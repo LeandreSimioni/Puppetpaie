@@ -14,15 +14,11 @@ use documents::plan_comptable::plan;
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::Value;
-
 use droit::contexte::Contexte;
-use documents::valeur::valeur_en_texte;
 use socle::echec::erreur;
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
-use documents::valeur::vrai;
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
-use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, sections_de, Ligne, Section, Tableau, R};
+use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
 
@@ -49,16 +45,18 @@ fn plus_grand(a: Decimal, b: Decimal) -> Decimal {
 /// l'export compta : l'etat des cotisations et le credit des comptes 43 ne peuvent pas diverger).
 fn organismes(ctx: &Contexte) -> R<Vec<(String, String)>> {
     let (plan, _) = plan(ctx)?;
-    let noms = plan.get("tiers").filter(|t| vrai(t));
-    let mut out = Vec::new();
-    if let Some(Value::Object(lignes)) = plan.get("lignes") {
-        for (k, v) in lignes {
-            let tiers = v.get("tiers").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("tiers")))?;
-            let nom = noms.and_then(|n| n.get(valeur_en_texte(tiers).as_str())).filter(|n| vrai(n)).map(valeur_en_texte);
-            out.push((k.clone(), nom.unwrap_or_else(|| format!("Organisme {}", valeur_en_texte(tiers)))));
-        }
-    }
-    Ok(out)
+    // Un tiers que le plan ne nomme pas se dit par son compte.
+    Ok(plan
+        .lignes
+        .iter()
+        .map(|(k, v)| {
+            let nom = match plan.nom_du_tiers(&v.tiers) {
+                Some(n) => n.to_string(),
+                None => format!("Organisme {}", v.tiers),
+            };
+            (k.clone(), nom)
+        })
+        .collect())
 }
 
 /// Les annees dont le socle est livre (`baremes.annees()`).
@@ -238,9 +236,9 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut t = Tableau::nouveau("cotisations-par-organisme", "Cotisations par organisme", p.libelle.clone());
     t.mois = p.mois.clone();
     t.sections = if regroupement == "mois" {
-        sections_de(lignes, |l| (l.texte("mois"), l.texte("organisme")), |k| format!("{} — {}", libelle_mois(&k.0).unwrap_or_else(|_| k.0.clone()), k.1), Some(&tri))
+        sections_de(lignes, |l| (l.texte("mois"), l.texte("organisme")), |k| Ok(format!("{} — {}", libelle_mois(&k.0)?, k.1)), Some(&tri))?
     } else {
-        sections_de(lignes, |l| l.texte("organisme"), |k| k.clone(), Some(&tri))
+        sections_de(lignes, |l| l.texte("organisme"), |k| Ok(k.clone()), Some(&tri))?
     };
     // Par organisme, la section porte deja son nom : une colonne qui le repeterait ne dirait rien de plus.
     let mut cols = if regroupement == "mois" { vec![col_t("mois", "Mois"), col_t("organisme", "Organisme")] } else { Vec::new() };
@@ -381,7 +379,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
     let mut t = Tableau::nouveau("versements-organismes", "Versements aux organismes (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), |k| libelle_mois(k).unwrap_or_else(|_| k.clone()), None);
+    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, None)?;
     t.colonnes = vec![
         col_t("mois", "Mois"),
         col_t("organisme", "Organisme"),
@@ -514,7 +512,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
                     "921" => "921 — assiette déplafonnée".to_string(),
                     q => q.to_string(),
                 });
-                let taux_at = if b.taux_at.is_empty() { None } else { montant(Some(&Value::String(b.taux_at.clone())))? };
+                let taux_at = if b.taux_at.is_empty() { None } else { Some(montant(&b.taux_at)?) };
                 l.od("taux_at", taux_at).od("assiette", if b.montant.is_some() { None } else { b.assiette }).od("montant", b.montant);
                 lignes.push(l);
             }
@@ -523,7 +521,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
     let mut t = Tableau::nouveau("bordereau-urssaf", "Bordereau Urssaf (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), |k| libelle_mois(k).unwrap_or_else(|_| k.clone()), None);
+    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, None)?;
     t.colonnes = vec![
         col_t("mois", "Mois"),
         col_t("ctp", "CTP"),

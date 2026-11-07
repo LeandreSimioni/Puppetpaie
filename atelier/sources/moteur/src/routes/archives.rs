@@ -290,7 +290,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
 #[derive(Debug, Serialize)]
 struct LogicielPropose {
     #[serde(flatten)]
-    livre: Value,
+    livre: documents::plan_comptable::Logiciel,
     dit: String,
 }
 
@@ -307,15 +307,15 @@ pub(crate) struct LogicielDuComptable {
 /// Le logiciel du comptable, tel que la page le montre.
 pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     let choix = ChoixCompta::lu(&ctx.racine)?;
-    let livres = tables()["logiciels"].as_array().cloned().unwrap_or_default();
-    let controle = match livres.iter().find(|l| l["logiciel"].as_str() == Some(choix.logiciel.as_str())) {
-        Some(l) => controler_plan(ctx, l["format"].as_str().unwrap_or(""))?,
+    let livres = &tables().logiciels;
+    let controle = match livres.iter().find(|l| l.logiciel == choix.logiciel) {
+        Some(l) => controler_plan(ctx, &l.format)?,
         None => Vec::new(),
     };
     // Ce que l'ecran dit de chaque logiciel, une fois choisi.
     let logiciels = livres
-        .into_iter()
-        .map(|l| LogicielPropose { dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", super::mot(&l["format_lisible"]), super::mot(&l["pourquoi"])), livre: l })
+        .iter()
+        .map(|l| LogicielPropose { dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", l.format_lisible, l.pourquoi), livre: l.clone() })
         .collect();
     Ok(LogicielDuComptable { logiciels, logiciel: choix.logiciel, analytique: choix.analytique, controle })
 }
@@ -326,12 +326,12 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
 fn etat_concerne(ctx: &Contexte, etat: &str) -> bool {
     let idcc = ctx.entreprise.idcc.portee();
     let t = tables();
-    if let Some(liste) = t["si_convention"].get(etat) {
-        if idcc.is_some() && !liste.as_array().expect("liste").iter().any(|c| c.as_str() == idcc) {
+    if let Some(liste) = t.si_convention.get(etat) {
+        if idcc.is_some() && !liste.iter().any(|c| Some(c.as_str()) == idcc) {
             return false;
         }
     }
-    if t["si_permanents"].as_array().expect("permanents").iter().any(|e| e.as_str() == Some(etat)) {
+    if t.si_permanents.iter().any(|e| e == etat) {
         return ctx.emploie_des_permanents();
     }
     true
@@ -356,9 +356,9 @@ struct ExportsPossibles {
     phrase: String,
     mois: Vec<String>,
     annees: Vec<String>,
-    etats: Vec<Value>,
-    formats: Value,
-    regroupements: Value,
+    etats: Vec<documents::plan_comptable::EtatLivre>,
+    formats: Vec<documents::plan_comptable::FormatLivre>,
+    regroupements: Vec<documents::plan_comptable::RegroupementLivre>,
     dossier: String,
     xlsx: bool,
     pdf: bool,
@@ -385,7 +385,7 @@ struct EcranDesExports {
 fn exports_periodes(ctx: &Contexte, c: ChargeExportsPeriodes) -> R<ExportsPossibles> {
     let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
     let t = tables();
-    let etats: Vec<Value> = t["etats"].as_array().expect("etats").iter().filter(|e| etat_concerne(ctx, e["etat"].as_str().expect("etat"))).cloned().collect();
+    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat)).cloned().collect();
     let annees = annees_de(&mois);
     let dossier = ctx.racine.join("exports").display().to_string();
     let ecran = EcranDesExports {
@@ -404,8 +404,8 @@ fn exports_periodes(ctx: &Contexte, c: ChargeExportsPeriodes) -> R<ExportsPossib
         mois,
         annees,
         etats,
-        formats: t["formats"].clone(),
-        regroupements: t["regroupements"].clone(),
+        formats: t.formats.clone(),
+        regroupements: t.regroupements.clone(),
         dossier,
         xlsx: c.xlsx,
         pdf: c.pdf,
@@ -533,9 +533,18 @@ fn dit(t: &Option<String>) -> Option<String> {
 pub(crate) struct EtatExporte {
     phrase: String,
     #[serde(flatten)]
-    etat: Value,
+    etat: EtatRendu,
     phrases: Vec<String>,
     ecran: EcranDUnEtat,
+}
+
+/// L'etat lui-meme, tel que la route le rend : la regularisation CASC-SVP, le livre de paie, ou un tableau.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum EtatRendu {
+    Casc(Value),
+    Livre(documents::etats_paie::LivreDePaie),
+    Tableau(documents::tableaux_export::Tableau),
 }
 
 /// CE QUE L'ECRAN DIT D'UN ETAT EXPORTE : ses donnees personnelles, ses totaux partiels, et pour la regularisation
@@ -554,7 +563,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     let nom = |f: &Option<std::path::PathBuf>| f.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
     // (le titre, les fichiers ecrits, ses avertissements, ses donnees personnelles, ses totaux partiels, la boite posee)
     let (etat, titre, ecrits, avertissements, personnelles, partiels, boite_liee) = match exporter_objet(ctx, c)? {
-        Exporte::Casc(r) => (crate::import::casc::vers_json(&r), r.periode.clone(), r.fichiers.iter().map(|f| nom_du(std::path::Path::new(f))).collect::<Vec<_>>(), r.avertissements.clone(), false, Vec::new(), r.boite_liee),
+        Exporte::Casc(r) => (EtatRendu::Casc(crate::import::casc::vers_json(&r)), r.periode.clone(), r.fichiers.iter().map(|f| nom_du(std::path::Path::new(f))).collect::<Vec<_>>(), r.avertissements.clone(), false, Vec::new(), r.boite_liee),
         Exporte::Livre(l) => {
             let bulletins = l.totaux.bulletins;
             let partiels = l
@@ -566,9 +575,13 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                     format!("{} sur {} bulletin{} sur {}", colonne.replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
                 })
                 .collect();
-            (l.json(), l.periode.clone(), nom(&l.fichier).into_iter().collect(), l.avertissements.clone(), false, partiels, false)
+            let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier).into_iter().collect(), l.avertissements.clone());
+            (EtatRendu::Livre(l), periode, ecrit, avertissements, false, partiels, false)
         }
-        Exporte::Tableau(t) => (documents::tableaux_export::brut_tableau(&t), t.titre.clone(), nom(&t.fichier).into_iter().collect(), t.avertissements.clone(), t.donnees_personnelles, Vec::new(), false),
+        Exporte::Tableau(t) => {
+            let (titre, ecrit, avertissements, personnelles) = (t.titre.clone(), nom(&t.fichier).into_iter().collect(), t.avertissements.clone(), t.donnees_personnelles);
+            (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), false)
+        }
     };
     let phrase = if ecrits.is_empty() { format!("{} : aperçu, rien n'est écrit.", titre) } else { format!("{} : écrit dans {}.", titre, ecrits.join(", ")) };
     let ecran = EcranDUnEtat {
@@ -596,10 +609,9 @@ pub(crate) enum Exporte {
 pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     use documents::etats_paie::Demande;
     let etat = dit(&c.etat).unwrap_or_else(|| "livre-de-paie".to_string());
-    let tables = documents::plan_comptable::tables();
-    let etats = tables["etats"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-    let Some(forme) = etats.iter().find(|e| e["etat"].as_str() == Some(etat.as_str())) else {
-        let mut noms: Vec<&str> = etats.iter().filter_map(|e| e["etat"].as_str()).collect();
+    let etats = &documents::plan_comptable::tables().etats;
+    let Some(forme) = etats.iter().find(|e| e.etat == etat) else {
+        let mut noms: Vec<&str> = etats.iter().map(|e| e.etat.as_str()).collect();
         noms.sort_unstable();
         return Err(refus(format!("État inconnu : « {} ». Les états possibles sont {}.", etat, noms.join(", "))));
     };
@@ -628,16 +640,16 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     }
     // Ce que l'etat ne demande pas ne lui est pas passe : un regroupement par defaut (« salarie ») n'a pas de
     // sens pour les cotisations.
-    let questions: Vec<&str> = forme["questions"].as_array().map(|q| q.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-    if !questions.contains(&"regroupement") {
+    let questions = &forme.questions;
+    if !questions.iter().any(|q| q == "regroupement") {
         d.regroupement = String::new();
     } else {
-        let permis: Vec<&str> = forme["regroupements"].as_array().map(|q| q.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-        if !permis.contains(&d.regroupement.as_str()) {
-            d.regroupement = permis.first().map(|s| s.to_string()).unwrap_or_default();
+        let permis = &forme.regroupements;
+        if !permis.contains(&d.regroupement) {
+            d.regroupement = permis.first().cloned().unwrap_or_default();
         }
     }
-    if !questions.contains(&"coordonnees") {
+    if !questions.iter().any(|q| q == "coordonnees") {
         d.coordonnees = false;
     }
     let tableau = match etat.as_str() {
@@ -816,7 +828,7 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
             mois: l.mois().map(|m| m.to_string()),
             mode: l.mode().nom().to_string(),
             accepte: l.accepte(),
-            fichier: l.fichier().unwrap_or_default().to_string(),
+            fichier: l.fichier().map(str::to_string),
             destinataire: l.destinataire().to_string(),
             reponse: l.reponse().to_string(),
             origine: l.origine().to_string(),
