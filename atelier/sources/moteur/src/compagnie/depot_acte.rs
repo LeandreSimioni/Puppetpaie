@@ -38,7 +38,8 @@ pub use envois::depot_acte::DepotFait;
 use socle::echec::Echec;
 
 /// Une erreur qui porte une donnee de plus pour la page (`etat`, `manques`...) : sa phrase et la donnee
-/// voyagent ensemble dans le message, que `routes::commande` redresse en `{"erreur", "classe", <cle>}`.
+/// voyagent ensemble dans le message, que l'enveloppe separe (`routes::enveloppe::Refus` : la phrase, et la donnee dans
+/// `a_part`).
 pub(crate) fn avec_donnee(classe: Classe,message: impl Into<String>, cle: &str, donnee: Value) -> Echec {
     Echec { classe: Some(classe), message: socle::echec::avec(message, json!({cle: donnee})) }
 }

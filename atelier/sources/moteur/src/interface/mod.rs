@@ -763,7 +763,7 @@ impl Fenetre {
             }
             let charge: Value = match serde_json::from_slice(if r.corps.is_empty() { b"{}" } else { &r.corps }) {
                 Ok(v) => v,
-                Err(e) => return refus(400, Classe::DemandeIllisible, format!("La demande ne se lit pas : ce n'est pas du JSON ({}).", e)),
+                Err(_) => return refus(400, Classe::DemandeIllisible, "La demande ne se lit pas : ce n'est pas du JSON.".into()),
             };
             if let Some(nom) = r.chemin.strip_prefix("/lanceur/") {
                 let args = charge.as_array().cloned().unwrap_or_default();

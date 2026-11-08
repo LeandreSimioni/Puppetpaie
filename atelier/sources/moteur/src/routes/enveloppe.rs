@@ -50,7 +50,7 @@ impl Demande {
         let v: Value = serde_json::from_str(texte).map_err(|e| {
             erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))
         })?;
-        let d: DemandeEcrite = socle::forme::lire(&v, "La demande est mal formée : elle s'écrit {\"route\": …, \"charge\": {…}}.").map_err(|m| erreur(Classe::MalFormee, m))?;
+        let d: DemandeEcrite = socle::forme::lire(&v, "La demande est mal formée : elle porte sa route et sa charge.").map_err(|m| erreur(Classe::MalFormee, m))?;
         Ok(Demande { route: route_nommee(&d.route)?, charge: d.charge })
     }
 }
@@ -102,12 +102,11 @@ impl Charge {
     /// la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle
     /// fautive a part ; rien ne s'ecrit.
     pub fn lire<T: DeserializeOwned>(&self) -> R<T> {
-        let mut m = match &self.0 {
-            Value::Object(m) => m.clone(),
-            _ => Map::new(),
-        };
-        m.remove(MOT_DE_PASSE);
-        socle::forme::lire(&Value::Object(m), "La demande est mal formée.").map_err(|m| erreur(Classe::MalFormee, m))
+        let mut v = self.0.clone();
+        if let Value::Object(m) = &mut v {
+            m.remove(MOT_DE_PASSE);
+        }
+        socle::forme::lire(&v, "La demande est mal formée.").map_err(|m| erreur(Classe::MalFormee, m))
     }
 
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).
@@ -237,62 +236,68 @@ impl Refus {
 // ------------------------------------------------------------------------------------------------- la reponse
 
 /// LA REPONSE D'UNE ROUTE, la meme pour l'ecran et le LLM : son rendu ou son refus, et si la route ecrit.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Reponse {
+    ecrit: bool,
+    issue: Result<Value, Refus>,
+}
+
+/// La reponse telle qu'elle s'ecrit (`Reponse::en_json`).
+#[derive(Serialize)]
+struct ReponseEcrite<'a> {
     ok: bool,
     ecrit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    resultat: Option<Value>,
+    resultat: Option<&'a Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    refus: Option<Refus>,
+    refus: Option<&'a Refus>,
+}
+
+impl Serialize for Reponse {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ReponseEcrite { ok: self.issue.is_ok(), ecrit: self.ecrit, resultat: self.issue.as_ref().ok(), refus: self.issue.as_ref().err() }.serialize(s)
+    }
 }
 
 impl Reponse {
     /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus.
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
-        let ecrit = super::est_une_ecriture(route);
-        match rendu {
-            Ok(r) => Reponse { ok: true, ecrit, resultat: Some(r.en_valeur()), refus: None },
-            Err(e) => Reponse { ok: false, ecrit, resultat: None, refus: Some(Refus::de(Some(route), e)) },
-        }
+        Reponse { ecrit: super::est_une_ecriture(route), issue: rendu.map(Rendu::en_valeur).map_err(|e| Refus::de(Some(route), e)) }
     }
 
     /// Le refus d'une demande qui n'a pas atteint de route (illisible, mal formee, une route inconnue) : rien ne s'est
     /// ecrit.
     pub fn refusee(refus: Refus) -> Reponse {
-        Reponse { ok: false, ecrit: false, resultat: None, refus: Some(refus) }
+        Reponse { ecrit: false, issue: Err(refus) }
     }
 
     /// Le refus `refus` de la route `route`, deja dit (la fenetre autour de la route, un refus qu'elle rend tel quel).
     pub fn refusee_par(route: Route, refus: Refus) -> Reponse {
-        Reponse { ok: false, ecrit: super::est_une_ecriture(route), resultat: None, refus: Some(refus) }
+        Reponse { ecrit: super::est_une_ecriture(route), issue: Err(refus) }
     }
 
     /// La route a-t-elle rendu (et non refuse) ?
     pub fn est_rendue(&self) -> bool {
-        self.ok
+        self.issue.is_ok()
     }
 
     /// Ce que la route a rendu, s'il y a lieu.
     pub fn resultat(&self) -> Option<&Value> {
-        self.resultat.as_ref()
+        self.issue.as_ref().ok()
     }
 
     /// Le refus, s'il y a lieu.
     pub fn refus(&self) -> Option<&Refus> {
-        self.refus.as_ref()
+        self.issue.as_ref().err()
     }
 
     /// Le rendu ou le refus, pris.
     pub fn en_resultat(self) -> Result<Value, Refus> {
-        match (self.resultat, self.refus) {
-            (Some(v), None) => Ok(v),
-            (_, Some(r)) => Err(r),
-            (None, None) => Ok(Value::Null),
-        }
+        self.issue
     }
 
-    /// La reponse en JSON : ce que `moteur route` imprime et ce que `/api/<route>` rend.
+    /// La reponse en JSON : ce que `moteur route` imprime et ce que `/api/<route>` rend. Un rendu et un refus sont des
+    /// objets et des textes : leur ecriture ne refuse pas.
     pub fn en_json(&self) -> Value {
         match serde_json::to_value(self) {
             Ok(v) => v,
@@ -303,13 +308,15 @@ impl Reponse {
     /// `moteur route --texte` : ce que l'ecran lit de la reponse, sans la composer, et jamais du JSON. Rendue : la phrase de
     /// la route, puis les lignes de sa liste `phrases` ; refusee : sa phrase, et ce qu'il faut corriger.
     pub fn en_texte(&self, route: &str) -> String {
-        if let Some(r) = &self.refus {
-            let corriger = r.corriger.map(|c| format!("À corriger : {}\n", c)).unwrap_or_default();
-            return format!("Refus : {}\n{}", r.phrase, corriger);
-        }
-        let r = self.resultat.as_ref();
-        let mut lignes: Vec<String> = r.and_then(|r| r.get("phrase")).and_then(Value::as_str).filter(|p| !p.is_empty()).map(String::from).into_iter().collect();
-        lignes.extend(r.and_then(|r| r.get("phrases")).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from));
+        let r = match &self.issue {
+            Err(r) => {
+                let corriger = r.corriger.map(|c| format!("À corriger : {}\n", c)).unwrap_or_default();
+                return format!("Refus : {}\n{}", r.phrase, corriger);
+            }
+            Ok(r) => r,
+        };
+        let mut lignes: Vec<String> = r.get("phrase").and_then(Value::as_str).filter(|p| !p.is_empty()).map(String::from).into_iter().collect();
+        lignes.extend(r.get("phrases").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from));
         if lignes.is_empty() {
             lignes.push(format!("La route {} n'a pas rendu de phrase.", route));
         }
