@@ -286,27 +286,27 @@ fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Opti
 
 // ------------------------------------------------------------------ ce que le simulateur rend
 
-/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut, son libelle, et
-/// pour un compte rendu du PAS, le mois de la declaration (`production`).
-#[derive(Debug, Clone, Serialize)]
-struct RetourDecrit<'a> {
-    flux: &'a str,
-    nature: &'a str,
-    publication: &'a str,
-    statut: &'a str,
-    libelle: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    production: Option<String>,
-}
-
 /// Une piece fabriquee : le retour tel que la liste des retours le decrit, et ses octets.
 pub struct Piece {
-    pub retour: serde_json::Value,
+    pub retour: crate::retours::Annonce,
     pub contenu: Vec<u8>,
 }
 
-fn retour(nature: &str, flux: &str, publication: &str, libelle: &str, production: Option<String>) -> serde_json::Value {
-    socle::ecriture::en_valeur(&RetourDecrit { flux, nature, publication, statut: "fictive", libelle, production })
+/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut (`fictive`), son
+/// libelle, et pour un compte rendu du PAS, le mois de la declaration (`production`).
+fn retour(nature: &str, flux: &str, publication: &str, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
+    crate::retours::Annonce {
+        publication: Some(publication.to_string()),
+        production,
+        ops: None,
+        delegataire: None,
+        nature: nature.to_string(),
+        statut: Some("fictive".to_string()),
+        id: None,
+        url: None,
+        libelle: Some(libelle.to_string()),
+        flux: Some(flux.to_string()),
+    }
 }
 
 fn echappe(t: &str) -> String {
@@ -676,7 +676,7 @@ mod tests {
         assert!(crate::releve_retours::poser_effectif(&racine, 2026, 3.0, "2027-01-05").unwrap());
         assert!(crate::releve_retours::poser_effectif(&racine, 2025, 2.0, "2027-01-05").unwrap());
         let p = crm_effectif(2026, 11.42, "FICTIF-000000000001", "20270215100000");
-        let chemin = crate::transport::archiver(&racine, "", &p.retour, &p.contenu, "application/xml", "20270215-100000").unwrap();
+        let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
         let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte("{}", "la fiche").unwrap();

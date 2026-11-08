@@ -61,7 +61,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 
 /// Le plus grand ordre des signalements (natures 04, 05, 07, 08) que les bilans de nature 11 archives dans `retours/`
 /// declarent pour ce SIREN, essais et reels, acceptes ou non ; et le flux qui le porte. Le flux se lit dans le nom de
-/// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `transport::archiver`).
+/// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `releve_retours::archiver_retour`).
 pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i64, String)>, Echec> {
     let mut dernier: Option<(i64, String)> = None;
     for (nom, p) in bilans_archives(racine)? {
@@ -86,7 +86,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i6
     Ok(dernier)
 }
 
-/// Les bilans (nature 11) archives dans `retours/`, par nom (`transport::archiver`) ; aucun sans dossier des retours.
+/// Les bilans (nature 11) archives dans `retours/`, par nom (`releve_retours::archiver_retour`) ; aucun sans dossier des retours.
 fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, Echec> {
     let dossier = racine.join(crate::retours::RETOURS);
     let lecture = match std::fs::read_dir(&dossier) {

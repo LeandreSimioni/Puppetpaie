@@ -49,7 +49,7 @@ pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero
 
 // ------------------------------------------------------------------ les etats
 
-fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
+pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
     let classe = match e.kind() {
         std::io::ErrorKind::NotFound => "FileNotFoundError",
         std::io::ErrorKind::PermissionDenied => "PermissionError",
@@ -961,7 +961,7 @@ pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
 }
 
 /// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
-/// `sansflux` quand le retour ne dit pas son flux (`transport::archiver`).
+/// `sansflux` quand le retour ne dit pas son flux (`releve_retours::archiver_retour`).
 fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf>> {
     let dossier = if quoi == Acte::Dpae { racine.join(crate::retours::RETOURS_DPAE) } else { racine.join(crate::retours::RETOURS) };
     if !dossier.is_dir() {

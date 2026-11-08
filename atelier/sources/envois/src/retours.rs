@@ -78,7 +78,7 @@ const RUBRIQUES_PAS: [(&str, &str); 3] = [
 /// Noms metier NEODeS des memes rubriques (cahier technique 2026.1, p. 244).
 const NOMS_METIER: [(&str, &str); 3] = [("tauxpas", "taux"), ("typetauxpas", "type"), ("idtauxpas", "identifiant")];
 
-/// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `transport::archiver`) est-elle celle d'un retour de nature
+/// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `releve_retours::archiver_retour`) est-elle celle d'un retour de nature
 /// `nature` ? Son deuxieme segment le dit.
 pub fn archive_de_nature(nom: &str, nature: &str) -> bool {
     nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature)

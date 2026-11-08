@@ -311,7 +311,7 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 
 // ------------------------------------------------------------------ les retours, lus
 
-/// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`transport::archiver`),
+/// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`),
 /// celle de sa publication d'abord, sinon la premiere de sa nature pour ce flux (`etats::archive_du_retour`).
 fn piece_du_retour(racine: &Path, canal: &str, flux: &str, nature: &str, publication: &str) -> Option<PathBuf> {
     let mut dossier = racine.join(envois::retours::RETOURS);

@@ -1,5 +1,5 @@
-//! Le transport vers net-entreprises et l'Urssaf : le client HTTP, l'authentification, les consultations, l'archivage
-//! des retours et leur journal, et l'envoi du corps d'un depot (DSN, DPAE).
+//! Le transport vers net-entreprises et l'Urssaf : le client HTTP, l'authentification, les consultations, et l'envoi du
+//! corps d'un depot (DSN, DPAE).
 //!
 //! CE MODULE NE CHERCHE JAMAIS UN SECRET : le mot de passe arrive de l'appelant, sert le temps de l'authentification
 //! et n'est ecrit nulle part ; il n'ouvre pas le coffre et n'en parle pas. Le jeton, lui, vaut une session : c'est
@@ -10,11 +10,9 @@
 
 use droit::fiche::Lue as _;
 use std::io::Read;
-use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use serde_json::Value;
 use ureq::http;
 
 pub const USER_AGENT: &str = "Client-DSN (PuppetPaie/1.0; PuppetPaie)";
@@ -76,29 +74,17 @@ impl Panne {
 
 /// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`ErreurApi`, `DepotRefuse`, ou celle d'une panne
 /// brute), sa phrase, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EchecApi {
-    pub ok: bool,
     pub erreur: String,
     pub classe: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<i64>,
 }
 
 impl EchecApi {
     fn nouveau(classe: &'static str, erreur: String, code: Option<i64>) -> EchecApi {
-        EchecApi { ok: false, erreur, classe, code }
+        EchecApi { erreur, classe, code }
     }
-
-    /// La panne en reponse JSON (`ok: false`, `erreur`, `classe`, `code`), telle que `releve_retours` la lit encore.
-    fn en_json(self) -> Value {
-        socle::ecriture::en_valeur(&self)
-    }
-}
-
-/// Une panne de l'archivage des retours, en reponse JSON.
-fn echec(classe: &'static str, message: String, code: Option<i64>) -> Value {
-    EchecApi::nouveau(classe, message, code).en_json()
 }
 
 fn echec_brut(p: Panne) -> EchecApi {
@@ -642,15 +628,15 @@ fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
 }
 
 /// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `ErreurApi`.
-pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Value> {
+pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { url, jeton, delai: DELAI_APPEL, ..Default::default() };
-    envoyer(&r).map_err(|p| en_erreur_api(url, p).en_json())
+    envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des instants ISO).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, Value> {
+pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
-    let illisible = |e: String| EchecApi::nouveau("ValueError", e, None).en_json();
+    let illisible = |e: String| EchecApi::nouveau("ValueError", e, None);
     url.push_str(&horodatage(debut).map_err(illisible)?);
     if let Some(fin) = fin {
         url.push('/');
@@ -704,21 +690,16 @@ pub struct Authentification<'a> {
     pub jeton: Option<&'a str>,
 }
 
-/// L'authentification du guide de l'API DSN : `{"ok", "jeton", "expire_le"}`. Sans mot de passe ou sans declarant
-/// complet, rien ne part. Le mot de passe ne survit pas a cet appel et n'entre dans aucun message.
-pub fn authentifier(a: &Authentification) -> Result<Value, Value> {
-    session(a).map(|s| socle::ecriture::en_valeur(&s)).map_err(EchecApi::en_json)
+/// UNE SESSION OUVERTE : son jeton, et l'heure ou il expire si le service la dit (l'en-tete `Expires`).
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub jeton: String,
+    pub expire_le: Option<String>,
 }
 
-/// UNE SESSION OUVERTE : son jeton, et l'heure ou il expire si le service la dit.
-#[derive(Debug, Clone, serde::Serialize)]
-struct Session {
-    ok: bool,
-    jeton: String,
-    expire_le: Option<String>,
-}
-
-fn session(a: &Authentification) -> Result<Session, EchecApi> {
+/// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
+/// part. Le mot de passe ne survit pas a cet appel et n'entre dans aucun message.
+pub fn authentifier(a: &Authentification) -> Result<Session, EchecApi> {
     let variable = a.variable;
     let mdp = match a.motdepasse {
         Some(m) if !m.is_empty() => m,
@@ -774,13 +755,13 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     };
     let (brut, entetes) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
-    Ok(Session { ok: true, jeton: socle::texte::strip(&jeton).to_string(), expire_le: entete(&entetes, "Expires").map(String::from) })
+    Ok(Session { jeton: socle::texte::strip(&jeton).to_string(), expire_le: entete(&entetes, "Expires").map(String::from) })
 }
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`ErreurApi`).
-pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), Value> {
+pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         url,
         jeton: Some(jeton),
@@ -791,8 +772,7 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
         delai,
         ..Default::default()
     };
-    envoyer(&r)
-        .map_err(|p| match (forme, p) {
+    envoyer(&r).map_err(|p| match (forme, p) {
             ("dsn", Panne::Statut { code, corps }) => match corps {
                 // Le corps de la reponse passe par `sans_secret`.
                 Ok(c) => EchecApi::nouveau(
@@ -809,122 +789,4 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
             (_, Panne::Reseau(r)) => EchecApi::nouveau("ErreurApi", format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
             (_, brute) => echec_brut(brute),
         })
-        .map_err(EchecApi::en_json)
-}
-
-// -------------------------------------------------------------- l'archivage
-
-fn erreur_io(e: std::io::Error, chemin: &Path) -> Value {
-    let classe = match e.kind() {
-        std::io::ErrorKind::NotFound => "FileNotFoundError",
-        std::io::ErrorKind::PermissionDenied => "PermissionError",
-        _ => "OSError",
-    };
-    echec(classe, format!("{} : {}", errno_texte(&e), chemin.display()), None)
-}
-
-/// `retours/` (la DSN) ou `retours/<canal>/`, cree.
-pub fn dossier_archive(racine: &Path, canal: &str) -> Result<PathBuf, Value> {
-    let mut p = racine.join(crate::retours::RETOURS);
-    if !canal.is_empty() {
-        p = p.join(canal);
-    }
-    std::fs::create_dir_all(&p).map_err(|e| erreur_io(e, &p))?;
-    Ok(p)
-}
-
-/// La piece telle quelle, nommee `AAAAMMJJ-hhmmss_natureN_flux.ext` ; l'heure est celle de la publication, ou
-/// `maintenant` (`AAAAMMJJ-hhmmss`) quand le retour n'en porte pas. Une piece deja archivee sous ce nom n'est pas
-/// reecrite.
-pub fn archiver(racine: &Path, canal: &str, retour: &Value, contenu: &[u8], ctype: &str, maintenant: &str) -> Result<PathBuf, Value> {
-    let ext = if ctype.contains("pdf") {
-        ".pdf"
-    } else {
-        let tete = &contenu[..contenu.len().min(200)];
-        let debut_utile = match tete.iter().position(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)) {
-            Some(i) => i,
-            None => tete.len(),
-        };
-        if ctype.contains("xml") || tete[debut_utile..].starts_with(b"<") {
-            ".xml"
-        } else {
-            ".txt"
-        }
-    };
-    let chaine = |cle: &str| -> Result<String, Value> {
-        match retour.get(cle) {
-            None | Some(Value::Null) => Ok(String::new()),
-            Some(Value::String(s)) => Ok(s.clone()),
-            Some(_) => Err(echec("TypeError", format!("`{}` : une chaine est attendue", cle), None)),
-        }
-    };
-    let publication = debut(&chaine("publication")?, 14);
-    let horo = if publication.chars().count() == 14 {
-        let c: Vec<char> = publication.chars().collect();
-        format!("{}-{}", c[..8].iter().collect::<String>(), c[8..].iter().collect::<String>())
-    } else {
-        maintenant.to_string()
-    };
-    let nature = match retour.get("nature") {
-        None => "??".to_string(),
-        Some(v) => crate::valeur::valeur_en_texte(v),
-    };
-    let flux = chaine("flux")?;
-    let flux = if flux.is_empty() { "sansflux".to_string() } else { flux };
-    let nom = format!("{}_nature{}_{}{}", horo, nature, flux, ext);
-    let dest = dossier_archive(racine, canal)?.join(nom);
-    if !dest.exists() {
-        std::fs::write(&dest, contenu).map_err(|e| erreur_io(e, &dest))?;
-    }
-    Ok(dest)
-}
-
-fn journal(racine: &Path, canal: &str) -> Result<PathBuf, Value> {
-    Ok(dossier_archive(racine, canal)?.join("journal.json"))
-}
-
-/// Les retours deja vus, tels que le journal du canal les garde (absent : aucun).
-fn lire_journal(p: &Path) -> Result<Vec<Value>, Value> {
-    if !p.exists() {
-        return Ok(Vec::new());
-    }
-    let t = std::fs::read(p).map_err(|e| erreur_io(e, p))?;
-    let t = String::from_utf8(t).map_err(|e| echec("UnicodeDecodeError", e.to_string(), None))?;
-    match serde_json::from_str::<Value>(&t).map_err(|e| echec("JSONDecodeError", e.to_string(), None))? {
-        Value::Array(a) => Ok(a),
-        _ => Err(echec("TypeError", format!("{} n'est pas une liste de retours", p.display()), None)),
-    }
-}
-
-/// Ce qui distingue un retour : son flux, sa nature, sa publication.
-fn cle_de_retour(e: &Value) -> Result<[Value; 3], Value> {
-    if !e.is_object() {
-        return Err(echec("TypeError", "une ligne du journal n'est pas un objet".into(), None));
-    }
-    Ok(["flux", "nature", "publication"].map(|c| e.get(c).cloned().unwrap_or(Value::Null)))
-}
-
-fn meme_cle(a: &[Value; 3], b: &[Value; 3]) -> bool {
-    a.iter().zip(b).all(|(x, y)| crate::valeur::valeurs_egales(x, y))
-}
-
-/// Ajoute au journal du canal les retours qu'il n'a pas encore vus ; LF, deux espaces, l'accent tel quel.
-pub fn noter_vus(racine: &Path, canal: &str, entrees: &[Value]) -> Result<(), Value> {
-    let p = journal(racine, canal)?;
-    let mut deja = lire_journal(&p)?;
-    let connus: Vec<[Value; 3]> = deja.iter().map(cle_de_retour).collect::<Result<_, _>>()?;
-    for e in entrees {
-        let cle = cle_de_retour(e)?;
-        if !connus.iter().any(|c| meme_cle(c, &cle)) {
-            deja.push(e.clone());
-        }
-    }
-    let mut t = serde_json::to_string_pretty(&deja).map_err(|e| echec("TypeError", e.to_string(), None))?;
-    t.push('\n');
-    std::fs::write(&p, t).map_err(|e| erreur_io(e, &p))
-}
-
-/// Les cles (flux, nature, publication) des retours deja vus sur le canal.
-pub fn deja_vus(racine: &Path, canal: &str) -> Result<Vec<[Value; 3]>, Value> {
-    lire_journal(&journal(racine, canal)?)?.iter().map(cle_de_retour).collect()
 }
