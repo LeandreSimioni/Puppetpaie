@@ -34,3 +34,4 @@ pub mod envoi;
 pub mod releve_signatures;
 pub mod signature_courriel;
 pub mod simulation_courriels;
+pub mod valeur;

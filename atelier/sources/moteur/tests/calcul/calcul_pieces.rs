@@ -13,7 +13,7 @@ const ORACLE: &str = "calcul-pieces.json";
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
 fn canon_valeur(v: &Value) -> Result<Value, String> {
     Ok(match v {
-        Value::Number(_) => Value::String(socle::num::nombre(declarations::valeur::dec(v)?)),
+        Value::Number(_) => Value::String(socle::num::nombre(envois::valeur::dec(v)?)),
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
         Value::Object(o) => Value::Object(
             o.iter()
@@ -103,7 +103,7 @@ fn le_seuil_de_smic() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(declarations::valeur::dec).transpose();
+            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(envois::valeur::dec).transpose();
             vus.push(essai(section(bar).and_then(|rg| au_dela_du_seuil(rg.as_ref(), dec(b.as_str().unwrap()), dec(h), seuil?)).map(Value::Bool)));
         }
         groupe(g, vus);

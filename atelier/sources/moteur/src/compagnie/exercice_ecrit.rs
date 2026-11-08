@@ -364,7 +364,7 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
     if !socle::fichiers::existe(&p) {
         return Ok(Exercices::default());
     }
-    let v = declarations::valeur::json_en_cache_ou(&p, declarations::valeur::lire_json_echec)?;
+    let v = envois::valeur::json_en_cache_ou(&p, envois::valeur::lire_json_echec)?;
     socle::forme::lire(&v, "Le fichier des exercices clos (config/exercices.json) ne se lit pas.").map_err(|m| erreur("ValueError", m))
 }
 

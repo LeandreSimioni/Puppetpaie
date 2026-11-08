@@ -19,7 +19,7 @@ use serde_json::{json, Map, Value};
 
 use droit::contexte::Contexte;
 use socle::ecriture::{ecrire_json, repr_flottant};
-use declarations::valeur::{euros_de, lire_json, valeur_en_texte, vrai};
+use envois::valeur::{euros_de, lire_json, valeur_en_texte, vrai};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::num::Decimal;

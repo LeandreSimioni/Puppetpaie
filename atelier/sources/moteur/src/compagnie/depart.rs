@@ -32,9 +32,9 @@ use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
 use socle::ecriture::ecrire_json;
-use declarations::valeur::vrai;
+use envois::valeur::vrai;
 use documents::ecrire_documents::{Reserves, Suite};
-use declarations::valeur::valeur_en_texte;
+use envois::valeur::valeur_en_texte;
 
 fn info(texte: impl Into<String>) -> Avis {
     Avis { info: true, texte: texte.into() }
@@ -638,7 +638,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     // LES ARRETS DE TRAVAIL : la DSN mensuelle REPORTE ceux que `Arret::a_reporter` y met, signales ou non.
     let arrets = &lu.arrets;
     let nomenclature = crate::routes::imprevus::nomenclatures()?;
-    let jour = |v: &Value| -> R<String> { declarations::valeur::d(v).map(|j| j.jj_mm_aaaa()).map_err(valeur) };
+    let jour = |v: &Value| -> R<String> { envois::valeur::d(v).map(|j| j.jj_mm_aaaa()).map_err(valeur) };
     let mut non_signales = 0;
     for a in arrets {
         let resume = crate::routes::imprevus::resume_arret(ctx, &nomenclature, a)?;

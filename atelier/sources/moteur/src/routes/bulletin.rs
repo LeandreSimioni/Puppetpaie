@@ -13,7 +13,7 @@ use droit::contexte::Contexte;
 use documents::bulletin::{jeux_et_description, Modele, CASE_MODELE};
 use socle::fichiers::dossier_du_code;
 use socle::echec::{Echec, R};
-use declarations::valeur::lire_json;
+use envois::valeur::lire_json;
 
 const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
 

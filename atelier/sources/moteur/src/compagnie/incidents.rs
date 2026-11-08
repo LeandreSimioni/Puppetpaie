@@ -31,7 +31,7 @@ use serde_json::{json, Map, Value};
 use crate::compagnie::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
 use envois::etats::{get};
-use declarations::valeur::{nom_type, valeur_en_texte, valeurs_egales, vrai};
+use envois::valeur::{nom_type, valeur_en_texte, valeurs_egales, vrai};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::fichiers::dossier_du_code;

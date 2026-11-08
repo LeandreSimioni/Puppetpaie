@@ -252,13 +252,13 @@ pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str
             let lu = corps.ok().filter(|c| !c.is_empty()).unwrap_or_else(|| b"{}".to_vec());
             let msg = match std::str::from_utf8(&lu).ok().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()) {
                 Some(Value::Object(o)) => match o.get("erreur") {
-                    Some(e) if declarations::valeur::vrai(e) => declarations::valeur::valeur_en_texte(e),
+                    Some(e) if envois::valeur::vrai(e) => envois::valeur::valeur_en_texte(e),
                     _ => propre,
                 },
                 Some(autre) => {
                     return Err(ErreurFilet::autre(
                         "AttributeError",
-                        socle::fichiers::attendu("un objet", declarations::valeur::nom_type(&autre)),
+                        socle::fichiers::attendu("un objet", envois::valeur::nom_type(&autre)),
                     ))
                 }
                 None => propre,

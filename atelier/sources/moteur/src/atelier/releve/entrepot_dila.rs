@@ -576,7 +576,7 @@ pub fn premiers_caracteres(s: &str, n: usize) -> &str {
 
 /// Une valeur lue dans un JSON, en texte.
 pub fn texte(v: &Value) -> String {
-    declarations::valeur::valeur_en_texte(v)
+    envois::valeur::valeur_en_texte(v)
 }
 
 /// Une valeur presente et non vide (ni `null`, `false`, `0`, `""`, `[]`, `{}`).

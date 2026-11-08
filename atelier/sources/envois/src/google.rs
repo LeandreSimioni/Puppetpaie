@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use socle::echec::{erreur, Echec};
-use declarations::valeur::{nom_type, vrai};
+use crate::valeur::{nom_type, vrai};
 
 use crate::transport::{envoyer, Panne, Requete};
 
@@ -36,7 +36,7 @@ pub fn champ(j: &Value, cle: &str) -> R<Value> {
 pub fn en_texte(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
-        autre => declarations::valeur::valeur_en_texte(autre),
+        autre => crate::valeur::valeur_en_texte(autre),
     }
 }
 
