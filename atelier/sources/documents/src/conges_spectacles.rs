@@ -211,9 +211,9 @@ const NOIR: &str = "#000000";
 // ---------------------------------------------------------------- chiffres
 
 /// `arrondi_euro` : a l'euro le plus proche, moitie superieure.
-pub fn arrondi_euro(x: Decimal) -> i64 {
+pub fn arrondi_euro(x: Decimal) -> Result<i64, String> {
     use rust_decimal::prelude::ToPrimitive;
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().unwrap_or(0)
+    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| format!("montant hors de portée : {}", x))
 }
 
 
@@ -257,8 +257,12 @@ impl ContratCs {
         })
     }
 
-    fn numero_ou(&self, defaut: &str) -> String {
-        self.numero.as_deref().unwrap_or(defaut).to_string()
+    /// Le contrat, tel qu'un refus le nomme : « FA1.26.13 », ou « sans numero ».
+    fn nomme(&self) -> String {
+        match self.numero.as_deref() {
+            Some(n) => n.to_string(),
+            None => "sans numero".to_string(),
+        }
     }
 }
 
@@ -291,13 +295,13 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         let nb = if eng.cachets != 0 { eng.cachets } else { eng.jours };
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
-    if eng.heures.map_or(false, |h| h != 0.0) {
+    if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
         return Err(Refus {
             classe: Some("ValueError"),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
-                eng.numero_ou("sans numero"),
-                repr_flottant(eng.heures.unwrap_or(0.0))
+                eng.nomme(),
+                repr_flottant(h)
             ),
         });
     }
@@ -307,7 +311,7 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
             classe: Some("ValueError"),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
-                eng.numero_ou("sans numero"),
+                eng.nomme(),
                 eng.cachets,
                 eng.jours,
                 n
@@ -374,7 +378,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                         classe: Some("ValueError"),
                         message: format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
-                            e.numero_ou("sans numero"),
+                            e.nomme(),
                             nb,
                             debut.jj_mm_aaaa(),
                             fin.jj_mm_aaaa()
@@ -467,7 +471,10 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     let adresse_defaut = texte_requis(&s.adresse, "adresse")?;
     let commune_defaut = texte_requis(&s.commune, "commune")?;
     // La forme lisible quand la fiche la porte, la forme declaree sinon.
-    let lisible = |c: &Option<String>, defaut: String| c.clone().unwrap_or(defaut);
+    let lisible = |c: &Option<String>, declaree: String| match c {
+        Some(l) => l.clone(),
+        None => declaree,
+    };
     let mut out: Vec<(&'static str, String)> = Vec::new();
     out.push(("dest_nom", format!("{} {}", texte_requis(&s.prenom, "prenom")?, texte_requis(&s.nom, "nom")?)));
     out.push(("dest_adresse", lisible(&s.adresse_affichage, adresse_defaut)));
@@ -477,7 +484,13 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     out.push(("compte", texte_requis(&ent.congesspectacles_adherent, "congesspectacles_adherent")?));
     out.push(("num_ce", c.numero.to_string()));
     if let Some(nir) = s.nir.portee() {
-        out.push(("nir", s.nir_cle.portee().map_or_else(|| nir.to_string(), |cle| format!("{} {}", nir, cle))));
+        out.push((
+            "nir",
+            match s.nir_cle.portee() {
+                Some(cle) => format!("{} {}", nir, cle),
+                None => nir.to_string(),
+            },
+        ));
     }
     out.push(("raison_sociale", texte_requis(&ent.raison_sociale, "raison_sociale")?));
     out.push(("nom_naissance", texte_requis(&s.nom, "nom")?));
@@ -495,8 +508,8 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     out.push(("debut", cases_date(&c.debut)));
     out.push(("fin", cases_date(&c.fin)));
     out.push(("nb_cachets", c.nb_jours_ou_cachets.to_string()));
-    out.push(("base_conge", arrondi_euro(c.base).to_string()));
-    out.push(("salaire_brut", arrondi_euro(c.brut).to_string()));
+    out.push(("base_conge", arrondi_euro(c.base)?.to_string()));
+    out.push(("salaire_brut", arrondi_euro(c.brut)?.to_string()));
     let e = c.emission;
     out.push(("date", format!("{:02}/{:02}/{:02}", e.jour, e.mois, e.an % 100)));
     out.push(("signataire", texte_requis(&sig.nom, "nom")?));
@@ -555,7 +568,7 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
     }
     if let Some(signature) = identite_de(&ent.gabarits, "signature") {
         let (x0, y0, x1, y1) = SIGNATURE_CADRE;
-        let svg = signature.extension().map_or(false, |e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
+        let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
             chemin: chemin_texte(&signature),
             x: x0 as f32,
@@ -636,8 +649,8 @@ pub fn recapitulatif(paires: &[(&PaieCs, i64)], ent: &ChampsEntreprise) -> R<Str
                 c.debut.jj_mm_aaaa(),
                 c.fin.jj_mm_aaaa(),
                 c.nb_jours_ou_cachets,
-                arrondi_euro(c.brut),
-                arrondi_euro(c.base)
+                arrondi_euro(c.brut)?,
+                arrondi_euro(c.base)?
             ));
         }
     }

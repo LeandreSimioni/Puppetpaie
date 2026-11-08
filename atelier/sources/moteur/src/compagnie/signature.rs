@@ -118,8 +118,8 @@ fn et_fr(morceaux: &[String]) -> String {
 
 /// `code_signature` : `SIG-` puis six signes tires au hasard, sans 0/O ni 1/I/L, pour qu'il se relise sans
 /// hesiter s'il faut le recopier a la main.
-pub fn code_signature() -> String {
-    documents::fiche_questionnaire::code_au_hasard("SIG-")
+pub fn code_signature() -> R<String> {
+    documents::fiche_questionnaire::code_au_hasard("SIG-").map_err(|m| erreur("OSError", m))
 }
 
 /// `signataire` et `raison` des courriels : le prenom d'affichage du signataire (sinon son prenom, capitalise), et
@@ -473,7 +473,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     for (cle, ps, _) in &par_salarie {
         let sal = &ps[0].salarie;
         let adresse = exige(&sal.email, "email")?.trim().to_lowercase();
-        let code = code_signature();
+        let code = code_signature()?;
         // Le contrat qui en remplace un autre porte son propre nom : le PDF parti avant lui reste sur le disque.
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" }));
         documents::contrat::ecrire_contrat(ctx, ps, &ent, &pdf, &remplacements)?;
@@ -931,7 +931,7 @@ pub fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAvenant>)]
         }
         let Some(sal) = sal else { continue };
         let adresse = lignes_contrats[0].adresse.clone().unwrap_or_default();
-        let code = code_signature();
+        let code = code_signature()?;
         let mut spectacles: Vec<String> = Vec::new();
         for n in &nommes {
             if !spectacles.contains(&n.spectacle) {

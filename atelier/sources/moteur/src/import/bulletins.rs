@@ -54,10 +54,10 @@ use crate::import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use droit::contexte::Contexte;
 use declarations::champs::ParCase;
 use socle::date::Jour;
-use documents::valeur::valeur_en_texte;
+use declarations::valeur::valeur_en_texte;
 use socle::echec::R;
 use socle::echec::erreur;
-use documents::valeur::vrai;
+use declarations::valeur::vrai;
 use crate::import::completer as completer;
 use crate::import::tri::Sorte;
 use socle::num::Decimal;
@@ -1123,7 +1123,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     }
                     None => {
                         let nombre = c.nombre.unwrap_or(0);
-                        if somme.is_some_and(|s| Decimal::from(documents::conges_spectacles::arrondi_euro(s)) != brut) {
+                        let ecart_de_brut = match somme {
+                            Some(s) => Decimal::from(documents::conges_spectacles::arrondi_euro(s).map_err(socle::echec::Echec::from)?) != brut,
+                            None => false,
+                        };
+                        if ecart_de_brut {
                             phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut), euros(somme.unwrap_or_default())));
                         }
                         if i128::from(nombre) != cachets && i128::from(nombre) != jours {

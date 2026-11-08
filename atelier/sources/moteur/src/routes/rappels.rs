@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use documents::valeur::{en_texte, vrai};
+use declarations::valeur::{en_texte, vrai};
 use socle::mois::{Graphie, Mois};
 use engagement;
 use crate::compagnie::etat_dsn;

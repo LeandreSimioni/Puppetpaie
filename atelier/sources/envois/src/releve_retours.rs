@@ -18,10 +18,10 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Map, Value};
 
 use droit::contexte::Contexte;
-use documents::valeur::valeur_en_texte;
+use declarations::valeur::valeur_en_texte;
 use socle::echec::R;
 use socle::echec::erreur;
-use documents::valeur::vrai;
+use declarations::valeur::vrai;
 use socle::echec::Echec;
 use socle::paris::{iso_de_naif, maintenant_naif};
 
@@ -355,7 +355,7 @@ fn deja_vus(ctx: &Contexte, canal: &str) -> Result<Vec<[Value; 3]>, Panne> {
 }
 
 fn egal_cle(a: &[Value; 3], b: &[Value; 3]) -> bool {
-    a.iter().zip(b).all(|(x, y)| documents::valeur::valeurs_egales(x, y))
+    a.iter().zip(b).all(|(x, y)| declarations::valeur::valeurs_egales(x, y))
 }
 
 /// La liste est-elle deja vue ? Les trois champs, comme `(flux, nature, publication) in connus`.

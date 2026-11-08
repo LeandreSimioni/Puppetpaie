@@ -105,7 +105,7 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
             super::phrase_en_tete(v.clone(), dire_les_modeles(&v))
         }),
         Route::ModeleContratLivre => livre(charge).map(|v| {
-            let p = format!("Modèle livré {}.", documents::valeur::valeur_en_texte(&v["libelle"]));
+            let p = format!("Modèle livré {}.", declarations::valeur::valeur_en_texte(&v["libelle"]));
             super::phrase_en_tete(v, p)
         }),
         Route::PoserModeleContrat => poser(ctx, charge).map(|v| {
@@ -183,7 +183,7 @@ fn modeles(ctx: &Contexte) -> R<Value> {
                                "bouton": if a_soi.is_some() { "Modifier le modèle" } else { "Écrire le modèle" },
                                "pastille": {"couleur": crate::routes::couleur_de_l_etat(etat), "mots": mots}}));
         }
-        let mut champs = documents::contrat_ecrit::champs_des_modeles(&nat).map_err(|m| erreur("ValueError", m))?;
+        let mut champs: Vec<Value> = documents::contrat_ecrit::champs_des_modeles(&nat).map_err(|m| erreur("ValueError", m))?.iter().map(socle::ecriture::en_valeur).collect();
         champs.extend(DU_REMPLACEMENT.iter().map(|c| json!({"marqueur": c.to_string(), "quoi": "le contrat remplacé (bloc ANNULE: seulement)", "obligatoire": false})));
         let champs_titre = format!("Ses champs ({})", champs.len());
         sortie.push(json!({"nature": nat.cle, "libelle": nat.libelle, "nom": nat.nom_du_contrat(), "modeles": pieces, "champs": champs, "champs_titre": champs_titre}));

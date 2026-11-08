@@ -13,7 +13,7 @@ use serde_json::Value;
 use engagement::calcul::Paie;
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use documents::valeur::{en_texte, json_en_cache, vrai};
+use crate::valeur::{en_texte, json_en_cache, vrai};
 use crate::dsn::{
     affiliations, bloc_anciennete, bloc_contrat, g, liste, usage_admet, Fichier, LOGICIEL, VERSION,
 };

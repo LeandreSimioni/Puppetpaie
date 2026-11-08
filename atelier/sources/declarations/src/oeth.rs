@@ -6,7 +6,7 @@
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::fichiers::repr;
-use documents::valeur::{dec_avec_echelle, en_texte, flottant, lire_json, nom_type, repr_valeur, vrai};
+use crate::valeur::{dec_avec_echelle, en_texte, flottant, lire_json, nom_type, repr_valeur, vrai};
 use socle::texte::{euros, virgule};
 use socle::num::{add, dec_f64, eur2, mul, sub, Decimal, Resultat};
 use serde_json::Value;

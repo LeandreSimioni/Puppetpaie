@@ -213,18 +213,29 @@ impl Cadre5 {
     }
 }
 
-/// Une quantite du formulaire -> nombre. '' et None valent zero. Un nombre a virgule se lit tel qu'il est ecrit
-/// (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des milliers (espace) s'ote ; tout autre
-/// texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
-pub fn quantite(v: Option<&str>) -> Resultat<Decimal> {
-    let t: String = v.unwrap_or("").chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
+/// Une quantite du formulaire -> nombre ; une case vide (ou absente) ne dit aucune quantite (`None`). Un nombre a
+/// virgule se lit tel qu'il est ecrit (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des
+/// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
+pub fn quantite(v: Option<&str>) -> Resultat<Option<Decimal>> {
+    let Some(v) = v else { return Ok(None) };
+    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
     if t.is_empty() {
-        return Ok(Decimal::ZERO);
+        return Ok(None);
     }
     if !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
         return Err(format!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_lu(&t).map(|d| d.normalize()).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+}
+
+/// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
+/// l'engagement ne dit pas) concorde avec zero, et avec elle seule.
+fn concordent(a: Option<Decimal>, b: Option<Decimal>) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => x == y,
+        (Some(x), None) | (None, Some(x)) => x.is_zero(),
+        (None, None) => true,
+    }
 }
 
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
@@ -248,14 +259,14 @@ pub fn jour(t: &str) -> Resultat<Option<Jour>> {
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
-/// precedente quand celle-ci ne l'imprime pas : la suite du meme contrat), les quantites.
+/// precedente quand celle-ci ne l'imprime pas : la suite du meme contrat), les quantites (`None` : la case est vide).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ligne {
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
     pub numero: String,
-    pub cachets: Decimal,
-    pub heures: Decimal,
+    pub cachets: Option<Decimal>,
+    pub heures: Option<Decimal>,
 }
 
 fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
@@ -270,8 +281,7 @@ pub fn lire_quantites(champs: &[ChampLu]) -> Resultat<Vec<Ligne>> {
     let mut numero_courant = String::new();
     for rang in 1..=5 {
         let nom = |p: &str| format!("{}{:02}", p, rang);
-        let numero = valeur(champs, &nom(NUM_CONTRAT)).unwrap_or_default().trim().to_string();
-        if !numero.is_empty() {
+        if let Some(numero) = valeur(champs, &nom(NUM_CONTRAT)).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
             numero_courant = numero;
         }
         let (deb, fin) = (valeur(champs, &nom(DEBUT)), valeur(champs, &nom(FIN)));
@@ -301,7 +311,8 @@ pub struct PaieAer {
     pub debut: Jour,
     pub fin: Jour,
     pub cachets: Decimal,
-    pub heures: Decimal,
+    /// `None` : l'engagement au cachet ne dit pas d'heures.
+    pub heures: Option<Decimal>,
 }
 
 impl PaieAer {
@@ -314,26 +325,34 @@ impl PaieAer {
     pub fn du_mois(p: &engagement::calcul::Paie) -> Resultat<PaieAer> {
         let e = &p.engagement;
         let (d, f) = (e.debut_mois()?, e.fin_mois()?);
-        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", e.numero.as_deref().unwrap_or_default().to_string()))?;
-        let heures = if e.nat()?.mensuelle() { p.heures_travaillees } else { socle::num::dec_f64(e.heures.unwrap_or(0.0))? };
+        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
+        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", numero))?;
+        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };
         Ok(PaieAer {
-            numero: e.numero.as_deref().unwrap_or_default().to_string(),
+            numero: numero.to_string(),
             debut: if e.debut > d { e.debut } else { d },
             fin: if fin < f { fin } else { f },
             cachets: Decimal::from(e.cachets),
-            heures: heures.normalize(),
+            heures: heures.map(|h| h.normalize()),
         })
     }
 }
 
 fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
-    let j = |x: Option<Jour>| x.map(|j| j.iso()).unwrap_or_else(|| "?".to_string());
+    // Une date que l'attestation n'imprime pas lisiblement se dit par « ? ».
+    let j = |x: Option<Jour>| match x {
+        Some(j) => j.iso(),
+        None => "?".to_string(),
+    };
     format!("{} au {}", j(debut), j(fin))
 }
 
-/// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 ».
-fn nombre(d: Decimal) -> String {
-    d.normalize().to_string().replace('.', ",")
+/// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 » ; « aucun » quand rien ne la dit.
+fn nombre(d: Option<Decimal>) -> String {
+    match d {
+        Some(d) => d.normalize().to_string().replace('.', ","),
+        None => "aucun".to_string(),
+    }
 }
 
 fn nom_du_contrat(numero: &str) -> &str {
@@ -365,8 +384,8 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
             ));
             continue;
         };
-        for (quoi, vu, n) in [("cachets", ligne.cachets, p.cachets), ("heures", ligne.heures, p.heures)] {
-            if vu != n {
+        for (quoi, vu, n) in [("cachets", ligne.cachets, Some(p.cachets)), ("heures", ligne.heures, p.heures)] {
+            if !concordent(vu, n) {
                 ecarts.push(format!(
                     "{} ({}) : {} {} sur l'attestation, {} dans la paie",
                     nom_du_contrat(&ligne.numero),
@@ -384,7 +403,7 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
                 "{} ({}) : une periode de la paie ({} cachets, {} heures) que l'attestation ne porte pas",
                 nom_du_contrat(&p.numero),
                 periode(Some(p.debut), Some(p.fin)),
-                nombre(p.cachets),
+                nombre(Some(p.cachets)),
                 nombre(p.heures)
             ));
         }
@@ -515,7 +534,7 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
         if !due(p)? {
             continue;
         }
-        let numero = e.numero.as_deref().unwrap_or_default().to_string();
+        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
         let mut m = e.debut.iso()[..7].to_string();
         while m.as_str() < periode {
             for q in paies_du_mois(&m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {

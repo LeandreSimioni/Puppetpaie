@@ -42,7 +42,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois;
 use engagement::{self, LignePaie};
 use socle::date::Jour;
-use documents::valeur::en_texte;
+use declarations::valeur::en_texte;
 use socle::echec::{erreur, Echec, R};
 use socle::fichiers::repr;
 use socle::mois::Mois;
@@ -1164,7 +1164,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> Ce
     }
     let salaire = |e: &SaisieCarte| socle::ecriture::en_valeur(&e.salaire_mensuel);
     let (sa, sb) = (salaire(avant), salaire(apres));
-    CeQuiChange { index, salaire_mensuel: (!documents::valeur::valeurs_egales(&sb, &sa)).then_some(sb), lignes }
+    CeQuiChange { index, salaire_mensuel: (!declarations::valeur::valeurs_egales(&sb, &sa)).then_some(sb), lignes }
 }
 
 /// Ce que la phrase du montant vise dit de la cible.
@@ -1212,7 +1212,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         })
         .collect();
     if let Some(s) = change.salaire_mensuel.as_ref().filter(|s| !s.is_null()) {
-        faut.push(format!("salaire du mois à {}", documents::valeur::euros_de(s)));
+        faut.push(format!("salaire du mois à {}", declarations::valeur::euros_de(s)));
     }
     let avec = if faut.is_empty() { String::new() } else { format!(" ; {}", faut.join(", ")) };
     let ecart = atteint - vise;

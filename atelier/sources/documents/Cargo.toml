@@ -12,10 +12,8 @@ droit = { path = "../droit" }
 engagement = { path = "../engagement" }
 rust_decimal = { workspace = true }
 serde_json = { workspace = true }
-# Les libelles courts de la compagnie, lus et ecrits par leur forme (`libelles_courts.rs`).
+# Les formes que les pieces lisent et rendent (`libelles_courts.rs`, `contrat.rs`, `fiche_questionnaire.rs`...).
 serde = { workspace = true }
-# L'empreinte d'une description de PDF (`fabrique.rs`).
-sha2 = { workspace = true }
 # Le PDF : la description part a la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
 # Les classeurs .xlsx des etats : ecriture seule.

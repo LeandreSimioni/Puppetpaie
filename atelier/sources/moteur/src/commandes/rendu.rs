@@ -32,7 +32,7 @@ pub fn erreur(commande: &str, classe: &str, message: &str, extra: &[(&str, Value
 
 /// Le texte d'une valeur JSON : `None` pour null, `True`, `0.5`.
 pub fn texte(v: &Value) -> String {
-    documents::valeur::valeur_en_texte(v)
+    declarations::valeur::valeur_en_texte(v)
 }
 
 /// Le texte d'une cle d'un objet JSON, `None` quand elle manque.

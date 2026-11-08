@@ -9,7 +9,7 @@
 //! alternatives, `? * + {n,m}`, `\d \s`, `^ $`), prouve contre `re`.
 
 use socle::fichiers::{dossier_du_code, repr};
-use documents::valeur::json_en_cache;
+use crate::valeur::json_en_cache;
 use crate::norme::Norme;
 use socle::num::Resultat;
 use crate::usages::{espace, lignes, strip};
@@ -314,7 +314,7 @@ pub fn table_de(norme: &Norme) -> Resultat<Arc<Value>> {
 pub fn format_en(norme: &Norme, rubrique: &str) -> Resultat<Value> {
     let t = table_de(norme)?;
     Ok(match t["formats"].get(rubrique) {
-        Some(f) if documents::valeur::vrai(f) => f.clone(),
+        Some(f) if crate::valeur::vrai(f) => f.clone(),
         _ => Value::Object(Default::default()),
     })
 }

@@ -12,7 +12,6 @@
 use documents::aer::{self, Authentification, Echec, PaieAer};
 use socle::date::Jour;
 use fabrique_pdf::formulaire::{ChampLu, ValeurLue};
-use serde_json::json;
 
 const HAUTEUR: f64 = 842.0;
 
@@ -21,17 +20,21 @@ fn jour(a: i32, m: u32, j: u32) -> Jour {
 }
 
 fn fiche() -> droit::fiche::ChampsEntreprise {
-    droit::fiche::lire_champs(&json!({
-        "raison_sociale": "Compagnie du Chat Perche",
-        "siret": "12345678900019",
-        "naf": "9001Z",
-        "adresse": "12 rue des Lilas",
-        "code_postal": "69003",
-        "commune": "Lyon",
-        "licence_spectacle": "PLATESV-R-2026-000000",
-        "signataire": {"nom": "MARTIN", "prenom": "Camille", "fonction": "Presidente"},
-        "declarant_dsn": {"nom_prenom": "DURAND Lou", "tel": "0102030405", "email": "Lou.Durand@Exemple.TEST"},
-    }), "fiche").unwrap()
+    socle::forme::lire_texte(
+        r#"{
+            "raison_sociale": "Compagnie du Chat Perche",
+            "siret": "12345678900019",
+            "naf": "9001Z",
+            "adresse": "12 rue des Lilas",
+            "code_postal": "69003",
+            "commune": "Lyon",
+            "licence_spectacle": "PLATESV-R-2026-000000",
+            "signataire": {"nom": "MARTIN", "prenom": "Camille", "fonction": "Presidente"},
+            "declarant_dsn": {"nom_prenom": "DURAND Lou", "tel": "0102030405", "email": "Lou.Durand@Exemple.TEST"}
+        }"#,
+        "La fiche du test ne se lit pas.",
+    )
+    .unwrap()
 }
 
 // ------------------------------------------------------------------ le PDF d'essai
@@ -159,7 +162,7 @@ fn attestation() -> Vec<u8> {
 }
 
 fn paie(numero: &str, debut: Jour, fin: Jour, cachets: i128, heures: i128) -> PaieAer {
-    PaieAer { numero: numero.into(), debut, fin, cachets: cachets.into(), heures: heures.into() }
+    PaieAer { numero: numero.into(), debut, fin, cachets: cachets.into(), heures: Some(heures.into()) }
 }
 
 fn paies_justes() -> Vec<PaieAer> {

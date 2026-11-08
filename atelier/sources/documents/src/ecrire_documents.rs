@@ -10,7 +10,6 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
-use crate::valeur::lire_json;
 use socle::verrou::Verrou;
 use socle::echec::Refus;
 use socle::ecriture::json_indente;
@@ -42,9 +41,9 @@ pub type Compteurs = BTreeMap<String, CompteursDeLAnnee>;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompteursDeLAnnee {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bulletin: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub certificat_cs: Option<i64>,
 }
 
@@ -71,8 +70,7 @@ pub fn compteurs(racine: &std::path::Path) -> R<Compteurs> {
     if !p.exists() {
         return Ok(Compteurs::new());
     }
-    let v = lire_json(&p).map_err(valeur)?;
-    socle::forme::lire_en_phrase(&v, |cle, _| {
+    socle::forme::lire_fichier_en_phrase(&p, |cle, _| {
         format!("Les compteurs de numéros de la compagnie (config/compteurs.json) ne se lisent pas{} : le fichier se corrige à la main.", if cle.is_empty() { String::new() } else { format!(" ({})", cle) })
     })
     .map_err(valeur)
@@ -113,8 +111,8 @@ pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, atte
     let n_bull = match attente.get(&annee) {
         Some(v) => v + 1,
         None => {
-            let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.bulletin).unwrap_or(0);
-            lu.max(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?) + 1
+            let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.bulletin);
+            lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?, i64::max) + 1
         }
     };
     let n_bull = engagement::numeros::numeroter(ctx, paies, annee, n_bull, departs)?;
@@ -138,9 +136,13 @@ impl Reserves {
         if let Some(v) = self.valeurs.get(&(annee, suite)) {
             return Ok(v + 1);
         }
-        let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite)).unwrap_or(0);
-        let importe = if suite == Suite::Bulletin { engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)? } else { 0 };
-        Ok(lu.max(importe) + 1)
+        let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite));
+        let importe = match suite {
+            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)?),
+            Suite::CertificatCs => None,
+        };
+        // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
+        Ok(lu.into_iter().chain(importe).fold(0, i64::max) + 1)
     }
 
     /// Reserve, sans ecrire.
@@ -172,8 +174,7 @@ impl Reserves {
         for k in &self.ordre {
             c.entry(k.0.to_string()).or_default().poser(k.1, self.valeurs[k]);
         }
-        let v = serde_json::to_value(&c).map_err(|e| valeur(e.to_string()))?;
-        std::fs::write(&p, json_indente(&v, 2)).map_err(|e| os(&p, e))
+        std::fs::write(&p, json_indente(&c, 2)).map_err(|e| os(&p, e))
     }
 }
 

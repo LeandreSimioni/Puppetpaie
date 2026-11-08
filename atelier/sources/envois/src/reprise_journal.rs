@@ -19,12 +19,12 @@ use serde_json::{json, Map, Value};
 use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
-use documents::valeur::vrai;
+use declarations::valeur::vrai;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
 
 fn texte(b: &Value, cle: &str) -> String {
-    b.get(cle).filter(|v| vrai(v)).map(documents::valeur::valeur_en_texte).unwrap_or_default()
+    b.get(cle).filter(|v| vrai(v)).map(declarations::valeur::valeur_en_texte).unwrap_or_default()
 }
 
 fn accepte(b: &Value) -> bool {

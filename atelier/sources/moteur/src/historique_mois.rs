@@ -24,9 +24,9 @@ use serde_json::{json, Value};
 use droit::contexte::Contexte;
 use envois::etats;
 use envois::journal::Ligne;
-use documents::valeur::valeur_en_texte;
+use declarations::valeur::valeur_en_texte;
 use socle::echec::erreur;
-use documents::valeur::vrai;
+use declarations::valeur::vrai;
 use envois::retours;
 use socle::echec::Echec;
 

@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use socle::echec::{erreur, R};
 
@@ -30,7 +29,14 @@ pub enum FormatBorne {
 impl FormatBorne {
     /// Le format d'un nom de format (`ximport`…), s'il borne ses zones de texte.
     pub fn de(format: &str) -> Option<FormatBorne> {
-        serde_json::from_value(Value::String(format.to_string())).ok()
+        match format {
+            "ximport" => Some(FormatBorne::Ximport),
+            "oxygene" => Some(FormatBorne::Oxygene),
+            "sage" => Some(FormatBorne::Sage),
+            "quadra" => Some(FormatBorne::Quadra),
+            "ebp" => Some(FormatBorne::Ebp),
+            _ => None,
+        }
     }
 
     pub fn nom(self) -> &'static str {
@@ -55,13 +61,12 @@ pub enum Quoi {
 }
 
 /// Le fichier : par format, les libelles (le libelle long -> le court), les comptes (le numero -> l'intitule court) et
-/// le nom de la compagnie (le nom long -> le court).
+/// le nom de la compagnie (le nom long -> le court). Chaque table s'ecrit, vide comprise.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LibellesCourts {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub quoi: String,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quoi: Option<String>,
     pub formats: BTreeMap<FormatBorne, Courts>,
 }
 
@@ -69,11 +74,8 @@ pub struct LibellesCourts {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Courts {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub libelles: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub comptes: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub compagnie: BTreeMap<String, String>,
 }
 
@@ -106,14 +108,12 @@ pub fn lire(racine: &Path) -> R<LibellesCourts> {
     if !p.exists() {
         return Ok(LibellesCourts::default());
     }
-    let v = crate::valeur::lire_json_echec(&p)?;
-    socle::forme::lire(&v, "Les libellés courts de la compagnie ne se lisent pas : les enregistrer à nouveau depuis les Exports.").map_err(|m| erreur("ErreurOperation", m))
+    socle::forme::lire_fichier(&p, "Les libellés courts de la compagnie ne se lisent pas : les enregistrer à nouveau depuis les Exports.").map_err(|m| erreur("ErreurOperation", m))
 }
 
 /// Ecrit les libelles courts de la compagnie.
 pub fn ecrire(racine: &Path, l: &LibellesCourts) -> R<()> {
-    let v = serde_json::to_value(l).map_err(|e| erreur("ErreurOperation", e.to_string()))?;
-    socle::ecriture::ecrire_json(&racine.join(LIBELLES_COURTS), &v, 2).map_err(|m| erreur("OSError", m))
+    socle::ecriture::ecrire_json(&racine.join(LIBELLES_COURTS), l, 2).map_err(|m| erreur("OSError", m))
 }
 
 /// Une valeur trop longue pour sa zone, telle qu'un export l'a rencontree : ce qu'elle est, sa cle, son texte long, la

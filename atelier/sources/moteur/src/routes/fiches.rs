@@ -32,7 +32,7 @@ use socle::ecriture::ecrire_json;
 use socle::fichiers::repr;
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
-use documents::valeur::{euros_de, nom_type, valeur_ecrite, valeur_en_texte, valeurs_egales, vrai};
+use declarations::valeur::{euros_de, nom_type, valeur_ecrite, valeur_en_texte, valeurs_egales, vrai};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -512,7 +512,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         Some(a) => return Err(erreur("ValueError", socle::date::annee_impossible(a))),
     };
     let bar = socle::date::Jour::nouveau(annee, 1, 1).and_then(|j| ctx.bareme(&j).ok());
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee);
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| erreur("ValueError", m))?;
     // La conclusion nomme les deux plafonds.
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
@@ -1647,7 +1647,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
 /// La date d'effet que la charge d'une route d'ecriture donne (`depuis`, AAAA-MM-JJ), ou `None`.
 pub(crate) fn depuis_de(depuis: &Value) -> R<Option<Jour>> {
     if vrai(depuis) {
-        documents::valeur::d(depuis).map(Some).map_err(|m| erreur("ValueError", m))
+        declarations::valeur::d(depuis).map(Some).map_err(|m| erreur("ValueError", m))
     } else {
         Ok(None)
     }
@@ -2196,7 +2196,7 @@ pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preu
         None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
     };
     let expediteur = client.compte().to_lowercase();
-    let code = fq::code_fiche();
+    let code = fq::code_fiche().map_err(|m| erreur("OSError", m))?;
     let q = fq::questionnaire(&code, &fq::posees(&|c| champs::utile("salarie", c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom = strip(prenom).to_string();
@@ -2376,7 +2376,11 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let (mut donnees, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte));
+        let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| erreur("ValueError", m))?;
+        let mut donnees: Map<String, Value> = match socle::ecriture::en_valeur(&lue) {
+            Value::Object(o) => o,
+            _ => Map::new(),
+        };
         donnees.insert("email".into(), json!(de));
         if !(donnees.get("nom_affichage").is_some_and(vrai) || donnees.get("prenom_affichage").is_some_and(vrai)) {
             r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
@@ -2507,7 +2511,7 @@ fn couts(o: &HashMap<String, String>, ctx: &Contexte, charge: &Value) -> R<Value
     let _ = o;
     let annee = valeur_en_texte(exiger(charge, "annee")?);
     let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
-    r.couts_de_l_annee().map_err(|e| Echec { classe: e.classe, message: e.message })
+    r.couts_de_l_annee().map(|c| socle::ecriture::en_valeur(&c)).map_err(|e| Echec { classe: e.classe, message: e.message })
 }
 
 /// `poser-courriel` : le courriel `email` du salarie `cle`, saisi la ou il manque (la boite des contrats a

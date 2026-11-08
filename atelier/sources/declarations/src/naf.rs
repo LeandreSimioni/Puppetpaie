@@ -23,7 +23,7 @@
 
 use droit::fiche::Lue as _;
 use socle::fichiers::dossier_du_code;
-use documents::valeur::json_en_cache;
+use crate::valeur::json_en_cache;
 use crate::norme::Norme;
 use socle::num::Resultat;
 use serde_json::Value;

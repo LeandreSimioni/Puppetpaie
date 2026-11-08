@@ -39,13 +39,14 @@ fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
 #[test]
 fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
     use documents::fiche_questionnaire::{fiche_depuis_reponses, pays_lu};
-    let lire = |cle: &'static str, reponse: &str| fiche_depuis_reponses(&[(cle, reponse.to_string())].into_iter().collect());
+    let lire = |cle: &'static str, reponse: &str| fiche_depuis_reponses(&[(cle, reponse.to_string())].into_iter().collect()).unwrap();
     for (reponse, pays, code) in [("norvégienne", "NO", "03"), ("Marocain", "MA", "04"), ("italienne", "IT", "02"), ("liechtensteinoise", "LI", "03"), ("britannique", "GB", "04"), ("Suisse", "CH", "04"), ("Islande", "IS", "03"), ("française", "FR", "01")] {
         let (d, illisible) = lire("nationalite", reponse);
         assert!(illisible.is_empty(), "{} : {:?}", reponse, illisible);
-        assert_eq!((&d["pays_nationalite"], &d["code_nationalite_dsn"]), (&json!(pays), &json!(code)), "{}", reponse);
+        assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.as_deref()), (Some(pays), Some(code)), "{}", reponse);
     }
     // Des noms que l'ancienne table courte ne connaissait pas.
+    let pays_lu = |t: &str| pays_lu(t).unwrap();
     assert_eq!(pays_lu("Sénégal").map(|p| p.0), Some("SN".into()));
     assert_eq!(pays_lu("Géorgie").map(|p| p.0), Some("GE".into()));
     assert_eq!(pays_lu("Islande"), Some(("IS".into(), Some("03"))));
@@ -54,13 +55,13 @@ fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
     // Un code que la liste ne connait pas ne se garde plus.
     assert_eq!(pays_lu("zz"), None);
     let rep: HashMap<&'static str, String> = [("pays", "Atlantide".to_string()), ("nationalite", "Vietnam".to_string())].into_iter().collect();
-    let (d, illisible) = fiche_depuis_reponses(&rep);
-    assert!(d.get("pays_naissance").is_none(), "{:?}", d);
+    let (d, illisible) = fiche_depuis_reponses(&rep).unwrap();
+    assert!(d.pays_naissance.is_none(), "{:?}", d);
     assert_eq!(illisible, vec!["pays de naissance : « Atlantide »".to_string()]);
-    assert_eq!((d["pays_nationalite"].as_str(), d["code_nationalite_dsn"].as_str()), (Some("VN"), Some("04")));
+    assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.as_deref()), (Some("VN"), Some("04")));
     // Un pays de naissance que le COG n'a pas, mais la table « Pays » de la DSN si, se lit par son libelle.
     let (d, illisible) = lire("pays", "Kosovo");
-    assert_eq!(d.get("pays_naissance"), Some(&json!("XK")), "{:?} {:?}", d, illisible);
+    assert_eq!(d.pays_naissance.as_deref(), Some("XK"), "{:?} {:?}", d, illisible);
     assert!(illisible.is_empty(), "{:?}", illisible);
 }
 

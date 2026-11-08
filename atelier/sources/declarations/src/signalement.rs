@@ -14,7 +14,7 @@ use serde_json::Value;
 
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use documents::valeur::{d, en_texte, repr_valeur, vrai};
+use crate::valeur::{d, en_texte, repr_valeur, vrai};
 use crate::dsn::{self, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use socle::num::Resultat;

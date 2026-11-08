@@ -10,6 +10,7 @@
 use std::path::Path;
 
 use fabrique_pdf::forme::{self, Description, Document, Style};
+use serde::Serialize;
 
 use crate::avenant::valeurs_de_la_paie;
 use crate::bulletin::{identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
@@ -56,17 +57,21 @@ pub fn document_modele(lu: &ModeleLu, valeurs: &Valeurs) -> forme::Modele {
     }
 }
 
-/// Les valeurs que le modele lit dans cette paie. Les montants s'ecrivent comme
-/// le modele les imprime (`ECHELLE_GARDEE`).
+/// Les valeurs que le modele lit dans cette paie (sa forme canonique, `Paie::canon`).
 pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> R<Valeurs> {
-    socle::num::ECHELLE_GARDEE.with(|f| f.set(true));
-    let r = (|| -> R<Valeurs> {
-        // Ecrite ici, sous `ECHELLE_GARDEE` : ses montants gardent leur echelle.
-        let canon = socle::ecriture::en_valeur(&p.canon(ctx)?);
-        Ok(valeurs_de_la_paie(ctx, ent, &canon, None)?)
-    })();
-    socle::num::ECHELLE_GARDEE.with(|f| f.set(false));
-    r
+    Ok(valeurs_de_la_paie(ctx, ent, &p.canon(ctx)?, None)?)
+}
+
+/// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire, ou apres quoi.
+#[derive(Serialize)]
+struct MarqueurAPart {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chemin: Option<String>,
+    marqueur: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a_ecrire: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apres: Option<String>,
 }
 
 /// Les contrats qui en annulent un autre : `{(salarie, premier jour, numero du contrat): (numero remplace, date)}`.
@@ -87,12 +92,9 @@ pub fn description(ctx: &Contexte, paies: &[Paie], ent: &EntrepriseDuDocument, r
             return Err(Refus::from("description illisible : une valeur du modele de contrat n'est pas un texte"));
         }
         let mut un = document_modele(&lu, &v);
-        let cle = (
-            p.salarie.id.to_string(),
-            p.engagement.debut.iso(),
-            p.engagement.numero.as_deref().unwrap_or_default().to_string(),
-        );
-        if let Some((_, (numero, date))) = remplacements.iter().find(|(k, _)| *k == cle) {
+        let (salarie, debut) = (p.salarie.id.to_string(), p.engagement.debut.iso());
+        let remplace = p.engagement.numero.as_deref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| *s == salarie && *d == debut && k == n));
+        if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.clone() });
         }
         un.signature = signature.as_deref().map(chemin_texte);
@@ -118,8 +120,11 @@ const A_CITER: [Marqueur; 1] = [Marqueur::RemunerationHorsBrut];
 /// inconnu », sans dire pourquoi).
 fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Valeurs) -> R<()> {
     const TAUX: Marqueur = Marqueur::RemunerationTauxCachet;
-    let qui = valeurs.get(&Marqueur::SalarieNomComplet).map_or("ce salarie", String::as_str);
-    let modele_nom = || modele.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let qui = valeurs.get(&Marqueur::SalarieNomComplet).ok_or_else(|| Refus::from("Le contrat ne nomme pas son salarié."))?;
+    let modele_nom = || match modele.file_stem() {
+        Some(s) => s.to_string_lossy().into_owned(),
+        None => modele.to_string_lossy().into_owned(),
+    };
     if valeurs.get(&TAUX).is_none() && lu.cite(TAUX) {
         return Err(Refus {
             classe: Some("ModeleIncomplet"),
@@ -129,13 +134,13 @@ fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Vale
                     modele_nom(),
                     qui,
                 ),
-                serde_json::json!({"chemin": modele.to_string_lossy(), "marqueur": TAUX.to_string(), "a_ecrire": Marqueur::RemunerationDetail.to_string()}),
+                MarqueurAPart { chemin: Some(modele.to_string_lossy().into_owned()), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()), apres: None },
             ),
         });
     }
     for cle in A_CITER {
-        let valeur = valeurs.get(&cle).map_or("", String::as_str);
-        if !valeur.trim().is_empty() && !lu.cite(cle) {
+        let Some(valeur) = valeurs.get(&cle).filter(|v| !v.trim().is_empty()) else { continue };
+        if !lu.cite(cle) {
             return Err(Refus {
                 classe: Some("ModeleIncomplet"),
                 message: socle::echec::avec(
@@ -145,7 +150,7 @@ fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Vale
                         qui,
                         valeur.trim().trim_start_matches(',').trim()
                     ),
-                    serde_json::json!({"chemin": modele.to_string_lossy(), "marqueur": cle.to_string(), "apres": Marqueur::RemunerationPeriode.to_string()}),
+                    MarqueurAPart { chemin: Some(modele.to_string_lossy().into_owned()), marqueur: cle.to_string(), a_ecrire: None, apres: Some(Marqueur::RemunerationPeriode.to_string()) },
                 ),
             });
         }
@@ -241,7 +246,7 @@ pub fn ecrire_avenant(
                     "Le modèle d'avenant {} ne dit pas une modification en clair : un contrat signé hors du logiciel n'a pas d'article à citer. Ajoutez à son bloc de modification un paragraphe qui porte la phrase de la modification (Configuration › Modèles de contrat). Rien n'est parti.",
                     nom
                 ),
-                serde_json::json!({"marqueur": Marqueur::ModificationPhrase.to_string()}),
+                MarqueurAPart { chemin: None, marqueur: Marqueur::ModificationPhrase.to_string(), a_ecrire: None, apres: None },
             ),
         });
     }

@@ -28,7 +28,9 @@ pub const AVIS: [&str; 3] = [
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
 pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf; 2]> {
     let e = &p.engagement;
-    let numero = e.numero.as_deref().unwrap_or("?").to_string();
+    let Some(numero) = e.numero.as_deref() else {
+        return Err(erreur("ValueError", "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
+    };
     let Some(fin) = e.fin else {
         return Err(erreur(
             "ValueError",
@@ -40,7 +42,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let poste = ctx.gabarits();
     let certificat = sortie.join(format!("CertificatTravail_{}_{}.pdf", cle, fin.aaaammjj()));
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
-    let valeurs_cert = marqueurs_communs(&date, p, &ent)?;
+    let valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
@@ -52,8 +54,8 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     Ok([certificat, recu])
 }
 
-/// Les mentions communes du certificat de travail et du reçu.
-fn marqueurs_communs(date: &Jour, p: &Paie, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
+/// Les mentions communes du certificat de travail et du reçu, du contrat `numero` qui finit le `fin`.
+fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
@@ -79,9 +81,9 @@ fn marqueurs_communs(date: &Jour, p: &Paie, ent: &droit::fiche::ChampsEntreprise
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
     poser(Marqueur::SalarieCommune, ecrite(&s.commune, "commune")?);
-    poser(Marqueur::ContratNumero, e.numero.as_deref().unwrap_or_default().to_string());
+    poser(Marqueur::ContratNumero, numero.to_string());
     poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
-    poser(Marqueur::ContratFin, e.fin.map(|f| f.jj_mm_aaaa()).unwrap_or_default());
+    poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
     poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur("ValueError", m))?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());

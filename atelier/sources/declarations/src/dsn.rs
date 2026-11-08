@@ -22,7 +22,7 @@ use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Mesure, Nature, TypeDeRemuneration};
 use socle::date::Jour;
-use documents::valeur::{dec, dec_avec_echelle, en_texte, vrai};
+use crate::valeur::{dec, dec_avec_echelle, en_texte, vrai};
 use socle::mois::Mois;
 use socle::num::{add, div, mul, pct, sub, Decimal, Resultat};
 use droit::organismes::{Ctp, Organismes, Versement};
@@ -311,7 +311,7 @@ fn rond(x: Decimal) -> Decimal {
 }
 
 pub fn jour(v: &Value) -> Resultat<Jour> {
-    documents::valeur::d(v)
+    crate::valeur::d(v)
 }
 
 pub fn jj(v: &Value) -> Resultat<String> {
@@ -4950,7 +4950,7 @@ pub fn ecrire(texte: &str, chemin: &Path) -> Resultat<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use documents::valeur::d;
+    use crate::valeur::d;
     use serde_json::json;
     use std::path::PathBuf;
 

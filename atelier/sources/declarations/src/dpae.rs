@@ -23,7 +23,7 @@ use serde_json::{json, Map, Value};
 use droit::natures;
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
-use documents::valeur::{d, en_texte, repr_valeur, vrai};
+use crate::valeur::{d, en_texte, repr_valeur, vrai};
 use socle::fichiers::{modele_de, repr};
 use crate::ntt;
 use socle::num::Resultat;

@@ -32,9 +32,9 @@ use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
 use socle::ecriture::ecrire_json;
-use documents::valeur::vrai;
+use declarations::valeur::vrai;
 use documents::ecrire_documents::{Reserves, Suite};
-use documents::valeur::valeur_en_texte;
+use declarations::valeur::valeur_en_texte;
 
 fn info(texte: impl Into<String>) -> Avis {
     Avis { info: true, texte: texte.into() }
@@ -638,7 +638,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     // LES ARRETS DE TRAVAIL : la DSN mensuelle REPORTE ceux que `Arret::a_reporter` y met, signales ou non.
     let arrets = &lu.arrets;
     let nomenclature = crate::routes::imprevus::nomenclatures()?;
-    let jour = |v: &Value| -> R<String> { documents::bulletin::jj_mm_aaaa(v).map_err(valeur) };
+    let jour = |v: &Value| -> R<String> { declarations::valeur::d(v).map(|j| j.jj_mm_aaaa()).map_err(valeur) };
     let mut non_signales = 0;
     for a in arrets {
         let resume = crate::routes::imprevus::resume_arret(ctx, &nomenclature, a)?;
@@ -785,31 +785,35 @@ impl DocumentsFabriques {
 /// `mois_versement` : la difference de net, et le prelevement a la source sur la difference de net imposable
 /// (`engagement::etats::prelevement_de_la_correction`, au taux du bulletin parti pour un trop-verse : BOFiP,
 /// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
-fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: &str) -> R<Value> {
+fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: &str) -> R<documents::bulletin::Ecart> {
     let taux_parti = parti.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
     let d_net = apres.net_a_payer - parti.net_a_payer;
     let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_deref(), mois_versement).map_err(valeur)?;
-    let (indu, prelevement) = (pas_c.indu(), pas_c.prelevement);
-    let taux = match (indu, taux_parti) {
-        (false, _) => socle::ecriture::en_valeur(&pas_c.versement.taux),
-        (true, Some(t)) => json!(t),
-        (true, None) => Value::Null,
+    let indu = pas_c.indu();
+    let prelevement = match pas_c.prelevement {
+        Some(montant) => {
+            let taux = match (indu, taux_parti) {
+                (false, _) => pas_c.versement.taux.clone(),
+                (true, t) => t.map(droit::fiche::Montant::Texte),
+            };
+            let taux = taux.ok_or_else(|| valeur(format!("La correction de {} prélève {} sans taux de prélèvement à la source.", socle::mois::Mois::en_clair(mois_versement), montant)))?;
+            Some(documents::bulletin::PrelevementDeLEcart { indu, taux, montant })
+        }
+        None => None,
     };
-    let a_verser = match prelevement {
-        Some(p) => d_net - p,
+    let a_verser = match &prelevement {
+        Some(p) => d_net - p.montant,
         None => d_net,
     };
-    Ok(json!({
-        "net_avant": parti.net_a_payer.to_string(),
-        "net_apres": apres.net_a_payer.to_string(),
-        "difference_net": d_net.to_string(),
-        "difference_net_imposable": pas_c.difference.to_string(),
-        "indu": indu,
-        "taux": taux,
-        "prelevement": prelevement.map_or(Value::Null, |p| json!(p.to_string())),
-        "a_verser": a_verser.to_string(),
-        "mois_versement": socle::mois::Mois::en_clair(mois_versement),
-    }))
+    Ok(documents::bulletin::Ecart {
+        net_avant: parti.net_a_payer,
+        net_apres: apres.net_a_payer,
+        difference_net: d_net,
+        difference_net_imposable: pas_c.difference,
+        mois_versement: socle::mois::Mois::en_clair(mois_versement),
+        prelevement,
+        a_verser,
+    })
 }
 
 fn numero_en_nom(n: &str) -> String {
@@ -901,24 +905,21 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: &str, cles: &[String], q
     // dont la DSN declare la correction (`ecart_avec_le_bulletin_parti`).
     let clos = regularisations::se_corrige_ailleurs(ctx, &departs, mois)?;
     let valides: Vec<engagement::etats::Valide> = engagement::etats::du_mois(ctx, mois, &departs).map_err(Echec::from)?.iter().filter_map(|e| e.valide().cloned()).collect();
-    let mut rectificatifs: HashMap<usize, Value> = HashMap::new();
+    let mut rectificatifs: HashMap<usize, documents::bulletin::Rectificatif> = HashMap::new();
     for i in 0..paies.len() {
         let Some(r) = ecrits.get(i).and_then(|e| e.rectifie.clone()) else { continue };
         let parti = match (clos, valides.get(i)) {
             (true, Some(v)) => engagement::etats::paie_partie(ctx, v.objet(), &departs, mois).map_err(Echec::from)?.map(|p| (p, v)),
             _ => None,
         };
-        let rectif = match parti {
+        let ecart = match parti {
             Some((parti, v)) => {
                 let porteur = crate::regularisation::dsn_qui_porte_la_correction(ctx, v, &departs, mois)?;
-                let mut e = ecart_avec_le_bulletin_parti(ctx, &paies[i], &parti, &porteur)?;
-                e["rectifie"] = json!(r);
-                e["mois_origine"] = json!(socle::mois::Mois::en_clair(mois));
-                e
+                Some(ecart_avec_le_bulletin_parti(ctx, &paies[i], &parti, &porteur)?)
             }
-            None => json!({"remplace": true, "rectifie": r, "mois_origine": socle::mois::Mois::en_clair(mois)}),
+            None => None,
         };
-        rectificatifs.insert(i, rectif);
+        rectificatifs.insert(i, documents::bulletin::Rectificatif { rectifie: r, mois_origine: socle::mois::Mois::en_clair(mois), ecart });
     }
 
     // LES CERTIFICATS CONGES SPECTACLES : un par contrat qui finit ce mois-ci, numerotes dans la sequence continue, dans
@@ -980,7 +981,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: &str, cles: &[String], q
 struct Impression<'a> {
     paies: &'a [Paie],
     numeros: &'a [Option<String>],
-    rectificatifs: &'a HashMap<usize, Value>,
+    rectificatifs: &'a HashMap<usize, documents::bulletin::Rectificatif>,
     certificats: &'a [(usize, &'a PaieCs, i64)],
 }
 
@@ -1022,7 +1023,7 @@ fn imprimer(ctx: &Contexte, mois: &str, ent: &droit::contexte::EntrepriseDuDocum
     let passe = documents::bulletin::passe_des_bulletins(ctx, &leurs_paies, mois, &departs).map_err(valeur)?;
     let bulletins = |rangs: &[usize], toutes: Option<&[Paie]>| -> R<fabrique_pdf::Description> {
         let imprimees: Vec<Paie> = rangs.iter().map(|i| paies[*i].clone()).collect();
-        let rectifs: HashMap<usize, Value> = rangs.iter().enumerate().filter_map(|(k, i)| imp.rectificatifs.get(i).map(|r| (k, r.clone()))).collect();
+        let rectifs: HashMap<usize, documents::bulletin::Rectificatif> = rangs.iter().enumerate().filter_map(|(k, i)| imp.rectificatifs.get(i).map(|r| (k, r.clone()))).collect();
         let leurs_numeros: Vec<Option<String>> = rangs.iter().map(|i| imp.numeros[*i].clone()).collect();
         documents::bulletin::jeux_et_description(ctx, &imprimees, &leurs_numeros, ent, mois, toutes, false, &rectifs, &departs, &passe).map_err(valeur)
     };
@@ -1540,7 +1541,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: &str, lignes: &[envois::journal::
         let mut paies: Vec<Paie> = Vec::new();
         let mut numeros: Vec<Option<String>> = Vec::new();
         let mut premiers_ce: Vec<Option<i64>> = Vec::new();
-        let mut rectificatifs: HashMap<usize, Value> = HashMap::new();
+        let mut rectificatifs: HashMap<usize, documents::bulletin::Rectificatif> = HashMap::new();
         for e in engagement::etats::du_mois(&ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(Echec::from)? {
             let Some(v) = e.valide() else { continue };
             let Some(p) = engagement::etats::paie_partie(&ctx, v.objet(), &jusqu_a, mois).map_err(Echec::from)? else { continue };
@@ -1550,17 +1551,14 @@ fn refaire_les_documents(ctx: &Contexte, mois: &str, lignes: &[envois::journal::
             };
             if let Some(r) = ecrite.as_ref().and_then(|x| x.rectifie.as_deref()) {
                 let parti = if clos { engagement::etats::paie_partie(&ctx, v.objet(), &avant, mois).map_err(Echec::from)? } else { None };
-                let rectif = match parti {
+                let ecart = match parti {
                     Some(parti) => {
                         let porteur = crate::regularisation::dsn_qui_porte_la_correction(&ctx, v, &avant, mois)?;
-                        let mut e = ecart_avec_le_bulletin_parti(&ctx, &p, &parti, &porteur)?;
-                        e["rectifie"] = json!(r);
-                        e["mois_origine"] = json!(socle::mois::Mois::en_clair(mois));
-                        e
+                        Some(ecart_avec_le_bulletin_parti(&ctx, &p, &parti, &porteur)?)
                     }
-                    None => json!({"remplace": true, "rectifie": r, "mois_origine": socle::mois::Mois::en_clair(mois)}),
+                    None => None,
                 };
-                rectificatifs.insert(paies.len(), rectif);
+                rectificatifs.insert(paies.len(), documents::bulletin::Rectificatif { rectifie: r.to_string(), mois_origine: socle::mois::Mois::en_clair(mois), ecart });
             }
             numeros.push(if p.engagement.sans_paie() { None } else { p.numero_bulletin.clone() });
             premiers_ce.push(ecrite.as_ref().and_then(|x| x.ce));

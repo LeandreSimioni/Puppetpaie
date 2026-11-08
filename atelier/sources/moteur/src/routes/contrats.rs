@@ -1207,9 +1207,9 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(salarie.to_string(), numero_parti.clone())), &parti);
     let ent = documents::avenant::ent_du_mois(ctx, &mois_parti)?;
     let modele = documents::avenant::modele_du_contrat(&ent.gabarits, &*p.engagement.nat().map_err(Echec::from)?)?;
-    let paie_json = socle::ecriture::en_valeur(&engagement::relire::ecrire(ctx, p)?);
-    let numero_porte = Some(p.engagement.numero.as_deref().unwrap_or("None").to_string());
-    let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_json, Some(&numero_porte))?;
+    let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
+    let numero_porte = p.engagement.numero.as_deref();
+    let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;
     // L'ancien texte s'ecrit du modele avec les valeurs de la version partie, au mois compare (ou, pour un contrat sans
     // terme dont cette version n'avait pas encore ecrit ce mois, a son dernier mois d'avant : ses termes s'y reconduisent).
     let ancienne = match (siens.as_ref(), passee) {
@@ -1231,7 +1231,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let ancienne = ancienne.ok_or_else(|| {
         erreur("ErreurOperation", format!("Le journal ne dit pas sur quelle version de l'engagement le contrat n° {} est parti : l'avenant ne peut pas citer son ancien texte.", numero_parti))
     })?;
-    let avant = documents::avenant::valeurs_de_la_paie(ctx, &ent, &socle::ecriture::en_valeur(&ancienne), Some(&numero_porte))?;
+    let avant = documents::avenant::valeurs_de_la_paie(ctx, &ent, &ancienne, numero_porte)?;
     let modifs = documents::avenant::modifications(&modele, &avant, &vals)?;
     let mut signes: Vec<i64> = Vec::new();
     for a in deja.iter().filter(|a| a.signe.is_some()) {
@@ -1239,7 +1239,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     }
     let modifications = modifs
         .into_iter()
-        .map(|x| ArticleModifie { numero: Some(x.numero), article: x.article, avant: x.avant.iter().map(documents::valeur::valeur_en_texte).collect(), apres: x.apres, blocs: x.blocs, phrase: None, jour: None })
+        .map(|x| ArticleModifie { numero: Some(x.numero), article: x.article, avant: x.avant, apres: x.apres, blocs: x.blocs, phrase: None, jour: None })
         .collect();
     let nomme = ContratNomme::de(p)?;
     Ok(Some(AvenantLu {
@@ -1307,8 +1307,8 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     let modifications = documents::avenant::changements_en_clair(ctx, &nat, &changes)
         .map_err(Echec::from)?
         .into_iter()
-        .map(|m| serde_json::from_value::<ArticleModifie>(m).map_err(|e| Echec::from(e.to_string())))
-        .collect::<R<Vec<_>>>()?;
+        .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour) })
+        .collect::<Vec<_>>();
     let effet = changes.first().map_or_else(|| debut.iso(), |x| x.jour.iso());
     let g = Moteur::nouveau(ctx).globales()?;
     let deja: Vec<AvenantParti> = g.avenants.get(&(salarie.to_string(), numero.to_string())).cloned().unwrap_or_default();

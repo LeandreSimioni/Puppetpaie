@@ -35,7 +35,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::{self, Constantes, Declare, Fenetre};
 use socle::date::Jour;
-use documents::valeur::{en_texte, json_en_cache, vrai};
+use declarations::valeur::{en_texte, json_en_cache, vrai};
 use droit::emplois;
 use socle::fichiers::dossier_du_code;
 use droit::minima::Par;
@@ -201,7 +201,7 @@ fn donnee(source: &Value, expr: &str) -> Option<String> {
         _ => (expr, None),
     };
     let (chemin, ops) = expr.split_at(expr.find('*').unwrap_or(expr.len()));
-    let mut x = documents::valeur::dec(suivre(source, chemin)?).ok()?;
+    let mut x = declarations::valeur::dec(suivre(source, chemin)?).ok()?;
     let mut reste = ops;
     while let Some(op) = reste.chars().next() {
         let suite = &reste[1..];
@@ -418,7 +418,7 @@ struct Art30 {
 
 fn art30(b: &Value, annexe: &str) -> Option<Art30> {
     let a = b.get("annexes")?.get(annexe)?;
-    let n = |k: &str| a.get(k).and_then(|v| documents::valeur::dec(v).ok());
+    let n = |k: &str| a.get(k).and_then(|v| declarations::valeur::dec(v).ok());
     Some(Art30 { heures_par_jour: n("heures_par_jour")?, coefficient: n("coefficient")?, jours_sans_allocation: n("jours_sans_allocation")? })
 }
 

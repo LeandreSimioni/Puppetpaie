@@ -198,7 +198,11 @@ impl ModeleLu {
             Refus { classe: Some(classe), message: socle::fichiers::panne_fichier(&e, chemin) }
         })?;
         let texte = String::from_utf8(octets).map_err(|e| Refus { classe: Some("UnicodeDecodeError"), message: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()) })?;
-        let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // Le refus nomme le fichier ; un chemin sans nom de fichier se nomme entier.
+        let nom = match chemin.file_name() {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => chemin.to_string_lossy().into_owned(),
+        };
         ModeleLu::lire(&texte, &nom).map_err(|m| Refus { classe: Some("ModeleIncomplet"), message: m })
     }
 

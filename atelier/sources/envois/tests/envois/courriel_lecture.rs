@@ -26,20 +26,20 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
         let lues = fq::lire_reponses(&propre);
         let reponses: Map<String, Value> = fq::QUESTIONS.iter().filter_map(|(k, _, _)| lues.get(k).map(|v| (k.to_string(), json!(v)))).collect();
         assert_eq!(reponses.len(), lues.len(), "{} : une reponse hors du questionnaire", cas["nom"]);
-        let (fiche, illisible) = fq::fiche_depuis_reponses(&lues);
+        let (fiche, illisible) = fq::fiche_depuis_reponses(&lues).unwrap();
         cas["texte"] = json!(propre);
         cas["adresse"] = json!(adresse_de(&m));
         cas["message_id"] = json!(identifiant_de(&m));
         cas["date"] = json!(date_de(&m, "MAINTENANT"));
         cas["reponses"] = Value::Object(reponses);
-        cas["fiche"] = Value::Object(fiche);
+        cas["fiche"] = socle::ecriture::en_valeur(&fiche);
         cas["illisible"] = json!(illisible);
     }
     for d in c["dates"].as_array_mut().unwrap() {
         d["attendu"] = json!(fq::date_lue(d["texte"].as_str().unwrap()));
     }
     for p in c["pays"].as_array_mut().unwrap() {
-        p["attendu"] = json!(fq::pays_lu(p["texte"].as_str().unwrap()));
+        p["attendu"] = json!(fq::pays_lu(p["texte"].as_str().unwrap()).unwrap());
     }
     c["questionnaire"] = json!(fq::questionnaire("FIC-ABCDEF", &fq::posees(&|_| true), &|_| String::new()));
     c["sujet"] = json!(fq::SUJET);

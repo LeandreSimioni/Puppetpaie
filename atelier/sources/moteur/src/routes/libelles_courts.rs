@@ -203,8 +203,8 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
         }
         courts.poser(v.quoi, v.cle.clone(), court);
     }
-    if fichier.quoi.is_empty() {
-        fichier.quoi = "Les libellés courts que la compagnie a validés, par format du logiciel du comptable (Exports, « Libellés courts »).".to_string();
+    if fichier.quoi.is_none() {
+        fichier.quoi = Some("Les libellés courts que la compagnie a validés, par format du logiciel du comptable (Exports, « Libellés courts »).".to_string());
     }
     lc::ecrire(&ctx.racine, &fichier)?;
     let mut r = libelles_courts(ctx, ChargeLire { format: Some(format) })?;
