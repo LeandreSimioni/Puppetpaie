@@ -1,7 +1,7 @@
 //! CE QUE DIT LE JOURNAL DES ENVOIS : les etats du mois, les resumes, la repetition d'un depot, le rattachement des
 //! retours, les contrats partis, les signatures attendues, les embauches declarees. Rien n'y calcule de paie. Les lignes
 //! se lisent dans leur forme (`journal::Ligne`) ; un contrat se designe par sa `Paire` (la cle du salarie, le numero du
-//! contrat, ou `""`).
+//! contrat s'il en a un).
 
 use droit::fiche::Lue as _;
 use std::collections::{HashMap, HashSet};
@@ -295,9 +295,19 @@ pub struct Attendue {
     pub envoyes: Vec<String>,
     /// Le prenom que la fiche du salarie dit (`prenom_affichage`, sinon `prenom`).
     pub prenom: Option<String>,
-    /// Le nom que la fiche du salarie dit, sinon sa cle.
-    pub nom: String,
+    /// Le nom que la fiche du salarie dit (`ChampsSalarie::nomme`).
+    pub nom: Option<String>,
     pub contrats: Vec<ContratAttendu>,
+}
+
+impl Attendue {
+    /// Le salarie tel qu'une phrase le nomme : le nom de sa fiche, sinon sa cle (un affichage, jamais une piece).
+    pub fn qui(&self) -> String {
+        match &self.nom {
+            Some(n) => n.clone(),
+            None => self.salarie.to_string(),
+        }
+    }
 }
 
 pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fiche::ChampsSalarie>, lignes: &[Ligne], mois: Option<Mois>) -> Vec<Attendue> {
@@ -346,11 +356,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
                     rang: i,
                     apres_signature: false,
                     envoyes: Vec::new(),
-                    // Le salarie se nomme par sa fiche ; une fiche qui ne dit pas son nom le laisse a sa cle.
-                    nom: match fiche.and_then(|f| f.nomme()) {
-                        Some(n) => n,
-                        None => c.salarie.to_string(),
-                    },
+                    nom: fiche.and_then(|f| f.nomme()),
                     prenom,
                     contrats: Vec::new(),
                 });

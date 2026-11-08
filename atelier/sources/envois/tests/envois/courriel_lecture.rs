@@ -37,7 +37,7 @@ struct MessageLu {
     nom: String,
     eml: String,
     texte: String,
-    adresse: String,
+    adresse: Option<String>,
     message_id: Option<String>,
     date: String,
     defaut_tirets: bool,

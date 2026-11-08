@@ -187,7 +187,7 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
 /// Le message entier, ses lignes mises bout a bout sur une seule, ou le nom de la classe quand le message est vide.
 fn motif_de(e: &Echec) -> String {
     if e.message.trim().is_empty() {
-        return e.classe.unwrap_or("Exception").to_string();
+        return e.classe_notee().to_string();
     }
     e.message.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
 }

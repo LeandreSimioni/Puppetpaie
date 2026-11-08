@@ -170,12 +170,7 @@ impl std::error::Error for ErreurGoogle {}
 
 impl From<socle::echec::Echec> for ErreurGoogle {
     fn from(e: socle::echec::Echec) -> Self {
-        // Un refus qui ne dit pas sa classe est une exception ordinaire.
-        let classe = match e.classe {
-            Some(c) => c,
-            None => "Exception",
-        };
-        ErreurGoogle::nouvelle(classe, e.message)
+        ErreurGoogle::nouvelle(e.classe_notee(), e.message)
     }
 }
 

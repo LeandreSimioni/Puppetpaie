@@ -105,18 +105,9 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
-/// La classe d'un refus, telle que le journal et les incidents la notent : un refus du moteur sans classe est une
-/// `Exception`.
-fn classe_de(e: &Echec) -> &'static str {
-    match e.classe {
-        Some(c) => c,
-        None => "Exception",
-    }
-}
-
 /// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
-    let classe = classe_de(&e);
+    let classe = e.classe_notee();
     let _ = noter(ctx, d, ligne);
     suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase(), repetition: d.repetition.cloned() });
     e
@@ -175,7 +166,7 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(classe_de(&e).into()), repetition: d.repetition.cloned(), nature: texte(apercu.nature.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement.clone(), ..Default::default() };
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature: texte(apercu.nature.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement.clone(), ..Default::default() };
             let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase(), None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
@@ -242,7 +233,7 @@ pub fn deposer_dpae(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDpae { preuve, erreur: Some(classe_de(&e).into()), repetition: d.repetition.cloned(), ..Default::default() };
+            let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..Default::default() };
             let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase(), None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }

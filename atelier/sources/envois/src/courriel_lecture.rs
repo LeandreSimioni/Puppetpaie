@@ -14,28 +14,28 @@ use mailparse::{MailHeaderMap, ParsedMail};
 
 use crate::simulation_courriels::{feuilles, nom_de_fichier, texte_de};
 
-/// L'adresse seule, en minuscules, ou rien.
-pub fn adresse_de(m: &ParsedMail) -> String {
-    let Some(h) = m.headers.get_first_header("From") else { return String::new() };
+/// L'adresse seule, en minuscules ; `None` quand le message ne dit pas d'ou il vient.
+pub fn adresse_de(m: &ParsedMail) -> Option<String> {
+    let h = m.headers.get_first_header("From")?;
     let liste = match mailparse::addrparse_header(h) {
         Ok(liste) => liste,
         // Un `From` qui n'est pas une adresse : le message ne dit pas d'ou il vient.
         Err(pas_une_adresse) => {
             drop(pas_une_adresse);
-            return String::new();
+            return None;
         }
     };
     for a in liste.iter() {
         match a {
-            mailparse::MailAddr::Single(i) => return socle::texte::strip(&i.addr).to_lowercase(),
+            mailparse::MailAddr::Single(i) => return Some(socle::texte::strip(&i.addr).to_lowercase()),
             mailparse::MailAddr::Group(g) => {
                 if let Some(i) = g.addrs.first() {
-                    return socle::texte::strip(&i.addr).to_lowercase();
+                    return Some(socle::texte::strip(&i.addr).to_lowercase());
                 }
             }
         }
     }
-    String::new()
+    None
 }
 
 /// Un message se lit toujours : quand le bloc d'en-tetes se rompt (une ligne qui n'est ni `Nom: valeur`,

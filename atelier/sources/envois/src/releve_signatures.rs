@@ -147,7 +147,7 @@ pub struct Reponse {
 pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &str, incidents: &mut Vec<String>) -> Result<Option<Reponse>, ()> {
     // Une demande partie sans adresse (remise en main propre) n'attend pas de reponse par courriel.
     let Some(a_adresse) = a.adresse.clone() else { return Ok(None) };
-    let (code, a_nom) = (a.code.clone(), a.nom.clone());
+    let (code, a_nom) = (a.code.clone(), a.qui());
     let envoyes = identifiants_de(a);
     let identifiants = match client.rechercher(&format!("\"{}\"", code), 10) {
         Ok(i) => i,
@@ -186,7 +186,10 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         if texte.contains("bouton « Je signe »") {
             continue; // notre demande elle-meme (envoyee avant que son identifiant soit note)
         }
-        let de = lecture::adresse_de(&m);
+        let Some(de) = lecture::adresse_de(&m) else {
+            incidents.push(format!("{} : une reponse portant {} ne dit pas d'ou elle vient ; elle n'est pas retenue.", a_nom, code));
+            continue;
+        };
         if de == expediteur && de != a_adresse {
             continue; // un autre de nos envois (le contresigne)
         }
@@ -261,9 +264,10 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
         )
     };
     let prenom = a.prenom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("prenom")))?;
+    let nom = a.nom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("nom")))?;
     let message = Message {
         cle: a.salarie.to_string(),
-        nom: a.nom.clone(),
+        nom: nom.clone(),
         destinataire: c.de.to_string(),
         sujet,
         corps: envoi::formater(
@@ -281,7 +285,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     };
     envoi::envoyer(&[message], c.expediteur, client, None, None).map_err(|e| socle::echec::Echec::from(e.to_string()))?;
     let noms_signes: Vec<String> = c.signes.iter().map(|p| socle::fichiers::nom_du(p)).collect();
-    let detail = DetailContresigne { salarie: a.salarie.clone(), nom: a.nom.clone(), code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
+    let detail = DetailContresigne { salarie: a.salarie.clone(), nom, code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
     let mut e = Envoi::nouveau(Mode::Reel, qui, true, c.de, "contrat contresigne renvoye au salarie", detail);
     e.mois = a.mois;
     journal::noter(racine, Ligne::ContratContresigne(e), Some(&c.signes[0]), &maintenant()).map(|_| ()).map_err(socle::echec::Echec::from)

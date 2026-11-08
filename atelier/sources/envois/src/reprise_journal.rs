@@ -85,11 +85,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
             Ok(Some(b)) => b,
             Ok(None) => continue,
             Err(e) => {
-                let classe = match e.classe {
-                    Some(c) => c,
-                    None => "Exception",
-                };
-                illisibles.push(format!("{} ({})", nom, classe));
+                illisibles.push(format!("{} ({})", nom, e.classe_notee()));
                 continue;
             }
         };
@@ -331,8 +327,8 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
     Ok((sortie, inconnus))
 }
 
-/// Une DPAE attestee telle que la reprise la montre : son flux entier quand un bilan le porte, reel ou test, acceptee
-/// ou non, deja au journal ou non.
+/// Une DPAE attestee telle que la reprise la montre : son flux entier quand un bilan le porte, reel ou test, `accepte`
+/// (ce que son bilan dit ; sans bilan, le certificat n'atteste que le depot parti), deja au journal ou non.
 #[cfg(feature = "atelier")]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DpaeVue {
@@ -388,7 +384,9 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
             None => e.flux.clone(),
         };
         let b = bilans.iter().find(|(f, _)| *f == entier).and_then(|(_, l)| crate::retours::fusionner_bilans(l));
-        // Sans bilan, le certificat seul atteste un depot reel et accepte.
+        // Sans bilan, le certificat atteste un depot parti : pris au point de depot (`accepte`), il n'en dit pas le
+        // verdict, que seuls les retours rattaches a la ligne donnent (`etats::verdict_dpae`) ; tant qu'aucun n'y est
+        // range, la DPAE est partie, sans bilan connu. Le mode reel est une INFERENCE : aucun bilan ne dit l'essai.
         let (mode, accepte_) = match &b {
             Some(b) => (Mode::de(reel(b)), accepte(b)),
             None => (Mode::Reel, true),

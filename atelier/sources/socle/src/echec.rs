@@ -17,6 +17,17 @@ pub struct Echec {
 
 pub type R<T> = Result<T, Echec>;
 
+impl Echec {
+    /// La classe du refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
+    /// `Exception`.
+    pub fn classe_notee(&self) -> &'static str {
+        match self.classe {
+            Some(c) => c,
+            None => "Exception",
+        }
+    }
+}
+
 impl From<String> for Echec {
     #[track_caller]
     fn from(message: String) -> Self {

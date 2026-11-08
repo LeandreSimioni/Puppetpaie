@@ -2390,7 +2390,10 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
             if !texte.to_uppercase().contains(code.as_str()) || texte.contains("Remplir ma fiche") {
                 continue;
             }
-            let de = lecture::adresse_de(&m);
+            let Some(de) = lecture::adresse_de(&m) else {
+                r.incidents.push(format!("Fiche {} : une reponse ne dit pas d'ou elle vient ; elle n'est pas retenue.", code));
+                continue;
+            };
             if de == expediteur && de != a.adresse {
                 continue;
             }

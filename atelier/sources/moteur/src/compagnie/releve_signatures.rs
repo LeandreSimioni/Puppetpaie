@@ -43,7 +43,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
         // Une demande remise en main propre n'a pas d'adresse : personne n'y repond par courriel.
         let Some(adresse) = a.adresse.as_deref() else { continue };
         let code = a.code.clone();
-        let nom = a.nom.clone();
+        let nom = a.qui();
         let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a))? {
             Some(b) => b,
             None => (
@@ -131,7 +131,7 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
     for a in &attendues {
         let code = a.code.clone();
         let a_mois = a.mois.map(|m| m.to_string()).unwrap_or_default();
-        let a_nom = a.nom.clone();
+        let a_nom = a.qui();
         let a_salarie = a.salarie.to_string();
         let contrats = a.contrats.clone();
         let retenue = match chercher_reponse(client, a, &expediteur, &mut r.incidents) {
@@ -159,14 +159,18 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
             }
         }
         let quand_lisible = etats::quand_lisible(&quand);
-        let mention = documents::contrat::mention_signature(&a_nom, &quand_lisible, &de, &code);
+        // La mention porte le nom que la fiche dit : sans lui, rien ne se contresigne.
+        let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
         let mut signes: Vec<(String, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
             let envoye = ctx.racine.join("sorties").join(mois_f).join("envoi").join(nom_f);
             let souche = envoye.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
             let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
-            let fait = crate::compagnie::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, &mention).map_err(|e| e.message);
+            let fait = match &mention {
+                Some(m) => crate::compagnie::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.message),
+                None => Err("la fiche du salarié ne dit pas son nom".to_string()),
+            };
             match fait {
                 Ok(()) => match signes.iter_mut().find(|(n, _)| n == nom_f) {
                     Some(deja) => deja.1 = signe,
