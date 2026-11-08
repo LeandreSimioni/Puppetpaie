@@ -14,7 +14,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::texte::euros;
 use socle::echec::R;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
 use crate::versement_declare::{self, VersementDeclare};
@@ -74,7 +74,7 @@ pub struct Due {
 /// correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit a cote de lui, et un
 /// engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
 pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
-    let refus = |m: String| erreur("MoisNonRegularisable", m);
+    let refus = |m: String| erreur(Classe::MoisNonRegularisable, m);
     let mut out = Vec::new();
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
@@ -104,7 +104,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
             let apres = d.valide.paie(ctx, &data, d.rang)?;
             let version = d.valide.version().ok_or_else(|| {
                 erreur(
-                    "MoisNonRegularisable",
+                    Classe::MoisNonRegularisable,
                     format!("Correction de {} pour {} : la validation de l'engagement ne porte pas son numéro de version, ce qu'elle déclare ne se dit pas. La revalider.", mois, documents::tableaux_export::qui_souple(&apres.salarie)),
                 )
             })?;
@@ -116,7 +116,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
             let numero = apres.engagement.numero.clone();
             let refus = |quoi: &str| {
                 erreur(
-                    "MoisNonRegularisable",
+                    Classe::MoisNonRegularisable,
                     format!(
                         "Correction de {} pour {} (contrat {}) : {}. Une regularisation annule ce qui a ete DECLARE : elle le lit dans la version de l'engagement sur laquelle la DSN est partie, elle ne le recalcule pas. La DSN de {} ne se produit pas tant que ce n'est pas regle.",
                         mois,
@@ -213,7 +213,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
-            erreur("MoisNonRegularisable", format!("{} : la correction de {} n'a pas de numero de contrat (S21.G00.40.009).", r.mois, documents::tableaux_export::qui_souple(&r.apres.salarie)))
+            erreur(Classe::MoisNonRegularisable, format!("{} : la correction de {} n'a pas de numero de contrat (S21.G00.40.009).", r.mois, documents::tableaux_export::qui_souple(&r.apres.salarie)))
         })?;
         let v = VersionPortee { salarie: r.apres.salarie.id.to_string(), numero: numero.to_string(), version: r.version, mois: r.mois.clone() };
         if !out.contains(&v) {
@@ -234,7 +234,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
 fn ajout(mois: String, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
     if apres.engagement.numero.is_none() {
         return Err(erreur(
-            "MoisNonRegularisable",
+            Classe::MoisNonRegularisable,
             format!("{} : le contrat ajoute apres la DSN de ce mois n'a pas de numero (S21.G00.40.009). Le revalider.", mois),
         ));
     }
@@ -260,7 +260,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
     for r in regs {
         let s = &r.apres.salarie;
         if s.nom.is_none() {
-            return Err(erreur("KeyError", socle::fichiers::absent("nom")));
+            return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
         }
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
@@ -303,7 +303,7 @@ fn decidee_le(le: &str) -> R<Option<Jour>> {
 }
 
 fn refus_valeur(m: String) -> Echec {
-    erreur("ValueError", m)
+    erreur(Classe::Illisible, m)
 }
 
 

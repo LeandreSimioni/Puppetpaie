@@ -12,6 +12,7 @@
 //! nombre illisible.
 
 use std::collections::{HashMap, HashSet};
+use socle::echec::Classe;
 
 use serde_json::{json, Value};
 
@@ -410,7 +411,7 @@ fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<Option<R
         let n = if ordre.is_empty() {
             0
         } else {
-            entier_lu(ordre).ok_or_else(|| erreur("ValueError", format!("nombre entier illisible : {}", repr(ordre))))?
+            entier_lu(ordre).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(ordre))))?
         };
         n > i128::from(r.dernier_ordre.unwrap_or(0))
     } else {
@@ -467,7 +468,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
     let nom = nom_du_chemin(&chemin);
     let signalement = a.est_signalement();
-    let mois = a.mois_declare().map_err(|m| erreur("ErreurOperation", format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", m)))?;
+    let mois = a.mois_declare().map_err(|m| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", m)))?;
     let mois_t = mois.to_string();
     let remplacement = if signalement { None } else { remplacement_du_fichier(&mut m, &a, mois)? };
     let recapitulatif = if signalement {
@@ -515,8 +516,8 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         nature_envoi: a.nature_envoi.as_deref().unwrap_or_default().to_string(),
         reel: a.reel(),
         signalement,
-        nature: a.nature().map_err(|m| erreur("ErreurOperation", m))?.to_string(),
-        libelle_nature: a.nature_lisible().ok_or_else(|| erreur("ErreurOperation", "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,
+        nature: a.nature().map_err(|m| erreur(Classe::Refuse, m))?.to_string(),
+        libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,
         evenement: match (signalement, a.evenement()) {
             (true, Some(j)) => j.iso(),
             (true, None) => "?".to_string(),

@@ -7,13 +7,13 @@ use std::collections::BTreeMap;
 
 use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::num::{eur2, zero2, Decimal};
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
 
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// Une ligne du journal de paie : date, journal, compte, libelle, debit, credit, analytique, auxiliaire.
@@ -40,7 +40,7 @@ pub struct Ecriture {
 
 /// La date de l'ecriture d'un mois (son dernier jour, AAAA-MM-JJ) et son libelle (« Decembre 2026 »).
 fn date_et_libelle(mois: &str) -> R<(String, String)> {
-    let mois = socle::mois::Mois::lire(mois).map_err(|e| erreur("ValueError", e))?;
+    let mois = socle::mois::Mois::lire(mois).map_err(|e| erreur(Classe::Illisible, e))?;
     Ok((mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre)))
 }
 
@@ -49,7 +49,7 @@ fn date_et_libelle(mois: &str) -> R<(String, String)> {
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
 pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| erreur("ErreurOperation", m))?;
+    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| erreur(Classe::Refuse, m))?;
     let (date, lib_mois) = date_et_libelle(mois)?;
     let jrn = plan.journal.clone();
     let zero = zero2();
@@ -151,7 +151,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += eur2(l.montant_pat);
                     for (part, id_tiers) in [(rg.urssaf, "maladie"), (rg.chomage, "chomage"), (rg.agirc_arrco, "retraite_t1")] {
                         if !part.is_zero() {
-                            let r = plan.lignes.get(id_tiers).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(id_tiers)))?;
+                            let r = plan.lignes.get(id_tiers).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(id_tiers)))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;
                         }
                     }

@@ -128,7 +128,7 @@ fn le_dossier(client: &mut dyn Drive, parent: &str, nom: &str, chemin: &str) -> 
         0 => Ok(None),
         1 => Ok(trouves.into_iter().next()),
         n => Err(ErreurGoogle::nouvelle(
-            "SauvegardeAmbigue",
+            socle::echec::Classe::SauvegardeAmbigue,
             format!("{} dossiers « {} » dans le Drive : la restauration ne choisit pas. Les reunir a la main dans le Drive, puis relancer.", n, chemin),
         )),
     }
@@ -155,7 +155,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     // 1. L'inventaire du Drive, sans rien y creer.
     let absente = || {
         ErreurGoogle::nouvelle(
-            "SauvegardeAbsente",
+            socle::echec::Classe::SauvegardeAbsente,
             format!(
                 "Pas de sauvegarde dans le Drive{} : le dossier {}/{} est introuvable. Le compte relie est-il celui de la \
                  compagnie ? Seuls les dossiers crees par PuppetPaie, avec la meme application Google, sont visibles.",
@@ -226,7 +226,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             liste.push(format!("  ... et {} autre(s)", ecarts.len() - 10));
         }
         return Err(ErreurGoogle::nouvelle(
-            "DossierNonVide",
+            socle::echec::Classe::DossierNonVide,
             format!(
                 "{} n'est pas vide : {} fichier(s) que la sauvegarde porterait y sont deja, et ne sont pas la copie du Drive :\n{}\n\
                  Rien n'a ete redescendu, rien n'a ete efface. Restaurer dans un dossier vide (le jeton Google peut y etre), ou \

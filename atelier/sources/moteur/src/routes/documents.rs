@@ -26,7 +26,7 @@ use envois::envoi;
 use envois::journal;
 use envois::ligne_d_envoi::{echec_d_envoi, noter, noter_echec_d_envoi, par_courriel};
 use socle::date::jour_iso;
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::nom_du;
 use socle::mois::Mois;
 use crate::valeur::valeur_en_texte;
@@ -64,9 +64,9 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "phrase, partis (les salariés servis), avertissements (ceux sans courriel, la boîte qui envoie)",
         refus: &[
-            Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
-            Refus { classe: "AucunDocument", corriger: "valider un engagement du mois" },
-            Refus { classe: "BoiteAbsente", corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
+            Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" },
+            Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
             OPERATION,
         ],
         acte: Acte::Engage,
@@ -80,7 +80,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MOIS, SALARIES],
         exemple: r#"{"mois":"2026-11","salaries":["SVOBODA"]}"#,
         rend: "impression (le PDF, dans sorties/<mois>/) et son chemin, salaries, avertissements",
-        refus: &[Refus { classe: "AucunDocument", corriger: "valider un engagement du mois" }, OPERATION],
+        refus: &[Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" }, OPERATION],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -357,10 +357,10 @@ pub(crate) fn ranger_aer_detail(ctx: &Contexte, mois: Option<&str>, fichiers: Op
         let Some(cle) = cle.filter(|_| !periode.is_empty()) else {
             // On ne devine pas : un nom que le rapprochement ne reconnait pas est peut-etre un salarie archive.
             let refuge = ctx.racine.join(envois::retours::RETOURS).join("aer-a-ranger");
-            std::fs::create_dir_all(&refuge).map_err(|e| erreur("OSError", e.to_string()))?;
+            std::fs::create_dir_all(&refuge).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
             for att in groupe {
                 let nom = att.nom_archive.rsplit('/').next().unwrap_or("").to_string();
-                std::fs::write(refuge.join(nom), &att.donnees).map_err(|e| erreur("OSError", e.to_string()))?;
+                std::fs::write(refuge.join(nom), &att.donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
                 fait.a_ranger.push((att.qui.clone(), refuge.join(att.nom_archive.rsplit('/').next().unwrap_or(""))));
             }
             continue;
@@ -406,9 +406,9 @@ pub(crate) fn ranger_aer_detail(ctx: &Contexte, mois: Option<&str>, fichiers: Op
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir()).map_err(Echec::from)? };
         let cible = ctx.racine.join("sorties").join(periode).join("envoi");
-        std::fs::create_dir_all(&cible).map_err(|e| erreur("OSError", e.to_string()))?;
+        std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(nom_fichier("AER", &cle, &crate::routes::dossier_salarie::etiquette(periode)?));
-        std::fs::write(&chemin, donnees).map_err(|e| erreur("OSError", e.to_string()))?;
+        std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         fait.ecrits.push((periode.clone(), cle, chemin));
     }
     Ok(fait)
@@ -473,14 +473,14 @@ struct Message {
 
 /// Un message par salarie, et les pieces qui lui sont DUES, nommees sans etre fabriquees : le bulletin d'une paie qui a des
 /// cachets, le certificat Conges Spectacles d'un contrat qui finit (`certificats_dus`), l'AER que France Travail a rendue
-/// et qui est rangee. Le corps n'est pas compose : seuls ses refus (`KeyError` d'une fiche entreprise sans nom
+/// et qui est rangee. Le corps n'est pas compose : seuls ses refus (`Manque` d'une fiche entreprise sans nom
 /// d'affichage ou sans signataire) sont gardes.
 fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: &str, dossier: &Path) -> R<Vec<Message>> {
     let etiq = crate::routes::dossier_salarie::etiquette(mois)?;
     let ent = &ctx.entreprise;
-    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(erreur("KeyError", socle::fichiers::absent(k))) } else { Ok(()) };
+    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(erreur(Classe::Manque, socle::fichiers::absent(k))) } else { Ok(()) };
     requis(&ent.nom_affichage, "nom_affichage")?;
-    let sg = ent.signataire.dite().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("signataire")))?;
+    let sg = ent.signataire.dite().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("signataire")))?;
     if sg.prenom_affichage.remplie().is_none() {
         requis(&sg.prenom, "prenom")?;
     }
@@ -545,7 +545,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         // La boite qui enverrait, quand des documents sont dus.
         if !messages.is_empty() {
             expediteur = compte_de_la_boite(ctx)?.to_lowercase();
-            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("signataire")))?;
+            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("signataire")))?;
             if let Some(signataire) = sg.email.portee().map(str::to_lowercase).filter(|s| *s != expediteur) {
                 avertissements.push(format!(
                     "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
@@ -637,16 +637,16 @@ fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
 
 // ------------------------------------------------------------------ ce que toutes les routes partagent
 
-/// `ErreurOperation` : un refus ordinaire, avec sa phrase.
+/// `Refuse` : un refus ordinaire, avec sa phrase.
 pub(crate) fn refus(message: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", message)
+    erreur(Classe::Refuse, message)
 }
 
-/// `d[cle]` : `KeyError` si elle manque.
+/// `d[cle]` : `Manque` si elle manque.
 pub(crate) fn requis<'a>(d: &'a Value, cle: &str) -> R<&'a Value> {
     match d {
-        Value::Object(o) => o.get(cle).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle))),
-        autre => Err(erreur("TypeError", socle::fichiers::attendu("un objet", crate::valeur::nom_type(autre)))),
+        Value::Object(o) => o.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle))),
+        autre => Err(erreur(Classe::MalFormee, socle::fichiers::attendu("un objet", crate::valeur::nom_type(autre)))),
     }
 }
 
@@ -661,11 +661,11 @@ pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
     }
     if !crate::compagnie::boite::disponible(&ctx.racine) {
         return Err(erreur(
-            "BoiteAbsente",
+            Classe::BoiteAbsente,
             socle::echec::cle("Aucune boîte courriel : poser le mot de passe d'application de la boîte dans Configuration › Mots de passe.", "courriel"),
         ));
     }
-    let client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur("ErreurCourriel", e.0))?;
+    let client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
     Ok(Box::new(client))
 }
 
@@ -718,7 +718,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     let paies = charger_le_mois(ctx, &mois)?;
     if paies.is_empty() {
         return Err(erreur(
-            "AucunDocument",
+            Classe::AucunDocument,
             format!("{} : aucun engagement valide, aucun document a imprimer. Rien ne part d'un engagement en saisie.", Mois::en_clair(&mois)),
         ));
     }
@@ -925,7 +925,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: &str, seulement: Option<&[Str
     let paies = charger_le_mois(ctx, mois)?;
     if paies.is_empty() {
         return Err(erreur(
-            "AucunDocument",
+            Classe::AucunDocument,
             format!("{} : aucun engagement validé, aucun document à envoyer. Rien ne part d'un engagement en saisie.", socle::mois::Mois::en_clair(mois)),
         ));
     }
@@ -971,7 +971,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: &str, seulement: Option<&[Str
     if !sans.is_empty() {
         avertissements.push(sans_courriel_dit(&noms_sans));
     }
-    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("signataire")))?.email.portee().map(str::to_lowercase);
+    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("signataire")))?.email.portee().map(str::to_lowercase);
     if let Some(signataire) = signataire.filter(|s| *s != expediteur) {
         avertissements.push(format!(
             "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
@@ -1086,12 +1086,12 @@ pub(crate) fn sans_courriel(ctx: &Contexte, mois: &str) -> R<Vec<(String, String
     Ok(cles.into_iter().filter(|c| !choix.a_jour.contains(c) && !a_un_courriel(&paies, c)).map(|c| { let nom = nom_de_la_paie(&paies, &c); (c, nom) }).collect())
 }
 
-/// Le refus de `envoi.preparer` : une fiche sans adresse est un `ValueError`, une cle absente un `KeyError`.
+/// Le refus de `envoi.preparer` : une fiche sans adresse est `Illisible`, une cle absente `Manque`.
 fn refus_de_preparation(m: &str) -> Echec {
     if m.starts_with("Pas d'adresse e-mail") {
-        erreur("ValueError", m)
+        erreur(Classe::Illisible, m)
     } else if m.starts_with("champ ") && m.ends_with(" absent") {
-        erreur("KeyError", m)
+        erreur(Classe::Manque, m)
     } else {
         Echec::from(m.to_string())
     }

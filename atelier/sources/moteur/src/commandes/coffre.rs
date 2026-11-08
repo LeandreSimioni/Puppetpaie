@@ -34,7 +34,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     match r {
         Ok(c) => c,
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
-        Err(e) if est_refus(e.classe) || e.classe == Some("ErreurCoffre") => {
+        Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
             dire!("! {}", e.message);
             2
         }
@@ -46,7 +46,7 @@ fn vers(e: crate::compagnie::coffre::Echec) -> Echec {
     Echec { classe: None, message: e.message }
 }
 
-/// Le refus du coffre sous sa classe (`ErreurCoffre`, `OSError`...), pour que la commande sache s'il se rend en phrase.
+/// Le refus du coffre sous sa classe (`Coffre`, `Disque`...), pour que la commande sache s'il se rend en phrase.
 fn vers_classe(e: crate::compagnie::coffre::Echec) -> Echec {
     Echec { classe: Some(e.classe), message: e.message }
 }

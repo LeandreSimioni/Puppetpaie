@@ -15,6 +15,7 @@
 //! Un numero de contrat s'ecrit dans l'engagement a sa validation (`engagement::numeros`) ; tout ce qui part le lit la.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use socle::mois::Mois;
 use crate::routes::dossier_salarie::cle_de;
 use std::collections::HashMap;
@@ -45,11 +46,11 @@ fn avertissement(texte: impl Into<String>) -> Avis {
 }
 
 fn os(chemin: &Path, e: std::io::Error) -> Echec {
-    erreur("OSError", socle::echec::du_disque(chemin, &e))
+    erreur(Classe::Disque, socle::echec::du_disque(chemin, &e))
 }
 
 fn valeur(m: String) -> Echec {
-    erreur("ValueError", m)
+    erreur(Classe::Illisible, m)
 }
 
 /// Un arret du magasin en sa forme (`engagement::imprevus::ArretSaisi`), pour ses regles.
@@ -89,7 +90,7 @@ pub(crate) fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Opt
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
-    ecrire_json(&p, &d, 2).map_err(|m| erreur("OSError", m))
+    ecrire_json(&p, &d, 2).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// UNE PIECE PARTIE NE SE RECRIT JAMAIS (regle 4 de `atelier/AGENTS.md` : ce qui est depose ne se regenere pas) : le
@@ -114,7 +115,7 @@ pub(crate) fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
     match partie_le(racine, cible)? {
         None => Ok(()),
         Some(le) => Err(erreur(
-            "ErreurOperation",
+            Classe::Refuse,
             format!(
                 "{} est parti le {} : ce qui est parti ne se réécrit pas. Rien n'est écrit.",
                 socle::fichiers::nom_du(cible),
@@ -527,13 +528,13 @@ impl DsnFabriquee {
 /// `atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt` ; `Echeance::premier_depot`). Avant ce jour, le refus dit
 /// le jour et l'echeance. Seule `fabriquer_dsn` ecrit une mensuelle : c'est elle qui refuse.
 fn pas_avant(ctx: &Contexte, mois: &str) -> R<()> {
-    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|m| erreur("ValueError", m))?;
-    let premier = echeance.premier_depot().map_err(|m| erreur("ValueError", m))?;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|m| erreur(Classe::Illisible, m))?;
+    let premier = echeance.premier_depot().map_err(|m| erreur(Classe::Illisible, m))?;
     if premier.ordinal() <= ctx.aujourdhui.ordinal() {
         return Ok(());
     }
     Err(erreur(
-        "ErreurOperation",
+        Classe::Refuse,
         format!(
             "La DSN de {} se dépose à partir du {} : la norme admet un dépôt au plus un mois avant l'échéance (cahier technique DSN 2026.1, § 1.4.2). Son échéance : {}. Rien n'est parti.",
             socle::mois::Mois::en_clair(mois),
@@ -566,7 +567,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     let en_saisie = valides.iter().filter(|v| !**v).count();
     if en_saisie > 0 && en_saisie == valides.len() {
         return Err(erreur(
-            "EngagementEnSaisie",
+            Classe::EngagementEnSaisie,
             format!(
                 "{} : aucun engagement n'est valide. Rien ne part d'un engagement en saisie : le valider d'abord (« Valider l'engagement »). Rien n'est ecrit.",
                 socle::mois::Mois::en_clair(mois)
@@ -725,7 +726,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     if !a_ecrire.is_empty() {
         std::fs::create_dir_all(&sortie).map_err(|e| os(&sortie, e))?;
         for (f, texte, _) in &a_ecrire {
-            declarations::dsn::ecrire(texte, f).map_err(|m| erreur("OSError", m))?;
+            declarations::dsn::ecrire(texte, f).map_err(|m| erreur(Classe::Disque, m))?;
         }
         // La paie que chaque DSN declare : l'ecran dira si elle change avant l'envoi.
         let empreinte = m.empreinte_saisie_avec(le_mois, || Ok(Moteur::portees(&lu.regs)))?;
@@ -854,7 +855,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
     }
     let fiches: Vec<(&str, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques("bulletin", &fiches, &[])? {
-        Some(m) => Err(erreur("ErreurOperation", m)),
+        Some(m) => Err(erreur(Classe::Refuse, m)),
         None => Ok(()),
     }
 }
@@ -1082,7 +1083,7 @@ fn imprimer(ctx: &Contexte, mois: &str, ent: &droit::contexte::EntrepriseDuDocum
 /// Refus : un nom qui n'est pas celui d'une piece partie de `mois`, une piece qui ne se refait pas, une piece refaite
 /// qui ne dit pas ce qui est parti.
 pub(crate) fn piece_partie(ctx: &Contexte, mois: &str, nom: &str) -> R<PathBuf> {
-    let refus = |m: String| erreur("ErreurOperation", m);
+    let refus = |m: String| erreur(Classe::Refuse, m);
     if [mois, nom].iter().any(|t| t.is_empty() || t.contains(['/', '\\']) || t.contains("..")) {
         return Err(refus(format!("{} n'est pas une piece de {}.", nom, mois)));
     }
@@ -1284,7 +1285,7 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
     let attendue = l.empreinte().unwrap_or_default().to_string();
     if envois::journal::empreinte(&octets) != attendue {
         return Err(erreur(
-            "ErreurOperation",
+            Classe::Refuse,
             format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", socle::fichiers::nom_du(cible)),
         ));
     }
@@ -1333,7 +1334,7 @@ fn garder_si_identique(l: &envois::journal::Ligne, ecrits: &[PathBuf]) -> R<()> 
         let _ = std::fs::remove_file(f);
     }
     Err(erreur(
-        "ErreurOperation",
+        Classe::Refuse,
         format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", socle::fichiers::nom_du(premier)),
     ))
 }
@@ -1365,7 +1366,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
     let (nature, type_dsn) = (detail.nature.clone().unwrap_or_default(), detail.type_declaration.clone().unwrap_or_default());
     let ordre: i64 = detail.ordre.as_deref().unwrap_or("").trim().parse().map_err(|_| valeur(format!("journal : {} sans numero d'ordre", nom)))?;
     if !type_dsn.is_empty() && type_dsn != "01" {
-        return Err(erreur("ErreurOperation", format!("{} annulait et remplaçait un signalement : il ne se refait pas ; le fichier a été déplacé ou effacé.", nom)));
+        return Err(erreur(Classe::Refuse, format!("{} annulait et remplaçait un signalement : il ne se refait pas ; le fichier a été déplacé ou effacé.", nom)));
     }
     let (jour, instant, _) = ecrite_a(ctx, mois, &nom, l)?;
     let ctx_j = contexte_du_jour(ctx, jour)?;
@@ -1416,7 +1417,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
 /// refus. Le fichier `envoye` n'est jamais reecrit.
 pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], code: &str, envoye: &Path, signe: &Path, mention: &str) -> R<()> {
     let nom = socle::fichiers::nom_du(envoye);
-    let refus = |m: String| erreur("ErreurOperation", m);
+    let refus = |m: String| erreur(Classe::Refuse, m);
     let entree = |l: &envois::journal::Ligne| l.signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == nom && c.code.as_deref() == Some(code)).cloned());
     let Some(rang) = lignes.iter().rposition(|l| entree(l).is_some()) else {
         return Err(refus(format!("{} : aucune demande de signature ne porte le code {}.", nom, code)));
@@ -1425,7 +1426,7 @@ pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], co
         return Err(refus(format!("{} est parti sans son empreinte : rien ne dit que c'est lui qu'on contresigne. Relancer la demande de signature.", nom)));
     };
     let octets = contrat_parti(ctx, lignes, rang, envoye, &empreinte)?;
-    let contresigne = fabrique_pdf::marquage::contresigner(&octets, mention).map_err(|r| erreur("FabriqueRefus", format!("{} : {}", nom, r.0)))?;
+    let contresigne = fabrique_pdf::marquage::contresigner(&octets, mention).map_err(|r| erreur(Classe::FabriqueRefus, format!("{} : {}", nom, r.0)))?;
     if let Some(parent) = signe.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
@@ -1453,7 +1454,7 @@ fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize,
             return Ok(o);
         }
     }
-    Err(erreur("ErreurOperation", format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier parti a été déplacé ou effacé.", nom)))
+    Err(erreur(Classe::Refuse, format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier parti a été déplacé ou effacé.", nom)))
 }
 
 /// LE CONTRAT OU L'AVENANT `pdf` QU'A FAIT PARTIR LA LIGNE `lignes[rang]` (une demande de signature ou une impression),
@@ -1521,7 +1522,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let pareils = contrats.iter().zip(&paies).all(|(c, p)| c.clauses.as_ref().is_none_or(|cl| crate::compagnie::signature::clauses_du_contrat(&ctx_j, p, &ent) == *cl));
     if !pareils {
         let _ = std::fs::remove_file(vers);
-        return Err(erreur("ErreurOperation", format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", nom)));
+        return Err(erreur(Classe::Refuse, format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", nom)));
     }
     Ok(())
 }

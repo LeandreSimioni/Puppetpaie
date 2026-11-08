@@ -466,9 +466,9 @@ echo '{"route":"etat-du-mois","charge":{"mois":"2026-10"}}' | moteur route --tex
 
 Dans ce texte, « route NOM {charge} » se lit `echo '{"route":"NOM","charge":{…}}' | moteur route`. Un acte réel
 (dépôt, envoi, signature) demande le mot de passe du logiciel à un humain, dans la fenêtre du moteur ou dans son
-terminal, sans écho : il n'entre jamais par l'entrée standard. Une erreur métier reste une réponse —
-`{"ok": false, "erreur": "…", "classe": "AnnuleRemplaceHorsDelai"}` — sur laquelle un appelant branche son
-comportement. Restent des commandes : `moteur coffre` (ce qui est posé, et la séance), `moteur restaurer` (un poste
+terminal, sans écho : il n'entre jamais par l'entrée standard. Un refus reste une réponse —
+`{"ok": false, "ecrit": …, "refus": {"classe": "AnnuleRemplaceHorsDelai", "phrase": "…", "corriger": "…"}}` — sur
+la classe de laquelle un appelant branche son comportement. Restent des commandes : `moteur coffre` (ce qui est posé, et la séance), `moteur restaurer` (un poste
 neuf), `moteur interface` ; `moteur --aide` les liste. Un secret (le mot de passe du logiciel, celui d'un organisme)
 ne se lit jamais dans la charge : la route le fait taper par le moteur.
 

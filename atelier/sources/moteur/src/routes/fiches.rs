@@ -3,7 +3,7 @@
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
-//! Les refus portent leur classe (`KeyError`, `TypeError`, `ErreurOperation`...), que la page releve.
+//! Les refus portent leur classe (`Manque`, `MalFormee`, `Refuse`...), que la page releve.
 
 use droit::fiche::Lue as _;
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ use envois::journal;
 use envois::ligne_d_envoi::{echec_d_envoi, noter, par_courriel};
 use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecriture::ecrire_json;
 use socle::fichiers::repr;
 use socle::html::{html_echapper, mailto};
@@ -38,9 +38,9 @@ const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), for
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
 const DONNEES: Champ = Champ { nom: "donnees", libelle: Affiche::new("Cases de la fiche"), forme: Forme::Objet, sens: "les cases de la fiche, que la route configuration décrit (description : nom, forme, valeurs) ; une case inconnue se dit", avance: false };
 const CHANGEMENTS: Champ = Champ { nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet, sens: "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur", avance: false };
-pub(crate) const REFUSEE: Refus = Refus { classe: "FicheRefusee", corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
-const PREUVE: Refus = Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
-const BOITE: Refus = Refus { classe: "BoiteAbsente", corriger: "poser la boîte courriel (Configuration, Mots de passe)" };
+pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
+const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
+const BOITE: Refus = Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" };
 const ETAT_REND: &str = "etat : ce que la page lit de la compagnie (la route etat), relu après l'écriture";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -227,7 +227,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"confirme": true}"#,
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 0,
@@ -239,7 +239,7 @@ pub fn route(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &V
     match nom {
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
-        Route::CompagnieSupprimer => crate::interface::suppression::route(&ctx.racine, charge, &|_| {}).map_err(|m| erreur("ErreurOperation", m)),
+        Route::CompagnieSupprimer => crate::interface::suppression::route(&ctx.racine, charge, &|_| {}).map_err(|m| erreur(Classe::Refuse, m)),
         // La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`compagnie::ouverture`).
         Route::SauvegardeMaintenant => {
             use crate::compagnie::ouverture::{ouverture, Clients, Options};
@@ -355,15 +355,15 @@ fn effectif(ctx: &Contexte, charge: &Value) -> R<Value> {
     let mut phrase = String::new();
     if let Some(v) = charge.get("valeur").filter(|v| !v.is_null() && valeur_en_texte(v).trim() != "") {
         if an >= an_paie {
-            return Err(erreur("ErreurOperation", format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
+            return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
         let lu = valeur_en_texte(v).replace(',', ".");
-        let x: f64 = lu.trim().parse().ok().filter(|x: &f64| x.is_finite() && *x >= 0.0).ok_or_else(|| erreur("ValueError", format!("Effectif illisible : {}.", valeur_ecrite(v))))?;
+        let x: f64 = lu.trim().parse().ok().filter(|x: &f64| x.is_finite() && *x >= 0.0).ok_or_else(|| erreur(Classe::Illisible, format!("Effectif illisible : {}.", valeur_ecrite(v))))?;
         // Tronque au centieme (R. 130-1, I).
         let x = (x * 100.0).trunc() / 100.0;
         let le = ctx.aujourdhui.iso();
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, &le)? {
-            return Err(erreur("ErreurOperation", format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
+            return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
         phrase = format!("Effectif de {} : {}.", an, socle::num::dec_f64(x).map(|e| socle::texte::virgule(e.round_dp(2))).unwrap_or_default());
     }
@@ -537,10 +537,10 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     let annee = match charge.annee {
         None => ctx.aujourdhui.an,
         Some(a) if (1900..=2999).contains(&a) => a as i32,
-        Some(a) => return Err(erreur("ValueError", socle::date::annee_impossible(a))),
+        Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
     let bar = socle::date::Jour::nouveau(annee, 1, 1).and_then(|j| ctx.bareme(&j).ok());
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| erreur("ValueError", m))?;
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| erreur(Classe::Illisible, m))?;
     // La conclusion nomme les deux plafonds.
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
@@ -567,19 +567,19 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
 /// `charge["cle"]`.
 pub(crate) fn exiger<'a>(charge: &'a Value, cle: &str) -> R<&'a Value> {
     match charge {
-        Value::Object(o) => o.get(cle).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle))),
-        autre => Err(erreur("TypeError", socle::fichiers::attendu("un objet", nom_type(autre)))),
+        Value::Object(o) => o.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle))),
+        autre => Err(erreur(Classe::MalFormee, socle::fichiers::attendu("un objet", nom_type(autre)))),
     }
 }
 
-/// `champs.FICHES[nom]` : le nom d'une fiche connue, `KeyError` sinon,
-/// `TypeError` quand ce qui est donne ne se hache pas.
+/// `champs.FICHES[nom]` : le nom d'une fiche connue, `Manque` sinon,
+/// `MalFormee` quand ce qui est donne n'est pas un nom.
 pub(crate) fn nom_de_fiche(v: &Value) -> R<&str> {
     match v {
         Value::String(s) if matches!(s.as_str(), "entreprise" | "salarie" | "spectacle") => Ok(s),
-        Value::Array(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("list"))),
-        Value::Object(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("dict"))),
-        autre => Err(erreur("KeyError", format!("fiche inconnue : {}", autre))),
+        Value::Array(_) => Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("list"))),
+        Value::Object(_) => Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("dict"))),
+        autre => Err(erreur(Classe::Manque, format!("fiche inconnue : {}", autre))),
     }
 }
 
@@ -602,7 +602,7 @@ pub(crate) fn entier(v: &Value) -> R<i64> {
             }
         },
         Value::String(t) => {
-            let illisible = || erreur("ValueError", format!("nombre entier illisible : {}", repr(t)));
+            let illisible = || erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(t)));
             let u = t.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c));
             let (neg, chiffres) = match u.strip_prefix('-') {
                 Some(r) => (true, r),
@@ -622,7 +622,7 @@ pub(crate) fn entier(v: &Value) -> R<i64> {
             Ok(if neg { -n } else { n })
         }
         autre => Err(erreur(
-            "TypeError",
+            Classe::MalFormee,
             socle::fichiers::attendu("un nombre entier", nom_type(autre)),
         )),
     }
@@ -635,26 +635,20 @@ pub(crate) fn lire_tolerant(p: &Path) -> R<Option<Value>> {
     if !p.exists() {
         return Ok(None);
     }
-    let octets = std::fs::read(p).map_err(|e| {
-        let classe = match e.kind() {
-            std::io::ErrorKind::PermissionDenied => "PermissionError",
-            _ => "OSError",
-        };
-        erreur(classe, socle::echec::du_disque(&p, &e))
-    })?;
+    let octets = std::fs::read(p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
     Ok(String::from_utf8(octets).ok().and_then(|t| serde_json::from_str(&t).ok()))
 }
 
 // ------------------------------------------------------------ verifier-fiche
 
 /// Un objet, de ce qu'un JSON porte : un objet se copie ; une liste
-/// de paires aussi ; le reste se refuse sous `TypeError`.
+/// de paires aussi ; le reste se refuse sous `MalFormee`.
 pub(crate) fn copie_en_objet(v: &Value) -> R<Map<String, Value>> {
     let paires: Vec<Value> = match v {
         Value::Object(o) => return Ok(o.clone()),
         Value::Array(a) => a.clone(),
         Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
-        autre => return Err(erreur("TypeError", socle::fichiers::attendu("une liste", nom_type(autre)))),
+        autre => return Err(erreur(Classe::MalFormee, socle::fichiers::attendu("une liste", nom_type(autre)))),
     };
     let mut sortie = Map::new();
     for (i, p) in paires.iter().enumerate() {
@@ -662,17 +656,17 @@ pub(crate) fn copie_en_objet(v: &Value) -> R<Map<String, Value>> {
             Value::Array(a) => a.clone(),
             Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
             Value::Object(o) => o.keys().map(|k| Value::String(k.clone())).collect(),
-            _ => return Err(erreur("TypeError", socle::fichiers::pas_une_paire(i, nom_type(p)))),
+            _ => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_paire(i, nom_type(p)))),
         };
         if couple.len() != 2 {
-            return Err(erreur("ValueError", socle::fichiers::paire_attendue(i, couple.len())));
+            return Err(erreur(Classe::Illisible, socle::fichiers::paire_attendue(i, couple.len())));
         }
         match &couple[0] {
             Value::String(k) => {
                 sortie.insert(k.clone(), couple[1].clone());
             }
-            Value::Array(_) => return Err(erreur("TypeError", socle::fichiers::pas_une_cle("list"))),
-            Value::Object(_) => return Err(erreur("TypeError", socle::fichiers::pas_une_cle("dict"))),
+            Value::Array(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("list"))),
+            Value::Object(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("dict"))),
             _ => {}
         }
     }
@@ -689,7 +683,7 @@ fn texte_ou_vide(v: Option<&Value>) -> String {
 
 /// `faute_de_norme(champ, actuel)` pour une valeur deja la, vraie : un texte
 /// passe par le controle de la norme ; ce qui n'en est pas un se refuse sous les
-/// memes `TypeError` que la table des formats.
+/// memes refus `MalFormee` que la table des formats.
 fn fautif(c: &champs::Champ, actuel: &Value) -> R<bool> {
     if let Value::String(s) = actuel {
         return Ok(champs::faute_de_norme(c, s)?.is_some());
@@ -697,11 +691,11 @@ fn fautif(c: &champs::Champ, actuel: &Value) -> R<bool> {
     let Some(rubrique) = c.rubrique.as_deref().filter(|r| !r.is_empty()) else { return Ok(false) };
     let Some(format) = declarations::formats::format_de(rubrique)? else { return Ok(false) };
     let motifs = format.csl.as_ref().is_some_and(|l| !l.is_empty());
-    let pas_un_texte = || erreur("TypeError", socle::fichiers::attendu("un texte", nom_type(actuel)));
+    let pas_un_texte = || erreur(Classe::MalFormee, socle::fichiers::attendu("un texte", nom_type(actuel)));
     let n = match actuel {
         Value::Array(a) => a.len(),
         Value::Object(o) => o.len(),
-        autre => return Err(erreur("TypeError", socle::fichiers::attendu("un texte ou une liste", nom_type(autre)))),
+        autre => return Err(erreur(Classe::MalFormee, socle::fichiers::attendu("un texte ou une liste", nom_type(autre)))),
     };
     let [mini, maxi] = format.longueur;
     let faute = !(mini <= n && n <= maxi);
@@ -821,7 +815,7 @@ fn deriver_etablissements(donnees: &mut Map<String, Value>) -> R<()> {
                 vm.shift_remove("taux");
             } else {
                 let t = socle::num::decimal_lu(brut.trim())
-                    .ok_or_else(|| erreur("ErreurOperation", format!("Taux du versement mobilité illisible : {}.", brut.trim())))?;
+                    .ok_or_else(|| erreur(Classe::Refuse, format!("Taux du versement mobilité illisible : {}.", brut.trim())))?;
                 vm.insert("taux".into(), json!(t.to_string().parse::<f64>().unwrap_or(0.0)));
             }
             if insee.is_empty() {
@@ -1011,14 +1005,14 @@ fn verifier_fiche(charge: &Value) -> R<Value> {
     let declare = match objet {
         Some(o) => socle::ecriture::en_valeur(&champs::apercu_derive(nom, &saisie(nom, o)?)?),
         None if champs::fiche(nom)?.iter().any(champs::Champ::calcule) => {
-            return Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(donnees))));
+            return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(donnees))));
         }
         None => json!({}),
     };
     let propose = match objet {
         Some(o) => suggestions(nom, o)?,
         None if nom == "spectacle" => json!({}),
-        None => return Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(donnees)))),
+        None => return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(donnees)))),
     };
     Ok(json!({"anomalies": anomalies, "declare": declare, "suggestions": propose}))
 }
@@ -1131,7 +1125,7 @@ pub(crate) fn changements(ctx: &Contexte, nom: &str, ancienne: &Value, copie: Ma
     let mut donnees = copie;
     deriver(nom, &mut donnees, true)?;
     let Value::Object(anc) = ancienne else {
-        return Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(ancienne))));
+        return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(ancienne))));
     };
     let champs_fiche = champs::fiche(nom)?;
     let mut sortie = Vec::new();
@@ -1157,7 +1151,7 @@ pub(crate) fn changements(ctx: &Contexte, nom: &str, ancienne: &Value, copie: Ma
         let o = entree.as_object_mut().unwrap();
         if c.is_some_and(|c| c.declare) {
             let deja = usages_declares(ctx, c.and_then(|c| c.rubrique.as_deref()), &avant)?;
-            o.insert("deja_declare".into(), serde_json::to_value(deja).map_err(|e| erreur("ValueError", e.to_string()))?);
+            o.insert("deja_declare".into(), serde_json::to_value(deja).map_err(|e| erreur(Classe::Illisible, e.to_string()))?);
         }
         if let Some(c) = c.filter(|c| c.calcule()) {
             let source = c.derive_de.as_deref().unwrap_or("");
@@ -1191,20 +1185,20 @@ pub(crate) fn plain(m: impl Into<String>) -> Echec {
 
 #[track_caller]
 pub(super) fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 #[track_caller]
 pub(crate) fn en_os(m: String) -> Echec {
-    erreur("OSError", m)
+    erreur(Classe::Disque, m)
 }
 
 pub(super) fn texte_requis<'a>(charge: &'a Value, cle: &str) -> R<&'a str> {
-    exiger(charge, cle)?.as_str().ok_or_else(|| erreur("TypeError", socle::echec::charge(cle, "un texte")))
+    exiger(charge, cle)?.as_str().ok_or_else(|| erreur(Classe::MalFormee, socle::echec::charge(cle, "un texte")))
 }
 
 pub(crate) fn creer_dossier(d: &Path) -> R<()> {
-    std::fs::create_dir_all(d).map_err(|e| erreur("OSError", socle::echec::du_disque(&d, &e)))
+    std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))
 }
 
 pub(crate) fn ecrire(chemin: &Path, v: Value) -> R<()> {
@@ -1673,7 +1667,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
 /// La date d'effet que la charge d'une route d'ecriture donne (`depuis`, AAAA-MM-JJ), ou `None`.
 pub(crate) fn depuis_de(depuis: &Value) -> R<Option<Jour>> {
     if vrai(depuis) {
-        crate::valeur::d(depuis).map(Some).map_err(|m| erreur("ValueError", m))
+        crate::valeur::d(depuis).map(Some).map_err(|m| erreur(Classe::Illisible, m))
     } else {
         Ok(None)
     }
@@ -1864,7 +1858,7 @@ fn fiche_refusee(nom: &str, anomalies: &[Value]) -> Echec {
         .collect();
     let message = format!("La fiche n'est pas écrite : {}", phrases.join(" ; "));
     let erreurs_dit = if phrases.len() > 1 { format!("{} erreurs", phrases.len()) } else { "Une erreur".to_string() };
-    Echec { classe: Some("FicheRefusee"), message: socle::echec::avec(message, json!({"anomalies": anomalies, "erreurs_dit": erreurs_dit})) }
+    Echec { classe: Some(Classe::FicheRefusee), message: socle::echec::avec(message, json!({"anomalies": anomalies, "erreurs_dit": erreurs_dit})) }
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, et si le
@@ -1884,7 +1878,7 @@ fn enregistrer_fiche(ctx: &Contexte, charge: &Value) -> R<Value> {
     let cle: Option<String> = match charge.get("cle") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => Some(s.clone()),
-        Some(_) => return Err(erreur("TypeError", socle::echec::charge("cle", "un texte"))),
+        Some(_) => return Err(erreur(Classe::MalFormee, socle::echec::charge("cle", "un texte"))),
     };
     let donnees = &cases_changees(nom, charge)?;
     let forcer = charge.get("forcer").is_some_and(vrai);
@@ -1950,7 +1944,7 @@ pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: &str, cle: Option<String>, donne
         return Err(refus(format!("Fiche inconnue : {}", socle::fichiers::repr(nom))));
     };
     if !donnees.is_object() {
-        return Err(erreur("TypeError", socle::echec::charge("donnees", "un objet")));
+        return Err(erreur(Classe::MalFormee, socle::echec::charge("donnees", "un objet")));
     }
     let vide = Value::Object(Map::new());
     let montree = crate::routes::etablissements::entreprise_montree(ctx);
@@ -2222,7 +2216,7 @@ pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preu
         None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
     };
     let expediteur = client.compte().to_lowercase();
-    let code = fq::code_fiche().map_err(|m| erreur("OSError", m))?;
+    let code = fq::code_fiche().map_err(|m| erreur(Classe::Disque, m))?;
     let utiles = champs::utiles("salarie")?;
     let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
@@ -2320,7 +2314,7 @@ impl ReleveFiches {
 }
 
 fn os(m: String) -> Echec {
-    erreur("OSError", m)
+    erreur(Classe::Disque, m)
 }
 
 /// Cherche les reponses aux demandes de fiche et cree chaque fiche.
@@ -2352,7 +2346,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
                 r.incidents.push("Aucune boite courriel : les fiches demandees ne peuvent pas etre relevees.".to_string());
                 return Ok(r);
             }
-            let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur("ErreurCourriel", e.0))?;
+            let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
             ouverte.insert(Box::new(vrai_client)).as_mut()
         }
     };
@@ -2406,7 +2400,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| erreur("ValueError", m))?;
+        let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| erreur(Classe::Illisible, m))?;
         let mut donnees: Map<String, Value> = match socle::ecriture::en_valeur(&lue) {
             Value::Object(o) => o,
             _ => Map::new(),
@@ -2531,7 +2525,7 @@ pub fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
-        let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| erreur("ValueError", m))?;
+        let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| erreur(Classe::Illisible, m))?;
         boite.repondre(&a.code, brut);
     }
     Ok(boite)

@@ -577,7 +577,7 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
     // salarié ») : sa DSN importee (decembre) ou non (septembre), le refus dit quoi faire et n'ecrit rien.
     for (mois, dit) in [("2025-09", "« Importer »"), ("2025-12", "Elle ne se refait pas ici.")] {
         let r = outils::route(&racine, "depot-apercu", json!({"quoi": "dsn", "mois": mois}), jour);
-        assert!(r["classe"] == json!("DsnDeLAncienLogiciel") && r["erreur"].as_str().is_some_and(|e| e.contains(dit)), "{} : {}", mois, r);
+        assert!(r["refus"]["classe"] == json!("DsnDeLAncienLogiciel") && r["refus"]["phrase"].as_str().is_some_and(|e| e.contains(dit)), "{} : {}", mois, r);
         assert!(!racine.join("sorties").join(mois).exists(), "{} : la DSN refusee s'est ecrite", mois);
     }
 }

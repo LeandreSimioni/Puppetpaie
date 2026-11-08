@@ -18,6 +18,7 @@
 //! Lecture seule : rien ne s'ecrit, rien ne part.
 
 use std::path::{Path, PathBuf};
+use socle::echec::Classe;
 
 use serde_json::{json, Value};
 
@@ -46,7 +47,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     charge: &[MOIS],
     exemple: r#"{"mois":"2026-11"}"#,
     rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
-    refus: &[Refus { classe: "ErreurOperation", corriger: "le mois, AAAA-MM" }],
+    refus: &[Refus { classe: Classe::Refuse, corriger: "le mois, AAAA-MM" }],
     acte: Acte::Lit,
     avance: false,
     phrase: 0,
@@ -848,11 +849,11 @@ pub fn route(ctx: &Contexte, charge: &Value) -> R<Value> {
     let mois = charge.get("mois").and_then(Value::as_str).unwrap_or("");
     let b = mois.as_bytes();
     if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
-        return Err(erreur("ErreurOperation", format!("Mois illisible : {}.", mois)));
+        return Err(erreur(Classe::Refuse, format!("Mois illisible : {}.", mois)));
     }
     // Les lignes du mois ; un signalement porte le mois de son evenement.
     let le_mois = socle::mois::Mois::lire(mois)?;
-    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur("OSError", m))?;
+    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur(Classe::Disque, m))?;
     let recus = etats::contrats_recus(&lignes);
     let avenants = etats::avenants_par_contrat(&lignes);
     let mut envois = Vec::new();

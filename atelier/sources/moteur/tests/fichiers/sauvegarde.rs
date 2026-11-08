@@ -156,7 +156,7 @@ fn copie_de_developpement_refus_avant_tout() {
     ecrire(&r, "COPIE-DE-DEVELOPPEMENT.json", "{}");
     // Sans client donne : le vrai se construit, et refuse une copie de developpement avant tout (pas de reseau, pas d'index).
     let e = sauvegarder(&r, RD, false, None).unwrap_err();
-    assert_eq!(e.classe, "CopieDeDeveloppement");
+    assert_eq!(e.classe, Some(socle::echec::Classe::CopieDeDeveloppement));
     assert!(!r.join("config/.sauvegarde.json").exists());
 }
 

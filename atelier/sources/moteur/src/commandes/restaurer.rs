@@ -23,7 +23,7 @@ pub static SPEC: Spec = Spec {
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let json = args.drapeau("json");
-    let refus = |classe: &str, message: &str| -> i32 {
+    let refus = |classe: Option<socle::echec::Classe>, message: &str| -> i32 {
         if json {
             dire!("{}", serde_json::json!({"ok": false, "erreur": {"type": classe, "message": message}}));
         } else {
@@ -32,10 +32,10 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         2
     };
     if let Err(e) = refuser_si_pas_redirige(cadre, Organisme::Google, "la restauration depuis le Drive") {
-        return refus("ErreurOperation", &e.message);
+        return refus(Some(socle::echec::Classe::Refuse), &e.message);
     }
     if !crate::routes::coffre::autorise(&cadre.racine) {
-        return refus("ErreurGoogle", "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
+        return refus(Some(socle::echec::Classe::Google), "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
     }
     let racine_drive = args.texte("racine-drive").unwrap_or(sauvegarde::RACINE_DRIVE);
     let cible = args.texte("dossier").filter(|d| !d.is_empty()).map(PathBuf::from).unwrap_or_else(|| cadre.racine.clone());

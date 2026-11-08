@@ -10,7 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use socle::echec::{erreur, R};
+use socle::echec::{erreur, Classe, R};
 
 /// Les libelles courts valides de la compagnie, sous sa racine.
 pub const LIBELLES_COURTS: &str = "config/libelles-courts.json";
@@ -108,12 +108,12 @@ pub fn lire(racine: &Path) -> R<LibellesCourts> {
     if !p.exists() {
         return Ok(LibellesCourts::default());
     }
-    socle::forme::lire_fichier(&p, "Les libellés courts de la compagnie ne se lisent pas : les enregistrer à nouveau depuis les Exports.").map_err(|m| erreur("ErreurOperation", m))
+    socle::forme::lire_fichier(&p, "Les libellés courts de la compagnie ne se lisent pas : les enregistrer à nouveau depuis les Exports.").map_err(|m| erreur(Classe::Refuse, m))
 }
 
 /// Ecrit les libelles courts de la compagnie.
 pub fn ecrire(racine: &Path, l: &LibellesCourts) -> R<()> {
-    socle::ecriture::ecrire_json(&racine.join(LIBELLES_COURTS), l, 2).map_err(|m| erreur("OSError", m))
+    socle::ecriture::ecrire_json(&racine.join(LIBELLES_COURTS), l, 2).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// Une valeur trop longue pour sa zone, telle qu'un export l'a rencontree : ce qu'elle est, sa cle, son texte long, la

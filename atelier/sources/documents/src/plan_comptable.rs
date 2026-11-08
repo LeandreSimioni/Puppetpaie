@@ -6,7 +6,7 @@
 //! Un modele de compte individuel qui emploie une forme que ce module ne rend pas -- groupement des milliers avec
 //! zeros
 //! (`{code:010,}`), types flottants (`{code:e}`, `f`, `g`, `%`), methodes ou attributs de `str`/`int` autres que
-//! `real`, `imag`, `numerator`, `denominator` -- est refuse en `ErreurOperation` qui le dit.
+//! `real`, `imag`, `numerator`, `denominator` -- est refuse (`Refuse`) en le disant.
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, HashSet};
@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
 
 // ------------------------------------------------------------------ les tables des exports
@@ -283,11 +283,11 @@ pub fn plan(ctx: &Contexte) -> R<(Plan, &'static str)> {
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
 pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
-        .map_err(|m| erreur("ValueError", m))?;
+        .map_err(|m| erreur(Classe::Illisible, m))?;
     let propre = ctx.racine.join(PLAN_COMPTABLE);
     if propre.exists() {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
-            .map_err(|m| erreur("ValueError", m))?;
+            .map_err(|m| erreur(Classe::Illisible, m))?;
         plan.recouvrir(p);
     }
     Ok(plan)
@@ -352,7 +352,7 @@ pub fn controler_plan(ctx: &Contexte, format: &str) -> R<Vec<String>> {
 }
 
 pub enum Refus {
-    /// Une `ErreurOperation` : `controler_plan` la rend en phrase.
+    /// Un refus `Refuse` : `controler_plan` le rend en phrase.
     Operation(String),
     Autre(Echec),
 }
@@ -370,13 +370,12 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         None => None,
     };
     formater(modele, code, cle, 0).map(Some).map_err(|(classe, message)| {
-        // `compte_du_salarie` ne rattrape que ValueError, KeyError et IndexError ;
-        // le reste (TypeError, AttributeError...) traverse.
+        // `compte_du_salarie` ne rattrape qu'une valeur illisible ou qui manque ; le reste traverse.
         match classe {
-            "ValueError" | "KeyError" | "IndexError" => {}
-            "NonPorte" => {
+            Classe::Illisible | Classe::Manque => {}
+            Classe::FormeNonPortee => {
                 return Refus::Autre(erreur(
-                    "ErreurOperation",
+                    Classe::Refuse,
                     socle::echec::avec(
                         format!(
                             "Le modèle du compte individuel « {} » emploie une forme que le logiciel ne sait pas remplir : l'écrire autrement dans le plan comptable.",
@@ -423,16 +422,15 @@ fn entier_de(t: &str) -> Result<Option<i64>, String> {
 
 // ------------------------------------------------------------- str.format
 
-/// `NonPorte` : une forme que ce module refuse.
-type Faute = (&'static str, String);
+/// `FormeNonPortee` : une forme que ce module refuse.
+type Faute = (Classe, String);
 
 /// `code` est l'entier de la fiche, ou "" s'il
-/// n'en a pas. Refuse, sous la classe de l'erreur (`ValueError`, `KeyError`,
-/// `IndexError`...) et une phrase en francais, en suivant `MarkupIterator_next` et
+/// n'en a pas. Refuse, sous la classe de l'erreur (`Illisible`, `Manque`...) et une phrase en francais, en suivant `MarkupIterator_next` et
 /// `parse_field`.
 fn formater(modele: &str, code: Option<i64>, cle: &str, profondeur: u32) -> Result<String, Faute> {
     if profondeur >= 2 {
-        return Err(("ValueError", "mise en forme imbriquée trop profondément".into()));
+        return Err((Classe::Illisible, "mise en forme imbriquée trop profondément".into()));
     }
     let c: Vec<char> = modele.chars().collect();
     let mut sortie = String::new();
@@ -446,10 +444,10 @@ fn formater(modele: &str, code: Option<i64>, cle: &str, profondeur: u32) -> Resu
             '{' | '}' => {
                 let au_bout = i >= c.len();
                 if x == '}' && (au_bout || c[i] != '}') {
-                    return Err(("ValueError", "« } » seule".into()));
+                    return Err((Classe::Illisible, "« } » seule".into()));
                 }
                 if au_bout && x == '{' {
-                    return Err(("ValueError", "« { » seule".into()));
+                    return Err((Classe::Illisible, "« { » seule".into()));
                 }
                 if c[i] == x {
                     sortie.push(x);
@@ -474,7 +472,7 @@ fn lire_champ(c: &[char], i: &mut usize) -> Result<(String, String, Option<char>
         dernier = c[*i];
         *i += 1;
         match dernier {
-            '{' => return Err(("ValueError", "« { » inattendue dans un nom de champ".into())),
+            '{' => return Err((Classe::Illisible, "« { » inattendue dans un nom de champ".into())),
             '[' => {
                 while *i < c.len() && c[*i] != ']' {
                     *i += 1;
@@ -490,7 +488,7 @@ fn lire_champ(c: &[char], i: &mut usize) -> Result<(String, String, Option<char>
         let mut conversion = None;
         if dernier == '!' {
             if *i >= c.len() {
-                return Err(("ValueError", "conversion inachevée après « ! »".into()));
+                return Err((Classe::Illisible, "conversion inachevée après « ! »".into()));
             }
             conversion = Some(c[*i]);
             *i += 1;
@@ -501,7 +499,7 @@ fn lire_champ(c: &[char], i: &mut usize) -> Result<(String, String, Option<char>
                     return Ok((nom, String::new(), conversion, false));
                 }
                 if x != ':' {
-                    return Err(("ValueError", "« : » attendu après la conversion".into()));
+                    return Err((Classe::Illisible, "« : » attendu après la conversion".into()));
                 }
             }
         }
@@ -524,10 +522,10 @@ fn lire_champ(c: &[char], i: &mut usize) -> Result<(String, String, Option<char>
                 _ => {}
             }
         }
-        return Err(("ValueError", "« { » sans « } » dans la mise en forme".into()));
+        return Err((Classe::Illisible, "« { » sans « } » dans la mise en forme".into()));
     }
     if dernier != '}' {
-        return Err(("ValueError", "« } » attendue avant la fin".into()));
+        return Err((Classe::Illisible, "« } » attendue avant la fin".into()));
     }
     Ok((nom, String::new(), None, false))
 }
@@ -556,14 +554,14 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
     let mut objet = if premier.is_empty() || premier.chars().all(|x| x.is_ascii_digit()) {
         let n = if premier.is_empty() {
             if *auto == Some(false) {
-                return Err(("ValueError", "champs numérotés et non numérotés mêlés".into()));
+                return Err((Classe::Illisible, "champs numérotés et non numérotés mêlés".into()));
             }
             *auto = Some(true);
             *prochain += 1;
             (*prochain - 1).to_string()
         } else {
             if *auto == Some(true) {
-                return Err(("ValueError", "champs numérotés et non numérotés mêlés".into()));
+                return Err((Classe::Illisible, "champs numérotés et non numérotés mêlés".into()));
             }
             *auto = Some(false);
             match premier.trim_start_matches('0') {
@@ -571,7 +569,7 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
                 n => n.to_string(),
             }
         };
-        return Err(("IndexError", format!("champ {{{}}} sans valeur (seuls {{code}} et {{cle}} en ont une)", n)));
+        return Err((Classe::Manque, format!("champ {{{}}} sans valeur (seuls {{code}} et {{cle}} en ont une)", n)));
     } else if premier == "code" {
         match code {
             Some(n) => Objet::Entier(n),
@@ -580,7 +578,7 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
     } else if premier == "cle" {
         Objet::Texte(cle.to_string())
     } else {
-        return Err(("KeyError", format!("champ {} inconnu (seuls code et cle en ont un)", repr(&premier))));
+        return Err((Classe::Manque, format!("champ {} inconnu (seuls code et cle en ont un)", repr(&premier))));
     };
     let mut i = fin_premier;
     while i < c.len() {
@@ -592,18 +590,18 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
             }
             let attribut: String = c[debut..i].iter().collect();
             if attribut.is_empty() {
-                return Err(("ValueError", "attribut vide".into()));
+                return Err((Classe::Illisible, "attribut vide".into()));
             }
             objet = match (&objet, attribut.as_str()) {
                 (Objet::Entier(n), "real") | (Objet::Entier(n), "numerator") => Objet::Entier(*n),
                 (Objet::Entier(_), "imag") => Objet::Entier(0),
                 (Objet::Entier(_), "denominator") => Objet::Entier(1),
-                (Objet::Entier(_), a) if METHODES_ENTIER.contains(&a) => return Err(("NonPorte", format!("l'attribut « {} » d'un entier", a))),
+                (Objet::Entier(_), a) if METHODES_ENTIER.contains(&a) => return Err((Classe::FormeNonPortee, format!("l'attribut « {} » d'un entier", a))),
                 (Objet::Texte(_), a) if METHODES_TEXTE.contains(&a) || a.starts_with("__") => {
-                    return Err(("NonPorte", format!("l'attribut « {} » d'un texte", a)))
+                    return Err((Classe::FormeNonPortee, format!("l'attribut « {} » d'un texte", a)))
                 }
-                (Objet::Entier(_), a) => return Err(("AttributeError", format!("un nombre entier n'a pas d'attribut « {} »", a))),
-                (Objet::Texte(_), a) => return Err(("AttributeError", format!("un texte n'a pas d'attribut « {} »", a))),
+                (Objet::Entier(_), a) => return Err((Classe::Illisible, format!("un nombre entier n'a pas d'attribut « {} »", a))),
+                (Objet::Texte(_), a) => return Err((Classe::Illisible, format!("un texte n'a pas d'attribut « {} »", a))),
             };
         } else {
             // c[i] == '[' : `[indice]`
@@ -613,28 +611,28 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
                 i += 1;
             }
             if i >= c.len() {
-                return Err(("ValueError", "« ] » manquant".into()));
+                return Err((Classe::Illisible, "« ] » manquant".into()));
             }
             let indice: String = c[debut..i].iter().collect();
             i += 1;
             if indice.is_empty() {
-                return Err(("ValueError", "attribut vide".into()));
+                return Err((Classe::Illisible, "attribut vide".into()));
             }
             if i < c.len() && c[i] != '.' && c[i] != '[' {
-                return Err(("ValueError", "seuls « . » ou « [ » suivent « ] »".into()));
+                return Err((Classe::Illisible, "seuls « . » ou « [ » suivent « ] »".into()));
             }
             objet = match &objet {
-                Objet::Entier(_) => return Err(("TypeError", "un nombre entier ne s'indexe pas".into())),
+                Objet::Entier(_) => return Err((Classe::MalFormee, "un nombre entier ne s'indexe pas".into())),
                 Objet::Texte(t) => {
                     if !indice.chars().all(|x| x.is_ascii_digit()) {
-                        return Err(("TypeError", "un texte ne s'indexe que par un nombre".into()));
+                        return Err((Classe::MalFormee, "un texte ne s'indexe que par un nombre".into()));
                     }
                     match indice.parse::<usize>() {
                         Ok(n) => match t.chars().nth(n) {
                             Some(x) => Objet::Texte(x.to_string()),
-                            None => return Err(("IndexError", format!("indice {} hors du texte", indice))),
+                            None => return Err((Classe::Manque, format!("indice {} hors du texte", indice))),
                         },
-                        Err(e) => return Err(("IndexError", format!("indice {} hors du texte ({})", indice, e))),
+                        Err(e) => return Err((Classe::Manque, format!("indice {} hors du texte ({})", indice, e))),
                     }
                 }
             };
@@ -681,7 +679,7 @@ fn remplir(
                 }
             }
         }),
-        Some(x) => return Err(("ValueError", format!("conversion « !{} » inconnue", x))),
+        Some(x) => return Err((Classe::Illisible, format!("conversion « !{} » inconnue", x))),
     };
     let spec = if a_developper { formater(spec, code, cle, profondeur + 1)? } else { spec.to_string() };
     mettre_en_forme(&objet, &spec)
@@ -701,7 +699,7 @@ struct Specification {
 
 fn lire_specification(spec: &str, nom_du_type: &str) -> Result<Specification, Faute> {
     let c: Vec<char> = spec.chars().collect();
-    let invalide = || ("ValueError", format!("mise en forme « {} » invalide pour {}", spec, socle::fichiers::nature(nom_du_type)));
+    let invalide = || (Classe::Illisible, format!("mise en forme « {} » invalide pour {}", spec, socle::fichiers::nature(nom_du_type)));
     let est_align = |x: char| matches!(x, '<' | '>' | '=' | '^');
     let mut s = Specification { remplissage: ' ', alignement: None, signe: None, diese: false, zero: false, largeur: None, groupe: None, precision: None, genre: None };
     let mut i = 0;
@@ -730,7 +728,7 @@ fn lire_specification(spec: &str, nom_du_type: &str) -> Result<Specification, Fa
         i += 1;
     }
     if i > debut {
-        s.largeur = Some(c[debut..i].iter().collect::<String>().parse().map_err(|_| ("ValueError", "nombre trop grand dans la mise en forme".to_string()))?);
+        s.largeur = Some(c[debut..i].iter().collect::<String>().parse().map_err(|_| (Classe::Illisible, "nombre trop grand dans la mise en forme".to_string()))?);
     }
     if i < c.len() && matches!(c[i], ',' | '_') {
         s.groupe = Some(c[i]);
@@ -743,9 +741,9 @@ fn lire_specification(spec: &str, nom_du_type: &str) -> Result<Specification, Fa
             i += 1;
         }
         if i == debut {
-            return Err(("ValueError", "précision manquante après « . »".into()));
+            return Err((Classe::Illisible, "précision manquante après « . »".into()));
         }
-        s.precision = Some(c[debut..i].iter().collect::<String>().parse().map_err(|_| ("ValueError", "nombre trop grand dans la mise en forme".to_string()))?);
+        s.precision = Some(c[debut..i].iter().collect::<String>().parse().map_err(|_| (Classe::Illisible, "nombre trop grand dans la mise en forme".to_string()))?);
     }
     if i < c.len() {
         s.genre = Some(c[i]);
@@ -766,19 +764,19 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
             }
             let s = lire_specification(spec, "str")?;
             if let Some(g) = s.genre.filter(|g| *g != 's') {
-                return Err(("ValueError", format!("type « {} » inconnu pour un texte", g)));
+                return Err((Classe::Illisible, format!("type « {} » inconnu pour un texte", g)));
             }
             if s.signe.is_some() {
-                return Err(("ValueError", "pas de signe pour un texte".into()));
+                return Err((Classe::Illisible, "pas de signe pour un texte".into()));
             }
             if s.diese {
-                return Err(("ValueError", "pas de forme « # » pour un texte".into()));
+                return Err((Classe::Illisible, "pas de forme « # » pour un texte".into()));
             }
             if s.alignement == Some('=') {
-                return Err(("ValueError", "pas d'alignement « = » pour un texte".into()));
+                return Err((Classe::Illisible, "pas d'alignement « = » pour un texte".into()));
             }
             if let Some(g) = s.groupe {
-                return Err(("ValueError", format!("pas de « {} » avec « s »", g)));
+                return Err((Classe::Illisible, format!("pas de « {} » avec « s »", g)));
             }
             let mut texte: String = t.clone();
             if let Some(p) = s.precision {
@@ -802,16 +800,16 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                 None => 'd',
             };
             if matches!(genre, 'e' | 'E' | 'f' | 'F' | 'g' | 'G' | '%') {
-                return Err(("NonPorte", format!("le type « {} » appliqué à un entier", genre)));
+                return Err((Classe::FormeNonPortee, format!("le type « {} » appliqué à un entier", genre)));
             }
             if !matches!(genre, 'd' | 'n' | 'x' | 'X' | 'o' | 'b' | 'c') {
-                return Err(("ValueError", format!("type « {} » inconnu pour un nombre entier", genre)));
+                return Err((Classe::Illisible, format!("type « {} » inconnu pour un nombre entier", genre)));
             }
             if s.precision.is_some() {
-                return Err(("ValueError", "pas de précision pour un nombre entier".into()));
+                return Err((Classe::Illisible, "pas de précision pour un nombre entier".into()));
             }
             if s.groupe.is_some() && (s.zero || s.alignement == Some('=')) {
-                return Err(("NonPorte", "le groupement des milliers avec remplissage de zeros".into()));
+                return Err((Classe::FormeNonPortee, "le groupement des milliers avec remplissage de zeros".into()));
             }
             let negatif = *n < 0;
             let valeur = n.unsigned_abs();
@@ -823,7 +821,7 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                 'c' => {
                     return match u32::try_from(*n).map(char::from_u32) {
                         Ok(Some(x)) => Ok(x.to_string()),
-                        _ => Err(("ValueError", format!("{} n'est pas un caractère (%c)", n))),
+                        _ => Err((Classe::Illisible, format!("{} n'est pas un caractère (%c)", n))),
                     }
                 }
                 _ => valeur.to_string(),

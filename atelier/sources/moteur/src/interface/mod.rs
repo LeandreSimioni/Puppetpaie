@@ -34,6 +34,8 @@ use http::{Reponse, Requete};
 use crate::etat_garde::{Fil, FileDesEtats};
 use veille::Veille;
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
+use socle::echec::Classe;
 
 pub const MINUTES_VEILLE: u64 = 20;
 
@@ -54,36 +56,31 @@ const GARDER: &str = include_str!("pages/garder.html");
 const CALE: &str = r#"<script>
 (function () {
   const JETON = "{{JETON}}";
-  // Une reponse se lit toujours en `{ok, erreur}`, `erreur` en phrase : un corps qui n'est pas du JSON, un
-  // refus en objet ou un serveur parti ne levent pas dans la page.
+  // Une reponse se lit toujours en `{ok, resultat}` ou `{ok: false, refus: {phrase}}`, comme le moteur la rend : un corps
+  // qui n'est pas du JSON ou un serveur parti ne levent pas dans la page.
   const lire = (r) => r.text().then((t) => {
     try { return JSON.parse(t); }
-    catch (e) { return { ok: false, erreur: "PuppetPaie a répondu " + r.status + " sans dire pourquoi." }; }
+    catch (e) { return { ok: false, refus: { phrase: "PuppetPaie a répondu " + r.status + " sans dire pourquoi." } }; }
   });
+  const parti = () => ({ ok: false, refus: { phrase: "PuppetPaie ne répond plus : relancez le logiciel." } });
   const appel = (nom, args) => fetch("/lanceur/" + nom, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Jeton": JETON },
       body: JSON.stringify(args),
-    }).then(lire, () => ({ ok: false, erreur: "PuppetPaie ne répond plus : relancez le logiciel." }))
+    }).then(lire, parti)
       .then((d) => {
-        if (d && d.erreur && typeof d.erreur === "object") d.erreur = d.erreur.message || "Refusé.";
         if (d && d.recharger) location.replace("/");
         return d;
       });
   const api = {};
   for (const nom of {{NOMS}}) api[nom] = (...args) => appel(nom, args);
   window.pywebview = { api };
-  // UNE ROUTE DU CATALOGUE, par la porte de toute la page (`/api/<route>`) : `{ok, resultat}`, ou `{ok: false, erreur}`
-  // avec la phrase du refus.
+  // UNE ROUTE DU CATALOGUE, par la porte de toute la page (`/api/<route>`) : la reponse du moteur, telle quelle.
   window.appel = (nom, charge) => fetch("/api/" + nom, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Jeton": JETON },
       body: JSON.stringify(charge || {}),
-    }).then(lire, () => ({ ok: false, erreur: "PuppetPaie ne répond plus : relancez le logiciel." }))
-      .then((d) => {
-        if (d && d.erreur && typeof d.erreur === "object") d.erreur = d.erreur.message || "Refusé.";
-        return d;
-      });
+    }).then(lire, parti);
   document.addEventListener("DOMContentLoaded", () => window.dispatchEvent(new Event("pywebviewready")));
 })();
 </script>
@@ -283,8 +280,8 @@ fn logo_en_ligne(logo: Option<&str>) -> String {
 
 /// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit.
 fn page_accueil() -> String {
-    let lu = api::route_de_l_installation(Route::Compagnies, &json!({}));
-    let r = &lu["resultat"];
+    let lu = api::route_de_l_installation(Route::Compagnies, &Charge::vide());
+    let r = lu.resultat().unwrap_or(&Value::Null);
     let t = |c: &Value, k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
     let mut tuiles = Vec::new();
     for c in r["compagnies"].as_array().into_iter().flatten() {
@@ -585,7 +582,7 @@ impl Fenetre {
     ///   (`scenario::rendre_simulee`).
     #[cfg(feature = "atelier")]
     fn atelier(&self, geste: &str, charge: &Value) -> Value {
-        let refus = |m: String| json!({"ok": false, "erreur": m});
+        let refus = |m: String| json!({"ok": false, "refus": Refus::nouveau(Classe::Refuse, m)});
         let phase = self.phase();
         let ouverte = match &phase {
             Phase::Ouverte { racine, .. } => Some(racine.clone()),
@@ -661,21 +658,24 @@ impl Fenetre {
     /// avant que les compagnies creees en demo soient gardees ou supprimees, elle lache ce qu'elle en tient (`lacher`) ;
     /// le tableau de l'administrateur se lit, comme l'ecran d'un mois, dans ce que son fil a deja refait (`prechauffer`),
     /// et ne releve les comptes rendus (le reseau, le coffre) qu'une fois le mot de passe de l'administrateur tape ici.
-    fn route_de_l_installation(&self, nom: Route, charge: &Value) -> Value {
+    fn route_de_l_installation(&self, nom: Route, charge: &Charge) -> RouteReponse {
         let inst = compagnies::base();
         if nom == Route::CompagniesGarder {
             for c in suppression::a_garder(&inst) {
                 self.lacher(&c.racine);
             }
         }
-        let vrai = |k: &str| charge.get(k).is_some_and(crate::valeur::vrai);
+        let vrai = |k: &str| charge.brute().get(k).is_some_and(crate::valeur::vrai);
         if nom == Route::AdministrateurTableau && !vrai("garde") && !vrai("relever") {
             if self.administrateur.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
-                return api::route_de_l_installation(nom, &json!({"relever": true}));
+                return match Charge::de(json!({"relever": true})) {
+                    Ok(c) => api::route_de_l_installation(nom, &c),
+                    Err(e) => RouteReponse::de(nom, Err(e)),
+                };
             }
             let rattachees = crate::compagnie::administrateur::rattachees(&inst);
             let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
-            return json!({"ok": true, "resultat": crate::compagnie::administrateur::tableau_de(&inst, par)});
+            return RouteReponse::de(nom, Ok(Rendu::brut(crate::compagnie::administrateur::tableau_de(&inst, par))));
         }
         api::route_de_l_installation(nom, charge)
     }
@@ -684,7 +684,7 @@ impl Fenetre {
     fn lanceur(&self, nom: &str, args: &[Value]) -> Value {
         let a = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("").to_string();
         let ok = |recharger: bool| json!({"ok": true, "recharger": recharger});
-        let refus = |m: String| json!({"ok": false, "erreur": m});
+        let refus = |m: String| json!({"ok": false, "refus": Refus::nouveau(Classe::Refuse, m)});
         match (nom, self.phase()) {
             ("choisir", Phase::Accueil) => match compagnies::racine_choisie(&compagnies::base(), &a(0)).and_then(|r| self.prendre(r)) {
                 Ok(()) => ok(true),
@@ -755,23 +755,15 @@ impl Fenetre {
     pub fn traiter(&self, r: Requete) -> Reponse {
         let texte = |code: u16| Reponse::nouvelle(code, "text/plain; charset=utf-8", Vec::new());
         if r.methode == "POST" {
-            // Les gestes de l'accueil lisent `erreur` en phrase (`err.textContent = r.erreur`) ; les routes de la page,
-            // en objet (`d.erreur.message`). Un refus du serveur parle a chacun sa langue.
-            let geste = r.chemin.starts_with("/lanceur/");
-            let refus = |code: u16, genre: &str, message: String| {
-                let erreur = if geste { json!(message) } else { json!({"type": genre, "message": message}) };
-                Reponse::json(code, &json!({"ok": false, "erreur": erreur}))
-            };
+            // Un refus du serveur, avant toute route ou tout geste, se dit comme le refus d'une route (`refus`), que la page
+            // lit de meme pour un geste de la fenetre.
+            let refus = |code: u16, classe: Classe, message: String| Reponse::json(code, &RouteReponse::refusee(Refus::nouveau(classe, message)).en_json());
             if !self.autorise(&r) {
-                return if geste {
-                    refus(403, "NonAutorise", "Cette page n'est plus reconnue par PuppetPaie (jeton absent) : fermez la fenêtre et relancez le logiciel.".into())
-                } else {
-                    refus(403, "NonAutorise", "jeton absent".into())
-                };
+                return refus(403, Classe::NonAutorise, "Cette page n'est plus reconnue par PuppetPaie (jeton absent) : fermez la fenêtre et relancez le logiciel.".into());
             }
             let charge: Value = match serde_json::from_slice(if r.corps.is_empty() { b"{}" } else { &r.corps }) {
                 Ok(v) => v,
-                Err(e) => return refus(400, "JSONInvalide", e.to_string()),
+                Err(e) => return refus(400, Classe::DemandeIllisible, format!("La demande ne se lit pas : ce n'est pas du JSON ({}).", e)),
             };
             if let Some(nom) = r.chemin.strip_prefix("/lanceur/") {
                 let args = charge.as_array().cloned().unwrap_or_default();
@@ -782,11 +774,15 @@ impl Fenetre {
                 return Reponse::json(200, &self.atelier(nom, &charge));
             }
             if let Some(texte) = r.chemin.strip_prefix("/api/") {
-                // LE NOM DE LA ROUTE SE LIT ICI, UNE FOIS : un nom qui n'est celui d'aucune route se refuse.
-                let Some(nom) = Route::lire(texte) else {
-                    let mut refus = api::Refus::simple("CalculRefuse", crate::routes::catalogue::ROUTE_INCONNUE);
-                    refus.plus.insert("route".into(), json!(texte));
-                    return Reponse::json(200, &api::en_page(Err(refus)));
+                // LE NOM DE LA ROUTE SE LIT ICI, UNE FOIS : un nom qui n'est celui d'aucune route se refuse ; une charge qui
+                // n'est pas un objet aussi.
+                let nom = match crate::routes::enveloppe::route_nommee(texte) {
+                    Ok(n) => n,
+                    Err(e) => return Reponse::json(200, &RouteReponse::refusee(Refus::de(None, e)).en_json()),
+                };
+                let charge = match Charge::de(charge) {
+                    Ok(c) => c,
+                    Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e)).en_json()),
                 };
                 // LA SEULE PORTE DE LA PAGE VERS LE MOTEUR : une route du catalogue. Celle de l'installation se sert a tout
                 // moment ; celle d'une compagnie, quand la compagnie est ouverte -- ou quand elle n'a pas encore de mot de
@@ -799,12 +795,12 @@ impl Fenetre {
                     let debut = Instant::now();
                     let rendu = self.route_de_l_installation(nom, &charge);
                     self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                    return Reponse::json(200, &rendu);
+                    return Reponse::json(200, &rendu.en_json());
                 }
                 let (racine, veille, etats) = match self.phase() {
                     Phase::Ouverte { racine, veille, etats } => (racine, Some(veille), Some(etats)),
                     Phase::MotDePasse { racine, premiere: true } => (racine, None, None),
-                    _ => return Reponse::json(200, &json!({"ok": false, "erreur": {"type": "ErreurOperation", "message": "Aucune compagnie n'est ouverte."}})),
+                    _ => return Reponse::json(200, &RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Aucune compagnie n'est ouverte.")).en_json()),
                 };
                 // LE JOURNAL DE L'INTERFACE note chaque route et sa duree (de quoi mesurer l'ouverture sur le poste) :
                 // l'heure, le nom, les millisecondes, et la classe d'un refus. Jamais la charge : elle peut porter un mot
@@ -820,23 +816,26 @@ impl Fenetre {
                 // (`suppression::route`) ; la fenetre lache d'abord ce qu'elle tient de la compagnie (sa veille, sa file
                 // des etats, son journal), et ne note rien apres dans un dossier qui n'est plus. Un passage de la veille en
                 // cours ecrit dans ce dossier : on attend qu'il finisse.
-                if nom == Route::CompagnieSupprimer && charge.get("confirme").is_some_and(crate::valeur::vrai) {
+                if nom == Route::CompagnieSupprimer && charge.brute().get("confirme").is_some_and(crate::valeur::vrai) {
                     let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
-                        Err(api::Refus::simple("ErreurOperation", "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
+                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
                     } else {
-                        suppression::route(&racine, &charge, &|r| self.lacher(r)).map_err(|m| api::Refus::simple("ErreurOperation", m))
+                        match suppression::route(&racine, charge.brute(), &|r| self.lacher(r)) {
+                            Ok(v) => RouteReponse::de(nom, Ok(Rendu::brut(v))),
+                            Err(m) => RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, m)),
+                        }
                     };
-                    if rendu.is_ok() {
+                    if rendu.est_rendue() {
                         self.ecrire(&format!("Compagnie supprimee : {}.\n", racine.display()));
                     }
-                    return Reponse::json(200, &api::en_page(rendu));
+                    return Reponse::json(200, &rendu.en_json());
                 }
                 let debut = Instant::now();
                 let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                return Reponse::json(200, &rendu);
+                return Reponse::json(200, &rendu.en_json());
             }
-            return Reponse::json(404, &json!({"ok": false, "erreur": {"type": "Inconnue", "message": "route inconnue"}}));
+            return refus(404, Classe::RouteInconnue, "Cette adresse n'est ni une route ni un geste de la fenêtre.".into());
         }
         match r.chemin.as_str() {
             "/" | "/index.html" => {
@@ -929,6 +928,7 @@ impl Fenetre {
         let charge = crate::routes::bulletin::ChargeModele { modele: modele.cle().to_string() };
         let pdf = serde_json::to_value(charge)
             .ok()
+            .and_then(|c| Charge::de(c).ok())
             .and_then(|c| api::route(&racine, Route::BulletinModeleApercu, &c).ok())
             .and_then(|v| crate::routes::lire_charge::<crate::routes::bulletin::ApercuModele>(&v).ok())
             .and_then(|a| socle::base64::lire(&a.pdf).ok());
@@ -974,11 +974,11 @@ impl Fenetre {
 
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a
 /// refuse. Ni la charge ni la reponse : seulement de quoi mesurer.
-pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &Value) -> String {
+pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> String {
     let heure = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
-    let refus = match rendu.get("ok").and_then(Value::as_bool) {
-        Some(true) => String::new(),
-        _ => format!(" refus {}", rendu.pointer("/erreur/type").and_then(Value::as_str).unwrap_or("?")),
+    let refus = match rendu.refus() {
+        None => String::new(),
+        Some(r) => format!(" refus {}", socle::echec::classe_notee(r.classe)),
     };
     format!("{} route {} {} ms{}\n", heure.get(11..).unwrap_or(""), nom, duree.as_millis(), refus)
 }

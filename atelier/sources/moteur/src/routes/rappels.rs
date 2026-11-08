@@ -28,7 +28,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as Refu
 use crate::routes::catalogue::Route;
 use crate::routes::{en_json, lire_charge, Pastille, SansCharge};
 use declarations::demarrage::{Manque, Pose};
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use std::collections::HashMap;
 use crate::routes::catalogue::{Ecran, Place};
 
@@ -37,7 +37,7 @@ use crate::routes::catalogue::{Ecran, Place};
 pub(crate) use socle::echec::Refus;
 pub(crate) type R<T> = Result<T, Refus>;
 
-fn avec_classe(classe: &'static str, message: impl Into<String>) -> Refus {
+fn avec_classe(classe: Classe,message: impl Into<String>) -> Refus {
     Refus { classe: Some(classe), message: message.into() }
 }
 
@@ -76,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[ANNEE, Champ { nom: "continuent", libelle: Affiche::new("Spectacles qui continuent"), forme: Forme::Liste, sens: "les spectacles qui continuent (leurs clés) ; les autres s'archivent", avance: false }],
         exemple: r#"{"annee":2026,"continuent":["le-banc-des-menteurs"]}"#,
         rend: "phrase, archives, continuent, configuration",
-        refus: &[RefusFiche { classe: "ErreurOperation", corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
+        refus: &[RefusFiche { classe: Classe::Refuse, corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -103,7 +103,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"cle":"revue-spectacles:2026"}"#,
         rend: "cle, fait",
-        refus: &[RefusFiche { classe: "ErreurOperation", corriger: "une échéance qui se coche, avec son année" }, FORME],
+        refus: &[RefusFiche { classe: Classe::Refuse, corriger: "une échéance qui se coche, avec son année" }, FORME],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -235,7 +235,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     let actifs = ctx.spectacles_actifs();
     let inconnus: Vec<&str> = garder.iter().map(String::as_str).filter(|g| !actifs.contains(g)).collect();
     if !inconnus.is_empty() {
-        return Err(erreur("ErreurOperation", format!("Spectacle actif inconnu : {}.", inconnus.join(", "))));
+        return Err(erreur(Classe::Refuse, format!("Spectacle actif inconnu : {}.", inconnus.join(", "))));
     }
     let archives: Vec<String> = actifs.iter().filter(|c| !garder.contains(**c)).map(|c| c.to_string()).collect();
     for cle in &archives {
@@ -745,7 +745,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     if cle == REVUE_SPECTACLES && ctx.spectacles.is_empty() {
         return Ok(None);
     }
-    let trop_courte = || avec_classe("IndexError", socle::fichiers::trop_courte("les mois de l'échéance"));
+    let trop_courte = || avec_classe(Classe::Manque, socle::fichiers::trop_courte("les mois de l'échéance"));
     let debut = Mois::nouveau(annee, *e.mois.first().ok_or_else(trop_courte)?)?;
     let dernier = Mois::nouveau(annee, *e.mois.last().ok_or_else(trop_courte)?)?;
     // Ce qui tombait avant l'arrivee de la compagnie ne la concerne pas -- sauf le taux AT/MP de l'annee, sans lequel
@@ -870,7 +870,7 @@ enum FaitPar {
 
 fn echeancier_base() -> socle::echec::R<EcheancierBase> {
     let v = crate::routes::mois::lire_saisie(&socle::fichiers::dossier_du_code().join("echeancier-base.json"))?;
-    socle::forme::lire(&v, "L'échéancier livré avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|m| erreur("ValueError", m))
+    socle::forme::lire(&v, "L'échéancier livré avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|m| erreur(Classe::Illisible, m))
 }
 
 // ------------------------------------------------------ ce que la compagnie a coche
@@ -902,7 +902,7 @@ fn cochees(ctx: &Contexte) -> socle::echec::R<Cochees> {
         return Ok(Cochees::default());
     }
     let v = crate::routes::mois::lire_saisie(&p)?;
-    socle::forme::lire(&v, "Les échéances cochées de la compagnie ne se lisent pas.").map_err(|m| erreur("ValueError", m))
+    socle::forme::lire(&v, "Les échéances cochées de la compagnie ne se lisent pas.").map_err(|m| erreur(Classe::Illisible, m))
 }
 
 /// Coche (ou decoche) une echeance que seule la compagnie peut dire faite : « quoi:AAAA », `quoi` une echeance annuelle
@@ -912,12 +912,12 @@ fn marquer_echeance(ctx: &Contexte, cle: &str, fait: bool, qui: &str) -> socle::
     let base = echeancier_base()?;
     let chiffres = !annee.is_empty() && annee.chars().all(|c| c.is_ascii_digit());
     let Some(e) = base.annuelles.iter().find(|x| x.cle == quoi).filter(|_| chiffres) else {
-        return Err(erreur("ErreurOperation", format!("Echeance inconnue : {}.", socle::fichiers::repr(cle))));
+        return Err(erreur(Classe::Refuse, format!("Echeance inconnue : {}.", socle::fichiers::repr(cle))));
     };
     if e.fait_par != FaitPar::Coche {
         let n: i64 = annee.parse().unwrap_or(0);
         let titre = formater(&e.titre, &[("annee", annee.to_string()), ("annee_precedente", (n - 1).to_string()), ("jour_dsn", String::new())])?;
-        return Err(erreur("ErreurOperation", format!("« {} » ne se coche pas : le logiciel le voit fait quand c'est fait.", titre)));
+        return Err(erreur(Classe::Refuse, format!("« {} » ne se coche pas : le logiciel le voit fait quand c'est fait.", titre)));
     }
     let mut c = cochees(ctx)?;
     if fait {
@@ -953,13 +953,13 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
                     match it.next() {
                         Some('}') => break,
                         Some(x) => nom.push(x),
-                        None => return Err(avec_classe("ValueError", "une accolade ouverte n'est pas fermée avant la fin du texte")),
+                        None => return Err(avec_classe(Classe::Illisible, "une accolade ouverte n'est pas fermée avant la fin du texte")),
                     }
                 }
-                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| avec_classe("KeyError", socle::fichiers::absent(&nom)))?;
+                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| avec_classe(Classe::Manque, socle::fichiers::absent(&nom)))?;
                 out.push_str(&v.1);
             }
-            '}' => return Err(avec_classe("ValueError", "une accolade fermée n'a pas été ouverte")),
+            '}' => return Err(avec_classe(Classe::Illisible, "une accolade fermée n'a pas été ouverte")),
             c => out.push(c),
         }
     }

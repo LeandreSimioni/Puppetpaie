@@ -12,6 +12,7 @@
 //! reseau. `verifier_secret` ouvre les vraies connexions.
 
 use serde_json::{json, Value};
+use socle::echec::Classe;
 
 use crate::compagnie::coffre::{Coffre, CONSULTATION};
 use droit::contexte::Contexte;
@@ -64,16 +65,16 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: Option<&Value>, authentifie
                 Some(Value::String(s)) => format!("Service inconnu : « {} ».", s),
                 _ => "La demande ne nomme pas de service.".to_string(),
             };
-            return Err(erreur("ErreurOperation", format!("{} Connus : {}, {}, {}.", quoi, NET_ENTREPRISES, URSSAF, COURRIEL)));
+            return Err(erreur(Classe::Refuse, format!("{} Connus : {}, {}, {}.", quoi, NET_ENTREPRISES, URSSAF, COURRIEL)));
         }
     };
     let coffre = Coffre::du_poste(&ctx.racine, "");
     if !coffre.disponible(nom).map_err(crate::routes::vers_route)? {
-        return Err(erreur("ErreurOperation", format!("Aucun mot de passe {} : rien à vérifier.", nom)));
+        return Err(erreur(Classe::Refuse, format!("Aucun mot de passe {} : rien à vérifier.", nom)));
     }
     if nom == COURRIEL {
         // La boite : une connexion IMAP, une seule (`courriel.verifier`).
-        let mut verdict = boite(ctx).map_err(|e| erreur("ErreurCourriel", e.0))?;
+        let mut verdict = boite(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
         if let Value::Object(o) = &mut verdict {
             o.insert("service".into(), json!(nom));
         }
@@ -83,7 +84,7 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: Option<&Value>, authentifie
     debug_assert!(CONSULTATION == "consultation");
     match authentifier(ctx, nom, mdp) {
         Ok(()) => Ok(json!({"service": nom, "ok": true, "message": "session ouverte"})),
-        Err(p) if p.classe == "ErreurApi" => {
+        Err(p) if p.classe == Classe::Organisme => {
             let premiere = socle::texte::lignes_du_texte(&p.message).first().copied().unwrap_or("").to_string();
             let conseil = if premiere.contains("422") {
                 "Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le."

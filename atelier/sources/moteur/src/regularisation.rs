@@ -6,6 +6,7 @@
 //! (`produire_regularisations::corrections_dues`).
 
 use std::str::FromStr;
+use socle::echec::Classe;
 
 use serde_json::{json, Map, Value};
 
@@ -20,7 +21,7 @@ use crate::routes::etapes::Moteur;
 
 #[track_caller]
 fn non_regularisable(message: impl Into<String>) -> Echec {
-    erreur("MoisNonRegularisable", message)
+    erreur(Classe::MoisNonRegularisable, message)
 }
 
 // ------------------------------------------------------------------ le mois d'origine
@@ -48,7 +49,7 @@ fn resume(p: &Paie) -> Value {
 }
 
 fn decimal(v: &Value, k: &str) -> R<Decimal> {
-    Decimal::from_str(v[k].as_str().unwrap_or("0")).map_err(|e| erreur("InvalidOperation", e.to_string()))
+    Decimal::from_str(v[k].as_str().unwrap_or("0")).map_err(|e| erreur(Classe::CalculImpossible, e.to_string()))
 }
 
 /// La difference d'activite (cachets, heures) entre deux paies resumees (`resume`), dans `delta` : la page la montre a
@@ -95,19 +96,15 @@ fn phrase_des_dates(mois: &str, declarees: &Bornes, corrigees: &Bornes) -> R<Str
 
 /// Les mois (AAAA-MM) que couvrent des bornes ; sans fin, le seul premier mois.
 fn mois_des_bornes(b: &Bornes) -> R<Vec<String>> {
-    let debut = socle::date::Jour::lire(&b.0).map_err(|m| erreur("ValueError", m))?;
+    let debut = socle::date::Jour::lire(&b.0).map_err(|m| erreur(Classe::Illisible, m))?;
     let fin = match &b.1 {
-        Some(f) => socle::date::Jour::lire(f).map_err(|m| erreur("ValueError", m))?,
+        Some(f) => socle::date::Jour::lire(f).map_err(|m| erreur(Classe::Illisible, m))?,
         None => debut,
     };
     Ok(socle::mois::Mois::entre(&debut, &fin).iter().map(socle::mois::Mois::to_string).collect())
 }
 
 // ------------------------------------------------- modifier la paie d'un mois deja declare
-
-/// La classe du refus de ce qui ne se declare pas apres la limite (`refus_non_declarable`) : la page le dit et recharge
-/// la saisie enregistree.
-pub const CLASSE_NON_DECLARABLE: &str = "ModificationNonDeclarable";
 
 /// `de septembre 2026`, `d'octobre 2026`.
 pub(crate) fn de_mois_en_clair(mois: &str) -> String {

@@ -6,8 +6,8 @@
 //! un evenement. Chaque rubrique ecrite ici est une rubrique que le tableau
 //! des usages admet pour la nature produite. Les refus de la norme
 //! (`SignalementImpossible`) gardent leurs phrases ; les autres refus (fiche
-//! introuvable, valeur absente, usage ou format hors norme) sont des
-//! `ValueError`/`KeyError`, ici `Echec::Autre`.
+//! introuvable, valeur absente, usage ou format hors norme) sont
+//! `Echec::Autre`.
 
 use droit::fiche::Lue as _;
 

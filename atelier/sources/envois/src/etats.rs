@@ -50,12 +50,7 @@ pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero
 // ------------------------------------------------------------------ les etats
 
 pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    let classe = match e.kind() {
-        std::io::ErrorKind::NotFound => "FileNotFoundError",
-        std::io::ErrorKind::PermissionDenied => "PermissionError",
-        _ => "OSError",
-    };
-    erreur(classe, socle::echec::du_disque(p, e))
+    erreur(socle::echec::Classe::du_disque(e), socle::echec::du_disque(p, e))
 }
 
 // ------------------------------------------------------------ les embauches
@@ -1211,7 +1206,7 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
             ajoutes += 1;
         }
     }
-    crate::journal::ranger(racine, rangements).map_err(|m| erreur("OSError", m))?;
+    crate::journal::ranger(racine, rangements).map_err(|m| erreur(socle::echec::Classe::Disque, m))?;
     Ok(ajoutes)
 }
 

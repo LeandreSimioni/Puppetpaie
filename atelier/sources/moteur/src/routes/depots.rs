@@ -20,7 +20,7 @@ use engagement::calcul::Paie;
 use envois::etats;
 use envois::releve_retours;
 use crate::valeur::{en_texte, vrai};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::dossier_du_code;
 use socle::mois::{Graphie, Mois};
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ const ENGAGEMENTS: Champ = Champ { nom: "engagements", libelle: Affiche::new("Em
 const SIGNALEMENT: Champ = Champ { nom: "fichier", libelle: Affiche::new("Signalement"), forme: Forme::Texte, sens: "un signalement écrit, tel que sa route le rend, à la place du mois", avance: true };
 /// L'exemple : la DPAE de novembre, que `depot-apercu` ecrit.
 const DPAE_DE_L_EXEMPLE: &str = r#"{"quoi":"dpae","mois":"2026-11"}"#;
-const ILLISIBLE_FICHIER: Refus = Refus { classe: "FileNotFoundError", corriger: "le signalement : le fichier que sa route a rendu" };
+const ILLISIBLE_FICHIER: Refus = Refus { classe: Classe::FichierAbsent, corriger: "le signalement : le fichier que sa route a rendu" };
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -73,9 +73,9 @@ pub const ROUTES: &[Fiche] = &[
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase, avis (l'encart à montrer après la DSN réelle d'un mois qui a des salariés)",
         refus: &[
-            Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
-            Refus { classe: "RepetitionManquante", corriger: "déposer d'abord ce fichier en test" },
-            Refus { classe: "DsnDejaDeposee", corriger: "rien, ou renvoyer avec forcer si l'annule-et-remplace est voulu" },
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
+            Refus { classe: Classe::RepetitionManquante, corriger: "déposer d'abord ce fichier en test" },
+            Refus { classe: Classe::DsnDejaDeposee, corriger: "rien, ou renvoyer avec forcer si l'annule-et-remplace est voulu" },
             ILLISIBLE_FICHIER,
             OPERATION,
         ],
@@ -352,7 +352,7 @@ fn pastilles_du_test(r: &mut Repetition) {
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 #[track_caller]
@@ -457,7 +457,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     // paie.
     let journal = envois::journal::lu(&ctx.racine).map_err(plain)?;
     let data = engagement::etats::validees_du_mois(ctx, &mois, &journal.departs).map_err(plain)?.map(|(d, _)| d)
-        .ok_or_else(|| erreur("FileNotFoundError", format!("Aucune saisie pour {}.", mois)))?;
+        .ok_or_else(|| erreur(Classe::FichierAbsent, format!("Aucune saisie pour {}.", mois)))?;
     let paies: Vec<Paie> = {
         let engs = engagement::engagements_de_la_saisie(ctx, &data).map_err(plain)?;
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>().map_err(plain)?
@@ -548,7 +548,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let partiel = !marque.is_empty() || crate::compagnie::depart::partie_le(&ctx.racine, &complet)?.is_some();
         let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq) };
         for x in candidats {
-            let contenu = std::fs::read(&x).map_err(|e| erreur("OSError", socle::echec::du_disque(&x, &e)))?;
+            let contenu = std::fs::read(&x).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&x, &e)))?;
             if declarations::dpae::meme_declaration(&latin1(&contenu), &voulu) {
                 pareils.push(x);
             }
@@ -683,7 +683,7 @@ pub(crate) fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcrit
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
     let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("fichier")));
+        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("fichier")));
     };
     if fichier.is_some() {
         return Err(refus(
@@ -850,16 +850,9 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     Ok(BilanDuTest { repetition, incident })
 }
 
-/// L'erreur du disque, sous sa classe (`FileNotFoundError`, `PermissionError`, `OSError`).
+/// L'erreur du disque, sous sa classe (`FichierAbsent`, `Disque`).
 fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    let classe = match (e.kind(), e.raw_os_error()) {
-        (std::io::ErrorKind::NotFound, _) => "FileNotFoundError",
-        (std::io::ErrorKind::PermissionDenied, _) => "PermissionError",
-        (_, Some(20)) => "NotADirectoryError",
-        (_, Some(21)) => "IsADirectoryError",
-        _ => "OSError",
-    };
-    erreur(classe, socle::fichiers::panne_fichier(e, p))
+    erreur(Classe::du_disque(e), socle::fichiers::panne_fichier(e, p))
 }
 
 // ------------------------------------------------------------------ les chemins
@@ -900,7 +893,7 @@ fn existe(t: &str) -> bool {
 /// le texte du chemin, normalisé.
 pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
     if t.chars().all(socle::texte::blanc) {
-        return Err(erreur("FileNotFoundError", "Aucun fichier indique."));
+        return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
     }
     let p = normaliser(t);
     if existe(&p) || p.starts_with('/') {
@@ -929,7 +922,7 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
 /// `read_bytes`, l'erreur du disque sous sa classe.
 fn empreinte_du_fichier(chemin: &str) -> R<String> {
     if chemin.contains('\0') {
-        return Err(erreur("ValueError", "embedded null byte"));
+        return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
     let p = Path::new(chemin);
     let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
@@ -941,7 +934,7 @@ fn empreinte_du_fichier(chemin: &str) -> R<String> {
 /// Le contenu d'un fichier, en octets.
 pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
     if chemin.contains('\0') {
-        return Err(erreur("ValueError", "embedded null byte"));
+        return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
     let p = Path::new(chemin);
     std::fs::read(p).map_err(|e| erreur_io(&e, p))
@@ -1011,8 +1004,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             continue;
         }
         match nir {
-            Value::Array(_) => return Err(erreur("TypeError", socle::fichiers::pas_une_cle("list"))),
-            Value::Object(_) => return Err(erreur("TypeError", socle::fichiers::pas_une_cle("dict"))),
+            Value::Array(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("list"))),
+            Value::Object(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("dict"))),
             Value::String(t) => {
                 par_nir.insert(t.clone(), (cle, s));
             }
@@ -1176,7 +1169,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("fichier")))?,
+        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("fichier")))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;

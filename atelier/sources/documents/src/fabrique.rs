@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::assemblage::{Assemblage, Piece};
 use fabrique_pdf::Description;
-use socle::echec::Refus;
+use socle::echec::{Classe, Refus};
 
 use socle::num::Resultat;
 
@@ -27,7 +27,7 @@ pub fn ecrire(description: &Description, chemin: &Path) -> Resultat<PathBuf> {
 
 /// Le PDF de `description` ecrit a `chemin` ; un refus de la fabrique, sur une ligne, sous la classe `FabriqueRefus`.
 pub fn ecrire_pdf(description: &Description, chemin: &Path) -> socle::echec::R<()> {
-    ecrire(description, chemin).map(|_| ()).map_err(|m| socle::echec::erreur("FabriqueRefus", m.replace('\n', " ").trim().to_string()))
+    ecrire(description, chemin).map(|_| ()).map_err(|m| socle::echec::erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string()))
 }
 
 /// Les octets du PDF de `description`, sans fichier.
@@ -43,7 +43,7 @@ pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, String> {
 // ------------------------------------------------------------------ l'assemblage
 
 /// Des pieces (un PDF, ses pages 0-based ou toutes) fusionnees par la fabrique ;
-/// un refus est une `ErreurOperation`, aucun PDF n'est assemble autrement.
+/// un refus est `Refuse`, aucun PDF n'est assemble autrement.
 pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> Result<Vec<u8>, Refus> {
     let assemblage = Assemblage {
         format: Some(1),
@@ -56,7 +56,7 @@ pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> Result<Vec<u8>
             .collect(),
     };
     let refus = |m: &str| {
-        avec("ErreurOperation", format!(
+        avec(Classe::Refuse, format!(
             "Assemblage impossible : la fabrique de PDF refuse la fusion ({}). Aucun PDF n'est assemblé autrement.",
             m.replace('\n', " ").trim()
         ))
@@ -74,7 +74,7 @@ pub fn fusion_octets(morceaux: &[Vec<u8>], tmp: &Path) -> Result<Vec<u8>, Refus>
     let mut pieces = Vec::new();
     for (i, octets) in morceaux.iter().enumerate() {
         let f = dossier.0.join(format!("piece{}.pdf", i));
-        std::fs::write(&f, octets).map_err(|e| avec("OSError", socle::echec::du_disque(&f, &e)))?;
+        std::fs::write(&f, octets).map_err(|e| avec(Classe::Disque, socle::echec::du_disque(&f, &e)))?;
         pieces.push((f, None));
     }
     fusion_pieces(&pieces)
@@ -87,7 +87,7 @@ impl Temporaire {
     pub fn nouveau_dans(parent: &Path, prefixe: &str) -> Result<Temporaire, Refus> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let p = parent.join(format!("{}-{}-{}", prefixe, std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
-        std::fs::create_dir_all(&p).map_err(|e| avec("OSError", socle::echec::du_disque(&p, &e)))?;
+        std::fs::create_dir_all(&p).map_err(|e| avec(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         Ok(Temporaire(p))
     }
 }
@@ -98,6 +98,6 @@ impl Drop for Temporaire {
     }
 }
 
-fn avec(classe: &'static str, message: impl Into<String>) -> Refus {
+fn avec(classe: Classe, message: impl Into<String>) -> Refus {
     Refus { classe: Some(classe), message: message.into() }
 }

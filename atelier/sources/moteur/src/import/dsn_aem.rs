@@ -259,7 +259,7 @@ pub(crate) fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement:
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les
-/// fichiers ou enregistrements illisibles. Un `InvalidOperation` (un brut qui n'est pas un nombre)
+/// fichiers ou enregistrements illisibles. Un `CalculImpossible` (un brut qui n'est pas un nombre)
 /// n'est pas rattrape.
 pub(crate) fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), socle::echec::Echec> {
     use socle::num::{decimal_lu, entier_lu};
@@ -296,7 +296,7 @@ pub(crate) fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<Strin
             };
             let brut_texte = champ(&l, 659, 668);
             let Some(brut_cts) = decimal_lu(&brut_texte) else {
-                return Err(socle::echec::Echec { classe: Some("InvalidOperation"), message: socle::num::illisible(&brut_texte) });
+                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), message: socle::num::illisible(&brut_texte) });
             };
             let mut brut = brut_cts / socle::num::Decimal::from(100);
             brut = brut.round_dp(2);

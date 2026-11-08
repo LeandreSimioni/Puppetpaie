@@ -19,7 +19,7 @@ use crate::routes::catalogue::Route;
 use crate::routes::engagement::texte_requis;
 use droit::contexte::Contexte;
 use droit::natures::Nature;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::dossier_du_code;
 use documents::marqueurs::{Marqueur, ModeleLu, Valeurs, DE_L_AVENANT, DU_REMPLACEMENT};
 use crate::routes::catalogue::{Ecran, Place};
@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[NATURE, QUOI, Champ { nom: "texte", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "le modèle entier (le format des modèles livrés : TITRE:, ARTICLE:…)", avance: false }],
         exemple: r#"{"nature":"cddu_spectacle","quoi":"avenant","texte":"TITRE: Avenant n° {{avenant.numero}}\n\nMODIFICATION:\nL'article {{modification.numero}} est désormais rédigé ainsi : « {{modification.apres}} »\n\nARTICLE: Le reste\nLe reste du contrat est inchangé.\n"}"#,
         rend: "les modèles, comme modeles-contrat",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le modèle : la mention obligatoire ou le champ que la phrase nomme ; rien n'est posé" }, MANQUE],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le modèle : la mention obligatoire ou le champ que la phrase nomme ; rien n'est posé" }, MANQUE],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 0,
@@ -122,7 +122,7 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
 }
 
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// Les natures dont la compagnie fait les contrats : le contrat d'usage toujours ; celles d'un permanent quand elle en
@@ -183,7 +183,7 @@ fn modeles(ctx: &Contexte) -> R<Value> {
                                "bouton": if a_soi.is_some() { "Modifier le modèle" } else { "Écrire le modèle" },
                                "pastille": {"couleur": crate::routes::couleur_de_l_etat(etat), "mots": mots}}));
         }
-        let mut champs: Vec<Value> = documents::contrat_ecrit::champs_des_modeles(&nat).map_err(|m| erreur("ValueError", m))?.iter().map(socle::ecriture::en_valeur).collect();
+        let mut champs: Vec<Value> = documents::contrat_ecrit::champs_des_modeles(&nat).map_err(|m| erreur(Classe::Illisible, m))?.iter().map(socle::ecriture::en_valeur).collect();
         champs.extend(DU_REMPLACEMENT.iter().map(|c| json!({"marqueur": c.to_string(), "quoi": "le contrat remplacé (bloc ANNULE: seulement)", "obligatoire": false})));
         let champs_titre = format!("Ses champs ({})", champs.len());
         sortie.push(json!({"nature": nat.cle, "libelle": nat.libelle, "nom": nat.nom_du_contrat(), "modeles": pieces, "champs": champs, "champs_titre": champs_titre}));
@@ -200,7 +200,7 @@ fn modeles(ctx: &Contexte) -> R<Value> {
 fn livre(charge: &Value) -> R<Value> {
     let (nat, nom) = nom_du_modele(texte_requis(charge, "nature")?, texte_requis(charge, "quoi")?)?;
     let chemin = dossier_du_code().join("modeles").join(&nom);
-    let texte = std::fs::read_to_string(&chemin).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+    let texte = std::fs::read_to_string(&chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
     let de = if texte_requis(charge, "quoi")? == "avenant" { "de l'avenant" } else { "du contrat" };
     Ok(json!({"nom": nom, "texte": texte, "libelle": format!("{} {}", de, nat.libelle)}))
 }
@@ -246,13 +246,13 @@ fn poser(ctx: &Contexte, charge: &Value) -> R<Value> {
     let texte = texte_requis(charge, "texte")?;
     verifier(&nat, quoi, &nom, texte).map_err(|m| refus(format!("{} Rien n'est posé.", m.trim_end_matches(" Rien n'est écrit."))))?;
     let dossier = ctx.gabarits();
-    std::fs::create_dir_all(&dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
     let cible = dossier.join(&nom);
     if cible.is_file() {
         let ancien = dossier.join(format!("{}.avant", nom));
-        std::fs::rename(&cible, &ancien).map_err(|e| erreur("OSError", socle::echec::du_disque(&cible, &e)))?;
+        std::fs::rename(&cible, &ancien).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&cible, &e)))?;
     }
-    std::fs::write(&cible, texte).map_err(|e| erreur("OSError", socle::echec::du_disque(&cible, &e)))?;
+    std::fs::write(&cible, texte).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&cible, &e)))?;
     modeles(ctx)
 }
 
@@ -261,7 +261,7 @@ fn retirer(ctx: &Contexte, charge: &Value) -> R<Value> {
     let (_, nom) = nom_du_modele(texte_requis(charge, "nature")?, texte_requis(charge, "quoi")?)?;
     if let Some(p) = propre(ctx, &nom) {
         let ancien = ctx.gabarits().join(format!("{}.avant", nom));
-        std::fs::rename(&p, &ancien).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        std::fs::rename(&p, &ancien).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
     }
     modeles(ctx)
 }

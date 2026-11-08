@@ -628,7 +628,7 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
     let rep: Option<Value> = String::from_utf8_lossy(&s.stdout).lines().rev().find_map(|l| serde_json::from_str(l).ok());
     match rep {
         Some(r) if r.get("ok").and_then(Value::as_bool) == Some(true) => Ok(()),
-        Some(r) => Err(format!("il ne lit pas la configuration : {}", r.get("erreur").map(|e| e.to_string()).unwrap_or_default())),
+        Some(r) => Err(format!("il ne lit pas la configuration : {}", r.pointer("/refus/phrase").map(|e| e.to_string()).unwrap_or_default())),
         None => Err(String::from_utf8_lossy(&s.stderr).trim().chars().rev().take(800).collect::<String>().chars().rev().collect()),
     }
 }

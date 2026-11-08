@@ -222,7 +222,7 @@ async function enregistrerDemarrage(liste) {
     }
   } catch (e) {
     if (bouton) bouton.disabled = false;
-    const anomalies = ((e.detail || {}).anomalies || []).filter((a) => a.gravite === "erreur");
+    const anomalies = (((e.detail || {}).a_part || {}).anomalies || []).filter((a) => a.gravite === "erreur");
     dit.textContent = anomalies.length ? anomalies.map((a) => `${a.libelle || a.champ} : ${a.message}`).join(" ; ") : e.message;
     dit.hidden = false;
     await relireEtat();

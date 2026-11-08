@@ -14,6 +14,7 @@
 //! l'horloge).
 
 use std::path::PathBuf;
+use socle::echec::Classe;
 
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
@@ -55,7 +56,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
             ),
         };
         let brut = envois::simulation_courriels::reponse_jouee(adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
-            .map_err(|m| erreur("ValueError", m))?;
+            .map_err(|m| erreur(Classe::Illisible, m))?;
         boite.repondre(&code, brut);
     }
     Ok(boite)
@@ -75,7 +76,7 @@ pub fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> {
 
 #[track_caller]
 fn os(m: String) -> Echec {
-    erreur("OSError", m)
+    erreur(Classe::Disque, m)
 }
 
 /// La boite ou chercher les reponses, quand l'appelant n'en donne pas, selon le branchement de la compagnie
@@ -94,7 +95,7 @@ fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
                 .to_string(),
         ));
     }
-    let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur("ErreurCourriel", e.0))?;
+    let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
     Ok(Ok(Box::new(vrai_client)))
 }
 
@@ -211,8 +212,8 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
                     let charge = crate::routes::contrats::ChargeRecu { mois, salarie: c.salarie.to_string(), debut: jour, numero: c.numero.as_ref().map(|n| n.to_string()), avenant: None, recu: true };
                     crate::routes::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
-                (None, _) => Err(erreur("ErreurOperation", "la demande de signature ne dit pas son mois")),
-                (_, Err(m)) => Err(erreur("ValueError", m)),
+                (None, _) => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),
+                (_, Err(m)) => Err(erreur(Classe::Illisible, m)),
             };
             match note {
                 Ok(_) => notes += 1,

@@ -9,7 +9,7 @@ use serde_json::Value;
 use droit::contexte::Contexte;
 use engagement::carte::{Brouillon, Changements};
 use engagement::stock::Identite;
-use socle::echec::{erreur, Echec, Refus, R};
+use socle::echec::{erreur, Classe, Echec, Refus, R};
 use socle::mois::Mois;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusDit, FORME, MOIS};
@@ -27,9 +27,9 @@ pub(crate) const CHANGEMENTS: Champ = Champ {
     sens: "[{case, valeur}, …], au moins un, appliqués dans l'ordre, tout ou rien (un refus nomme sa case et rien n'est écrit) : chacun une case de la nature de la carte (`natures` de cette fiche : chacune obligatoire ou facultative à la validation, et les motifs d'un CDD ; une case qu'elle n'a pas se refuse), valeur null pour la vider ; {\"case\": \"nature\", \"valeur\": \"cdi\"} change sa nature (les cases des deux natures gardent ce qu'elles disent, les autres naissent vides). Les cases : salarie (la clé de sa fiche), spectacle, debut, fin, motif_recours (un CDD), lignes [{rubrique, et exactement les clés que sa rubrique demande, `rubriques[].cles` de la route etat, null pour une case vide : quantite, taux, heures (par unité : 4 pour des services de 4 h), lieu, dates, planning (facultatifs : absents, ils sont vides) ; base et taux_majoration (un pourcentage) ; montant, genre ; territoire et cases (un repas, une nuitée ; facultatifs ; une autre ligne ne les a pas)}] ; un contrat au mois : les cases de la carte (`cases` de cette fiche, les avancées seulement quand `faits_avances` de la route apercu les nomme) ; sa fin : `cases_de_la_fin` de cette fiche ; les cases que son contrat écrit appelle, et numero (le numéro déjà déclaré en DSN d'un contrat commencé avant PuppetPaie) : `contrat.ecrits` de la route apercu (leur sens : `aides` de la route etat)",
     avance: false,
 };
-pub(crate) const SAISIE_INCOMPLETE: RefusDit = RefusDit { classe: "SaisieIncomplete", corriger: "le fait que la phrase nomme, sur la carte ou la fiche du salarié" };
+pub(crate) const SAISIE_INCOMPLETE: RefusDit = RefusDit { classe: Classe::SaisieIncomplete, corriger: "le fait que la phrase nomme, sur la carte ou la fiche du salarié" };
 const OPERATION: RefusDit = RefusDit {
-    classe: "ErreurOperation",
+    classe: Classe::Refuse,
     corriger: "ce que la phrase dit : un mois importé ou clos, une carte que l'écran ne montre pas, un contrat au mois déjà engagé (sa carte le modifie), une saisie hors de ses bornes",
 };
 
@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[
             SAISIE_INCOMPLETE,
             OPERATION,
-            RefusDit { classe: "ModificationNonDeclarable", corriger: "rien : la norme ne permet plus de déclarer ce changement ; la phrase dit pourquoi" },
+            RefusDit { classe: Classe::ModificationNonDeclarable, corriger: "rien : la norme ne permet plus de déclarer ce changement ; la phrase dit pourquoi" },
             FORME,
         ],
         acte: Acte::Ecrit,
@@ -163,7 +163,7 @@ struct Retrait {
 
 #[track_caller]
 pub(super) fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 pub(super) fn en_echec(r: Refus) -> Echec {
@@ -172,7 +172,7 @@ pub(super) fn en_echec(r: Refus) -> Echec {
 
 /// `charge["cle"]` : un texte requis.
 pub(super) fn texte_requis<'a>(charge: &'a Value, cle: &str) -> R<&'a str> {
-    crate::routes::fiches::exiger(charge, cle)?.as_str().ok_or_else(|| erreur("TypeError", socle::echec::charge(cle, "un texte")))
+    crate::routes::fiches::exiger(charge, cle)?.as_str().ok_or_else(|| erreur(Classe::MalFormee, socle::echec::charge(cle, "un texte")))
 }
 
 /// L'heure de Paris, a la seconde.
@@ -286,7 +286,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
     if let Some(cle) = &e.salarie {
         crate::routes::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
     }
-    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur("OSError", m))?;
+    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
     let phrase = match depuis {
         Some(j) => format!("Engagement modifié. {}", vaut_a_partir_du(&j)),
         None => "Engagement modifié.".to_string(),
@@ -349,7 +349,7 @@ fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement:
     if let Some(devenu) = devenu {
         let mut m = crate::routes::etapes::Moteur::nouveau(ctx);
         if let Some(texte) = crate::regularisation::refus_non_declarable(&mut m, ctx, o, &devenu, &departs)? {
-            return Err(erreur(crate::regularisation::CLASSE_NON_DECLARABLE, texte));
+            return Err(erreur(Classe::ModificationNonDeclarable, texte));
         }
     }
     let v = engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| {

@@ -17,6 +17,7 @@
 //! DECIDER d'un televersement.
 
 use std::collections::BTreeMap;
+use socle::echec::Classe;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -138,9 +139,9 @@ const FICHIER_ILLISIBLE: &str = "fichier illisible sur ce poste";
 pub fn cause_de(e: &ErreurGoogle) -> &'static str {
     if envois::drive::passagere(e) {
         GOOGLE_INDISPONIBLE
-    } else if e.classe == "TimeoutError" || e.message.to_lowercase().contains("timed out") {
+    } else if e.classe == Some(Classe::DelaiDepasse) || e.message.to_lowercase().contains("timed out") {
         GOOGLE_MUET
-    } else if matches!(e.classe, "PermissionError" | "OSError") {
+    } else if e.classe == Some(Classe::Disque) {
         FICHIER_ILLISIBLE
     } else {
         GOOGLE_REFUSE
@@ -377,7 +378,7 @@ fn lire_index(racine: &Path) -> Map<String, Value> {
 }
 
 pub(crate) fn ecrire_index(racine: &Path, index: &Value) -> Result<(), ErreurGoogle> {
-    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle("OSError", e))
+    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, e))
 }
 
 /// `rien_n_a_bouge` : le disque est-il identique au dernier passage ? SANS RESEAU. Taille et date
@@ -577,7 +578,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 // LE FICHIER A DISPARU ENTRE L'INVENTAIRE ET L'ENVOI, et ce n'est pas un incident :
                 // `engagements/avant/` et `config/avant/` ne gardent que les dernieres copies, et
                 // l'interface enregistre a chaque frappe. On ne l'inscrit pas a l'index non plus.
-                Err(e) if e.classe == "FileNotFoundError" => {
+                Err(e) if e.classe == Some(Classe::FichierAbsent) => {
                     resultat.disparus += 1;
                     en_echec.insert(relatif.clone());
                 }

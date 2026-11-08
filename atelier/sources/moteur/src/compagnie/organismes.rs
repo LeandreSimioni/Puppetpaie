@@ -54,7 +54,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"mois":"2026-11","contrats":{"prevoyance_permanents":{"libelle":"PREVOYANCE","organisme":"P0983"},"sante_permanents":{"libelle":"SANTE","organisme":"P0983"}}}"#,
         rend: "ce que organismes-contrats rend",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
+        refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -106,7 +106,7 @@ fn plain(m: impl Into<String>) -> Echec {
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(Some("ErreurOperation"), m)
+    socle::echec::noter_et(Some(socle::echec::Classe::Refuse), m)
 }
 
 fn g<'a>(v: &'a Value, k: &str) -> &'a Value {

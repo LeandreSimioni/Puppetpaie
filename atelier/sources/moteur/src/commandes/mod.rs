@@ -66,10 +66,9 @@ impl Cadre {
     /// Un plantage : une ligne dans le journal des incidents (sa classe et sa nature), puis la phrase seule a l'ecran
     /// (sortie d'erreur), code 1.
     pub fn plantage(&self, e: Echec) -> i32 {
-        let classe = e.classe.unwrap_or("RuntimeError");
-        let nature = crate::compagnie::incidents::nature_de(classe);
+        let nature = crate::compagnie::incidents::nature_de(e.classe);
         let ou = if nature == crate::compagnie::incidents::REFUS { self.commande } else { "" };
-        let _ = crate::compagnie::incidents::depuis_exception(&self.racine, classe, &e.message, Some(nature), ou, json!({"commande": self.commande}), None);
+        let _ = crate::compagnie::incidents::depuis_exception(&self.racine, e.classe,&e.message, Some(nature), ou, json!({"commande": self.commande}), None);
         eprintln!("{}", e.message);
         1
     }

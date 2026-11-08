@@ -14,7 +14,7 @@ use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;
-use socle::echec::{erreur, R};
+use socle::echec::{erreur, Classe, R};
 use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
@@ -29,11 +29,11 @@ pub const AVIS: [&str; 3] = [
 pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf; 2]> {
     let e = &p.engagement;
     let Some(numero) = e.numero.as_deref() else {
-        return Err(erreur("ValueError", "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
+        return Err(erreur(Classe::Illisible, "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
     };
     let Some(fin) = e.fin else {
         return Err(erreur(
-            "ValueError",
+            Classe::Illisible,
             format!("Certificat de travail : le contrat {} n'a pas de date de fin. Il se délivre à l'expiration du contrat (L1234-19).", numero),
         ));
     };
@@ -59,9 +59,9 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-        c.ecrite(k).map(str::to_string).map_err(|m| erreur("KeyError", m))
+        c.ecrite(k).map(str::to_string).map_err(|m| erreur(Classe::Manque, m))
     }
-    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur("KeyError", m))?;
+    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur(Classe::Manque, m))?;
     let aujourdhui = date.jj_mm_aaaa();
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -76,7 +76,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::EmployeurSignataire, format!("{} {}", ecrite(&sig.prenom, "prenom")?, ecrite(&sig.nom, "nom")?));
     poser(Marqueur::EmployeurSignataireFonction, ecrite(&sig.fonction, "fonction")?);
     poser(Marqueur::SalarieNomComplet, format!("{} {}", ecrite(&s.prenom, "prenom")?, ecrite(&s.nom, "nom")?));
-    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur("KeyError", m))?.jj_mm_aaaa());
+    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur(Classe::Manque, m))?.jj_mm_aaaa());
     poser(Marqueur::SalarieLieuNaissance, ecrite(&s.lieu_naissance, "lieu_naissance")?);
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
@@ -85,7 +85,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
-    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur("ValueError", m))?.libelle.clone());
+    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur(Classe::Illisible, m))?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());
     poser(Marqueur::RecuDate, aujourdhui);
     Ok(m)
@@ -115,6 +115,6 @@ fn ecrire_papier(modele: &Path, valeurs: Valeurs, chemin: &Path, ent: &droit::co
         un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }
     let d = crate::contrat::enveloppe(Style::Attestation, ent, vec![Document::Modele(un)]);
-    crate::fabrique::ecrire(&d, chemin).map_err(|m| erreur("FabriqueRefus", m.replace('\n', " ").trim().to_string()))?;
+    crate::fabrique::ecrire(&d, chemin).map_err(|m| erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string()))?;
     Ok(())
 }

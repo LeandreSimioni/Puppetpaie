@@ -6,7 +6,7 @@
 use serde::de::IgnoredAny;
 use serde::Deserialize;
 
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 
 use crate::transport::{envoyer, Panne, Requete};
 
@@ -143,7 +143,7 @@ pub fn traduire(code: u16, corps: &str) -> String {
 
 /// Une panne du transport : `Ok(phrase)` pour un statut de Google (traduit) ou un reseau injoignable,
 /// `Err((classe, message))` pour une panne brute (delai depasse, connexion fermee, corps illisible...).
-pub fn phrase_de_panne(p: Panne) -> Result<String, (&'static str, String)> {
+pub fn phrase_de_panne(p: Panne) -> Result<String, (Classe, String)> {
     match p {
         Panne::Statut { code, corps } => {
             let corps = corps.map_err(|p| brute(*p))?;
@@ -157,11 +157,11 @@ pub fn phrase_de_panne(p: Panne) -> Result<String, (&'static str, String)> {
 }
 
 /// Une panne brute (`Panne::Brute`) : sa classe et son message ; une autre se dit par sa phrase.
-fn brute(p: Panne) -> (&'static str, String) {
+fn brute(p: Panne) -> (Classe, String) {
     match p {
         Panne::Brute { classe, message, .. } => (classe, message),
-        Panne::Reseau(raison) => ("URLError", format!("Reseau injoignable : {}", raison)),
-        Panne::Statut { code, .. } => ("HTTPError", format!("HTTP {}", code)),
+        Panne::Reseau(raison) => (Classe::Reseau, format!("Reseau injoignable : {}", raison)),
+        Panne::Statut { code, .. } => (Classe::Reseau, format!("HTTP {}", code)),
     }
 }
 

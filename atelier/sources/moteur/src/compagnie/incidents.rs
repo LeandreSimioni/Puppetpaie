@@ -32,7 +32,7 @@ use crate::compagnie::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
 use crate::valeur::{get, nom_type, valeur_en_texte, valeurs_egales, vrai};
 use socle::echec::R;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::fichiers::dossier_du_code;
 use regex::Regex;
 use socle::verrou::Verrou;
@@ -367,35 +367,32 @@ fn ecart_secondes(a: &str, b: &str) -> Option<i64> {
     Some(secondes(b)? - secondes(a)?)
 }
 
-/// Les classes qui disent un refus, pas un defaut (`nature_de`) : une
-/// `ErreurOperation` et ses filles, `KeyError`, `ValueError`,
-/// `FileNotFoundError` et leurs filles.
-// `ErreurCoffre` et `ErreurGoogle` y sont : un coffre ferme ou un refus de Google est une situation d'usage, pas un
-// defaut du logiciel.
-const REFUS_PAR_CLASSE: [&str; 18] = [
-    "ErreurOperation", "SaisieIncomplete", "PreuveInsuffisante", "CalculRefuse", "FabriqueRefus", "FicheRefusee",
-    "DsnDejaDeposee", "RepetitionManquante", "VersionExigee", "CompteursVerrouilles",
-    "KeyError", "ValueError", "FileNotFoundError", "UnicodeDecodeError", "JSONDecodeError",
-    "ErreurCoffre", "ErreurGoogle", "ModificationNonDeclarable",
+/// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
+/// situation d'usage, pas un defaut du logiciel.
+const REFUS_PAR_CLASSE: [Classe; 17] = [
+    Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FabriqueRefus, Classe::FicheRefusee,
+    Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::VersionExigee, Classe::CompteursVerrouilles,
+    Classe::Manque, Classe::Illisible, Classe::MalFormee, Classe::FichierAbsent, Classe::RouteInconnue,
+    Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable,
 ];
 
-/// `nature_de` d'apres le NOM de la classe de l'exception.
-pub fn nature_de(classe: &str) -> &'static str {
-    if REFUS_PAR_CLASSE.contains(&classe) {
-        REFUS
-    } else {
-        LOGICIEL
+/// La nature d'un refus d'apres sa classe : un refus d'usage, ou un defaut du logiciel (un refus sans classe aussi).
+pub fn nature_de(classe: Option<Classe>) -> &'static str {
+    match classe {
+        Some(c) if REFUS_PAR_CLASSE.contains(&c) => REFUS,
+        _ => LOGICIEL,
     }
 }
 
-/// `depuis_exception` : note une exception (son type, l'endroit, sa trace).
-/// `nature` absente : elle se deduit du type. Les copies de developpement ne
+/// `depuis_exception` : note un refus (sa classe, l'endroit, sa trace).
+/// `nature` absente : elle se deduit de la classe. Les copies de developpement ne
 /// notent rien (« rien ne part d'ici », le moteur tient sa porte).
-pub fn depuis_exception(racine: &Path, classe: &str, message: &str, nature: Option<&str>, ou: &str, detail: Value, trace: Option<&str>) -> Option<Value> {
-    if classe == "CopieDeDeveloppement" || classe == "EditionBridee" || classe == crate::compagnie::bridage::CLASSE_REFUS_D_ENVOI {
+pub fn depuis_exception(racine: &Path, classe: Option<Classe>, message: &str, nature: Option<&str>, ou: &str, detail: Value, trace: Option<&str>) -> Option<Value> {
+    if matches!(classe, Some(Classe::CopieDeDeveloppement | Classe::EditionBridee | Classe::EnvoiBride)) {
         return None;
     }
     let nature = nature.unwrap_or_else(|| nature_de(classe));
+    let classe = socle::echec::classe_notee(classe);
     noter(
         racine,
         &Note {
@@ -413,7 +410,7 @@ pub fn depuis_exception(racine: &Path, classe: &str, message: &str, nature: Opti
 /// UN RECALCUL QUE LE MOTEUR REFUSE A LA LECTURE D'UN ENGAGEMENT VALIDE (`engagement::etats::du_mois`) : l'engagement garde
 /// sa paie validee, l'utilisateur n'en voit rien, et l'editeur le recoit comme un incident.
 fn recalcul_refuse(racine: &Path, mois: &str, refus: &str) {
-    let _ = depuis_exception(racine, "RecalculRefuse", refus, None, "engagement::etats::du_mois", serde_json::json!({ "mois": mois }), None);
+    let _ = depuis_exception(racine, Some(Classe::RecalculRefuse), refus, None, "engagement::etats::du_mois", serde_json::json!({ "mois": mois }), None);
 }
 
 /// Branche l'engagement sur ce qui l'entoure, a l'entree de toute commande du moteur : le temoin des recalculs refuses
@@ -529,7 +526,7 @@ pub fn depuis_navigateur(racine: &Path, rapport: &Value) -> Option<Value> {
 // ------------------------------------------------------------------------- lire
 
 /// `lire` : les lignes, les plus recentes en dernier. Une ligne qui n'est pas
-/// un objet leve `AttributeError`, comme `l.get`.
+/// un objet se refuse (`Illisible`).
 pub fn lire(racine: &Path, nature: Option<&str>, en_attente_seulement: bool) -> R<Vec<Value>> {
     let mut out = lignes(&chemin(racine));
     if let Some(n) = nature.filter(|n| !n.is_empty()) {
@@ -812,7 +809,7 @@ pub fn regler_envoi(racine: &Path, actif: bool) -> R<()> {
         _ => Map::new(),
     };
     d.insert("envoi".into(), Value::Bool(actif));
-    ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur("OSError", m))
+    ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// Un numero de poste tel que le serveur les donne : 32 hexadecimaux.
@@ -871,7 +868,7 @@ pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet
             d.insert("poste".into(), json!(n));
             d.insert("cle".into(), json!(c));
             d.insert("serveur".into(), json!(serveur));
-            ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur("OSError", m))?;
+            ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur(Classe::Disque, m))?;
             (n, c)
         }
     };
@@ -955,7 +952,7 @@ fn marquer(racine: &Path, cles: &[(Value, Value)]) -> R<usize> {
         }
     }
     if n > 0 {
-        ecrire_json(&p, &Value::Array(toutes), 2).map_err(|m| erreur("OSError", m))?;
+        ecrire_json(&p, &Value::Array(toutes), 2).map_err(|m| erreur(Classe::Disque, m))?;
     }
     Ok(n)
 }
@@ -966,7 +963,7 @@ fn concatener(a: &Value, b: &Value) -> R<Vec<Value>> {
     let (a, b) = (if vrai(a) { a } else { &vide }, if vrai(b) { b } else { &vide });
     match (a, b) {
         (Value::Array(x), Value::Array(y)) => Ok(x.iter().chain(y).cloned().collect()),
-        (Value::Array(_), autre) | (autre, _) => Err(erreur("TypeError", format!("'recus' et 'ecartes' : {}", socle::fichiers::attendu("une liste", nom_type(autre))))),
+        (Value::Array(_), autre) | (autre, _) => Err(erreur(Classe::MalFormee, format!("'recus' et 'ecartes' : {}", socle::fichiers::attendu("une liste", nom_type(autre))))),
     }
 }
 

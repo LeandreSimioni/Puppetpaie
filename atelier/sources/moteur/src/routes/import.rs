@@ -20,7 +20,7 @@ use crate::import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Im
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use crate::valeur::{valeur_en_texte, vrai};
 use crate::routes::catalogue::{Ecran, Place};
 
@@ -51,7 +51,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[DOSSIER],
         exemple: r#"{}"#,
         rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -63,7 +63,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[DOSSIER],
         exemple: r#"{}"#,
         rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -83,7 +83,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"salarie":"TARTEMPION","nature":"cdi"}"#,
         rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -135,7 +135,7 @@ pub(crate) fn dossier_import(ctx: &Contexte, charge: &Value) -> R<PathBuf> {
             && p.parent().and_then(|x| x.canonicalize().ok()).is_some_and(|x| ctx.racine.canonicalize().is_ok_and(|r| r == x))
     };
     if la_boite(&d) && !d.exists() {
-        std::fs::create_dir_all(&d).map_err(|e| erreur("OSError", socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(&d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
     }
     Ok(d)
 }

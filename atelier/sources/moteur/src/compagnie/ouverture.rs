@@ -423,7 +423,7 @@ fn passer_la_version(ctx: &Contexte) -> R<()> {
     dire_l_etape(ctx, "Nouvelle version : relecture des mois finis…");
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     engagement::etats::corriger_les_mois_finis(ctx, &departs)?;
-    socle::ecriture::ecrire_json(&p, &json!({"version": marque}), 1).map_err(|m| socle::echec::erreur("OSError", m))?;
+    socle::ecriture::ecrire_json(&p, &json!({"version": marque}), 1).map_err(|m| socle::echec::erreur(socle::echec::Classe::Disque, m))?;
     Ok(())
 }
 

@@ -26,7 +26,7 @@ use crate::routes::catalogue::Route;
 use droit::contexte::Contexte;
 use super::vers_route;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
 use crate::valeur::{nom_type, valeur_en_texte, vrai};
 use crate::routes::catalogue::{Ecran, Place};
@@ -34,7 +34,7 @@ use crate::routes::catalogue::{Ecran, Place};
 const SERVICE: Champ = Champ { nom: "service", libelle: Affiche::new("Service"), forme: Forme::Texte, sens: "net-entreprises, urssaf ou courriel", avance: false };
 const MOT_DE_PASSE: Champ = Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain", avance: false };
 const ADMINISTRATEUR: Champ = Champ { nom: "administrateur", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur, tapé dans la page ; par moteur route, le moteur le demande à un humain", avance: false };
-const PREUVE: Refus = Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };
+const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };
 const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs";
 
 /// Les secrets qu'une charge de ce module peut porter, retires de celle qui arrive par `moteur route` (le mot de passe
@@ -109,7 +109,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[SERVICE],
         exemple: r#"{"service":"urssaf"}"#,
         rend: "service, ok, message (la première ligne de l'erreur), conseil, pastille",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "poser d'abord le mot de passe de ce service" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "poser d'abord le mot de passe de ce service" }],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -161,7 +161,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MOT_DE_PASSE],
         exemple: r#"{}"#,
         rend: "compte : l'adresse du compte Google lié ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
-        refus: &[PREUVE, Refus { classe: "ErreurOperation", corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
+        refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -337,7 +337,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: &Value, poste: &Poste) 
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un
@@ -355,14 +355,14 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: &Value, quoi: &str)
         return match crate::compagnie::demande::autoriser_acte(racine, &acte) {
             crate::compagnie::demande::Verdict::Accepte => Ok(()),
             crate::compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(
-                "PreuveInsuffisante",
+                Classe::PreuveInsuffisante,
                 format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, phrase.replace("Rien n'est parti", "Rien n'a ete modifie")),
             )),
         };
     }
     let mdp = valeur_en_texte(motdepasse);
     if !coffre.verifier_ouverture(&mdp).map_err(vers)? {
-        return Err(erreur("PreuveInsuffisante", "Mot de passe du logiciel refuse. Rien n'a ete modifie."));
+        return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'a ete modifie."));
     }
     Ok(())
 }
@@ -372,10 +372,10 @@ fn optionnel<'a>(charge: &'a Value, cle: &str) -> &'a Value {
     charge.get(cle).unwrap_or(&Value::Null)
 }
 
-/// Le refus du coffre : `ErreurCoffre` se rend `ErreurOperation` (la page le montre tel quel), tout le reste
-/// (`OSError`...) garde sa classe.
+/// Le refus du coffre : `Coffre` se rend `Refuse` (la page le montre tel quel), tout le reste (`Disque`...) garde
+/// sa classe.
 fn en_operation(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(if x.classe == "ErreurCoffre" { "ErreurOperation" } else { x.classe }), message: x.message }
+    Echec { classe: Some(if x.classe == Classe::Coffre { Classe::Refuse } else { x.classe }), message: x.message }
 }
 
 /// Le refus du coffre tel quel (`coffre.oublier_ouverture` ne l'attrapait pas).
@@ -582,7 +582,7 @@ fn google_oublier(ctx: &Contexte, charge: &Value) -> R<Value> {
     let p = ctx.racine.join(JETON_GOOGLE);
     let efface = p.exists();
     if efface {
-        std::fs::remove_file(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        std::fs::remove_file(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
     }
     Ok(json!({ "efface": efface }))
 }
@@ -612,7 +612,7 @@ fn config(racine: &Path) -> PathBuf {
 /// `ErreurGoogle` : la phrase est ecrite pour etre lue.
 #[track_caller]
 fn erreur_google(message: impl Into<String>) -> Echec {
-    erreur("ErreurGoogle", message)
+    erreur(Classe::Google, message)
 }
 
 /// `(j or {}).get(cle)` : `Null` pour un jeton vide.
@@ -622,7 +622,7 @@ fn champ(j: &Value, cle: &str) -> R<Value> {
     }
     match j {
         Value::Object(o) => Ok(o.get(cle).cloned().unwrap_or(Value::Null)),
-        autre => Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(autre)))),
+        autre => Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(autre)))),
     }
 }
 
@@ -651,7 +651,7 @@ fn rafraichissement_dit(racine: &Path) -> Result<Option<String>, String> {
 pub(crate) fn identifiants(racine: &Path) -> R<(Value, Value, String)> {
     let p = config(racine).join(FICHIER_IDENTIFIANTS);
     if p.exists() {
-        // Un `google.json` illisible est un refus, pas un plantage (`JSONDecodeError`, `UnicodeDecodeError`, `AttributeError`).
+        // Un `google.json` illisible est un refus, pas un plantage (`Illisible`).
         let illisible = |raison: String| erreur_google(format!("{} est illisible : {}.\nLe corriger, ou le supprimer pour revenir a l'application du logiciel.", p.display(), raison));
         let octets = std::fs::read(&p).map_err(|e| illisible(e.to_string()))?;
         let texte = String::from_utf8(octets).map_err(|e| illisible(e.to_string()))?;
@@ -704,8 +704,8 @@ pub(crate) fn autorise(racine: &Path) -> bool {
 }
 
 /// Le contenu du jeton, `Null` s'il n'y en a pas.
-/// `Err` : ce que `autorise` et ses voisins rattrapent (`ErreurGoogle`,
-/// `ValueError`) -- le coffre qui refuse, un JSON illisible.
+/// `Err` : ce que `autorise` et ses voisins rattrapent (`Google`,
+/// `Illisible`) -- le coffre qui refuse, un JSON illisible.
 fn lire_jeton(racine: &Path) -> Result<Value, ()> {
     lire_jeton_dit(racine).map_err(|_| ())
 }
@@ -718,8 +718,7 @@ pub(crate) fn lire_jeton_dit(racine: &Path) -> Result<Value, String> {
     if !p.exists() {
         return Ok(Value::Null);
     }
-    // Une lecture impossible (droits) levait une OSError que rien ne
-    // rattrapait ; elle se range ici avec les refus du coffre : l'etat se lit.
+    // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
     let brut = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e))?;
     let clair = crate::compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
         format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", e.message)
@@ -783,12 +782,12 @@ fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, charge: &Value) -> R<Value> {
     exiger_mot_de_passe(&ctx.racine, optionnel(charge, "motdepasse"), "lier le compte Google")?;
-    let (id, secret, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some("ErreurOperation"), message: e.message })?;
+    let (id, secret, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         let _ = crate::interface::poste::ouvrir_adresse(u);
     };
-    let application = application_de(&id, &secret).map_err(|e| Echec { classe: Some("ErreurOperation"), message: e.message })?;
+    let application = application_de(&id, &secret).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
     let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
     Ok(json!({"compte": sceller_le_jeton(&ctx.racine, &jeton)?}))
 }
@@ -817,7 +816,7 @@ fn courtes<'a>(ps: impl IntoIterator<Item = &'a Value>) -> R<Vec<Value>> {
     ps.into_iter()
         .map(|p| match p {
             Value::String(s) => Ok(json!(s.rsplit('/').next().unwrap_or(s))),
-            autre => Err(erreur("AttributeError", socle::fichiers::attendu("un texte", nom_type(autre)))),
+            autre => Err(erreur(Classe::Illisible, socle::fichiers::attendu("un texte", nom_type(autre)))),
         })
         .collect()
 }
@@ -828,7 +827,7 @@ fn liste(v: &Value) -> R<Vec<Value>> {
         Value::Array(a) => Ok(a.clone()),
         Value::String(s) => Ok(s.chars().map(|c| json!(c.to_string())).collect()),
         Value::Object(o) => Ok(o.keys().map(|k| json!(k)).collect()),
-        autre => Err(erreur("TypeError", socle::fichiers::attendu("une liste", nom_type(autre)))),
+        autre => Err(erreur(Classe::MalFormee, socle::fichiers::attendu("une liste", nom_type(autre)))),
     }
 }
 
@@ -837,7 +836,7 @@ fn liste(v: &Value) -> R<Vec<Value>> {
 pub(crate) fn refus_de_copie(racine: &Path) -> Option<Echec> {
     Path::new(racine).join(MARQUEUR_COPIE).is_file().then(|| {
         erreur(
-            "CopieDeDeveloppement",
+            Classe::CopieDeDeveloppement,
             "Copie de developpement : la sauvegarde ou l'archivage Drive ne part jamais d'ici. Les essais se font en \
              test ; pour le faire en vrai, ouvrir la vraie compagnie.",
         )

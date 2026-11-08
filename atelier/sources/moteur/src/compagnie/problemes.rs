@@ -16,6 +16,7 @@
 //! le modele des incidents (`en-attente`, `depose`).
 
 use std::path::{Path, PathBuf};
+use socle::echec::Classe;
 
 use serde_json::{json, Value};
 
@@ -42,7 +43,7 @@ fn tete(s: &str, n: usize) -> String {
 }
 
 fn valeur_erreur(m: &str) -> socle::echec::Echec {
-    erreur("ValueError", m)
+    erreur(Classe::Illisible, m)
 }
 
 /// Le base64 d'une capture, lu strictement : seulement des caracteres de
@@ -148,7 +149,7 @@ fn corps_signalement(racine: &Path, texte: &Value, ecran: &Value, captures: &[Va
     let texte = match texte {
         Value::String(s) => s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)).to_string(),
         t if !vrai(t) => String::new(),
-        t => return Err(erreur("AttributeError", socle::fichiers::attendu("un texte", nom_type(t)))),
+        t => return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un texte", nom_type(t)))),
     };
     if texte.is_empty() {
         return Err(valeur_erreur("Écrivez votre message avant d'envoyer."));
@@ -234,8 +235,8 @@ fn ecrire_entier(p: &Path, v: &Value) -> R<()> {
     let mut nom = p.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     nom.push(".ecriture");
     let provisoire = p.with_file_name(nom);
-    ecrire_json(&provisoire, v, 2).map_err(|m| erreur("OSError", m))?;
-    std::fs::rename(&provisoire, p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))
+    ecrire_json(&provisoire, v, 2).map_err(|m| erreur(Classe::Disque, m))?;
+    std::fs::rename(&provisoire, p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))
 }
 
 /// `signalements` : ceux faits depuis ce poste, du plus recent au plus ancien, chacun avec ce que la page en dit :
@@ -273,11 +274,11 @@ fn en_ordre_strict(racine: &Path) -> R<Vec<Value>> {
     let octets = match std::fs::read(&p) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&p, &e))),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&p, &e))),
     };
     match String::from_utf8(octets).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
         Some(Value::Array(a)) => Ok(a),
-        _ => Err(erreur("ErreurOperation", socle::echec::avec("Un fichier de la compagnie est illisible : rien n'y est écrit, pour ne rien perdre de ce qu'il garde.", serde_json::json!({"chemin": p.to_string_lossy()})))),
+        _ => Err(erreur(Classe::Refuse, socle::echec::avec("Un fichier de la compagnie est illisible : rien n'y est écrit, pour ne rien perdre de ce qu'il garde.", serde_json::json!({"chemin": p.to_string_lossy()})))),
     }
 }
 
@@ -299,12 +300,12 @@ fn id_de(l: &Value) -> Option<&str> {
 fn verrouiller(racine: &Path) -> R<Result<Verrou, ()>> {
     let p = chemin_signalements(racine).with_file_name(".signalements.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur("OSError", socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
     }
     let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::maintenant());
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur("OSError", m))? {
+        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
             Ok(v) => return Ok(Ok(v)),
             Err(_) if std::time::Instant::now() >= fin => return Ok(Err(())),
             Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
@@ -327,7 +328,7 @@ fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Value>) -> R<(T, bool)>) -
 /// Un identifiant de message, propre au poste : l'heure et six octets tires au hasard. Il nomme son fichier d'attente.
 fn nouvel_id() -> R<String> {
     let mut alea = [0u8; 6];
-    socle::temps::aleas(&mut alea).map_err(|e| erreur("OSError", e))?;
+    socle::temps::aleas(&mut alea).map_err(|e| erreur(Classe::Disque, e))?;
     let heure: String = socle::paris::maintenant().chars().filter(char::is_ascii_alphanumeric).collect();
     Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
 }
@@ -383,7 +384,7 @@ pub fn envoyer(racine: &Path, texte: &Value, ecran: &Value, captures: &[Value]) 
     match ecrit {
         Ok(Some(Some(existant))) => Ok(json!({"id": existant, "deja": true, "signalements": signalements(racine)})),
         Ok(Some(None)) => Ok(json!({"id": id, "deja": false, "signalements": signalements(racine)})),
-        Ok(None) => Err(erreur("ErreurOperation", "La boîte des messages est occupée : réessayez dans un instant. Rien n'est enregistré.")),
+        Ok(None) => Err(erreur(Classe::Refuse, "La boîte des messages est occupée : réessayez dans un instant. Rien n'est enregistré.")),
         Err(e) => {
             let _ = std::fs::remove_file(&fichier);
             Err(e)
@@ -427,10 +428,10 @@ pub fn partir(racine: &Path) -> Value {
 fn passage(racine: &Path) -> R<Value> {
     let p = chemin_signalements(racine).with_file_name(".signalements-envoi.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur("OSError", socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
     }
     let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::maintenant());
-    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur("OSError", m))? {
+    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
         Ok(v) => v,
         Err(_) => return Ok(bilan(0, en_ordre(racine).iter().filter(|l| en_attente(l)).count(), "", true)),
     };
@@ -527,7 +528,7 @@ fn marquer_arrive(racine: &Path, id: &str, r: &Value) -> R<()> {
     })?;
     // La boite est restee occupee dix secondes : le message est parti, mais sa ligne le dirait en attente et la veille le
     // renverrait. On le dit, sans rien effacer.
-    fait.ok_or_else(|| erreur("ErreurOperation", format!("Le message {} est parti, mais la boîte des messages est restée occupée : il n'a pas pu être noté.", id)))
+    fait.ok_or_else(|| erreur(Classe::Refuse, format!("Le message {} est parti, mais la boîte des messages est restée occupée : il n'a pas pu être noté.", id)))
 }
 
 fn noter_raison(racine: &Path, ids: &[String], raison: &str) -> R<()> {

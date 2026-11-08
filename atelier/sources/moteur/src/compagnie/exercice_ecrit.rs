@@ -10,10 +10,11 @@
 //!   octets COMPRESSES (donc l'empreinte et la taille de l'archive) dependent du compresseur, et l'empreinte rendue
 //!   est celle de l'archive que ce programme a reellement ecrite.
 //!
-//! Un refus de l'export pendant la cloture (une `ErreurOperation`, dont les refus du calcul) n'arrete pas la
+//! Un refus de l'export pendant la cloture (un refus metier, `Refuse`, dont les refus du calcul) n'arrete pas la
 //! cloture : il est rendu dans `manques`, et l'archive part sans export.
 
 use std::collections::BTreeMap;
+use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -32,17 +33,17 @@ use crate::routes::rappels::mois_de_l_annee;
 type R<T> = Result<T, Echec>;
 
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 fn en_os(e: &std::io::Error, p: &Path) -> Echec {
-    erreur("OSError", socle::echec::du_disque(p, e))
+    erreur(Classe::Disque, socle::echec::du_disque(p, e))
 }
 
 /// Une erreur d'operation, que l'appelant rattrape : celles que le moteur nomme, et
-/// les refus du calcul (`CalculRefuse`, `SaisieIncomplete`), qui en sont.
+/// les refus du calcul (sans classe, `SaisieIncomplete`), qui en sont.
 fn est_une_erreur_d_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some("ErreurOperation") | Some("SaisieIncomplete"))
+    matches!(e.classe, None | Some(Classe::Refuse) | Some(Classe::SaisieIncomplete))
 }
 
 /// L'heure de Paris, a la seconde.
@@ -365,12 +366,12 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
         return Ok(Exercices::default());
     }
     let v = crate::valeur::json_en_cache_ou(&p, crate::valeur::lire_json_echec)?;
-    socle::forme::lire(&v, "Le fichier des exercices clos (config/exercices.json) ne se lit pas.").map_err(|m| erreur("ValueError", m))
+    socle::forme::lire(&v, "Le fichier des exercices clos (config/exercices.json) ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))
 }
 
 fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
     let chemin = ctx.racine.join(EXERCICES);
-    socle::ecriture::ecrire_json(&chemin, &crate::routes::en_json(tous)?, 1).map_err(|m| erreur("OSError", m))
+    socle::ecriture::ecrire_json(&chemin, &crate::routes::en_json(tous)?, 1).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// Les fichiers sous `d`, triés par chemin (les chemins se comparent composant par composant).
@@ -394,7 +395,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     if let Some(clos) = tous.de(annee) {
         return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.chars().take(10).collect::<String>())));
     }
-    let an: i64 = socle::num::entier_lu(annee).and_then(|n| i64::try_from(n).ok()).ok_or_else(|| erreur("ValueError", format!("nombre entier illisible : {}", socle::fichiers::repr(annee))))?;
+    let an: i64 = socle::num::entier_lu(annee).and_then(|n| i64::try_from(n).ok()).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", socle::fichiers::repr(annee))))?;
     if an >= i64::from(ctx.aujourdhui.an) {
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
     }

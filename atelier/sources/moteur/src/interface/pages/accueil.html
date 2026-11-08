@@ -172,7 +172,7 @@
     // La reponse se lit : une compagnie qui ne s'ouvre pas le dit, au lieu de ne rien faire.
     t.addEventListener("click", async () => {
       const r = await window.pywebview.api.choisir(t.dataset.id);
-      err.textContent = r && r.ok ? "" : (r && r.erreur) || "{{P:ouvre_pas}}";
+      err.textContent = r && r.ok ? "" : (r && r.refus && r.refus.phrase) || "{{P:ouvre_pas}}";
     });
   }
   for (const c of document.querySelectorAll(".crayon input")) {
@@ -181,7 +181,7 @@
     c.addEventListener("input", () => tuile.style.setProperty("--cie", c.value));
     c.addEventListener("change", async () => {
       const r = await appel("compagnie-couleur", { compagnie: tuile.dataset.id, couleur: c.value });
-      err.textContent = r.ok ? "" : r.erreur;
+      err.textContent = r.ok ? "" : r.refus.phrase;
     });
   }
   for (const z of document.querySelectorAll(".zero")) {
@@ -191,7 +191,7 @@
       const nom = tuile.querySelector(".nom").textContent;
       if (!confirm(nom + " — {{P:zero_confirmer}}")) return;
       const r = await appel("compagnie-remettre-a-zero", { compagnie: tuile.dataset.id });
-      err.textContent = r.ok ? r.resultat.phrase : r.erreur;
+      err.textContent = r.ok ? r.resultat.phrase : r.refus.phrase;
     });
   }
   // LE GESTE : cinq secondes d'appui sur le filet
@@ -206,7 +206,7 @@
     minuterie = setTimeout(async () => {
       minuterie = null;
       const r = await window.pywebview.api.basculer();
-      if (!r.ok) err.textContent = r.erreur;
+      if (!r.ok) err.textContent = r.refus.phrase;
     }, 5000);
   });
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) geste.addEventListener(ev, lacher);
@@ -255,7 +255,7 @@
       // La compagnie se crée par sa route ; la fenêtre l'ouvre ensuite, comme une tuile.
       let r = await appel("compagnie-ajouter", { nom: nom.value, venue: venue || "neuve" });
       if (r.ok) r = await window.pywebview.api.choisir(r.resultat.id);
-      document.getElementById("venue-erreur").textContent = r.ok ? "" : r.erreur;
+      document.getElementById("venue-erreur").textContent = r.ok ? "" : r.refus.phrase;
     });
   }
   // Le message part par sa route ; la phrase que le moteur rend se lit telle quelle.
@@ -265,7 +265,7 @@
     e.preventDefault();
     const texte = ecrire.querySelector("textarea");
     const r = await appel("signalement-envoyer", { texte: texte.value, ecran: "L'accueil des compagnies" });
-    document.getElementById("ecrire-dit").textContent = r.ok ? r.resultat.phrase : r.erreur;
+    document.getElementById("ecrire-dit").textContent = r.ok ? r.resultat.phrase : r.refus.phrase;
     if (r.ok) texte.value = "";
   });
 </script>
@@ -319,7 +319,7 @@
       for (const l of zone.querySelectorAll(".declaration[data-id]")) {
         l.addEventListener("click", async () => {
           const r = await api.choisir(l.dataset.id);
-          if (!r || !r.ok) err.textContent = (r && r.erreur) || "{{P:ouvre_pas}}";
+          if (!r || !r.ok) err.textContent = (r && r.refus && r.refus.phrase) || "{{P:ouvre_pas}}";
         });
       }
       const reel = document.getElementById("g-reel"), test = document.getElementById("g-test");
@@ -353,7 +353,7 @@
       bouton.textContent = bouton.dataset.occupe;
       const r = await appel("administrateur-deposer", reel ? { reel, motdepasse } : { reel });
       if (!r || !r.ok) {
-        resultats = `<p class="refus">${esc((r && r.erreur) || "{{P:rien_parti}}")}</p>`;
+        resultats = `<p class="refus">${esc((r && r.refus && r.refus.phrase) || "{{P:rien_parti}}")}</p>`;
         dessiner(dernier);
         return;
       }
@@ -378,7 +378,7 @@
   // Ce que `js/avance.js` lit dans la page d'une compagnie (`js/tuyau.js`) : le catalogue, l'echappement, la route.
   let CATALOGUE = {};
   const echapper = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r || !r.ok) throw new Error((r && r.erreur) || ""); return r.resultat; });
+  const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r || !r.ok) throw new Error((r && r.refus && r.refus.phrase) || ""); return r.resultat; });
 </script>
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
 <script>

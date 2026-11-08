@@ -3,17 +3,16 @@
 //! a validee (`documents::libelles_courts`). L'export la lit ; sans elle, il se refuse et renvoie ici. Une route rend ce
 //! qui depasse, une autre enregistre ; l'ecran (une boite des Exports) et le LLM font la meme chose.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use documents::libelles_courts::{self as lc, Depasse, FormatBorne, Quoi};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
-use crate::routes::{en_json, lire_charge};
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
 const FORMAT: Champ = Champ {
     nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte,
@@ -51,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"format":"ximport","libelles":[]}"#,
         rend: "ce que rend libelles-courts, après l'enregistrement, et sa phrase ; une liste vide : rien n'est écrit, libelles vide",
         refus: &[
-            Refus { classe: "ErreurOperation", corriger: "la valeur que la phrase nomme : vide, trop longue, ou d'un libellé qui ne dépasse pas ; rien n'est écrit" },
+            Refus { classe: socle::echec::Classe::Refuse, corriger: "la valeur que la phrase nomme : vide, trop longue, ou d'un libellé qui ne dépasse pas ; rien n'est écrit" },
             FORME,
         ],
         acte: Acte::Ecrit,
@@ -61,20 +60,25 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module : sa charge lue en sa forme, sa reponse une structure.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
-        Route::LibellesCourts => en_json(libelles_courts(ctx, lire_charge(charge)?)?),
-        Route::LibellesCourtsEnregistrer => en_json(enregistrer(ctx, lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
+        Route::LibellesCourts => en_json(libelles_courts(porte.ctx, charge.lire()?)?),
+        Route::LibellesCourtsEnregistrer => en_json(enregistrer(porte.ctx, charge.lire()?)?),
+        autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
-/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il manque.
+impl Dite for Libelles {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
-    #[serde(default)]
     format: Option<String>,
 }
 
@@ -82,7 +86,6 @@ struct ChargeLire {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEnregistrer {
-    #[serde(default)]
     format: Option<String>,
     libelles: Vec<Valide>,
 }
@@ -168,7 +171,7 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
 
 /// Le refus d'une valeur : sa phrase, et sa cle a part (il se dit seul, sans ce qui manque pour demarrer).
 fn faute(phrase: String, cle: &str) -> Echec {
-    erreur("ErreurOperation", socle::echec::avec(phrase, serde_json::json!({"cle": cle})))
+    erreur(socle::echec::Classe::Refuse, socle::echec::avec(phrase, serde_json::json!({"cle": cle})))
 }
 
 /// ENREGISTRER : chaque valeur se verifie (un libelle qui depasse, une valeur non vide qui tient) ; une seule faute et

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
 use socle::paris::{iso_de_naif, maintenant_naif};
 
@@ -36,65 +36,44 @@ fn horodatage_archive(local: i64) -> String {
 
 // -------------------------------------------------------------------- les pannes
 
-/// Une panne du transport : `ErreurApi` (son message et son `code`, le statut HTTP quand il y en a un), ou une autre
-/// exception que la releve ne rattrape pas.
+/// Une panne du transport : `Organisme` (son message et son `code`, le statut HTTP quand il y en a un), ou une autre
+/// panne que la releve ne rattrape pas.
 #[derive(Debug, Clone)]
 pub struct Panne {
-    pub classe: String,
+    pub classe: Classe,
     pub message: String,
     pub code: Option<i64>,
 }
 
 impl Panne {
     /// Une panne sans statut HTTP.
-    fn de(classe: &str, message: String) -> Panne {
-        Panne { classe: classe.into(), message, code: None }
+    fn de(classe: Classe, message: String) -> Panne {
+        Panne { classe, message, code: None }
     }
 
-    /// Une liste que la plate-forme rend et qui ne se lit pas.
+    /// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
     fn de_lecture(e: Echec) -> Panne {
         let classe = match e.classe {
             Some(c) => c,
-            None => "ValueError",
+            None => Classe::Illisible,
         };
         Panne::de(classe, e.message)
     }
 
     pub fn est_api(&self) -> bool {
-        self.classe == "ErreurApi" || self.classe == "DepotRefuse"
+        matches!(self.classe, Classe::Organisme | Classe::DepotRefuse)
     }
 
     /// La panne comme un refus de route : sa classe et sa phrase.
     pub fn en_echec(self) -> Echec {
-        Echec { classe: Some(classe_connue(&self.classe)), message: self.message }
-    }
-}
-
-/// La classe d'une panne, rendue en `&'static str` pour `Echec` ; une classe inconnue devient `OSError`.
-fn classe_connue(c: &str) -> &'static str {
-    match c {
-        "ErreurApi" => "ErreurApi",
-        "DepotRefuse" => "DepotRefuse",
-        "ValueError" => "ValueError",
-        "FileNotFoundError" => "FileNotFoundError",
-        "PermissionError" => "PermissionError",
-        "TimeoutError" => "TimeoutError",
-        "URLError" => "URLError",
-        "RemoteDisconnected" => "RemoteDisconnected",
-        "IncompleteRead" => "IncompleteRead",
-        "HTTPException" => "HTTPException",
-        "UnicodeDecodeError" => "UnicodeDecodeError",
-        "JSONDecodeError" => "JSONDecodeError",
-        "AttributeError" => "AttributeError",
-        "TypeError" => "TypeError",
-        _ => "OSError",
+        Echec { classe: Some(self.classe), message: self.message }
     }
 }
 
 /// La panne que le transport rend : sa classe, sa phrase, son statut HTTP.
 impl From<crate::transport::EchecApi> for Panne {
     fn from(e: crate::transport::EchecApi) -> Panne {
-        Panne { classe: e.classe.to_string(), message: e.erreur, code: e.code }
+        Panne { classe: e.classe, message: e.erreur, code: e.code }
     }
 }
 
@@ -141,7 +120,7 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
             "https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(Panne::de("ValueError", format!("environnement inconnu : '{}'", autre))),
+        autre => return Err(Panne::de(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
     Ok(Adresses {
         authentification: auth.into(),
@@ -293,11 +272,11 @@ impl Client {
     }
 
     /// L'envoi du guide (text/plain, gzip, jeton DSNLogin) des octets deja prepares. `forme` : `dsn` (`DepotRefuse`)
-    /// ou `dpae` (`ErreurApi`). Rend la reponse et son type de contenu, s'il est dit.
+    /// ou `dpae` (`Organisme`). Rend la reponse et son type de contenu, s'il est dit.
     pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
-        let jeton = self.jeton.clone().ok_or_else(|| Panne::de("OSError", "La session ouverte n'a pas de jeton.".into()))?;
+        let jeton = self.jeton.clone().ok_or_else(|| Panne::de(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
         let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
         let texte = String::from_utf8_lossy(&brut).trim_matches(socle::texte::blanc).to_string();
         let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
@@ -309,8 +288,8 @@ impl Client {
 fn gzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
     use std::io::Write;
     let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(donnees).map_err(|x| Panne::de("OSError", x.to_string()))?;
-    e.finish().map_err(|x| Panne::de("OSError", x.to_string()))
+    e.write_all(donnees).map_err(|x| Panne::de(Classe::Disque, x.to_string()))?;
+    e.finish().map_err(|x| Panne::de(Classe::Disque, x.to_string()))
 }
 
 // ------------------------------------------------------------------ la releve
@@ -529,7 +508,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             faits += 1;
         }
     }
-    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur("OSError", m))?;
+    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur(Classe::Disque, m))?;
     crate::organismes_simules::garder(&ctx.racine, &avant, &memoire)?;
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
@@ -573,7 +552,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&chemin, &e))),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))),
     };
     crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui).map_err(Echec::from)
 }
@@ -787,7 +766,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v: f64 = valeur.parse().map_err(|_| erreur("ValueError", format!("nombre illisible : '{}'", valeur)))?;
+        let v: f64 = valeur.parse().map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -843,14 +822,14 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| erreur("ValueError", m))
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur("OSError", m))?;
+        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur(Classe::Disque, m))?;
     }
     Ok(())
 }
@@ -873,11 +852,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
     };
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| erreur("OSError", socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
         if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
             noms.push(nom);
         }
@@ -886,7 +865,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut annees = Annees::new();
     for nom in &noms {
         let p = dossier.join(nom);
-        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
             let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };

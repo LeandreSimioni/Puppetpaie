@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
@@ -526,7 +526,7 @@ fn virgule(v: Decimal) -> String {
 
 /// Le compte et le journal tiennent dans leurs zones, ou on refuse.
 fn borne(format: &str, compte: &str, journal: &str) -> R<()> {
-    let l = crate::plan_comptable::tables().limites.get(format).ok_or_else(|| erreur("KeyError", format!("format inconnu : {}", socle::fichiers::repr(format))))?;
+    let l = crate::plan_comptable::tables().limites.get(format).ok_or_else(|| erreur(Classe::Manque, format!("format inconnu : {}", socle::fichiers::repr(format))))?;
     if let Some(lc) = l.compte.filter(|lc| compte.chars().count() > *lc) {
         return Err(refus(format!("{} : le compte « {} » dépasse sa zone ({} caractères). Choisir dans le plan comptable de la compagnie un compte qui tient.", l.nom, compte, lc)));
     }
@@ -975,12 +975,12 @@ impl ChoixCompta {
         if !chemin.exists() {
             return Ok(ChoixCompta::default());
         }
-        socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| erreur("ValueError", m))
+        socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))
     }
 
     /// Le choix ecrit dans `config/compta.json`.
     pub fn ecrire(&self, racine: &std::path::Path) -> R<()> {
-        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| erreur("OSError", m))
+        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| erreur(Classe::Disque, m))
     }
 
     /// Le logiciel retenu, s'il en est un.
@@ -1074,7 +1074,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if d.ecrire {
         let dossier = p.dossier(ctx);
         if let Some(ec) = &ecr_format {
-            let io = |c: &std::path::Path, e: std::io::Error| erreur("OSError", socle::echec::du_disque(&c, &e));
+            let io = |c: &std::path::Path, e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&c, &e));
             let env = envoi(ctx, &plan, sections, &format)?;
             // Les deux fichiers se fabriquent avant d'ecrire : une zone qui ne tient pas refuse l'export entier.
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
@@ -1259,7 +1259,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: &str) -> R<(Option<Decimal>, i64)> {
-    let annee: i64 = tranche(jusqu_a, 0, 4).parse().map_err(|_| erreur("ValueError", "mois illisible"))?;
+    let annee: i64 = tranche(jusqu_a, 0, 4).parse().map_err(|_| erreur(Classe::Illisible, "mois illisible"))?;
     let depart = format!("{:04}-{}", annee - 1, tranche(jusqu_a, 5, 7));
     let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
     for l in lignes {
@@ -1295,12 +1295,12 @@ fn provision_d_une_annee_importee(
     a_provisionner: &mut Vec<(String, Option<String>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
-    let ko = |x: String| erreur("ErreurOperation", x);
-    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
-    let lendemain = fin.plus_jours(1).map_err(|x| erreur("ValueError", x))?;
+    let ko = |x: String| erreur(Classe::Refuse, x);
+    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
+    let lendemain = fin.plus_jours(1).map_err(|x| erreur(Classe::Illisible, x))?;
     let importes: Vec<String> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| k.clone()).collect();
     // `m` est un mois repris : il y en a au moins un.
-    let premier_importe = importes.first().cloned().ok_or_else(|| erreur("ErreurOperation", format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
+    let premier_importe = importes.first().cloned().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
@@ -1384,7 +1384,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut sans_compteur = 0;
     let m = match saisis.last().cloned() {
         Some(m) => {
-            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
+            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
             // Ce qui a ete paye ce mois-la : les paies ecrites de ses engagements valides, la saisie au meme rang.
             let (saisie, paies) = charger_mois(ctx, &m, &d.departs)?;
             for (e, pa) in saisie.engagements.iter().zip(paies.iter()) {
@@ -1412,7 +1412,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             m
         }
     };
-    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
+    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
     let toutes = Periode::nouvelle(ctx, None, None, true, true)?;
     let livre = lignes_livre(ctx, &toutes, &mut Vec::new(), &d.departs)?;
     let mut lignes: Vec<Ligne> = Vec::new();
@@ -1441,8 +1441,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
         }
-        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(&cle)))?;
-        let nom = fiche.nom.exigee("nom").map_err(|m| erreur("KeyError", m))?;
+        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(&cle)))?;
+        let nom = fiche.nom.exigee("nom").map_err(|m| erreur(Classe::Manque, m))?;
         let mut l = Ligne::nouvelle();
         l.t("salarie", match fiche.prenom.portee() {
             Some(prenom) => format!("{} {}", nom, prenom),
@@ -1528,7 +1528,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.
-    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| erreur("ValueError", x))?;
+    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| erreur(Classe::Illisible, x))?;
     let bar = ctx.bareme(&jour).map_err(socle::echec::Echec::from)?;
     // Les plafonds de la franchise, que la conclusion nomme : ceux du bareme de l'annee.
     let plafonds = crate::taxe_sur_les_salaires::plafonds_franchise(Some(&*bar));
@@ -1560,9 +1560,9 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<String>)> = BTreeMap::new();
     for m in p.mois.clone() {
-        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| erreur("ErreurOperation", x)) {
+        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| erreur(Classe::Refuse, x)) {
             Ok(paies) => paies,
-            Err(e) if matches!(e.classe, Some("ErreurOperation") | Some("ValueError") | Some("KeyError") | Some("FileNotFoundError")) => {
+            Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.message));
                 continue;
             }

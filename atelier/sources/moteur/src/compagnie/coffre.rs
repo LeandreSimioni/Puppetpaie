@@ -22,6 +22,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use serde_json::{Map, Value};
 
 use socle::base64::ecrire as base64_ecrire;
+use socle::echec::Classe;
 use socle::json_ascii::dumps;
 use socle::json_ascii::repr_flottant;
 
@@ -84,21 +85,21 @@ pub const SERVICES: [Service; 3] = [
 /// Un refus : sa classe et sa phrase.
 #[derive(Debug, Clone)]
 pub struct Echec {
-    pub classe: &'static str,
+    pub classe: Classe,
     pub message: String,
-    /// `errno`, `strerror` et `filename` d'une `OSError`.
+    /// `errno`, `strerror` et `filename` d'un refus du disque.
     pub os: Option<(i32, String, String)>,
 }
 
 pub type R<T> = Result<T, Echec>;
 
-fn echec(classe: &'static str, message: impl Into<String>) -> Echec {
+fn echec(classe: Classe, message: impl Into<String>) -> Echec {
     Echec { classe, message: message.into(), os: None }
 }
 
-/// `ErreurCoffre` : le coffre refuse, la phrase est ecrite pour etre lue.
+/// `Coffre` : le coffre refuse, la phrase est ecrite pour etre lue.
 fn refus(message: impl Into<String>) -> Echec {
-    echec("ErreurCoffre", message)
+    echec(Classe::Coffre, message)
 }
 
 fn oserr(e: &std::io::Error, p: &Path) -> Echec {
@@ -110,7 +111,7 @@ fn oserr(e: &std::io::Error, p: &Path) -> Echec {
     let errno = e.raw_os_error().unwrap_or(0);
     let nom = affiche(p);
     Echec {
-        classe: "OSError",
+        classe: Classe::Disque,
         message: socle::fichiers::panne_fichier(e, p),
         os: Some((errno, strerror, nom)),
     }
@@ -239,13 +240,13 @@ pub fn d64(v: &Value) -> R<Vec<u8>> {
         Value::String(t) => t,
         autre => {
             return Err(echec(
-                "TypeError",
+                Classe::MalFormee,
                 socle::fichiers::attendu("un texte en base64", crate::valeur::nom_type(autre)),
             ))
         }
     };
     if !t.is_ascii() {
-        return Err(echec("ValueError", "du base64 ne porte que des caracteres ASCII"));
+        return Err(echec(Classe::Illisible, "du base64 ne porte que des caracteres ASCII"));
     }
     let (mut sortie, mut quad, mut reste, mut bourrage) = (Vec::new(), 0u8, 0u8, 0u8);
     for c in t.bytes() {
@@ -286,13 +287,13 @@ pub fn d64(v: &Value) -> R<Vec<u8>> {
     match quad {
         0 => Ok(sortie),
         1 => Err(echec(
-            "ValueError",
+            Classe::Illisible,
             format!(
                 "base64 illisible : {} caracteres utiles, un de plus qu'un multiple de 4",
                 sortie.len() / 3 * 4 + 1
             ),
         )),
-        _ => Err(echec("ValueError", "base64 illisible : le remplissage est incomplet")),
+        _ => Err(echec(Classe::Illisible, "base64 illisible : le remplissage est incomplet")),
     }
 }
 
@@ -316,7 +317,7 @@ fn entier(v: &Value) -> R<i128> {
                 if f.is_finite() {
                     Ok(f.trunc() as i128)
                 } else {
-                    Err(echec("ValueError", "un nombre infini n'est pas un entier"))
+                    Err(echec(Classe::Illisible, "un nombre infini n'est pas un entier"))
                 }
             }
         }
@@ -334,11 +335,11 @@ fn entier(v: &Value) -> R<i128> {
             let n: Option<i128> = if valide { corps.replace('_', "").parse().ok() } else { None };
             match n {
                 Some(n) => Ok(if neg { -n } else { n }),
-                None => Err(echec("ValueError", format!("nombre entier illisible : {}", repr_chaine(t)))),
+                None => Err(echec(Classe::Illisible, format!("nombre entier illisible : {}", repr_chaine(t)))),
             }
         }
         autre => Err(echec(
-            "TypeError",
+            Classe::MalFormee,
             socle::fichiers::attendu("un nombre entier", crate::valeur::nom_type(autre)),
         )),
     }
@@ -350,7 +351,7 @@ fn objet(v: Option<&Value>) -> R<Map<String, Value>> {
         None | Some(Value::Null) => Ok(Map::new()),
         Some(Value::Object(o)) => Ok(o.clone()),
         Some(x) if !vrai(x) => Ok(Map::new()),
-        Some(x) => Err(echec("AttributeError", socle::fichiers::attendu("un objet", crate::valeur::nom_type(x)))),
+        Some(x) => Err(echec(Classe::Illisible, socle::fichiers::attendu("un objet", crate::valeur::nom_type(x)))),
     }
 }
 
@@ -427,14 +428,14 @@ fn permissions(_: &Path, _: u32) {}
 
 fn aleas(n: usize) -> R<Vec<u8>> {
     let mut o = vec![0u8; n];
-    getrandom::fill(&mut o).map_err(|e| echec("OSError", format!("pas d'alea du systeme : {}", e)))?;
+    getrandom::fill(&mut o).map_err(|e| echec(Classe::Disque, format!("pas d'alea du systeme : {}", e)))?;
     Ok(o)
 }
 
 // ---------------------------------------------------------------- le scellage
 
 fn boite(cle: &[u8]) -> R<Aes256Gcm> {
-    Aes256Gcm::new_from_slice(cle).map_err(|_| echec("ValueError", "une cle AES-GCM fait 32 octets"))
+    Aes256Gcm::new_from_slice(cle).map_err(|_| echec(Classe::Illisible, "une cle AES-GCM fait 32 octets"))
 }
 
 /// nonce (12 octets) suivi du scelle.
@@ -444,7 +445,7 @@ pub fn sceller(cle: &[u8], clair: &[u8], aad: &[u8]) -> R<Vec<u8>> {
     let mut sortie = nonce.clone();
     let scelle = b
         .encrypt(Nonce::from_slice(&nonce), Payload { msg: clair, aad })
-        .map_err(|_| echec("ValueError", "chiffrement impossible"))?;
+        .map_err(|_| echec(Classe::Illisible, "chiffrement impossible"))?;
     sortie.extend(scelle);
     Ok(sortie)
 }
@@ -482,7 +483,7 @@ pub fn deriver(motdepasse: &str, kdf: Option<&Value>) -> R<Vec<u8>> {
         };
         return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", dit)));
     }
-    let cle = |nom: &str| kdf.get(nom).ok_or_else(|| echec("KeyError", socle::fichiers::absent(nom)));
+    let cle = |nom: &str| kdf.get(nom).ok_or_else(|| echec(Classe::Manque, socle::fichiers::absent(nom)));
     let sel = d64(cle("sel")?)?;
     let n = entier(cle("n")?)?;
     let r = entier(cle("r")?)?;
@@ -491,21 +492,21 @@ pub fn deriver(motdepasse: &str, kdf: Option<&Value>) -> R<Vec<u8>> {
 }
 
 fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<u8>> {
-    let invalide = || echec("ValueError", "parametres scrypt incompatibles (n, r, p)");
-    let memoire_max = || echec("ValueError", "parametres scrypt : la memoire demandee depasse la borne");
+    let invalide = || echec(Classe::Illisible, "parametres scrypt incompatibles (n, r, p)");
+    let memoire_max = || echec(Classe::Illisible, "parametres scrypt : la memoire demandee depasse la borne");
     for (nom, v) in [("n", n), ("r", r), ("p", p)] {
         if v < 0 {
-            return Err(echec("TypeError", format!("le parametre scrypt {} est un entier positif", nom)));
+            return Err(echec(Classe::MalFormee, format!("le parametre scrypt {} est un entier positif", nom)));
         }
     }
     if n < 2 || n & (n - 1) != 0 {
-        return Err(echec("ValueError", "le parametre scrypt n est une puissance de 2"));
+        return Err(echec(Classe::Illisible, "le parametre scrypt n est une puissance de 2"));
     }
     if r == 0 || p == 0 {
         return Err(invalide());
     }
     if r > u32::MAX as i128 || p > u32::MAX as i128 {
-        return Err(echec("ValueError", "parametres scrypt : r ou p trop grand"));
+        return Err(echec(Classe::Illisible, "parametres scrypt : r ou p trop grand"));
     }
     if p > ((1i128 << 30) - 1) / r {
         return Err(memoire_max());
@@ -727,7 +728,7 @@ impl Coffre {
     }
 
     fn cle_ou_creer(&self) -> R<Vec<u8>> {
-        self.cle_poste(true)?.ok_or_else(|| echec("OSError", "la cle de ce poste n'a pas pu etre posee"))
+        self.cle_poste(true)?.ok_or_else(|| echec(Classe::Disque, "la cle de ce poste n'a pas pu etre posee"))
     }
 
     // -------------------------------------------- proteger / deproteger
@@ -879,7 +880,7 @@ impl Coffre {
         if let (Some(cle), Some(e)) = (&cle, enveloppe("poste")) {
             match desceller(cle, &d64(e)?, AAD_POSTE) {
                 Ok(m) => return Ok(Some(m)),
-                Err(x) if x.classe == "ErreurCoffre" => {}
+                Err(x) if x.classe == Classe::Coffre => {}
                 Err(x) => return Err(x),
             }
         }
@@ -887,7 +888,7 @@ impl Coffre {
             let r = deriver(mdp, contenu.get("kdf")).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
             return match r {
                 Ok(m) => Ok(Some(m)),
-                Err(x) if x.classe == "ErreurCoffre" => Ok(None),
+                Err(x) if x.classe == Classe::Coffre => Ok(None),
                 Err(x) => Err(x),
             };
         }
@@ -932,10 +933,10 @@ impl Coffre {
             return Ok(Map::new());
         }
         let clair = desceller(maitresse, &d64(&contenu["secrets"])?, &aad_fiches(&fiches_brutes(contenu)))?;
-        let t = String::from_utf8(clair).map_err(|_| echec("ValueError", "secrets illisibles"))?;
+        let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "secrets illisibles"))?;
         match serde_json::from_str::<Value>(&t) {
             Ok(Value::Object(o)) => Ok(o),
-            _ => Err(echec("ValueError", "secrets illisibles")),
+            _ => Err(echec(Classe::Illisible, "secrets illisibles")),
         }
     }
 
@@ -944,7 +945,7 @@ impl Coffre {
         let (Some(cle), Some(e)) = (cle, enveloppes.get("poste").filter(|v| vrai(v))) else { return Ok(false) };
         match desceller(&cle, &d64(e)?, AAD_POSTE) {
             Ok(m) => Ok(m == maitresse),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1037,7 +1038,7 @@ impl Coffre {
     /// `AAAA-MM-JJ HH:MM`.
     fn pose_le(&self) -> R<String> {
         if self.maintenant.len() != 16 {
-            return Err(echec("ValueError", "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
+            return Err(echec(Classe::Illisible, "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
         }
         Ok(self.maintenant.replacen('T', " ", 1))
     }
@@ -1065,7 +1066,7 @@ impl Coffre {
     fn fiches(&self) -> R<Map<String, Value>> {
         match self.lire_fichier() {
             Ok(c) => objet(c.get("fiches")),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(Map::new()),
+            Err(x) if x.classe == Classe::Coffre => Ok(Map::new()),
             Err(x) => Err(x),
         }
     }
@@ -1073,7 +1074,7 @@ impl Coffre {
     pub fn pose(&self, service: &str) -> R<bool> {
         match self.lire_fichier() {
             Ok(c) => Ok(dans(&fiches_brutes(&c), service)),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1183,7 +1184,7 @@ impl Coffre {
         }
         let (maitresse, contenu) = self.ouvrir_ou_lever(ancien)?;
         let mut enveloppes = objet(contenu.get("enveloppes"))?;
-        let kdf = contenu.get("kdf").ok_or_else(|| echec("KeyError", socle::fichiers::absent("kdf")))?;
+        let kdf = contenu.get("kdf").ok_or_else(|| echec(Classe::Manque, socle::fichiers::absent("kdf")))?;
         enveloppes.insert("motdepasse".into(), b64(&sceller(&deriver(motdepasse, Some(kdf))?, &maitresse, AAD_MOTDEPASSE)?));
         let mut c = contenu;
         c.insert("enveloppes".into(), Value::Object(enveloppes));
@@ -1197,7 +1198,7 @@ impl Coffre {
     pub fn ouverture_exigee(&self) -> R<bool> {
         match self.lire_fichier() {
             Ok(c) => Ok(objet(c.get("enveloppes"))?.get("motdepasse").is_some_and(vrai)),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1229,7 +1230,7 @@ impl Coffre {
     pub fn verifier_ouverture(&self, motdepasse: &str) -> R<bool> {
         let contenu = match self.lire_fichier() {
             Ok(c) => c,
-            Err(x) if x.classe == "ErreurCoffre" => return Ok(false),
+            Err(x) if x.classe == Classe::Coffre => return Ok(false),
             Err(x) => return Err(x),
         };
         let enveloppes = objet(contenu.get("enveloppes"))?;
@@ -1237,7 +1238,7 @@ impl Coffre {
         let r = deriver(motdepasse, contenu.get("kdf")).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
         match r {
             Ok(_) => Ok(true),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1271,8 +1272,8 @@ impl Coffre {
         });
         match lu {
             Ok(Some(Value::Object(d))) => Ok(Some(d)),
-            Ok(_) => Err(echec("Illisible", "")),
-            Err(x) if x.classe == "ErreurCoffre" => Err(echec("Illisible", "")),
+            Ok(_) => Err(echec(Classe::CoffreIllisible, "")),
+            Err(x) if x.classe == Classe::Coffre => Err(echec(Classe::CoffreIllisible, "")),
             Err(x) => Err(x),
         }
     }
@@ -1283,7 +1284,7 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == "Illisible" => {
+            Err(x) if x.classe == Classe::CoffreIllisible => {
                 self.oublier_ouverture_gardee()?;
                 return Ok(None);
             }
@@ -1310,7 +1311,7 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == "Illisible" => return Ok(None),
+            Err(x) if x.classe == Classe::CoffreIllisible => return Ok(None),
             Err(x) => return Err(x),
         };
         Ok(d.get("fin").and_then(Value::as_str).filter(|f| *f >= self.heure().as_str()).map(String::from))

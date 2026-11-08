@@ -1,17 +1,32 @@
-//! `moteur route` : les routes de l'interface. La fenetre les sert dans son processus (`dans_la_fenetre`) ; `moteur
-//! route`, une par processus, sert la ligne de commande et les tests.
+//! LES ROUTES : la seule porte du moteur. L'ecran les appelle par `/api/<route>` (la fenetre les sert dans son processus,
+//! `dans_la_fenetre`), le LLM par `moteur route` (`commande`, une par processus) ; l'un et l'autre lisent la meme reponse.
 //!
-//! Demande sur l'entree standard : `{"route": "...", "charge": {...}}`, avec `--racine` et `--date`. Reponse :
-//! `{"ok": true, "resultat": ...}` ; un refus rend `{"ok": false, "erreur": "...", "classe": "..."}` avec sa classe
-//! (`ErreurOperation`, `FileNotFoundError`, `KeyError`...), que la page releve.
+//! L'ENVELOPPE (`enveloppe`) dit la forme de ce qu'une route recoit, rend et refuse : la demande et sa charge
+//! (`Demande`, `Charge`), le rendu (`Rendu`, ecrit depuis une forme `Dite` qui porte sa phrase), le refus (`Refus` : une
+//! classe en mots du logiciel, `socle::echec::Classe`, sa phrase, ce que la fiche dit de corriger, ce qu'il porte a part)
+//! et la reponse (`Reponse`). Le JSON ne se touche que la : sous la porte, une route lit sa charge en sa forme et rend la
+//! sienne.
 //!
 //! UN MODULE PAR PLACE DE L'ECRAN (`catalogue::Place`) : la Paie (`mois`, `etapes`, `engagement`, `contrats`,
 //! `documents`, `depots`, `imprevus`, `rappels`), la Configuration (`fiches`, `metiers`, `identite`, `bulletin`,
 //! `modeles_contrat`, `coffre`, `import`), l'Historique (`historique`), les Exports (`archives`, `dossier_salarie`),
-//! « Un probleme, une idee ? » (`filet`), l'accueil des compagnies (`accueil` : les routes de l'installation), et les lectures que les ecrans partagent (`ouverture`). Chacun dit ses routes et
-//! leurs fiches (`ROUTES`, `catalogue::FICHES`), comme les modules des obligations,
-//! des conseils et de l'ouverture ; l'aiguillage ne fait rien d'autre que les servir (et l'horloge
-//! du banc, hors catalogue). Ce que les routes partagent (lire un fichier, le salarie d'une charge, `INTERFACE`) est ici.
+//! « Un probleme, une idee ? » (`filet`), l'accueil des compagnies (`accueil` : les routes de l'installation), et les
+//! lectures que les ecrans partagent (`ouverture`). Chacun dit ses routes et leurs fiches (`ROUTES`, `catalogue::FICHES`) ;
+//! l'aiguillage (`servir`) ne fait rien d'autre que les servir.
+//!
+//! BRANCHER UN MODULE SUR L'ENVELOPPE :
+//! 1. sa fonction `route` prend la porte et la charge et rend un rendu :
+//!    `pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu>` ;
+//! 2. chaque bras lit la charge de sa route en sa forme et finit par l'ecrire :
+//!    `Route::X => en_json(faire(porte.ctx, charge.lire()?)?)` (`enveloppe::en_json`) ; une route qui ne prend rien lit
+//!    `SansCharge`. La forme de la charge est une structure `serde` (`deny_unknown_fields`) ; le mot de passe du logiciel
+//!    n'y est pas : `charge.mot_de_passe()` ;
+//! 3. ce que la route rend est une structure `serde` qui porte sa phrase et la dit (`impl Dite`) ;
+//! 4. un refus est un `Echec` dont la classe est un mot du logiciel (`erreur(Classe::Manque, …)`), ce qui n'est pas pour
+//!    l'ecran a part (`socle::echec::avec`) ; la fiche dit quoi corriger pour chaque classe qu'elle refuse ;
+//! 5. dans `servir`, son bras passe de `brute(m::route(o, &ctx, route, charge.brute()))` a `m::route(&porte, charge)`.
+//!
+//! Ce que les routes partagent (le salarie d'une charge, l'encart, la pastille, `INTERFACE`) est ici.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,15 +34,16 @@ use std::path::Path;
 use serde_json::{json, Map, Value};
 
 use socle::date::repr_texte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use crate::valeur::vrai;
 use droit::contexte::Contexte;
-use socle::num::Resultat;
 use crate::valeur::{valeur_ecrite, valeur_en_texte};
 use crate::service::contexte;
 use catalogue::Route;
+use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
 
 
+pub mod enveloppe;
 pub mod ouverture;
 pub mod depots;
 pub mod archives;
@@ -85,7 +101,7 @@ pub(crate) fn remettre_le_fil() {
 ///
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
-pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Value) -> Value {
+pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Charge) -> Reponse {
     let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servir_la_route(o, route, charge)));
     remettre_le_fil();
     match rendu {
@@ -96,35 +112,25 @@ pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Value
                 .map(|s| s.to_string())
                 .or_else(|| panique.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "sans phrase".into());
-            json!({"ok": false, "classe": "DefautDuLogiciel", "erreur": format!("Defaut du logiciel : la route {} s'est arretee ({}).", route, pourquoi)})
+            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée ({}).", route, pourquoi))))
         }
     }
 }
 
-/// `moteur route [--racine R] [--date D]` : la demande `{"route", "charge"}` lue (la route une fois, par son nom :
-/// `Route::lire`), puis servie.
-pub fn commande(o: &HashMap<String, String>, entree: &str) -> Resultat<Value> {
-    Ok(match lire_la_demande(entree) {
-        Ok((route, charge)) => servir_la_route(o, route, &charge),
-        Err(e) => reponse(crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o)).as_deref(), "", Err(e)),
-    })
-}
-
-/// La route et la charge d'une demande ; un refus si elle ne se lit pas, ne nomme pas sa route, ou en nomme une qui
-/// n'existe pas.
-fn lire_la_demande(entree: &str) -> Result<(Route, Value), Echec> {
-    let d: Value = serde_json::from_str(entree)
-        .map_err(|e| Echec::from(socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", json!({"detail": e.to_string()}))))?;
-    let nom = d.get("route").and_then(Value::as_str).unwrap_or_default();
-    if nom.is_empty() {
-        return Err(socle::echec::avec("La demande ne nomme pas sa route.", json!({"cle": "route"})).into());
+/// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets
+/// (`Charge::sans_les_secrets` : l'entree standard est celle d'un programme), puis servie.
+pub fn commande(o: &HashMap<String, String>, entree: &str) -> Reponse {
+    match Demande::lire(entree) {
+        Ok(mut d) => {
+            d.charge.sans_les_secrets(d.route);
+            servir_la_route(o, d.route, &d.charge)
+        }
+        Err(e) => Reponse::refusee(Refus::de(None, e)),
     }
-    let route = Route::lire(nom).ok_or_else(|| Echec::from(socle::echec::avec(catalogue::ROUTE_INCONNUE, json!({"route": nom}))))?;
-    Ok((route, d.get("charge").cloned().unwrap_or_else(|| json!({}))))
 }
 
-/// La route `route` servie sur `charge`, et ce que l'ecran et le LLM en lisent (`reponse`).
-pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge: &Value) -> Value {
+/// La route `route` servie sur `charge`, et ce que l'ecran et le LLM en lisent (`Reponse`).
+pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge: &Charge) -> Reponse {
     // Le code livre ne bouge pas le temps de la route : ses signatures se lisent une fois (`fichiers::code_fige`).
     let _code = socle::fichiers::code_fige();
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
@@ -135,18 +141,26 @@ pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge:
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
         if catalogue::dans(accueil::ROUTES, route).is_none() && catalogue::dans(catalogue::ROUTES, route).is_none() {
-            phrase_a_sa_place(r, route, v);
+            phrase_a_sa_place(r, route, v.valeur());
         }
     }
-    reponse(racine.as_deref(), route.nom(), rendu)
+    let reponse = Reponse::de(route, rendu);
+    if let (Some(refus), Some(r)) = (reponse.refus(), &racine) {
+        refus_a_sa_place(r, route.nom(), &refus.phrase);
+    }
+    reponse
 }
 
-/// La route `route` servie : ce qu'elle rend, ou son refus.
-fn servir(o: &HashMap<String, String>, route: Route, charge: &Value) -> Result<Value, Echec> {
-    let charge = charge.clone();
+/// Ce qu'une route qui n'est pas encore branchee sur l'enveloppe a rendu, en JSON.
+fn brute(rendu: R<Value>) -> R<Rendu> {
+    rendu.map(Rendu::brut)
+}
+
+/// LA ROUTE `route` SERVIE : ce qu'elle rend, ou son refus. L'aiguillage, rien d'autre.
+fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu> {
     // Le mot de passe du logiciel tape pour cette route ouvre aussi le coffre (`coffre::retenir_mot_de_passe_tape`) ;
     // dans la fenetre, le temps de cette route seulement (`dans_la_fenetre`).
-    if let Some(m) = charge.get("motdepasse").and_then(Value::as_str) {
+    if let Some(m) = charge.mot_de_passe() {
         crate::compagnie::coffre::retenir_mot_de_passe_tape(m);
     }
     // UNE ROUTE QUI TOMBE, pour les essais seulement (`garde_reseau::en_essai`, que Cargo pose) : la fenetre doit rendre
@@ -154,118 +168,87 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Value) -> Result<V
     // expres, comme un calcul qui tombe le laisserait. Hors des essais, elle n'existe pas.
     if route == Route::EssaiDefautDuLogiciel {
         if !socle::garde_reseau::en_essai() {
-            return Err(socle::echec::avec(catalogue::ROUTE_INCONNUE, json!({"route": route})).into());
+            return Err(enveloppe::route_inconnue(route.nom()));
         }
         socle::num::ECHELLE_GARDEE.with(|f| f.set(true));
         panic!("la route d'essai tombe expres");
     }
     // UNE ROUTE DE L'INSTALLATION (l'accueil des compagnies) ne porte sur aucune compagnie : elle se sert sans contexte.
     if catalogue::dans(accueil::ROUTES, route).is_some() {
-        return accueil::route(o, route, &charge);
+        return brute(accueil::route(o, route, charge.brute()));
     }
     // ECRIRE AU DEVELOPPEUR, ET CE QUI S'Y RATTACHE, SE SERT AUSSI SANS COMPAGNIE : depuis l'accueil, ou en ligne de
     // commande sans `--racine` (`filet::sans_compagnie`).
     if catalogue::dans(filet::ROUTES, route).is_some() && !crate::service::compagnie_nommee(o) {
-        return filet::route_sans_compagnie(o, route, &charge);
+        return brute(filet::route_sans_compagnie(o, route, charge.brute()));
     }
     // Le catalogue lui-meme, ce que `moteur routes --json` imprime : il ne porte sur aucune compagnie non plus.
     if route == Route::Routes {
-        let mut v = catalogue::en_json(charge.get("avance").is_some_and(vrai));
-        let lignes: Vec<Value> = v["routes"].as_array().into_iter().flatten().map(|f| json!(format!("{} : {}", mot(&f["nom"]), mot(&f["geste"])))).collect();
-        let p = format!("Routes : {} (la fiche de chacune : moteur routes NOM).", lignes.len());
-        v["phrases"] = Value::Array(lignes);
-        return Ok(phrase_en_tete(v, p));
+        return catalogue::route(charge);
     }
     // UNE ROUTE QUI PORTE UN MOIS LIT LA CONFIGURATION DE CE MOIS (`Contexte::du_mois`) : sa paie, sa DSN et ses documents
-    // se font sous les valeurs qui valaient alors, jamais sous celles d'aujourd'hui. Le mois de la charge se lit ici, une
-    // fois : un mois qui ne se lit pas refuse la route, rien ne s'ecrit.
-    let mois = match charge.get("mois").and_then(Value::as_str).filter(|m| !m.is_empty()) {
-        Some(m) => Some(socle::mois::Mois::lire(m).map_err(|e| erreur("ValueError", socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", e)))?),
-        None => None,
-    };
-    let ctx = match mois {
+    // se font sous les valeurs qui valaient alors, jamais sous celles d'aujourd'hui. Un mois qui ne se lit pas refuse la
+    // route, rien ne s'ecrit.
+    let ctx = match charge.mois()? {
         Some(m) => contexte(o)?.du_mois(&m.to_string())?,
         None => contexte(o)?,
     };
+    let porte = Porte { route, ctx: &ctx };
     let dans = |l: &[catalogue::Fiche]| catalogue::dans(l, route).is_some();
-    let rendu: Result<Value, Echec> = match route {
+    let c = charge.brute();
+    let rendu: R<Rendu> = match route {
+        // Les modules branches sur l'enveloppe : leur charge lue en sa forme, leur rendu ecrit depuis la sienne.
+        _ if dans(bulletin::ROUTES) => bulletin::route(&porte, charge),
+        _ if dans(metiers::ROUTES) => metiers::route(&porte, charge),
+        _ if dans(libelles_courts::ROUTES) => libelles_courts::route(&porte, charge),
         // L'etat d'un mois : l'etat garde, ecrit apres chaque ecriture, lu tel quel (`etat_garde`).
-        _ if dans(crate::etat_garde::ROUTES) => crate::etat_garde::route(o, &ctx, route, &charge),
+        _ if dans(crate::etat_garde::ROUTES) => brute(crate::etat_garde::route(o, &ctx, route, c)),
         // Un geste de l'ecran, une route : un module par geste.
-        _ if dans(mois::ROUTES) => mois::route(o, &ctx, route, &charge),
-        _ if dans(etapes::ROUTES) => etapes::route(o, &ctx, route, &charge),
-        _ if dans(engagement::ROUTES) => engagement::route(o, &ctx, route, &charge),
-        _ if dans(contrats::ROUTES) => contrats::route(o, &ctx, route, &charge),
-        _ if dans(modeles_contrat::ROUTES) => modeles_contrat::route(o, &ctx, route, &charge),
-        _ if dans(documents::ROUTES) => documents::route(o, &ctx, route, &charge),
-        _ if dans(depots::ROUTES) => depots::route(o, &ctx, route, &charge),
-        _ if dans(imprevus::ROUTES) => imprevus::route(o, &ctx, route, &charge),
+        _ if dans(mois::ROUTES) => brute(mois::route(o, &ctx, route, c)),
+        _ if dans(etapes::ROUTES) => brute(etapes::route(o, &ctx, route, c)),
+        _ if dans(engagement::ROUTES) => brute(engagement::route(o, &ctx, route, c)),
+        _ if dans(contrats::ROUTES) => brute(contrats::route(o, &ctx, route, c)),
+        _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),
+        _ if dans(documents::ROUTES) => brute(documents::route(o, &ctx, route, c)),
+        _ if dans(depots::ROUTES) => brute(depots::route(o, &ctx, route, c)),
+        _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.
-        _ if dans(crate::obligations::ROUTES) => crate::obligations::route(&ctx, route, &charge),
-        _ if dans(fiches::ROUTES) => fiches::route(o, &ctx, route, &charge),
-        _ if dans(identite::ROUTES) => identite::route(o, &ctx, route, &charge),
-        _ if dans(metiers::ROUTES) => metiers::route(o, &ctx, route, &charge),
-        _ if dans(bulletin::ROUTES) => bulletin::route(o, &ctx, route, &charge),
+        _ if dans(crate::obligations::ROUTES) => brute(crate::obligations::route(&ctx, route, c)),
+        _ if dans(fiches::ROUTES) => brute(fiches::route(o, &ctx, route, c)),
+        _ if dans(identite::ROUTES) => brute(identite::route(o, &ctx, route, c)),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
-        _ if dans(crate::compagnie::organismes::ROUTES) => crate::compagnie::organismes::route(&ctx, route, &charge),
-        _ if dans(coffre::ROUTES) => coffre::route(o, &ctx, route, &charge),
-        _ if dans(filet::ROUTES) => filet::route(o, &ctx, route, &charge),
-        _ if dans(import::ROUTES) => import::route(o, &ctx, route, &charge),
-        _ if dans(archives::ROUTES) => archives::route(o, &ctx, route, &charge),
-        _ if dans(libelles_courts::ROUTES) => libelles_courts::route(o, &ctx, route, &charge),
-        _ if dans(historique::ROUTES) => historique::route(o, &ctx, route, &charge),
+        _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
+        _ if dans(coffre::ROUTES) => brute(coffre::route(o, &ctx, route, c)),
+        _ if dans(filet::ROUTES) => brute(filet::route(o, &ctx, route, c)),
+        _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
+        _ if dans(archives::ROUTES) => brute(archives::route(o, &ctx, route, c)),
+        _ if dans(historique::ROUTES) => brute(historique::route(o, &ctx, route, c)),
         // L'Historique d'un mois : ses documents, ses envois et leurs retours, lus (lecture seule).
-        Route::HistoriqueMois => crate::historique_mois::route(&ctx, &charge),
-        _ if dans(dossier_salarie::ROUTES) => dossier_salarie::route(o, &ctx, route, &charge),
-        _ if dans(ouverture::ROUTES) => ouverture::route(o, &ctx, route, &charge),
-        _ if dans(rappels::ROUTES) => rappels::route(o, &ctx, route, &charge),
+        Route::HistoriqueMois => brute(crate::historique_mois::route(&ctx, c)),
+        _ if dans(dossier_salarie::ROUTES) => brute(dossier_salarie::route(o, &ctx, route, c)),
+        _ if dans(ouverture::ROUTES) => brute(ouverture::route(o, &ctx, route, c)),
+        _ if dans(rappels::ROUTES) => brute(rappels::route(o, &ctx, route, c)),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
-        _ if dans(crate::compagnie::conseils::ROUTES) => crate::compagnie::conseils::route(&ctx, route, &charge),
+        _ if dans(crate::compagnie::conseils::ROUTES) => brute(crate::compagnie::conseils::route(&ctx, route, c)),
         // L'ouverture du logiciel et la veille : sauvegarder, relever les retours, les signatures et les fiches, sans
         // jamais echouer. ATTENTION : hors d'une compagnie fictive, cette route va au reseau (net-entreprises, Urssaf,
         // boite courriel, Drive, serveur des incidents).
-        _ if dans(crate::compagnie::ouverture::ROUTES) => crate::compagnie::ouverture::route(o, &ctx, route, &charge),
+        _ if dans(crate::compagnie::ouverture::ROUTES) => brute(crate::compagnie::ouverture::route(o, &ctx, route, c)),
         // Le banc : l'horloge de la compagnie fictive (rattraper ce qui etait du, ce que le bandeau « pendant votre
         // absence » lit ; `horloge::HorlogeFictive`).
-        Route::HorlogeRattraper => crate::horloge::route(o, &ctx, &charge),
-        autre => return Err(socle::echec::avec(catalogue::ROUTE_INCONNUE, json!({"route": autre})).into()),
+        Route::HorlogeRattraper => brute(crate::horloge::route(o, &ctx, c)),
+        autre => return Err(enveloppe::route_inconnue(autre.nom())),
     };
     // UN ACTE REFUSE A UNE COMPAGNIE QUI N'A PAS FINI DE DEMARRER dit tout ce qui lui manque, pas un manque a la fois.
     // Les mots de passe et les comptes (`routes::coffre`), le filet et les messages au developpeur (`routes::filet`) ne
     // dependent d'aucun de ces manques : leur refus se dit seul.
     match rendu {
-        Err(Echec { classe, message }) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && classe != Some(crate::compagnie::bridage::CLASSE_REFUS_D_ENVOI) => {
+        Err(Echec { classe, message }) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && classe != Some(Classe::EnvoiBride) => {
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
             let message = if crate::valeur::separer(&message).1.is_empty() { let suite = match declarations::demarrage::a_la_suite(&ctx, &message) { Ok(s) => s.unwrap_or_default(), Err(e) => format!(" {}", e) }; message + &suite } else { message };
             Err(Echec { classe, message })
         }
         autre => autre,
-    }
-}
-
-/// LA REPONSE DE `moteur route`, le seul endroit ou ce qu'une route a rendu devient ce que l'ecran et le LLM lisent :
-/// `{"ok": true, "resultat"}`, ou `{"ok": false, "erreur", "classe"}` et ce que le refus porte a part
-/// (`socle::echec::avec` : un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche). La phrase d'un refus se lit
-/// a l'ecran : elle passe la verification de ce que l'ecran affiche (`refus_a_sa_place`).
-fn reponse(racine: Option<&Path>, route: &str, rendu: Result<Value, Echec>) -> Value {
-    match rendu {
-        Ok(v) => json!({"ok": true, "resultat": v}),
-        Err(Echec { classe, message }) => {
-            let (phrase, plus) = crate::valeur::separer(&message);
-            if let Some(r) = racine {
-                refus_a_sa_place(r, route, &phrase);
-            }
-            let mut m = Map::new();
-            m.insert("ok".into(), Value::Bool(false));
-            m.insert("erreur".into(), Value::String(phrase));
-            if let Some(c) = classe {
-                m.insert("classe".into(), json!(c));
-            }
-            for (k, v) in plus {
-                m.entry(k).or_insert(v);
-            }
-            Value::Object(m)
-        }
     }
 }
 
@@ -331,7 +314,8 @@ pub fn phrases_rendues(v: &Value) -> Vec<&str> {
 fn phrase_a_sa_place(racine: &Path, route: Route, rendu: &Value) {
     // UNE REPONSE SANS PHRASE d'une route du catalogue (un avertissement, une variante que l'exemple de sa fiche ne joue
     // pas) : ni l'ecran ni `moteur route --texte` n'ont rien a lire. Le meme incident silencieux, pour la reponse qui l'a
-    // oubliee. (L'horloge du banc, hors catalogue, rend ses phrases en liste.)
+    // oubliee. Une route branchee ne rend pas sans phrase (`enveloppe::Dite`). (L'horloge du banc, hors catalogue, rend
+    // ses phrases en liste.)
     let au_catalogue = route.au_catalogue();
     if au_catalogue && !rendu.get("phrase").and_then(Value::as_str).is_some_and(|p| !p.trim().is_empty()) {
         let resume = format!("La route {} a rendu une réponse sans phrase.", route);
@@ -379,7 +363,7 @@ fn phrase_a_sa_place(racine: &Path, route: Route, rendu: &Value) {
 }
 
 /// Les routes qui ecrivent ou engagent, d'apres l'acte de leur fiche : apres elles, la fenetre verifie les etats des mois
-/// (`interface/api.rs`).
+/// (`interface/api.rs`), et la reponse le dit (`Reponse::ecrit`).
 pub fn est_une_ecriture(route: Route) -> bool {
     catalogue::FICHES.iter().any(|l| catalogue::dans(l, route).is_some_and(|f| f.acte != catalogue::Acte::Lit))
 }
@@ -392,14 +376,15 @@ pub(crate) fn maintenant() -> String {
 /// QUI ECRIT : ce que les routes inscrivent, la fenetre comme la ligne de commande (`moteur route`, qui sert les memes).
 pub(crate) const INTERFACE: &str = "interface";
 
-/// LA CHARGE D'UNE ROUTE, lue une fois a son entree, en sa forme (`socle::forme::lire`) : une cle que la forme ne connait
-/// pas, une cle qui manque, une valeur d'une autre forme la refusent (`TypeError`, `catalogue::FORME`), la cle fautive a
-/// part ; rien ne s'ecrit.
+/// LA CHARGE D'UNE ROUTE QUI N'EST PAS ENCORE BRANCHEE (son module la recoit en JSON), lue en sa forme comme
+/// `Charge::lire` : une cle que la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent
+/// (`MalFormee`, `catalogue::FORME`), la cle fautive a part ; rien ne s'ecrit.
 pub(crate) fn lire_charge<T: serde::de::DeserializeOwned>(charge: &Value) -> R<T> {
-    socle::forme::lire(charge, "La demande est mal formée.").map_err(|m| erreur("TypeError", m))
+    socle::forme::lire(charge, "La demande est mal formée.").map_err(|m| erreur(Classe::MalFormee, m))
 }
 
-/// Une reponse en JSON : chacune est une structure de son module, que `serde_json` ecrit toujours.
+/// La reponse d'une route qui n'est pas encore branchee, en JSON : chacune est une structure de son module, que
+/// `serde_json` ecrit toujours.
 pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
     serde_json::to_value(v).map_err(|e| Echec::from(e.to_string()))
 }
@@ -409,12 +394,12 @@ pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
 #[serde(deny_unknown_fields)]
 pub(crate) struct SansCharge {}
 
-/// Le salarié que `nom` désigne (`Contexte::salarie`) ; refus (`KeyError`) avec la phrase de `Contexte::salarie`.
+/// Le salarié que `nom` désigne (`Contexte::salarie`) ; refus (`Manque`) avec la phrase de `Contexte::salarie`.
 pub(crate) fn salarie(ctx: &Contexte, nom: &Value) -> R<droit::fiche::FicheSalarie> {
-    ctx.salarie(&cle_du_salarie(ctx, nom)?).map_err(|m| erreur("KeyError", m))
+    ctx.salarie(&cle_du_salarie(ctx, nom)?).map_err(|m| erreur(Classe::Manque, m))
 }
 
-/// La cle de la fiche que `nom` designe (`Contexte::cle_du_salarie`) ; refus (`KeyError`) avec sa phrase, qui cite `nom`
+/// La cle de la fiche que `nom` designe (`Contexte::cle_du_salarie`) ; refus (`Manque`) avec sa phrase, qui cite `nom`
 /// tel que la charge l'ecrit.
 pub(crate) fn cle_du_salarie(ctx: &Contexte, nom: &Value) -> R<droit::contexte::IdSalarie> {
     let texte = valeur_en_texte(nom);
@@ -424,7 +409,7 @@ pub(crate) fn cle_du_salarie(ctx: &Contexte, nom: &Value) -> R<droit::contexte::
             autre if m.starts_with("Salarie ") => m.replacen(&repr_texte(&texte), &valeur_ecrite(autre), 1),
             _ => m,
         };
-        erreur("KeyError", m)
+        erreur(Classe::Manque, m)
     })
 }
 
@@ -494,19 +479,11 @@ pub(crate) fn brut(v: &Value) -> Value {
     }
 }
 
-fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    let classe = match e.kind() {
-        std::io::ErrorKind::NotFound => "FileNotFoundError",
-        std::io::ErrorKind::PermissionDenied => "PermissionError",
-        _ => "OSError",
-    };
-    erreur(classe, socle::echec::du_disque(p, e))
-}
-
-/// Un fichier lu en UTF-8.
+/// Un fichier lu en UTF-8 : un refus du disque sous sa classe (`FichierAbsent`, `Disque`), un texte qui n'est pas de
+/// l'UTF-8 `Illisible`.
 fn lire_texte(p: &Path) -> R<String> {
-    let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
-    String::from_utf8(octets).map_err(|e| erreur("UnicodeDecodeError", socle::echec::du_disque(&p, &e)))
+    let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(p, &e)))?;
+    String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&p, &e)))
 }
 
 pub(crate) fn vers_route(x: crate::compagnie::coffre::Echec) -> Echec {
@@ -514,7 +491,7 @@ pub(crate) fn vers_route(x: crate::compagnie::coffre::Echec) -> Echec {
 }
 
 /// LA PHRASE D'UNE ROUTE, en tete de ce qu'elle rend : celle que l'ecran lit, et que `moteur route --texte` imprime
-/// (`service::en_texte`). Chaque route en rend une ; une phrase deja posee par la route est remplacee.
+/// (`Reponse::en_texte`). Chaque route en rend une ; une phrase deja posee par la route est remplacee.
 pub(crate) fn phrase_en_tete(v: Value, phrase: impl Into<String>) -> Value {
     let mut m = Map::new();
     m.insert("phrase".into(), Value::String(phrase.into()));

@@ -21,7 +21,7 @@ use crate::compagnie::administrateur;
 use crate::interface::{compagnies, suppression};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use crate::valeur::{valeur_en_texte, vrai};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[COMPAGNIE, Champ { nom: "couleur", libelle: Affiche::new("Couleur"), forme: Forme::Texte, sens: "#RRGGBB", avance: false }],
         exemple: r##"{"compagnie":"cie:la-compagnie","couleur":"#2E5A7D"}"##,
         rend: "couleur, phrase",
-        refus: &[MANQUE, Refus { classe: "ErreurOperation", corriger: "une couleur #RRGGBB, une compagnie réelle ; rien n'est écrit" }],
+        refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une couleur #RRGGBB, une compagnie réelle ; rien n'est écrit" }],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 80,
@@ -76,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[COMPAGNIE],
         exemple: r#"{"compagnie":"fictive:fictive-essai"}"#,
         rend: "phrase",
-        refus: &[MANQUE, Refus { classe: "ErreurOperation", corriger: "une compagnie fictive livrée ; rien n'est effacé" }],
+        refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une compagnie fictive livrée ; rien n'est effacé" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 120,
@@ -91,7 +91,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"garder":["fictive:ajoutee-demo"]}"#,
         rend: "gardees, supprimees, erreurs, phrase",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "une compagnie créée en démo, d'un logiciel débloqué ; rien n'a changé" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "une compagnie créée en démo, d'un logiciel débloqué ; rien n'a changé" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 200,
@@ -121,7 +121,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{}"#,
         rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus), tableau ; rien de prêt : phrase",
-        refus: &[Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
+        refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
         acte: Acte::Engage,
         avance: true,
         phrase: 0,
@@ -133,7 +133,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[Champ { nom: "portable", libelle: Affiche::new("Rendre ce dossier portable"), forme: Forme::OuiNon, sens: "vrai : faire aussi de ce dossier un dossier portable, pour une clé USB (PORTABLE.json)", avance: false }],
         exemple: r#"{"portable":true}"#,
         rend: "ajoutes, absents (les systèmes que la version n'a pas), version, portable, phrase",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 140,
@@ -150,7 +150,7 @@ pub fn installation(o: &HashMap<String, String>) -> PathBuf {
 }
 
 fn texte<'a>(charge: &'a Value, cle: &str) -> R<&'a str> {
-    charge.get(cle).and_then(Value::as_str).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))
+    charge.get(cle).and_then(Value::as_str).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))
 }
 
 fn ids(charge: &Value, cle: &str) -> Vec<String> {
@@ -158,7 +158,7 @@ fn ids(charge: &Value, cle: &str) -> Vec<String> {
 }
 
 fn operation(m: String) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// Une route de l'installation.

@@ -37,7 +37,7 @@ use engagement::numeros::NumeroContrat;
 use crate::dico::est;
 use envois::etats::{self, quand_lisible, DOCUMENTS, DPAE, DSN, SIGNATURE};
 use crate::valeur::{get, valeur_en_texte, vrai};
-use socle::echec::R;
+use socle::echec::{Classe, R};
 use socle::echec::erreur;
 use socle::fichiers::sha256_hex;
 use socle::echec::Echec;
@@ -665,7 +665,7 @@ fn plur(k: usize, un: &'static str, des: &'static str) -> &'static str {
 /// celui du moteur.
 pub fn classer_saisie(message: String) -> Echec {
     let incomplete = engagement::saisie_incomplete(&message);
-    Echec { classe: if incomplete { Some("SaisieIncomplete") } else { None }, message }
+    Echec { classe: if incomplete { Some(Classe::SaisieIncomplete) } else { None }, message }
 }
 
 /// Quand le contrat (ou son dernier avenant) de l'engagement `numero` du salarie `cle` est parti (`departs`) ; rien s'il
@@ -1412,13 +1412,13 @@ impl<'a> Moteur<'a> {
             let sal = &p.salarie;
             let nat = p.engagement.nat().map_err(plain)?;
             let spectacle = match &p.spectacle {
-                Some(s) if s.titre.is_none() => return Err(erreur("KeyError", socle::fichiers::absent("titre"))),
+                Some(s) if s.titre.is_none() => return Err(erreur(Classe::Manque, socle::fichiers::absent("titre"))),
                 Some(s) => socle::ecriture::en_valeur(&s.titre),
                 None => Value::Null,
             };
             let mois_du_contrat = p.engagement.mois_du_contrat().map_err(plain)?;
             let (Some(depuis), Some(jusqu_a)) = (mois_du_contrat.first().cloned(), mois_du_contrat.last().cloned()) else {
-                return Err(erreur("IndexError", socle::fichiers::trop_courte("les mois du contrat")));
+                return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
             let premier_mois = p.engagement.premier_mois().map_err(plain)?;
             let dernier_mois = p.engagement.dernier_mois().map_err(plain)?;
@@ -1609,7 +1609,7 @@ impl<'a> Moteur<'a> {
             Deposables::default()
         } else {
             let mut tous: Vec<(String, PathBuf)> = Vec::new();
-            let rd = std::fs::read_dir(&dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
+            let rd = std::fs::read_dir(&dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
             for e in rd.flatten() {
                 let chemin = e.path();
                 let Ok(m) = std::fs::metadata(&chemin) else { continue };
@@ -1668,7 +1668,7 @@ impl<'a> Moteur<'a> {
     /// `limite` : le dernier jour ou un annule-et-remplace est admis, jusqu'a minuit : la veille de l'echeance de depot
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
-        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, &mois.to_string()).map_err(|m| erreur("ValueError", m))?;
+        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, &mois.to_string()).map_err(|m| erreur(Classe::Illisible, m))?;
         Ok(e.veille())
     }
 
@@ -1679,7 +1679,7 @@ impl<'a> Moteur<'a> {
             return Ok(());
         }
         Err(erreur(
-            "AnnuleRemplaceHorsDelai",
+            Classe::AnnuleRemplaceHorsDelai,
             format!(
                 "La DSN de {} est deja partie, et l'annule-et-remplace n'est plus admis depuis le {} a minuit (veille de l'echeance, cahier technique DSN §1.4.2). Ce qui a change dans ce mois part dans la DSN d'un mois suivant, en correction. Rien ne part.",
                 mois,
@@ -1703,7 +1703,7 @@ impl<'a> Moteur<'a> {
         let t = l.dsn().and_then(|e| e.detail.ordre.clone()).unwrap_or_default();
         t.trim().parse::<i64>().map_err(|_| {
             erreur(
-                "ValueError",
+                Classe::Illisible,
                 socle::echec::avec(format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois), serde_json::json!({"fichier": envois::journal::DEPOTS, "cle": "ordre"})),
             )
         })
@@ -1863,7 +1863,7 @@ impl<'a> Moteur<'a> {
         };
         let chemin = PathBuf::from(&premier.chemin);
         let lignes = self.lignes()?;
-        let empreinte = envois::journal::empreinte_fichier(&chemin).map_err(|m| erreur("FileNotFoundError", m))?;
+        let empreinte = envois::journal::empreinte_fichier(&chemin).map_err(|m| erreur(Classe::FichierAbsent, m))?;
         let acte = if quoi == DSN { envois::journal::Acte::Dsn } else { envois::journal::Acte::Dpae };
         if etats::deja_depose(&lignes, acte, &empreinte).is_some() {
             return Ok(None);
@@ -2109,7 +2109,7 @@ impl<'a> Moteur<'a> {
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: &Value) -> R<Groupe> {
         let mois = &le_mois.to_string();
-        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| erreur("ValueError", m))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| erreur(Classe::Illisible, m))?;
         let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = crate::compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic.as_str())?;
         let partie = e.deposee();
@@ -2146,7 +2146,7 @@ impl<'a> Moteur<'a> {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
             let suivant = crate::regularisation::dsn_qui_porte(self.ctx, mois)?;
-            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant).map_err(|m| erreur("ValueError", m))?;
+            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant).map_err(|m| erreur(Classe::Illisible, m))?;
             let a = deposer_dsn(Mois::lire(&suivant)?, nic, format!("Déposer la DSN de {}…", Mois::en_clair(&suivant)));
             return Ok(Groupe::de(
                 EtatCase::AFaire,

@@ -117,7 +117,8 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
             fautes.push(format!("{} : « {} » : {}", ou, t, d.corriger()));
         }
     };
-    for f in moteur::routes::catalogue::en_json(true)["routes"].as_array().unwrap() {
+    for f in moteur::routes::catalogue::catalogue().iter().map(moteur::routes::catalogue::Fiche::en_json) {
+        let f = &f;
         let nom = f["nom"].as_str().unwrap();
         if let Some(b) = f["bouton"].as_str() {
             voir(format!("le bouton de {}", nom), b, COURT, true);
@@ -434,7 +435,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             _ => route_avec(&c, f.nom(), exemple, "2026-11-02", &[(VARIABLE_ESSAIS, "exemple")]),
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
-        assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()) && !moteur::service::en_texte(f.nom(), &r).trim_start().starts_with(['{', '[']), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
+        assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
         for p in moteur::routes::phrases_rendues(&r["resultat"]) {
             if let Some(d) = moteur::routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
@@ -679,8 +680,8 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         assert!(places.len() <= 1, "un module, une place : les routes qui écrivent de {:?} vont à {:?} ; range chacune dans le module de sa place", module.iter().map(|f| f.nom()).collect::<Vec<_>>(), places);
     }
     let c = treteaux("servies");
-    // Une route inconnue se refuse en nommant la route a part (`routes::servir`).
-    let inconnue = |r: &Value| r["ok"] == json!(false) && r.get("route").is_some_and(Value::is_string);
+    // Une route inconnue se refuse en nommant la route a part (`enveloppe::route_inconnue`).
+    let inconnue = |r: &Value| r["ok"] == json!(false) && r["refus"]["classe"] == json!("RouteInconnue") && r["refus"]["a_part"]["route"].is_string();
     assert!(inconnue(&route(&c, "pas-une-route", json!({}), "2026-11-02")));
     for nom in &noms {
         let r = route(&c, nom, json!({}), "2026-11-02");

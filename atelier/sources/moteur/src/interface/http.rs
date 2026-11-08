@@ -128,7 +128,7 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> Option<Result<Requete, u16>>
     Some(Ok(Requete { methode, chemin: decoder_pourcent(chemin), params, entetes, corps }))
 }
 
-/// Une requete refusee avant d'etre lue : un corps JSON que la page sait lire (`d.erreur.message`), et non un
+/// Une requete refusee avant d'etre lue : l'enveloppe d'un refus, que la page sait lire (`d.refus.phrase`), et non un
 /// corps vide sur lequel `r.json()` levait une SyntaxError.
 fn refus_de_lecture(code: u16) -> Reponse {
     let message = match code {
@@ -138,7 +138,8 @@ fn refus_de_lecture(code: u16) -> Reponse {
         ),
         _ => format!("La demande n'a pas pu être lue (code {}).", code),
     };
-    Reponse::json(code, &serde_json::json!({"ok": false, "erreur": {"type": "RequeteRefusee", "message": message}}))
+    let refus = crate::routes::enveloppe::Refus::nouveau(socle::echec::Classe::RequeteRefusee, message);
+    Reponse::json(code, &crate::routes::enveloppe::Reponse::refusee(refus).en_json())
 }
 
 fn ecrire_reponse(flux: &mut TcpStream, r: &Reponse) -> std::io::Result<()> {

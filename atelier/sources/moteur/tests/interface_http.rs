@@ -48,7 +48,7 @@ fn requete_brute(port: u16, brut: &str) -> (u16, String) {
     (tete.split_whitespace().nth(1).unwrap().parse().unwrap(), corps.to_string())
 }
 
-/// Un geste de l'accueil refuse (jeton absent) dit une PHRASE, pas un objet (« [object Object] ») ; un corps
+/// Un geste de l'accueil refuse (jeton absent) dit sa phrase dans l'enveloppe d'un refus (`refus.phrase`) ; un corps
 /// trop gros recoit une reponse JSON qui le dit, pas un corps vide que la page ne sait pas lire.
 #[test]
 fn le_lanceur_refuse_en_phrase_et_un_corps_trop_gros_se_dit_en_json() {
@@ -58,11 +58,11 @@ fn le_lanceur_refuse_en_phrase_et_un_corps_trop_gros_se_dit_en_json() {
     assert_eq!(code, 403);
     let v: serde_json::Value = serde_json::from_str(&corps).unwrap();
     assert_eq!(v["ok"], serde_json::json!(false));
-    assert!(v["erreur"].is_string(), "{}", corps);
+    assert!(v["refus"]["phrase"].is_string(), "{}", corps);
     let (code, corps) = requete_brute(port, "POST /api/etat HTTP/1.1\r\nHost: x\r\nContent-Length: 999999999\r\n\r\n");
     assert_eq!(code, 413);
     let v: serde_json::Value = serde_json::from_str(&corps).unwrap_or_else(|_| panic!("corps illisible : {:?}", corps));
     assert_eq!(v["ok"], serde_json::json!(false));
-    assert!(v["erreur"]["message"].as_str().unwrap().contains("trop"), "{}", corps);
+    assert!(v["refus"]["phrase"].as_str().unwrap().contains("trop"), "{}", corps);
     let _ = std::fs::remove_dir_all(&utilisateur);
 }

@@ -18,7 +18,7 @@
 
 use serde_json::Value;
 
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use envois::transport::{envoyer, Panne, Requete};
 
 /// Ce que le paquet soude (bride pour toujours) peut poster.
@@ -43,7 +43,7 @@ pub const DELAI: u64 = 15;
 pub struct ErreurFilet {
     pub message: String,
     pub statut: u16,
-    pub classe: Option<&'static str>,
+    pub classe: Option<Classe>,
 }
 
 impl ErreurFilet {
@@ -51,7 +51,7 @@ impl ErreurFilet {
         ErreurFilet { message, statut, classe: None }
     }
 
-    pub(crate) fn autre(classe: &'static str, message: String) -> ErreurFilet {
+    pub(crate) fn autre(classe: Classe, message: String) -> ErreurFilet {
         ErreurFilet { message, statut: 0, classe: Some(classe) }
     }
 
@@ -63,7 +63,7 @@ impl ErreurFilet {
 
     /// L'exception qui remonte de la route.
     pub fn en_echec(self) -> Echec {
-        Echec { classe: self.classe.or(Some("ErreurFilet")), message: self.message }
+        Echec { classe: self.classe.or(Some(Classe::Filet)), message: self.message }
     }
 }
 
@@ -216,7 +216,7 @@ fn chaine(t: &str, s: &mut String) {
 /// serveur, ou l'`ErreurFilet` qu'elle a causee.
 pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str)], delai: u64) -> Result<Value, ErreurFilet> {
     if crate::compagnie::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
-        return Err(ErreurFilet::autre("EditionBridee", edition_bridee(action)));
+        return Err(ErreurFilet::autre(Classe::EditionBridee,edition_bridee(action)));
     }
     let donnees = json_ascii(corps);
     let url = format!("{}/{}", serveur.trim_end_matches('/'), action);
@@ -236,8 +236,7 @@ pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str
     match envoyer(&r) {
         Ok((brut, _)) => {
             let octets = if brut.is_empty() { b"{}".to_vec() } else { brut };
-            // Le texte se lit en UTF-8 ; un echec est une `ValueError`, rangee
-            // avec les pannes de reseau.
+            // Le texte se lit en UTF-8 ; un echec se range avec les pannes de reseau.
             let texte = match std::str::from_utf8(&octets) {
                 Ok(t) => t.trim_start_matches('\u{feff}'),
                 Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
@@ -257,7 +256,7 @@ pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str
                 },
                 Some(autre) => {
                     return Err(ErreurFilet::autre(
-                        "AttributeError",
+                        Classe::Illisible,
                         socle::fichiers::attendu("un objet", crate::valeur::nom_type(&autre)),
                     ))
                 }
@@ -268,7 +267,7 @@ pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str
         Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),
         Err(Panne::Brute { classe, message, .. }) => match classe {
             // Une connexion rompue ou qui ne répond plus : le filet est injoignable.
-            "TimeoutError" | "ConnectionResetError" | "RemoteDisconnected" | "BadGzipFile" => {
+            Classe::DelaiDepasse | Classe::Reseau => {
                 Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", message.trim_end_matches('.')), 0))
             }
             autre => Err(ErreurFilet::autre(autre, message)),

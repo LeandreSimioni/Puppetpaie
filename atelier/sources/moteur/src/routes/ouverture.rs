@@ -24,7 +24,7 @@ use droit::emplois::{self};
 use droit::natures::{self, Nature};
 use droit::permanents;
 use engagement::{self};
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::dossier_du_code;
 use socle::num::Resultat;
 use crate::valeur::{nom_type, valeur_en_texte, vrai};
@@ -182,7 +182,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[Champ { nom: "apres", libelle: Affiche::new("Depuis"), forme: Forme::Texte, sens: "seulement ceux d'après cet instant", avance: true }],
         exemple: r#"{}"#,
         rend: "les courriels joués (à qui, quoi, quand)",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "rien : seulement dans une compagnie fictive" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
         acte: Acte::Lit,
         avance: true,
         phrase: 0,
@@ -228,24 +228,17 @@ fn brut(v: &Value) -> Value {
     }
 }
 
-/// Un dictionnaire, sinon `AttributeError`.
+/// Un dictionnaire, sinon `Illisible`.
 fn objet<'a>(v: &'a Value, _qui: &str) -> R<&'a Map<String, Value>> {
-    v.as_object().ok_or_else(|| erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(v))))
+    v.as_object().ok_or_else(|| erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(v))))
 }
 
 /// Un refus garde la classe que
-/// la lecture rencontre (`FileNotFoundError`, `UnicodeDecodeError`, `JSONDecodeError`).
+/// la lecture rencontre (`FichierAbsent`, `Disque`, `Illisible`).
 fn lire_objet(p: &Path) -> R<Value> {
-    let octets = std::fs::read(p).map_err(|e| {
-        let classe = match e.kind() {
-            std::io::ErrorKind::NotFound => "FileNotFoundError",
-            std::io::ErrorKind::PermissionDenied => "PermissionError",
-            _ => "OSError",
-        };
-        erreur(classe, socle::echec::du_disque(&p, &e))
-    })?;
-    let texte = String::from_utf8(octets).map_err(|e| erreur("UnicodeDecodeError", socle::echec::du_disque(&p, &e)))?;
-    serde_json::from_str(&texte).map_err(|e| erreur("JSONDecodeError", e.to_string()))
+    let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&p, &e)))?;
+    let texte = String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&p, &e)))?;
+    serde_json::from_str(&texte).map_err(|e| erreur(Classe::Illisible, e.to_string()))
 }
 
 // ------------------------------------------------------------ la configuration
@@ -618,7 +611,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
         match pose {
             None => e.dossier = Some(dossier.display().to_string()),
             Some(f) => {
-                let st = std::fs::metadata(&f).map_err(|x| erreur("OSError", socle::echec::du_disque(&f, &x)))?;
+                let st = std::fs::metadata(&f).map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&f, &x)))?;
                 e.octets = Some(st.len());
                 e.format = Some(f.extension().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default());
                 e.quand = Some(socle::paris::iso_secondes(socle::paris::mtime(&st)));
@@ -999,7 +992,7 @@ impl MoisDuBilan {
 fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
     for (nom, noms) in mois {
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, nom).map_err(|m| erreur("ValueError", m))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, nom).map_err(|m| erreur(Classe::Illisible, m))?;
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
         // L'ETAT DE LA DSN, lu une fois (`compagnie::etat_dsn`) ; une DSN a deposer passee l'echeance est en retard.
@@ -1340,7 +1333,7 @@ fn natures(ctx: &Contexte) -> R<Vec<NatureDeLaPage>> {
         let carte = engagement::carte::CarteValide::natures()
             .into_iter()
             .find(|d| d.nature == n.cle)
-            .ok_or_else(|| erreur("KeyError", format!("Le logiciel ne sait pas saisir un {}.", n.libelle)))?;
+            .ok_or_else(|| erreur(Classe::Manque, format!("Le logiciel ne sait pas saisir un {}.", n.libelle)))?;
         sortie.push(NatureDeLaPage {
             cle: n.cle.clone(),
             libelle: n.libelle.clone(),
@@ -1525,7 +1518,7 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .into_iter()
         .map(|k| {
             let v = &ctx.spectacles[k];
-            let titre = Some(socle::ecriture::en_valeur(&v.titre)).filter(|_| v.titre.is_some()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("titre")))?;
+            let titre = Some(socle::ecriture::en_valeur(&v.titre)).filter(|_| v.titre.is_some()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("titre")))?;
             Ok(SpectacleDeLaListe { cle: k.to_string(), titre, numero_objet: socle::ecriture::en_valeur(&v.numero_objet) })
         })
         .collect::<R<Vec<_>>>()?;
@@ -1664,8 +1657,8 @@ pub(crate) fn version() -> R<Version> {
     let code = dossier_du_code().parent().map(Path::to_path_buf).unwrap_or_default();
     // La mise a jour est celle de l'INSTALLATION : son reglage (`maj::reglage`), sa version prete (`maj::prete`).
     let inst = code.parent().map(Path::to_path_buf).unwrap_or_default();
-    let (depot, editeur) = crate::compagnie::maj::reglage(&inst).map_err(|e| erreur("ValueError", e))?;
-    let prete = crate::compagnie::maj::prete(&inst).map_err(|e| erreur("ValueError", e))?;
+    let (depot, editeur) = crate::compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
+    let prete = crate::compagnie::maj::prete(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
     let courante_v = courante(&code)?;
     let avant = if code.join(".avant").join("donnees").is_dir() { Some(courante(&code.join(".avant"))?) } else { None };
     let dite = match &prete {

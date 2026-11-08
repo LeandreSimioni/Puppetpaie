@@ -39,7 +39,7 @@ pub const A_DIRE: &str = engagement::importe::A_DIRE;
 
 /// Les natures qu'un permanent peut recevoir.
 fn natures_permanentes() -> R<Vec<std::sync::Arc<droit::natures::Nature>>> {
-    let toutes = droit::natures::natures().map_err(|m| erreur("ErreurOperation", m))?;
+    let toutes = droit::natures::natures().map_err(|m| erreur(socle::echec::Classe::Refuse, m))?;
     Ok(toutes.iter().filter(|n| n.mensuelle()).cloned().collect())
 }
 
@@ -195,7 +195,7 @@ pub(crate) struct NatureProposee {
 }
 
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
-    erreur("ErreurOperation", m.into())
+    erreur(socle::echec::Classe::Refuse, m.into())
 }
 
 /// La charge d'`importation-nature` : le salarie, la nature, et ce que `demande` exige d'un contrat qui court encore.

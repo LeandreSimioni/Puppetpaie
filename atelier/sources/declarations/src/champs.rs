@@ -21,7 +21,7 @@ use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess
 use serde::{Deserialize, Serialize, Serializer};
 
 use socle::date::Jour;
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::dossier_du_code;
 use socle::forme::NombreLu;
 use socle::texte::sans_accent;
@@ -512,7 +512,7 @@ fn table(nom: &str) -> R<&'static [Champ]> {
         "entreprise" => Ok(&t.entreprise),
         "salarie" => Ok(&t.salarie),
         "spectacle" => Ok(&t.spectacle),
-        autre => Err(erreur("KeyError", format!("fiche inconnue : {}", socle::fichiers::repr(autre)))),
+        autre => Err(erreur(Classe::Manque, format!("fiche inconnue : {}", socle::fichiers::repr(autre)))),
     }
 }
 

@@ -8,7 +8,7 @@ use droit::fiche::Lue as _;
 use std::collections::BTreeSet;
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use socle::num::{eur2, Decimal};
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
@@ -47,7 +47,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 fiche: paie.salarie.champs.clone(),
                 salarie: qui(&paie.salarie)?,
                 contrat: e.numero.as_deref().map(str::to_string),
-                nature: e.nat().map_err(|x| erreur("ErreurOperation", x))?.libelle.clone(),
+                nature: e.nat().map_err(|x| erreur(Classe::Refuse, x))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
                 objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
@@ -159,7 +159,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         // art. D1221-23, 1°), la categorie DSN la suit entre parentheses ; sans pays, la categorie seule. Un pays hors de
         // la liste du logiciel se dit par son code.
         let pays = match f.pays_nationalite.remplie() {
-            Some(code) => match socle::pays::du_code(code).map_err(|m| erreur("ValueError", m))? {
+            Some(code) => match socle::pays::du_code(code).map_err(|m| erreur(Classe::Illisible, m))? {
                 Some(p) => Some(p.nom),
                 None => Some(code.to_string()),
             },

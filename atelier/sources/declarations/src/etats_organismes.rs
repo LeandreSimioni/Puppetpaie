@@ -15,7 +15,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
 use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
@@ -81,11 +81,11 @@ fn annees_du_socle(ctx: &Contexte) -> Vec<i32> {
 /// Ce que la convention `idcc` fait payer hors du bulletin (`hors_bulletin`), dans le socle livre de l'annee `an`, a
 /// defaut dans le plus recent livre.
 fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &str) -> R<Option<droit::forme_bareme::HorsBulletin>> {
-    let socle = match droit::contexte::socle_livre_lu(an).map_err(|m| erreur("OSError", m))? {
+    let socle = match droit::contexte::socle_livre_lu(an).map_err(|m| erreur(Classe::Disque, m))? {
         Some(s) => s,
         None => {
-            let derniere = annees_du_socle(ctx).into_iter().max().ok_or_else(|| erreur("ValueError", "max() arg is an empty sequence"))?;
-            match droit::contexte::socle_livre_lu(derniere).map_err(|m| erreur("OSError", m))? {
+            let derniere = annees_du_socle(ctx).into_iter().max().ok_or_else(|| erreur(Classe::Illisible, "max() arg is an empty sequence"))?;
+            match droit::contexte::socle_livre_lu(derniere).map_err(|m| erreur(Classe::Disque, m))? {
                 Some(s) => s,
                 None => return Ok(None),
             }
@@ -95,7 +95,7 @@ fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &str) -> R<Option<droit::forme_b
 }
 
 fn annee_entiere(an: &str) -> R<i32> {
-    an.parse::<i32>().map_err(|_| erreur("ValueError", format!("nombre entier illisible : {}", socle::fichiers::repr(an))))
+    an.parse::<i32>().map_err(|_| erreur(Classe::Illisible, format!("nombre entier illisible : {}", socle::fichiers::repr(an))))
 }
 
 /// L'IDCC de la fiche entreprise, que chacun de ces etats exige.
@@ -193,7 +193,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {
                             if !part.is_zero() {
-                                let o = org_de(id_org).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(id_org)))?;
+                                let o = org_de(id_org).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(id_org)))?;
                                 ajouter(&m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, zero, None, -part);
                                 reparti = add(reparti, part);
                             }
@@ -462,11 +462,11 @@ fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
     if !p.exists() {
         return Ok(Vec::new());
     }
-    let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+    let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
     let texte = String::from_utf8_lossy(&octets).into_owned();
     let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
     let Some((entete, corps)) = rangs.split_first() else { return Ok(Vec::new()) };
-    let illisible = |quoi: &str| erreur("ValueError", socle::echec::avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }));
+    let illisible = |quoi: &str| erreur(Classe::Illisible, socle::echec::avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }));
     let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
     let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
     let mut out: Vec<(String, String)> = Vec::new();
@@ -601,7 +601,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         // UNE ANNEE QUE LE LOGICIEL NE TIENT PAS EN ENTIER : la compagnie n'y a de paies (ecrites ou importees) qu'a
         // partir d'un mois apres janvier ; les mois d'avant manquent, la tranche A et la contribution sont partielles.
-        let premier = p.dispo.keys().next().map(|m| socle::mois::Mois::lire(m)).transpose().map_err(|e| erreur("ValueError", e))?.filter(|m| m.annee().to_string() == an);
+        let premier = p.dispo.keys().next().map(|m| socle::mois::Mois::lire(m)).transpose().map_err(|e| erreur(Classe::Illisible, e))?.filter(|m| m.annee().to_string() == an);
         let regle = if let Some(premier) = premier.filter(|m| m.numero() > 1) {
             let titre = |m: socle::mois::Mois| m.libelle(socle::mois::Graphie::Titre);
             let (janvier, avant) = (socle::mois::Mois::nouveau(premier.annee(), 1)?, premier.precedent());
@@ -671,7 +671,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut par_an: Vec<(String, Decimal, Decimal)> = Vec::new();
     let zero = zero2();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
-    let mensuelles: Vec<String> = droit::natures::natures().map_err(|m| erreur("ErreurOperation", m))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
+    let mensuelles: Vec<String> = droit::natures::natures().map_err(|m| erreur(Classe::Refuse, m))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
         let an: String = l.mois.chars().take(4).collect();
@@ -696,13 +696,13 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut cpnef = zero;
         if let Some(c) = &hb.cpnef_dialogue_social {
             let brut_cpnef = eur2(div(mul(masse, c.taux), Decimal::ONE_HUNDRED));
-            let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)));
+            let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)));
             cpnef = plus_grand(borne(c.plancher.map(|n| n.0), "plancher")?, plus_petit(borne(c.plafond.map(|n| n.0), "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
-            .ok_or_else(|| erreur("KeyError", socle::fichiers::absent("contribution_conventionnelle_permanents")))?
+            .ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("contribution_conventionnelle_permanents")))?
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
@@ -711,7 +711,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 tranches
                     .iter()
                     .find(|x| x.jusqu_a.is_none_or(|j| eff <= j as f64))
-                    .ok_or_else(|| erreur("StopIteration", socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?
+                    .ok_or_else(|| erreur(Classe::Manque, socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?
                     .taux,
             ),
             None if masse_permanents.is_zero() => None,

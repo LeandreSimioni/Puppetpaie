@@ -4,15 +4,16 @@ use droit::fiche::Lue as _;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde_json::json;
 
-use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, OPERATION};
+use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, OPERATION};
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::refus;
 use droit::contexte::Contexte;
 use documents::bulletin::{jeux_et_description, Modele, CASE_MODELE};
 use socle::fichiers::dossier_du_code;
-use socle::echec::{Echec, R};
+use socle::echec::R;
 use crate::valeur::lire_json;
 
 const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
@@ -28,7 +29,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[],
         exemple: r#"{}"#,
         rend: "modele, les modèles connus, autrement (les salariés à un autre modèle)",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -40,7 +41,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MODELE],
         exemple: r#"{"modele":"complet"}"#,
         rend: "modele, pdf (en base64)",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -52,7 +53,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MODELE],
         exemple: r#"{"modele":"simplifié"}"#,
         rend: "ce que bulletin-modeles rend",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -60,24 +61,39 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
         Route::BulletinModeles => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(modeles(ctx)?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(modeles(porte.ctx)?)
         }
-        Route::BulletinModeleApercu => {
-            let modele = modele_demande(&super::lire_charge(charge)?)?;
-            let pdf = apercu_pdf(modele).map_err(refus)?;
-            super::en_json(ApercuModele {
-                phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
-                modele: modele.cle().to_string(),
-                pdf: socle::base64::ecrire(&pdf),
-            })
-        }
-        Route::BulletinModeleChoisir => super::en_json(choisir(ctx, &super::lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::BulletinModeleApercu => en_json(apercu(charge.lire()?)?),
+        Route::BulletinModeleChoisir => en_json(choisir(porte.ctx, &charge.lire()?)?),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
+    }
+}
+
+/// `bulletin-modele-apercu` : le bulletin d'exemple dans le modele demande, en PDF.
+fn apercu(c: ChargeModele) -> R<ApercuModele> {
+    let modele = modele_demande(&c)?;
+    let pdf = apercu_pdf(modele).map_err(refus)?;
+    Ok(ApercuModele {
+        phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
+        modele: modele.cle().to_string(),
+        pdf: socle::base64::ecrire(&pdf),
+    })
+}
+
+impl Dite for ApercuModele {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for ModelesDuBulletin {
+    fn phrase(&self) -> &str {
+        &self.phrase
     }
 }
 

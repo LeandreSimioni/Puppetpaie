@@ -11,6 +11,7 @@
 //! voir `liste_nominative_xlsx`.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -27,11 +28,11 @@ use socle::texte::{euros, virgule};
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 fn dec(t: &str) -> R<Decimal> {
-    Decimal::from_str(t.trim()).map_err(|_| erreur("InvalidOperation", socle::num::illisible(t)))
+    Decimal::from_str(t.trim()).map_err(|_| erreur(Classe::CalculImpossible, socle::num::illisible(t)))
 }
 
 fn jjmmaaaa(iso: &str) -> String {
@@ -162,7 +163,7 @@ fn plafond_mensuel(annee: &str) -> R<Option<Decimal>> {
     if !f.exists() {
         return Ok(None);
     }
-    let v = lire_json(&f).map_err(|m| erreur("OSError", m))?;
+    let v = lire_json(&f).map_err(|m| erreur(Classe::Disque, m))?;
     let m = v.get("plafond_securite_sociale").and_then(|p| p.get("mensuel"));
     match m {
         Some(x) if vrai(x) => {
@@ -178,7 +179,7 @@ fn plafond_mensuel(annee: &str) -> R<Option<Decimal>> {
 
 /// La regularisation CASC-SVP que demande `d`, calculee sans rien ecrire (l'ecriture des fichiers : `ecrire`).
 pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
-    let base = droit::adhesions::casc_svp_base().map_err(|m| erreur("OSError", m))?;
+    let base = droit::adhesions::casc_svp_base().map_err(|m| erreur(Classe::Disque, m))?;
     let ent = &ctx.entreprise;
     let idcc = ent.idcc.ecrite("idcc").map_err(refus)?;
     if idcc != base.idcc {
@@ -196,7 +197,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         }
         Ok(false) => {}
     }
-    let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur("OSError", m))?;
+    let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur(Classe::Disque, m))?;
     let depuis = base.depuis.clone();
     let mut candidats: Vec<String> = crate::import::mois::mois_importes(&ctx.racine)?
         .into_iter()
@@ -439,7 +440,7 @@ fn fichier_suivi(ctx: &Contexte) -> std::path::PathBuf {
 /// Les annees deja notees regularisees, en une phrase : l'annee, le montant vire (en euros s'il se lit en nombre) et le
 /// jour du virement.
 fn deja_faites(ctx: &Contexte) -> R<String> {
-    let d = declarations::casc::lue(ctx).map_err(|m| erreur("AttributeError", m))?;
+    let d = declarations::casc::lue(ctx).map_err(|m| erreur(Classe::Illisible, m))?;
     Ok(d.iter()
         .flat_map(|d| &d.regularisations)
         .map(|x| {
@@ -500,7 +501,7 @@ pub fn vers_json(r: &Regularisation) -> Value {
 /// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes.
 pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
     let dossier = ctx.racine.join("exports").join("casc-svp");
-    let io = |p: &Path, e: std::io::Error| erreur("OSError", socle::echec::du_disque(&p, &e));
+    let io = |p: &Path, e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&p, &e));
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
     let virgule = |d: &Decimal| d.to_string().replace('.', ",");
     let mut fichiers: Vec<std::path::PathBuf> = vec![];
@@ -609,7 +610,7 @@ fn quantite_xlsx(q: Option<&Decimal>) -> Option<f64> {
 /// effacees avant d'ecrire.
 fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path, fichiers: &mut Vec<std::path::PathBuf>) -> R<()> {
     use rust_xlsxwriter::{Format, FormatAlign, Workbook};
-    let xl = |e: rust_xlsxwriter::XlsxError| erreur("OSError", format!("classeur CASC-SVP : {}", e));
+    let xl = |e: rust_xlsxwriter::XlsxError| erreur(Classe::Disque, format!("classeur CASC-SVP : {}", e));
     let mut wb = Workbook::new();
     let ws = wb.add_worksheet();
     ws.set_name("Feuil1").map_err(xl)?;
@@ -700,7 +701,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         ));
     }
     let chemin = dossier.join("CASC-SVP_liste-nominative.xlsx");
-    wb.save(&chemin).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+    wb.save(&chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
     fichiers.push(chemin);
     Ok(())
 }
@@ -712,7 +713,7 @@ pub use declarations::casc::RegularisationNotee;
 pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &str, qui: &str, aujourd_hui: &str) -> R<RegularisationNotee> {
     let r = regularisation(ctx, &Demande { annee: Some(annee.to_string()), ..Default::default() })?;
     let p = fichier_suivi(ctx);
-    let mut d = match declarations::casc::lue(ctx).map_err(|m| erreur("AttributeError", m))? {
+    let mut d = match declarations::casc::lue(ctx).map_err(|m| erreur(Classe::Illisible, m))? {
         Some(d) => d,
         None => declarations::casc::CascSvp {
             quoi: "Les regularisations CASC-SVP faites hors DSN. Un mois ici ne revient plus dans un dossier de regularisation.".into(),
@@ -730,6 +731,6 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
         qui: qui.to_string(),
     };
     d.regularisations.push(entree.clone());
-    ecrire_json(&p, &d, 2).map_err(|m| erreur("OSError", m))?;
+    ecrire_json(&p, &d, 2).map_err(|m| erreur(Classe::Disque, m))?;
     Ok(entree)
 }

@@ -165,7 +165,7 @@ pub struct Cadre5 {
     pub courriel: String,
 }
 
-/// Une case que le cadre 5 exige : absente, elle se refuse (`KeyError`).
+/// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
 fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
     c.ecrite(cle).map(str::to_string)
 }

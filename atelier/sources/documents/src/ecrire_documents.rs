@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::echec::Echec;
 use socle::echec::R;
 use socle::verrou::Verrou;
@@ -16,11 +16,11 @@ use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
 
 fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
-    erreur("OSError", socle::echec::du_disque(&chemin, &e))
+    erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
 }
 
 fn valeur(m: String) -> Echec {
-    erreur("ValueError", m)
+    erreur(Classe::Illisible, m)
 }
 
 /// La suite des numeros de chaque annee, sous la racine de la compagnie.
@@ -88,9 +88,9 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
     let maintenant = socle::paris::iso_secondes(socle::temps::secondes()).replace('T', " ");
     let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
-    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur("OSError", m))? {
+    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
         Ok(v) => Ok(v),
-        Err(v) => Err(erreur("CompteursVerrouilles", v.message())),
+        Err(v) => Err(erreur(Classe::CompteursVerrouilles, v.message())),
     }
 }
 

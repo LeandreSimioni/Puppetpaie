@@ -733,7 +733,7 @@ impl Fautes {
             Faute::Rubrique { ligne, version: None } => format!("porte la ligne « {} », qui n'est pas une rubrique de la norme DSN", ligne),
         };
         Some(socle::echec::erreur(
-            "ErreurOperation",
+            socle::echec::Classe::Refuse,
             format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce),
         ))
     }

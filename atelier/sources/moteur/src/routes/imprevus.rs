@@ -6,7 +6,7 @@
 //!
 //! RIEN NE PART D'ICI : un imprevu s'ecrit dans `imprevus/AAAA-MM.json`, et c'est la production du mois qui en tire la
 //! ligne de paie et le bloc de la DSN ; un signalement s'ecrit en fichier, il ne s'envoie pas. Les refus sont des
-//! `ErreurOperation` (la page les montre tels quels) ; un refus n'ecrit rien.
+//! `Refuse` (la page les montre tels quels) ; un refus n'ecrit rien.
 //!
 //! CE QUI S'Y SAISIT, ET CE QUI L'APPELLE (rien de remplissable s'il n'y a pas a le remplir). Le moteur dit, sur chaque
 //! imprevu resume (`resume`), ce que ses faits ouvrent : `ij_attendues` (l'arret ouvre le maintien de salaire, par la loi
@@ -35,7 +35,7 @@ use crate::dico::{items, Dico};
 use crate::valeur::{get, getd, objet_vide, ou};
 use socle::date::Jour;
 use crate::valeur::{d, en_texte, vrai};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 use socle::num::Decimal;
 use crate::valeur::{nom_type, valeur_ecrite, valeur_en_texte};
@@ -519,11 +519,11 @@ fn regulariser(ctx: &Contexte, nom: &str, phrase: &mut String) -> R<()> {
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 fn jour(v: &Value) -> R<Jour> {
-    d(v).map_err(|m| erreur("ValueError", m))
+    d(v).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 fn magasin<T>(r: Result<T, String>) -> R<T> {
@@ -655,7 +655,7 @@ fn l_arret(ctx: &Contexte, cle: &str, dernier: &Jour) -> R<(usize, Vec<Value>)> 
 /// range, tels que la liste les donne.
 fn ecrire(ctx: &Contexte, mois: &str, liste: Vec<Value>) -> R<()> {
     let liste = liste.iter().map(forme).collect::<R<Vec<_>>>()?;
-    imprevus::ecrire(&ctx.racine, mois, liste).map_err(|m| erreur("OSError", m))
+    imprevus::ecrire(&ctx.racine, mois, liste).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// Ce qui est parti d'un imprevu (`obligations::ce_qui_est_parti` : les envois du journal, tels qu'il les lit).
@@ -678,7 +678,7 @@ fn envoye(ctx: &Contexte, imp: &Value, nature: &str) -> R<bool> {
 fn parti_le(ctx: &Contexte, imp: &Value, nature: &str) -> R<Option<Jour>> {
     let envois = ses_envois(ctx, imp)?;
     let premier = envois.iter().filter(|x| x.nature == nature && x.type_declaration == signalement::NORMALE).map(|x| x.quand.as_str()).min().map(str::to_string);
-    premier.map(|q| Jour::lire(&q.chars().take(10).collect::<String>()).map_err(|m| erreur("ValueError", m))).transpose()
+    premier.map(|q| Jour::lire(&q.chars().take(10).collect::<String>()).map_err(|m| erreur(Classe::Illisible, m))).transpose()
 }
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
@@ -1355,7 +1355,7 @@ l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche n
     ));
     // Les jours ajoutes qui tombent dans un mois dont la DSN reelle est deja partie : elle portait l'ancienne fin.
     let declares = reporte_par(ctx, &avant)?;
-    for m in Mois::entre(&fin_avant.plus_jours(1).map_err(|e| erreur("ValueError", e))?, &nouvelle_fin).iter().map(Mois::to_string) {
+    for m in Mois::entre(&fin_avant.plus_jours(1).map_err(|e| erreur(Classe::Illisible, e))?, &nouvelle_fin).iter().map(Mois::to_string) {
         if declares.iter().any(|x| *x == m) {
             avertissements.push(format!(
                 "La DSN de {} est déjà partie avec l'ancienne fin (le {}) : la paie de ce mois, où les jours ajoutés \
@@ -1377,7 +1377,7 @@ remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). 
 
 /// L'arret est-il subroge (S21.G00.60.004 = oui) ?
 fn signalement_subroge(a: &Value) -> R<bool> {
-    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { saisi: arret_de(a)? }).map_err(|m| erreur("ValueError", m))
+    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { saisi: arret_de(a)? }).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 // ------------------------------------------------------------------ les suspensions
@@ -1483,12 +1483,12 @@ reprendre (une fin plus tot), ou corriger les DSN deposees.",
     reponse_suspension(ctx, &s, "Absence retirée : aucune déclaration ne l'avait portée.")
 }
 
-/// Ce que la norme refuse (`SignalementImpossible`, une
-/// `ValueError`) ; les avertissements ne servent pas ici.
+/// Ce que la norme refuse (`SignalementImpossible`, une valeur
+/// `Illisible`) ; les avertissements ne servent pas ici.
 fn verifier(arret: &Value) -> R<()> {
     match signalement::verifier(&declarations::dsn::Arret { saisi: arret_de(arret)? }, signalement::ARRET, None) {
         Ok(_) => Ok(()),
-        Err(signalement::Echec::Impossible(m)) => Err(erreur("ValueError", m)),
+        Err(signalement::Echec::Impossible(m)) => Err(erreur(Classe::Illisible, m)),
         Err(signalement::Echec::Autre(m)) => Err(Echec { classe: None, message: m }),
     }
 }
@@ -1732,9 +1732,9 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Value, mois: &str) -> R<declarati
     }
     let preavis = e.get("preavis").filter(|p| vrai(p)).cloned().unwrap_or_else(|| json!({}));
     let cle = |k: &str| e.get(k).cloned().unwrap_or(Value::Null);
-    let fin = e.get("fin").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("fin")))?.clone();
-    let motif = e.get("motif_rupture").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("motif_rupture")))?.clone();
-    let type_preavis = preavis.get("type").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("type")))?.clone();
+    let fin = e.get("fin").ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("fin")))?.clone();
+    let motif = e.get("motif_rupture").ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("motif_rupture")))?.clone();
+    let type_preavis = preavis.get("type").ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("type")))?.clone();
     let dite = |x: Value| Some(x).filter(vrai).map(|x| en_texte(&x));
     Ok(declarations::fctu::FinDeContrat {
         fin: en_texte(&fin),
@@ -1751,10 +1751,10 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Value, mois: &str) -> R<declarati
 }
 
 /// L'echec d'un signalement de fin de contrat ou d'amorcage : une regle de la norme qui s'oppose
-/// (`FctuImpossible`, `AmorcageImpossible`, des `ValueError`) ou autre chose.
+/// (`FctuImpossible`, `AmorcageImpossible`, une valeur `Illisible`) ou autre chose.
 fn echec_fctu(e: declarations::fctu::Echec) -> Echec {
     match e {
-        declarations::fctu::Echec::Impossible(m) | declarations::fctu::Echec::Autre(m) => erreur("ValueError", m),
+        declarations::fctu::Echec::Impossible(m) | declarations::fctu::Echec::Autre(m) => erreur(Classe::Illisible, m),
     }
 }
 
@@ -1928,7 +1928,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let constitution = c.le.unwrap_or(ctx.aujourdhui);
     let dsn_arret = declarations::dsn::Arret { saisi: arret_de(&arret)? };
     let echec = |e: Ech| match e {
-        Ech::Impossible(m) | Ech::Autre(m) => erreur("ValueError", m),
+        Ech::Impossible(m) | Ech::Autre(m) => erreur(Classe::Illisible, m),
     };
     let mut avertissements = signalement::verifier(&dsn_arret, nature, Some(&constitution)).map_err(echec)?;
     let (ordre, plate_forme) = match c.ordre.unwrap_or(0) {
@@ -1981,7 +1981,7 @@ fn plain(m: String) -> Echec {
 /// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu, le dossier `arrets/` d'avant.
 #[track_caller]
 pub(crate) fn refus_magasin(m: String) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// Les arrets de travail du magasin des imprevus (`imprevus/AAAA-MM.json`, genre `arret`), dans l'ordre des mois du
@@ -1998,7 +1998,7 @@ pub(crate) fn nomenclatures() -> R<Bloc60> {
 /// Le libelle du motif d'arret dans les codes de la norme, `?` s'il n'y est pas.
 fn libelle_motif(n: &Bloc60, motif: &Value) -> R<String> {
     if matches!(motif, Value::Array(_) | Value::Object(_)) {
-        return Err(erreur("TypeError", socle::fichiers::pas_une_cle(nom_type(motif))));
+        return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle(nom_type(motif))));
     }
     Ok(n.motifs_arret.code(motif.as_str().unwrap_or_default()).map_or_else(|| "?".to_string(), |c| c.libelle.clone()))
 }
@@ -2085,25 +2085,25 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
 
 // ----------------------------------------------------------- fins de contrat
 
-/// `KeyError` quand elle est inconnue.
+/// `Manque` quand elle est inconnue.
 fn nature_de(cle: &Value) -> R<std::sync::Arc<droit::natures::Nature>> {
     let texte = match cle {
         Value::String(s) if !s.is_empty() => s.clone(),
         v if !vrai(v) => {
             // Une nature se dit, elle ne se devine pas (regle 6).
-            return Err(erreur("KeyError", socle::fichiers::absent("nature")));
+            return Err(erreur(Classe::Manque, socle::fichiers::absent("nature")));
         }
         Value::Array(_) | Value::Object(_) => {
-            return Err(erreur("TypeError", socle::fichiers::pas_une_cle(nom_type(cle))));
+            return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle(nom_type(cle))));
         }
         autre => {
             // Une cle qui n'est pas un texte ne peut etre aucune nature.
             let mut connues: Vec<String> = droit::natures::natures().map_err(plain)?.iter().map(|n| n.cle.clone()).collect();
             connues.sort();
-            return Err(erreur("KeyError", format!("Nature de contrat inconnue : {}. Connues : {}.", valeur_ecrite(autre), connues.join(", "))));
+            return Err(erreur(Classe::Manque, format!("Nature de contrat inconnue : {}. Connues : {}.", valeur_ecrite(autre), connues.join(", "))));
         }
     };
-    droit::natures::nature(&texte).map_err(|m| erreur("KeyError", m))
+    droit::natures::nature(&texte).map_err(|m| erreur(Classe::Manque, m))
 }
 
 /// CE QUI MANQUE A UN SIGNALEMENT, tel que l'ecran le dit : `champ` (la donnee de l'engagement, `data-fait` de sa carte),
@@ -2177,8 +2177,8 @@ technique DSN p. 275). Le signalement ne s'écrit pas sans elle.",
     }
     let preavis = ou(get(e, "preavis")?, objet_vide());
     if !vrai(get(preavis, "type")?) {
-        let requis = |k: &str| e.get(k).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(k)));
-        let (debut, fin) = (d(requis("debut")?).map_err(|m| erreur("ValueError", m))?, d(requis("fin")?).map_err(|m| erreur("ValueError", m))?);
+        let requis = |k: &str| e.get(k).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(k)));
+        let (debut, fin) = (d(requis("debut")?).map_err(|m| erreur(Classe::Illisible, m))?, d(requis("fin")?).map_err(|m| erreur(Classe::Illisible, m))?);
         let anciennete = droit::permanents::anciennete_mois(&debut, &fin);
         let motif_texte = if vrai(motif) { Some(valeur_en_texte(motif)) } else { None };
         let cdd = !nature_de(get(e, "nature")?)?.duree_indeterminee;
@@ -2281,7 +2281,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: &str, aujourdhui: Jour) -> R
     };
     let journal = envois::journal::lu(&ctx.racine)?;
     let etats = engagement::etats::tels_qu_ecrits(ctx, mois, &journal.departs).map_err(Echec::from)?;
-    let le_mois = Mois::lire(mois).map_err(|e| erreur("ValueError", e))?;
+    let le_mois = Mois::lire(mois).map_err(|e| erreur(Classe::Illisible, e))?;
     let engagements = getd(&saisie, "engagements", &Value::Null)?;
     let liste = if vrai(engagements) { items(engagements)? } else { Vec::new() };
     let mut out = Vec::new();
@@ -2296,11 +2296,11 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: &str, aujourdhui: Jour) -> R
         if !nat.signalement_fctu(motif.as_deref()) || !vrai(get(e, "fin")?) {
             continue;
         }
-        let fin = d(&e["fin"]).map_err(|m| erreur("ValueError", m))?;
+        let fin = d(&e["fin"]).map_err(|m| erreur(Classe::Illisible, m))?;
         if !(le_mois.premier_jour() <= fin && fin <= le_mois.dernier_jour()) {
             continue;
         }
-        let salarie = e.get("salarie").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("salarie")))?;
+        let salarie = e.get("salarie").ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("salarie")))?;
         // La cle de la fiche : celle que porte le nom du fichier du signalement (`fin-contrat-signaler`).
         let cle = ctx.cle_du_salarie(&valeur_en_texte(salarie)).ok();
         let a_saisir = ce_qui_manque(ctx, e)?;
@@ -2361,7 +2361,7 @@ const MOIS_EN_ARRIERE: u32 = 12;
 /// elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
 pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: &str, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     let mut out = Vec::new();
-    let mut m = Mois::lire(mois).map_err(|e| erreur("ValueError", e))?;
+    let mut m = Mois::lire(mois).map_err(|e| erreur(Classe::Illisible, e))?;
     for _ in 0..MOIS_EN_ARRIERE {
         m = m.precedent();
         let mut celles: Vec<FinASignaler> = fins_a_signaler(ctx, &m.to_string(), aujourdhui)?.into_iter().filter(|f| f.du && f.en_retard).collect();

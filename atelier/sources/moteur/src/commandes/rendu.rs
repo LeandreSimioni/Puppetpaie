@@ -46,11 +46,11 @@ pub fn debut(t: &str, n: usize) -> String {
 }
 
 
-/// Le texte de la cle, ou le refus `KeyError` quand elle manque.
+/// Le texte de la cle, ou le refus `Manque` quand elle manque.
 pub fn exiger(v: &Value, cle: &str) -> Result<String, socle::echec::Echec> {
     match v.get(cle) {
         Some(x) => Ok(texte(x)),
-        None => Err(socle::echec::Echec { classe: Some("KeyError"), message: socle::fichiers::repr(cle) }),
+        None => Err(socle::echec::Echec { classe: Some(socle::echec::Classe::Manque), message: socle::fichiers::repr(cle) }),
     }
 }
 

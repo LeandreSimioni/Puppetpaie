@@ -33,7 +33,7 @@ use crate::import::reponse::{brut, Copie, EtatFiche, Importation};
 type R<T> = Result<T, Echec>;
 
 fn en_os(e: &std::io::Error, p: &Path) -> Echec {
-    erreur("OSError", socle::echec::du_disque(p, e))
+    erreur(socle::echec::Classe::Disque, socle::echec::du_disque(p, e))
 }
 
 // ------------------------------------------------------------------ l'alerte CASC-SVP
@@ -71,7 +71,7 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &str) -> Result<Option<(decl
 
 /// L'alerte apres l'import : une compagnie de la 3090 qui arrive de CoolPaie avec des DSN de 2025
 /// ou apres : la CASC-SVP y manque peut-etre. Rien si ce n'est pas la 3090, ou si tout est regularise ; toute
-/// `ErreurOperation` de la regularisation (`regularisation_casc_svp(ecrire=False)`) vaut « rien ». Seuls comptent
+/// refus `Refuse` de la regularisation (`regularisation_casc_svp(ecrire=False)`) vaut « rien ». Seuls comptent
 /// le nombre de mois, la periode et le total, que cette fonction calcule comme la regularisation.
 fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let base = droit::adhesions::casc_svp_base().map_err(Echec::from)?;
@@ -112,7 +112,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     if par_mois.is_empty() {
         return Ok(None);
     }
-    let libelle = |m: &str| socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| erreur("ValueError", e));
+    let libelle = |m: &str| socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| erreur(socle::echec::Classe::Illisible, e));
     let periode = format!("{} à {}", libelle(&par_mois[0].0)?, libelle(&par_mois[par_mois.len() - 1].0)?);
     let total = par_mois.iter().fold(Decimal::ZERO, |a, (_, c)| a + *c);
     Ok(Some(format!(

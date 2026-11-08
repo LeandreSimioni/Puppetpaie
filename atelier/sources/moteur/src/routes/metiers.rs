@@ -7,14 +7,14 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, MANQUE, OPERATION};
+use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::{creer_dossier, ecrire, plain, refus};
 use crate::routes::mois::sauver_avant;
-use crate::routes::{en_json, lire_charge};
 use droit::contexte::Contexte;
 use droit::emplois::{self, MetierDuDeroulant};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, R};
 
 const METIERS_REND: &str = "emplois (les métiers proposés) et emplois_autres (ceux des autres conventions)";
 
@@ -29,7 +29,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[],
         exemple: r#"{}"#,
         rend: "metiers (le catalogue, chacun dit retenu ou non)",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: true,
         phrase: 0,
@@ -41,7 +41,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[Champ { nom: "code", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier au catalogue", avance: false }, Champ { nom: "retenu", libelle: Affiche::new("Le proposer"), forme: Forme::OuiNon, sens: "vrai : le proposer", avance: false }],
         exemple: r#"{"code":"CHE350","retenu":true}"#,
         rend: METIERS_REND,
-        refus: &[OPERATION, MANQUE],
+        refus: &[OPERATION, MANQUE, FORME],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 0,
@@ -49,15 +49,27 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
         Route::MetiersCatalogue => {
-            let super::SansCharge {} = lire_charge(charge)?;
-            en_json(metiers_catalogue(ctx)?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(metiers_catalogue(porte.ctx)?)
         }
-        Route::MetierRetenu => en_json(metier_retenu(ctx, lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::MetierRetenu => en_json(metier_retenu(porte.ctx, charge.lire()?)?),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
+    }
+}
+
+impl Dite for MetiersDuCatalogue {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for EmploisRendus {
+    fn phrase(&self) -> &str {
+        &self.phrase
     }
 }
 
@@ -84,11 +96,11 @@ impl MetiersAjoutes {
         if !p.exists() {
             return Ok(MetiersAjoutes::default());
         }
-        let v = crate::valeur::lire_json(&p).map_err(|m| erreur("ValueError", m))?;
+        let v = crate::valeur::lire_json(&p).map_err(|m| erreur(socle::echec::Classe::Illisible, m))?;
         socle::forme::lire(&v, "Les métiers retenus par la compagnie ne se lisent pas : effacez leur fichier, puis cochez-les de nouveau dans Configuration › Métiers.").map_err(|m| {
             let (dite, mut plus) = crate::valeur::separer(&m);
             plus.insert("chemin".into(), Value::String(p.to_string_lossy().into_owned()));
-            erreur("ValueError", socle::echec::avec(dite, Value::Object(plus)))
+            erreur(socle::echec::Classe::Illisible, socle::echec::avec(dite, Value::Object(plus)))
         })
     }
 
@@ -98,7 +110,7 @@ impl MetiersAjoutes {
             creer_dossier(parent)?;
         }
         sauver_avant(&p)?;
-        ecrire(&p, en_json(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: self.codes.clone(), retires: self.retires.clone() })?)
+        ecrire(&p, crate::routes::en_json(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: self.codes.clone(), retires: self.retires.clone() })?)
     }
 
     /// Ce metier est-il dans le deroulant de cette compagnie ? Ceux de sa convention le sont d'office ; elle en ajoute

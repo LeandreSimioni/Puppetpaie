@@ -435,9 +435,10 @@ fn rejouer_les_gestes(
                 let charge = poser_les_pieces(scenario, racine, travail, n, g)?;
                 let mut o = std::collections::HashMap::new();
                 o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
-                let rep = match route {
-                    Some(route) => crate::routes::dans_la_fenetre(&o, route, &charge),
-                    None => json!({"ok": false, "erreur": crate::routes::catalogue::ROUTE_INCONNUE, "route": nom}),
+                let rep = match (route, crate::routes::enveloppe::Charge::de(charge)) {
+                    (Some(route), Ok(charge)) => crate::routes::dans_la_fenetre(&o, route, &charge).en_json(),
+                    (Some(route), Err(e)) => crate::routes::enveloppe::Reponse::de(route, Err(e)).en_json(),
+                    (None, _) => crate::routes::enveloppe::Reponse::refusee(crate::routes::enveloppe::Refus::de(None, crate::routes::enveloppe::route_inconnue(nom))).en_json(),
                 };
                 r.routes_rejouees += 1;
                 let ok = rep.get("ok") == Some(&Value::Bool(true));
@@ -459,7 +460,7 @@ fn rejouer_les_gestes(
                         nom,
                         if ok { "reussit" } else { "refuse" },
                         if attendu { "reussi" } else { "refuse" },
-                        rep.get("erreur").map(|e| format!(" : {}", crate::valeur::valeur_en_texte(e))).unwrap_or_default()
+                        rep.pointer("/refus/phrase").map(|e| format!(" : {}", crate::valeur::valeur_en_texte(e))).unwrap_or_default()
                     ));
                 }
             }
@@ -921,10 +922,11 @@ mod enregistreur {
         /// UNE ROUTE, servie par `servir` sous l'enregistreur : le temps fige a son debut, ce qu'on avait depose recopie,
         /// l'empreinte de la compagnie avant et apres, puis sa ligne. Une lecture, quand on ne les enregistre pas, est
         /// seulement servie.
-        pub fn route(&self, racine: &Path, nom: Route, charge: &Value, servir: impl FnOnce() -> Value) -> Value {
+        pub fn route(&self, racine: &Path, nom: Route, charge: &crate::routes::enveloppe::Charge, servir: impl FnOnce() -> crate::routes::enveloppe::Reponse) -> crate::routes::enveloppe::Reponse {
             if !self.lectures && !crate::routes::est_une_ecriture(nom) {
                 return servir();
             }
+            let charge = charge.brute();
             let mut n = self.tour.lock().unwrap_or_else(|p| p.into_inner());
             let quand = socle::temps::secondes();
             socle::temps::figer(quand);
@@ -941,11 +943,10 @@ mod enregistreur {
                 ligne.insert("pieces".into(), Value::Object(pieces));
             }
             ligne.insert("ecrit".into(), json!(ecrit));
-            let ok = rep.get("ok") == Some(&Value::Bool(true));
-            ligne.insert("ok".into(), json!(ok));
+            ligne.insert("ok".into(), json!(rep.est_rendue()));
             // Le refus se garde, pour qui relit le scenario (le rejeu ne compare que `ok`).
-            if !ok {
-                ligne.insert("refus".into(), json!(rep.get("erreur").map(crate::valeur::valeur_en_texte).unwrap_or_default()));
+            if let Some(r) = rep.refus() {
+                ligne.insert("refus".into(), json!(r.phrase));
             }
             self.ecrire(&mut n, ligne, quand);
             rep

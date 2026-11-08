@@ -44,7 +44,7 @@ fn jour_de(t: i64) -> String {
 
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(i64, i64), Echec> {
-    let lire = |t: &str| Jour::lire(t).map_err(|m| Echec { classe: Some("ValueError"), message: m });
+    let lire = |t: &str| Jour::lire(t).map_err(|m| Echec { classe: Some(socle::echec::Classe::Illisible), message: m });
     let fin = match args.texte("jusqu-a") {
         Some(j) => secondes(&lire(j)?) + JOUR - 1,
         None => socle::paris::maintenant_naif(),

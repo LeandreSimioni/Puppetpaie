@@ -21,7 +21,7 @@
       const nePas = cases.filter((c) => !c.checked).map((c) => c.value);
       const r = await appel("compagnies-garder", { garder, ne_pas_garder: nePas });
       if (r && r.ok) { location.replace("/"); return; }
-      if (!r || !r.ok) document.getElementById("erreur").textContent = (r && r.erreur) || "{{P:rien_change}}";
+      if (!r || !r.ok) document.getElementById("erreur").textContent = (r && r.refus && r.refus.phrase) || "{{P:rien_change}}";
     });
   })();
 </script>

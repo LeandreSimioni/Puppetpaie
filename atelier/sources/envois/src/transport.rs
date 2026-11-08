@@ -5,10 +5,11 @@
 //! et n'est ecrit nulle part ; il n'ouvre pas le coffre et n'en parle pas. Le jeton, lui, vaut une session : c'est
 //! l'appelant qui le garde en memoire et le repasse.
 //!
-//! Les pannes : `ErreurApi` (message et `code`) ; un delai de lecture, une reponse coupee, une connexion rompue, un gzip
-//! illisible portent chacun leur `classe`, que l'appelant releve.
+//! Les pannes : `Organisme` (message et `code`) ; un delai de lecture (`DelaiDepasse`), une reponse coupee, une connexion
+//! rompue, un gzip illisible (`Reseau`) portent leur `classe`, que l'appelant releve.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -60,29 +61,29 @@ fn phrase_du_statut(code: u16, ou: &str, corps: Option<String>) -> String {
 pub enum Panne {
     /// Un statut HTTP hors 2xx ; le corps, lu en entier (ou la panne de sa lecture).
     Statut { code: u16, corps: Result<Vec<u8>, Box<Panne>> },
-    /// La connexion n'a pas abouti (`URLError`) : la raison.
+    /// La connexion n'a pas abouti : la raison.
     Reseau(String),
-    /// Une panne après l'envoi, sous le nom de sa classe.
-    Brute { classe: &'static str, message: String },
+    /// Une panne après l'envoi, sous sa classe.
+    Brute { classe: Classe, message: String },
 }
 
 impl Panne {
-    fn brute(classe: &'static str, message: impl Into<String>) -> Panne {
+    fn brute(classe: Classe, message: impl Into<String>) -> Panne {
         Panne::Brute { classe, message: message.into() }
     }
 }
 
-/// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`ErreurApi`, `DepotRefuse`, ou celle d'une panne
+/// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`Organisme`, `DepotRefuse`, ou celle d'une panne
 /// brute), sa phrase, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EchecApi {
     pub erreur: String,
-    pub classe: &'static str,
+    pub classe: Classe,
     pub code: Option<i64>,
 }
 
 impl EchecApi {
-    fn nouveau(classe: &'static str, erreur: String, code: Option<i64>) -> EchecApi {
+    fn nouveau(classe: Classe, erreur: String, code: Option<i64>) -> EchecApi {
         EchecApi { erreur, classe, code }
     }
 }
@@ -91,8 +92,8 @@ fn echec_brut(p: Panne) -> EchecApi {
     match p {
         Panne::Brute { classe, message } => EchecApi::nouveau(classe, message, None),
         // Les appelants traduisent les deux autres avant d'arriver ici.
-        Panne::Reseau(r) => EchecApi::nouveau("URLError", r, None),
-        Panne::Statut { code, .. } => EchecApi::nouveau("HTTPError", format!("HTTP {}", code), Some(code as i64)),
+        Panne::Reseau(r) => EchecApi::nouveau(Classe::Reseau, r, None),
+        Panne::Statut { code, .. } => EchecApi::nouveau(Classe::Reseau, format!("HTTP {}", code), Some(code as i64)),
     }
 }
 
@@ -163,7 +164,7 @@ fn horodatage(iso: &str) -> Result<String, String> {
 
 /// Decompresse un corps gzip ; les refus (tronque, en-tete invalide, somme de controle) sont dits en francais.
 pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
-    let eof = || Panne::brute("EOFError", "réponse gzip tronquée");
+    let eof = || Panne::brute(Classe::Reseau, "réponse gzip tronquée");
     let mut sortie = Vec::new();
     let mut reste = donnees;
     loop {
@@ -172,7 +173,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         }
         if reste.len() < 2 || reste[0] != 0x1f || reste[1] != 0x8b {
             let debut: Vec<String> = reste.iter().take(2).map(|o| format!("{:02x}", o)).collect();
-            return Err(Panne::brute("BadGzipFile", format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
+            return Err(Panne::brute(Classe::Reseau, format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
         }
         let mut pos = 2;
         let lire = |pos: &mut usize, n: usize| -> Result<(), Panne> {
@@ -188,7 +189,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let (methode, drapeaux) = (reste[2], reste[3]);
         pos += 8;
         if methode != 8 {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : méthode de compression inconnue"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : méthode de compression inconnue"));
         }
         if drapeaux & 4 != 0 {
             if reste.len() < pos + 2 {
@@ -224,7 +225,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
             membre.reserve(32 * 1024);
             let st = d
                 .decompress_vec(&en_entree[avant_in..], &mut membre, flate2::FlushDecompress::None)
-                .map_err(|e| Panne::brute("error", format!("réponse gzip illisible : {}", e)))?;
+                .map_err(|e| Panne::brute(Classe::Reseau,format!("réponse gzip illisible : {}", e)))?;
             if st == flate2::Status::StreamEnd {
                 break;
             }
@@ -242,10 +243,10 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let mut h = flate2::Crc::new();
         h.update(&membre);
         if crc != h.sum() {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : somme de contrôle fausse"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : somme de contrôle fausse"));
         }
         if longueur != (membre.len() as u64 & 0xffff_ffff) as u32 {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : longueur fausse"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : longueur fausse"));
         }
         sortie.extend_from_slice(&membre);
         let mut suite = &apres[8..];
@@ -295,28 +296,27 @@ fn delai_expire(https: bool) -> &'static str {
     }
 }
 
-/// Une panne de `ureq` en refus du moteur : `URLError` avant la reponse,
-/// exception brute apres l'envoi.
+/// Une panne de `ureq` en refus du moteur : `Panne::Reseau` avant la reponse, une panne brute apres l'envoi.
 fn panne_de(e: ureq::Error, https: bool) -> Panne {
     use std::io::ErrorKind as K;
     use ureq::{Error, Timeout};
     match e {
         Error::Timeout(Timeout::Connect) | Error::Timeout(Timeout::Resolve) => Panne::Reseau("timed out".into()),
-        Error::Timeout(_) => Panne::brute("TimeoutError", delai_expire(https)),
+        Error::Timeout(_) => Panne::brute(Classe::DelaiDepasse, delai_expire(https)),
         Error::HostNotFound => Panne::Reseau("[Errno -2] Name or service not known".into()),
         Error::Io(io) => match io.kind() {
-            K::UnexpectedEof => Panne::brute("RemoteDisconnected", "Remote end closed connection without response"),
+            K::UnexpectedEof => Panne::brute(Classe::Reseau, "Remote end closed connection without response"),
             // Observe sur le service reel : la connexion est rompue pendant
-            // l'etablissement (mandataire, TLS) : la connexion n'a pas abouti
-            // (`URLError`). ureq ne dit pas a quel moment.
+            // l'etablissement (mandataire, TLS) : la connexion n'a pas abouti.
+            // ureq ne dit pas a quel moment.
             K::ConnectionReset | K::ConnectionAborted => Panne::Reseau(errno_texte(&io)),
             K::TimedOut if io.raw_os_error().is_none() => Panne::Reseau("timed out".into()),
             _ => Panne::Reseau(errno_texte(&io)),
         },
-        Error::Protocol(p) => Panne::brute("HTTPException", p.to_string()),
+        Error::Protocol(p) => Panne::brute(Classe::Reseau, p.to_string()),
         Error::Rustls(r) => Panne::Reseau(format!("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: {}", r)),
         Error::Tls(t) => Panne::Reseau(format!("[SSL] {}", t)),
-        Error::BadUri(u) => Panne::brute("ValueError", format!("unknown url type: {:?}", u)),
+        Error::BadUri(u) => Panne::brute(Classe::Illisible, format!("unknown url type: {:?}", u)),
         autre => Panne::Reseau(autre.to_string()),
     }
 }
@@ -422,12 +422,12 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
             Ok(Ok(m)) => tout.extend_from_slice(&m),
             Ok(Err(e)) => {
                 if matches!(e.kind(), std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted) {
-                    return Err(Panne::brute("ConnectionResetError", errno_texte(&e)));
+                    return Err(Panne::brute(Classe::Reseau, errno_texte(&e)));
                 }
                 return Err(coupee(tout.len(), attendu));
             }
             // Le silence a dure le delai (ou le fil de lecture s'est arrete sans rien dire).
-            Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => return Err(Panne::brute("TimeoutError", delai_expire(https))),
+            Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => return Err(Panne::brute(Classe::DelaiDepasse, delai_expire(https))),
         }
     }
 }
@@ -438,7 +438,7 @@ fn coupee(lus: usize, attendu: Option<u64>) -> Panne {
         Some(a) if a as usize > lus => format!("IncompleteRead({} bytes read, {} more expected)", lus, a as usize - lus),
         _ => format!("IncompleteRead({} bytes read)", lus),
     };
-    Panne::brute("IncompleteRead", message)
+    Panne::brute(Classe::Reseau, message)
 }
 
 /// L'adresse d'un `Location` de redirection, lue depuis l'adresse demandée.
@@ -552,9 +552,9 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         let rep = if post {
             // Un POST sans donnees part avec un corps vide.
             let corps: Vec<u8> = donnees.into_iter().flatten().copied().collect();
-            ag.run(b.body(corps).map_err(|e| Panne::brute("ValueError", e.to_string()))?)
+            ag.run(b.body(corps).map_err(|e| Panne::brute(Classe::Illisible, e.to_string()))?)
         } else {
-            ag.run(b.body(()).map_err(|e| Panne::brute("ValueError", e.to_string()))?)
+            ag.run(b.body(()).map_err(|e| Panne::brute(Classe::Illisible, e.to_string()))?)
         }
         .map_err(|e| panne_de(e, https))?;
         let (parts, corps) = rep.into_parts();
@@ -616,18 +616,18 @@ fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> Option<String
     }
 }
 
-/// Une panne d'appel en `ErreurApi`.
+/// Une panne d'appel en `Organisme`.
 fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
     match p {
         Panne::Statut { code, corps } => {
-            EchecApi::nouveau("ErreurApi", phrase_du_statut(code, &format!("sur {}", sans_secret(url)), debut_du_corps(corps, 400)), Some(code as i64))
+            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url)), debut_du_corps(corps, 400)), Some(code as i64))
         }
-        Panne::Reseau(r) => EchecApi::nouveau("ErreurApi", format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
+        Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
         brute => echec_brut(brute),
     }
 }
 
-/// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `ErreurApi`.
+/// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
 pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { url, jeton, delai: DELAI_APPEL, ..Default::default() };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
@@ -636,7 +636,7 @@ pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Ech
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des instants ISO).
 pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
-    let illisible = |e: String| EchecApi::nouveau("ValueError", e, None);
+    let illisible = |e: String| EchecApi::nouveau(Classe::Illisible, e, None);
     url.push_str(&horodatage(debut).map_err(illisible)?);
     if let Some(fin) = fin {
         url.push('/');
@@ -705,7 +705,7 @@ pub fn authentifier(a: &Authentification) -> Result<Session, EchecApi> {
         Some(m) if !m.is_empty() => m,
         _ => {
             return Err(EchecApi::nouveau(
-                "ErreurApi",
+                Classe::Organisme,
                 format!(
                     "Mot de passe absent.\n\
 Trois facons de le fournir, dans cet ordre de priorite :\n\n\
@@ -724,7 +724,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     let decl = a.declarant;
     let (Some(siret), Some(nom), Some(prenom)) = (&decl.siret, &decl.nom, &decl.prenom) else {
         return Err(EchecApi::nouveau(
-            "ErreurApi",
+            Classe::Organisme,
             format!(
                 "Le compte qui se connecte est incomplet, il manque {} : ceux du compte ouvert pour ce service, sans accent. Rien n'est parti.",
                 decl.manquants().join(", ")
@@ -760,7 +760,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
-/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`ErreurApi`).
+/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
 pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         url,
@@ -776,17 +776,17 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
             ("dsn", Panne::Statut { code, corps }) => match corps {
                 // Le corps de la reponse passe par `sans_secret`.
                 Ok(c) => EchecApi::nouveau(
-                    "DepotRefuse",
+                    Classe::DepotRefuse,
                     format!("Le point de depot a repondu {}.\n{}", code, sans_secret(&debut(&utf8_remplace(&c), 800))),
                     None,
                 ),
                 Err(p) => echec_brut(*p),
             },
-            ("dsn", Panne::Reseau(r)) => EchecApi::nouveau("DepotRefuse", format!("Pas de reponse du point de depot : {}", r), None),
+            ("dsn", Panne::Reseau(r)) => EchecApi::nouveau(Classe::DepotRefuse, format!("Pas de reponse du point de depot : {}", r), None),
             (_, Panne::Statut { code, corps }) => {
-                EchecApi::nouveau("ErreurApi", phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), debut_du_corps(corps, 400)), None)
+                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), debut_du_corps(corps, 400)), None)
             }
-            (_, Panne::Reseau(r)) => EchecApi::nouveau("ErreurApi", format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
+            (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
             (_, brute) => echec_brut(brute),
         })
 }

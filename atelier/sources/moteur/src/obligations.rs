@@ -34,6 +34,7 @@
 //! (`imprevus/AAAA-MM.json`, les imprevus de genre arret) n'est pas touche : ce module le lit par `crate::routes::imprevus::tous_les_arrets`.
 
 use std::collections::HashMap;
+use socle::echec::Classe;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -64,7 +65,7 @@ const FAITE: &[Champ] = &[
     Champ { nom: "reference", libelle: Affiche::new("Référence de l'accusé"), forme: Forme::Texte, sens: "la référence de l'accusé", avance: true },
 ];
 const OBLIGATIONS_REND: &str = "obligations (chacune son échéance, son état et ce qui reste à faire)";
-const NON_ECRIT: Refus = Refus { classe: "ErreurOperation", corriger: "ce que la phrase dit (l'arrêt, le jour, le lieu) ; rien n'est écrit" };
+const NON_ECRIT: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (l'arrêt, le jour, le lieu) ; rien n'est écrit" };
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -148,12 +149,12 @@ const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "sa
 
 /// `obligations-base.json`, lu par sa forme (`declarations::obligations::base`, son seul lecteur).
 fn base() -> R<BaseDesObligations> {
-    declarations::obligations::base().map_err(|m| erreur("ValueError", m))
+    declarations::obligations::base().map_err(|m| erreur(Classe::Illisible, m))
 }
 
 /// Un nombre que le delai doit porter.
 fn nombre(n: Option<i64>, quoi: &str) -> R<i64> {
-    n.ok_or_else(|| erreur("KeyError", declarations::obligations::livree(quoi)))
+    n.ok_or_else(|| erreur(Classe::Manque, declarations::obligations::livree(quoi)))
 }
 
 /// Le motif d'arret appelle-t-il l'obligation `cle` (ses `motifs`) ?
@@ -183,7 +184,7 @@ fn jour_dit(t: &str) -> Option<Jour> {
 }
 
 fn plus(j: Jour, n: i64) -> R<Jour> {
-    j.plus_jours(n).map_err(|m| erreur("OverflowError", m))
+    j.plus_jours(n).map_err(|m| erreur(Classe::CalculImpossible, m))
 }
 
 /// Les feries chomes de la compagnie, annee par annee (`feries::chomes`, la fiche Entreprise).
@@ -200,7 +201,7 @@ impl<'a> Calendrier<'a> {
 
     fn chome(&mut self, j: Jour) -> R<bool> {
         if !self.chomes.contains_key(&j.an) {
-            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| erreur("ValueError", m))?;
+            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| erreur(Classe::Illisible, m))?;
             self.chomes.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
         }
         Ok(self.chomes[&j.an].contains(&j))
@@ -208,7 +209,7 @@ impl<'a> Calendrier<'a> {
 
     fn ferie(&mut self, j: Jour) -> R<bool> {
         if !self.legaux.contains_key(&j.an) {
-            let f = socle::feries::feries(j.an).map_err(|m| erreur("ValueError", m))?;
+            let f = socle::feries::feries(j.an).map_err(|m| erreur(Classe::Illisible, m))?;
             self.legaux.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
         }
         Ok(self.legaux[&j.an].contains(&j))
@@ -363,7 +364,7 @@ impl Suivi {
             return Ok(Suivi { fiches: Vec::new() });
         }
         let v = crate::valeur::lire_json_echec(&p)?;
-        let f: FichierDuSuivi = socle::forme::lire(&v, "Le fichier des obligations des imprévus (imprevus/obligations.json) ne se lit pas.").map_err(|m| erreur("ValueError", m))?;
+        let f: FichierDuSuivi = socle::forme::lire(&v, "Le fichier des obligations des imprévus (imprevus/obligations.json) ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))?;
         Ok(Suivi { fiches: f.arrets })
     }
 
@@ -383,7 +384,7 @@ impl Suivi {
         changer(&mut self.fiches[i]);
         self.fiches.retain(FicheDeSuivi::dit_quelque_chose);
         let doc = FichierDuSuivi { _quoi: QUOI_DU_SUIVI.to_string(), arrets: std::mem::take(&mut self.fiches) };
-        let ecrit = socle::ecriture::ecrire_json(&chemin(ctx), &crate::routes::en_json(&doc)?, 2).map_err(|m| erreur("OSError", m));
+        let ecrit = socle::ecriture::ecrire_json(&chemin(ctx), &crate::routes::en_json(&doc)?, 2).map_err(|m| erreur(Classe::Disque, m));
         self.fiches = doc.arrets;
         ecrit
     }
@@ -769,13 +770,13 @@ fn signalement_dsn(
             "La subrogation de cet arrêt n'est pas dite : c'est elle qui fixe le délai (cinq jours ouvrés sans subrogation, avec la DSN du mois avec ; CSS R. 133-14, II).",
         ));
     }
-    if en_texte(subrogation) == droit::arrets::bloc_60().map_err(|m| erreur("ValueError", m))?.subrogation_oui().map_err(|m| erreur("KeyError", m))? {
+    if en_texte(subrogation) == droit::arrets::bloc_60().map_err(|m| erreur(Classe::Illisible, m))?.subrogation_oui().map_err(|m| erreur(Classe::Manque, m))? {
         let d = o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?;
         // SUBROGE, la date butoir est l'echeance de la DSN mensuelle du mois de l'evenement (R. 133-14, II, premier
         // alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou un ferie
         // (R. 133-14, I), a midi (cahier technique § 1.4.2). INFERENCE : le report de la mensuelle vaut pour le signalement
         // qui part avec elle (le texte du report parle de « la declaration sociale nominative » sans distinguer).
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &evenement.mois_civil().to_string()).map_err(|m| erreur("ValueError", m))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &evenement.mois_civil().to_string()).map_err(|m| erreur(Classe::Illisible, m))?;
         m.subrogation = Some(true);
         m.echeance_dsn = Some(echeance.dite());
         // La connaissance ne compte pas : le delai court du mois de l'evenement.
@@ -805,7 +806,7 @@ fn connaissance(fiche: &FicheDeSuivi, de: DeQuoi, quoi: &str) -> Option<Depart> 
 /// reportent). Seul compte un depot reel accepte : un signalement refuse au bilan n'est pas recu (cahier technique DSN,
 /// `norme-dsn/texte/chapitre-4-controles.txt` §4.2) et reste du.
 pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret>> {
-    let lu = envois::journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?;
+    let lu = envois::journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?;
     let (lignes, departs) = (lu.lignes, lu.departs);
     let texte = |k: &str| a.get(k).map(en_texte).unwrap_or_default();
     let salarie = texte("salarie");
@@ -813,11 +814,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret
     // L'imprevu en sa forme, pour les regles du magasin ; illisible, il refuse. Seul un arret a un jour declare et des mois traverses.
     let lu = crate::routes::imprevus::forme(a)?;
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
-    let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| erreur("ValueError", m))?;
+    let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| erreur(Classe::Illisible, m))?;
     let declare = declare_lu.map(|j| j.iso());
     let traverses: Vec<String> = match declare_lu {
         Some(p) => {
-            let d = engagement::imprevus::dernier_jour(&lu).map_err(|m| erreur("ValueError", m))?;
+            let d = engagement::imprevus::dernier_jour(&lu).map_err(|m| erreur(Classe::Illisible, m))?;
             if p <= d { socle::mois::Mois::entre(&p, &d).iter().map(socle::mois::Mois::to_string).collect() } else { Vec::new() }
         }
         None => Vec::new(),
@@ -830,7 +831,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret
             return Ok(quand.replace('T', " ") >= saisi);
         }
         match &arret {
-            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| erreur("ValueError", m)),
+            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| erreur(Classe::Illisible, m)),
             None => Ok(false),
         }
     };
@@ -1053,7 +1054,7 @@ pub fn route(ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
         Route::AccidentDeclare => en_json(accident_declare(ctx, lire_charge(charge)?)?),
         Route::AttestationDeclare => en_json(attestation_declare(ctx, lire_charge(charge)?)?),
         Route::ArretObligations => en_json(arret_obligations(ctx, lire_charge(charge)?)?),
-        autre => Err(erreur("ErreurOperation", format!("route inconnue : {}", autre))),
+        autre => Err(erreur(Classe::Refuse, format!("route inconnue : {}", autre))),
     }
 }
 
@@ -1089,12 +1090,12 @@ pub(crate) fn en_phrases(obligations: &[Obligation]) -> Vec<String> {
 }
 
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// L'arret du salarie `nom` (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
 fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(String, Value)> {
-    let cle = ctx.cle_du_salarie(nom).map_err(|m| erreur("KeyError", m))?.to_string();
+    let cle = ctx.cle_du_salarie(nom).map_err(|m| erreur(Classe::Manque, m))?.to_string();
     for a in crate::routes::imprevus::tous_les_arrets(ctx)? {
         if a.get("salarie").map(en_texte).as_deref() == Some(cle.as_str()) && a.get("dernier_jour_travaille").map(en_texte) == Some(dernier.iso()) {
             return Ok((cle, a));
@@ -1286,7 +1287,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     let faite = match le {
         None => None,
         Some(le) => {
-            let depot = charge.depot.clone().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("depot")))?;
+            let depot = charge.depot.clone().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("depot")))?;
             let codes: Vec<String> = base()?.obligations.de(f.obligation).lieux().iter().map(|x| x.code.clone()).collect();
             if !codes.contains(&depot) {
                 return Err(refus(format!("Ou {} a-t-elle ete faite ? {} n'est pas connu ; les lieux sont : {}. Rien n'est ecrit.", f.quoi.to_lowercase(), repr(&depot), codes.join(", "))));

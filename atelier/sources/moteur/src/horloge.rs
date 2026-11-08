@@ -50,6 +50,7 @@
 //! autres continuent. Seuls les refus du decor (une fiche entreprise illisible, une echeance introuvable) remontent.
 
 use std::collections::{BTreeSet, HashMap};
+use socle::echec::Classe;
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
@@ -115,7 +116,7 @@ impl<'a> HorlogeFictive<'a> {
         if crate::compagnie::bridage::branchement(self.racine).joue() {
             Ok(())
         } else {
-            Err(erreur("ErreurOperation", "Ce dossier n'est pas une compagnie fictive : l'horloge ne joue rien ici."))
+            Err(erreur(Classe::Refuse, "Ce dossier n'est pas une compagnie fictive : l'horloge ne joue rien ici."))
         }
     }
 }
@@ -173,13 +174,13 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
         || matches!(
         e.classe,
         Some(
-            "ErreurOperation"
-                | "SortieAbsente"
-                | "AucunDocument"
-                | "BoiteAbsente"
-                | "PreuveInsuffisante"
-                | "SaisieIncomplete"
-                | "ExerciceClos"
+            Classe::Refuse
+                | Classe::SortieAbsente
+                | Classe::AucunDocument
+                | Classe::BoiteAbsente
+                | Classe::PreuveInsuffisante
+                | Classe::SaisieIncomplete
+                | Classe::ExerciceClos
         )
     )
 }
@@ -465,7 +466,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
     sortie.insert("mois_faits".into(), Value::Object(clos));
     sortie.insert("annees_faites".into(), json!(annees_faites.iter().collect::<Vec<_>>()));
     sortie.insert("dernier".into(), dernier);
-    socle::ecriture::ecrire_json(&memoire_f, &Value::Object(sortie), 2).map_err(|m| erreur("OSError", m))?;
+    socle::ecriture::ecrire_json(&memoire_f, &Value::Object(sortie), 2).map_err(|m| erreur(Classe::Disque, m))?;
     Ok(fait)
 }
 
@@ -569,7 +570,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
 
 /// FIN JANVIER DE `annee`, l'annee d'avant se clot a 10 h, puis s'exporte pour la comptabilite a 11 h.
 fn les_pas_de_l_annee(annee: i32, jour: Jour, calendrier: &mut Vec<Pas>) -> R<()> {
-    let fin_janvier = Jour::nouveau(annee, 1, 31).ok_or_else(|| erreur("ValueError", "date impossible"))?;
+    let fin_janvier = Jour::nouveau(annee, 1, 31).ok_or_else(|| erreur(Classe::Illisible, "date impossible"))?;
     if jour < fin_janvier {
         return Ok(());
     }

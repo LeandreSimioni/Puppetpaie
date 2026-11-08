@@ -43,6 +43,7 @@
 //! la phrase peut partir chez l'editeur) ; un PDF a aussi le sort de chacune de ses pages. Les sorts : `reponse::Sort`.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -222,7 +223,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         .collect::<R<_>>()?;
 
     // 2. Les bulletins, page par page.
-    let table = Table::livree().map_err(|m| erreur("ErreurOperation", format!("La table de lecture des bulletins ne se lit pas : {}", m)))?;
+    let table = Table::livree().map_err(|m| erreur(Classe::Refuse, format!("La table de lecture des bulletins ne se lit pas : {}", m)))?;
     let saisis: HashSet<String> = engagement::stock::mois_saisis(&ctx.racine).unwrap_or_default().into_iter().map(String::from).collect();
     let mut pages: BTreeMap<usize, Vec<PageCr>> = BTreeMap::new();
     let mut illisibles: BTreeMap<usize, String> = BTreeMap::new();
@@ -403,7 +404,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let sous = if *aem { "AEM_EDI" } else { "DSN" };
         let d = export.join(sous);
-        std::fs::create_dir_all(&d).map_err(|e| erreur("OSError", socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(&d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
         let base = nom_copie(f).unwrap_or_else(|| if *aem { "fichier.txt".into() } else { "fichier.dsn".into() });
         let mut nom = base.clone();
         let mut k = 2;
@@ -411,7 +412,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             nom = format!("{}-{}", k, base);
             k += 1;
         }
-        std::fs::copy(&f.disque, d.join(&nom)).map_err(|e| erreur("OSError", format!("{} : {}", f.chemin, e)))?;
+        std::fs::copy(&f.disque, d.join(&nom)).map_err(|e| erreur(Classe::Disque, format!("{} : {}", f.chemin, e)))?;
         noms.insert(*i, nom);
         if *aem {
             aem_dir = Some(d);
@@ -441,11 +442,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // du meme salarie et du meme mois a completer (DSN de cet apercu, paie importee), est « deja saisi ».
     let mut saisis_ici: HashSet<(String, String)> = HashSet::new();
     if lus.iter().any(|l| l.mois_saisi) {
-        let objets = engagement::stock::objets(&ctx.racine).map_err(|m| erreur("ErreurOperation", m))?;
+        let objets = engagement::stock::objets(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))?;
         for o in objets.iter().filter(|o| !o.importe_seul()) {
             let Some(cle) = &o.brut.saisie.carte.salarie else { continue };
             for l in lus.iter().filter(|l| l.mois_saisi) {
-                if o.couvre(&l.mois).map_err(|m| erreur("ErreurOperation", m))? {
+                if o.couvre(&l.mois).map_err(|m| erreur(Classe::Refuse, m))? {
                     saisis_ici.insert((cle.to_string(), l.mois.clone()));
                 }
             }
@@ -1606,9 +1607,9 @@ pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme
         let non = mots[i] == "noncadre" || (i > 0 && mots[i - 1] == "non");
         f.insert("statut_categoriel_rc".into(), json!(if non { "04" } else { "01" }));
     }
-    if let Some((code, feminin)) = droit::emplois::par_intitule(intitule, compare).map_err(|m| erreur("ErreurOperation", m))? {
+    if let Some((code, feminin)) = droit::emplois::par_intitule(intitule, compare).map_err(|m| erreur(Classe::Refuse, m))? {
         let cadre = f.get("statut_categoriel_rc").map(valeur_en_texte).map(|s| s == "01");
-        let r = droit::emplois::resoudre(&code, cadre, feminin || femme, idcc).map_err(|m| erreur("ErreurOperation", m))?;
+        let r = droit::emplois::resoudre(&code, cadre, feminin || femme, idcc).map_err(|m| erreur(Classe::Refuse, m))?;
         // TRAVAIL A FAIRE (lot de l'import) : la fiche importee se compose encore par ses cles.
         for (k, v) in crate::routes::en_json(r)?.as_object().into_iter().flatten() {
             if v.is_null() || (k == "statut" && f.contains_key("statut")) {
@@ -1658,7 +1659,7 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Map<String, Value>> {
     if let Some(c) = e.convention.as_deref() {
         let i = match idcc_lu(c) {
             Some(i) => Some(i),
-            None => droit::clauses::idcc_nomme(c).map_err(|m| erreur("ErreurOperation", m))?,
+            None => droit::clauses::idcc_nomme(c).map_err(|m| erreur(Classe::Refuse, m))?,
         };
         if let Some(i) = i {
             f.insert("idcc".into(), json!(i));
@@ -1752,7 +1753,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, chemin: &str, page: usize, 
     // regime general, un autre ; la comparaison des calculs lit celui de la paie (`engagement::ecarts`), pas la fiche.
     let imprime = statut_et_metier(b.salarie.statut.as_deref(), b.salarie.emploi.as_deref(), false, idcc).unwrap_or_default();
     if !imprime.is_empty() {
-        let lu: EmploiImprime = socle::forme::lire(&Value::Object(imprime), "L'emploi qu'un bulletin imprime ne se lit pas : à signaler au développeur.").map_err(|m| erreur("ErreurOperation", m))?;
+        let lu: EmploiImprime = socle::forme::lire(&Value::Object(imprime), "L'emploi qu'un bulletin imprime ne se lit pas : à signaler au développeur.").map_err(|m| erreur(Classe::Refuse, m))?;
         ligne.emploi_imprime = Some(lu);
     }
     ligne.bulletin = Some(BulletinSource { fichier: chemin.to_string(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });

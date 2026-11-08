@@ -39,6 +39,7 @@
 //! suivre : rien ne le depose.
 
 use socle::date::jj_mm_aaaa;
+use socle::echec::Classe;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -437,7 +438,7 @@ pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, pos
 /// (test parti, bilan attendu), `test_refuse`, `a_tester`. Les memes lectures que l'etape de depot du mois
 /// (`crate::routes::etapes`, la route `etat-du-mois`).
 fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &Path, mensuelle: Option<&str>) -> R<&'static str> {
-    let octets = std::fs::read(chemin).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
     let empreinte = envois::journal::empreinte(&octets);
     if etats::deja_depose(lignes, envois::journal::Acte::Dsn, &empreinte).is_some() {
         return Ok("deposee");
@@ -614,11 +615,11 @@ pub fn tableau_compagnie(ctx: &Contexte) -> R<Value> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
     let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, &ctx.aujourdhui.iso());
-    let rappels = crate::routes::rappels::rappels(ctx).map_err(|e| erreur("ErreurOperation", e.message))?;
+    let rappels = crate::routes::rappels::rappels(ctx).map_err(|e| erreur(Classe::Refuse, e.message))?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
     for r in &rappels.rappels {
-        let r = serde_json::to_value(r).map_err(|e| erreur("ErreurOperation", e.to_string()))?;
+        let r = serde_json::to_value(r).map_err(|e| erreur(Classe::Refuse, e.to_string()))?;
         if let Some(d) = declaration(ctx, &lignes, &r)? {
             declarations.push(d);
         }
@@ -753,7 +754,7 @@ pub fn tableau(o: &HashMap<String, String>, inst: &Path, relever: bool) -> Value
 pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse: Option<String>) -> R<Value> {
     let groupe = rattachees(inst);
     if groupe.is_empty() {
-        return Err(erreur("ErreurOperation", "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
+        return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
     }
     // Ce qui est pret, decide maintenant, sur l'etat d'aujourd'hui (pas sur le tableau garde).
     let mut a_faire: Vec<(PathBuf, String, Value)> = Vec::new();
@@ -790,12 +791,12 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
                     "",
                     "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
                 );
-                crate::compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|p| erreur("PreuveInsuffisante", p))?
+                crate::compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|p| erreur(Classe::PreuveInsuffisante, p))?
             }
         };
         let poste = Poste::de_ce_poste();
         if !groupe.iter().any(|r| ouvre(&poste, r, &m)) {
-            return Err(erreur("PreuveInsuffisante", "Mot de passe de l'administrateur refusé. Rien n'est parti."));
+            return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe de l'administrateur refusé. Rien n'est parti."));
         }
         mdp = Some(m);
     }
@@ -804,9 +805,8 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
         let mut sortie = json!({"compagnie": nom, "titre": d["titre"], "fichier": d["fichier"], "genre": d["genre"]});
         let rep = crate::routes::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         crate::compagnie::coffre::oublier_mot_de_passe_tape();
-        match rep {
-            v if v.get("ok") == Some(&json!(true)) => {
-                let res = &v["resultat"];
+        match rep.en_resultat() {
+            Ok(res) => {
                 sortie["parti"] = json!(true);
                 sortie["flux"] = res.get("flux").cloned().unwrap_or(Value::Null);
                 sortie["phrase"] = json!(if reel {
@@ -815,11 +815,10 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
                     "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme."
                 });
             }
-            v => {
+            Err(r) => {
                 sortie["parti"] = json!(false);
-                let message = v.get("erreur").map(|e| e.as_str().map(String::from).unwrap_or_else(|| e.to_string())).unwrap_or_default();
-                sortie["refus"] = json!(socle::echec::phrase_de(&message));
-                sortie["classe"] = v.get("classe").cloned().unwrap_or(Value::Null);
+                sortie["refus"] = json!(r.phrase);
+                sortie["classe"] = json!(r.classe);
             }
         }
         resultats.push(sortie);
@@ -844,6 +843,6 @@ fn designation(d: &Value) -> R<Designation> {
 }
 
 /// Une charge de route, en JSON : ce que `servir_la_route` lit.
-fn en_charge(c: impl serde::Serialize) -> R<Value> {
-    serde_json::to_value(c).map_err(|e| Echec::from(e.to_string()))
+fn en_charge(c: impl serde::Serialize) -> R<crate::routes::enveloppe::Charge> {
+    crate::routes::enveloppe::Charge::de(serde_json::to_value(c).map_err(|e| Echec::from(e.to_string()))?)
 }

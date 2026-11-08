@@ -5,7 +5,7 @@
 //! Elle lit ce que les etats lisent, et rien d'autre : les paies ecrites des engagements valides et celles des
 //! engagements importes. Le recapitulatif annuel et le cout de l'annee portent les paies importees avec ce que les
 //! pieces de l'ancien logiciel en disaient ; les heures et les cachets ne portent que les paies calculees ici, comme
-//! l'etat. Un etat qui n'a rien sur la periode (`ErreurOperation`) est LAISSE DE COTE ; tout autre refus remonte.
+//! l'etat. Un etat qui n'a rien sur la periode (`Refuse`) est LAISSE DE COTE ; tout autre refus remonte.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -15,12 +15,12 @@ use serde::Serialize;
 use crate::etats_paie::{self, Demande, Periode};
 use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, TOTAL_GENERAL};
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use socle::num::Decimal;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some("ErreurOperation") | Some("SaisieIncomplete"))
+    matches!(e.classe, None | Some(Classe::Refuse) | Some(Classe::SaisieIncomplete))
 }
 
 fn copie(e: &Echec) -> Echec {
@@ -74,7 +74,7 @@ impl<'a> Recapitulatifs<'a> {
     /// cout employeur rend le cumul `incomplet`. Sans annee, ou sans mois cette annee-la : rien.
     pub fn couts_de_l_annee(&mut self) -> R<CoutsDeLAnnee> {
         let Some(annee) = self.demande.annee.clone() else {
-            return Err(erreur("ValueError", "Le coût de l'année se demande pour une année : la dire."));
+            return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
         };
         let courant: String = self.ctx.aujourdhui.iso().chars().take(7).collect();
         let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant.clone(), spectacles: Vec::new(), salaries: Vec::new() };
@@ -158,7 +158,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {

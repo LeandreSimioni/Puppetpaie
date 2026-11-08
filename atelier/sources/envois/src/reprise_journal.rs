@@ -20,7 +20,7 @@ use serde::Serialize;
 
 use droit::contexte::Contexte;
 use socle::echec::R;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::mois::Mois;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
@@ -53,11 +53,11 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
     let lecture = match std::fs::read_dir(dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
     };
     let mut noms = Vec::new();
     for e in lecture {
-        let e = e.map_err(|x| erreur("OSError", socle::echec::du_disque(&dossier, &x)))?;
+        let e = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?;
         let nom = e.file_name().to_string_lossy().into_owned();
         if garder(&nom) && e.path().is_file() {
             noms.push((nom, e.path()));
@@ -70,14 +70,14 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
 /// Lecture pure.
 fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
     let dossier = ctx.racine.join(crate::retours::RETOURS);
-    std::fs::create_dir_all(&dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
     let mut par_flux: Vec<(String, Vec<(Bilan, String)>)> = vec![];
     let mut illisibles: Vec<String> = vec![];
     for (nom, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
         let octets = match std::fs::read(&p) {
             Ok(o) => o,
             Err(e) => {
-                illisibles.push(format!("{} (OSError : {})", nom, e.kind()));
+                illisibles.push(format!("{} (Disque : {})", nom, e.kind()));
                 continue;
             }
         };
@@ -194,7 +194,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
     for d in a_ecrire {
         let b = &d.bilan;
         let (Some(quand), Some(piece)) = (b.recu_le.clone(), d.pieces.last()) else { continue };
-        let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| erreur("ValueError", socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries")))).transpose()?;
+        let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| erreur(Classe::Illisible, socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries")))).transpose()?;
         let detail = DetailDsn {
             reconstruit: true,
             logiciel: b.logiciel.clone(),
@@ -224,7 +224,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
     if p.exists() {
         let retours: Vec<crate::retours::Annonce> =
-            socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| erreur("ValueError", m))?;
+            socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))?;
         let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
         rapport.rattaches = r.resultat?;
@@ -290,7 +290,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
     let par_nir = salarie_par_nir(ctx);
     let (mut sortie, mut inconnus): (Vec<DpaeAttestee>, Vec<String>) = (vec![], vec![]);
     for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, "41"))? {
-        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte) {
@@ -368,7 +368,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
     let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
     let mut bilans: Vec<(String, Vec<Bilan>)> = Vec::new();
     for (_, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
-        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         let Some(b) = crate::retours::bilan_si_xml(&octets)? else { continue };
         match bilans.iter_mut().find(|(f, _)| *f == b.flux) {
             Some((_, l)) => l.push(b),

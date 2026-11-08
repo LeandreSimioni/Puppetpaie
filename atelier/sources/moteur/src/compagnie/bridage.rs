@@ -76,10 +76,9 @@ pub fn est_bride_de(inst: &Path) -> bool {
 }
 
 /// LE REFUS D'UN ENVOI DEPUIS UNE FICTIVE AJOUTEE, mot pour mot : le meme pour tout geste
-/// qui ferait partir quelque chose vers un organisme ou une personne. Sa classe : `CLASSE_REFUS_D_ENVOI` (la page la
-/// reconnait et montre la phrase dans sa boite, `js/tuyau.js`).
+/// qui ferait partir quelque chose vers un organisme ou une personne. Sa classe : `EnvoiBride` (la page la reconnait et
+/// montre la phrase dans sa boite, `js/tuyau.js`).
 pub const REFUS_D_ENVOI: &str = "L'envoi n'est pas possible depuis la version démo. Pour 2027, et afin d'offrir un service de qualité, le nombre d'utilisateurs est restreint. N'hésitez pas à contacter Léandre (puppetpaie@gmail.com) avec une courte présentation et votre motivation pour débloquer le logiciel et faire partie des premiers utilisateurs.";
-pub const CLASSE_REFUS_D_ENVOI: &str = "EnvoiBride";
 
 /// LE BRANCHEMENT DE LA COMPAGNIE `racine` (`envois::branchement`), choisi ici et nulle part ailleurs :
 /// - une FICTIVE AJOUTEE (`compagnies::est_ajoutee`) n'envoie rien : le message, `REFUS_D_ENVOI` ;
@@ -93,7 +92,7 @@ pub fn branchement(racine: &Path) -> envois::branchement::Branchement {
     use crate::interface::compagnies::{est_ajoutee, est_fictive};
     use envois::branchement::{Branchement, Refus};
     if est_ajoutee(racine) {
-        Branchement::Message(Refus { classe: CLASSE_REFUS_D_ENVOI, phrase: REFUS_D_ENVOI })
+        Branchement::Message(Refus { classe: socle::echec::Classe::EnvoiBride, phrase: REFUS_D_ENVOI })
     } else if paquet_soude() || est_fictive(racine) {
         Branchement::Simulateur
     } else {

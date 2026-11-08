@@ -11,7 +11,7 @@ use crate::routes::catalogue::Route;
 use crate::routes::documents::requis;
 use crate::routes::ouverture::mois_connus;
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{Classe, Echec, R};
 use crate::valeur::{valeur_en_texte, vrai};
 
 const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
@@ -68,9 +68,9 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "mois, dossier (dans le Drive), compte, fichiers (nom, octets, remplace), phrase ; une fictive joue le dépôt, rien ne part",
         refus: &[
-            Refus { classe: "SortieAbsente", corriger: "un mois dont les documents sont écrits (une paie validée)" },
-            Refus { classe: "ErreurGoogle", corriger: "lier le Drive (route google-autoriser), ou ce que la phrase de Google dit" },
-            Refus { classe: "CopieDeDeveloppement", corriger: "rien : une copie de développement n'écrit jamais dans le Drive" },
+            Refus { classe: Classe::SortieAbsente, corriger: "un mois dont les documents sont écrits (une paie validée)" },
+            Refus { classe: Classe::Google, corriger: "lier le Drive (route google-autoriser), ou ce que la phrase de Google dit" },
+            Refus { classe: Classe::CopieDeDeveloppement, corriger: "rien : une copie de développement n'écrit jamais dans le Drive" },
             OPERATION,
         ],
         acte: Acte::Ecrit,
@@ -291,7 +291,7 @@ fn archiver(ctx: &Contexte, charge: &Value) -> R<Value> {
     let joue = crate::compagnie::bridage::branchement(&ctx.racine).joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
-    let r = archivage::archiver(&ctx.racine, &mois, crate::compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| erreur(e.classe, e.message))?;
+    let r = archivage::archiver(&ctx.racine, &mois, crate::compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| socle::echec::noter_et(e.classe, e.message))?;
     let dossier = format!("{}/{}", r.racine_drive, r.mois);
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
     let ou = format!("{} › {}", r.racine_drive, r.mois);

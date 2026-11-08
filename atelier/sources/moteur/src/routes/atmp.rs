@@ -20,7 +20,7 @@ use serde_json::{json, Map, Value};
 
 use droit::bareme::{self, RisqueAtmp};
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecriture::ecrire_json;
 use crate::valeur::vrai;
 use socle::num::Decimal;
@@ -70,16 +70,16 @@ fn ecrire(racine: &Path, an: i64, taux: Map<String, Value>) -> R<()> {
     let lu = if p.exists() { crate::routes::mois::lire_saisie(&p)? } else { json!({}) };
     let mut data = if vrai(&lu) { lu } else { json!({"annee": an, "socle": an}) };
     let Value::Object(d) = &mut data else {
-        return Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(&data))));
+        return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(&data))));
     };
     d.insert("taux_atmp".into(), Value::Object(taux));
     if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| erreur("OSError", socle::echec::du_disque(&parent, &e)))?;
+        std::fs::create_dir_all(parent).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&parent, &e)))?;
     }
     if p.exists() {
         crate::routes::mois::sauver_avant(&p)?;
     }
-    ecrire_json(&p, &data, 2).map_err(|m| erreur("OSError", m))
+    ecrire_json(&p, &data, 2).map_err(|m| erreur(Classe::Disque, m))
 }
 
 fn nombre(t: Decimal) -> Value {
@@ -107,7 +107,7 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
     let code = code.trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase();
     if !code_risque_valide(&code) {
         return Err(erreur(
-            "ErreurOperation",
+            Classe::Refuse,
             format!(
                 "Code risque « {} » : trois chiffres et deux lettres ou chiffres, suivis du « B » du taux bureau s'il est sur la notification (923AD, 602MDB) ; 999ZZ sans notification.",
                 code
@@ -119,7 +119,7 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
     let valeur = if code == bareme::SANS_NOTIFICATION {
         if valeur.is_some() {
             return Err(erreur(
-                "ErreurOperation",
+                Classe::Refuse,
                 "Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string(),
             ));
         }
@@ -129,13 +129,13 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
             Some(v) if v > Decimal::ZERO && v < Decimal::from(20) => Some(v),
             Some(v) => {
                 return Err(erreur(
-                    "ErreurOperation",
+                    Classe::Refuse,
                     format!("Taux AT/MP de {} % : il se donne en pourcentage, par exemple 1,50 pour 1,50 %.", v.normalize()),
                 ))
             }
             None => {
                 return Err(erreur(
-                    "ErreurOperation",
+                    Classe::Refuse,
                     format!("Code risque {} : son taux est celui que la CARSAT vous a notifié (compte AT/MP sur net-entreprises) ; saisissez-le.", code),
                 ))
             }
@@ -215,7 +215,7 @@ pub(crate) fn taux_saisi(v: Option<&Value>) -> R<Option<Decimal>> {
     }
     socle::num::decimal_lu(brut)
         .map(Some)
-        .ok_or_else(|| erreur("ErreurOperation", format!("Taux AT/MP illisible : {}.", valeur_ecrite(v))))
+        .ok_or_else(|| erreur(Classe::Refuse, format!("Taux AT/MP illisible : {}.", valeur_ecrite(v))))
 }
 
 fn risque_en_json(r: &RisqueAtmp) -> Value {
@@ -352,7 +352,7 @@ pub(crate) fn route(ctx: &Contexte, charge: &Value) -> R<Value> {
     let an = crate::routes::fiches::entier(crate::routes::fiches::exiger(charge, "annee")?)?;
     let code = match charge.get("code_risque").filter(|c| vrai(c)) {
         Some(Value::String(c)) => Some(c.clone()),
-        Some(autre) => return Err(erreur("AttributeError", socle::fichiers::attendu("un texte", nom_type(autre)))),
+        Some(autre) => return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un texte", nom_type(autre)))),
         None if charge.get("valeur").is_some_and(vrai) => {
             let pose = crate::routes::fiches::lire_tolerant(&surcouche(&ctx.racine, an))?
                 .and_then(|v| v.pointer("/taux_atmp/code_risque").filter(|c| vrai(c)).map(valeur_en_texte));

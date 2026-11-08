@@ -1455,13 +1455,13 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       rafraichirReferentiels();
     }
   } catch (e) {
-    if (e.detail?.type === "FicheRefusee") {
+    if (e.detail?.classe === "FicheRefusee") {
       // On propose de forcer, mais on ne force jamais tout seul : une regle
       // peut se tromper, l'utilisateur en sait parfois plus qu'elle.
       // Le libellé du champ, pas sa clé technique (« numero_objet »).
       const libelles = {};
       (ETAT.configuration.description[FICHE_ACTIVE] || []).forEach((c) => { libelles[c.cle] = c.libelle; });
-      const erreurs = e.detail.anomalies.filter((a) => a.gravite === "erreur");
+      const erreurs = e.detail.a_part.anomalies.filter((a) => a.gravite === "erreur");
       // LE MOTEUR DIT CE QUI SE FORCE : une erreur de forme (`forcable`), oui ;
       // une case qu'une structure ne décrit pas, non.
       const forcable = erreurs.every((a) => a.forcable !== false);
@@ -1469,7 +1469,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       const pourquoi = [...new Set(erreurs.filter((a) => forcable || a.forcable === false).map((a) => a.pourquoi).filter(Boolean))];
       // Le libellé et son message sur une ligne : `.encart b` est un titre.
       ouvrirBoite(`<h3>Enregistrement refusé</h3>
-        <div class="encart erreur"><b>${echapper(e.detail.erreurs_dit || "")}</b>
+        <div class="encart erreur"><b>${echapper(e.detail.a_part.erreurs_dit || "")}</b>
           ${erreurs.map((a) => `<div class="anomalie"><b>${echapper(libelles[a.champ] || a.champ)}</b> : ${echapper(a.message)}</div>`).join("")}</div>
         ${pourquoi.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         <div class="actions">

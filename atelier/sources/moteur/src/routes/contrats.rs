@@ -24,7 +24,7 @@ use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
 use envois::releve_signatures::ReleveDite;
 use socle::date::{jour_iso, Jour};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
 use socle::mois::Mois;
 
@@ -34,7 +34,7 @@ const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Début de l'en
 const NUMERO: Champ = Champ { nom: "numero", libelle: Affiche::new("Numéro du contrat"), forme: Forme::Texte, sens: "le numéro du contrat, quand deux commencent le même jour", avance: true };
 /// Un contrat ecrit refuse de se faire quand une case qu'il appelle est vide : elle se dit dans la saisie de l'engagement.
 const CONTRAT_ECRIT: Refus = Refus {
-    classe: "ErreurOperation",
+    classe: Classe::Refuse,
     corriger: "ce que la phrase dit ; une case du contrat écrit vide (`contrat.ecrits` de la route apercu) se remplit dans la saisie de l'engagement, par modifier-engagement ; rien n'est écrit",
 };
 
@@ -69,8 +69,8 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","contrats":[{"salarie":"FULLER","debut":"2026-11-27"}]}"#,
         rend: "phrase, partis, contrats (les contrats et les avenants partis, tels que le journal les note), avertissements (ceux sans courriel), signatures (compagnie fictive : revenues aussitôt)",
         refus: &[
-            Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est parti" },
-            Refus { classe: "BoiteAbsente", corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est parti" },
+            Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
             CONTRAT_ECRIT,
             MANQUE,
         ],
@@ -105,7 +105,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"salarie":"FULLER","debut":"2026-11-27","numero":"FU1.26.01"}"#,
         rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -788,7 +788,7 @@ fn avenants_voulus(ctx: &Contexte, voulus: &[AvenantVoulu]) -> R<Vec<(String, Ve
 fn avenant_a_relancer(ctx: &Contexte, v: &AvenantVoulu) -> R<UnAvenant> {
     let qui = ctx.nomme(&v.salarie);
     let numero = v.numero.as_deref().unwrap_or("");
-    let mois = v.mois.ok_or_else(|| erreur("KeyError", socle::echec::cle("L'avenant à relancer dit son mois, celui de l'écran. Rien n'est parti.", "mois")))?;
+    let mois = v.mois.ok_or_else(|| erreur(Classe::Manque, socle::echec::cle("L'avenant à relancer dit son mois, celui de l'écran. Rien n'est parti.", "mois")))?;
     let c = signature_apercu(ctx, mois)?
         .contrats
         .into_iter()
@@ -1009,11 +1009,11 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
         None => match avenant_d_un_contrat_signe_ailleurs(ctx, c)? {
             Some(a) => a,
             None if c.numero().is_empty() => {
-                return Err(erreur("KeyError", socle::echec::cle("Le numéro du contrat désigne le contrat parti dont l'avenant se fait, et la demande ne le dit pas. Rien n'est écrit.", "numero")));
+                return Err(erreur(Classe::Manque, socle::echec::cle("Le numéro du contrat désigne le contrat parti dont l'avenant se fait, et la demande ne le dit pas. Rien n'est écrit.", "numero")));
             }
             None => {
                 return Err(erreur(
-                    "ErreurOperation",
+                    Classe::Refuse,
                     format!("Aucun contrat n'est parti à la signature pour {} du {} : il n'y a rien à modifier.", c.salarie, c.debut.jj_mm_aaaa()),
                 ))
             }
@@ -1169,7 +1169,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let numero_parti = parti.numero.as_ref().map(|n| n.to_string()).unwrap_or_default();
     let Some(i) = etats::paie_du_contrat(&paies, salarie, &numero_parti)? else {
         return Err(erreur(
-            "ErreurOperation",
+            Classe::Refuse,
             format!("Aucun contrat de {} commençant le {} dans les engagements de {}.", salarie, c.debut.jj_mm_aaaa(), mois_parti),
         ));
     };
@@ -1187,7 +1187,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         Some(me) => {
             let (_d, ps) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, me, None, &departs)?;
             let j = etats::paie_du_contrat(&ps, salarie, &numero_parti)?
-                .ok_or_else(|| erreur("ErreurOperation", format!("Aucune paie de {} en {} pour le contrat n° {}.", salarie, socle::mois::Mois::en_clair(me), numero_parti)))?;
+                .ok_or_else(|| erreur(Classe::Refuse, format!("Aucune paie de {} en {} pour le contrat n° {}.", salarie, socle::mois::Mois::en_clair(me), numero_parti)))?;
             (ps, j, me.clone())
         }
         None => (paies, i, mois_parti.clone()),
@@ -1229,13 +1229,13 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         _ => None,
     };
     let ancienne = ancienne.ok_or_else(|| {
-        erreur("ErreurOperation", format!("Le journal ne dit pas sur quelle version de l'engagement le contrat n° {} est parti : l'avenant ne peut pas citer son ancien texte.", numero_parti))
+        erreur(Classe::Refuse, format!("Le journal ne dit pas sur quelle version de l'engagement le contrat n° {} est parti : l'avenant ne peut pas citer son ancien texte.", numero_parti))
     })?;
     let avant = documents::avenant::valeurs_de_la_paie(ctx, &ent, &ancienne, numero_porte)?;
     let modifs = documents::avenant::modifications(&modele, &avant, &vals)?;
     let mut signes: Vec<i64> = Vec::new();
     for a in deja.iter().filter(|a| a.signe.is_some()) {
-        signes.push(a.numero.ok_or_else(|| erreur("TypeError", "un numero d'avenant n'est pas un entier"))?);
+        signes.push(a.numero.ok_or_else(|| erreur(Classe::MalFormee, "un numero d'avenant n'est pas un entier"))?);
     }
     let modifications = modifs
         .into_iter()
@@ -1359,7 +1359,7 @@ fn piece(racine: &Path, quoi: String, quand: &str, mois: Option<Mois>, fichier: 
 /// piece et son jour, comme la boite de l'ecran.
 fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let numero = c.numero.filter(|n| !n.is_empty()).ok_or_else(|| {
-        erreur("KeyError", "Quel contrat ? Donnez son numéro (« numero »), tel que signature-apercu ou etat-par-engagement le rend. Rien n'est écrit.")
+        erreur(Classe::Manque, "Quel contrat ? Donnez son numéro (« numero »), tel que signature-apercu ou etat-par-engagement le rend. Rien n'est écrit.")
     })?;
     let le_salarie = c.salarie.filter(|s| !s.is_empty());
     let mut qui: Option<String> = le_salarie.clone();

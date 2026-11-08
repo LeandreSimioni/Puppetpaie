@@ -18,7 +18,7 @@ use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
 use crate::conges_spectacles::chemin_texte;
 use droit::contexte::Contexte;
-use socle::echec::Refus;
+use socle::echec::{Classe, Refus};
 use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
 
 type R<T> = Result<T, Refus>;
@@ -100,7 +100,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], ent: &EntrepriseDuDocument, r
         un.signature = signature.as_deref().map(chemin_texte);
         refuser_ce_que_le_modele_tairait(&modele, &lu, &v)?;
         crate::contrat_ecrit::refuser_les_mentions_absentes(&modele, &lu, &nat, &v)
-            .map_err(|m| Refus { classe: Some("ModeleIncomplet"), message: m })?;
+            .map_err(|m| Refus { classe: Some(Classe::ModeleIncomplet), message: m })?;
         documents.push(Document::Modele(un));
     }
     Ok(enveloppe(Style::Contrat, ent, documents))
@@ -127,7 +127,7 @@ fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Vale
     };
     if valeurs.get(&TAUX).is_none() && lu.cite(TAUX) {
         return Err(Refus {
-            classe: Some("ModeleIncomplet"),
+            classe: Some(Classe::ModeleIncomplet),
             message: socle::echec::avec(
                 format!(
                     "Le modèle de contrat « {} » cite le taux du cachet, et le contrat de {} n'a aucun taux de cachet : il ne paie aucun cachet, et ni l'engagement ni le mois n'en écrivent. Le moteur n'en invente pas. Écrire la rémunération de ce modèle par le détail de la rémunération, qui la dit quelle que soit sa forme (le modèle livré le fait), ou porter le taux sur une ligne de cachet de l'engagement. Rien n'est écrit.",
@@ -142,7 +142,7 @@ fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Vale
         let Some(valeur) = valeurs.get(&cle).filter(|v| !v.trim().is_empty()) else { continue };
         if !lu.cite(cle) {
             return Err(Refus {
-                classe: Some("ModeleIncomplet"),
+                classe: Some(Classe::ModeleIncomplet),
                 message: socle::echec::avec(
                     format!(
                         "Le modèle de contrat « {} » ne cite pas ce que le contrat de {} lui verse hors brut ({}) : le contrat le tairait. Ajouter son marqueur à l'article « Rémunération » de ce modèle (le modèle livré l'y place juste après la période). Rien n'est écrit.",
@@ -192,7 +192,7 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
         let contrat = socle::fichiers::modele_de(&crate::contrat_ecrit::nom_du_modele(&nat)?, Some(&ent.gabarits), &ctx.gabarits());
         let du_contrat = ModeleLu::du_fichier(&contrat)?;
         refuser_ce_que_le_modele_tairait(&contrat, &du_contrat, &v)?;
-        crate::contrat_ecrit::refuser_les_mentions_absentes(&contrat, &du_contrat, &nat, &v).map_err(|m| Refus { classe: Some("ModeleIncomplet"), message: m })?;
+        crate::contrat_ecrit::refuser_les_mentions_absentes(&contrat, &du_contrat, &nat, &v).map_err(|m| Refus { classe: Some(Classe::ModeleIncomplet), message: m })?;
     }
     let mut un = document_modele(lu, &v);
     un.modifications = Some(modifs.to_vec());
@@ -229,18 +229,18 @@ pub fn ecrire_avenant(
     ailleurs: bool,
 ) -> R<()> {
     if modifs.is_empty() {
-        return Err(Refus { classe: Some("ValueError"), message: "Rien n'a changé : pas d'avenant à écrire.".into() });
+        return Err(Refus { classe: Some(Classe::Illisible), message: "Rien n'a changé : pas d'avenant à écrire.".into() });
     }
     let nom = nom_de_l_avenant(&*p.engagement.nat()?)?;
     let fichier = socle::fichiers::modele_de(&nom, Some(&ent.gabarits), &ctx.gabarits());
     let lu = ModeleLu::du_fichier(&fichier)?;
-    let m = lu.decoupe(&fichier.to_string_lossy()).map_err(|r| Refus { classe: Some("ValueError"), message: r })?;
+    let m = lu.decoupe(&fichier.to_string_lossy()).map_err(|r| Refus { classe: Some(Classe::Illisible), message: r })?;
     if m.modification.is_empty() {
-        return Err(Refus { classe: Some("ValueError"), message: format!("{} n'a pas de bloc MODIFICATION:.", nom) });
+        return Err(Refus { classe: Some(Classe::Illisible), message: format!("{} n'a pas de bloc MODIFICATION:.", nom) });
     }
     if ailleurs && !m.modification.iter().any(|b| b.contains(Marqueur::ModificationPhrase.nom())) {
         return Err(Refus {
-            classe: Some("ModeleIncomplet"),
+            classe: Some(Classe::ModeleIncomplet),
             message: socle::echec::avec(
                 format!(
                     "Le modèle d'avenant {} ne dit pas une modification en clair : un contrat signé hors du logiciel n'a pas d'article à citer. Ajoutez à son bloc de modification un paragraphe qui porte la phrase de la modification (Configuration › Modèles de contrat). Rien n'est parti.",

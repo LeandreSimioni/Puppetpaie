@@ -10,7 +10,7 @@
 //! Le XML se lit en arbre d'elements dont le texte est
 //! celui d'avant le premier enfant (commentaires et instructions ignores), les
 //! balises et les attributs a espace de noms ecrits `{uri}nom`. Un XML qui ne se
-//! lit pas est une `ParseError` (la phrase est celle de `roxmltree`).
+//! lit pas est un refus `XmlIllisible` (la phrase est celle de `roxmltree`).
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_L
 
 type Resultat<T> = Result<T, Echec>;
 
-use socle::echec::{erreur as echec, Echec};
+use socle::echec::{erreur as echec, Classe, Echec};
 use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
@@ -270,7 +270,7 @@ fn blanc_xml(c: Option<&char>) -> bool {
 }
 
 fn mal_forme(m: &str) -> Echec {
-    echec("ParseError", m)
+    echec(Classe::XmlIllisible, m)
 }
 
 /// La declaration `<?xml ...?>` comme expat la verifie : `version` d'abord, puis
@@ -579,7 +579,7 @@ fn lire_texte_nu(s: &str) -> Resultat<Arbre> {
     }
     controle_expat(s)?;
     let options = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
-    let doc = roxmltree::Document::parse_with_options(s, options).map_err(|e| echec("ParseError", e.to_string()))?;
+    let doc = roxmltree::Document::parse_with_options(s, options).map_err(|e| echec(Classe::XmlIllisible, e.to_string()))?;
     let mut a = Arbre { n: Vec::new() };
     ajouter(&mut a, doc.root_element());
     Ok(a)
@@ -630,9 +630,9 @@ enum Codage {
     /// `UTF-16` (`None`), `UTF-16LE` (`Some(true)`), `UTF-16BE` (`Some(false)`).
     Utf16(Option<bool>),
     /// Un nom d'encodage connu mais qui n'est pas sur 256 caracteres (multi-octets) : refuse
-    /// (`ValueError`).
+    /// (`Illisible`).
     Refuse,
-    /// Une autre table sur 256 caracteres, que ce moteur ne porte pas : `ParseError`.
+    /// Une autre table sur 256 caracteres, que ce moteur ne porte pas : `XmlIllisible`.
     Autre,
     /// Un nom d'encodage inconnu : `LookupError`.
     Introuvable,
@@ -667,16 +667,16 @@ fn codage(nom: &str) -> Codage {
 
 fn erreur_codage(c: &Codage, nom: &str) -> Echec {
     match c {
-        Codage::Introuvable => echec("LookupError", format!("encodage inconnu : {}", nom)),
-        Codage::Refuse => echec("ValueError", "multi-byte encodings are not supported"),
-        _ => echec("ParseError", "encodage inconnu"),
+        Codage::Introuvable => echec(Classe::Illisible, format!("encodage inconnu : {}", nom)),
+        Codage::Refuse => echec(Classe::Illisible, "multi-byte encodings are not supported"),
+        _ => echec(Classe::XmlIllisible, "encodage inconnu"),
     }
 }
 
 /// `ET.fromstring(octets)` : l'encodage declare est celui qui decode.
 fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
-    let invalide = || echec("ParseError", "XML mal forme : un caractere inattendu");
-    let incorrect = || echec("ParseError", "l'encodage declare par le XML n'est pas le sien");
+    let invalide = || echec(Classe::XmlIllisible, "XML mal forme : un caractere inattendu");
+    let incorrect = || echec(Classe::XmlIllisible, "l'encodage declare par le XML n'est pas le sien");
     let (o, bom8) = match o.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         Some(r) => (r, true),
         None => (o, false),
@@ -748,7 +748,7 @@ fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
         Codage::Refuse | Codage::Autre | Codage::Introuvable => {
             return Err(match &nom {
                 Some(n) => erreur_codage(&c, n),
-                None => echec("ParseError", "encodage inconnu"),
+                None => echec(Classe::XmlIllisible, "encodage inconnu"),
             })
         }
     };
@@ -812,7 +812,7 @@ impl Bilan {
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
 fn mois_du_rapport(brut: &str) -> Resultat<socle::mois::Mois> {
-    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| echec("ValueError", m))
+    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| echec(Classe::Illisible, m))
 }
 
 fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Option<Bilan>> {
@@ -871,7 +871,7 @@ pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
 /// refus (un encodage inconnu, un mois illisible) remonte.
 pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
     match bilan_d_octets(o) {
-        Err(Echec { classe: Some("ParseError"), .. }) => Ok(None),
+        Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
         autre => autre,
     }
 }
@@ -935,7 +935,7 @@ pub struct DeclarationIdentifiee {
 fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
     match lire_octets(o) {
         Ok(a) => Ok(Some(a)),
-        Err(Echec { classe: Some("ParseError"), .. }) => Ok(None),
+        Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
         Err(autre) => Err(autre),
     }
 }
@@ -1162,7 +1162,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec("JSONDecodeError", m))?;
+        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
         let mut out = Vec::new();
         for f in UnOuPlusieurs::en_liste(l.retours.and_then(|r| r.flux)) {
             for r in UnOuPlusieurs::en_liste(f.retour) {
@@ -1209,10 +1209,10 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
                     "statut" => a.statut = t,
                     "id" => a.id = t,
                     "url" => a.url = t,
-                    autre => return Err(echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("flux.retour.{}", autre)))),
+                    autre => return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("flux.retour.{}", autre)))),
                 }
             }
-            a.nature = nature.ok_or_else(|| echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, "flux.retour.nature")))?;
+            a.nature = nature.ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, "flux.retour.nature")))?;
             out.push(a);
         }
     }
@@ -1224,7 +1224,7 @@ pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec("JSONDecodeError", m))?;
+        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
         return Ok(UnOuPlusieurs::en_liste(d.depots.and_then(|x| x.declarant).and_then(|x| x.depot)));
     }
     let arbre = lire_texte(texte)?;
@@ -1232,10 +1232,10 @@ pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
     for el in arbre.tous().filter(|el| local(&el.tag) == "depot") {
         let champs = enfants_textes(&arbre, el);
         let champ = |k: &str| {
-            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", k))))
+            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", k))))
         };
         if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
-            return Err(echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", autre))));
+            return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", autre))));
         }
         out.push(Depot { idflux: champ("idflux")?, date: champ("date")?, statut: champ("statut")? });
     }
@@ -1520,7 +1520,7 @@ fn u64_le(b: &[u8], i: usize) -> u64 {
 }
 
 fn mauvais(m: impl Into<String>) -> Echec {
-    echec("BadZipFile", m)
+    echec(Classe::ArchiveIllisible, m)
 }
 
 fn cp437(o: &[u8]) -> Resultat<String> {
@@ -1535,7 +1535,7 @@ fn nom_zip(o: &[u8], drapeaux: usize) -> Resultat<String> {
     if drapeaux & 0x800 != 0 {
         std::str::from_utf8(o)
             .map(str::to_string)
-            .map_err(|e| echec("UnicodeDecodeError", format!("texte illisible en UTF-8 a l'octet {}", e.valid_up_to())))
+            .map_err(|e| echec(Classe::Illisible, format!("texte illisible en UTF-8 a l'octet {}", e.valid_up_to())))
     } else {
         cp437(o)
     }
@@ -1699,7 +1699,7 @@ fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
             fin: 0,
         };
         if c[6] > 63 {
-            return Err(echec("NotImplementedError", format!("archive zip de version {:.1} : non lue", c[6] as f64 / 10.0)));
+            return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {:.1} : non lue", c[6] as f64 / 10.0)));
         }
         extra_zip64(extra, &mut m)?;
         m.decalage += concat;
@@ -1726,7 +1726,7 @@ fn crc32(o: &[u8]) -> u64 {
 /// `ZipFile.read(nom)`.
 fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
     if m.decalage < 0 {
-        return Err(echec("ValueError", format!("negative seek value {}", m.decalage)));
+        return Err(echec(Classe::Illisible, format!("negative seek value {}", m.decalage)));
     }
     let dec = m.decalage as usize;
     if dec.saturating_add(30) > b.len() {
@@ -1741,10 +1741,10 @@ fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
     let nom_brut = &b[debut_nom.min(b.len())..(debut_nom + ln_nom).min(b.len())];
     let debut_donnees = debut_nom + ln_nom + ln_extra;
     if m.drapeaux & 0x20 != 0 {
-        return Err(echec("NotImplementedError", "archive zip a donnees corrigees (bit 5) : non lue"));
+        return Err(echec(Classe::ArchiveNonLue, "archive zip a donnees corrigees (bit 5) : non lue"));
     }
     if m.drapeaux & 0x40 != 0 {
-        return Err(echec("NotImplementedError", "archive zip chiffree (bit 6) : non lue"));
+        return Err(echec(Classe::ArchiveNonLue, "archive zip chiffree (bit 6) : non lue"));
     }
     let nom_en_tete = nom_zip(nom_brut, u16_le(h, 6))?;
     if nom_en_tete != m.original {
@@ -1754,14 +1754,14 @@ fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
         return Err(mauvais(format!("archive zip abimee : « {} » chevauche un autre fichier", m.original)));
     }
     if m.drapeaux & 1 != 0 {
-        return Err(echec("RuntimeError", format!("File « {} » is encrypted, password required for extraction", m.nom)));
+        return Err(echec(Classe::ArchiveNonLue, format!("File « {} » is encrypted, password required for extraction", m.nom)));
     }
     let comprime = &b[debut_donnees.min(b.len())..(debut_donnees.saturating_add(m.taille_comp as usize)).min(b.len())];
     let donnees = match m.methode {
         0 => {
             let n = (m.taille as usize).min(m.taille_comp as usize);
             if comprime.len() < n {
-                return Err(echec("EOFError", ""));
+                return Err(echec(Classe::ArchiveNonLue, ""));
             }
             comprime[..n].to_vec()
         }
@@ -1785,13 +1785,13 @@ fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
                         }
                         out.reserve(out.len().max(4096));
                     }
-                    Err(e) => return Err(echec("error", format!("decompression impossible : {}", e))),
+                    Err(e) => return Err(echec(Classe::ArchiveNonLue, format!("decompression impossible : {}", e))),
                 }
             }
             out
         }
         t => {
-            return Err(echec("NotImplementedError", format!("compression {} ({}) : non lue", t, description_compression(t))));
+            return Err(echec(Classe::ArchiveNonLue, format!("compression {} ({}) : non lue", t, description_compression(t))));
         }
     };
     if crc32(&donnees) != m.crc {
@@ -1902,7 +1902,7 @@ pub struct AttestationAer {
 pub fn aer_spectacle(o: &[u8]) -> Resultat<Vec<AttestationAer>> {
     let membres = match repertoire_zip(o) {
         Ok(m) => m,
-        Err(e) if e.classe == Some("BadZipFile") => return Ok(Vec::new()),
+        Err(e) if e.classe == Some(Classe::ArchiveIllisible) => return Ok(Vec::new()),
         Err(e) => return Err(e),
     };
     // `NameToInfo` garde le dernier membre de chaque nom.
@@ -1988,9 +1988,9 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
         };
         for t in arbre.sous(d).filter(|x| local(&x.tag) == "taux_AT") {
             let champ = |n: &str| premier_texte(&arbre, t, &[n]).to_string();
-            let illisible = |quoi: &str, v: &str| echec("ValueError", format!("Notification du taux AT/MP : {} illisible ({:?}).", quoi, v));
+            let illisible = |quoi: &str, v: &str| echec(Classe::Illisible, format!("Notification du taux AT/MP : {} illisible ({:?}).", quoi, v));
             if siren.is_empty() || nic.is_empty() {
-                return Err(echec("ValueError", "Notification du taux AT/MP : la déclaration ne dit pas son établissement (SIREN, nic_affectation)."));
+                return Err(echec(Classe::Illisible, "Notification du taux AT/MP : la déclaration ne dit pas son établissement (SIREN, nic_affectation)."));
             }
             let code = champ("code_risque").to_uppercase();
             let ok_code = code.len() == 5 && code.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase());
@@ -2024,7 +2024,7 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
         }
     }
     if out.is_empty() {
-        return Err(echec("ValueError", "Notification du taux AT/MP : aucun élément taux_AT lisible (code risque, taux, date d'effet)."));
+        return Err(echec(Classe::Illisible, "Notification du taux AT/MP : aucun élément taux_AT lisible (code risque, taux, date d'effet)."));
     }
     Ok(out)
 }
@@ -2200,7 +2200,7 @@ pub struct DonneeCollective {
 pub fn membres_du_zip(o: &[u8]) -> Resultat<Vec<String>> {
     match repertoire_zip(o) {
         Ok(m) => Ok(m.into_iter().map(|x| x.nom).filter(|n| !n.ends_with('/')).collect()),
-        Err(e) if e.classe == Some("BadZipFile") => Ok(Vec::new()),
+        Err(e) if e.classe == Some(Classe::ArchiveIllisible) => Ok(Vec::new()),
         Err(e) => Err(e),
     }
 }

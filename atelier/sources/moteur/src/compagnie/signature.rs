@@ -18,6 +18,7 @@
 //! (`envoi::envoyer_suivi`) et note le depart (`ligne_d_envoi`).
 
 use droit::fiche::{ChampsSalarie, Lue as _};
+use socle::echec::Classe;
 use crate::routes::dossier_salarie::cle_de;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,12 +41,12 @@ use engagement::numeros::NumeroContrat;
 
 /// Un refus ordinaire, avec sa phrase.
 fn refus(message: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", message)
+    erreur(Classe::Refuse, message)
 }
 
 /// La case `cle` de la fiche entreprise manque.
 fn requis_manque(cle: &str) -> Echec {
-    erreur("KeyError", socle::fichiers::absent(cle))
+    erreur(Classe::Manque, socle::fichiers::absent(cle))
 }
 
 use documents::marqueurs::Marqueur;
@@ -88,9 +89,9 @@ pub struct Choisis {
     pub contrats: Option<Vec<Cible>>,
 }
 
-/// Une date ISO en JJ/MM/AAAA ; refus (`ValueError`) si elle ne se lit pas.
+/// Une date ISO en JJ/MM/AAAA ; refus (`Illisible`) si elle ne se lit pas.
 pub(crate) fn jj(iso: &str) -> R<String> {
-    socle::date::Jour::lire(iso).map(|j| j.jj_mm_aaaa()).map_err(|m| erreur("ValueError", m))
+    socle::date::Jour::lire(iso).map(|j| j.jj_mm_aaaa()).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 /// « du 12/01/2026 au 30/06/2026 », ou « à partir du 12/01/2026 » pour un contrat sans terme.
@@ -119,7 +120,7 @@ fn et_fr(morceaux: &[String]) -> String {
 /// `code_signature` : `SIG-` puis six signes tires au hasard, sans 0/O ni 1/I/L, pour qu'il se relise sans
 /// hesiter s'il faut le recopier a la main.
 pub fn code_signature() -> R<String> {
-    documents::fiche_questionnaire::code_au_hasard("SIG-").map_err(|m| erreur("OSError", m))
+    documents::fiche_questionnaire::code_au_hasard("SIG-").map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// `signataire` et `raison` des courriels : le prenom d'affichage du signataire (sinon son prenom, capitalise), et
@@ -147,7 +148,7 @@ fn prenom_de(sal: &ChampsSalarie) -> R<String> {
 
 /// Le texte d'une case de la fiche, exigee.
 fn exige<T: AsRef<str>>(c: &Option<T>, cle: &str) -> R<String> {
-    c.portee().map(str::to_string).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))
+    c.portee().map(str::to_string).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))
 }
 
 /// « Prenom Nom » tel que la reponse « Je signe » le dit : `prenom_affichage or prenom`, `nom_affichage or nom`.
@@ -330,8 +331,8 @@ pub fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, p
     let octets = documents::fabrique::fusion_pieces(&pieces.iter().map(|p| (p.clone(), None)).collect::<Vec<_>>())?;
     let f = dossier.join(format!("{}{}_{}.pdf", PREFIXE_IMPRESSION, quoi, etiq));
     // Un mois dont seul un avenant s'imprime n'a pas encore son dossier d'envoi.
-    std::fs::create_dir_all(dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
-    std::fs::write(&f, octets).map_err(|e| erreur("OSError", socle::echec::du_disque(&f, &e)))?;
+    std::fs::create_dir_all(dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::write(&f, octets).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&f, &e)))?;
     Ok(f)
 }
 
@@ -367,7 +368,7 @@ pub fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Choisis>, 
     }
     controler_avenants(ctx, avenants)?;
     let dossier = ctx.racine.join("sorties").join(&s_mois).join("envoi");
-    let etiq = socle::mois::Mois::lire(&s_mois).map(socle::mois::Mois::etiquette).map_err(|m| erreur("ValueError", m))?;
+    let etiq = socle::mois::Mois::lire(&s_mois).map(socle::mois::Mois::etiquette).map_err(|m| erreur(Classe::Illisible, m))?;
     let ent = documents::avenant::ent_du_mois(ctx, &s_mois)?;
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
     for (cle, ps, _) in &par_salarie {
@@ -437,7 +438,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &departs)?;
     let s_mois = data.mois.to_string();
     let dossier = ctx.racine.join("sorties").join(&s_mois).join("envoi");
-    let etiq = socle::mois::Mois::lire(&s_mois).map(socle::mois::Mois::etiquette).map_err(|m| erreur("ValueError", m))?;
+    let etiq = socle::mois::Mois::lire(&s_mois).map(socle::mois::Mois::etiquette).map_err(|m| erreur(Classe::Illisible, m))?;
 
     let (an, nom_mois) = socle::mois::Mois::lire(&s_mois).map(|m| (m.annee(), m.nom(socle::mois::Graphie::Accentuee)))?;
     let ent = documents::avenant::ent_du_mois(ctx, &s_mois)?;
@@ -481,7 +482,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" }));
         documents::contrat::ecrire_contrat(ctx, ps, &ent, &pdf, &remplacements)?;
         // Le PDF tel qu'il part : son exemplaire contresigne commencera par ces octets-la (`depart::contresigner`).
-        let empreinte = envois::journal::empreinte_fichier(&pdf).map_err(|m| erreur("OSError", m))?;
+        let empreinte = envois::journal::empreinte_fichier(&pdf).map_err(|m| erreur(Classe::Disque, m))?;
         let mut spectacles: Vec<String> = Vec::new();
         let mut titres: Vec<String> = Vec::new();
         for p in ps {
@@ -886,7 +887,7 @@ fn avenant_ecrit(
         relance: None,
         // Le PDF tel qu'il part (une relance reprend celui qui est parti) : son exemplaire contresigne commencera par ces
         // octets-la.
-        empreinte: Some(envois::journal::empreinte_fichier(&pdf).map_err(|m| erreur("OSError", m))?),
+        empreinte: Some(envois::journal::empreinte_fichier(&pdf).map_err(|m| erreur(Classe::Disque, m))?),
         message: None,
         // Un avenant au contrat signe hors du logiciel : la piece se refait de meme (`depart::refaire_le_contrat`), et le
         // PDF du contrat signe, depose dans son dossier, part avec lui.

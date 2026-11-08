@@ -10,15 +10,15 @@ use socle::echec::erreur;
 /// (`declarations::dsn::Arret::a_reporter` : les arrets qui croisent le mois, et ceux d'un mois anterieur saisis apres le
 /// depart de sa DSN).
 pub(crate) fn arrets_pour(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<Value>> {
-    socle::mois::Mois::lire(mois).map(socle::mois::Mois::premier_jour).map_err(|m| erreur("ValueError", m))?;
+    socle::mois::Mois::lire(mois).map(socle::mois::Mois::premier_jour).map_err(|m| erreur(socle::echec::Classe::Illisible, m))?;
     let mut out = Vec::new();
     for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::routes::imprevus::refus_magasin)? {
         if !engagement::imprevus::est_un_arret(&imp) {
             continue;
         }
         let a = socle::ecriture::en_valeur(&imp);
-        let arret = declarations::dsn::Arret { saisi: socle::forme::lire(&a, engagement::imprevus::ILLISIBLE).map_err(|m| erreur("ValueError", m))? };
-        if arret.a_reporter(mois, departs).map_err(|m| erreur("ValueError", m))? {
+        let arret = declarations::dsn::Arret { saisi: socle::forme::lire(&a, engagement::imprevus::ILLISIBLE).map_err(|m| erreur(socle::echec::Classe::Illisible, m))? };
+        if arret.a_reporter(mois, departs).map_err(|m| erreur(socle::echec::Classe::Illisible, m))? {
             out.push(a);
         }
     }

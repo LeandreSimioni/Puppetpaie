@@ -444,7 +444,7 @@ async function lancerExport(apercu) {
   try { r = await api("exporter", charge); }
   catch (e) {
     // Des libellés trop longs pour le format : le refus y renvoie.
-    const courts = e.detail && e.detail.libelles_courts;
+    const courts = e.detail && e.detail.a_part && e.detail.a_part.libelles_courts;
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}${courts
       ? ` <button class="lien" id="x-courts-refus">Les raccourcir</button>` : ""}</div>`;
     if (courts) document.getElementById("x-courts-refus").onclick = () => ouvrirCourts(courts);

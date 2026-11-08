@@ -26,7 +26,7 @@ use envois::envoi::{self, Message};
 use envois::ligne_d_envoi::{echec_d_envoi, noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::jour_iso;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{nom_du, repr};
 use socle::html::courriel_en_html;
 use crate::routes::catalogue::{Ecran, Place};
@@ -103,7 +103,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"salaries":["FULLER"],"mois":"2026-11"}"#,
         rend: "le dossier, et envoi (partis)",
         refus: &[
-            Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
             OPERATION,
         ],
         acte: Acte::Engage,
@@ -133,9 +133,9 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"vire_le":{"2026":"2026-11-02"}}"#,
         rend: "partis (les destinataires), expediteur, periode, total, annees (les régularisations notées), eml",
         refus: &[
-            Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
-            Refus { classe: "BoiteAbsente", corriger: "poser la boîte courriel (Configuration, Mots de passe)" },
-            Refus { classe: "ErreurOperation", corriger: "la date du virement fait, ou l'année que la phrase nomme ; rien n'est parti" },
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
+            Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" },
+            Refus { classe: Classe::Refuse, corriger: "la date du virement fait, ou l'année que la phrase nomme ; rien n'est parti" },
         ],
         acte: Acte::Engage,
         avance: true,
@@ -737,7 +737,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, ouvrir: Ouvrir) -> R
 fn adresses_de(ctx: &Contexte, cles: &[String]) -> R<Vec<String>> {
     cles.iter()
         .map(|cle| {
-            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))?;
+            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
             s.email.dite().filter(|e| !e.is_empty()).cloned().ok_or_else(|| {
                 refus(format!("Pas d'adresse e-mail pour {} : compléter sa fiche avant d'envoyer. Rien n'est parti.", ctx.nomme(cle)))
             })
@@ -759,10 +759,10 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::routes::dossier_salarie::Dossier, 
     let mut messages: Vec<Message> = Vec::new();
     let adresses = adresses_de(ctx, &d.salaries)?;
     for ((cle, f), email) in d.salaries.iter().zip(&d.fichiers).zip(adresses) {
-        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))?;
-        let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("prenom")))?.to_string();
-        let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("signataire")))?;
-        let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("prenom")))?;
+        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
+        let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("prenom")))?.to_string();
+        let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("signataire")))?;
+        let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("prenom")))?;
         let ses_pages = d.pages.get(cle);
         let liste = d
             .categories
@@ -818,7 +818,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::routes::dossier_salarie::Dossier, 
 
 /// Les actes du journal des envois, tels que le journal des declarations les montre.
 fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJournal>> {
-    let lignes = journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?.lignes;
+    let lignes = journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?.lignes;
     Ok(lignes
         .iter()
         .map(|l| documents::etats_personnel::ActeDuJournal {
@@ -900,7 +900,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, ouvrir: Ouvrir) -> R<CascEnvoyee>
     }
 
     let mut client = ouvrir()?;
-    let dernier_mois = r.mois.last().map(|m| m.mois.clone()).ok_or_else(|| erreur("IndexError", socle::fichiers::trop_courte("les mois de la régularisation")))?;
+    let dernier_mois = r.mois.last().map(|m| m.mois.clone()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de la régularisation")))?;
     verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(c.motdepasse.clone())), &dernier_mois, "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
 
     // La liste nominative est la premiere chose qu'ecrit le dossier (`casc::ecrire`) : si elle ne peut s'ecrire, le refus
@@ -950,13 +950,13 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, ouvrir: Ouvrir) -> R<CascEnvoyee>
 
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
     let garde = std::path::Path::new(&r.dossier).join("envoyes");
-    std::fs::create_dir_all(&garde).map_err(|e| erreur("OSError", socle::echec::du_disque(&garde, &e)))?;
+    std::fs::create_dir_all(&garde).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&garde, &e)))?;
     let iso = socle::paris::maintenant();
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut emls: Vec<String> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {
         let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.cle));
-        std::fs::write(&p, brut).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        std::fs::write(&p, brut).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         emls.push(nom_du(&p));
     }
     detail.eml = emls.clone();
@@ -995,16 +995,9 @@ struct CascEnvoyee {
     dossier: String,
 }
 
-/// L'erreur du disque, sous sa classe (`FileNotFoundError`, `PermissionError`, `OSError`).
+/// L'erreur du disque, sous sa classe (`FichierAbsent`, `Disque`).
 fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    let classe = match (e.kind(), e.raw_os_error()) {
-        (std::io::ErrorKind::NotFound, _) => "FileNotFoundError",
-        (std::io::ErrorKind::PermissionDenied, _) => "PermissionError",
-        (_, Some(20)) => "NotADirectoryError",
-        (_, Some(21)) => "IsADirectoryError",
-        _ => "OSError",
-    };
-    erreur(classe, socle::fichiers::panne_fichier(e, p))
+    erreur(Classe::du_disque(e), socle::fichiers::panne_fichier(e, p))
 }
 
 // ------------------------------------------------------------------ les droits des intermittents, l'archive d'un mois

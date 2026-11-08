@@ -24,15 +24,15 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
 
 pub type R<T> = Result<T, Echec>;
 
-/// Une `ErreurOperation`.
+/// Un refus `Refuse`.
 pub fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// `FORMATS_TABLEAU` : les six formats de la machinerie, dans l'ordre du format.
@@ -71,7 +71,7 @@ impl Val {
         match self {
             Val::Dec(d) => Ok(*d),
             Val::Ent(n) => Ok(Decimal::from(*n)),
-            Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur("InvalidOperation", socle::num::illisible(t))),
+            Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t))),
         }
     }
 }
@@ -540,7 +540,7 @@ enum Cel {
 /// Le nombre du classeur : un montant en flottant (le classeur n'a que ceux-la).
 pub fn en_f64(d: &Decimal) -> R<f64> {
     use rust_decimal::prelude::ToPrimitive;
-    d.to_f64().ok_or_else(|| erreur("ValueError", format!("{} ne s'écrit pas en nombre du classeur", d)))
+    d.to_f64().ok_or_else(|| erreur(Classe::Illisible, format!("{} ne s'écrit pas en nombre du classeur", d)))
 }
 
 /// Le nombre d'une colonne de chiffres (un texte qui se lit en nombre aussi), le texte sinon.
@@ -559,7 +559,7 @@ fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
 }
 
 fn xl(e: rust_xlsxwriter::XlsxError) -> Echec {
-    erreur("OSError", format!("classeur : {}", e))
+    erreur(Classe::Disque, format!("classeur : {}", e))
 }
 
 /// Un format : gras ou non, une taille, un format de nombre.
@@ -884,7 +884,7 @@ pub fn description_pdf(
     }
 }
 
-/// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est une `ErreurOperation`.
+/// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est `Refuse`.
 pub fn pdf_fabrique(description: &pdf::Description) -> R<Vec<u8>> {
     fabrique_pdf::fabriquer(description).map_err(|r| refus(format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", r.0.replace('\n', " "))))
 }
@@ -924,11 +924,11 @@ pub fn format_possible(fmt: &str, formats: &[&str]) -> R<String> {
 
 /// Ecrit le tableau dans `dossier/nom.<ext>` (`tsv` s'ecrit `.txt`) et rend le chemin.
 pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<PathBuf> {
-    std::fs::create_dir_all(dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
     let ext = if t.format == "tsv" { "txt" } else { t.format.as_str() };
     let chemin = dossier.join(format!("{}.{}", nom, ext));
     let contenu = octets(t, Some(ctx))?;
-    std::fs::write(&chemin, contenu).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+    std::fs::write(&chemin, contenu).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
     t.fichier = Some(chemin.clone());
     Ok(chemin)
 }
@@ -937,7 +937,7 @@ pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<P
 
 /// « Septembre 2026 » d'un mois `AAAA-MM` (le nom en titre) ; un mois illisible se refuse.
 pub fn libelle_mois(m: &str) -> R<String> {
-    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| erreur("ValueError", e))
+    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| erreur(Classe::Illisible, e))
 }
 
 /// AAAA-MM-JJ -> JJ/MM/AAAA ; le reste tel quel.
@@ -953,7 +953,7 @@ pub fn jj(iso: &str) -> String {
 /// « NOM Prenom ».
 pub fn qui(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     if fiche.nom.is_none() {
-        return Err(erreur("KeyError", socle::fichiers::absent("nom")));
+        return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
     }
     Ok(qui_souple(fiche))
 }
@@ -966,6 +966,6 @@ pub fn qui_souple(fiche: &droit::fiche::ChampsSalarie) -> String {
 
 /// Un montant ecrit en texte, a deux decimales ; un texte qui n'est pas un nombre se refuse.
 pub fn montant(t: &str) -> R<Decimal> {
-    let d = socle::num::decimal_lu(t).ok_or_else(|| erreur("InvalidOperation", socle::num::illisible(t)))?;
+    let d = socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t)))?;
     Ok(socle::num::eur2(d))
 }

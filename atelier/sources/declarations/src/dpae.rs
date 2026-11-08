@@ -636,8 +636,8 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
     Ok(())
 }
 
-/// La nature de contrat de cette embauche. Une nature inconnue est un
-/// `KeyError`, dont le message se rend entre guillemets.
+/// La nature de contrat de cette embauche. Une nature inconnue se refuse, son
+/// message entre guillemets.
 fn nature_de(e: &Embauche) -> Resultat<std::sync::Arc<natures::Nature>> {
     natures::nature(&e.nature).map_err(|m| repr(&m))
 }

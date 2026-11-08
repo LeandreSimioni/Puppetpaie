@@ -16,7 +16,7 @@ pub struct ChargeCourrielsFictifs {
 /// Les courriels joues de la compagnie fictive ; refuse une compagnie reelle.
 pub fn courriels_fictifs(ctx: &Contexte, charge: &ChargeCourrielsFictifs) -> R<CourrielsJoues> {
     if !crate::compagnie::bridage::branchement(&ctx.racine).joue() {
-        return Err(erreur("ErreurOperation", "Seulement dans la compagnie fictive."));
+        return Err(erreur(socle::echec::Classe::Refuse, "Seulement dans la compagnie fictive."));
     }
     envois::simulation_courriels::courriels_joues(&ctx.racine, charge.apres.as_deref())
 }

@@ -43,7 +43,7 @@ use droit::emplois;
 use engagement::{self, LignePaie};
 use socle::date::Jour;
 use crate::valeur::en_texte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
 use socle::mois::Mois;
 use socle::num::Decimal;
@@ -418,9 +418,9 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
 /// (`rappels` : l'echeancier livre et celui de la compagnie ; `atmp` ; `fiches`) lisent chacun un fichier de leur domaine,
 /// qui se declarera avec lui.
 pub(crate) fn lire_saisie(chemin: &Path) -> R<Value> {
-    let octets = std::fs::read(chemin).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
-    let texte = String::from_utf8(octets).map_err(|e| erreur("UnicodeDecodeError", socle::echec::du_disque(&chemin, &e)))?;
-    serde_json::from_str(&texte).map_err(|e| erreur("JSONDecodeError", e.to_string()))
+    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    let texte = String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&chemin, &e)))?;
+    serde_json::from_str(&texte).map_err(|e| erreur(Classe::Illisible, e.to_string()))
 }
 
 #[track_caller]
@@ -435,7 +435,7 @@ fn plain(m: impl Into<String>) -> Echec {
 /// dernier taux saisi -- `null` quand le dossier n'a encore aucun cachet (R12 :
 /// aucun texte ne fixe un taux de cachet, la compagnie le saisit).
 pub(crate) fn squelette(ctx: &Contexte, mois: &str) -> R<VueDuMois> {
-    let mois = Mois::lire(mois).map_err(|m| erreur("ValueError", m))?;
+    let mois = Mois::lire(mois).map_err(|m| erreur(Classe::Illisible, m))?;
     Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.and_then(socle::forme::NombreLu::de_f64), ..VueDuMois::vide(mois) })
 }
 
@@ -740,7 +740,7 @@ fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {
             continue;
         }
         if let Some(q) = l.quantite() {
-            cachets += i64::try_from(q.trunc()).map_err(|_| erreur("OverflowError", socle::fichiers::entier_hors_limites(&q.to_string())))?;
+            cachets += i64::try_from(q.trunc()).map_err(|_| erreur(Classe::CalculImpossible, socle::fichiers::entier_hors_limites(&q.to_string())))?;
         }
     }
     Ok(cachets)
@@ -908,7 +908,7 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(Some(s.nir.as_str()), Some(s.sexe.as_str())) == Some("2"));
     if emplois::metier(&c.metier).map_err(plain)?.is_none() {
         return Err(erreur(
-            "ValueError",
+            Classe::Illisible,
             format!("Métier {} inconnu : ni dans le catalogue des métiers, ni dans la nomenclature France Travail.", repr(&c.metier)),
         ));
     }
@@ -925,7 +925,7 @@ pub(crate) fn sauver_avant(chemin: &Path) -> R<()> {
     if !chemin.exists() {
         return Ok(());
     }
-    let io = |e: std::io::Error| erreur("OSError", e.to_string());
+    let io = |e: std::io::Error| erreur(Classe::Disque, e.to_string());
     let parent = chemin.parent().unwrap_or(Path::new("."));
     let dossier = parent.join("avant");
     std::fs::create_dir_all(&dossier).map_err(io)?;
@@ -1081,9 +1081,9 @@ pub(crate) fn ecrire_une_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>
         refuser_si_importe(ctx, &fichier)?;
         refuser_si_clos(ctx, &fichier)?;
     }
-    let id = engagement::stock::ecrire_la_carte(ctx, mois, id, saisie, &squelette(ctx, &fichier)?).map_err(|m| erreur("ErreurOperation", m))?;
+    let id = engagement::stock::ecrire_la_carte(ctx, mois, id, saisie, &squelette(ctx, &fichier)?).map_err(|m| erreur(Classe::Refuse, m))?;
     // UN MOIS FAIT EN DEMO, retravaille dans la compagnie gardee : il cesse d'etre « de demo » (`suppression::sortir_de_la_demo`).
-    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur("OSError", m))?;
+    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
     Ok(id)
 }
 
@@ -1179,7 +1179,7 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = q2(socle::num::dec_f64(c.montant).map_err(|m| erreur("InvalidOperation", m))?);
+    let vise = q2(socle::num::dec_f64(c.montant).map_err(|m| erreur(Classe::CalculImpossible, m))?);
     if vise <= Decimal::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", vise)));
     }
@@ -1246,10 +1246,10 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
 /// defauts du logiciel.
 pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, message: String) -> Echec {
     if engagement::saisie_incomplete(&message) {
-        return erreur("SaisieIncomplete", message);
+        return erreur(Classe::SaisieIncomplete, message);
     }
     if let Some(m) = engagement::refus_de_saisie_incomplete(ctx, data) {
-        return erreur("SaisieIncomplete", m);
+        return erreur(Classe::SaisieIncomplete, m);
     }
     Echec::from(message)
 }
@@ -1580,7 +1580,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let e = &p.engagement;
     let nat = e.nat()?;
     let s = &p.salarie;
-    let exige = |c: &Option<String>, k: &str| if c.is_none() { Err(erreur("KeyError", socle::fichiers::absent(k))) } else { Ok(c.clone()) };
+    let exige = |c: &Option<String>, k: &str| if c.is_none() { Err(erreur(Classe::Manque, socle::fichiers::absent(k))) } else { Ok(c.clone()) };
     let salarie = SalarieVu {
         cle: s.id.clone(),
         nom: exige(&s.nom.en_texte(), "nom")?,
@@ -1590,7 +1590,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         },
     };
     let spectacle = match &p.spectacle {
-        Some(s) if s.titre.is_none() => return Err(erreur("KeyError", socle::fichiers::absent("titre"))),
+        Some(s) if s.titre.is_none() => return Err(erreur(Classe::Manque, socle::fichiers::absent("titre"))),
         Some(s) => Some(SpectacleVu {
             titre: socle::ecriture::en_valeur(&s.titre),
             numero_objet: if s.numero_objet.is_none() { Value::Null } else { socle::ecriture::en_valeur(&s.numero_objet) },
@@ -1605,7 +1605,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         .iter()
         .find(|l| droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au).ok().map_or(false, |r| r.unite == "cachet"));
     let taux_cachet = match premier_cachet {
-        Some(l) => socle::forme::NombreLu::de_f64(socle::num::flottant(l.taux().ok_or_else(|| erreur("KeyError", socle::fichiers::absent("taux")))?)),
+        Some(l) => socle::forme::NombreLu::de_f64(socle::num::flottant(l.taux().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("taux")))?)),
         None => brut.taux_cachet.clone().or_else(|| data.taux_cachet.clone()),
     };
     let jours = brut.jours.clone().unwrap_or_else(|| socle::forme::NombreLu::from(e.jours));
@@ -1761,7 +1761,7 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
         // Un permanent n'a pas de spectacle -- le numero d'objet lui est interdit
         // (CCH-11) -- donc rien a verifier de ce cote.
         if let Some(sp) = p.spectacle.as_ref().filter(|s| s.actif.dite() == Some(&false)) {
-            let titre = sp.titre.ecrite("titre").map_err(|m| erreur("KeyError", m))?;
+            let titre = sp.titre.ecrite("titre").map_err(|m| erreur(Classe::Manque, m))?;
             let lequel = match sp.numero_objet.portee() {
                 Some(objet) => format!("« {} » (objet {})", titre, objet),
                 None => format!("« {} »", titre),

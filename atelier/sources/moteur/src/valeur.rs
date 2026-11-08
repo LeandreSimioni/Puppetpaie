@@ -120,10 +120,10 @@ pub fn lire_json(chemin: &Path) -> Resultat<Value> {
     serde_json::from_str(&texte).map_err(|e| socle::echec::du_disque(&chemin, &e))
 }
 
-/// Un fichier JSON (`lire_texte_echec`, puis `JSONDecodeError` s'il ne se lit pas : la phrase en mots, le chemin et ce
+/// Un fichier JSON (`lire_texte_echec`, puis `Illisible` s'il ne se lit pas : la phrase en mots, le chemin et ce
 /// qui ne va pas a part, `echec::du_disque`).
 pub fn lire_json_echec(p: &Path) -> Result<Value, Echec> {
-    serde_json::from_str(&lire_texte_echec(p)?).map_err(|e| erreur("JSONDecodeError", socle::echec::du_disque(p, &e)))
+    serde_json::from_str(&lire_texte_echec(p)?).map_err(|e| erreur(socle::echec::Classe::Illisible, socle::echec::du_disque(p, &e)))
 }
 
 // ------------------------------------------------------------ un nombre
@@ -282,11 +282,11 @@ pub fn get<'a>(v: &'a Value, k: &str) -> R<&'a Value> {
     getd(v, k, &NUL)
 }
 
-/// Sur autre chose qu'un dictionnaire, `AttributeError`.
+/// Sur autre chose qu'un dictionnaire, `Illisible`.
 pub fn getd<'a>(v: &'a Value, k: &str, defaut: &'a Value) -> R<&'a Value> {
     match v {
         Value::Object(o) => Ok(o.get(k).unwrap_or(defaut)),
-        _ => Err(erreur("AttributeError", attendu("un objet", nom_type(v)))),
+        _ => Err(erreur(socle::echec::Classe::Illisible, attendu("un objet", nom_type(v)))),
     }
 }
 

@@ -319,7 +319,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
       const test = document.getElementById("d-test"), reelB = document.getElementById("d-reel");
       if (test) test.disabled = false;
       if (reelB) reelB.disabled = !a.reel;
-      if (e.detail?.type === "RepetitionManquante") {
+      if (e.detail?.classe === "RepetitionManquante") {
         // « Aucun acte irréversible sans une répétition réussie du même
         // contenu. » On ne renvoie pas l'utilisateur chercher une commande :
         // le dépôt de test est un bouton, ici, tout de suite.
@@ -327,7 +327,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
                                () => lancer(false),
                                (motif) => lancer(true, false, motif));
       }
-      if (e.detail?.type === "DsnDejaDeposee") {
+      if (e.detail?.classe === "DsnDejaDeposee") {
         // « On attend le retour, et si vraiment on y tient, après un
         // avertissement, on peut renvoyer ». Le mot de
         // passe déjà tapé sert au renvoi : on ne le redemande pas.

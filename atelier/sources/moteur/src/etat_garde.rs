@@ -37,7 +37,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 
 type R<T> = Result<T, Echec>;
 
@@ -48,6 +48,7 @@ const FORMAT: u64 = 4;
 use crate::routes::catalogue::{Acte, Fiche, ILLISIBLE, MOIS};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::Ecran;
+use crate::routes::enveloppe::{Charge, Rendu as RenduDeRoute, Reponse};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Lecture;
@@ -246,11 +247,13 @@ fn garde(racine: &Path, empreinte: &str) -> Option<Value> {
     (v.get("format").and_then(Value::as_u64) == Some(FORMAT) && v.get("empreinte").and_then(Value::as_str) == Some(empreinte)).then_some(v)
 }
 
-/// Une route du moteur, faite dans ce processus, rendue comme la page la recoit (`{"ok", "resultat"}` ou
-/// `{"ok": false, "erreur": {"type", "message", ...}}`).
+/// Une route du moteur, faite dans ce processus, rendue comme la page la recoit (l'enveloppe des routes,
+/// `routes::enveloppe::Reponse`).
 fn lecture(o: &HashMap<String, String>, route: Route, charge: Value) -> Value {
-    let rep = crate::routes::servir_la_route(o, route, &charge);
-    crate::interface::api::en_page(crate::interface::api::depuis_reponse(rep))
+    match Charge::de(charge) {
+        Ok(c) => crate::routes::servir_la_route(o, route, &c).en_json(),
+        Err(e) => Reponse::de(route, Err(e)).en_json(),
+    }
 }
 
 /// Les lectures de l'ecran de `mois` (`LECTURES`, puis l'apercu de la saisie enregistree).
@@ -376,13 +379,9 @@ fn par_engagement(etat: &Value, brut: &Value) -> Value {
 /// Tout l'ecran de `mois`, tel que la page le lit (`chargerMois`) : `lectures`, une entree par route, au format d'une
 /// reponse de la page.
 fn pour_la_page(racine: &Path, etat: &Value, brut: &Value) -> Value {
-    use crate::interface::api::{en_page, Refus};
     let mut l = etat.get("lectures").and_then(Value::as_object).cloned().unwrap_or_default();
-    l.insert(Route::EtatParEngagement.nom().into(), en_page(Ok(par_engagement(etat, brut))));
-    l.insert(
-        Route::EtatDuMois.nom().into(),
-        en_page(du_mois(racine, etat).map_err(|e| Refus::simple(e.classe.unwrap_or("ErreurOperation"), e.message))),
-    );
+    l.insert(Route::EtatParEngagement.nom().into(), Reponse::de(Route::EtatParEngagement, Ok(RenduDeRoute::brut(par_engagement(etat, brut)))).en_json());
+    l.insert(Route::EtatDuMois.nom().into(), Reponse::de(Route::EtatDuMois, du_mois(racine, etat).map(RenduDeRoute::brut)).en_json());
     // La phrase de l'ecran du mois : celle de ses etapes (`etat-du-mois`).
     let phrase = l.get(Route::EtatDuMois.nom()).and_then(|e| e["resultat"]["phrase"].as_str()).unwrap_or("").to_string();
     json!({ "phrase": phrase, "mois": brut, "lectures": l })
@@ -441,7 +440,7 @@ fn mois_a_ouvrir(ouverture: &Value, jour: &str) -> String {
         .unwrap_or_else(|| jour.get(..7).unwrap_or_default().to_string())
 }
 
-type Rendu = Result<Value, (Option<&'static str>, String)>;
+type Rendu = Result<Value, (Option<Classe>, String)>;
 
 /// La cle du TABLEAU de l'administrateur dans la file : `config/.tableau.json`, refait pour une compagnie
 /// rattachee (`administrateur::tableau_compagnie`), sous l'empreinte de l'ouverture (toute la compagnie).
@@ -717,7 +716,7 @@ impl FileDesEtats {
         match rendu {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => Err((e.classe, e.message)),
-            Err(_) => Err((Some("DefautDuLogiciel"), format!("Defaut du logiciel : l'etat de {} ne s'est pas refait (le calcul s'est arrete).", mois))),
+            Err(_) => Err((Some(Classe::DefautDuLogiciel), format!("Defaut du logiciel : l'etat de {} ne s'est pas refait (le calcul s'est arrete).", mois))),
         }
     }
 
@@ -741,7 +740,7 @@ impl FileDesEtats {
         match rendu {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => Err((e.classe, e.message)),
-            Err(_) => Err((Some("DefautDuLogiciel"), "Defaut du logiciel : le tableau de la compagnie ne s'est pas refait.".into())),
+            Err(_) => Err((Some(Classe::DefautDuLogiciel), "Defaut du logiciel : le tableau de la compagnie ne s'est pas refait.".into())),
         }
     }
 
@@ -818,7 +817,7 @@ impl FileDesEtats {
                 }
             }
             if e.arretee {
-                return Err(Echec { classe: Some("ErreurOperation"), message: "La compagnie a ete fermee.".into() });
+                return Err(Echec { classe: Some(Classe::Refuse), message: "La compagnie a ete fermee.".into() });
             }
             e = self.signal.wait(e).unwrap_or_else(|p| p.into_inner());
         }
@@ -834,7 +833,7 @@ impl FileDesEtats {
     /// garde : l'etat frais, une fois refait.
     pub fn ecran(&self, mois: &str, attendre: bool) -> R<Value> {
         if !socle::mois::Mois::lire(mois).is_ok() {
-            return Err(Echec { classe: Some("ErreurOperation"), message: format!("Mois illisible : {}.", mois) });
+            return Err(Echec { classe: Some(Classe::Refuse), message: format!("Mois illisible : {}.", mois) });
         }
         self.verrou().affiche = Some(mois.to_string());
         let brut = Value::String(mois.to_string());
@@ -870,7 +869,7 @@ impl FileDesEtats {
                 }
             }
             if e.arretee {
-                return Err(Echec { classe: Some("ErreurOperation"), message: "La compagnie a ete fermee.".into() });
+                return Err(Echec { classe: Some(Classe::Refuse), message: "La compagnie a ete fermee.".into() });
             }
             let reste = limite.saturating_duration_since(Instant::now());
             if reste.is_zero() {

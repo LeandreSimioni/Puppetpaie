@@ -3,6 +3,7 @@
 //! faire taire le reveil du filet. Elles se font toutes, que l'envoi ait abouti ou non.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use serde_json::json;
 
 use droit::contexte::Contexte;
@@ -53,7 +54,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
     use serde_json::Value;
     let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
-    let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur("ValueError", m))?;
+    let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
         let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
         let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
@@ -62,7 +63,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     let mut tous = Vec::new();
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
         let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
@@ -96,7 +97,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         let le_iso = socle::date::Jour::lire(&le).map(|j| j.iso()).unwrap_or_default();
         let archive = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let source = format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive);
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {

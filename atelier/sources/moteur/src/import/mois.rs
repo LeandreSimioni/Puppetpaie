@@ -123,7 +123,7 @@ pub(crate) fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) ->
         None if importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
         None => return Ok(()),
     };
-    Err(socle::echec::erreur("DsnDeLAncienLogiciel", format!("{} : {} Rien n'est écrit.", socle::mois::Mois::en_clair(mois), phrase)))
+    Err(socle::echec::erreur(socle::echec::Classe::DsnDeLAncienLogiciel, format!("{} : {} Rien n'est écrit.", socle::mois::Mois::en_clair(mois), phrase)))
 }
 
 // ------------------------------------------------------------------ les cartes

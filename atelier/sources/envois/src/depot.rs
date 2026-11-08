@@ -7,7 +7,7 @@
 //! transport est ailleurs (`transport`).
 
 use declarations::dsn_lue::DsnLue;
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use socle::texte::{ascii_nfkd, strip};
 
 type Resultat<T> = Result<T, Echec>;
@@ -33,13 +33,13 @@ pub const INDICATEUR_TEST: &str = "TST";
 pub const LONGUEUR_DPAE: i64 = 990;
 
 #[track_caller]
-fn refus(classe: &'static str, message: impl Into<String>) -> Echec {
+fn refus(classe: Classe, message: impl Into<String>) -> Echec {
     socle::echec::noter_et(Some(classe), message)
 }
 
 #[track_caller]
 fn depot_refuse(message: impl Into<String>) -> Echec {
-    refus("DepotRefuse", message)
+    refus(Classe::DepotRefuse, message)
 }
 
 // ------------------------------------------------ la bascule en test, en memoire
@@ -180,11 +180,11 @@ pub fn est_reel(octets: &[u8]) -> bool {
 /// flux s'ajoute a la fin).
 pub fn basculer_dpae(octets: &[u8], longueur: i64) -> Resultat<Vec<u8>> {
     if longueur == 0 {
-        return Err(refus("ZeroDivisionError", "integer modulo by zero"));
+        return Err(refus(Classe::CalculImpossible,"integer modulo by zero"));
     }
     let n = octets.len() as i64;
     if n % longueur != 0 {
-        return Err(refus("ValueError", "flux DPAE de longueur inattendue"));
+        return Err(refus(Classe::Illisible,"flux DPAE de longueur inattendue"));
     }
     let mut sortie = octets.to_vec();
     let (a, b) = (INDICATEUR.0 as i64, INDICATEUR.1 as i64);
