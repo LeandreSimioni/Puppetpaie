@@ -489,11 +489,6 @@ pub fn pas_une_cle(nom_type: &str) -> String {
     format!("{} ne peut pas servir de clé", nature(nom_type))
 }
 
-/// « comparaison impossible : un texte et un nombre entier » : deux valeurs à ranger qui ne se comparent pas.
-pub fn incomparables(type_a: &str, type_b: &str) -> String {
-    format!("comparaison impossible : {} et {}", nature(type_a), nature(type_b))
-}
-
 /// « élément 3 de la liste : <ce qui ne va pas> » (`rang` compte depuis zéro, l'élément depuis un).
 pub fn element(rang: usize, quoi: &str) -> String {
     format!("élément {} de la liste : {}", rang + 1, quoi)

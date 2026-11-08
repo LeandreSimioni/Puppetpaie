@@ -1325,7 +1325,7 @@ mod tests {
     fn contrat(sal: &str, code: &str) -> String {
         format!(
             "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"fin\": \"2026-06-30\", \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
-             \"code\": \"{}\", \"empreinte\": \"e1\", \"message\": \"m1\", \"mois\": \"2026-06\"}}",
+             \"code\": \"{}\", \"empreinte\": \"e1\", \"message\": \"m1\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
             sal, code
         )
     }
@@ -1339,7 +1339,7 @@ mod tests {
     }
 
     fn signature(quand: &str, c: &str, retours: &str) -> Ligne {
-        ligne("contrat-signature", "reel", quand, "e1", "f.dsn", true, "", &format!("{{\"contrats\": [{}]}}", c), retours)
+        ligne("contrat-signature", "reel", quand, "e1", "f.dsn", true, "", &format!("{{\"contrats\": [{}], \"main_propre\": false}}", c), retours)
     }
 
     #[test]
@@ -1356,7 +1356,7 @@ mod tests {
     #[test]
     fn la_repetition_et_le_deja_depose() {
         let avec = |mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, retours: &str| {
-            ligne("dsn", mode, quand, empreinte, fichier, accepte, "", "{\"repetition\": null, \"ordre_test\": null}", retours)
+            ligne("dsn", mode, quand, empreinte, fichier, accepte, "", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", retours)
         };
         let l = vec![
             avec("test", "2026-06-01T09:00:00", "eB", "DSN.dsn", true, "[]"),
@@ -1384,8 +1384,8 @@ mod tests {
 
     #[test]
     fn le_rattachement_pose_le_verdict_et_signale_l_incident() {
-        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null}", "[]");
-        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null}", "[]");
+        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
+        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: &str, publication: &str| Annonce {
             publication: Some(publication.into()),

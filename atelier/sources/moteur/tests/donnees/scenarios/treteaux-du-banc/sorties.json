@@ -1325,9 +1325,11 @@
               "adresse": "loie.fuller@exemple.invalid",
               "relance": false,
               "empreinte": "7e44d85d6a51e8cd",
-              "message": "<d852419153486c50@fictive.puppetpaie>"
+              "message": "<d852419153486c50@fictive.puppetpaie>",
+              "ailleurs": false
             }
           ],
+          "main_propre": false,
           "expediteur": "fictive@puppetpaie.invalid",
           "relance": false
         },
@@ -1410,6 +1412,7 @@
         "trace": "retours/depots/20261120-070000_depot-dpae_202611.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "repetition": null,
           "embauches": [
             {
@@ -1418,7 +1421,8 @@
               "debut": "2026-11-20",
               "fin": "2026-11-21"
             }
-          ]
+          ],
+          "certificat": false
         },
         "versions": [
           {
@@ -1462,6 +1466,7 @@
         "trace": "retours/depots/20261120-070000_depot-dsn_20261120.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "type": "01",
           "nature": "08",
           "ordre": "1",
@@ -1516,6 +1521,7 @@
         "trace": "retours/depots/20261120-070000_depot-dpae_202611-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "repetition": {
             "test": "2026-11-20T07:00:00",
             "flux": "FICTIF-97604AE3C15F",
@@ -1529,7 +1535,8 @@
               "debut": "2026-11-20",
               "fin": "2026-11-21"
             }
-          ]
+          ],
+          "certificat": false
         },
         "versions": [
           {
@@ -1579,6 +1586,7 @@
         "trace": "retours/depots/20261120-070000_depot-dsn_20261120-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "type": "01",
           "nature": "08",
           "ordre": "1",
@@ -1637,6 +1645,7 @@
         "trace": "retours/depots/20261215-100000_depot-dsn_202611.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "type": "01",
           "nature": "01",
           "ordre": "1",
@@ -1709,6 +1718,7 @@
         "trace": "retours/depots/20261215-100000_depot-dsn_202611-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "type": "01",
           "nature": "01",
           "ordre": "1",
@@ -1775,7 +1785,6 @@
                       "2026-11-21"
                     ],
                     "cachets": 2,
-                    "heures": "",
                     "brut": "300,00",
                     "net": "232,30"
                   }
@@ -1786,6 +1795,7 @@
               "renvoi": false
             }
           ],
+          "main_propre": false,
           "expediteur": "fictive@puppetpaie.invalid",
           "durees_ms": {
             "preparation": 0,

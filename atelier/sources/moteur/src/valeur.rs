@@ -276,12 +276,6 @@ pub fn objet_vide() -> &'static Value {
     V.get_or_init(|| Value::Object(Map::new()))
 }
 
-/// `""`, a rendre par reference.
-pub fn texte_vide() -> &'static Value {
-    static V: OnceLock<Value> = OnceLock::new();
-    V.get_or_init(|| Value::String(String::new()))
-}
-
 /// `v.get(k)`.
 pub fn get<'a>(v: &'a Value, k: &str) -> R<&'a Value> {
     static NUL: Value = Value::Null;

@@ -27,7 +27,7 @@ use crate::transport::{envoyer, Requete};
 /// UN FICHIER (OU UN DOSSIER) TEL QUE DRIVE LE REND, des seuls champs demandes (`fields`) : un element d'un listage, un
 /// dossier cree, un fichier depose.
 #[derive(Debug, Deserialize)]
-// Une reponse du Drive, un tiers : les champs lus sont exiges, ceux que Google ajoute passent.
+#[serde(deny_unknown_fields)]
 struct FichierDrive {
     id: Option<String>,
     name: Option<String>,
@@ -58,7 +58,7 @@ impl FichierDrive {
 /// UN LISTAGE DE DRIVE (`files.list`) : ses fichiers (Drive ecrit la liste, vide s'il n'y en a pas), et la page suivante
 /// s'il y en a une.
 #[derive(Debug, Deserialize)]
-// Une reponse du Drive : les champs que Google ajoute passent.
+#[serde(deny_unknown_fields)]
 struct Listage {
     files: Vec<FichierDrive>,
     #[serde(rename = "nextPageToken")]
