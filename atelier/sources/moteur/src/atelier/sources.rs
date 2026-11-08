@@ -191,7 +191,7 @@ pub fn verifier(
 }
 
 fn nourrit(e: &Value) -> String {
-    let n: Vec<String> = e["nourrit"].as_array().into_iter().flatten().map(envois::valeur::valeur_en_texte).collect();
+    let n: Vec<String> = e["nourrit"].as_array().into_iter().flatten().map(crate::valeur::valeur_en_texte).collect();
     if n.is_empty() {
         "rien".into()
     } else {

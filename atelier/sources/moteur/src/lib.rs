@@ -18,3 +18,4 @@ pub mod regularisation;
 pub mod routes;
 pub mod service;
 pub mod simulation_courriels;
+pub mod valeur;

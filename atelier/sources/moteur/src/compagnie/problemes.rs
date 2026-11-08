@@ -21,10 +21,10 @@ use serde_json::{json, Value};
 
 use socle::ecriture::ecrire_json;
 use envois::etats::{get, items};
-use envois::valeur::{nom_type, valeur_en_texte, valeurs_egales};
+use crate::valeur::{nom_type, valeur_en_texte, valeurs_egales};
 use socle::echec::R;
 use socle::echec::erreur;
-use envois::valeur::vrai;
+use crate::valeur::vrai;
 use crate::compagnie::incidents::{self, Canal, DEPOSE, EN_ATTENTE};
 use socle::verrou::Verrou;
 

@@ -21,7 +21,7 @@ use envois::depot;
 use envois::etats;
 use socle::echec::erreur;
 use socle::fichiers::repr;
-use envois::valeur::vrai;
+use crate::valeur::vrai;
 use socle::num::{decimal_lu, entier_lu, q2};
 
 use socle::echec::Echec;
@@ -212,7 +212,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: &str) -> Resul
                     if attendu_emploi != Some(c.emploi.as_str()) {
                         let dit = match &emploi {
                             Value::Null => "None".to_string(),
-                            v => envois::valeur::valeur_en_texte(v),
+                            v => crate::valeur::valeur_en_texte(v),
                         };
                         ecarts.push(format!("emploi : la paie dit {}, le fichier {}", dit, c.emploi));
                     }

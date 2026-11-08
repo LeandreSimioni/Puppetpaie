@@ -33,11 +33,11 @@ use engagement::imprevus::{self, Suspend, ARRET, SUSPENSION};
 use engagement::numeros::NumeroContrat;
 use envois::etats::{get, getd, items, objet_vide, ou, Dico};
 use socle::date::Jour;
-use envois::valeur::{d, en_texte, vrai};
+use crate::valeur::{d, en_texte, vrai};
 use socle::echec::{erreur, Echec, R};
 use socle::mois::Mois;
 use socle::num::Decimal;
-use envois::valeur::{nom_type, valeur_ecrite, valeur_en_texte};
+use crate::valeur::{nom_type, valeur_ecrite, valeur_en_texte};
 
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
@@ -1207,7 +1207,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     let mut nouveau = liste[i].clone();
     for (k, v) in montants {
         let Some(t) = v else { continue };
-        let x = envois::valeur::dec_avec_echelle(&json!(t.trim())).map_err(|e| refus(format!("Indemnité journalière ({}) : {}", k, e)))?;
+        let x = crate::valeur::dec_avec_echelle(&json!(t.trim())).map_err(|e| refus(format!("Indemnité journalière ({}) : {}", k, e)))?;
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }

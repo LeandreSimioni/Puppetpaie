@@ -105,7 +105,7 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
             super::phrase_en_tete(v.clone(), dire_les_modeles(&v))
         }),
         Route::ModeleContratLivre => livre(charge).map(|v| {
-            let p = format!("Modèle livré {}.", envois::valeur::valeur_en_texte(&v["libelle"]));
+            let p = format!("Modèle livré {}.", crate::valeur::valeur_en_texte(&v["libelle"]));
             super::phrase_en_tete(v, p)
         }),
         Route::PoserModeleContrat => poser(ctx, charge).map(|v| {

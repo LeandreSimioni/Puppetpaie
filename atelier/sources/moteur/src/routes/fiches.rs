@@ -32,7 +32,7 @@ use socle::ecriture::ecrire_json;
 use socle::fichiers::repr;
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
-use envois::valeur::{euros_de, nom_type, valeur_ecrite, valeur_en_texte, valeurs_egales, vrai};
+use crate::valeur::{euros_de, nom_type, valeur_ecrite, valeur_en_texte, valeurs_egales, vrai};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -1673,7 +1673,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
 /// La date d'effet que la charge d'une route d'ecriture donne (`depuis`, AAAA-MM-JJ), ou `None`.
 pub(crate) fn depuis_de(depuis: &Value) -> R<Option<Jour>> {
     if vrai(depuis) {
-        envois::valeur::d(depuis).map(Some).map_err(|m| erreur("ValueError", m))
+        crate::valeur::d(depuis).map(Some).map_err(|m| erreur("ValueError", m))
     } else {
         Ok(None)
     }

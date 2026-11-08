@@ -21,7 +21,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME,
 use crate::routes::catalogue::Route;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
-use envois::valeur::{valeur_en_texte, vrai};
+use crate::valeur::{valeur_en_texte, vrai};
 use crate::routes::catalogue::{Ecran, Place};
 
 

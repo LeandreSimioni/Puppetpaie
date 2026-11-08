@@ -17,9 +17,9 @@ use serde_json::{json, Map, Value};
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, PaieLue, PaieVersee};
 use envois::etats;
-use envois::valeur::valeur_en_texte;
+use crate::valeur::valeur_en_texte;
 use socle::echec::{Echec, R};
-use envois::valeur::vrai;
+use crate::valeur::vrai;
 use crate::import::completer::A_COMPLETER;
 
 fn texte(v: &Value, k: &str) -> String {

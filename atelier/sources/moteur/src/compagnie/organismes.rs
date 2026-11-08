@@ -16,10 +16,10 @@ use serde_json::{json, Value};
 use droit::contexte::Contexte;
 use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, Saisie};
 use socle::date::Jour;
-use envois::valeur::en_texte;
+use crate::valeur::en_texte;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
-use envois::valeur::vrai;
+use crate::valeur::vrai;
 use socle::echec::Echec;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};

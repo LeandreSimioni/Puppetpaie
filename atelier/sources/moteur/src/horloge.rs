@@ -61,7 +61,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use crate::compagnie::depot_acte::{self, Preuve};
 use envois::etats;
-use envois::valeur::{valeur_en_texte, vrai};
+use crate::valeur::{valeur_en_texte, vrai};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
