@@ -1376,7 +1376,7 @@ remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). 
 
 /// L'arret est-il subroge (S21.G00.60.004 = oui) ?
 fn signalement_subroge(a: &Value) -> R<bool> {
-    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { v: a.clone() }).map_err(|m| erreur("ValueError", m))
+    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { saisi: arret_de(a)? }).map_err(|m| erreur("ValueError", m))
 }
 
 // ------------------------------------------------------------------ les suspensions
@@ -1485,7 +1485,7 @@ reprendre (une fin plus tot), ou corriger les DSN deposees.",
 /// Ce que la norme refuse (`SignalementImpossible`, une
 /// `ValueError`) ; les avertissements ne servent pas ici.
 fn verifier(arret: &Value) -> R<()> {
-    match signalement::verifier(&declarations::dsn::Arret { v: arret.clone() }, signalement::ARRET, None) {
+    match signalement::verifier(&declarations::dsn::Arret { saisi: arret_de(arret)? }, signalement::ARRET, None) {
         Ok(_) => Ok(()),
         Err(signalement::Echec::Impossible(m)) => Err(erreur("ValueError", m)),
         Err(signalement::Echec::Autre(m)) => Err(Echec { classe: None, message: m }),
@@ -1734,17 +1734,19 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Value, mois: &str) -> R<declarati
     let fin = e.get("fin").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("fin")))?.clone();
     let motif = e.get("motif_rupture").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("motif_rupture")))?.clone();
     let type_preavis = preavis.get("type").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("type")))?.clone();
-    let v = json!({
-        "fin": fin, "motif": motif, "mois_rattachement": mois,
-        "type_preavis": type_preavis,
-        "preavis_debut": preavis.get("debut").cloned().unwrap_or(Value::Null),
-        "preavis_fin": preavis.get("fin").cloned().unwrap_or(Value::Null),
-        "notification": cle("notification_rupture"),
-        "signature_convention": cle("signature_convention"),
-        "engagement_licenciement": cle("engagement_licenciement"),
-        "transaction": cle("transaction"),
-    });
-    declarations::fctu::FinDeContrat::lire(&v).map_err(plain)
+    let dite = |x: Value| Some(x).filter(vrai).map(|x| en_texte(&x));
+    Ok(declarations::fctu::FinDeContrat {
+        fin: en_texte(&fin),
+        motif: en_texte(&motif),
+        mois_rattachement: mois.to_string(),
+        type_preavis: en_texte(&type_preavis),
+        preavis_debut: dite(preavis.get("debut").cloned().unwrap_or(Value::Null)),
+        preavis_fin: dite(preavis.get("fin").cloned().unwrap_or(Value::Null)),
+        notification: dite(cle("notification_rupture")),
+        signature_convention: dite(cle("signature_convention")),
+        engagement_licenciement: dite(cle("engagement_licenciement")),
+        transaction: dite(cle("transaction")),
+    })
 }
 
 /// L'echec d'un signalement de fin de contrat ou d'amorcage : une regle de la norme qui s'oppose
@@ -1813,7 +1815,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let arrets: Vec<declarations::dsn::Arret> = imprevus::arrets_du_contrat(ctx, &paie, &debut_p, &fin_p)
         .map_err(refus_magasin)?
         .into_iter()
-        .map(|a| declarations::dsn::Arret { v: socle::ecriture::en_valeur(&a) })
+        .map(|saisi| declarations::dsn::Arret { saisi })
         .collect();
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
@@ -1923,7 +1925,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let type_declaration = if remplace.is_some() { signalement::ANNULE_ET_REMPLACE } else { signalement::NORMALE };
     // `ordre` (`--ordre N`) : le rang voulu ; sinon le suivant. `le` (`--le`) : la date de constitution ; sinon le jour du contexte.
     let constitution = c.le.unwrap_or(ctx.aujourdhui);
-    let dsn_arret = declarations::dsn::Arret { v: arret.clone() };
+    let dsn_arret = declarations::dsn::Arret { saisi: arret_de(&arret)? };
     let echec = |e: Ech| match e {
         Ech::Impossible(m) | Ech::Autre(m) => erreur("ValueError", m),
     };

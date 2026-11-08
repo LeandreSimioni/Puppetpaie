@@ -278,9 +278,10 @@ impl Lu {
         let regs_dsn = regularisations::pour_la_dsn(&regs_e);
         let mut arrets: Vec<declarations::dsn::Arret> = Vec::new();
         for a in &self.arrets {
-            let sal = engagement::imprevus::fiche_du_salarie(ctx, &arret_de(a).map_err(valeur)?).map_err(valeur)?;
+            let saisi = arret_de(a).map_err(valeur)?;
+            let sal = engagement::imprevus::fiche_du_salarie(ctx, &saisi).map_err(valeur)?;
             if du_nic(&sal)? {
-                arrets.push(declarations::dsn::Arret { v: a.clone() });
+                arrets.push(declarations::dsn::Arret { saisi });
             }
         }
         Ok(Present { paies, regs: regs_dsn, arrets, departs: self.departs.clone() })
@@ -452,13 +453,14 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let mut arrets: Vec<declarations::dsn::Arret> = Vec::new();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     for a in crate::compagnie::marques_depot::arrets_pour(ctx, &mois, &departs)? {
+        let saisi = arret_de(&a).map_err(valeur)?;
         if let Some(n) = &forme.etablissement {
-            let sal = engagement::imprevus::fiche_du_salarie(ctx, &arret_de(&a).map_err(valeur)?).map_err(valeur)?;
+            let sal = engagement::imprevus::fiche_du_salarie(ctx, &saisi).map_err(valeur)?;
             if droit::bareme::etablissement_de(&ctx.entreprise, &sal).map_err(valeur)? != *n {
                 continue;
             }
         }
-        arrets.push(declarations::dsn::Arret { v: a });
+        arrets.push(declarations::dsn::Arret { saisi });
     }
     declarations::dsn::fabriquer(ctx, &paies, &mois, &regs, &arrets, &forme.options(), &departs).map_err(valeur)
 }

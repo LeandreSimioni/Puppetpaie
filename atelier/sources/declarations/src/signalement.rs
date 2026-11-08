@@ -10,12 +10,10 @@
 //! `ValueError`/`KeyError`, ici `Echec::Autre`.
 
 use droit::fiche::Lue as _;
-use serde_json::Value;
 
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use crate::valeur::{d, en_texte, repr_valeur, vrai};
-use crate::dsn::{self, Arret, Fichier, LOGICIEL, VERSION};
+use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use socle::num::Resultat;
 
@@ -43,47 +41,34 @@ fn impossible<T>(m: String) -> R<T> {
     Err(Echec::Impossible(m))
 }
 
-const NUL: Value = Value::Null;
-
-fn g<'a>(v: &'a Value, k: &str) -> &'a Value {
-    v.get(k).unwrap_or(&NUL)
-}
-
-fn s(v: &Value, k: &str) -> String {
-    en_texte(g(v, k))
-}
-
 /// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).
 pub fn avec_subrogation(a: &Arret) -> Resultat<bool> {
-    let sub = if vrai(g(&a.v, "subrogation")) { s(&a.v, "subrogation") } else { String::new() };
-    Ok(sub == droit::arrets::bloc_60()?.subrogation_oui()?)
+    let bloc = droit::arrets::bloc_60()?;
+    let oui = bloc.subrogation_oui()?;
+    Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
 }
 
 fn nature_inconnue(nature: &str) -> String {
     format!("Nature {} : ce module n'ecrit que {} et {}.", repr(nature), ARRET, REPRISE)
 }
 
-fn jours(a: &Arret, k: &str) -> Resultat<Jour> {
-    d(g(&a.v, k))
-}
-
 /// Ce que la norme refuse (`Echec::Impossible`) ; rend les avertissements.
 pub fn verifier(a: &Arret, nature: &str, constitution: Option<&Jour>) -> R<Vec<String>> {
-    let v = &a.v;
+    let v = &a.saisi;
     if nature != ARRET && nature != REPRISE {
         return impossible(nature_inconnue(nature));
     }
     let bloc = droit::arrets::bloc_60()?;
-    let motif = match bloc.motifs_arret.code(g(v, "motif").as_str().unwrap_or_default()) {
+    let motif = match bloc.motifs_arret.code(&v.motif) {
         Some(m) => m.clone(),
         None => {
             return impossible(format!(
                 "Motif d'arret {} inconnu de la norme (S21.G00.60.001). Les motifs sont dans arrets-base.json.",
-                repr_valeur(g(v, "motif"))
+                repr(&v.motif)
             ))
         }
     };
-    let m_s = s(v, "motif");
+    let m_s = v.motif.clone();
     let libelle = motif.libelle.clone();
 
     if motif.annulation == Some(true) {
@@ -109,10 +94,11 @@ moteur n'ecrit pas.",
         ));
     }
 
-    let travaille = jours(a, "dernier_jour_travaille")?;
-    let debut = jours(a, "debut")?;
-    let fin_prev = jours(a, "fin_previsionnelle")?;
-    let debut_contrat = jours(a, "contrat_debut")?;
+    let travaille = Jour::lire(&v.dernier_jour_travaille)?;
+    let debut = Jour::lire(&v.debut)?;
+    let fin_prev = Jour::lire(&v.fin_previsionnelle)?;
+    let debut_contrat = Jour::lire(&v.contrat_debut)?;
+    let (accident, subrogation, reprise, reprise_motif) = (dite(&v.date_accident), dite(&v.subrogation), dite(&v.reprise), dite(&v.reprise_motif));
 
     // Le dernier jour travaille est la veille du debut prescrit, ou ce jour meme quand il a ete travaille
     // (S21.G00.60.002) : un arret ne commence pas avant un jour travaille.
@@ -131,12 +117,12 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
             fin_prev.jj_mm_aaaa()
         ));
     }
-    let dernier = engagement::imprevus::dernier_jour_declare(&a.forme()?)?;
+    let dernier = engagement::imprevus::dernier_jour_declare(v)?;
     if dernier > fin_prev {
         return impossible(format!(
             "Dernier jour travaille ({}) posterieur a la fin previsionnelle de l'arret ({}) -- CCH-12.",
             dernier.jj_mm_aaaa(),
-            s(v, "fin_previsionnelle")
+            v.fin_previsionnelle
         ));
     }
     if dernier < debut_contrat {
@@ -144,26 +130,26 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
             "Dernier jour travaille ({}) anterieur au debut du contrat ({}) -- CCH-18. Ce n'est pas ce \
 contrat-la qui est suspendu.",
             dernier.jj_mm_aaaa(),
-            s(v, "contrat_debut")
+            v.contrat_debut
         ));
     }
 
     if motif.date_accident == Some(true) {
-        if !vrai(g(v, "date_accident")) {
+        let Some(accident) = accident else {
             return impossible(format!(
                 "Motif {} ({}) : la date de l'accident ou de la premiere constatation (S21.G00.60.012) est \
 obligatoire -- CCH-11.",
                 m_s, libelle
             ));
-        }
-        if jours(a, "date_accident")? < debut_contrat {
+        };
+        if Jour::lire(accident)? < debut_contrat {
             return impossible(format!(
                 "Date de l'accident ({}) anterieure au debut du contrat ({}) -- SIG-14.",
-                s(v, "date_accident"),
-                s(v, "contrat_debut")
+                accident,
+                v.contrat_debut
             ));
         }
-    } else if vrai(g(v, "date_accident")) {
+    } else if accident.is_some() {
         return impossible(format!(
             "Motif {} ({}) : la date de l'accident (S21.G00.60.012) est INTERDITE -- CCH-11. Elle n'est due que \
 pour un accident de trajet, un accident du travail ou une maladie professionnelle.",
@@ -172,42 +158,43 @@ pour un accident de trajet, un accident du travail ou une maladie professionnell
     }
 
     if nature == ARRET {
-        if !vrai(g(v, "subrogation")) {
+        let Some(subrogation) = subrogation else {
             return impossible(
                 "La subrogation (S21.G00.60.004) est obligatoire dans un signalement d'arret de travail : dire \
 oui ou non. Elle ne se devine pas -- repondre oui engage la compagnie a percevoir les indemnites journalieres \
 et a maintenir le salaire."
                     .into(),
             );
-        }
+        };
         let subs = &bloc.subrogation.codes;
-        if bloc.subrogation.code(g(v, "subrogation").as_str().unwrap_or_default()).is_none() {
+        if bloc.subrogation.code(subrogation).is_none() {
             let liste: Vec<String> = subs
                 .iter()
                 .map(|c| format!("{} ({})", c.code, c.libelle))
                 .collect();
             return impossible(format!(
                 "Subrogation {} : la norme ne connait que {}.",
-                repr_valeur(g(v, "subrogation")),
+                repr(subrogation),
                 liste.join(", ")
             ));
         }
+        let (sub_debut, sub_fin) = (dite(&v.subrogation_debut), dite(&v.subrogation_fin));
         if avec_subrogation(a)? {
-            if !(vrai(g(v, "subrogation_debut")) && vrai(g(v, "subrogation_fin"))) {
+            let (Some(sub_debut), Some(sub_fin)) = (sub_debut, sub_fin) else {
                 return impossible(
                     "Subrogation demandee : ses dates de debut et de fin (S21.G00.60.005 et .006) sont \
 obligatoires -- CCH-11."
                         .into(),
                 );
-            }
-            if jours(a, "subrogation_fin")? < jours(a, "subrogation_debut")? {
+            };
+            if Jour::lire(sub_fin)? < Jour::lire(sub_debut)? {
                 return impossible(format!(
                     "Fin de subrogation ({}) anterieure a son debut ({}) -- CCH-12.",
-                    s(v, "subrogation_fin"),
-                    s(v, "subrogation_debut")
+                    sub_fin,
+                    sub_debut
                 ));
             }
-        } else if vrai(g(v, "subrogation_debut")) || vrai(g(v, "subrogation_fin")) {
+        } else if sub_debut.is_some() || sub_fin.is_some() {
             return impossible(
                 "Sans subrogation, ses dates sont INTERDITES (CCH-11 des rubriques S21.G00.60.005 et .006)."
                     .into(),
@@ -215,15 +202,15 @@ obligatoires -- CCH-11."
         }
     }
 
-    if vrai(g(v, "reprise")) {
-        let rep = jours(a, "reprise")?;
+    if let Some(reprise) = reprise {
+        let rep = Jour::lire(reprise)?;
         if rep < dernier || rep < debut_contrat {
             return impossible(format!(
                 "Date de reprise ({}) anterieure au dernier jour travaille ({}) ou au debut du contrat ({}) -- \
 CCH-11.",
-                s(v, "reprise"),
+                reprise,
                 dernier.jj_mm_aaaa(),
-                s(v, "contrat_debut")
+                v.contrat_debut
             ));
         }
         if rep > fin_prev {
@@ -232,40 +219,40 @@ CCH-11.",
 reprise anticipee, et la rubrique ne doit alors pas etre valorisee (S21.G00.60.010). Si l'arret s'est \
 prolonge, c'est sa fin previsionnelle qui change (S21.G00.60.003, sans nouveau signalement : fiche net-entreprises \
 1983) : prolonger l'arret d'abord.",
-                s(v, "reprise"),
-                s(v, "fin_previsionnelle")
+                reprise,
+                v.fin_previsionnelle
             ));
         }
     }
     if nature == REPRISE {
-        if !vrai(g(v, "reprise")) {
+        let Some(reprise) = reprise else {
             return impossible(
                 "Un signalement de reprise sans date de reprise (S21.G00.60.010, usage O). Et il ne s'emet \
 qu'en cas de reprise ANTICIPEE par rapport a la fin previsionnelle."
                     .into(),
             );
-        }
-        if jours(a, "reprise")? == fin_prev {
+        };
+        if Jour::lire(reprise)? == fin_prev {
             return impossible(format!(
                 "Reprise le {}, soit la fin previsionnelle de l'arret : le signalement de reprise ne s'emet \
 qu'en cas de reprise ANTICIPEE (cahier technique §5.4). Rien n'est a declarer ; la DSN mensuelle portera la \
 reprise.",
-                s(v, "reprise")
+                reprise
             ));
         }
-        if !vrai(g(v, "reprise_motif")) {
+        if reprise_motif.is_none() {
             return impossible(
                 "Un signalement de reprise sans motif de reprise (S21.G00.60.011, usage O).".into(),
             );
         }
     }
-    if vrai(g(v, "reprise_motif")) {
-        let mr = match bloc.motifs_reprise.code(g(v, "reprise_motif").as_str().unwrap_or_default()) {
+    if let Some(reprise_motif) = reprise_motif {
+        let mr = match bloc.motifs_reprise.code(reprise_motif) {
             Some(m) => m,
             None => {
                 return impossible(format!(
                     "Motif de reprise {} inconnu de la norme (S21.G00.60.011).",
-                    repr_valeur(g(v, "reprise_motif"))
+                    repr(reprise_motif)
                 ))
             }
         };
@@ -273,10 +260,10 @@ reprise.",
             return impossible(format!(
                 "Le motif de reprise {} (temps partiel therapeutique) est interdit dans un signalement -- \
 CCH-12.",
-                s(v, "reprise_motif")
+                reprise_motif
             ));
         }
-        if !vrai(g(v, "reprise")) {
+        if reprise.is_none() {
             return impossible(
                 "Un motif de reprise sans date de reprise : les deux vont ensemble.".into(),
             );
@@ -289,18 +276,20 @@ CCH-12.",
         Some(j) => *j,
         None => aujourdhui()?,
     };
-    for (libelle, cle) in [
-        ("Dernier jour travaillé", "dernier_jour_travaille"),
-        ("Début de subrogation", "subrogation_debut"),
-        ("Date de reprise", "reprise"),
-        ("Date de l'accident", "date_accident"),
+    for (libelle, case) in [
+        ("Dernier jour travaillé", Some(v.dernier_jour_travaille.as_str()).filter(|c| !c.is_empty())),
+        ("Début de subrogation", dite(&v.subrogation_debut)),
+        ("Date de reprise", reprise),
+        ("Date de l'accident", accident),
     ] {
-        if vrai(g(v, cle)) && jours(a, cle)? > jour {
+        let Some(case) = case else { continue };
+        let le = Jour::lire(case)?;
+        if le > jour {
             avertissements.push(format!(
                 "{} le {}, après le jour où le fichier est fait ({}) : le cahier technique (§4.4.13) le signale sans bloquer, \
 un fait déjà survenu ne se date pas dans le futur.",
                 libelle,
-                jours(a, cle)?.jj_mm_aaaa(),
+                le.jj_mm_aaaa(),
                 jour.jj_mm_aaaa()
             ));
         }
@@ -370,10 +359,10 @@ annule-et-remplace (type 03)."
     }
 
     // La configuration du dernier jour travaille : celle de la periode que le signalement declare.
-    let arret = a.forme()?;
-    let ctx = &ctx.au(&engagement::imprevus::dernier_jour_declare(&arret)?)?;
+    let arret = a.forme();
+    let ctx = &ctx.au(&engagement::imprevus::dernier_jour_declare(arret)?)?;
     let ent = &ctx.entreprise;
-    let fiche = engagement::imprevus::fiche_du_salarie(ctx, &arret)?;
+    let fiche = engagement::imprevus::fiche_du_salarie(ctx, arret)?;
     let constitution = match o.date_constitution {
         Some(j) => j,
         None => aujourdhui()?,
@@ -426,7 +415,7 @@ annule-et-remplace (type 03)."
 
     // Les adhesions qui valent le dernier jour travaille (`droit::adhesions`).
     let orgs = ctx.organismes()?;
-    let jour = engagement::imprevus::dernier_jour_declare(&arret)?;
+    let jour = engagement::imprevus::dernier_jour_declare(arret)?;
     for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&jour, &jour)) {
         f.add("S21.G00.15.001", &ad.libelle);
         f.add("S21.G00.15.002", &ad.delegataire);
@@ -439,18 +428,18 @@ annule-et-remplace (type 03)."
     f.add_case("S21.G00.30.004", &fiche.prenom, "prenom")?;
     f.add("S21.G00.30.006", fiche.date_naissance.exigee("date_naissance")?.jjmmaaaa());
     f.add_case("S21.G00.30.019", &fiche.code_salarie, "code_salarie")?;
-    crate::ntt::poser_ntt(&mut f, ent, &fiche,crate::changements_individu::derniere_declaree(ctx, &fiche, &engagement::imprevus::dernier_jour_declare(&arret)?, departs)?.as_ref())?;
+    crate::ntt::poser_ntt(&mut f, ent, &fiche,crate::changements_individu::derniere_declaree(ctx, &fiche, &engagement::imprevus::dernier_jour_declare(arret)?, departs)?.as_ref())?;
 
     // -------------------------------------------------------- S21 contrat
-    f.add("S21.G00.40.001", jours(a, "contrat_debut")?.jjmmaaaa());
-    f.add_v("S21.G00.40.009", g(&a.v, "contrat_numero"))?;
+    f.add("S21.G00.40.001", Jour::lire(&arret.contrat_debut)?.jjmmaaaa());
+    f.add_opt("S21.G00.40.009", arret.contrat_numero.as_deref())?;
     f.add_case("S21.G00.40.019", &etab.siret, "siret")?;
 
     if ent.banque.is_none() {
         return Err(socle::fichiers::absent("banque").into());
     }
     let banque = ent.banque.dite();
-    if nature != REPRISE && vrai(g(&a.v, "subrogation")) && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
+    if nature != REPRISE && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
         return impossible(
             "Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont obligatoires \
 -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."

@@ -807,7 +807,7 @@ fn connaissance(fiche: &FicheDeSuivi, de: DeQuoi, quoi: &str) -> Option<Depart> 
 pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret>> {
     let lu = envois::journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?;
     let (lignes, departs) = (lu.lignes, lu.departs);
-    let arret = declarations::dsn::Arret { v: a.clone() };
+    let arret = declarations::dsn::Arret { saisi: crate::routes::imprevus::arret_de(a)? };
     let texte = |k: &str| a.get(k).map(en_texte).unwrap_or_default();
     let salarie = texte("salarie");
     let dj = texte("dernier_jour_travaille");

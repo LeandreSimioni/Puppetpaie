@@ -310,12 +310,9 @@ fn rond(x: Decimal) -> Decimal {
     bordereau::euro(x)
 }
 
-pub fn jour(v: &Value) -> Resultat<Jour> {
-    crate::valeur::d(v)
-}
-
-pub fn jj(v: &Value) -> Resultat<String> {
-    Ok(jour(v)?.jjmmaaaa())
+/// Une date `AAAA-MM-JJ` en JJMMAAAA.
+pub fn jj(v: &str) -> Resultat<String> {
+    Ok(Jour::lire(v)?.jjmmaaaa())
 }
 
 
@@ -394,25 +391,26 @@ pub fn bloc_individu(f: &mut Fichier, s: &droit::fiche::ChampsSalarie, courriel:
 
 // ----------------------------------------------------- les entrees
 
-/// Un arret de travail a reporter (`signalement.Arret`).
+/// Un arret de travail a reporter, tel que le magasin des imprevus le garde (`engagement::imprevus::ArretSaisi`).
 #[derive(Clone, Debug)]
 pub struct Arret {
-    pub v: Value,
+    pub saisi: engagement::imprevus::ArretSaisi,
+}
+
+/// Une case facultative de l'arret, dite : ni absente ni nulle, ni un texte vide.
+pub(crate) fn dite(case: &Option<String>) -> Option<&str> {
+    case.as_deref().filter(|t| !t.is_empty())
 }
 
 impl Arret {
-    fn s(&self, k: &str) -> String {
-        txt(g(&self.v, k))
-    }
-
-    /// L'arret en sa forme (`engagement::imprevus::ArretSaisi`), pour les regles du magasin.
-    pub fn forme(&self) -> Resultat<engagement::imprevus::ArretSaisi> {
-        socle::forme::lire(&self.v, engagement::imprevus::ILLISIBLE)
+    /// L'arret en sa forme, pour les regles du magasin.
+    pub fn forme(&self) -> &engagement::imprevus::ArretSaisi {
+        &self.saisi
     }
 
     /// Une periode commune avec [debut, fin] : la regle du bloc 60 (`imprevus::arret_croise`).
     pub fn couvre(&self, debut: &Jour, fin: &Jour) -> Resultat<bool> {
-        engagement::imprevus::arret_croise(&self.forme()?, debut, fin)
+        engagement::imprevus::arret_croise(&self.saisi, debut, fin)
     }
 
     /// L'arret se reporte-t-il dans la DSN mensuelle de `mois` ? Celle de chaque mois qu'il croise ; et, s'il a fini avant
@@ -434,19 +432,17 @@ impl Arret {
         }
         // Une date du journal (« 2026-10-15T10:00:00 ») et une date de saisie (« 2026-11-03 11:39 ») a la minute.
         let minute = |t: &str| t.replacen('T', " ", 1).chars().take(16).collect::<String>();
-        let saisi = minute(&self.s("saisi_le"));
-        let numero = self.s("contrat_numero");
-        if saisi.is_empty() || numero.is_empty() {
-            return Ok(false);
-        }
+        let saisi = minute(&self.saisi.saisi_le);
+        let Some(numero) = dite(&self.saisi.contrat_numero).filter(|_| !saisi.is_empty()) else { return Ok(false) };
         let mut avant: Option<String> = None;
-        for d in departs.de(&self.s("salarie"), &numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
-            let declarante = d.par.clone().or_else(|| d.mois.clone()).unwrap_or_default();
+        for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
+            // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
+            let Some(declarante) = d.par.as_deref().or(d.mois.as_deref()) else { continue };
             let le = minute(&d.le);
-            if declarante.as_str() == mois && le < saisi {
+            if declarante == mois && le < saisi {
                 return Ok(false);
             }
-            if declarante.as_str() < mois && avant.as_ref().map_or(true, |a| le > *a) {
+            if declarante < mois && avant.as_ref().is_none_or(|a| le > *a) {
                 avant = Some(le);
             }
         }
@@ -456,7 +452,7 @@ impl Arret {
     /// L'arret suspend-il le contrat de cette paie ? La regle des imprevus (`imprevus::du_contrat`) : le meme salarie, la
     /// meme date de debut du contrat, le meme numero quand l'un et l'autre en ont un.
     fn du_contrat(&self, p: &Paie) -> Resultat<bool> {
-        engagement::imprevus::du_contrat(&self.forme()?, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut)
+        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut)
     }
 }
 
@@ -478,35 +474,43 @@ fn arrets_du_contrat<'a>(arrets: &[&'a Arret], p: &Paie) -> Resultat<Vec<&'a Arr
 /// C en 01, O ou C en 04, I en 05 et en 07 ; la date de l'accident (60.012), I en 01 et en 07. `nature` est celle du
 /// fichier, jamais une autre.
 pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: &str, banque: Option<&droit::fiche::Banque>) -> Resultat<()> {
-    let v = &a.v;
-    f.add_v("S21.G00.60.001", g(v, "motif"))?;
+    let v = &a.saisi;
+    f.add("S21.G00.60.001", &v.motif);
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
-    f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(&a.forme()?)?.jjmmaaaa());
-    f.add("S21.G00.60.003", jj(g(v, "fin_previsionnelle"))?);
-    if usage_admet(f, "S21.G00.60.004", nature)? && vrai(g(v, "subrogation")) {
-        f.add_v("S21.G00.60.004", g(v, "subrogation"))?;
+    f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
+    f.add("S21.G00.60.003", jj(&v.fin_previsionnelle)?);
+    let subrogation = if usage_admet(f, "S21.G00.60.004", nature)? { dite(&v.subrogation) } else { None };
+    if let Some(subrogation) = subrogation {
+        f.add("S21.G00.60.004", subrogation);
         if crate::signalement::avec_subrogation(a)? {
             let Some((iban, bic)) = banque.and_then(|b| b.iban.remplie().zip(b.bic.remplie())) else {
                 return Err("Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont \
 obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."
                     .into());
             };
-            f.add("S21.G00.60.005", jj(g(v, "subrogation_debut"))?);
-            f.add("S21.G00.60.006", jj(g(v, "subrogation_fin"))?);
+            f.add("S21.G00.60.005", jj_exige(&v.subrogation_debut, "subrogation_debut")?);
+            f.add("S21.G00.60.006", jj_exige(&v.subrogation_fin, "subrogation_fin")?);
             f.add("S21.G00.60.007", iban);
             f.add("S21.G00.60.008", bic);
         }
     }
-    if vrai(g(v, "reprise")) {
-        f.add("S21.G00.60.010", jj(g(v, "reprise"))?);
-        if vrai(g(v, "reprise_motif")) {
-            f.add_v("S21.G00.60.011", g(v, "reprise_motif"))?;
+    if let Some(reprise) = dite(&v.reprise) {
+        f.add("S21.G00.60.010", jj(reprise)?);
+        if let Some(motif) = dite(&v.reprise_motif) {
+            f.add("S21.G00.60.011", motif);
         }
     }
-    if usage_admet(f, "S21.G00.60.012", nature)? && vrai(g(v, "date_accident")) {
-        f.add("S21.G00.60.012", jj(g(v, "date_accident"))?);
+    if usage_admet(f, "S21.G00.60.012", nature)? {
+        if let Some(accident) = dite(&v.date_accident) {
+            f.add("S21.G00.60.012", jj(accident)?);
+        }
     }
     Ok(())
+}
+
+/// La date `AAAA-MM-JJ` d'une case de l'arret que la rubrique exige, en JJMMAAAA ; vide, le refus la nomme.
+fn jj_exige(case: &Option<String>, cle: &str) -> Resultat<String> {
+    jj(dite(case).ok_or_else(|| socle::fichiers::absent(cle))?)
 }
 
 /// Une correction d'un mois depose : ce qui a ete declare, et la paie corrigee.
@@ -4327,8 +4331,16 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
         let liste_o: Vec<String> = orphelins
             .iter()
             .map(|a| {
-                let fin = if vrai(g(&a.v, "reprise")) { a.s("reprise") } else { a.s("fin_previsionnelle") };
-                format!("{} contrat {} ({} -> {})", a.s("salarie"), a.s("contrat_numero"), a.s("dernier_jour_travaille"), fin)
+                let s = &a.saisi;
+                let fin = match dite(&s.reprise) {
+                    Some(r) => r,
+                    None => s.fin_previsionnelle.as_str(),
+                };
+                let numero = match dite(&s.contrat_numero) {
+                    Some(n) => n,
+                    None => "sans numero",
+                };
+                format!("{} contrat {} ({} -> {})", s.salarie, numero, s.dernier_jour_travaille, fin)
             })
             .collect();
         return Err(format!(
@@ -5114,14 +5126,32 @@ mod tests {
 
     fn arret(reprise: Option<&str>, fin_previsionnelle: &str) -> Arret {
         Arret {
-            v: json!({
-                "genre": "arret", "salarie": "Audinot", "contrat_debut": "2025-09-01", "contrat_numero": "AU.25.01", "motif": "01",
-                "dernier_jour_travaille": "2026-06-20", "debut": "2026-06-21", "fin_previsionnelle": fin_previsionnelle, "subrogation": "02",
-                "subrogation_debut": null, "subrogation_fin": null,
-                "reprise": reprise, "reprise_motif": reprise.map(|_| "01"), "date_accident": null, "jours_deja_indemnises": null,
-                "ij_brute": null, "ij_nette": null, "ij_brute_majoree": null, "ij_nette_majoree": null,
-                "prolongations": [], "reprises": [], "saisi_le": "2026-06-21T10:00:00", "qui": "interface", "note": "",
-            }),
+            saisi: engagement::imprevus::ArretSaisi {
+                genre: engagement::imprevus::GenreArret::Arret,
+                salarie: "Audinot".into(),
+                contrat_debut: "2025-09-01".into(),
+                contrat_numero: Some("AU.25.01".into()),
+                motif: "01".into(),
+                dernier_jour_travaille: "2026-06-20".into(),
+                debut: "2026-06-21".into(),
+                fin_previsionnelle: fin_previsionnelle.into(),
+                subrogation: Some("02".into()),
+                subrogation_debut: None,
+                subrogation_fin: None,
+                reprise: reprise.map(String::from),
+                reprise_motif: reprise.map(|_| "01".to_string()),
+                date_accident: None,
+                jours_deja_indemnises: None,
+                ij_brute: None,
+                ij_nette: None,
+                ij_brute_majoree: None,
+                ij_nette_majoree: None,
+                prolongations: Vec::new(),
+                reprises: Vec::new(),
+                saisi_le: "2026-06-21T10:00:00".into(),
+                qui: "interface".into(),
+                note: String::new(),
+            },
         }
     }
 
