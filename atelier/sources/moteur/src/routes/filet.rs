@@ -20,7 +20,7 @@ use crate::compagnie::problemes;
 use droit::contexte::Contexte;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
 use crate::routes::catalogue::Route;
-use envois::valeur::get;
+use crate::valeur::get;
 use socle::echec::{Echec, R};
 use crate::valeur::{valeur_en_texte, valeurs_egales, vrai};
 use crate::routes::catalogue::{Ecran, Place};

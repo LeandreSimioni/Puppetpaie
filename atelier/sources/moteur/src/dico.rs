@@ -18,7 +18,7 @@ pub fn items(v: &Value) -> R<Vec<Cow<'_, Value>>> {
         Value::Array(a) => Ok(a.iter().map(Cow::Borrowed).collect()),
         Value::Object(o) => Ok(o.keys().map(|k| Cow::Owned(Value::String(k.clone()))).collect()),
         Value::String(s) => Ok(s.chars().map(|c| Cow::Owned(Value::String(c.to_string()))).collect()),
-        _ => Err(erreur("TypeError", socle::fichiers::attendu("une liste", envois::valeur::nom_type(v)))),
+        _ => Err(erreur("TypeError", socle::fichiers::attendu("une liste", crate::valeur::nom_type(v)))),
     }
 }
 
@@ -30,7 +30,7 @@ fn cle_de_hachage(v: &Value) -> R<String> {
         Value::Array(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("list"))),
         Value::Object(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("dict"))),
         autre => {
-            let x = envois::valeur::nombre(autre).unwrap_or(0.0);
+            let x = crate::valeur::nombre(autre).unwrap_or(0.0);
             Ok(format!("n{:?}", if x == 0.0 { 0.0 } else { x }))
         }
     }

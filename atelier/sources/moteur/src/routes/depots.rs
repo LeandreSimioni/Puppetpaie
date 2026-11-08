@@ -1006,7 +1006,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     // L'identite d'une embauche se compare aux cases de la fiche par leur nom : en JSON.
     let vues: Vec<(String, Value)> = ctx.salaries.iter().map(|(k, f)| (k.to_string(), socle::ecriture::en_valeur(&f.champs))).collect();
     for (cle, s) in &vues {
-        let nir = envois::valeur::get(s, "nir")?;
+        let nir = crate::valeur::get(s, "nir")?;
         if !vrai(nir) {
             continue;
         }

@@ -13,7 +13,6 @@ engagement = { path = "../engagement" }
 documents = { path = "../documents" }
 declarations = { path = "../declarations" }
 rust_decimal = { workspace = true }
-serde_json = { workspace = true }
 serde = { workspace = true }
 # L'empreinte d'un fichier du journal ; le defi PKCE de l'autorisation Google.
 sha2 = { workspace = true }

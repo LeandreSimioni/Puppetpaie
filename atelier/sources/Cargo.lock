@@ -555,7 +555,6 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "serde",
- "serde_json",
  "sha2",
  "socle",
  "ureq",
