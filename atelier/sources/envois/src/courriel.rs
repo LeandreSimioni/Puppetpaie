@@ -497,7 +497,7 @@ impl Courriel for Client {
                     Some((_, d)) => d,
                     None => self.compte.as_str(),
                 };
-                let i = crate::envoi::nouveau_message_id(domaine);
+                let i = crate::envoi::nouveau_message_id(domaine).map_err(erreur)?;
                 let mut avec = format!("Message-ID: {}\n", i).into_bytes();
                 avec.extend_from_slice(&brut);
                 brut = avec;
