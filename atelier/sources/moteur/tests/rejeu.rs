@@ -276,6 +276,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
         std::fs::write(&journal, texte).unwrap();
     };
     let annoncer = |a: Value| {
+        let a: envois::organismes_simules::Annonce = socle::forme::lire(&a, "l'annonce").unwrap();
         // Annoncee avant le depot : le 1er novembre.
         let le = socle::paris::naif_de_iso("2026-11-01T12:00:00").unwrap() as f64;
         socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, moteur::compagnie::bridage::branchement(&racine), &a)).unwrap();

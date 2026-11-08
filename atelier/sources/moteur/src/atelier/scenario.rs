@@ -386,7 +386,9 @@ fn rejouer_les_gestes(
             Some("annoncer") => {
                 let racine = racines.get(compagnie).ok_or(format!("geste {} : `annoncer` sur {}, que le scenario n'a pas ajoutee", n, compagnie))?;
                 let annonce = g.get("annonce").ok_or(format!("geste {} : `annoncer` sans annonce", n))?;
-                envois::organismes_simules::annoncer(racine, crate::compagnie::bridage::branchement(racine), annonce).map_err(|e| format!("geste {} : {}", n, e.message))?;
+                let annonce: envois::organismes_simules::Annonce =
+                    socle::forme::lire(annonce, "Une annonce porte un taux de prélèvement, un taux AT/MP ou un refus, et rien d'autre.").map_err(|m| format!("geste {} : {}", n, m))?;
+                envois::organismes_simules::annoncer(racine, crate::compagnie::bridage::branchement(racine), &annonce).map_err(|e| format!("geste {} : {}", n, e.message))?;
             }
             Some("etat") => {
                 let Some(racine) = racines.get(compagnie) else {

@@ -13,12 +13,11 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::{erreur, R};
-use crate::valeur::{valeur_en_texte, vrai};
+use socle::echec::{erreur, Echec, R};
 
 use crate::journal::Ligne;
 use declarations::dsn_lue::DsnLue;
@@ -35,32 +34,117 @@ fn chemin(racine: &Path) -> PathBuf {
     racine.join(DOSSIER).join(FICHIER)
 }
 
-/// La memoire du simulateur : `{"annonces": [...], "effectifs_rendus": ["2026", ...]}`.
-fn charger(racine: &Path) -> R<Value> {
+// ------------------------------------------------------------------ ce que le scenario annonce
+
+/// CE QUE LE SCENARIO ANNONCE AUX ORGANISMES, une sorte par annonce : `{"taux_pas": …}`, `{"taux_atmp": …}` ou
+/// `{"refus": …}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Annonce {
+    TauxPas(TauxPasAnnonce),
+    TauxAtmp(TauxAtmpAnnonce),
+    Refus(RefusAnnonce),
+}
+
+/// La DGFiP connait ce taux pour ce salarie (la cle de sa fiche).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TauxPasAnnonce {
+    pub salarie: String,
+    pub taux: String,
+}
+
+/// La CARSAT notifie ce taux a l'etablissement.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TauxAtmpAnnonce {
+    pub code_risque: String,
+    pub taux: String,
+    pub date_effet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bureau: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_ctn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+}
+
+/// net-entreprises refusera la prochaine DSN reelle (du mois dit, s'il l'est) par cette anomalie.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RefusAnnonce {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rubrique: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mois: Option<String>,
+}
+
+/// UNE ANNONCE GARDEE : son jour, ce qu'elle annonce (une seule de ses trois cases), et, une fois servie, le flux du
+/// depot qu'un refus a vise (`servi_par`) ou de la DSN qui a porte la notification AT/MP (`rendue`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnnonceGardee {
+    le: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    taux_pas: Option<TauxPasAnnonce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    taux_atmp: Option<TauxAtmpAnnonce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refus: Option<RefusAnnonce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    servi_par: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rendue: Option<String>,
+}
+
+impl AnnonceGardee {
+    /// Son jour.
+    fn jour(&self) -> R<Jour> {
+        jour_iso(&self.le)
+    }
+}
+
+/// LA MEMOIRE DU SIMULATEUR (`organismes-simules/annonces.json`) : les annonces du scenario, et les annees dont
+/// l'effectif est deja rendu. Aucun fichier : rien n'est encore annonce ni rendu.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Memoire {
+    annonces: Vec<AnnonceGardee>,
+    effectifs_rendus: Vec<String>,
+}
+
+fn charger(racine: &Path) -> R<Memoire> {
     let p = chemin(racine);
-    if !p.exists() {
-        return Ok(json!({"annonces": [], "effectifs_rendus": []}));
+    if !socle::fichiers::existe(&p) {
+        return Ok(Memoire::default());
     }
-    let t = std::fs::read_to_string(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
-    let mut v: Value = serde_json::from_str(&t).map_err(|e| erreur("ValueError", socle::echec::du_disque(&p, &e)))?;
-    for cle in ["annonces", "effectifs_rendus"] {
-        if !v.get(cle).is_some_and(Value::is_array) {
-            v[cle] = json!([]);
-        }
-    }
-    Ok(v)
+    Ok(socle::forme::lire_fichier(&p, "La mémoire des organismes simulés ne se lit pas.")?)
 }
 
-fn ecrire(racine: &Path, v: &Value) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin(racine), v, 2).map_err(|m| erreur("OSError", m))
+fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
+    socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| erreur("OSError", m))
 }
 
-fn jour_iso(t: &str) -> Option<Jour> {
-    Jour::lire(&t.chars().take(10).collect::<String>()).ok()
+/// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
+fn jour_iso(t: &str) -> R<Jour> {
+    Ok(Jour::lire(&t.chars().take(10).collect::<String>())?)
+}
+
+/// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
+fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<f64> {
+    let t = taux.replace(',', ".");
+    t.parse::<f64>().map_err(|e| erreur("ValueError", socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e))))
+}
+
+/// Un texte facultatif d'une annonce : vide, il n'est pas dit.
+fn dit(v: Option<String>) -> Option<String> {
+    v.filter(|t| !t.is_empty())
 }
 
 /// Ce que le scenario annonce aux organismes de la compagnie fictive, a la date ou il le joue (le jour de l'horloge
-/// figee). Deux annonces :
+/// figee). Trois annonces :
 /// - `{"taux_pas": {"salarie": "<cle de la fiche>", "taux": "7.50"}}` : la DGFiP connait ce taux pour ce salarie a
 ///   partir de ce jour ; elle le communique en retour de chaque DSN mensuelle reelle, et de chaque demande de taux
 ///   (signalement d'amorcage), qui le declare ensuite. Un salarie que le scenario n'annonce pas recoit un taux de
@@ -71,71 +155,59 @@ fn jour_iso(t: &str) -> Option<Jour> {
 /// - `{"refus": {"code": "...", "message": "...", "rubrique": "S21.G00.xx.xxx"?, "mois": "AAAA-MM"?}}` : la prochaine DSN
 ///   reelle deposee a partir de ce jour (du mois dit, s'il l'est) recoit un bilan non conforme portant cette anomalie.
 /// Hors d'une compagnie fictive, refus : le monde ne s'annonce pas.
-pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Value) -> R<()> {
+pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R<()> {
     if !branchement.joue() {
         return Err(erreur("ErreurOperation", "Seuls les organismes d'une compagnie fictive s'annoncent : ceux d'une vraie repondent d'eux-memes."));
     }
-    let o = annonce.as_object().ok_or_else(|| erreur("ValueError", "Une annonce est un objet."))?;
-    let texte = |v: &Value, k: &str| v.get(k).filter(|x| vrai(x)).map(valeur_en_texte).unwrap_or_default();
-    let mut propre = Map::new();
-    propre.insert("le".into(), json!(socle::paris::maintenant().chars().take(10).collect::<String>()));
-    match (o.get("taux_pas"), o.get("refus")) {
-        (Some(t), None) if o.len() == 1 => {
-            let salarie = texte(t, "salarie");
-            let taux = texte(t, "taux").replace(',', ".");
-            let n: f64 = taux.parse().map_err(|_| erreur("ValueError", socle::echec::a_la_cle("Le taux de prélèvement annoncé ne se lit pas.", "taux_pas.taux", &taux)))?;
-            if salarie.is_empty() || !(0.0..=100.0).contains(&n) {
+    let mut gardee = AnnonceGardee {
+        le: socle::paris::maintenant().chars().take(10).collect::<String>(),
+        taux_pas: None,
+        taux_atmp: None,
+        refus: None,
+        servi_par: None,
+        rendue: None,
+    };
+    match annonce.clone() {
+        Annonce::TauxPas(t) => {
+            let n = taux_annonce(&t.taux, "taux_pas.taux", "Le taux de prélèvement annoncé ne se lit pas.")?;
+            if t.salarie.is_empty() || !(0.0..=100.0).contains(&n) {
                 return Err(erreur("ValueError", socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas")));
             }
-            propre.insert("taux_pas".into(), json!({"salarie": salarie, "taux": format!("{:.2}", n)}));
+            gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: format!("{:.2}", n) });
         }
-        (None, None) if o.len() == 1 && o.contains_key("taux_atmp") => {
-            let t = &o["taux_atmp"];
-            let code = texte(t, "code_risque").replace(['.', ' '], "").to_uppercase();
-            let taux = texte(t, "taux").replace(',', ".");
-            let n: f64 = taux.parse().map_err(|_| erreur("ValueError", socle::echec::a_la_cle("Le taux AT/MP annoncé ne se lit pas.", "taux_atmp.taux", &taux)))?;
-            let effet = texte(t, "date_effet");
-            if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 || jour_iso(&effet).is_none() {
+        Annonce::TauxAtmp(t) => {
+            let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
+            let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
+            let effet_lisible = matches!(Jour::lire(&t.date_effet), Ok(j) if j.iso() == t.date_effet);
+            if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 || !effet_lisible {
                 return Err(erreur("ValueError", socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp")));
             }
-            let mut m = Map::new();
-            m.insert("code_risque".into(), json!(code));
-            m.insert("taux".into(), json!(format!("{:.2}", n)));
-            m.insert("date_effet".into(), json!(effet));
-            for k in ["bureau", "code_ctn", "section"] {
-                let v = texte(t, k);
-                if !v.is_empty() {
-                    m.insert(k.into(), json!(v));
-                }
-            }
-            propre.insert("taux_atmp".into(), Value::Object(m));
+            gardee.taux_atmp = Some(TauxAtmpAnnonce {
+                code_risque: code,
+                taux: format!("{:.2}", n),
+                date_effet: t.date_effet,
+                bureau: dit(t.bureau),
+                code_ctn: dit(t.code_ctn),
+                section: dit(t.section),
+            });
         }
-        (None, Some(r)) if o.len() == 1 => {
-            let (code, message) = (texte(r, "code"), texte(r, "message"));
-            if code.is_empty() || message.is_empty() {
+        Annonce::Refus(r) => {
+            if r.code.is_empty() || r.message.is_empty() {
                 return Err(erreur("ValueError", "refus : le code et le message de l'anomalie sont attendus."));
             }
-            let mois = texte(r, "mois");
-            if !mois.is_empty() && jour_iso(&format!("{}-01", mois)).is_none() {
-                return Err(erreur("ValueError", socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", &mois)));
+            let mois = dit(r.mois);
+            if let Some(m) = &mois {
+                Mois::lire(m).map_err(|e| erreur("ValueError", socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, e))))?;
             }
-            let mut m = Map::new();
-            m.insert("code".into(), json!(code));
-            m.insert("message".into(), json!(message));
-            for k in ["rubrique", "mois"] {
-                let v = texte(r, k);
-                if !v.is_empty() {
-                    m.insert(k.into(), json!(v));
-                }
-            }
-            propre.insert("refus".into(), Value::Object(m));
+            gardee.refus = Some(RefusAnnonce { code: r.code, message: r.message, rubrique: dit(r.rubrique), mois });
         }
-        _ => return Err(erreur("ValueError", socle::echec::cle("Une annonce porte un taux de prélèvement, un taux AT/MP ou un refus, et rien d'autre.", "taux_pas, taux_atmp, refus"))),
     }
-    let mut v = charger(racine)?;
-    v["annonces"].as_array_mut().expect("liste").push(Value::Object(propre));
-    ecrire(racine, &v)
+    let mut m = charger(racine)?;
+    m.annonces.push(gardee);
+    ecrire(racine, &m)
 }
+
+// ------------------------------------------------------------------ l'effectif
 
 /// L'effectif d'un mois, d'apres les DSN de ce mois (une par etablissement), comme R. 130-1 du code de la securite
 /// sociale le compte (`atelier/reference/sources/code-de-la-securite-sociale/articles-20261029.md`, « L'effectif au sens
@@ -145,29 +217,45 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Value) -> R<(
 /// contrat, S21.G00.40.013, sur celle de la categorie, S21.G00.40.012) ; un CDD qui remplace un salarie absent
 /// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
 /// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
-/// jour.
-fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> f64 {
+/// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
+fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
     use rust_decimal::prelude::ToPrimitive;
     let n = socle::date::jours_du_mois(an, mois);
     let premier = Jour::nouveau(an, mois, 1).expect("mois");
     let dernier = Jour::nouveau(an, mois, n).expect("mois");
-    let nombre = |q: Option<socle::num::Decimal>| q.and_then(|q| q.to_f64()).unwrap_or(0.0);
     let mut par_jour: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
             let ind = &d.individus[k.individu];
-            let qui = if ind.nir.is_empty() { format!("NTT {}", ind.ntt.as_deref().unwrap_or_default()) } else { ind.nir.clone() };
+            let qui = match (ind.nir.is_empty(), &ind.ntt) {
+                (false, _) => ind.nir.clone(),
+                (true, Some(ntt)) => format!("NTT {}", ntt),
+                (true, None) => return Err(Echec::from(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"))),
+            };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![0.0; n as usize]);
             if k.motif_recours.as_deref() == Some("01") {
                 continue;
             }
             let Some(debut) = k.debut else { continue };
-            let fin = k.fin_declaree.or(k.fin).unwrap_or(dernier);
+            let fin = match k.fin_declaree.or(k.fin) {
+                Some(f) => f,
+                None => dernier,
+            };
             if debut > dernier || fin < premier {
                 continue;
             }
-            let (reference, quotite) = (nombre(k.quotite_reference), nombre(k.quotite));
-            let poids = if k.modalite.as_deref() == Some("20") && reference > 0.0 { (quotite / reference).min(1.0) } else { 1.0 };
+            let poids = if k.modalite.as_deref() == Some("20") {
+                let (Some(reference), Some(quotite)) = (k.quotite_reference.and_then(|q| q.to_f64()), k.quotite.and_then(|q| q.to_f64())) else {
+                    return Err(Echec::from(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013")));
+                };
+                if reference > 0.0 {
+                    (quotite / reference).min(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
             let (a, b) = (if debut < premier { 1 } else { debut.jour }, if fin > dernier { n } else { fin.jour });
             for j in a..=b {
                 let p = &mut jours[(j - 1) as usize];
@@ -175,35 +263,64 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> f64 {
             }
         }
     }
-    par_jour.values().map(|jours| jours.iter().sum::<f64>() / f64::from(n)).sum()
+    Ok(par_jour.values().map(|jours| jours.iter().sum::<f64>() / f64::from(n)).sum())
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
 /// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale, memes releves). `None` quand
 /// aucun mois n'a de salarie.
-pub fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> Option<f64> {
-    let mois: Vec<f64> = (1..=12).map(|m| dsn_par_mois.get(&m).map_or(0.0, |d| effectif_du_mois(an, m, d))).filter(|e| *e > 0.0).collect();
+fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Option<f64>> {
+    let mut mois: Vec<f64> = Vec::new();
+    for (m, d) in dsn_par_mois {
+        let e = effectif_du_mois(an, *m, d)?;
+        if e > 0.0 {
+            mois.push(e);
+        }
+    }
     if mois.is_empty() {
-        return None;
+        return Ok(None);
     }
     let moyenne = mois.iter().sum::<f64>() / mois.len() as f64;
-    Some((moyenne * 100.0 + 1e-9).floor() / 100.0)
+    Ok(Some((moyenne * 100.0 + 1e-9).floor() / 100.0))
 }
 
 // ------------------------------------------------------------------ ce que le simulateur rend
 
+/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut, son libelle, et
+/// pour un compte rendu du PAS, le mois de la declaration (`production`).
+#[derive(Debug, Clone, Serialize)]
+struct RetourDecrit<'a> {
+    flux: &'a str,
+    nature: &'a str,
+    publication: &'a str,
+    statut: &'a str,
+    libelle: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    production: Option<String>,
+}
+
 /// Une piece fabriquee : le retour tel que la liste des retours le decrit, et ses octets.
 pub struct Piece {
-    pub retour: Value,
+    pub retour: serde_json::Value,
     pub contenu: Vec<u8>,
 }
 
-fn retour(nature: &str, flux: &str, publication: &str, libelle: &str) -> Value {
-    json!({"flux": flux, "nature": nature, "publication": publication, "statut": "fictive", "libelle": libelle})
+fn retour(nature: &str, flux: &str, publication: &str, libelle: &str, production: Option<String>) -> serde_json::Value {
+    socle::ecriture::en_valeur(&RetourDecrit { flux, nature, publication, statut: "fictive", libelle, production })
 }
 
 fn echappe(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// Le texte d'un element XML : la valeur, echappee, ou rien.
+fn element(v: Option<&str>) -> String {
+    v.into_iter().map(echappe).collect()
+}
+
+/// Le mois de la ligne : une DSN du journal le dit toujours.
+fn mois_de(l: &Ligne) -> R<Mois> {
+    l.mois().ok_or_else(|| Echec::from(socle::echec::cle("Une DSN du journal ne dit pas son mois.", "mois")))
 }
 
 /// La DSN de la ligne du journal, relue la ou le depot l'a prise (`sorties/<mois>/<fichier>`) ; un signalement est range
@@ -211,19 +328,18 @@ fn echappe(t: &str) -> String {
 fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     let Some(fichier) = l.fichier().filter(|f| !f.is_empty()) else { return Ok(None) };
     let p = Path::new(fichier);
-    let chemin = if p.is_absolute() { p.to_path_buf() } else { racine.join("sorties").join(mois_de(l)).join(fichier) };
-    let Ok(octets) = std::fs::read(&chemin) else { return Ok(None) };
+    let chemin = if p.is_absolute() { p.to_path_buf() } else { racine.join("sorties").join(mois_de(l)?.to_string()).join(fichier) };
+    let octets = match std::fs::read(&chemin) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(Echec::from(socle::echec::du_disque(&chemin, &e))),
+    };
     declarations::dsn_lue::lire(&octets, fichier).map(Some)
 }
 
-/// Le mois de la ligne (`AAAA-MM`), ou rien.
-fn mois_de(l: &Ligne) -> String {
-    l.mois().map(|m| m.to_string()).unwrap_or_default()
-}
-
-/// La nature de la DSN que la ligne porte ; une ligne qui ne la dit pas est une mensuelle.
-fn nature_dsn(l: &Ligne) -> &str {
-    Some(l.nature_dsn()).filter(|n| !n.is_empty()).unwrap_or("01")
+/// La nature de la DSN que la ligne porte, quand la ligne la dit.
+fn nature_dsn(l: &Ligne) -> Option<&str> {
+    l.dsn().and_then(|e| e.detail.nature.as_deref()).filter(|n| !n.is_empty())
 }
 
 fn reelle(l: &Ligne) -> bool {
@@ -232,25 +348,23 @@ fn reelle(l: &Ligne) -> bool {
 
 /// Le refus annonce qui attend ce depot : le premier non servi, annonce au plus tard le jour du depot, du mois du depot
 /// s'il en dit un. Il est servi par ce depot (son flux).
-fn refus_pour(memoire: &mut Value, l: &Ligne, flux: &str) -> Option<Value> {
+fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnnonce>> {
     if !reelle(l) {
-        return None;
+        return Ok(None);
     }
     let depot = jour_iso(l.quand())?;
-    let mois = mois_de(l);
-    for a in memoire["annonces"].as_array_mut()? {
-        let Some(r) = a.get("refus").cloned() else { continue };
-        if a.get("servi_par").is_some() {
+    let mois = mois_de(l)?.to_string();
+    for a in memoire.annonces.iter_mut() {
+        let Some(r) = a.refus.clone() else { continue };
+        if a.servi_par.is_some() {
             continue;
         }
-        let le = a.get("le").and_then(Value::as_str).and_then(jour_iso);
-        let son_mois = r.get("mois").and_then(Value::as_str).unwrap_or("");
-        if le.is_some_and(|le| le <= depot) && (son_mois.is_empty() || son_mois == mois) {
-            a["servi_par"] = json!(flux);
-            return Some(r);
+        if a.jour()? <= depot && r.mois.as_deref().is_none_or(|m| m == mois) {
+            a.servi_par = Some(flux.to_string());
+            return Ok(Some(r));
         }
     }
-    None
+    Ok(None)
 }
 
 /// L'accuse de reception (nature 10, rapport `AEE`) et le bilan non conforme (nature 11, rapport `BAN`) d'une DSN que
@@ -258,10 +372,9 @@ fn refus_pour(memoire: &mut Value, l: &Ligne, flux: &str) -> Option<Value> {
 /// gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` : `envoi`, `idflux`, `essai_reel`, `envoi_etat` ;
 /// `declaration`, sa `declaration_identification`, son bilan `etat` et `mois`, ses anomalies `code`, `categorie`,
 /// `message`, `identifiant` de la rubrique).
-fn bilans_refuses(flux: &str, publication: &str, l: &Ligne, refus: &Value) -> Vec<Piece> {
-    let mois = mois_de(l);
-    let mois_dsn = if mois.len() == 7 { format!("01{}{}", &mois[5..7], &mois[..4]) } else { String::new() };
-    let t = |k: &str| echappe(refus.get(k).and_then(Value::as_str).unwrap_or(""));
+fn bilans_refuses(flux: &str, publication: &str, l: &Ligne, nature: &str, refus: &RefusAnnonce) -> R<Vec<Piece>> {
+    let mois = mois_de(l)?;
+    let mois_dsn = format!("01{:02}{}", mois.numero(), mois.annee());
     let envoi = format!("<envoi><idflux>{}</idflux><essai_reel>02</essai_reel><envoi_etat>OK</envoi_etat></envoi>", echappe(flux));
     let rapport = |type_rapport: &str, corps: &str| {
         format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" type=\"{}\">{}</ns2:rapport>", type_rapport, corps)
@@ -272,16 +385,16 @@ fn bilans_refuses(flux: &str, publication: &str, l: &Ligne, refus: &Value) -> Ve
          <declaration_bilan><etat>KO</etat><mois>{}</mois><declaration_anomalie><code>{}</code><categorie>Bloquante</categorie>\
          <message>{}</message><identifiant>{}</identifiant></declaration_anomalie></declaration_bilan></declaration>",
         envoi,
-        echappe(&nature_dsn(l)),
+        echappe(nature),
         mois_dsn,
-        t("code"),
-        t("message"),
-        t("rubrique")
+        echappe(&refus.code),
+        echappe(&refus.message),
+        element(refus.rubrique.as_deref())
     );
-    vec![
-        Piece { retour: retour("10", flux, publication, "Accuse de reception (compagnie fictive)"), contenu: rapport("AEE", &envoi) },
-        Piece { retour: retour("11", flux, publication, "Bilan d'anomalies (compagnie fictive)"), contenu: rapport("BAN", &ban) },
-    ]
+    Ok(vec![
+        Piece { retour: retour("10", flux, publication, "Accuse de reception (compagnie fictive)", None), contenu: rapport("AEE", &envoi) },
+        Piece { retour: retour("11", flux, publication, "Bilan d'anomalies (compagnie fictive)", None), contenu: rapport("BAN", &ban) },
+    ])
 }
 
 /// LE TAUX DE SIMULATION d'un salarie dont le scenario n'annonce aucun taux : la DGFiP simulee le connait comme la vraie
@@ -300,29 +413,32 @@ fn taux_de_simulation(nir: &str) -> String {
 /// plus tard le jour du depot, sinon `taux_de_simulation`), dans la forme du CRM nominatif recu
 /// (`envois/tests/envois/retours.rs`, `CRM_REEL` : `rapport/@identifiant`, `salarie`, `NIR`, `matricule`,
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
-fn crm_pas(ctx: &Contexte, memoire: &Value, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> R<Option<Piece>> {
-    let depot = jour_iso(l.quand());
+fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> R<Option<Piece>> {
+    let depot = jour_iso(l.quand())?;
     let mut taux: BTreeMap<String, String> = BTreeMap::new();
-    for a in memoire["annonces"].as_array().into_iter().flatten() {
-        let Some(t) = a.get("taux_pas") else { continue };
-        let le = a.get("le").and_then(Value::as_str).and_then(jour_iso);
-        if le.is_some() && le <= depot {
-            taux.insert(valeur_en_texte(&t["salarie"]), valeur_en_texte(&t["taux"]));
+    for a in &memoire.annonces {
+        let Some(t) = &a.taux_pas else { continue };
+        if a.jour()? <= depot {
+            taux.insert(t.salarie.clone(), t.taux.clone());
         }
     }
     let mut salaries = String::new();
     let mut vus = BTreeSet::new();
     for ind in d.individus.iter().filter(|i| !i.nir.is_empty()) {
-        let (nir, matricule) = (ind.nir.clone(), ind.code_salarie.clone().unwrap_or_default());
+        let nir = ind.nir.clone();
         let Some((cle, _)) = ctx.salaries.iter().find(|(_, s)| s.nir.portee() == Some(nir.as_str())) else { continue };
         if !vus.insert(nir.clone()) {
             continue;
         }
-        let t = taux.get(cle.as_str()).cloned().unwrap_or_else(|| taux_de_simulation(&nir));
+        // Le taux annonce ; sans annonce, celui de la simulation.
+        let t = match taux.get(cle.as_str()) {
+            Some(t) => t.clone(),
+            None => taux_de_simulation(&nir),
+        };
         salaries.push_str(&format!(
             "<salarie><NIR>{}</NIR><matricule>{}</matricule><taux_imposition_PAS>{}</taux_imposition_PAS></salarie>",
             echappe(&nir),
-            echappe(&matricule),
+            element(ind.code_salarie.as_deref()),
             echappe(&t)
         ));
     }
@@ -340,9 +456,9 @@ fn crm_pas(ctx: &Contexte, memoire: &Value, l: &Ligne, d: &DsnLue, flux: &str, p
         echappe(flux),
         salaries
     );
-    let mut r = retour(crate::retours::NATURE_TAUX_PAS, flux, publication, "Compte-rendu metier DGFiP, taux du PAS (compagnie fictive)");
     // Le mois de la declaration (`AAAAMM`), meme pour un signalement date du jour de son fait.
-    r["production"] = json!(mois_de(l).replace('-', ""));
+    let production = Some(mois_de(l)?.to_string().replace('-', ""));
+    let r = retour(crate::retours::NATURE_TAUX_PAS, flux, publication, "Compte-rendu metier DGFiP, taux du PAS (compagnie fictive)", production);
     Ok(Some(Piece { retour: r, contenu: xml.into_bytes() }))
 }
 
@@ -353,34 +469,32 @@ fn crm_pas(ctx: &Contexte, memoire: &Value, l: &Ligne, d: &DsnLue, flux: &str, p
 /// (`code_ctn`, `section`, `code_risque`, `temoin_bureau`, `taux`, `date_effet`, `date_calcul` ;
 /// `atelier/reference/sources/gip-mds-api-dsn/`, LISEZ-MOI, « La notification du taux AT/MP »). Le `type` du rapport
 /// n'est ecrit par aucun texte depose : la piece n'en porte pas. `None` quand la CARSAT n'a rien a notifier.
-fn crm_atmp(memoire: &mut Value, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> Option<Piece> {
-    let depot = jour_iso(l.quand());
-    let texte = |v: Option<&str>| echappe(v.unwrap_or_default());
-    let mois = d.mois.map(|m| format!("01{:02}{}", m.numero(), m.annee())).unwrap_or_default();
+fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> R<Option<Piece>> {
+    let depot = jour_iso(l.quand())?;
+    let mois = element(d.mois.map(|m| format!("01{:02}{}", m.numero(), m.annee())).as_deref());
     let calcul = socle::paris::maintenant().chars().take(10).collect::<String>().replace('-', "");
+    // Un element facultatif ne s'ecrit que s'il est dit.
+    let facultatif = |v: &Option<String>, balise: &str| v.iter().map(|x| format!("<{}>{}</{}>", balise, echappe(x), balise)).collect::<String>();
     let mut taux = String::new();
-    for a in memoire["annonces"].as_array_mut().into_iter().flatten() {
-        let Some(t) = a.get("taux_atmp").cloned() else { continue };
-        let le = a.get("le").and_then(Value::as_str).and_then(jour_iso);
-        if a.get("rendue").is_some() || le.is_none() || le > depot {
+    for a in memoire.annonces.iter_mut() {
+        let Some(t) = a.taux_atmp.clone() else { continue };
+        if a.rendue.is_some() || a.jour()? > depot {
             continue;
         }
-        let x = |k: &str| t.get(k).map(valeur_en_texte).unwrap_or_default();
-        let facultatif = |k: &str, balise: &str| if x(k).is_empty() { String::new() } else { format!("<{}>{}</{}>", balise, echappe(&x(k)), balise) };
         taux.push_str(&format!(
             "<taux_AT>{}{}<code_risque>{}</code_risque>{}<taux>{}</taux><date_effet>{}</date_effet><date_calcul>{}</date_calcul></taux_AT>",
-            facultatif("code_ctn", "code_ctn"),
-            facultatif("section", "section"),
-            echappe(&x("code_risque")),
-            facultatif("bureau", "temoin_bureau"),
-            echappe(&x("taux")),
-            x("date_effet").replace('-', ""),
+            facultatif(&t.code_ctn, "code_ctn"),
+            facultatif(&t.section, "section"),
+            echappe(&t.code_risque),
+            facultatif(&t.bureau, "temoin_bureau"),
+            echappe(&t.taux),
+            t.date_effet.replace('-', ""),
             calcul
         ));
-        a["rendue"] = json!(flux);
+        a.rendue = Some(flux.to_string());
     }
     if taux.is_empty() {
-        return None;
+        return Ok(None);
     }
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" profil=\"DSN\" version=\"v02r02\">\
@@ -388,40 +502,36 @@ fn crm_atmp(memoire: &mut Value, l: &Ligne, d: &DsnLue, flux: &str, publication:
          <rang>1</rang><nature>{}</nature><type>{}</type><mois>{}</mois><SIREN>{}</SIREN><nic_affectation>{}</nic_affectation>\
          </declaration_identification><declaration_bilan><etat>OK</etat>{}</declaration_bilan></declaration></ns2:rapport>",
         echappe(flux),
-        texte(d.nature.as_deref()),
-        texte(d.type_declaration.as_deref()),
-        echappe(&mois),
-        texte(d.entreprise.siren.as_deref()),
-        texte(d.etablissement()),
+        element(d.nature.as_deref()),
+        element(d.type_declaration.as_deref()),
+        mois,
+        element(d.entreprise.siren.as_deref()),
+        element(d.etablissement()),
         taux
     );
-    Some(Piece { retour: retour(crate::retours::NATURE_TAUX_ATMP, flux, publication, "Compte-rendu metier taux AT/MP, notification de la Carsat (compagnie fictive)"), contenu: xml.into_bytes() })
+    let r = retour(crate::retours::NATURE_TAUX_ATMP, flux, publication, "Compte-rendu metier taux AT/MP, notification de la Carsat (compagnie fictive)", None);
+    Ok(Some(Piece { retour: r, contenu: xml.into_bytes() }))
 }
 
 /// Les DSN mensuelles reelles de l'annee `an` que l'Urssaf a recues et acceptees, par mois : pour chaque mois et chaque
-/// etablissement, la derniere deposee ; une DSN dont le bilan est non conforme n'en est pas une.
+/// etablissement, la derniere deposee ; une DSN dont le bilan est non conforme n'en est pas une, ni une ligne qui ne dit
+/// pas sa nature.
 fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, Vec<DsnLue>>> {
-    let mut dernieres: BTreeMap<(String, String), &Ligne> = BTreeMap::new();
+    let mut dernieres: BTreeMap<(Mois, Option<&str>), &Ligne> = BTreeMap::new();
     for l in lignes {
-        let mois = mois_de(l);
-        if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || nature_dsn(l) != "01" {
+        if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || nature_dsn(l) != Some("01") {
             continue;
         }
-        if !mois.starts_with(&format!("{}-", an)) {
-            continue;
-        }
-        let etab = l.etablissement().unwrap_or_default().to_string();
-        dernieres.insert((mois, etab), l);
+        let Some(mois) = l.mois().filter(|m| m.annee() == an) else { continue };
+        dernieres.insert((mois, l.etablissement()), l);
     }
     let mut out: BTreeMap<u32, Vec<DsnLue>> = BTreeMap::new();
     for ((mois, _), l) in dernieres {
-        let refusee = l.retours_organisme().iter().any(|r| r.ko());
-        let Some(m) = mois.get(5..7).and_then(|m| m.parse::<u32>().ok()) else { continue };
-        if refusee {
+        if l.retours_organisme().iter().any(|r| r.ko()) {
             continue;
         }
         if let Some(d) = dsn_deposee(racine, l)? {
-            out.entry(m).or_default().push(d);
+            out.entry(mois.numero()).or_default().push(d);
         }
     }
     Ok(out)
@@ -448,43 +558,42 @@ fn crm_effectif(an: i32, valeur: f64, flux: &str, publication: &str) -> Piece {
         an,
         calcule_le
     );
-    Piece { retour: retour(NATURE_EFFECTIFS, flux, publication, "Effectifs (compagnie fictive)"), contenu: xml.into_bytes() }
+    Piece { retour: retour(NATURE_EFFECTIFS, flux, publication, "Effectifs (compagnie fictive)", None), contenu: xml.into_bytes() }
 }
 
 /// Ce que les organismes rendent a la DSN que porte la ligne `l` du journal (deja acceptee au transport), au-dela de
 /// l'accuse et du bilan conformes : `Err(pieces)` quand net-entreprises la refuse (ses deux bilans, rien d'autre), sinon
 /// `Ok(pieces)` a ajouter (le taux du PAS, a une DSN mensuelle comme a un signalement d'amorcage ; l'effectif de l'annee
-/// precedente a la premiere DSN mensuelle d'une annee).
-pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Value, lignes: &[Ligne], l: &Ligne, flux: &str, publication: &str) -> R<Result<Vec<Piece>, Vec<Piece>>> {
-    if let Some(r) = refus_pour(memoire, l, flux) {
-        return Ok(Err(bilans_refuses(flux, publication, l, &r)));
+/// precedente a la premiere DSN mensuelle d'une annee). Une DSN du journal dit sa nature.
+pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: &Ligne, flux: &str, publication: &str) -> R<Result<Vec<Piece>, Vec<Piece>>> {
+    let nature = nature_dsn(l).ok_or_else(|| Echec::from(socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature")))?;
+    if let Some(r) = refus_pour(memoire, l, flux)? {
+        return Ok(Err(bilans_refuses(flux, publication, l, nature, &r)?));
     }
     let mut pieces = Vec::new();
     if !reelle(l) {
         return Ok(Ok(pieces));
     }
     // La demande de taux par anticipation (BOI-IR-PAS-30-10-20, § 20) : le compte rendu du taux, rien d'autre.
-    if nature_dsn(l) == declarations::amorcage::NATURE {
+    if nature == declarations::amorcage::NATURE {
         if let Some(d) = dsn_deposee(&ctx.racine, l)? {
             pieces.extend(crm_pas(ctx, memoire, l, &d, flux, publication)?);
         }
         return Ok(Ok(pieces));
     }
-    if nature_dsn(l) != "01" {
+    if nature != "01" {
         return Ok(Ok(pieces));
     }
     if let Some(d) = dsn_deposee(&ctx.racine, l)? {
         pieces.extend(crm_pas(ctx, memoire, l, &d, flux, publication)?);
-        pieces.extend(crm_atmp(memoire, l, &d, flux, publication));
+        pieces.extend(crm_atmp(memoire, l, &d, flux, publication)?);
     }
-    let an: Option<i32> = l.mois().map(Mois::annee);
-    if let Some(an) = an {
+    if let Some(an) = l.mois().map(Mois::annee) {
         let precedente = (an - 1).to_string();
-        let rendus = memoire["effectifs_rendus"].as_array().into_iter().flatten().any(|a| valeur_en_texte(a) == precedente);
-        if !rendus {
-            if let Some(e) = effectif_annuel(an - 1, &dsn_de_l_annee(&ctx.racine, lignes, an - 1)?) {
+        if !memoire.effectifs_rendus.contains(&precedente) {
+            if let Some(e) = effectif_annuel(an - 1, &dsn_de_l_annee(&ctx.racine, lignes, an - 1)?)? {
                 pieces.push(crm_effectif(an - 1, e, flux, publication));
-                memoire["effectifs_rendus"].as_array_mut().expect("liste").push(json!(precedente));
+                memoire.effectifs_rendus.push(precedente);
             }
         }
     }
@@ -492,11 +601,11 @@ pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Value, lignes: &[Ligne], l: &L
 }
 
 /// La memoire du simulateur, lue pour une releve jouee ; `garder` la reecrit si elle a change.
-pub fn memoire(racine: &Path) -> R<Value> {
+pub fn memoire(racine: &Path) -> R<Memoire> {
     charger(racine)
 }
 
-pub fn garder(racine: &Path, avant: &Value, apres: &Value) -> R<()> {
+pub fn garder(racine: &Path, avant: &Memoire, apres: &Memoire) -> R<()> {
     if avant != apres {
         ecrire(racine, apres)?;
     }
@@ -549,9 +658,9 @@ mod tests {
         par_mois.insert(2, vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
         let janvier: f64 = 1.0 + 0.5 * 16.0 / 31.0 + 2.0 / 31.0;
         let attendu = ((janvier + 1.0) / 2.0 * 100.0).floor() / 100.0;
-        assert_eq!(effectif_annuel(2025, &par_mois), Some(attendu));
+        assert_eq!(effectif_annuel(2025, &par_mois).unwrap(), Some(attendu));
         assert_eq!(attendu, 1.16);
-        assert_eq!(effectif_annuel(2025, &BTreeMap::new()), None);
+        assert_eq!(effectif_annuel(2025, &BTreeMap::new()).unwrap(), None);
     }
 
     /// Le compte rendu 118 que le simulateur rend se lit par le lecteur des vrais (`releve_retours::reconstruire_effectifs`,
@@ -570,9 +679,10 @@ mod tests {
         let chemin = crate::transport::archiver(&racine, "", &p.retour, &p.contenu, "application/xml", "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
-        let e: Value = serde_json::from_str(&std::fs::read_to_string(racine.join(droit::contexte::EFFECTIFS)).unwrap()).unwrap();
-        assert_eq!(e["annees"]["2026"]["A01"]["valeur"], json!(11.42));
-        assert_eq!(e["annees"]["2025"]["A01"]["valeur"], json!(2.0));
+        let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte("{}", "la fiche").unwrap();
+        let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
+        assert_eq!(e.annees.get(&2026), Some(&11.42));
+        assert_eq!(e.annees.get(&2025), Some(&2.0));
         assert!(!crate::releve_retours::poser_effectif(&racine, 2026, 3.0, "2027-03-01").unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
