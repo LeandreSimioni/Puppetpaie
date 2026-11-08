@@ -625,7 +625,7 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
             None => {
                 return Err(socle::echec::avec(
                     "Le fichier de la DPAE n'a pas de nom : le signaler au développeur.",
-                    socle::echec::APart { chemin: Some(chemin.display().to_string()), ..socle::echec::APart::default() },
+                    socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
                 ))
             }
         };
