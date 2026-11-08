@@ -890,7 +890,11 @@ impl Fenetre {
         }
         let nom = r.params.get("c").cloned().unwrap_or_default();
         let rang: usize = r.params.get("p").and_then(|p| p.parse().ok()).unwrap_or(0);
-        let Some(brut) = envois::simulation_courriels::courriels(&racine).into_iter().find(|(n, _)| *n == nom).map(|(_, o)| o) else {
+        let joues = match envois::simulation_courriels::courriels(&racine) {
+            Ok(j) => j,
+            Err(e) => return Reponse::nouvelle(500, "text/plain", e.phrase().into_bytes()),
+        };
+        let Some(brut) = joues.into_iter().find(|(n, _)| *n == nom).map(|(_, o)| o) else {
             return Reponse::nouvelle(404, "text/plain", Vec::new());
         };
         let Ok(m) = mailparse::parse_mail(&brut) else { return Reponse::nouvelle(404, "text/plain", Vec::new()) };

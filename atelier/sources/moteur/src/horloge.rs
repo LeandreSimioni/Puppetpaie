@@ -138,7 +138,7 @@ impl Courriel for BoiteMuette {
     }
 
     fn envoyer(&mut self, _message_mime: &[u8]) -> Result<String, ErreurCourriel> {
-        Ok(format!("<{}@fictive.puppetpaie>", envois::courriel::hexa_au_hasard(8)))
+        Ok(format!("<{}@fictive.puppetpaie>", envois::courriel::hexa_au_hasard(8)?))
     }
 
     fn rechercher(&mut self, _requete: &str, _maximum: usize) -> Result<Vec<String>, ErreurCourriel> {

@@ -1,14 +1,14 @@
 //! La boite simulee des compagnies fictives : elle garde ce qu'on lui envoie, sans rien envoyer.
 
 use envois::courriel::{BoiteSimulee, Courriel};
-use serde_json::json;
 
 use crate::outils::dossier_de_test;
 
 #[test]
 fn boite_simulee_garde_sans_envoyer() {
     let r = dossier_de_test("courriel", "boite-envoi");
-    let mut b = BoiteSimulee::nouvelle(&r, &droit::fiche::lire_champs(&json!({"signataire": {"email": "direction@demo.invalid"}}), "la fiche").unwrap());
+    let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte(r#"{"signataire": {"email": "direction@demo.invalid"}}"#, "la fiche").unwrap();
+    let mut b = BoiteSimulee::nouvelle(&r, &fiche).unwrap();
     let m1 = b"From: a@b.fr\nMessage-ID: <un.deux@demo.invalid>\nSubject: un\n\ncorps\n".to_vec();
     let m2 = b"From: a@b.fr\nSubject: sans identifiant\n\ncorps\n".to_vec();
     assert_eq!(b.envoyer(&m1).unwrap(), "<un.deux@demo.invalid>");

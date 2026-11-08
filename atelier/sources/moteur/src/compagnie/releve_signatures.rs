@@ -34,15 +34,15 @@ use envois::simulation_courriels::BoiteQuiRepond;
 /// au code dans les termes de `CORPS_REPONSE`) ; la vraie releve la lit, note la signature, contresigne le contrat et le
 /// renvoie au salarie.
 pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
-    let mut boite = BoiteQuiRepond::nouvelle(ctx);
+    let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let attendues = etats::signatures_attendues(|c| ctx.salaries.get(c).map(|f| &f.champs), &lignes, None);
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
-    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine);
+    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in &attendues {
         let code = a.code.clone();
         let nom = a.nom.clone();
-        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a)) {
+        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a))? {
             Some(b) => b,
             None => (
                 "Re: contrat".to_string(),

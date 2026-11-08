@@ -2518,16 +2518,16 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
 /// depuis `delai` secondes y trouve sa reponse remplie ; la vraie releve la lit et cree la fiche. Ce qu'on y envoie
 /// s'ecrit comme tout courriel joue (`BoiteQuiRepond`, partagee avec `BoiteDesSignatures`).
 pub fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
-    let mut boite = BoiteQuiRepond::nouvelle(ctx);
+    let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
     let maintenant_naif = socle::paris::maintenant_naif();
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
-    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine);
+    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
         let age = socle::paris::naif_de_iso(&a.quand).map_or(0, |t| maintenant_naif - t);
         if age < delai {
             continue;
         }
-        let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes);
+        let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
         let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| erreur("ValueError", m))?;
         boite.repondre(&a.code, brut);
     }

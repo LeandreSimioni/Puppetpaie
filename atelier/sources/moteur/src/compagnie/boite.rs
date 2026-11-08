@@ -72,8 +72,8 @@ pub fn verifier(racine: &Path) -> Result<Value, ErreurCourriel> {
             "conseil": "route coffre-poser, service courriel, compte adresse@..."
         }));
     }
-    match client(racine) {
-        Ok(c) => Ok(envois::courriel::verifier(c)),
+    match client(racine).and_then(envois::courriel::verifier) {
+        Ok(message) => Ok(json!({"ok": true, "message": message, "conseil": ""})),
         Err(e) => Ok(json!({"ok": false, "message": e.0.lines().next().unwrap_or(""), "conseil": ""})),
     }
 }

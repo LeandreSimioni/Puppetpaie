@@ -18,5 +18,5 @@ pub fn courriels_fictifs(ctx: &Contexte, charge: &ChargeCourrielsFictifs) -> R<C
     if !crate::compagnie::bridage::branchement(&ctx.racine).joue() {
         return Err(erreur("ErreurOperation", "Seulement dans la compagnie fictive."));
     }
-    Ok(envois::simulation_courriels::courriels_joues(&ctx.racine, charge.apres.as_deref().unwrap_or("")))
+    envois::simulation_courriels::courriels_joues(&ctx.racine, charge.apres.as_deref())
 }

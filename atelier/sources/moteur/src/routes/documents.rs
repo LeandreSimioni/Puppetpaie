@@ -657,7 +657,7 @@ pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
     let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
     branchement.ouvrir()?;
     if branchement.joue() {
-        return Ok(Box::new(BoiteSimulee::du_contexte(ctx)));
+        return Ok(Box::new(BoiteSimulee::du_contexte(ctx)?));
     }
     if !crate::compagnie::boite::disponible(&ctx.racine) {
         return Err(erreur(

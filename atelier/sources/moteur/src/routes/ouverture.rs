@@ -1799,7 +1799,7 @@ pub(crate) struct Coulisses {
 struct CourrielsFictifs {
     phrase: String,
     courriels: Vec<envois::simulation_courriels::CourrielJoue>,
-    dernier: String,
+    dernier: Option<String>,
     intro: String,
     circuits: Circuits,
     phrases: Vec<String>,
@@ -1808,7 +1808,14 @@ struct CourrielsFictifs {
 /// La route `courriels-fictifs`.
 fn courriels_fictifs(ctx: &Contexte, charge: &crate::simulation_courriels::ChargeCourrielsFictifs) -> R<CourrielsFictifs> {
     let joues = crate::simulation_courriels::courriels_fictifs(ctx, charge)?;
-    let phrases: Vec<String> = joues.courriels.iter().map(|m| format!("{} → {} : {}", m.de, m.a, m.sujet)).collect();
+    let phrases: Vec<String> = joues
+        .courriels
+        .iter()
+        .map(|m| match &m.sujet {
+            Some(sujet) => format!("{} → {} : {}", m.de, m.a, sujet),
+            None => format!("{} → {}", m.de, m.a),
+        })
+        .collect();
     // Ce que la fenetre d'une compagnie fictive en dit : combien sont joues, et le circuit de chaque genre.
     let n = phrases.len();
     let s = if n > 1 { "s" } else { "" };
