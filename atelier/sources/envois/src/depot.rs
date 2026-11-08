@@ -121,14 +121,18 @@ fn nettoye(s: &str) -> &str {
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
 pub fn verifier(a: &DsnLue, reel: bool, mois_confirme: Option<&str>, presence_prouvee: bool) -> Resultat<()> {
-    let nature_envoi = a.nature_envoi.as_deref().unwrap_or("");
-    if reel && nature_envoi != NATURE_REEL {
+    let nature_envoi = a.nature_envoi.as_deref();
+    if reel && nature_envoi != Some(NATURE_REEL) {
+        let porte = match nature_envoi {
+            Some(n) => format!("porte {}='{}'", RUB_NATURE, n),
+            None => format!("ne porte pas {}", RUB_NATURE),
+        };
         return Err(depot_refuse(format!(
-            "Le fichier porte {}='{}' (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
-            RUB_NATURE, nature_envoi
+            "Le fichier {} (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
+            porte
         )));
     }
-    if !reel && nature_envoi != NATURE_REEL {
+    if !reel && nature_envoi != Some(NATURE_REEL) {
         return Ok(());
     }
     if reel {

@@ -7,11 +7,9 @@
 //! Dans le binaire de l'atelier, un organisme qui n'est pas redirige vers un faux serveur local n'est pas appele, hors
 //! compagnie fictive (`commandes::actes::refuser_si_pas_redirige`).
 
-use serde_json::Value;
 
 use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::rendu::{champ, texte};
 use crate::commandes::Cadre;
 use socle::date::Jour;
 use socle::echec::Echec;
@@ -74,19 +72,19 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     for i in &r.incidents {
         dire!("  {}", i);
     }
-    let mut trouves: Vec<&Value> = r.trouves.iter().filter(|x| flux.is_empty() || champ(x, "flux") == flux).collect();
-    trouves.sort_by_key(|x| champ(x, "publication"));
+    let dit = |t: &Option<String>| t.clone().unwrap_or_else(|| "None".into());
+    let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_empty() || x.flux.as_deref() == Some(flux)).collect();
+    trouves.sort_by_key(|x| x.publication.clone());
     dire!("{} retour(s), dont {} nouveau(x).\n", trouves.len(), r.nouveaux.len());
     for x in trouves {
-        let nature = x.get("nature").map(texte).unwrap_or_default();
         dire!(
             "  {} {}  nature {:<4} {:<8} {}  flux {}",
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
-            envois::releve_retours::date_publication(x),
-            nature,
-            champ(x, "statut"),
-            envois::retours::libelle_nature(&nature),
-            champ(x, "flux")
+            envois::releve_retours::date_publication(x).unwrap_or_else(|| "?".into()),
+            x.nature,
+            dit(&x.statut),
+            envois::retours::libelle_nature(&x.nature),
+            dit(&x.flux)
         );
     }
     for quoi in &r.a_faire {

@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use socle::ecriture::ecrire_json;
-use envois::etats::{get, items};
-use crate::valeur::{nom_type, valeur_en_texte, valeurs_egales};
+use crate::dico::items;
+use crate::valeur::{get, nom_type, valeur_en_texte, valeurs_egales};
 use socle::echec::R;
 use socle::echec::erreur;
 use crate::valeur::vrai;

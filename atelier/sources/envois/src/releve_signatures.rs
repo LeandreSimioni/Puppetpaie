@@ -24,8 +24,19 @@ use socle::echec::R;
 use socle::paris::maintenant;
 
 /// La fin du nom de l'exemplaire contresigne d'un contrat (le contrat parti, `<souche>` ; contresigne, `<souche>_signe.pdf`) :
-/// la piece jointe du courriel qui le renvoie au signataire.
+/// la piece jointe du courriel qui le renvoie au signataire. Ses lecteurs passent par `nom_contresigne` et
+/// `souche_contresignee`.
 pub const SUFFIXE_CONTRESIGNE: &str = "_signe.pdf";
+
+/// Le nom de l'exemplaire contresigne du contrat de souche `souche`.
+pub fn nom_contresigne(souche: &str) -> String {
+    format!("{}_signe.pdf", souche)
+}
+
+/// La souche du contrat dont `nom` est l'exemplaire contresigne ; aucune si `nom` n'en est pas un.
+pub fn souche_contresignee(nom: &str) -> Option<&str> {
+    nom.strip_suffix("signe.pdf")?.strip_suffix('_')
+}
 
 const SUJET_CONTRESIGNE: &str = "Ton contrat signé - {spectacle}";
 const SUJET_CONTRESIGNE_PLURIEL: &str = "Tes contrats signés - {mois} {annee}";
@@ -131,7 +142,9 @@ pub struct Reponse {
 /// la boite de la compagnie. Ce qui ecarte une reponse se dit dans `incidents`. `Err` : la boite ne repond pas (une erreur
 /// de transport ne se corrige pas en essayant le code suivant).
 pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &str, incidents: &mut Vec<String>) -> Result<Option<Reponse>, ()> {
-    let (code, a_nom, a_adresse) = (a.code.clone(), a.nom.clone(), a.adresse.clone());
+    // Une demande partie sans adresse (remise en main propre) n'attend pas de reponse par courriel.
+    let Some(a_adresse) = a.adresse.clone() else { return Ok(None) };
+    let (code, a_nom) = (a.code.clone(), a.nom.clone());
     let envoyes = identifiants_de(a);
     let identifiants = match client.rechercher(&format!("\"{}\"", code), 10) {
         Ok(i) => i,
@@ -153,7 +166,13 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         };
         // Un bloc d'en-tetes rompu se recoupe, et le message se lit quand meme.
         let lu = lecture::recouper_les_entetes(&brut);
-        let Ok(m) = mailparse::parse_mail(&lu) else { continue };
+        let m = match mailparse::parse_mail(&lu) {
+            Ok(m) => m,
+            Err(e) => {
+                incidents.push(format!("Lecture du message {} : {}", ident, e));
+                continue;
+            }
+        };
         if envoyes.contains(&lecture::identifiant_de(&m)) {
             continue; // notre propre demande, par son en-tete
         }
@@ -210,12 +229,16 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
             spectacles.push(x.spectacle.clone());
         }
     }
-    let avenant_de = |x: &ContratAttendu| x.avenant.filter(|v| *v != 0).or(a.avenant).map(|v| v.to_string()).unwrap_or_default();
-    let numeros: Vec<String> = c.contrats.iter().map(avenant_de).collect();
+    // Le numero de l'avenant : celui du contrat, sinon celui de la demande.
+    let numero = c.contrats.first().and_then(|x| x.avenant.filter(|v| *v != 0).or(a.avenant));
     let (sujet, quoi) = if c.est_avenant {
         (
             format!("{} - {}", if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" }, spectacles[0]),
-            if nb == 1 { format!("l'avenant n° {} à ton contrat", numeros[0]) } else { format!("tes {} avenants (un document chacun)", nb) },
+            match (nb, numero) {
+                (1, Some(n)) => format!("l'avenant n° {} à ton contrat", n),
+                (1, None) => "l'avenant à ton contrat".to_string(),
+                _ => format!("tes {} avenants (un document chacun)", nb),
+            },
         )
     } else {
         (

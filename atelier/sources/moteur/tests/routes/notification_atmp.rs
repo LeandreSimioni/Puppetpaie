@@ -33,6 +33,7 @@ fn notification(racine: &Path, nom: &str, siren: &str, nic: &str, taux_at: &[(&s
 
 fn suites(racine: &Path, notifications: Vec<(Value, PathBuf)>) -> Vec<String> {
     let ctx = droit::contexte::Contexte::nouveau(racine, None).unwrap();
+    let notifications = notifications.into_iter().map(|(v, p)| (serde_json::from_value(v).unwrap(), p)).collect();
     let s = envois::suites::Suites { taux_atmp: notifications, ..Default::default() };
     let faites = moteur::compagnie::suites::faire(&ctx, s).unwrap();
     assert!(faites.incidents.is_empty(), "{:?}", faites.incidents);

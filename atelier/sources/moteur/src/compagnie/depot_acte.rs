@@ -212,7 +212,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
     // celui d'un test revient bel et bien (constate sur des DPAE de test : le certificat 41 les dit enregistrees,
     // code 99).
     if let (etats::EtatDuTest::Testee, Some(l)) = (etat.etat, &etat.conforme) {
-        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: Some(etat.flux_conforme()), empreinte: etat.empreinte.clone(), compte_rendu: Some(etat.compte_rendu.to_string()), contournement: None });
+        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu.map(str::to_string), contournement: None });
     }
     let raison = contournement.trim();
     if !raison.is_empty() {

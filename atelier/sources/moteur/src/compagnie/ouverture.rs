@@ -235,8 +235,8 @@ impl Ouverture {
                 "archives_detail": r.archives.iter().map(|a| json!({
                     "chemin": a.chemin.to_string_lossy(),
                     "fichier": a.chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                    "nature": a.retour.get("nature").cloned().unwrap_or(Value::Null),
-                    "libelle": envois::retours::libelle_nature(&a.retour.get("nature").map(valeur_en_texte).unwrap_or_else(|| "None".to_string())),
+                    "nature": a.retour.nature,
+                    "libelle": envois::retours::libelle_nature(&a.retour.nature),
                 })).collect::<Vec<_>>(),
                 "rattaches": r.rattaches,
             })
@@ -360,9 +360,7 @@ fn noter_ouverture(ctx: &Contexte, r: &Ouverture) {
         // Un journal illisible ne doit pas empecher la trace (l'ouverture n'echoue jamais).
         envois::journal::lu(&ctx.racine).map(|j| etats::flux_de_test(&j.lignes)).unwrap_or_default()
     };
-    let hors_tests = |liste: &[Value]| -> usize {
-        liste.iter().filter(|x| !tests.iter().any(|t| x.get("flux").and_then(Value::as_str) == Some(t.as_str()))).count()
-    };
+    let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_deref() == Some(t.as_str()))).count() };
     let (trouves, nouveaux) = match &r.releve {
         Some(rel) => (hors_tests(&rel.trouves), hors_tests(&rel.nouveaux)),
         None => (0, 0),

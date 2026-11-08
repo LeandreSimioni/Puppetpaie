@@ -837,7 +837,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     if repetition.etat == etats::EtatDuTest::EnTest {
         let (debut, fin) = releve_retours::derniere_journee();
         let releve = match d.quoi {
-            Quoi::Dpae => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, &repetition.flux_conforme()),
+            Quoi::Dpae => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, repetition.flux_conforme().as_deref().unwrap_or_default()),
             Quoi::Dsn => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, ""),
         };
         incident = match releve {
@@ -1006,7 +1006,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     // L'identite d'une embauche se compare aux cases de la fiche par leur nom : en JSON.
     let vues: Vec<(String, Value)> = ctx.salaries.iter().map(|(k, f)| (k.to_string(), socle::ecriture::en_valeur(&f.champs))).collect();
     for (cle, s) in &vues {
-        let nir = etats::get(s, "nir")?;
+        let nir = envois::valeur::get(s, "nir")?;
         if !vrai(nir) {
             continue;
         }

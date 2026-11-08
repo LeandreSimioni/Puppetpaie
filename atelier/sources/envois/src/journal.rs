@@ -59,20 +59,31 @@ pub fn empreinte_fichier(chemin: &Path) -> Resultat<String> {
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enregistrement {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     ligne: Option<Ligne>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     a: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    retour: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retour: Option<Retour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     nature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     publication: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     complete: Option<Verdict>,
+}
+
+/// CE QUI REVIENT D'UN ENVOI, dans la forme de sa sorte : un compte rendu d'organisme (une DSN, une DPAE), un contrat
+/// signe, une fiche recue. Les trois formes n'ont pas les memes cles exigees, et aucune n'accepte une cle de plus : le
+/// retour se reconnait a sa forme, et `Tenu::replier` verifie qu'elle est celle de la sorte de son envoi.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum Retour {
+    Organisme(RetourOrganisme),
+    Contrat(RetourContrat),
+    Fiche(RetourFiche),
 }
 
 /// LE JOURNAL LU : ses lignes (ce qui est parti et ce qui en est revenu : bilans, contrats signes, anomalies), et ce qui
@@ -88,11 +99,12 @@ pub struct Journal {
 }
 
 /// Le journal d'un dossier tel que le processus l'a replie : les octets lus jusqu'a la derniere fin de ligne, ce que
-/// le systeme de fichiers en disait (taille, date), le journal, et l'indice de chaque `id`.
+/// le systeme de fichiers en disait (taille, date ; `None` : le fichier n'existait pas), le journal, et l'indice de
+/// chaque `id`.
 #[derive(Default)]
 struct Tenu {
     octets: Vec<u8>,
-    vu: (u64, Option<std::time::SystemTime>),
+    vu: Option<(u64, std::time::SystemTime)>,
     journal: Journal,
     index: HashMap<String, usize>,
 }
@@ -101,7 +113,12 @@ type Tenus = Mutex<HashMap<PathBuf, Tenu>>;
 
 fn tenus() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Tenu>> {
     static TENUS: OnceLock<Tenus> = OnceLock::new();
-    TENUS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    socle::memoire::tenu(TENUS.get_or_init(Default::default))
+}
+
+/// Ce que le systeme de fichiers dit du journal `p` (taille, date).
+fn vu(meta: &std::fs::Metadata, p: &Path) -> Resultat<(u64, std::time::SystemTime)> {
+    Ok((meta.len(), meta.modified().map_err(|e| socle::echec::du_disque(&p, &e))?))
 }
 
 /// Une ligne de journal qui compte pour ce qui est parti malgre ses retours : un envoi au salarie (documents,
@@ -111,19 +128,20 @@ fn depend_de_ses_retours(l: &Ligne) -> Option<bool> {
 }
 
 /// La phrase d'un journal qui ne se lit pas, sa ligne nommee.
-fn abime(p: &Path, n: usize) -> String {
-    format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, p.display())
+fn abime(n: usize) -> String {
+    format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée.", n)
 }
 
-/// Le retour `r` lu dans la forme `T` de la sorte de son envoi.
-fn retour_de<T: serde::de::DeserializeOwned>(r: &serde_json::Value, p: &Path, n: usize) -> Resultat<T> {
-    socle::forme::lire(r, &abime(p, n))
+/// Le refus du journal `p` dont la ligne `n` ne se lit pas : la phrase dit ce qui ne va pas (`quoi`), le chemin va a
+/// part (`echec::du_disque`).
+fn abime_a(p: &Path, n: usize, quoi: &str) -> String {
+    socle::echec::du_disque(&p, &format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, quoi))
 }
 
 impl Tenu {
     /// Replie un enregistrement (`n` : sa ligne dans le fichier, pour le dire s'il ne se lit pas).
     fn replier(&mut self, e: Enregistrement, n: usize, p: &Path) -> Resultat<()> {
-        let illisible = |quoi: &str| format!("{} : {}.", abime(p, n), quoi);
+        let illisible = |quoi: &str| abime_a(p, n, quoi);
         match e {
             Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature: None, publication: None, complete: None } => {
                 if self.index.contains_key(&id) {
@@ -141,39 +159,38 @@ impl Tenu {
                 let i = *self.index.get(&a).ok_or_else(|| illisible("ce qui revient d'un envoi que le journal ne porte pas"))?;
                 let lignes = Arc::make_mut(&mut self.journal.lignes);
                 let avant = depend_de_ses_retours(&lignes[i]);
-                match (retour, complete) {
-                    (Some(r), None) if nature.is_none() && publication.is_none() => match &mut lignes[i] {
+                match (retour, nature, complete) {
+                    (Some(r), None, None) if publication.is_none() => match (&mut lignes[i], r) {
                         // LE MEME RETOUR, RANGE SUR DEUX POSTES, NE COMPTE QU'UNE FOIS. Un compte rendu d'organisme se
                         // reconnait a sa nature et a sa publication (`etats::rattacher_retours` n'en range qu'un par envoi) :
                         // ce que l'autre poste en savait de plus (un verdict) le complete ; ce qui revient d'un envoi au
                         // salarie, a lui-meme.
-                        Ligne::Dsn(l) => ranger_organisme(&mut l.retours, retour_de(&r, p, n)?),
-                        Ligne::Dpae(l) => ranger_organisme(&mut l.retours, retour_de(&r, p, n)?),
-                        Ligne::ContratSignature(l) => ranger_une_fois(&mut l.retours, retour_de(&r, p, n)?),
-                        Ligne::FicheDemande(l) => ranger_une_fois(&mut l.retours, retour_de(&r, p, n)?),
-                        _ => return Err(illisible("un retour sur un envoi dont rien ne revient")),
+                        (Ligne::Dsn(l), Retour::Organisme(r)) => ranger_organisme(&mut l.retours, r),
+                        (Ligne::Dpae(l), Retour::Organisme(r)) => ranger_organisme(&mut l.retours, r),
+                        (Ligne::ContratSignature(l), Retour::Contrat(r)) => ranger_une_fois(&mut l.retours, r),
+                        (Ligne::FicheDemande(l), Retour::Fiche(r)) => ranger_une_fois(&mut l.retours, r),
+                        _ => return Err(illisible("un retour qui n'a pas la forme de ce que son envoi reçoit")),
                     },
-                    (None, Some(v)) => {
+                    (None, Some(nature), Some(v)) => {
                         let retours = match &mut lignes[i] {
                             Ligne::Dsn(l) => &mut l.retours,
                             Ligne::Dpae(l) => &mut l.retours,
-                            _ => return Err(illisible("le complement d'un retour sur un envoi dont rien ne revient")),
+                            _ => return Err(illisible("le complément d'un retour, sur un envoi dont rien ne revient")),
                         };
-                        let nature = nature.unwrap_or_default();
                         let r = retours
                             .iter_mut()
                             .find(|r| r.nature == nature && r.publication == publication)
-                            .ok_or_else(|| illisible("un complement d'un retour que l'envoi ne porte pas"))?;
+                            .ok_or_else(|| illisible("le complément d'un retour que l'envoi ne porte pas"))?;
                         r.poser(v);
                     }
-                    _ => return Err(illisible("ce qui revient d'un envoi, sans `retour` ni `complete`")),
+                    _ => return Err(illisible("ce qui revient d'un envoi n'y est ni un retour ni son complément")),
                 }
                 if depend_de_ses_retours(&lignes[i]) != avant {
                     self.journal.departs = departs_des_lignes(lignes);
                 }
                 Ok(())
             }
-            _ => Err(illisible("ni un envoi (`id`, `ligne`), ni ce qui lui revient (`a`)")),
+            _ => Err(illisible("ni un envoi, ni ce qui lui revient")),
         }
     }
 
@@ -197,8 +214,8 @@ impl Tenu {
 
 /// L'enregistrement de la ligne `n` du fichier `p`, lu strictement.
 fn lire_enregistrement(texte: &[u8], p: &Path, n: usize) -> Resultat<Enregistrement> {
-    let texte = std::str::from_utf8(texte).map_err(|e| format!("{} : {}.", abime(p, n), e))?;
-    socle::forme::lire_texte(texte, &abime(p, n))
+    let texte = std::str::from_utf8(texte).map_err(|_| abime_a(p, n, "elle n'est pas du texte"))?;
+    socle::forme::lire_texte(texte, &abime(n)).map_err(|e| socle::echec::du_disque(&p, &e))
 }
 
 /// Un compte rendu d'organisme de plus, ou ce qu'il apporte au meme (sa nature, sa publication) deja range.
@@ -216,19 +233,20 @@ fn ranger_une_fois<T: PartialEq>(retours: &mut Vec<T>, r: T) {
     }
 }
 
-/// Le journal de `p` replie a jour de ce que porte le fichier ; `None` s'il n'existe pas.
-fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<Option<&'t mut Tenu>> {
+/// Le journal de `p` replie a jour de ce que porte le fichier ; vide (`vu` a `None`) s'il n'existe pas.
+fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<&'t mut Tenu> {
     let meta = match std::fs::metadata(p) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tenus.remove(p);
-            return Ok(None);
+            let t = tenus.entry(p.to_path_buf()).or_default();
+            *t = Tenu::default();
+            return Ok(t);
         }
         Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     };
-    let vu = (meta.len(), meta.modified().ok());
+    let vu = Some(vu(&meta, p)?);
     if tenus.get(p).is_some_and(|t| t.vu == vu) {
-        return Ok(tenus.get_mut(p));
+        return Ok(tenus.entry(p.to_path_buf()).or_default());
     }
     let octets = std::fs::read(p).map_err(|e| socle::echec::du_disque(&p, &e))?;
     // Ce qui a ete lu reste en tete du fichier, puisqu'on n'y fait qu'ajouter : seul le reste se replie. Un fichier
@@ -240,18 +258,18 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<Optio
     let debut = t.octets.len();
     t.replier_le_texte(&octets[debut..], p)?;
     t.vu = vu;
-    Ok(Some(tenus.entry(p.to_path_buf()).or_insert(t)))
+    Ok(tenus.entry(p.to_path_buf()).insert_entry(t).into_mut())
 }
 
 /// `journal/depots.jsonl` lu (`Journal`) ; vide s'il n'existe pas.
 pub fn lu(racine: &Path) -> Resultat<Journal> {
     let p = chemin(racine);
-    let j = match a_jour(&mut tenus(), &p)? {
-        Some(t) => t.journal.clone(),
-        None => return Ok(Journal::default()),
-    };
-    socle::fichiers::noter_si_besoin(&p);
-    Ok(j)
+    let mut tenus = tenus();
+    let t = a_jour(&mut tenus, &p)?;
+    if t.vu.is_some() {
+        socle::fichiers::noter_si_besoin(&p);
+    }
+    Ok(t.journal.clone())
 }
 
 /// LE SEUL ENDROIT QUI ECRIT LE JOURNAL : les enregistrements que `faire` tire du journal a jour s'ajoutent a la fin du
@@ -259,18 +277,14 @@ pub fn lu(racine: &Path) -> Resultat<Journal> {
 fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) -> Resultat<Vec<Enregistrement>>) -> Resultat<()> {
     let p = chemin(racine);
     let mut tenus = tenus();
-    let vide = Tenu::default();
-    let (j, index) = match a_jour(&mut tenus, &p)? {
-        Some(t) => (&t.journal, &t.index),
-        None => (&vide.journal, &vide.index),
-    };
-    let enregistrements = faire(j, index)?;
+    let t = a_jour(&mut tenus, &p)?;
+    let enregistrements = faire(&t.journal, &t.index)?;
     if enregistrements.is_empty() {
         return Ok(());
     }
     let mut texte = String::new();
     for e in &enregistrements {
-        texte.push_str(&serde_json::to_string(e).map_err(|x| x.to_string())?);
+        texte.push_str(&socle::ecriture::json_en_ligne(e));
         texte.push('\n');
     }
     if let Some(dossier) = p.parent() {
@@ -282,21 +296,27 @@ fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) 
         f.write_all(texte.as_bytes()).map_err(|e| socle::echec::du_disque(&p, &e))?;
     }
     let meta = std::fs::metadata(&p).map_err(|e| socle::echec::du_disque(&p, &e))?;
-    let mut t = tenus.remove(&p).unwrap_or_default();
-    // Un autre processus a pu ajouter entre la lecture et l'ecriture : le journal se relira alors du fichier.
-    if t.octets.len() + texte.len() == meta.len() as usize {
+    // Ce que le processus tient se replie de ce qu'il vient d'ecrire ; si un autre processus a ajoute entre la lecture
+    // et l'ecriture, le journal se relira du fichier.
+    let t = tenus.remove(&p);
+    if let Some(mut t) = t.filter(|t| t.octets.len() + texte.len() == meta.len() as usize) {
         t.replier_le_texte(texte.as_bytes(), &p)?;
-        t.vu = (meta.len(), meta.modified().ok());
+        t.vu = Some(vu(&meta, &p)?);
         tenus.insert(p, t);
     }
     Ok(())
 }
 
 /// Ne garde du journal de `racine` que les envois que `garder` retient, et ce qui leur est revenu : le journal d'une
-/// compagnie montee depuis une autre (`moteur::compagnie::essai`). Le fichier se remplace d'un coup.
+/// compagnie montee depuis une autre (`moteur::compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
+/// n'est a garder.
 pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat<()> {
     let p = chemin(racine);
-    let Ok(octets) = std::fs::read(&p) else { return Ok(()) };
+    let octets = match std::fs::read(&p) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
+    };
     let mut gardes: std::collections::HashSet<String> = Default::default();
     let mut texte = String::new();
     for (n, l) in octets.split(|&o| o == b'\n').enumerate() {
@@ -379,19 +399,32 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant
     if !quand.is_empty() && origine.is_empty() {
         return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine"));
     }
-    let (q, o) = DATE.with(|d| d.borrow().clone()).unwrap_or_else(|| ((if quand.is_empty() { maintenant.to_string() } else { quand.clone() }), origine.clone()));
-    *quand = q;
-    *origine = o;
+    match DATE.with(|d| d.borrow().clone()) {
+        Some((q, o)) => {
+            *quand = q;
+            *origine = o;
+        }
+        None if quand.is_empty() => *quand = maintenant.to_string(),
+        None => {}
+    }
     if let Some(f) = fichier.filter(|f| !f.as_os_str().is_empty()) {
-        let nom = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let nom = f
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .ok_or_else(|| socle::echec::du_disque(&f, &"Le fichier d'un envoi n'a pas de nom : le signaler au développeur.".to_string()))?;
         let e = if f.exists() { Some(empreinte_fichier(f)?) } else { None };
         poser_fichier(&mut ligne, nom, e);
     }
     let ecrite = ligne.clone();
     ajouter(racine, |_, index| {
         // L'empreinte du texte de la ligne ; deux lignes au meme texte se distinguent par leur rang.
-        let base = self::empreinte(serde_json::to_string(&ligne).map_err(|x| x.to_string())?.as_bytes());
-        let id = std::iter::once(base.clone()).chain((2..).map(|k| format!("{}-{}", base, k))).find(|id| !index.contains_key(id)).unwrap_or(base);
+        let base = self::empreinte(socle::ecriture::json_en_ligne(&ligne).as_bytes());
+        let mut id = base.clone();
+        let mut rang = 1;
+        while index.contains_key(&id) {
+            rang += 1;
+            id = format!("{}-{}", base, rang);
+        }
         Ok(vec![Enregistrement { id: Some(id), ligne: Some(ligne), ..Default::default() }])
     })?;
     Ok(ecrite)
@@ -449,10 +482,9 @@ pub fn rattacher(racine: &Path, envoi: impl Fn(&Ligne) -> bool, retour: Revenu) 
         }
         trouvee = Some(i);
         let r = match &retour {
-            Revenu::Contrat(r) => serde_json::to_value(r),
-            Revenu::Fiche(r) => serde_json::to_value(r),
-        }
-        .map_err(|x| x.to_string())?;
+            Revenu::Contrat(r) => Retour::Contrat(r.clone()),
+            Revenu::Fiche(r) => Retour::Fiche(r.clone()),
+        };
         Ok(vec![Enregistrement { a: Some(j.ids[i].clone()), retour: Some(r), ..Default::default() }])
     })?;
     Ok(match trouvee {
@@ -477,7 +509,7 @@ pub fn ranger(racine: &Path, rangements: Vec<(usize, Rangement)>) -> Resultat<()
             .map(|(i, r)| {
                 let a = Some(j.ids.get(i).ok_or_else(|| format!("journal : aucune ligne {}", i))?.clone());
                 Ok(match r {
-                    Rangement::Retour(retour) => Enregistrement { a, retour: Some(serde_json::to_value(retour).map_err(|x| x.to_string())?), ..Default::default() },
+                    Rangement::Retour(retour) => Enregistrement { a, retour: Some(Retour::Organisme(retour)), ..Default::default() },
                     Rangement::Complement { nature, publication, verdict } => Enregistrement { a, nature: Some(nature), publication, complete: Some(verdict), ..Default::default() },
                 })
             })
@@ -518,7 +550,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
     }
     let mois = matches!(envoi, Envoi::Documents | Envoi::Dsn).then(|| l.mois().map(|m| m.to_string())).flatten();
     let le = l.quand().to_string();
-    for v in l.versions().unwrap_or_default() {
+    for v in l.versions().into_iter().flatten() {
         // La correction d'un mois passe que la DSN porte : sa version est celle de l'engagement du mois corrige.
         let corrige = (envoi == Envoi::Dsn).then(|| v.mois.map(|m| m.to_string())).flatten().filter(|m| Some(m) != mois.as_ref());
         let (m, par) = match corrige {
@@ -594,17 +626,18 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> Resultat<i64> {
         if !signalement {
             continue;
         }
-        match e.detail.ordre.as_deref().and_then(|o| o.trim().parse::<i64>().ok()) {
-            Some(o) => dernier = dernier.max(o),
-            None if e.accepte => {
-                return Err(socle::echec::avec(
-                    format!(
-                        "Le journal des envois note le signalement reel du {} sans son numero d'ordre, lu en S20.G00.05.004 du fichier envoye. Le numero d'ordre d'un signalement ne se remet jamais a zero (cahier technique DSN, p. 136) : sans lui, le suivant ne se numerote pas. Le signaler au developpeur. Rien n'est ecrit.",
-                        e.quand,
-                    ),
-                    serde_json::json!({"chemin": chemin(racine).to_string_lossy(), "fichier": e.fichier.as_deref().unwrap_or("?"), "cle": "detail.ordre"}),
-                ))
-            }
+        let sans_ordre = || {
+            socle::echec::avec(
+                format!(
+                    "Le journal des envois note le signalement reel du {} sans son numero d'ordre, lu en S20.G00.05.004 du fichier envoye. Le numero d'ordre d'un signalement ne se remet jamais a zero (cahier technique DSN, p. 136) : sans lui, le suivant ne se numerote pas. Le signaler au developpeur. Rien n'est ecrit.",
+                    e.quand,
+                ),
+                socle::echec::APart { chemin: Some(chemin(racine).to_string_lossy().into_owned()), fichier: e.fichier.clone(), cle: Some("detail.ordre".to_string()), detail: None },
+            )
+        };
+        match e.detail.ordre.as_deref() {
+            Some(o) => dernier = dernier.max(o.trim().parse::<i64>().map_err(|_| sans_ordre())?),
+            None if e.accepte => return Err(sans_ordre()),
             None => {}
         }
     }

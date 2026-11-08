@@ -26,7 +26,7 @@ fn liste(v: &Value, cle: &str) -> Vec<Value> {
 
 fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
     let maintenant = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
-    let d = envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier", &maintenant)?;
+    let d = socle::ecriture::en_valeur(&envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier", &maintenant)?);
     let (trouves, ajoutes) = (liste(&d, "trouves"), liste(&d, "ajoutes"));
     for x in liste(&d, "inconnus") {
         dire!("Non rattache : {}", texte(&x));

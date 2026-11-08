@@ -2,25 +2,18 @@
 //! retours, les contrats partis, les signatures attendues, les embauches declarees. Rien n'y calcule de paie. Les lignes
 //! se lisent dans leur forme (`journal::Ligne`) ; un contrat se designe par sa `Paire` (la cle du salarie, le numero du
 //! contrat, ou `""`).
-//!
-//! `Dico`, `items` et les lectures de `crate::valeur` qu'il reexporte servent d'autres modules qui lisent encore des
-//! `Value` : aucun ne lit le journal.
 
 use droit::fiche::Lue as _;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde::Serialize;
 
-use crate::valeur::vrai;
 use socle::mois::Mois;
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
-use crate::retours;
+use crate::retours::{self, Annonce};
 use socle::echec::{erreur, Echec, R};
-use crate::valeur::{nom_type, nombre, valeur_en_texte};
-pub use crate::valeur::{get, getd, objet_vide, ou, texte_vide};
 use crate::tables_journal::ALNUM;
 
 pub const DSN: &str = "dsn";
@@ -36,105 +29,6 @@ pub const NATURES_DPAE: [(&str, &str); 4] = [
     ("20", "bilan d'identification des salaries"),
     ("41", "certificat de conformite des DPAE"),
 ];
-
-pub fn est(v: &Value, s: &str) -> bool {
-    v.as_str() == Some(s)
-}
-
-/// `for x in v` : une liste, les cles d'un dictionnaire, les caracteres d'un texte.
-pub fn items(v: &Value) -> R<Vec<Cow<'_, Value>>> {
-    match v {
-        Value::Array(a) => Ok(a.iter().map(Cow::Borrowed).collect()),
-        Value::Object(o) => Ok(o.keys().map(|k| Cow::Owned(Value::String(k.clone()))).collect()),
-        Value::String(s) => Ok(s.chars().map(|c| Cow::Owned(Value::String(c.to_string()))).collect()),
-        _ => Err(erreur("TypeError", socle::fichiers::attendu("une liste", nom_type(v)))),
-    }
-}
-
-pub fn s(t: &str) -> Value {
-    Value::String(t.to_string())
-}
-
-// ---------------------------------------------------- les dictionnaires
-
-/// La cle de hachage d'une valeur : `1`, `1.0` et `true` ne font qu'une ;
-/// une liste ou un dictionnaire ne se hache pas.
-fn cle_de_hachage(v: &Value) -> R<String> {
-    match v {
-        Value::Null => Ok("N".into()),
-        Value::String(t) => Ok(format!("s{}:{}", t.len(), t)),
-        Value::Array(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("list"))),
-        Value::Object(_) => Err(erreur("TypeError", socle::fichiers::pas_une_cle("dict"))),
-        autre => {
-            let x = nombre(autre).unwrap_or(0.0);
-            Ok(format!("n{:?}", if x == 0.0 { 0.0 } else { x }))
-        }
-    }
-}
-
-/// Une table (ou un ensemble) a cle composee, dans l'ordre d'insertion : reposer
-/// une cle change la valeur et garde la place.
-pub struct Dico<V> {
-    pub index: HashMap<String, usize>,
-    pub items: Vec<(Vec<Value>, V)>,
-}
-
-impl<V> Dico<V> {
-    pub fn nouveau() -> Self {
-        Dico { index: HashMap::new(), items: Vec::new() }
-    }
-
-    pub fn cle(k: &[Value]) -> R<String> {
-        let mut t = String::new();
-        for x in k {
-            t.push_str(&cle_de_hachage(x)?);
-            t.push('\u{1f}');
-        }
-        Ok(t)
-    }
-
-    pub fn get(&self, k: &[Value]) -> R<Option<&V>> {
-        Ok(self.index.get(&Self::cle(k)?).map(|&i| &self.items[i].1))
-    }
-
-    pub fn get_mut(&mut self, k: &[Value]) -> R<Option<&mut V>> {
-        let i = self.index.get(&Self::cle(k)?).copied();
-        Ok(i.map(move |i| &mut self.items[i].1))
-    }
-
-    pub fn contient(&self, k: &[Value]) -> R<bool> {
-        Ok(self.index.contains_key(&Self::cle(k)?))
-    }
-
-    pub fn poser(&mut self, k: Vec<Value>, v: V) -> R<()> {
-        let c = Self::cle(&k)?;
-        match self.index.get(&c) {
-            Some(&i) => self.items[i].1 = v,
-            None => {
-                self.index.insert(c, self.items.len());
-                self.items.push((k, v));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn sortie(&self, f: impl Fn(&V) -> Value) -> Value {
-        Value::Array(
-            self.items
-                .iter()
-                .map(|(k, v)| {
-                    let mut l = k.clone();
-                    l.push(f(v));
-                    Value::Array(l)
-                })
-                .collect(),
-        )
-    }
-
-    pub fn cles(&self) -> Value {
-        Value::Array(self.items.iter().map(|(k, _)| Value::Array(k.clone())).collect())
-    }
-}
 
 /// UN CONTRAT, tel que le journal le designe : la cle du salarie et le numero du contrat (`""` sans numero).
 pub type Paire = (String, String);
@@ -183,8 +77,18 @@ pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, String> {
 
 /// Les lignes d'une DSN de l'etablissement `nic` (son NIC ; `None` : `principal`, le NIC de la fiche entreprise).
 pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: Option<&str>, principal: &str) -> Vec<&'a Ligne> {
-    let voulu = nic.filter(|n| !n.is_empty()).unwrap_or(principal);
-    lignes.into_iter().filter(|l| l.etablissement().unwrap_or(principal) == voulu).collect()
+    // Une ligne qui ne dit pas son etablissement est celle de l'etablissement principal.
+    let voulu = match nic.filter(|n| !n.is_empty()) {
+        Some(n) => n,
+        None => principal,
+    };
+    lignes
+        .into_iter()
+        .filter(|l| match l.etablissement() {
+            Some(e) => e == voulu,
+            None => principal == voulu,
+        })
+        .collect()
 }
 
 /// CE QU'EST DEVENUE LA DSN REELLE D'UN MOIS (la derniere acceptee de son etablissement) : passee (le bilan OK, ou le
@@ -216,7 +120,7 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, princip
     // UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la ligne
     // en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
     let sans_bilan = !e.retours.iter().any(|r| r.nature == "11");
-    let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().unwrap_or("").eq_ignore_ascii_case("OK");
+    let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("OK"));
     let refusee = refuse_par_un_retour(l);
     Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: (bilan_ok || repris_ok) && !refusee, refusee, anomalies, aer_recue: aer })
 }
@@ -266,7 +170,7 @@ pub struct EtatEmbauche {
     pub refusee: bool,
     pub anomalies: Vec<String>,
     pub retours: Vec<RetourOrganisme>,
-    pub dossier: String,
+    pub dossier: Option<String>,
     pub deja_existante: bool,
 }
 
@@ -292,7 +196,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
                     refusee,
                     anomalies: anomalies.clone(),
                     retours: e.retours.clone(),
-                    dossier: cert.map(|c| c.dossier.clone()).unwrap_or_default(),
+                    dossier: cert.map(|c| c.dossier.clone()),
                     deja_existante: cert.is_some_and(|c| c.deja_existante),
                 },
             );
@@ -319,7 +223,10 @@ pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (signe, ou la mention retiree), sur la ligne de son envoi (`journal::rattacher`),
 /// dans l'ordre ou c'est revenu.
 pub fn revenus(l: &Ligne) -> &[RetourContrat] {
-    l.signature().filter(|e| e.accepte).map_or(&[], |e| e.retours.as_slice())
+    match l.signature().filter(|e| e.accepte) {
+        Some(e) => e.retours.as_slice(),
+        None => &[],
+    }
 }
 
 /// Les contrats repartis apres leur signature sur une autre version de l'engagement que celle signee : ils attendent une
@@ -377,15 +284,18 @@ pub struct Attendue {
     pub mois: Option<Mois>,
     pub quand: String,
     pub salarie: droit::contexte::IdSalarie,
-    pub adresse: String,
+    /// L'adresse ou le contrat est parti (aucune : remis en main propre).
+    pub adresse: Option<String>,
     pub fichier: String,
-    pub acte: String,
+    /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
+    pub acte: Option<String>,
     pub avenant: Option<i64>,
     pub rang: usize,
     pub apres_signature: bool,
     pub envoyes: Vec<String>,
     /// Le prenom que la fiche du salarie dit (`prenom_affichage`, sinon `prenom`).
     pub prenom: Option<String>,
+    /// Le nom que la fiche du salarie dit, sinon sa cle.
     pub nom: String,
     pub contrats: Vec<ContratAttendu>,
 }
@@ -429,14 +339,18 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
                     mois: e.mois,
                     quand: e.quand.clone(),
                     salarie: c.salarie.clone(),
-                    adresse: c.adresse.clone().unwrap_or_default(),
+                    adresse: c.adresse.clone(),
                     fichier: c.fichier.clone(),
-                    acte: c.acte.clone().unwrap_or_else(|| "contrat".into()),
+                    acte: c.acte.clone(),
                     avenant: c.avenant,
                     rang: i,
                     apres_signature: false,
                     envoyes: Vec::new(),
-                    nom: fiche.and_then(|f| f.nomme()).unwrap_or_else(|| c.salarie.to_string()),
+                    // Le salarie se nomme par sa fiche ; une fiche qui ne dit pas son nom le laisse a sa cle.
+                    nom: match fiche.and_then(|f| f.nomme()) {
+                        Some(n) => n,
+                        None => c.salarie.to_string(),
+                    },
                     prenom,
                     contrats: Vec::new(),
                 });
@@ -491,7 +405,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
                     code: c.code.clone(),
                     contrat: c.numero.clone(),
                     effet: c.effet.clone(),
-                    modifications: c.modifications.clone().unwrap_or_default(),
+                    modifications: c.modifications.iter().flatten().cloned().collect(),
                     signe: None,
                 });
             }
@@ -644,7 +558,11 @@ fn resume_des_retours(prefixe: &str, le: &str, retours: &[RetourOrganisme]) -> S
         let suite = if apres > 0 { format!(" ; {} compte{}-rendu{} d'organismes reçu{}", apres, pluriel(apres), pluriel(apres), pluriel(apres)) } else { String::new() };
         return format!("{} — bilan OK, aucune anomalie{}", prefixe, suite);
     }
-    let choix = [dernier.libelle.as_str(), dernier.nature.as_str()].into_iter().find(|t| !t.is_empty()).unwrap_or("retour reçu");
+    // Le retour se dit par son libelle, sinon sa nature ; sans l'un ni l'autre, il est seulement recu.
+    let choix = match [dernier.libelle.as_str(), dernier.nature.as_str()].into_iter().find(|t| !t.is_empty()) {
+        Some(t) => t,
+        None => "retour reçu",
+    };
     format!("{} — {}", prefixe, choix)
 }
 
@@ -663,7 +581,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
                 return true;
             }
             let bilan = e.retours.iter().any(|r| r.nature == "11");
-            !bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().unwrap_or("").eq_ignore_ascii_case("KO")
+            !bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("KO"))
         }
         _ => false,
     }
@@ -722,7 +640,7 @@ pub struct Repetition {
     pub empreinte: String,
     pub fichier: String,
     pub conforme: Option<Ligne>,
-    pub compte_rendu: &'static str,
+    pub compte_rendu: Option<&'static str>,
     pub ratees: Vec<Ligne>,
     pub perimees: Vec<Ligne>,
     pub couleur: &'static str,
@@ -756,9 +674,9 @@ impl EtatDuTest {
 }
 
 impl Repetition {
-    /// Le flux du test conforme (`""` sans lui).
-    pub fn flux_conforme(&self) -> String {
-        self.conforme.as_ref().map(|c| c.flux().to_string()).unwrap_or_default()
+    /// Le flux du test conforme, s'il y en a un.
+    pub fn flux_conforme(&self) -> Option<String> {
+        self.conforme.as_ref().map(|c| c.flux().to_string())
     }
 
     /// Les lignes qu'il porte, pour y poser ce que la page en montre.
@@ -781,47 +699,45 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
             perimees.push(l.clone());
         }
     }
-    let compte_rendu = conforme.map_or("", |c| compte_rendu_du_depot(c.retours_organisme()));
+    let compte_rendu = conforme.map(|c| compte_rendu_du_depot(c.retours_organisme()));
     let motif = ratees.last().map(pourquoi_rate);
     // LA COULEUR DE L'ENCART qui le dit (la charte des etats, `socle::ecran::couleur_de_l_etat`) : teste conforme, vert ;
     // essaye et rate (ou un test d'un contenu d'avant), a corriger, orange ; en test, ou jamais essaye, une information.
     let couleur = match conforme {
-        Some(_) if compte_rendu == "ok" => "vert",
+        Some(_) if compte_rendu == Some("ok") => "vert",
         Some(_) => "gris",
         None if !ratees.is_empty() || !perimees.is_empty() => "orange",
         None => "gris",
     };
-    let etat = match conforme {
-        Some(_) if compte_rendu == "ok" => EtatDuTest::Testee,
-        Some(_) => EtatDuTest::EnTest,
-        None if !ratees.is_empty() => EtatDuTest::TestRefuse,
-        None => EtatDuTest::Ecrite,
-    };
     // CE QUE L'ENCART DU TEST DIT, titre et phrase, d'apres ou il en est : la page et `moteur route` les lisent tels quels.
     let cette = if quoi == Acte::Dpae { "Cette DPAE" } else { "Cette DSN" };
-    let quand_conforme = conforme.map(|c| quand_lisible(c.quand())).unwrap_or_default();
-    let derniere = |l: &[Ligne]| l.last().map(|x| quand_lisible(x.quand())).unwrap_or_default();
     const ENSUITE: &str = "Le dépôt réel se fait une fois le test revenu conforme.";
-    let (titre, phrase) = match etat {
-        EtatDuTest::Testee => (format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette), format!("Déposée en test le {}, avec ce même contenu.", quand_conforme)),
-        EtatDuTest::EnTest => (format!("{} est en test — son compte rendu est attendu", cette), format!("Envoyée en test le {}. {}", quand_conforme, ENSUITE)),
-        EtatDuTest::TestRefuse => (
+    let (etat, titre, phrase) = match (conforme, ratees.last(), perimees.last()) {
+        (Some(c), _, _) if compte_rendu == Some("ok") => (
+            EtatDuTest::Testee,
+            format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
+            format!("Déposée en test le {}, avec ce même contenu.", quand_lisible(c.quand())),
+        ),
+        (Some(c), _, _) => (
+            EtatDuTest::EnTest,
+            format!("{} est en test — son compte rendu est attendu", cette),
+            format!("Envoyée en test le {}. {}", quand_lisible(c.quand()), ENSUITE),
+        ),
+        (None, Some(r), _) => (
+            EtatDuTest::TestRefuse,
             "Le test est refusé".into(),
             format!(
                 "Essayé le {} : {}. Le même refus attendrait le dépôt réel : c'est cela qu'il faut corriger.",
-                derniere(&ratees),
-                motif.as_deref().unwrap_or_default().trim_end_matches('.')
+                quand_lisible(r.quand()),
+                pourquoi_rate(r).trim_end_matches('.')
             ),
         ),
-        EtatDuTest::Ecrite if !perimees.is_empty() => (
+        (None, None, Some(p)) => (
+            EtatDuTest::Ecrite,
             "Pas de test valable pour ce contenu".into(),
-            format!(
-                "Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}",
-                derniere(&perimees),
-                ENSUITE
-            ),
+            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", quand_lisible(p.quand()), ENSUITE),
         ),
-        EtatDuTest::Ecrite => ("D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
+        (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
     Repetition { empreinte: empreinte.to_string(), fichier: nom.to_string(), conforme: conforme.cloned(), compte_rendu, ratees, perimees, couleur, motif, etat, titre, phrase }
 }
@@ -1008,17 +924,17 @@ fn correspond(j: &[Jeton], nom: &[char]) -> bool {
     let (mut ji, mut ni) = (0, 0);
     let mut reprise: Option<(usize, usize)> = None;
     while ni < nom.len() {
-        let ok = match j.get(ji) {
-            Some(Jeton::Etoile) => {
-                reprise = Some((ji, ni));
-                ji += 1;
-                continue;
-            }
-            Some(Jeton::Un) => true,
-            Some(Jeton::Car(c)) => egal(*c, nom[ni]),
-            Some(Jeton::Classe(plages, nie)) => plages.iter().any(|&(a, b)| a <= nom[ni] && nom[ni] <= b) != *nie,
-            None => false,
-        };
+        if matches!(j.get(ji), Some(Jeton::Etoile)) {
+            reprise = Some((ji, ni));
+            ji += 1;
+            continue;
+        }
+        // Un motif epuise avant le nom ne correspond pas a ce qui reste.
+        let ok = j.get(ji).is_some_and(|x| match x {
+            Jeton::Etoile | Jeton::Un => true,
+            Jeton::Car(c) => egal(*c, nom[ni]),
+            Jeton::Classe(plages, nie) => plages.iter().any(|&(a, b)| a <= nom[ni] && nom[ni] <= b) != *nie,
+        });
         if ok {
             ji += 1;
             ni += 1;
@@ -1036,40 +952,25 @@ fn correspond(j: &[Jeton], nom: &[char]) -> bool {
     ji == j.len()
 }
 
-/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DONNE (`retours::liste_retours_d_octets`, une `Value` par retour) : son
-/// flux, sa nature, sa publication, son statut.
-struct Annonce {
-    flux: String,
-    nature: String,
-    publication: Option<String>,
-    statut: Option<String>,
+/// LA CLE DU CONTENU TELECHARGE D'UN RETOUR (`retours::Annonce`) : son flux, sa nature, sa publication.
+pub type CleDuContenu = (Option<String>, String, Option<String>);
+
+/// La cle du contenu telecharge du retour `r`.
+pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
+    (r.flux.clone(), r.nature.clone(), r.publication.clone())
 }
 
-impl Annonce {
-    fn de(r: &Value) -> Annonce {
-        let texte = |k: &str| r.get(k).filter(|v| !v.is_null()).map(valeur_en_texte);
-        Annonce { flux: texte("flux").unwrap_or_default(), nature: texte("nature").unwrap_or_default(), publication: texte("publication"), statut: texte("statut") }
-    }
-
-    /// La cle de son contenu telecharge (`rattacher_retours_avec_contenus`).
-    fn cle(&self) -> (String, String, String) {
-        (self.flux.clone(), self.nature.clone(), self.publication.clone().unwrap_or_default())
-    }
-}
-
-/// La cle du contenu telecharge du retour `r` (tel que la liste des retours le decrit) : son flux, sa nature, sa
-/// publication.
-pub fn cle_du_contenu(r: &Value) -> (String, String, String) {
-    Annonce::de(r).cle()
-}
-
-/// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE).
+/// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
+/// `sansflux` quand le retour ne dit pas son flux (`transport::archiver`).
 fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf>> {
     let dossier = if quoi == Acte::Dpae { racine.join(crate::retours::RETOURS_DPAE) } else { racine.join(crate::retours::RETOURS) };
     if !dossier.is_dir() {
         return Ok(None);
     }
-    let flux: String = if r.flux.is_empty() { "sansflux".to_string() } else { r.flux.clone() };
+    let flux = match r.flux.as_deref().filter(|f| !f.is_empty()) {
+        Some(f) => f,
+        None => "sansflux",
+    };
     let motif = jetons(&format!("*_nature{}_{}*", r.nature, flux));
     let mut noms = Vec::new();
     for e in std::fs::read_dir(&dossier).map_err(|e| erreur_io(&e, &dossier))? {
@@ -1145,14 +1046,11 @@ fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u
     if nature == NATURE_CERTIFICAT_DPAE {
         return verdict_du_certificat(&octets);
     }
-    let b = retours::bilan_d_octets(&octets);
-    if b.is_null() {
-        return Ok(None);
-    }
-    let etat = |k: &str| b.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let verdict = if !etat("etat_declaration").is_empty() { etat("etat_declaration") } else { etat("etat_envoi") };
-    let anomalies = retours::anomalies_lisibles_d_octets(&octets)?.iter().map(valeur_en_texte).collect();
-    Ok(Some(Verdict { verdict: verdict.to_uppercase(), anomalies, dpae: None }))
+    // Une piece sans bilan (ce n'est pas un rapport de depot), ou un bilan qui ne dit ni l'etat de la declaration ni
+    // celui de l'envoi, ne donne pas de verdict.
+    let Some(verdict) = retours::bilan_si_xml(&octets)?.and_then(|b| b.verdict().map(str::to_uppercase)) else { return Ok(None) };
+    let anomalies = retours::anomalies_lisibles_d_octets(&octets)?;
+    Ok(Some(Verdict { verdict, anomalies, dpae: None }))
 }
 
 /// Le libelle d'une nature de retour, selon le canal de l'envoi.
@@ -1169,91 +1067,98 @@ fn libelle_nature(code: &str, acte: Acte) -> String {
     retours::libelle_nature(code)
 }
 
-/// L'INCIDENT D'UN RETOUR QUI REJETTE (le format du journal des incidents, que `moteur` ecrit) : rien quand le retour ne
-/// rejette pas, ou quand son calcul echoue (il ne leve jamais).
-fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, contenus: &HashMap<(String, String, String), Vec<u8>>) -> Option<Value> {
-    let calcul = || -> R<Option<Value>> {
-        if verdict.verdict != "KO" {
-            return Ok(None);
-        }
-        let quoi = ligne.acte();
-        let mut anomalies: Vec<Value> = Vec::new();
-        if quoi == Acte::Dpae && r.nature == NATURE_CERTIFICAT_DPAE {
-            for d in verdict.dpae.iter().flatten().filter(|d| !d.enregistree && !d.deja_existante) {
-                anomalies.push(json!({"code": d.code, "message": d.libelle}));
-            }
-        } else {
-            let contenu = match contenus.get(&r.cle()) {
-                Some(c) => c.clone(),
-                None => match archive_du_retour(racine, r, quoi)? {
-                    Some(f) => lire_archive(&f)?,
-                    None => Vec::new(),
-                },
-            };
-            anomalies = retours::anomalies_codees_d_octets(&contenu).map_err(|e| Echec { classe: e.classe, message: e.message })?;
-        }
-        // Sans doublon, puis les cles par ordre alphabetique.
-        let mut vus: Vec<String> = Vec::new();
-        let mut uniques: Vec<Value> = Vec::new();
-        for a in &anomalies {
-            let Value::Object(o) = a else {
-                return Err(erreur("AttributeError", "anomalie illisible"));
-            };
-            let mut p: Vec<(&String, &Value)> = o.iter().collect();
-            p.sort_by(|x, y| x.0.cmp(y.0));
-            for (_, v) in &p {
-                cle_de_hachage(v)?;
-            }
-            let k = p.iter().map(|(k, v)| format!("{}={}", k, cle_de_hachage(v).unwrap_or_default())).collect::<Vec<_>>().join("\u{1e}");
-            if !vus.contains(&k) {
-                vus.push(k);
-                uniques.push(Value::Object(p.into_iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
-            }
-        }
-        let mut cles: Vec<(bool, String, Value)> = Vec::new();
-        for a in uniques {
-            let bloquant = !est(get(&a, "categorie")?, "bloquant");
-            let code = match getd(&a, "code", texte_vide())? {
-                Value::String(t) => t.clone(),
-                autre => return Err(erreur("TypeError", format!("'code' : {}", socle::fichiers::incomparables(nom_type(autre), "str")))),
-            };
-            cles.push((bloquant, code, a));
-        }
-        cles.sort_by(|x, y| (x.0, &x.1).cmp(&(y.0, &y.1)));
-        let anomalies: Vec<Value> = cles.into_iter().map(|c| c.2).collect();
-        let mut codes = Vec::new();
-        for a in &anomalies {
-            if vrai(get(a, "code")?) {
-                codes.push(get(a, "code")?.clone());
-            }
-        }
-        let mut phrases = Vec::new();
-        for a in anomalies.iter().take(10) {
-            let t = format!("{} : {}", valeur_en_texte(get(a, "code")?), valeur_en_texte(get(a, "message")?));
-            phrases.push(t.trim_matches(|c| c == ' ' || c == ':').to_string());
-        }
-        let resume = if phrases.join(" ; ").is_empty() { "Rejet sans motif lisible".to_string() } else { phrases.join(" ; ") };
-        let type_declaration = ligne.dsn().and_then(|e| e.detail.type_declaration.clone()).unwrap_or_default();
-        Ok(Some(json!({
-            "canal": if quoi == Acte::Dpae { "dpae" } else { "dsn" },
-            "ou": format!("retour-{}", quoi.nom()),
-            "quoi": codes.first().cloned().unwrap_or_else(|| s("KO")),
-            "resume": resume,
-            "detail": {
-                "reel": ligne.reel(),
-                "nature_retour": r.nature,
-                "type_declaration": type_declaration,
-                "anomalies": anomalies.iter().take(30).collect::<Vec<_>>(),
-            },
-        })))
+/// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`moteur::compagnie::incidents`) : son
+/// canal, l'endroit, le premier code d'anomalie (ou `KO`), le resume (dix anomalies au plus), et le detail.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IncidentDeRetour {
+    pub canal: &'static str,
+    pub ou: String,
+    pub quoi: String,
+    pub resume: String,
+    pub detail: DetailIncidentDeRetour,
+}
+
+/// Le detail d'un incident de retour : reel ou test, la nature du retour, le type de la declaration (une DSN qui le
+/// dit), et trente anomalies au plus.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DetailIncidentDeRetour {
+    pub reel: bool,
+    pub nature_retour: String,
+    pub type_declaration: Option<String>,
+    pub anomalies: Vec<AnomalieDeRetour>,
+}
+
+/// Une anomalie d'un incident : celle d'un bilan (categorie, code, message, rubrique), ou d'une personne que le certificat
+/// d'une DPAE n'a pas enregistree (son code et son libelle).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AnomalieDeRetour {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub categorie: Option<String>,
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rubrique: Option<String>,
+}
+
+/// L'INCIDENT D'UN RETOUR QUI REJETTE : rien quand le retour ne rejette pas.
+fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, contenus: &HashMap<CleDuContenu, Vec<u8>>) -> R<Option<IncidentDeRetour>> {
+    if verdict.verdict != "KO" {
+        return Ok(None);
+    }
+    let quoi = ligne.acte();
+    let anomalies: Vec<AnomalieDeRetour> = if quoi == Acte::Dpae && r.nature == NATURE_CERTIFICAT_DPAE {
+        verdict
+            .dpae
+            .iter()
+            .flatten()
+            .filter(|d| !d.enregistree && !d.deja_existante)
+            .map(|d| AnomalieDeRetour { categorie: None, code: d.code.clone(), message: d.libelle.clone(), rubrique: None })
+            .collect()
+    } else {
+        // Sans piece (ni telechargee, ni archivee), le rejet n'a pas d'anomalie lisible.
+        let contenu = match contenus.get(&cle_du_contenu(r)) {
+            Some(c) => Some(c.clone()),
+            None => archive_du_retour(racine, r, quoi)?.map(|f| lire_archive(&f)).transpose()?,
+        };
+        let codees = contenu.map(|c| retours::anomalies_codees_d_octets(&c)).transpose()?;
+        codees.into_iter().flatten().map(|a| AnomalieDeRetour { categorie: Some(a.categorie), code: a.code, message: a.message, rubrique: Some(a.rubrique) }).collect()
     };
-    calcul().ok().flatten()
+    // Sans doublon, les bloquantes d'abord, puis par code.
+    let mut uniques: Vec<AnomalieDeRetour> = Vec::new();
+    for a in anomalies {
+        if !uniques.contains(&a) {
+            uniques.push(a);
+        }
+    }
+    uniques.sort_by(|x, y| (x.categorie.as_deref() != Some("bloquant"), &x.code).cmp(&(y.categorie.as_deref() != Some("bloquant"), &y.code)));
+    let phrases: Vec<String> = uniques.iter().take(10).map(|a| format!("{} : {}", a.code, a.message).trim_matches(|c| c == ' ' || c == ':').to_string()).collect();
+    let resume = match phrases.join(" ; ") {
+        r if r.is_empty() => "Rejet sans motif lisible".to_string(),
+        r => r,
+    };
+    let quoi_ = match uniques.iter().find(|a| !a.code.is_empty()) {
+        Some(a) => a.code.clone(),
+        None => "KO".to_string(),
+    };
+    uniques.truncate(30);
+    Ok(Some(IncidentDeRetour {
+        canal: if quoi == Acte::Dpae { DPAE } else { DSN },
+        ou: format!("retour-{}", quoi.nom()),
+        quoi: quoi_,
+        resume,
+        detail: DetailIncidentDeRetour {
+            reel: ligne.reel(),
+            nature_retour: r.nature.clone(),
+            type_declaration: ligne.dsn().and_then(|e| e.detail.type_declaration.clone()),
+            anomalies: uniques,
+        },
+    }))
 }
 
 /// Le nombre ajoute ; les incidents a noter (dans
 /// l'ordre) s'ajoutent a `incidents`, que l'appelant ecrit dans le journal des
 /// incidents, meme quand le rattachement s'arrete sur une erreur.
-fn rattacher_retours(racine: &Path, retours: &[Value], contenus: &HashMap<(String, String, String), Vec<u8>>, incidents: &mut Vec<Value>) -> R<i64> {
+fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<i64> {
     if !chemin(racine).exists() {
         return Ok(0);
     }
@@ -1266,10 +1171,14 @@ fn rattacher_retours(racine: &Path, retours: &[Value], contenus: &HashMap<(Strin
         }
     }
     let mut ajoutes = 0;
-    for r in retours.iter().map(Annonce::de) {
-        for &li in par_flux.get(&r.flux).map(Vec::as_slice).unwrap_or(&[]) {
+    for r in retours {
+        let siennes = match r.flux.as_ref().and_then(|f| par_flux.get(f)) {
+            Some(l) => l.as_slice(),
+            None => &[],
+        };
+        for &li in siennes {
             let quoi = lignes[li].acte();
-            let verdict = verdict_du_retour(racine, &r, quoi, contenus.get(&r.cle()).map(Vec::as_slice))?;
+            let verdict = verdict_du_retour(racine, r, quoi, contenus.get(&cle_du_contenu(r)).map(Vec::as_slice))?;
             let ligne = lignes[li].clone();
             let connus = match &mut lignes[li] {
                 Ligne::Dsn(e) => &mut e.retours,
@@ -1282,13 +1191,13 @@ fn rattacher_retours(racine: &Path, retours: &[Value], contenus: &HashMap<(Strin
                     x.poser(v.clone());
                     rangements.push((li, Rangement::Complement { nature: x.nature.clone(), publication: x.publication.clone(), verdict: v.clone() }));
                     ajoutes += 1;
-                    incidents.extend(incident(racine, &ligne, &r, &v, contenus));
+                    incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
                 }
                 continue;
             }
             let mut neuf = neuf;
             if let Some(v) = verdict {
-                incidents.extend(incident(racine, &ligne, &r, &v, contenus));
+                incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
                 neuf.poser(v);
             }
             connus.push(neuf.clone());
@@ -1304,21 +1213,21 @@ fn rattacher_retours(racine: &Path, retours: &[Value], contenus: &HashMap<(Strin
 /// releves, que `moteur` note au journal des incidents, meme quand le rattachement s'est arrete sur une erreur.
 pub struct AvecIncidents<T> {
     pub resultat: R<T>,
-    /// `{"canal": "dsn"|"dpae", "ou", "quoi", "resume", "detail"}`, dans l'ordre.
-    pub incidents: Vec<Value>,
+    /// Dans l'ordre.
+    pub incidents: Vec<IncidentDeRetour>,
 }
 
 /// Range les retours `retours` (la liste des retours) en face des lignes du journal qu'ils concernent (par le flux).
 /// `contenus` donne, pour chaque `(flux, nature, publication)` telecharge, les octets du retour : le verdict se lit dedans.
-pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Value], contenus: &[((String, String, String), Vec<u8>)]) -> AvecIncidents<i64> {
-    let mut incidents: Vec<Value> = Vec::new();
-    let dico: HashMap<(String, String, String), Vec<u8>> = contenus.iter().cloned().collect();
+pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<i64> {
+    let mut incidents = Vec::new();
+    let dico: HashMap<CleDuContenu, Vec<u8>> = contenus.iter().cloned().collect();
     let resultat = rattacher_retours(racine, retours, &dico, &mut incidents);
     AvecIncidents { resultat, incidents }
 }
 
 /// `rattacher_retours_avec_contenus` sans contenus : les retours deja archives.
-pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Value]) -> AvecIncidents<i64> {
+pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncidents<i64> {
     rattacher_retours_avec_contenus(racine, retours, &[])
 }
 
@@ -1339,7 +1248,10 @@ pub struct Parti {
 impl Parti {
     /// Le jour qui date le contrat dans un avenant : celui de sa signature, sinon de son envoi.
     pub fn date(&self) -> String {
-        self.signe.as_deref().unwrap_or(&self.quand).chars().take(10).collect()
+        match &self.signe {
+            Some(s) => s.chars().take(10).collect(),
+            None => self.quand.chars().take(10).collect(),
+        }
     }
 }
 
@@ -1388,73 +1300,69 @@ mod tests {
         let p = std::env::temp_dir().join(format!("paie-etats-{}-{}", nom, std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(p.join(crate::journal::JOURNAL)).unwrap();
-        let texte: String = lignes.iter().enumerate().map(|(i, l)| format!("{}\n", json!({"id": i.to_string(), "ligne": l}))).collect();
+        let texte: String = lignes.iter().enumerate().map(|(i, l)| format!("{{\"id\":\"{}\",\"ligne\":{}}}\n", i, socle::ecriture::json_en_ligne(l))).collect();
         std::fs::write(chemin(&p), texte).unwrap();
         p
     }
 
-    fn ligne(quoi: &str, mode: &str, quand: &str, detail: Value, retours: Value) -> Value {
-        json!({"quoi": quoi, "quand": quand, "origine": "", "mois": "2026-06", "fichier": "f.dsn", "empreinte": "e1",
-               "mode": mode, "qui": "?", "accepte": true, "destinataire": "", "flux": "", "retours": retours,
-               "reponse": "", "trace": null, "detail": detail})
+    /// Une ligne du journal, ecrite en JSON (`detail`, `retours` : du JSON) et lue en sa forme.
+    fn ligne(quoi: &str, mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, flux: &str, detail: &str, retours: &str) -> Ligne {
+        let texte = format!(
+            "{{\"quoi\": \"{}\", \"quand\": \"{}\", \"origine\": \"\", \"mois\": \"2026-06\", \"fichier\": \"{}\", \"empreinte\": \"{}\", \
+             \"mode\": \"{}\", \"qui\": \"?\", \"accepte\": {}, \"destinataire\": \"\", \"flux\": \"{}\", \"retours\": {}, \
+             \"reponse\": \"\", \"trace\": null, \"detail\": {}}}",
+            quoi, quand, fichier, empreinte, mode, accepte, flux, retours, detail
+        );
+        socle::forme::lire_texte(&texte, "ligne de test").unwrap()
     }
 
-    fn lue(v: Value) -> Ligne {
-        serde_json::from_value(v).unwrap()
+    fn contrat(sal: &str, code: &str) -> String {
+        format!(
+            "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"fin\": \"2026-06-30\", \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
+             \"code\": \"{}\", \"empreinte\": \"e1\", \"message\": \"m1\", \"mois\": \"2026-06\"}}",
+            sal, code
+        )
     }
 
-    fn contrat(sal: &str, code: &str) -> Value {
-        json!({"salarie": sal, "debut": "2026-06-04", "fin": "2026-06-30", "numero": "SA1.26.01", "fichier": "c.pdf", "spectacle": null,
-               "code": code, "empreinte": "e1", "message": "m1", "mois": "2026-06"})
+    /// Un contrat revenu (`plus` : ce qu'il dit d'autre, en JSON).
+    fn recu(sal: &str, recu: bool, plus: &str) -> String {
+        format!(
+            "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"numero\": \"SA1.26.01\", \"nom\": \"{}\", \"recu\": {}, \"quand\": \"2026-06-12T10:00:00\", \"qui\": \"t\", \"reponse\": \"\"{}}}",
+            sal, sal, recu, plus
+        )
     }
 
-    fn recu(sal: &str, origine: Option<&str>) -> Value {
-        let mut r = json!({"salarie": sal, "debut": "2026-06-04", "numero": "SA1.26.01", "nom": sal, "recu": true, "quand": "2026-06-12T10:00:00", "qui": "t", "reponse": ""});
-        if let Some(o) = origine {
-            r["origine"] = json!(o);
-        }
-        r
-    }
-
-    fn signature(quand: &str, c: Value) -> Value {
-        ligne("contrat-signature", "reel", quand, json!({"contrats": [c]}), json!([]))
+    fn signature(quand: &str, c: &str, retours: &str) -> Ligne {
+        ligne("contrat-signature", "reel", quand, "e1", "f.dsn", true, "", &format!("{{\"contrats\": [{}]}}", c), retours)
     }
 
     #[test]
     fn une_reponse_deja_relevee_ne_se_renote_pas_apres_la_mention_retiree() {
         let ctx = |_: &str| None;
-        let mut lu = recu("ALPHA", Some("courriel"));
-        lu["code"] = json!("C1");
-        let mut retiree = recu("ALPHA", None);
-        retiree["recu"] = json!(false);
-        let mut envoi = signature("2026-06-05T10:00:00", contrat("ALPHA", "C1"));
-        envoi["retours"] = json!([lu, retiree]);
-        let mut l = vec![lue(envoi)];
+        let lu = recu("ALPHA", true, ", \"origine\": \"courriel\", \"code\": \"C1\"");
+        let retiree = recu("ALPHA", false, "");
+        let mut l = vec![signature("2026-06-05T10:00:00", &contrat("ALPHA", "C1"), &format!("[{}, {}]", lu, retiree))];
         assert!(signatures_attendues(&ctx, &l, None).is_empty());
-        l.push(lue(signature("2026-06-13T10:00:00", contrat("ALPHA", "C3"))));
+        l.push(signature("2026-06-13T10:00:00", &contrat("ALPHA", "C3"), "[]"));
         assert_eq!(signatures_attendues(&ctx, &l, None)[0].code, "C3");
     }
 
     #[test]
     fn la_repetition_et_le_deja_depose() {
-        let avec = |mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, retours: Value| {
-            let mut l = ligne("dsn", mode, quand, json!({"repetition": null, "ordre_test": null}), retours);
-            l["empreinte"] = json!(empreinte);
-            l["fichier"] = json!(fichier);
-            l["accepte"] = json!(accepte);
-            lue(l)
+        let avec = |mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, retours: &str| {
+            ligne("dsn", mode, quand, empreinte, fichier, accepte, "", "{\"repetition\": null, \"ordre_test\": null}", retours)
         };
         let l = vec![
-            avec("test", "2026-06-01T09:00:00", "eB", "DSN.dsn", true, json!([])),
-            avec("test", "2026-06-01T10:00:00", "eA", "f.dsn", true, json!([{"nature": "11", "verdict": "OK", "libelle": "", "statut": null, "publication": null}])),
-            avec("test", "2026-06-01T11:00:00", "eA", "f.dsn", false, json!([])),
-            avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, json!([])),
+            avec("test", "2026-06-01T09:00:00", "eB", "DSN.dsn", true, "[]"),
+            avec("test", "2026-06-01T10:00:00", "eA", "f.dsn", true, "[{\"nature\": \"11\", \"verdict\": \"OK\", \"libelle\": \"\", \"statut\": null, \"publication\": null}]"),
+            avec("test", "2026-06-01T11:00:00", "eA", "f.dsn", false, "[]"),
+            avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, "[]"),
         ];
         let rep = repetition(&l, Acte::Dsn, "eA", "DSN.dsn");
-        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand()), ("ok", "2026-06-01T10:00:00"));
+        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand()), (Some("ok"), "2026-06-01T10:00:00"));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
         let vide = repetition(&l, Acte::Dpae, "eA", "x");
-        assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, "", EtatDuTest::Ecrite));
+        assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, "eB").is_none());
         let r = |verdict: &str| RetourOrganisme { nature: "11".into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
@@ -1470,27 +1378,33 @@ mod tests {
 
     #[test]
     fn le_rattachement_pose_le_verdict_et_signale_l_incident() {
-        let mut l = ligne("dsn", "test", "2026-06-01T10:00:00", json!({"repetition": null, "ordre_test": null}), json!([]));
-        l["flux"] = json!("WSBBBB");
-        let mut autre = ligne("dpae", "reel", "2026-06-01T10:00:00", json!({"repetition": null}), json!([]));
-        autre["flux"] = json!("WSCCCC");
-        let r = journal("rattachement", &[lue(l), lue(autre)]);
-        let retours = vec![
-            json!({"flux": "WSBBBB", "nature": "11", "publication": "p1", "statut": "recu"}),
-            json!({"flux": "WSINCONNU", "nature": "11", "publication": "p2", "statut": "recu"}),
-            json!({"flux": "WSCCCC", "nature": "20", "publication": "p3", "statut": "recu"}),
-        ];
+        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null}", "[]");
+        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null}", "[]");
+        let r = journal("rattachement", &[l, autre]);
+        let annonce = |flux: &str, nature: &str, publication: &str| Annonce {
+            publication: Some(publication.into()),
+            production: None,
+            ops: None,
+            delegataire: None,
+            nature: nature.into(),
+            statut: Some("recu".into()),
+            id: None,
+            url: None,
+            libelle: None,
+            flux: Some(flux.into()),
+        };
+        let retours = vec![annonce("WSBBBB", "11", "p1"), annonce("WSINCONNU", "11", "p2"), annonce("WSCCCC", "20", "p3")];
         let mut contenus = HashMap::new();
-        contenus.insert(("WSBBBB".to_string(), "11".to_string(), "p1".to_string()), BAN_KO.as_bytes().to_vec());
+        contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());
         let mut inc = Vec::new();
         assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut inc).unwrap(), 2);
         assert_eq!(inc.len(), 1);
-        assert_eq!((&inc[0]["canal"], &inc[0]["ou"], &inc[0]["quoi"]), (&json!("dsn"), &json!("retour-dsn"), &json!("CST-04")));
-        assert_eq!(inc[0]["resume"], "CST-04 : Code URSSAF invalide");
-        assert_eq!(inc[0]["detail"]["reel"], false);
-        assert_eq!(inc[0]["detail"]["anomalies"][0]["rubrique"], "S21.G00.20.001");
+        assert_eq!((inc[0].canal, inc[0].ou.as_str(), inc[0].quoi.as_str()), ("dsn", "retour-dsn", "CST-04"));
+        assert_eq!(inc[0].resume, "CST-04 : Code URSSAF invalide");
+        assert!(!inc[0].detail.reel);
+        assert_eq!(inc[0].detail.anomalies[0].rubrique.as_deref(), Some("S21.G00.20.001"));
         // ni le nom du salarie ni la valeur ne partent chez l'editeur
-        assert!(!inc[0].to_string().contains("FAVART"));
+        assert!(!socle::ecriture::json_en_ligne(&inc[0]).contains("FAVART"));
         let fichier = crate::journal::lu(&r).unwrap().lignes;
         let pose = &fichier[0].retours_organisme()[0];
         assert_eq!(pose.verdict(), "KO");
