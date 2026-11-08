@@ -164,15 +164,6 @@ impl Montant {
         }
     }
 
-    /// Un nombre qui n'est pas zero, ou un texte : ce qu'une valeur JSON vraie dit.
-    pub fn non_nul(&self) -> bool {
-        match self {
-            Montant::Entier(i) => *i != 0,
-            Montant::Naturel(u) => *u != 0,
-            Montant::Flottant(x) => *x != 0.0,
-            Montant::Texte(s) => !s.is_empty(),
-        }
-    }
 
     /// Le flottant ; un texte se lit sans virgule.
     pub fn flottant(&self) -> Resultat<f64> {
