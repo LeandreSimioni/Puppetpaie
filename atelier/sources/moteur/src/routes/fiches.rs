@@ -918,8 +918,7 @@ fn suggestions(nom: &str, donnees: &Map<String, Value>) -> R<Value> {
             }
         }
     } else if nom == "entreprise" && socle::texte::strip(&texte_ou_vide(donnees.get("code_urssaf"))).is_empty() {
-        let code = declarations::urssaf::base().map_err(Echec::from)?.du_code_postal(&texte_ou_vide(donnees.get("code_postal")));
-        if !code.is_empty() {
+        if let Some(code) = declarations::urssaf::base().map_err(Echec::from)?.du_code_postal(&texte_ou_vide(donnees.get("code_postal"))) {
             propose.insert(
                 "code_urssaf".into(),
                 json!({

@@ -1256,8 +1256,11 @@ fn controles_croises(nom: &str, d: &Map<String, Value>) -> R<Vec<Value>> {
     if nom == "entreprise" {
         let choisi = strip(&d.get("code_urssaf").filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default()).to_string();
         if !choisi.is_empty() {
-            let deduit = crate::urssaf::base().map_err(Echec::from)?.du_code_postal(&d.get("code_postal").filter(|x| vrai(x)).map(valeur_en_texte).unwrap_or_default());
-            if !deduit.is_empty() && deduit != choisi {
+            let deduit = match d.get("code_postal").filter(|x| vrai(x)).map(valeur_en_texte) {
+                Some(cp) => crate::urssaf::base().map_err(Echec::from)?.du_code_postal(&cp),
+                None => None,
+            };
+            if let Some(deduit) = deduit.filter(|d| *d != choisi) {
                 out.push(anomalie(
                     "code_urssaf",
                     "avertissement",

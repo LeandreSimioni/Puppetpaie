@@ -1094,26 +1094,24 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<Verdict>> {
     if lignes.is_empty() {
         return Ok(None);
     }
-    let texte_de = |l: &Value, k: &str| l.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let mut personnes = Vec::new();
     let mut anomalies: Vec<String> = Vec::new();
-    for l in &lignes {
-        let lot = texte_de(l, "lot");
-        if lot != "00" && !lot.is_empty() {
-            if let Some((_, nom)) = declarations::dpae::CODES_RET_AR_LOT.iter().find(|(c, _)| *c == lot) {
+    for l in lignes {
+        if l.lot != "00" {
+            if let Some((_, nom)) = declarations::dpae::CODES_RET_AR_LOT.iter().find(|(c, _)| *c == l.lot) {
                 anomalies.push(format!("{} (lot)", nom));
             }
         }
         let p = PersonneCertifiee {
-            nom: texte_de(l, "nom"),
-            prenom: texte_de(l, "prenom"),
-            embauche: texte_de(l, "embauche"),
-            dossier: texte_de(l, "dossier"),
-            code: texte_de(l, "code"),
-            libelle: texte_de(l, "libelle"),
-            enregistree: l.get("enregistree").is_some_and(vrai),
-            deja_existante: l.get("deja_existante").is_some_and(vrai),
-            formalites: l.get("formalites").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from).collect(),
+            nom: l.nom,
+            prenom: l.prenom,
+            embauche: l.embauche,
+            dossier: l.dossier,
+            code: l.code,
+            libelle: l.libelle,
+            enregistree: l.enregistree,
+            deja_existante: l.deja_existante,
+            formalites: l.formalites.iter().map(|f| f.to_string()).collect(),
             pastille: None,
         };
         if !p.enregistree && !p.deja_existante {

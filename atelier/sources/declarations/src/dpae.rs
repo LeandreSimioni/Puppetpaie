@@ -18,12 +18,12 @@
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
 use droit::natures;
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
-use crate::valeur::{d, en_texte, repr_valeur, vrai};
+use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
 use crate::ntt;
 use socle::num::Resultat;
@@ -252,11 +252,13 @@ fn raison_sociale(texte: &str) -> Resultat<(String, String)> {
     Ok((ljust(&premiere, largeur("raison_sociale")), ljust(&seconde, largeur("raison_sociale_2"))))
 }
 
-/// Le telephone (N_TEL_EMP, l. 380-385) : les chiffres de celui du declarant DSN, sinon de celui du signataire, sinon
-/// rien ; plus de 11, ce que la fiche refuse (`droit::fiche::Telephone`).
+/// Le telephone (N_TEL_EMP, l. 380-385, facultatif) : les chiffres de celui du declarant DSN, sinon de celui du
+/// signataire ; sans l'un ni l'autre, la zone est a blanc ; plus de 11, ce que la fiche refuse (`droit::fiche::Telephone`).
 fn telephone(ent: &ChampsEntreprise) -> Resultat<String> {
     let tel = ent.declarant_dsn.dite().and_then(|d| d.tel.remplie()).or_else(|| ent.signataire.dite().and_then(|s| s.tel.remplie()));
-    let tel = tel.unwrap_or_default();
+    let Some(tel) = tel else {
+        return Ok(" ".repeat(largeur("tel")));
+    };
     if let Some(f) = droit::fiche::Telephone::faute(tel) {
         return Err(f);
     }
@@ -299,16 +301,15 @@ pub fn employeur(ent: &ChampsEntreprise) -> Resultat<Vec<(&'static str, String)>
 /// (`urssaf-dpae-base.json`, `par_departement`). Le code de la fiche entreprise est celui du siege.
 fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> Resultat<String> {
     let (siret, cp) = (vue.siret.ecrite("siret")?, vue.code_postal.ecrite("code_postal")?);
-    let code = crate::urssaf::base()?.du_code_postal(cp);
-    if code.is_empty() {
-        return Err(format!(
+    match crate::urssaf::base()?.du_code_postal(cp) {
+        Some(code) => Ok(code),
+        None => Err(format!(
             "La DPAE ne sait pas a quelle Urssaf aller : l'etablissement {} a le code postal {}, qu'aucune Urssaf de la table \
 ne couvre (Configuration › Entreprise › Avancé, « Autres établissements »).",
             siret,
             repr(cp)
-        ));
+        )),
     }
-    Ok(code)
 }
 
 // -------------------------------------------- ce que la DPAE lit d'une embauche
@@ -319,8 +320,9 @@ ne couvre (Configuration › Entreprise › Avancé, « Autres établissements �
 #[derive(Debug, Clone)]
 pub struct Embauche {
     pub salarie: droit::fiche::SalarieDuContrat,
-    pub debut: Value,
-    pub fin: Value,
+    pub debut: Jour,
+    /// Le terme de l'engagement, s'il en a un.
+    pub fin: Option<Jour>,
     /// La cle de sa nature de contrat.
     pub nature: String,
     pub spectacle: Option<droit::fiche::Spectacle>,
@@ -331,8 +333,8 @@ pub struct Parametres<'a> {
     /// JJMMAAAAHHMM : la minute de l'ecriture, donnee par l'appelant (heure de Paris).
     pub horodatage: &'a str,
     pub heure_embauche: String,
-    /// Le code Urssaf voulu, tel que l'appelant l'a donne (`""` : celui du gabarit).
-    pub code_urssaf: Value,
+    /// Le code Urssaf voulu, tel que l'appelant l'a donne (`None` : celui du gabarit).
+    pub code_urssaf: Option<String>,
     pub ent: Option<&'a EntrepriseDuDocument>,
     pub chemins: &'a Chemins,
 }
@@ -367,18 +369,17 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
             ecrire_zone(&mut buf, nom, a, b, &v)?;
         }
         if etab.nic.portee() != ent.nic_principal() {
-            code_urssaf = json!(urssaf_d_un_etablissement(etab)?);
+            code_urssaf = Some(urssaf_d_un_etablissement(etab)?);
         }
     }
-    if vrai(&code_urssaf) {
+    if let Some(brut) = &code_urssaf {
         let (a, b) = champ("code_urssaf");
-        let brut = en_texte(&code_urssaf);
-        let v = strip(&brut);
+        let v = strip(brut);
         if v.chars().count() != b - a || !tout_chiffres(v) {
             return Err(socle::echec::a_la_cle(
                 &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
                 "code_urssaf",
-                repr_valeur(&code_urssaf),
+                repr(brut),
             ));
         }
         // ET LE CODE DOIT EXISTER. Trois chiffres bien formes
@@ -391,7 +392,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
             return Err(socle::echec::a_la_cle(
                 "Le code Urssaf de la fiche entreprise n'est pas celui d'un organisme de recouvrement connu : le point de dépôt le refuserait. Le code se lit sur les bordereaux Urssaf de la compagnie.",
                 "code_urssaf",
-                repr_valeur(&code_urssaf),
+                repr(brut),
             ));
         }
         ecrire_zone(&mut buf, "code_urssaf", a, b, v)?;
@@ -430,7 +431,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
     poser(&mut buf, "lieu_naissance", &zone_texte(s.lieu_naissance.ecrite("lieu_naissance")?, &LIEU, zone("lieu_naissance"), droit::fiche::LieuNaissance::faute)?)?;
     let (a, b) = RESERVE_APRES_LIEU;
     ecrire_zone(&mut buf, "reserve", a, b, &" ".repeat(b - a))?;
-    poser(&mut buf, "date_embauche", &d(&e.debut)?.jjmmaaaa())?;
+    poser(&mut buf, "date_embauche", &e.debut.jjmmaaaa())?;
     poser(&mut buf, "heure_embauche", &p.heure_embauche)?;
     poser(&mut buf, "sexe", sexe)?;
     poser(&mut buf, "dept_naissance", s.departement_naissance.ecrite("departement_naissance")?)?;
@@ -440,7 +441,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
     // controle 46 (<< date de fin obligatoire >>) ne vise que les contrats de
     // type CDD. Un CDD sans fin, lui, est refuse ici plutot que par l'Urssaf.
     if nat.date_fin_dpae() {
-        if !vrai(&e.fin) {
+        let Some(fin) = e.fin else {
             return Err(socle::echec::cle(
                 format!(
                     "{} : un contrat {} dit sa date de fin ; la DPAE d'un CDD la porte, et l'Urssaf la refuse sans (code retour 46).",
@@ -449,8 +450,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                 ),
                 "fin",
             ));
-        }
-        poser(&mut buf, "date_fin", &d(&e.fin)?.jjmmaaaa())?;
+        };
+        poser(&mut buf, "date_fin", &fin.jjmmaaaa())?;
     } else {
         poser(&mut buf, "date_fin", &" ".repeat(8))?;
     }
@@ -472,19 +473,21 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<S
     // zones D_NAISSANCE_SAL, L_LIEU_NAISS_SAL et le departement de naissance, « O », et le sexe sans NIR, zone SEXE,
     // `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`) : tout ce qui manque, d'un coup, avant d'ecrire.
     let mut fiches: Vec<(&str, String, &dyn crate::champs::ParCase)> = p.ent.map(|e| ("entreprise", "la fiche entreprise".to_string(), &e.fiche as &dyn crate::champs::ParCase)).into_iter().collect();
-    fiches.extend(embauches.iter().map(|e| ("salarie", format!("la fiche de {}", e.salarie.nomme().unwrap_or_default()), &e.salarie.champs as &dyn crate::champs::ParCase)));
+    fiches.extend(embauches.iter().map(|e| {
+        let qui = match e.salarie.nomme() {
+            Some(n) => n,
+            None => e.salarie.fiche.id.to_string(),
+        };
+        ("salarie", format!("la fiche de {}", qui), &e.salarie.champs as &dyn crate::champs::ParCase)
+    }));
     if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[]).map_err(|e| e.message)? {
         return Err(m);
     }
-    let mut out = Vec::new();
-    let mut gabarit: Option<Vec<char>> = None;
-    for e in embauches {
-        if gabarit.is_none() {
-            gabarit = Some(gabarit_lu(p.ent.map(|e| e.gabarits.as_path()), p.chemins)?);
-        }
-        out.push(enregistrement(e, p, gabarit.as_deref().unwrap_or(&[]))?);
+    if embauches.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(out)
+    let gabarit = gabarit_lu(p.ent.map(|e| e.gabarits.as_path()), p.chemins)?;
+    embauches.iter().map(|e| enregistrement(e, p, &gabarit)).collect()
 }
 
 /// Le texte en latin-1 : un caractere hors de la table se refuse, et le refus le nomme.
@@ -528,14 +531,19 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> Resultat<Vec<u8>> {
     use flate2::{Compression, Crc};
     use std::io::Write;
 
-    let n = |a: usize, b: usize| horodatage.get(a..b).and_then(|t| t.parse::<u32>().ok());
-    let (jour, mois, an, h, m) = (n(0, 2), n(2, 4), n(4, 8), n(8, 10), n(10, 12));
-    let (date, heure) = match (jour, mois, an, h, m) {
-        (Some(j), Some(mo), Some(a), Some(h), Some(m)) if a >= 1980 && a < 2108 => {
-            (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5))
+    // L'horodatage JJMMAAAAHHMM, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
+    let illisible = || format!("L'horodatage de la DPAE ({}) ne se lit pas en JJMMAAAAHHMM.", repr(horodatage));
+    let n = |a: usize, b: usize| -> Resultat<u32> {
+        match horodatage.get(a..b).map(str::parse::<u32>) {
+            Some(Ok(x)) => Ok(x),
+            _ => Err(illisible()),
         }
-        _ => ((0 << 9) | (1 << 5) | 1, 0),
     };
+    let (j, mo, a, h, m) = (n(0, 2)?, n(2, 4)?, n(4, 8)?, n(8, 10)?, n(10, 12)?);
+    if horodatage.chars().count() != 12 || !(1980..2108).contains(&a) {
+        return Err(illisible());
+    }
+    let (date, heure) = (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5));
     let mut crc = Crc::new();
     crc.update(donnees);
     let somme = crc.sum();
@@ -605,25 +613,15 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
     let octets = contenu(embauches, p)?;
     std::fs::write(chemin, &octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     if zipper {
-        let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom = match chemin.file_name() {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => return Err(format!("Le fichier de la DPAE ({}) n'a pas de nom : le signaler au développeur.", chemin.display())),
+        };
         let mut cz = chemin.as_os_str().to_os_string();
         cz.push(".zip");
         std::fs::write(PathBuf::from(cz), zip(&nom, &octets, p.horodatage)?).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     }
     Ok(())
-}
-
-/// Le nom du type d'une valeur JSON, pour la phrase d'un `TypeError`.
-fn nom_du_type(v: &Value) -> &'static str {
-    match v {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) if n.is_f64() => "float",
-        Value::Number(_) => "int",
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
-    }
 }
 
 /// La nature de contrat de cette embauche. Une nature inconnue est un
@@ -632,14 +630,8 @@ fn nature_de(e: &Embauche) -> Resultat<std::sync::Arc<natures::Nature>> {
     natures::nature(&e.nature).map_err(|m| repr(&m))
 }
 
-/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises.
-/// `heure_embauche` se coupe comme un texte (`heure_embauche[:2]`) : toute
-/// autre valeur est un `TypeError`.
-pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &Value) -> Resultat<String> {
-    let heure_embauche = match heure_embauche {
-        Value::String(t) => t.as_str(),
-        autre => return Err(format!("heure d'embauche : {}", socle::fichiers::attendu("un texte", nom_du_type(autre)))),
-    };
+/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.
+pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> Resultat<String> {
     let h: Vec<char> = heure_embauche.chars().collect();
     let heure = format!(
         "{}h{}",
@@ -654,10 +646,9 @@ pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &Value) -> Resultat
         // situe, comme sur le bulletin (`calcul.Paie.__str__`). Ce texte se
         // recopie a la main dans la saisie en ligne -- il ne doit rien dire
         // que le fichier ne dise.
-        let terme = if vrai(&e.fin) {
-            format!(", fin prevue le {}", d(&e.fin)?.jj_mm_aaaa())
-        } else {
-            ", sans terme".to_string()
+        let terme = match e.fin {
+            Some(fin) => format!(", fin prevue le {}", fin.jj_mm_aaaa()),
+            None => ", sans terme".to_string(),
         };
         let ou = if let Some(sp) = &e.spectacle {
             format!(" - {}", sp.titre.ecrite("titre")?)
@@ -676,7 +667,7 @@ pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &Value) -> Resultat
             Some(nir) => format!("  NIR {}{}", nir, s.nir_cle.ecrite("nir_cle")?),
             None => "  NIR : aucun -- cette DPAE vaut demande d'immatriculation (formalite IMMA)".to_string(),
         });
-        lignes.push(format!("  Embauche le {} a {}{}", d(&e.debut)?.jj_mm_aaaa(), heure, terme));
+        lignes.push(format!("  Embauche le {} a {}{}", e.debut.jj_mm_aaaa(), heure, terme));
         lignes.push(format!("  Emploi : {} - {}{}", s.emploi.ecrite("emploi")?, nat.libelle, ou));
         lignes.push(String::new());
     }
@@ -809,14 +800,31 @@ fn zone_retour(nom: &str) -> (usize, usize) {
     (*a, *b)
 }
 
+/// Une DPAE du certificat de conformite (nature 41) : chaque zone telle que l'enregistrement la porte, sans ses blancs.
+#[derive(Debug, Clone, Serialize)]
+pub struct LigneDuCertificat {
+    pub nom: String,
+    pub prenom: String,
+    pub nir: String,
+    /// AAAA-MM-JJ, vide si la zone ne porte pas huit caracteres.
+    pub embauche: String,
+    /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
+    pub dossier: String,
+    /// C_RETOUR_AR (`00` quand la zone est a blanc) et son libelle (Format 120).
+    pub code: String,
+    pub libelle: String,
+    /// 00 ou 99 avec un dossier.
+    pub enregistree: bool,
+    /// 98.
+    pub deja_existante: bool,
+    /// Celles a O : CERTIF, IMMA, MT, PMF5.
+    pub formalites: Vec<&'static str>,
+    /// C_RET_AR_LOT (`00` quand la zone est a blanc).
+    pub lot: String,
+}
+
 /// Le certificat de conformite (nature 41), DPAE par DPAE.
-///
-/// Rend, par enregistrement : `nom`, `prenom`, `nir`, `embauche`
-/// (AAAA-MM-JJ), `dossier` (R_DOSSIER), `code` et `libelle` (C_RETOUR_AR,
-/// Format 120), `enregistree` (00 ou 99 avec un dossier), `deja_existante`
-/// (98), `formalites` (celles a O : CERTIF, IMMA, MT, PMF5), `lot`
-/// (C_RET_AR_LOT).
-pub fn lire_certificat(contenu: &str) -> Vec<Value> {
+pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
     let mut out = Vec::new();
     for r in lire_enregistrements(contenu) {
         let z = |k: &str| {
@@ -829,10 +837,10 @@ pub fn lire_certificat(contenu: &str) -> Vec<Value> {
         };
         let emb = c("date_embauche");
         let code = if z("retour_ar").is_empty() { "00".to_string() } else { z("retour_ar") };
-        let libelle = CODES_RETOUR_AR
-            .iter()
-            .find(|(k, _)| *k == code)
-            .map_or_else(|| format!("code {} (inconnu du Format 120)", code), |(_, l)| l.to_string());
+        let libelle = match CODES_RETOUR_AR.iter().find(|(k, _)| *k == code) {
+            Some((_, l)) => l.to_string(),
+            None => format!("code {} (inconnu du Format 120)", code),
+        };
         let e: Vec<char> = emb.chars().collect();
         let embauche = if e.len() == 8 {
             format!(
@@ -846,21 +854,20 @@ pub fn lire_certificat(contenu: &str) -> Vec<Value> {
         };
         let dossier = z("dossier");
         let lot = z("ret_ar_lot");
-        let mut m = Map::new();
-        m.insert("nom".into(), json!(c("nom")));
-        m.insert("prenom".into(), json!(c("prenom")));
-        m.insert("nir".into(), json!(c("nir")));
-        m.insert("embauche".into(), json!(embauche));
-        m.insert("dossier".into(), json!(dossier));
-        m.insert("code".into(), json!(code));
-        m.insert("libelle".into(), json!(libelle));
         let enregistree = CODES_ENREGISTREE.contains(&code.as_str()) && !dossier.is_empty();
-        m.insert("enregistree".into(), json!(enregistree));
-        m.insert("deja_existante".into(), json!(code == CODE_DEJA_EXISTANTE));
-        let formalites: Vec<&str> = FORMALITES.iter().filter(|(k, _)| z(k) == "O").map(|(_, n)| *n).collect();
-        m.insert("formalites".into(), json!(formalites));
-        m.insert("lot".into(), json!(if lot.is_empty() { "00".to_string() } else { lot }));
-        out.push(Value::Object(m));
+        out.push(LigneDuCertificat {
+            nom: c("nom"),
+            prenom: c("prenom"),
+            nir: c("nir"),
+            embauche,
+            dossier,
+            deja_existante: code == CODE_DEJA_EXISTANTE,
+            code,
+            libelle,
+            enregistree,
+            formalites: FORMALITES.iter().filter(|(k, _)| z(k) == "O").map(|(_, n)| *n).collect(),
+            lot: if lot.is_empty() { "00".to_string() } else { lot },
+        });
     }
     out
 }
@@ -870,7 +877,6 @@ pub fn lire_certificat(contenu: &str) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use socle::fichiers::dossier_du_code;
 
     /// Le gabarit neutre livre avec le logiciel.
@@ -880,27 +886,45 @@ mod tests {
     }
 
     /// Un salarie inventé (le NIR porte `999`, la marque des numeros inventes).
-    fn salarie() -> Value {
-        json!({"nom": "Dupont", "prenom": "Alice", "nir": "2850375999001", "nir_cle": "42",
-               "date_naissance": "1985-03-07", "lieu_naissance": "Tours", "departement_naissance": "37",
-               "emploi": "Comedienne"})
+    const SALARIE: &str = r#"{"nom": "Dupont", "prenom": "Alice", "nir": "2850375999001", "nir_cle": "42",
+        "date_naissance": "1985-03-07", "lieu_naissance": "Tours", "departement_naissance": "37", "emploi": "Comedienne"}"#;
+
+    /// Le meme, sans NIR, le sexe dit par la fiche.
+    const SALARIE_SANS_NIR: &str = r#"{"nom": "Dupont", "prenom": "Alice", "sexe": "1",
+        "date_naissance": "1985-03-07", "lieu_naissance": "Tours", "departement_naissance": "37", "emploi": "Comedienne"}"#;
+
+    fn jour(t: &str) -> Jour {
+        Jour::lire(t).unwrap()
     }
 
-    fn embauche(s: Value, nature: &str, fin: Value) -> Embauche {
+    fn embauche_de(fiche: &str, nature: &str, fin: Option<&str>) -> Embauche {
         Embauche {
-            salarie: droit::fiche::SalarieDuContrat::de(droit::fiche::FicheSalarie { id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(), champs: droit::fiche::lire_champs(&s, "fiche").unwrap() }),
-            debut: json!("2026-10-01"),
-            fin,
+            salarie: droit::fiche::SalarieDuContrat::de(droit::fiche::FicheSalarie {
+                id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(),
+                champs: socle::forme::lire_texte(fiche, "la fiche du test").unwrap(),
+            }),
+            debut: jour("2026-10-01"),
+            fin: fin.map(jour),
             nature: nature.to_string(),
             spectacle: None,
         }
     }
 
-    fn entreprise() -> EntrepriseDuDocument {
-        let fiche = droit::fiche::lire_champs(&json!({"siret": "12345691500016", "nic": "00016", "raison_sociale": "Compagnie Fictive des Marionnettes d'Orléans", "adresse": "1, rue Fictive",
-               "code_postal": "45000", "commune": "Orléans", "naf": "9001Z", "medecine_travail": "MT542",
-               "declarant_dsn": {"tel": "01 02 03 04 05"}}), "entreprise").unwrap();
+    fn embauche(nature: &str, fin: Option<&str>) -> Embauche {
+        embauche_de(SALARIE, nature, fin)
+    }
+
+    const ENTREPRISE: &str = r#"{"siret": "12345691500016", "nic": "00016", "raison_sociale": "Compagnie Fictive des Marionnettes d'Orléans",
+        "adresse": "1, rue Fictive", "code_postal": "45000", "commune": "Orléans", "naf": "9001Z", "medecine_travail": "MT542",
+        "declarant_dsn": {"tel": "01 02 03 04 05"}"#;
+
+    fn entreprise_de(fiche: &str) -> EntrepriseDuDocument {
+        let fiche = socle::forme::lire_texte(fiche, "la fiche du test").unwrap();
         EntrepriseDuDocument { fiche, gabarits: std::env::temp_dir().join("puppetpaie-dpae-sans-gabarits") }
+    }
+
+    fn entreprise() -> EntrepriseDuDocument {
+        entreprise_de(&format!("{}}}", ENTREPRISE))
     }
 
     fn chemins() -> Chemins {
@@ -910,11 +934,11 @@ mod tests {
         }
     }
 
-    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Value, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: "031020261407", heure_embauche: "0800".into(), code_urssaf: code, ent, chemins }
+    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
+        Parametres { horodatage: "031020261407", heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
-    fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Value) -> Resultat<String> {
+    fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> Resultat<String> {
         let c = chemins();
         enregistrements(std::slice::from_ref(e), &parametres(ent, code, &c)).map(|mut v| v.remove(0))
     }
@@ -928,31 +952,31 @@ mod tests {
 
     #[test]
     fn un_cdd_sans_terme_est_refuse_ici_et_non_par_l_urssaf() {
-        let e = embauche(salarie(), "cdd", Value::Null);
-        let m = enr(&e, None, json!("")).unwrap_err();
+        let e = embauche("cdd", None);
+        let m = enr(&e, None, None).unwrap_err();
         assert!(m.contains("date de fin"), "{}", m);
         // Avec son terme, il part, type 1 (CDD) et date de fin dans la case.
-        let e = embauche(salarie(), "cdd", json!("2026-12-31"));
-        let t = enr(&e, None, json!("")).unwrap();
+        let e = embauche("cdd", Some("2026-12-31"));
+        let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "31122026");
     }
 
     #[test]
     fn un_cdi_est_declare_a_duree_indeterminee_sans_terme() {
-        let e = embauche(salarie(), "cdi", Value::Null);
-        let t = enr(&e, None, json!("")).unwrap();
+        let e = embauche("cdi", None);
+        let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "2");
         assert_eq!(zone(&t, "date_fin"), " ".repeat(8));
         // Une fin portee par un CDI n'est pas declaree : il n'a pas de terme.
-        let e = embauche(salarie(), "cdi", json!("2026-12-31"));
-        assert_eq!(zone(&enr(&e, None, json!("")).unwrap(), "date_fin"), " ".repeat(8));
+        let e = embauche("cdi", Some("2026-12-31"));
+        assert_eq!(zone(&enr(&e, None, None).unwrap(), "date_fin"), " ".repeat(8));
     }
 
     #[test]
     fn un_cdd_d_usage_est_un_cdd_avec_terme() {
-        let e = embauche(salarie(), "cddu_spectacle", json!("2026-10-05"));
-        let t = enr(&e, None, json!("")).unwrap();
+        let e = embauche("cddu_spectacle", Some("2026-10-05"));
+        let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "05102026");
         assert_eq!(t.chars().count(), LONGUEUR);
@@ -960,8 +984,8 @@ mod tests {
 
     #[test]
     fn les_zones_du_salarie() {
-        let e = embauche(salarie(), "cdi", Value::Null);
-        let t = enr(&e, None, json!("117")).unwrap();
+        let e = embauche("cdi", None);
+        let t = enr(&e, None, Some("117")).unwrap();
         assert_eq!(zone(&t, "horodatage"), "031020261407");
         assert_eq!(zone(&t, "code_urssaf"), "117");
         assert_eq!(zone(&t, "nom").trim_end(), "DUPONT");
@@ -977,26 +1001,23 @@ mod tests {
 
     #[test]
     fn sans_nir_la_zone_reste_a_blanc_et_le_sexe_vient_de_la_fiche() {
-        let mut s = salarie();
-        s["nir"] = json!("");
-        s["sexe"] = json!("1");
-        let t = enr(&embauche(s, "cdi", Value::Null), None, json!("")).unwrap();
+        let t = enr(&embauche_de(SALARIE_SANS_NIR, "cdi", None), None, None).unwrap();
         assert_eq!(zone(&t, "nir"), " ".repeat(13));
         assert_eq!(zone(&t, "sexe"), "M");
     }
 
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
-        let e = embauche(salarie(), "cdi", Value::Null);
-        let m = enr(&e, None, json!("11")).unwrap_err();
+        let e = embauche("cdi", None);
+        let m = enr(&e, None, Some("11")).unwrap_err();
         assert!(m.contains("code_urssaf") && m.contains("'11'"), "{}", m);
-        let m = enr(&e, None, json!("abc")).unwrap_err();
+        let m = enr(&e, None, Some("abc")).unwrap_err();
         assert!(m.contains("3 chiffres"), "{}", m);
-        let m = enr(&e, None, json!("999")).unwrap_err();
+        let m = enr(&e, None, Some("999")).unwrap_err();
         assert!(m.contains("code_urssaf") && m.contains("'999'"), "{}", m);
-        assert!(enr(&e, None, json!(" 117 ")).is_ok());
+        enr(&e, None, Some(" 117 ")).unwrap();
         // Sans code, celui du gabarit reste.
-        let t = enr(&e, None, json!("")).unwrap();
+        let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), neutre()[133..136].iter().collect::<String>());
     }
 
@@ -1005,24 +1026,24 @@ mod tests {
     /// `atelier/reference/sources/code-du-travail/xml/R1221-3.xml`) ; celle du siege garde le code de la fiche.
     #[test]
     fn la_dpae_d_un_autre_etablissement_va_a_l_urssaf_de_son_territoire() {
-        let mut ent = entreprise();
-        ent.fiche.siren = Some("123456915".into());
-        ent.fiche.nic = Some("00016".into());
-        ent.fiche.etablissements = Some(droit::fiche::lire_champs(&json!([{"nic": "00024", "adresse": "8 RUE DE LA FONDERIE", "code_postal": "44000", "commune": "NANTES"}]), "etablissements").unwrap());
-        let nantes = crate::urssaf::base().unwrap().du_departement("44");
-        let mut e = embauche(salarie(), "cdi", Value::Null);
+        let ent = entreprise_de(&format!(
+            r#"{}, "siren": "123456915", "etablissements": [{{"nic": "00024", "adresse": "8 RUE DE LA FONDERIE", "code_postal": "44000", "commune": "NANTES"}}]}}"#,
+            ENTREPRISE
+        ));
+        let nantes = crate::urssaf::base().unwrap().du_departement("44").unwrap();
+        let mut e = embauche("cdi", None);
         e.salarie.etablissement = Some("00024".into());
-        let t = enr(&e, Some(&ent), json!("117")).unwrap();
+        let t = enr(&e, Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), nantes);
-        let t = enr(&embauche(salarie(), "cdi", Value::Null), Some(&ent), json!("117")).unwrap();
+        let t = enr(&embauche("cdi", None), Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), "117");
     }
 
     #[test]
     fn l_employeur_vient_de_la_fiche_entreprise() {
         let ent = entreprise();
-        let e = embauche(salarie(), "cdi", Value::Null);
-        let t = enr(&e, Some(&ent), json!("117")).unwrap();
+        let e = embauche("cdi", None);
+        let t = enr(&e, Some(&ent), Some("117")).unwrap();
         let ch = |nom: &str| {
             let (a, b) = zone_employeur(nom);
             t.chars().skip(a).take(b - a).collect::<String>()
@@ -1041,7 +1062,7 @@ mod tests {
         // Un SIRET qui ne fait pas 14 chiffres : refus.
         let mut mauvais = entreprise();
         mauvais.fiche.siret = Some("1234".into());
-        let m = enr(&e, Some(&mauvais), json!("117")).unwrap_err();
+        let m = enr(&e, Some(&mauvais), Some("117")).unwrap_err();
         assert!(m.contains("SIRET") && m.contains("'1234'"), "{}", m);
     }
 
@@ -1062,12 +1083,12 @@ mod tests {
 
     #[test]
     fn un_cddu_ecrit_000_en_periode_d_essai_les_autres_la_laissent_a_blanc() {
-        let e = embauche(salarie(), "cddu_spectacle", json!("2026-10-05"));
-        assert_eq!(zone(&enr(&e, None, json!("")).unwrap(), "jours_essai"), "000");
-        let e = embauche(salarie(), "cdi", Value::Null);
-        assert_eq!(zone(&enr(&e, None, json!("")).unwrap(), "jours_essai"), "   ");
-        let e = embauche(salarie(), "cdd", json!("2026-12-31"));
-        assert_eq!(zone(&enr(&e, None, json!("")).unwrap(), "jours_essai"), "   ");
+        let e = embauche("cddu_spectacle", Some("2026-10-05"));
+        assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "000");
+        let e = embauche("cdi", None);
+        assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
+        let e = embauche("cdd", Some("2026-12-31"));
+        assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
     }
 
     // ---- le latin-1 et le .zip
@@ -1147,24 +1168,24 @@ mod tests {
         });
         let c = lire_certificat(&f);
         assert_eq!(c.len(), 4);
-        assert_eq!(c[0]["embauche"], "2026-10-01");
-        assert_eq!(c[0]["dossier"], "D1234");
-        assert_eq!(c[0]["code"], "99");
-        assert_eq!(c[0]["libelle"], "Autre erreur (données facultatives)");
-        assert_eq!(c[0]["enregistree"], true);
-        assert_eq!(c[0]["formalites"], json!(["CERTIF", "MT"]));
+        assert_eq!(c[0].embauche, "2026-10-01");
+        assert_eq!(c[0].dossier, "D1234");
+        assert_eq!(c[0].code, "99");
+        assert_eq!(c[0].libelle, "Autre erreur (données facultatives)");
+        assert!(c[0].enregistree);
+        assert_eq!(c[0].formalites, ["CERTIF", "MT"]);
         // 98 : deja existante, et pas enregistree
-        assert_eq!(c[1]["deja_existante"], true);
-        assert_eq!(c[1]["enregistree"], false);
-        assert_eq!(c[1]["formalites"], json!(["IMMA"]));
+        assert!(c[1].deja_existante);
+        assert!(!c[1].enregistree);
+        assert_eq!(c[1].formalites, ["IMMA"]);
         // un code inconnu du Format 120
-        assert_eq!(c[2]["libelle"], "code 77 (inconnu du Format 120)");
-        assert_eq!(c[2]["enregistree"], false);
+        assert_eq!(c[2].libelle, "code 77 (inconnu du Format 120)");
+        assert!(!c[2].enregistree);
         // un lot en erreur ; le code `00` sans dossier n'est pas enregistre
-        assert_eq!(c[3]["lot"], "11");
-        assert_eq!(c[3]["enregistree"], false);
+        assert_eq!(c[3].lot, "11");
+        assert!(!c[3].enregistree);
         // sans code de retour, `00`
-        assert_eq!(lire_certificat(&flux(1, |_, _| {}))[0]["code"], "00");
+        assert_eq!(lire_certificat(&flux(1, |_, _| {}))[0].code, "00");
     }
 
     #[test]

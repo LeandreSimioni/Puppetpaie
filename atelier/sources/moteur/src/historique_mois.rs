@@ -367,17 +367,15 @@ fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
         if !lignes.is_empty() {
             l.titre = "Certificat de conformité des DPAE".into();
             for x in &lignes {
-                let t = |k: &str| x.get(k).filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default();
-                let qui = [t("nom"), t("prenom")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" ");
-                let etat = if vrai(&x["enregistree"]) {
-                    let dossier = t("dossier");
-                    if dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée, dossier {}", dossier) }
-                } else if vrai(&x["deja_existante"]) {
+                let qui = [&x.nom, &x.prenom].iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+                let etat = if x.enregistree {
+                    if x.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée, dossier {}", x.dossier) }
+                } else if x.deja_existante {
                     "déjà enregistrée auparavant".to_string()
                 } else {
-                    format!("refusée : {}", [t("code"), t("libelle")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" — "))
+                    format!("refusée : {}", [&x.code, &x.libelle].iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect::<Vec<_>>().join(" — "))
                 };
-                l.phrases.push(format!("{}{} : {}.", qui, if t("embauche").is_empty() { String::new() } else { format!(" (embauche du {})", t("embauche")) }, etat));
+                l.phrases.push(format!("{}{} : {}.", qui, if x.embauche.is_empty() { String::new() } else { format!(" (embauche du {})", x.embauche) }, etat));
             }
             return l;
         }

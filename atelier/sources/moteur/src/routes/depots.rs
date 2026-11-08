@@ -429,7 +429,7 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<String> {
         return Ok(ecrit.trim().to_string());
     }
     let base = declarations::urssaf::base().map_err(plain)?;
-    let territoire = ent.code_postal.portee().map(|cp| base.du_code_postal(cp)).filter(|t| !t.is_empty());
+    let territoire = ent.code_postal.portee().and_then(|cp| base.du_code_postal(cp));
     Ok(territoire.unwrap_or_else(|| "117".to_string()))
 }
 
@@ -437,8 +437,8 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<String> {
 fn embauche_dpae(p: &Paie, spectacle: bool) -> Embauche {
     Embauche {
         salarie: p.salarie.clone(),
-        debut: json!(p.engagement.debut.iso()),
-        fin: p.engagement.fin.map_or(Value::Null, |f| json!(f.iso())),
+        debut: p.engagement.debut,
+        fin: p.engagement.fin,
         nature: p.engagement.nature.clone(),
         spectacle: p.spectacle.clone().filter(|_| spectacle),
     }
@@ -451,7 +451,7 @@ fn embauche_dpae(p: &Paie, spectacle: bool) -> Embauche {
 pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDesignee]>) -> R<Dpae> {
     let mois = le_mois.to_string();
     // L'heure d'embauche que la DPAE declare.
-    let heure = json!(declarations::dpae::HEURE_EMBAUCHE);
+    let heure = declarations::dpae::HEURE_EMBAUCHE;
 
     // Les engagements valides du mois (rien ne part d'un engagement en saisie), vus comme des embauches, sans relire leur
     // paie.
@@ -534,7 +534,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"),
         poste: ctx.gabarits(),
     };
-    let heure_texte = en_texte(&heure);
+    let heure_texte = heure;
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let mut f: Option<PathBuf> = None;
     {
@@ -580,7 +580,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         Some(f) => f,
         None => {
             let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
-            ecrire_la_dpae(ctx, &retenues, &cible, &recap, &heure, &maintenant_iso())?;
+            ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, &maintenant_iso())?;
             crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&cible), None, None)?;
             cible
         }
@@ -611,20 +611,20 @@ pub(crate) struct DpaeEcrite {
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
 /// `quand` (`AAAA-MM-JJTHH:MM:SS`, a Paris), l'heure d'embauche `heure` ; et son recapitulatif en clair dans `recap`.
 /// Ce que `dpae` ecrit, et ce que `compagnie::depart::piece_partie` refait d'une DPAE partie dont le fichier manque.
-pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &Value, quand: &str) -> R<()> {
+pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: &str) -> R<()> {
     let ent = ctx.entreprise_et_gabarits();
     let code = code_urssaf(&ctx.entreprise)?;
     let chemins = Chemins { defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"), poste: ctx.gabarits() };
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let h = horodatage(quand);
-    declarations::dpae::ecrire(&embauches, cible, &parametres_de(&h, &en_texte(heure), &code, &ent, &chemins), true).map_err(plain)?;
+    declarations::dpae::ecrire(&embauches, cible, &parametres_de(&h, heure, &code, &ent, &chemins), true).map_err(plain)?;
     let pour_recap: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, true)).collect();
     ecrire_texte(recap, &declarations::dpae::recapitulatif(&pour_recap, heure).map_err(plain)?)
 }
 
 /// Les parametres d'une ecriture de DPAE.
 fn parametres_de<'a>(horodatage: &'a str, heure: &str, code: &str, ent: &'a droit::contexte::EntrepriseDuDocument, chemins: &'a Chemins) -> Parametres<'a> {
-    Parametres { horodatage, heure_embauche: heure.to_string(), code_urssaf: json!(code), ent: Some(ent), chemins }
+    Parametres { horodatage, heure_embauche: heure.to_string(), code_urssaf: Some(code.to_string()), ent: Some(ent), chemins }
 }
 
 /// `AAAA-MM-JJTHH:MM:SS` -> `JJMMAAAAHHMM`.

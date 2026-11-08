@@ -1547,8 +1547,8 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
     // fiche n'en dit rien : l'organisme du territoire.
     let urssaf = declarations::urssaf::base().map_err(plain)?;
-    let deduit = ctx.entreprise.code_postal.portee().map(|cp| urssaf.du_code_postal(cp)).filter(|d| !d.is_empty());
-    let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.into_iter().map(|o| OrganismeUrssaf { code: o.code, nom: o.nom }).collect();
+    let deduit = ctx.entreprise.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp));
+    let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.iter().map(|o| OrganismeUrssaf { code: o.code.clone(), nom: o.nom.clone() }).collect();
     let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
     let joue = branchement.joue();
 
