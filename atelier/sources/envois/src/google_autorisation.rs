@@ -30,7 +30,7 @@ use crate::transport::{envoyer, Requete};
 
 /// CE QUE GOOGLE DIT DU COMPTE (`userinfo`) : son adresse. Les autres cles que Google ecrit sont declarees, sans servir.
 #[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+// Une reponse de Google, un tiers : les champs lus sont exiges, ceux que Google ajoute passent.
 struct ReponseCompte {
     email: Option<String>,
     #[serde(rename = "sub")]

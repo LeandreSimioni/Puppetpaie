@@ -33,7 +33,7 @@ pub struct Application {
 /// CE QUE GOOGLE REND A UNE DEMANDE DE JETON (`/token`) : le jeton d'acces, et pour un premier code d'autorisation le
 /// jeton de rafraichissement et les permissions accordees. Les autres cles que Google ecrit sont declarees, sans servir.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// Une reponse de Google, un tiers : les champs lus sont exiges, ceux que Google ajoute passent.
 pub struct ReponseJeton {
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
@@ -57,7 +57,7 @@ pub fn lue<T: serde::de::DeserializeOwned>(brut: Vec<u8>, phrase: &str) -> Resul
 /// L'ERREUR QUE GOOGLE REND : celle de l'autorisation (`{"error": "invalid_grant", "error_description": …}`) ou celle d'une
 /// API (`{"error": {"code", "message", "status", …}}`).
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// Une reponse de Google : les champs que Google ajoute passent.
 struct ReponseDErreur {
     error: ErreurDite,
     error_description: Option<String>,
@@ -73,7 +73,7 @@ enum ErreurDite {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// Une reponse de Google : les champs que Google ajoute passent.
 struct ErreurDApi {
     message: Option<String>,
     status: Option<String>,
