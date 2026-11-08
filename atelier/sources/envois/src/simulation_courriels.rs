@@ -406,7 +406,7 @@ pub fn courriels_joues(racine: &Path, apres: Option<&str>) -> R<CourrielsJoues> 
             pieces.push(PieceJouee { nom: nom_de_fichier(f), pages: pages(f)? });
         }
         // Le courriel qui renvoie au signataire son contrat contresigne : sa piece en est l'exemplaire.
-        let contresigne = pieces.iter().any(|p| p.nom.as_deref().is_some_and(|n| n.ends_with(crate::releve_signatures::SUFFIXE_CONTRESIGNE)));
+        let contresigne = pieces.iter().any(|p| p.nom.as_deref().is_some_and(|n| crate::releve_signatures::souche_contresignee(n).is_some()));
         sortie.push(CourrielJoue {
             nom,
             de: adresses(&m, "From")?,

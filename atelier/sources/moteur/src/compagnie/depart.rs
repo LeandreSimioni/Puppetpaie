@@ -1178,7 +1178,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, mois: &str, nom: &str) -> R<PathBuf> 
         // L'EXEMPLAIRE CONTRESIGNE : le contrat parti, plus la mention que sa signature a notee (`contresigner`).
         let signe = lignes.iter().rev().filter(|l| l.mois() == Some(le_mois)).flat_map(|l| envois::etats::revenus(l)).find(|r| r.fichier_signe.as_deref().unwrap_or("").split(", ").any(|f| f == nom));
         if let Some(r) = signe {
-            let (Some(envoye), mention) = (nom.strip_suffix(envois::releve_signatures::SUFFIXE_CONTRESIGNE), r.mention.clone().unwrap_or_default()) else {
+            let (Some(envoye), mention) = (envois::releve_signatures::souche_contresignee(&nom), r.mention.clone().unwrap_or_default()) else {
                 return Err(refus(format!("{} : la signature notée ne dit pas quel contrat parti elle signe.", nom)));
             };
             if mention.is_empty() {

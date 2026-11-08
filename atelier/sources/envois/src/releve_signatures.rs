@@ -26,16 +26,16 @@ use socle::paris::maintenant;
 /// La fin du nom de l'exemplaire contresigne d'un contrat (le contrat parti, `<souche>` ; contresigne, `<souche>_signe.pdf`) :
 /// la piece jointe du courriel qui le renvoie au signataire. Ses lecteurs passent par `nom_contresigne` et
 /// `souche_contresignee`.
-pub const SUFFIXE_CONTRESIGNE: &str = "_signe.pdf";
+const SUFFIXE_CONTRESIGNE: &str = "_signe.pdf";
 
 /// Le nom de l'exemplaire contresigne du contrat de souche `souche`.
 pub fn nom_contresigne(souche: &str) -> String {
-    format!("{}_signe.pdf", souche)
+    format!("{}{}", souche, SUFFIXE_CONTRESIGNE)
 }
 
 /// La souche du contrat dont `nom` est l'exemplaire contresigne ; aucune si `nom` n'en est pas un.
 pub fn souche_contresignee(nom: &str) -> Option<&str> {
-    nom.strip_suffix("signe.pdf")?.strip_suffix('_')
+    nom.strip_suffix(SUFFIXE_CONTRESIGNE)
 }
 
 const SUJET_CONTRESIGNE: &str = "Ton contrat signé - {spectacle}";
@@ -176,7 +176,7 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
                 continue;
             }
         };
-        if envoyes.contains(&lecture::identifiant_de(&m)) {
+        if lecture::identifiant_de(&m).is_some_and(|i| envoyes.contains(&i)) {
             continue; // notre propre demande, par son en-tete
         }
         let texte = lecture::texte_propre(&m);

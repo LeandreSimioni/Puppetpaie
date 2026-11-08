@@ -2383,7 +2383,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
                 r.incidents.push(format!("Lecture du message {} : message illisible.", ident));
                 continue;
             };
-            if a.envoyes.contains(&lecture::identifiant_de(&m)) {
+            if lecture::identifiant_de(&m).is_some_and(|i| a.envoyes.contains(&i)) {
                 continue;
             }
             let texte = lecture::texte_propre(&m);

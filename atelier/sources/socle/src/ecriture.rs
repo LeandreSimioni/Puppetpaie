@@ -41,8 +41,8 @@ pub fn json_trie<T: Serialize + ?Sized>(v: &T) -> String {
     s
 }
 
-/// Le JSON de `v` sur une ligne, serre, tel que serde l'ecrit : ce qu'un refus porte a part (`echec::avec`), que
-/// `echec::phrase_de` sait retirer ; jamais un fichier.
+/// Le JSON de `v` sur une ligne, serre, tel que serde l'ecrit : une ligne d'un journal (JSONL), ou ce qu'un refus porte
+/// a part (`echec::avec`), que `echec::phrase_de` sait retirer.
 pub fn json_en_ligne<T: Serialize + ?Sized>(v: &T) -> String {
     // Toute forme du logiciel s'ecrit (`en_valeur`).
     match serde_json::to_string(v) {

@@ -390,26 +390,13 @@ fn noms_commencant_finissant(dossier: &Path, debut: &str, fin: &str) -> Vec<Stri
     out
 }
 
-/// `glob("Contrat*_<cle>_*_signe.pdf")`.
+/// `glob("Contrat*_<cle>_*_signe.pdf")` : les exemplaires contresignes (`envois::releve_signatures::souche_contresignee`)
+/// dont la souche porte `_<cle>_` apres `Contrat`.
 fn contrats_signes_de(dossier: &Path, cle: &str) -> Vec<String> {
     let marque = format!("_{}_", cle);
-    let fin = envois::releve_signatures::SUFFIXE_CONTRESIGNE;
-    noms_commencant_finissant(dossier, "Contrat", fin)
+    noms_commencant_finissant(dossier, "Contrat", "")
         .into_iter()
-        .filter(|n| {
-            let mut de = "Contrat".len();
-            while let Some(i) = n.get(de..).and_then(|r| r.find(&marque)) {
-                let apres = de + i + marque.len();
-                if n.len() >= apres + fin.len() {
-                    return true;
-                }
-                de += i + 1;
-                while !n.is_char_boundary(de) {
-                    de += 1;
-                }
-            }
-            false
-        })
+        .filter(|n| envois::releve_signatures::souche_contresignee(n).and_then(|s| s.get("Contrat".len()..)).is_some_and(|r| r.contains(&marque)))
         .collect()
 }
 

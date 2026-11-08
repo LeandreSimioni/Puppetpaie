@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
@@ -324,7 +324,8 @@ pub fn pays_lu(texte: &str) -> Result<Option<(String, Option<&'static str>)>, St
 
 /// CE QUE LES REPONSES DISENT DE LA FICHE DU SALARIE : chaque case lue, dans l'ordre du fichier de la fiche ; une case
 /// que les reponses ne disent pas, ou pas lisiblement, ne s'ecrit pas.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prenom_affichage: Option<String>,
@@ -365,7 +366,8 @@ pub struct FicheLue {
 }
 
 /// Le compte bancaire que les reponses donnent : l'IBAN et le BIC, chacun s'il est lisible.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BanqueLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iban: Option<String>,

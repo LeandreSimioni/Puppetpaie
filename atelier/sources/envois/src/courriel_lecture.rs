@@ -92,9 +92,9 @@ fn sans_fin_de_ligne(l: &[u8]) -> &[u8] {
     }
 }
 
-/// L'identifiant du message (`Message-ID`), sans blancs aux bords ; vide s'il manque.
-pub fn identifiant_de(m: &ParsedMail) -> String {
-    identifiant_des_entetes(&m.headers).unwrap_or_default()
+/// L'identifiant du message (`Message-ID`), sans blancs aux bords ; `None` s'il manque.
+pub fn identifiant_de(m: &ParsedMail) -> Option<String> {
+    identifiant_des_entetes(&m.headers)
 }
 
 /// L'identifiant (`Message-ID`) d'en-tetes lus seuls (`mailparse::parse_headers`), s'ils le portent.
