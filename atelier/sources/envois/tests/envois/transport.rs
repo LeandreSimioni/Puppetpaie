@@ -6,7 +6,6 @@
 use std::io::Write;
 
 use envois::transport::{authentifier, depot, Authentification, Identite};
-use serde_json::json;
 
 use crate::outils::{serveur, Recu, Requete};
 
@@ -53,7 +52,7 @@ fn l_authentification_envoie_les_identifiants_du_guide_et_rend_le_jeton() {
     let (base, recu) = faux();
     let (url, d) = (format!("{}/auth", base), declarant());
     let r = authentifier(&auth(&url, &d, Some("a&b<c>d"))).unwrap();
-    assert_eq!(r["jeton"], json!("JETON-123"));
+    assert_eq!(r["jeton"], "JETON-123");
     let v = &recu.lock().unwrap()[0];
     assert_eq!((v.methode.as_str(), en_tete(v, "content-type")), ("POST", Some("application/xml")));
     // Le mot de passe s'echappe : un `<` ou un `&` ne casse pas le XML du guide.

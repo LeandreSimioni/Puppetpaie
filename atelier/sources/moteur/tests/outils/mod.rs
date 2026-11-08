@@ -414,6 +414,11 @@ mod serveur;
 #[allow(unused_imports)]
 pub use serveur::*;
 
+/// Une réponse HTTP dont le corps est ce JSON.
+pub fn http_json(statut: u16, v: &Value) -> Vec<u8> {
+    http(statut, "application/json", v.to_string().as_bytes())
+}
+
 /// Un faux mandataire, que l'essai nomme comme seule porte du garde-fou reseau (`socle::garde_reseau::VARIABLE`) : il
 /// note la première ligne de chaque demande (`CONNECT hote:port HTTP/1.1`) et refuse ; rien ne sort de la machine.
 pub fn mandataire() -> (String, Arc<Mutex<Vec<String>>>) {

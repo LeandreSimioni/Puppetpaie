@@ -5,8 +5,6 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
-use serde_json::Value;
-
 /// Une requête reçue. Le corps d'une authentification (un chemin qui contient `authentifier`) n'est jamais gardé : il porte
 /// un mot de passe.
 #[derive(Clone, Debug)]
@@ -24,9 +22,6 @@ pub struct Requete {
 impl Requete {
     pub fn entete(&self, nom: &str) -> &str {
         self.entetes.iter().find(|(k, _)| k.eq_ignore_ascii_case(nom)).map(|(_, v)| v.as_str()).unwrap_or("")
-    }
-    pub fn json(&self) -> Value {
-        serde_json::from_slice(&self.corps).unwrap_or(Value::Null)
     }
 }
 
@@ -69,10 +64,6 @@ pub fn http(statut: u16, type_: &str, corps: &[u8]) -> Vec<u8> {
     let mut r = format!("HTTP/1.1 {} X\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", statut, type_, corps.len()).into_bytes();
     r.extend_from_slice(corps);
     r
-}
-
-pub fn http_json(statut: u16, v: &Value) -> Vec<u8> {
-    http(statut, "application/json", v.to_string().as_bytes())
 }
 
 /// Un serveur local (127.0.0.1, un fil par connexion) : `f` rend les octets de la réponse, ou `None` pour couper la
