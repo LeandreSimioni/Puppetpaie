@@ -344,16 +344,13 @@ pas son assiette. Rien n'est ecrit.",
 
 #[cfg(test)]
 mod tests {
-    use crate::dsn::{g, liste, txt};
-
     #[test]
     fn la_fiche_propose_les_motifs_de_la_table_mnata_livree() {
         let motifs = droit::apprentissage::motifs_mnata().unwrap();
         assert_eq!(motifs.len(), 19);
         assert_eq!(motifs.iter().find(|(c, _)| c == "007").map(|(_, l)| l.as_str()), Some("Associations sans but lucratif"));
-        let champs = crate::valeur::json_en_cache(&socle::fichiers::dossier_du_code().join("champs-base.json")).unwrap();
-        let champ = liste(g(&champs, "entreprise")).iter().find(|c| txt(g(c, "cle")) == droit::apprentissage::CHAMP_MOTIF_TAXE_APPRENTISSAGE).cloned().unwrap();
-        let choix: Vec<String> = liste(g(&champ, "choix")).iter().map(|c| c.as_str().unwrap().to_string()).filter(|c| !c.is_empty()).collect();
+        let champ = crate::champs::champ("entreprise", droit::apprentissage::CHAMP_MOTIF_TAXE_APPRENTISSAGE).unwrap().unwrap();
+        let choix: Vec<String> = champ.choix.iter().map(|c| c.as_str().unwrap().to_string()).filter(|c| !c.is_empty()).collect();
         assert_eq!(choix, motifs.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>());
     }
 }

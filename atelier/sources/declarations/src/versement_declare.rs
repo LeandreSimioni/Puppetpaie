@@ -106,7 +106,7 @@ pub fn est_un_montant(rubrique: &str) -> Option<bool> {
 }
 
 /// Le refus d'un montant `v` de la rubrique `k` qui ne se lit pas, dans `quoi`.
-fn illisible(k: &str, v: &str, quoi: &str) -> String {
+pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> String {
     socle::echec::avec(
         format!("La DSN déposée porte un montant illisible en {}.", k),
         socle::echec::APart { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..socle::echec::APart::default() },
