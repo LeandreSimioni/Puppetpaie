@@ -27,6 +27,7 @@ use crate::compagnie::etat_dsn;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::{en_json, lire_charge, Pastille, SansCharge};
+use declarations::demarrage::{Manque, Pose};
 use socle::echec::{erreur, Echec};
 use std::collections::HashMap;
 use crate::routes::catalogue::{Ecran, Place};
@@ -200,14 +201,26 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
         Route::PourDemarrer => {
             let SansCharge {} = lire_charge(charge)?;
             let (proposes, simules) = acces_proposes(ctx)?;
-            let proposes = proposes.iter().map(en_json).collect::<Result<Vec<_>, _>>()?;
-            let simules = simules.as_ref().map(en_json).transpose()?;
-            declarations::demarrage::route(ctx, proposes, simules).map(|mut v| {
-                if let Some(Value::Array(p)) = v.get_mut("poses") {
-                    p.iter_mut().filter(|x| x.get("pastille").is_none()).for_each(|x| x["pastille"] = super::pastille("information", "posé pour vous"));
-                }
-                v
-            })
+            let (simule, pastille_simulee) = match simules {
+                Some((pose, pastille)) => (Some(pose), Some(pastille)),
+                None => (None, None),
+            };
+            let d = declarations::demarrage::route(ctx, proposes, simule)?;
+            // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
+            let n = d.poses.len();
+            let poses = d
+                .poses
+                .into_iter()
+                .enumerate()
+                .map(|(i, pose)| {
+                    let pastille = match (&pastille_simulee, i + 1 == n) {
+                        (Some(p), true) => p.clone(),
+                        _ => Pastille::de("information", "posé pour vous"),
+                    };
+                    PoseVue { pose, pastille }
+                })
+                .collect();
+            en_json(PourDemarrerVu { phrase: d.phrase, phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
         }
         autre => Err(Echec::from(format!("route inconnue : {}", autre))),
     }
@@ -1351,7 +1364,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
 /// est un choix. « Pour demarrer » propose ceux qui ne sont pas poses, avec ce qu'ils permettent (`sinon` : ce qui se
 /// fait sans eux) ; une compagnie dont rien ne part (envois simules, ou la demo : `bridage::branchement`) n'en propose
 /// aucun et le dit, une fois.
-fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<AccesPropose>, Option<AccesSansObjet>)> {
+fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose, Pastille)>)> {
     use envois::branchement::Branchement;
     let (texte, mots) = match crate::compagnie::bridage::branchement(&ctx.racine) {
         Branchement::Monde => ("", ""),
@@ -1359,8 +1372,8 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<AccesPropose>, Option<
         Branchement::Message(_) => ("Dans la démo, rien ne part de cette compagnie : ses mots de passe et ses comptes ne se demandent pas.", "démo"),
     };
     if !mots.is_empty() {
-        let sans_objet = AccesSansObjet { cle: "acces", libelle: "Les accès aux organismes", ou: OU_DES_ACCES, onglet: "coffre", champ: None, texte, pastille: Pastille::de("information", mots) };
-        return Ok((Vec::new(), Some(sans_objet)));
+        let sans_objet = Pose { cle: "acces".into(), libelle: "Les accès aux organismes".into(), texte: texte.into(), ou: OU_DES_ACCES.into(), onglet: "coffre".into(), champ: None };
+        return Ok((Vec::new(), Some((sans_objet, Pastille::de("information", mots)))));
     }
     let etat = super::coffre::coffre_etat_de(&ctx.racine, &ctx.entreprise)?;
     let mut out = Vec::new();
@@ -1371,46 +1384,38 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<AccesPropose>, Option<
             continue;
         }
         let dit = |k: &str| s[k].as_str().unwrap_or("").to_string();
-        out.push(AccesPropose::nouveau(format!("acces.{}", dit("service")), dit("libelle"), format!("{} depuis le logiciel", dit("sert_a")), "vous le faites vous-même, hors du logiciel"));
+        out.push(acces_propose(format!("acces.{}", dit("service")), dit("libelle"), format!("{} depuis le logiciel", dit("sert_a")), "vous le faites vous-même, hors du logiciel"));
     }
     // Le Drive de la sauvegarde : se lie au meme endroit (« Lier le Drive »), sans reseau pour le savoir.
     if super::coffre::compte_autorise(&ctx.racine).is_none() {
-        out.push(AccesPropose::nouveau("acces.google".into(), "Google Drive".into(), "sauvegarder la compagnie dans votre Drive".into(), "rien ne se sauvegarde hors de ce poste"));
+        out.push(acces_propose("acces.google".into(), "Google Drive".into(), "sauvegarder la compagnie dans votre Drive".into(), "rien ne se sauvegarde hors de ce poste"));
     }
     Ok((out, None))
 }
 
-const OU_DES_ACCES: &str = "Configuration › Mots de passe";
-
 /// UN ACCES PROPOSE, une ligne de « Pour demarrer » (`declarations::demarrage::route`, qui y ajoute sa phrase) : ce qu'il
-/// permet (`utile`), ce qui se fait sans lui (`sinon`), ou il se pose.
-#[derive(Debug, Serialize)]
-struct AccesPropose {
-    cle: String,
-    libelle: String,
-    utile: String,
-    sinon: &'static str,
-    ou: &'static str,
-    onglet: &'static str,
-    /// Aucune case : l'onglet du coffre.
-    champ: Option<&'static str>,
-    trouver: &'static str,
+/// permet (`utile`), ce qui se fait sans lui (`sinon`), ou il se pose (l'onglet du coffre, aucune case).
+fn acces_propose(cle: String, libelle: String, utile: String, sinon: &str) -> Manque {
+    Manque::utile(cle, libelle, utile, sinon, (OU_DES_ACCES, "coffre"), None, String::new())
 }
 
-impl AccesPropose {
-    fn nouveau(cle: String, libelle: String, utile: String, sinon: &'static str) -> AccesPropose {
-        AccesPropose { cle, libelle, utile, sinon, ou: OU_DES_ACCES, onglet: "coffre", champ: None, trouver: "" }
-    }
-}
-
-/// Une compagnie dont rien ne part : les acces ne se demandent pas, ce que « Pour demarrer » dit en information.
+/// Une pose de « Pour demarrer » et sa pastille.
 #[derive(Debug, Serialize)]
-struct AccesSansObjet {
-    cle: &'static str,
-    libelle: &'static str,
-    ou: &'static str,
-    onglet: &'static str,
-    champ: Option<&'static str>,
-    texte: &'static str,
+struct PoseVue {
+    #[serde(flatten)]
+    pose: Pose,
     pastille: Pastille,
 }
+
+/// `pour-demarrer` (`declarations::demarrage::PourDemarrer`), chaque pose avec sa pastille.
+#[derive(Debug, Serialize)]
+struct PourDemarrerVu {
+    phrase: String,
+    phrases: Vec<String>,
+    titre: String,
+    note: String,
+    manques: Vec<Manque>,
+    poses: Vec<PoseVue>,
+}
+
+const OU_DES_ACCES: &str = "Configuration › Mots de passe";

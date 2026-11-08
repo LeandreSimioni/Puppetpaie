@@ -1570,9 +1570,9 @@ pub(crate) struct VuePaie {
     /// TRAVAIL A FAIRE : le conseil de saisie (`compagnie::conseils::de_saisie`) se compose en JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     conseil: Option<Value>,
-    /// TRAVAIL A FAIRE : la ligne de « Pour démarrer » (`declarations::demarrage::conges_a_dire`) se compose en JSON.
+    /// La ligne de « Pour démarrer » qui demande les conges acquis avant le logiciel (`declarations::demarrage::conges_a_dire`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    a_dire: Option<[Value; 1]>,
+    a_dire: Option<[declarations::demarrage::Manque; 1]>,
 }
 
 /// Une paie pour l'ecran. `brut` : la carte de l'engagement ; `data` : la saisie du mois (son `taux_cachet`).
@@ -2003,7 +2003,8 @@ fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie
     };
     v.informations.insert(0, phrase);
     if v.nature.mensuelle && !declarations::demarrage::conges_repris(ctx, &v.salarie.cle) {
-        v.a_dire = Some([declarations::demarrage::conges_a_dire(&v.salarie.cle, &qui, &format!("{}-01", mois))]);
+        let depuis = socle::date::Jour::lire(&format!("{}-01", mois)).map_err(Echec::from)?;
+        v.a_dire = Some([declarations::demarrage::conges_a_dire(&v.salarie.cle, &qui, depuis)]);
     }
     Ok(())
 }

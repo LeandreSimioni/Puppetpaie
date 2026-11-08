@@ -330,7 +330,7 @@ fn effectif(ctx: &Contexte, charge: &Value) -> R<Value> {
     let a_dire = |ctx: &Contexte| -> R<Vec<i32>> {
         let e = ctx.effectif().map_err(Echec::from)?;
         let mut v = e.a_dire(an_paie);
-        let demande = declarations::demarrage::manques(ctx).map_err(Echec::from)?.iter().any(|m| m["cle"] == "effectif");
+        let demande = declarations::demarrage::manques(ctx).map_err(Echec::from)?.iter().any(|m| m.cle == "effectif");
         if demande && e.valeur(an_paie).is_none() && !v.contains(&(an_paie - 1)) {
             v.push(an_paie - 1);
             v.sort();
