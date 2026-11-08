@@ -278,9 +278,10 @@ impl Lu {
         let regs_dsn = regularisations::pour_la_dsn(&regs_e);
         let mut arrets: Vec<declarations::dsn::Arret> = Vec::new();
         for a in &self.arrets {
-            let sal = engagement::imprevus::fiche_du_salarie(ctx, &arret_de(a).map_err(valeur)?).map_err(valeur)?;
+            let saisi = arret_de(a).map_err(valeur)?;
+            let sal = engagement::imprevus::fiche_du_salarie(ctx, &saisi).map_err(valeur)?;
             if du_nic(&sal)? {
-                arrets.push(declarations::dsn::Arret { v: a.clone() });
+                arrets.push(declarations::dsn::Arret { saisi });
             }
         }
         Ok(Present { paies, regs: regs_dsn, arrets, departs: self.departs.clone() })
@@ -452,13 +453,14 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let mut arrets: Vec<declarations::dsn::Arret> = Vec::new();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     for a in crate::compagnie::marques_depot::arrets_pour(ctx, &mois, &departs)? {
+        let saisi = arret_de(&a).map_err(valeur)?;
         if let Some(n) = &forme.etablissement {
-            let sal = engagement::imprevus::fiche_du_salarie(ctx, &arret_de(&a).map_err(valeur)?).map_err(valeur)?;
+            let sal = engagement::imprevus::fiche_du_salarie(ctx, &saisi).map_err(valeur)?;
             if droit::bareme::etablissement_de(&ctx.entreprise, &sal).map_err(valeur)? != *n {
                 continue;
             }
         }
-        arrets.push(declarations::dsn::Arret { v: a });
+        arrets.push(declarations::dsn::Arret { saisi });
     }
     declarations::dsn::fabriquer(ctx, &paies, &mois, &regs, &arrets, &forme.options(), &departs).map_err(valeur)
 }
@@ -705,10 +707,13 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         // constitue.
         if refabriquer_sur(ctx, Some(&lu), &f_dsn, le_mois, n.as_deref())?.is_none() {
             // Ce que la DSN de cet etablissement corrige des mois passes : elle le dit a son depot.
-            let portees = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_deref() {
+            let portees: Vec<Value> = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_deref() {
                 Some(x) => x,
                 None => fiche.nic.ecrite("nic").map_err(valeur)?,
-            })?;
+            })?
+            .iter()
+            .map(socle::ecriture::en_valeur)
+            .collect();
             let forme = Forme { type_dsn, ordre, etablissement: n, constitution: ctx.aujourdhui, remplacee_versait_pas };
             a_ecrire.push((f_dsn.clone(), fabriquer_du_present(ctx, &lu, mois, &forme)?.texte, portees));
         }

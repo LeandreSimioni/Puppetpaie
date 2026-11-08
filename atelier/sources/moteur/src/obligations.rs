@@ -807,7 +807,7 @@ fn connaissance(fiche: &FicheDeSuivi, de: DeQuoi, quoi: &str) -> Option<Depart> 
 pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret>> {
     let lu = envois::journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?;
     let (lignes, departs) = (lu.lignes, lu.departs);
-    let arret = declarations::dsn::Arret { v: a.clone() };
+    let arret = declarations::dsn::Arret { saisi: crate::routes::imprevus::arret_de(a)? };
     let texte = |k: &str| a.get(k).map(en_texte).unwrap_or_default();
     let salarie = texte("salarie");
     let dj = texte("dernier_jour_travaille");
@@ -1017,7 +1017,7 @@ pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &str, fin
 }
 
 /// Le premier depot REEL, non refuse au bilan, du signalement de fin de ce contrat : une ligne `dsn` du journal, au jour de la fin
-/// (`DsnLue::evenement_lisible`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
+/// (`DsnLue::evenement`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
 fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> Option<Fait> {
     let nom = format!("SignalementFinContrat_{}_{}.dsn", cle.to_uppercase(), fin.aaaammjj());
     envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, true)

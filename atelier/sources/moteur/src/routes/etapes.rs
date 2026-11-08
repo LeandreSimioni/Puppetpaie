@@ -1667,7 +1667,7 @@ impl<'a> Moteur<'a> {
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
         let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, &mois.to_string()).map_err(|m| erreur("ValueError", m))?;
-        e.veille().map_err(plain)
+        Ok(e.veille())
     }
 
     /// Le refus d'un annule-et-remplace du mois apres sa `limite` (cahier technique DSN §1.4.2) ; `Ok` jusqu'a elle.

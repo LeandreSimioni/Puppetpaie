@@ -17,7 +17,7 @@ pub(crate) fn arrets_pour(ctx: &Contexte, mois: &str, departs: &engagement::depa
             continue;
         }
         let a = socle::ecriture::en_valeur(&imp);
-        let arret = declarations::dsn::Arret { v: a.clone() };
+        let arret = declarations::dsn::Arret { saisi: socle::forme::lire(&a, engagement::imprevus::ILLISIBLE).map_err(|m| erreur("ValueError", m))? };
         if arret.a_reporter(mois, departs).map_err(|m| erreur("ValueError", m))? {
             out.push(a);
         }

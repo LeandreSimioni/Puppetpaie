@@ -6,14 +6,12 @@
 //! sont propres (CCH-14, CCH-15, CCH-11) sont tenus ici ; `Echec::Impossible` est la regle de la norme qui s'oppose.
 
 use droit::fiche::Lue as _;
-use serde_json::Value;
 
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use crate::valeur::{en_texte, vrai};
 use crate::dsn::{
-    autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, g, primes_et_indemnites,
-    remunerations, req, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
+    autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
+    remunerations, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
 };
 use engagement::Engagement;
 use socle::fichiers::repr;
@@ -66,7 +64,10 @@ fn nomenclatures() -> Resultat<droit::preavis::BaseFctu> {
 
 /// `FinDeContrat.libelle_preavis` : le libelle du type de preavis, « ? » s'il est inconnu.
 pub fn libelle_preavis(type_preavis: &str) -> Resultat<String> {
-    Ok(nomenclatures()?.types_preavis.du_code(type_preavis).map_or_else(|| "?".to_string(), |c| c.libelle.clone()))
+    Ok(match nomenclatures()?.types_preavis.du_code(type_preavis) {
+        Some(c) => c.libelle.clone(),
+        None => "?".to_string(),
+    })
 }
 
 /// Le code par defaut d'une nomenclature.
@@ -90,30 +91,11 @@ pub struct FinDeContrat {
     pub transaction: Option<String>,
 }
 
-impl FinDeContrat {
-    /// Depuis l'objet JSON de ses champs.
-    pub fn lire(v: &Value) -> Resultat<FinDeContrat> {
-        let t = |k: &str| -> Resultat<String> { req(v, k).map(en_texte) };
-        let o = |k: &str| -> Option<String> {
-            let x = g(v, k);
-            if vrai(x) {
-                Some(en_texte(x))
-            } else {
-                None
-            }
-        };
-        Ok(FinDeContrat {
-            fin: t("fin")?,
-            motif: t("motif")?,
-            mois_rattachement: t("mois_rattachement")?,
-            type_preavis: t("type_preavis")?,
-            preavis_debut: o("preavis_debut"),
-            preavis_fin: o("preavis_fin"),
-            notification: o("notification"),
-            signature_convention: o("signature_convention"),
-            engagement_licenciement: o("engagement_licenciement"),
-            transaction: o("transaction"),
-        })
+/// Le numero du contrat dans une phrase (« None » s'il n'en a pas).
+fn numero_dit(e: &Engagement) -> &str {
+    match e.numero.as_deref() {
+        Some(n) => n,
+        None => "None",
     }
 }
 
@@ -203,7 +185,7 @@ preavis ({}) -- CCH-12 de S21.G00.62.006.",
 /// a ete effectue ou qu'il n'y en a pas. Sur un preavis NON effectue (02, 03, 10, 50, 51, 61), le dernier jour paye au
 /// salaire habituel precede le debut du preavis (CCH-12) : sans saisie, le moteur refuse plutot que de le deviner.
 pub fn dernier_jour_paye(e: &Engagement) -> Resultat<Jour> {
-    let numero = e.numero.as_deref().unwrap_or("None").to_string();
+    let numero = numero_dit(e);
     let fin = e.fin.ok_or_else(|| format!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre.clone()).filter(|t| !t.is_empty());
@@ -275,8 +257,7 @@ clause de preavis applicable », et les dates sont alors interdites.",
             libelle
         )));
     }
-    if dates {
-        let (pd, pf) = (debut_p.unwrap_or(""), fin_p.unwrap_or(""));
+    if let (true, Some(pd), Some(pf)) = (dates, debut_p, fin_p) {
         if d(pf)? < d(pd)? {
             return Err(Echec::Impossible(format!(
                 "Preavis : la date de fin ({}) est anterieure a la date de debut ({}) -- CCH-13 de S21.G00.63.003.",
@@ -364,7 +345,7 @@ signalement sans elle. Rien n'est ecrit.",
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
     let nat = e.nat()?;
-    if let Some(refus) = nat.motif_rupture_refuse(&fin.motif, &e.numero.as_deref().unwrap_or("None").to_string()) {
+    if let Some(refus) = nat.motif_rupture_refuse(&fin.motif, numero_dit(e)) {
         return Err(Echec::Impossible(refus));
     }
 
@@ -374,7 +355,7 @@ signalement sans elle. Rien n'est ecrit.",
         avertissements.push(format!(
             "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
 DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
-            e.numero.as_deref().unwrap_or_default().to_string(),
+            numero_dit(e),
             nat.libelle
         ));
     }
@@ -469,7 +450,7 @@ ou un annule."
     if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(&fin.type_preavis, &indemnites_de_preavis_versees(paie)?)? {
         return Err(Echec::Impossible(format!(
             "Contrat {} : {}",
-            paie.engagement.numero.as_deref().unwrap_or("None").to_string(),
+            numero_dit(&paie.engagement),
             pourquoi
         )));
     }
@@ -616,7 +597,7 @@ ou un annule."
 /// 001, 002 et 010).
 pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
     let lignes: Vec<&str> = texte.lines().map(str::trim).collect();
-    let valeur = |l: &str| -> String { l.split(',').nth(1).unwrap_or("").trim_matches('\'').to_string() };
+    let valeur = |l: &str| -> String { crate::usages::rubrique_valeur(l).1.to_string() };
     let bases: Vec<String> = lignes.iter().filter(|l| l.starts_with("S21.G00.78.001,")).map(|l| valeur(l)).collect();
     if bases.iter().any(|b| b == "31") {
         return Err(Echec::Impossible(

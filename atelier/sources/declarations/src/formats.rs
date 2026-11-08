@@ -8,13 +8,12 @@
 //! sous-ensemble que la table des formats emploie (classes, groupes,
 //! alternatives, `? * + {n,m}`, `\d \s`, `^ $`), prouve contre `re`.
 
-use socle::fichiers::{dossier_du_code, repr};
-use crate::valeur::json_en_cache;
+use socle::fichiers::repr;
 use crate::norme::Norme;
 use socle::num::Resultat;
 use crate::usages::{espace, lignes, strip};
-use serde_json::Value;
-use std::collections::HashMap;
+use serde::Deserialize;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
 
 // Les rubriques de la table des formats qui se saisissent dans une fiche :
@@ -113,15 +112,17 @@ impl Lecteur {
         Ok(seq)
     }
 
-    fn entier(&mut self) -> Option<usize> {
+    /// L'entier ecrit ici, `None` s'il n'y en a pas.
+    fn entier(&mut self) -> Resultat<Option<usize>> {
         let debut = self.i;
-        while self.peek().map_or(false, |c| c.is_ascii_digit()) {
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.i += 1;
         }
         if debut == self.i {
-            return None;
+            return Ok(None);
         }
-        self.c[debut..self.i].iter().collect::<String>().parse().ok()
+        let ecrit: String = self.c[debut..self.i].iter().collect();
+        ecrit.parse().map(Some).map_err(|_| format!("{} : nombre trop grand", ecrit))
     }
 
     fn quantifie(&mut self, atome: Noeud) -> Resultat<Noeud> {
@@ -131,10 +132,14 @@ impl Lecteur {
             Some('+') => (1, usize::MAX),
             Some('{') => {
                 self.i += 1;
-                let min = self.entier().ok_or("accolade non prise en charge")?;
+                let min = self.entier()?.ok_or("accolade non prise en charge")?;
                 let max = if self.peek() == Some(',') {
                     self.i += 1;
-                    self.entier().unwrap_or(usize::MAX)
+                    // `{n,}` : sans borne haute.
+                    match self.entier()? {
+                        Some(max) => max,
+                        None => usize::MAX,
+                    }
                 } else {
                     min
                 };
@@ -195,7 +200,7 @@ impl Lecteur {
                     }
                     let e = if c == '\\' { self.echappe()? } else { Elt::Car(c) };
                     if let Elt::Car(a) = e {
-                        if self.peek() == Some('-') && self.c.get(self.i + 1).map_or(false, |&x| x != ']') {
+                        if self.peek() == Some('-') && self.c.get(self.i + 1).is_some_and(|&x| x != ']') {
                             self.i += 1;
                             let b = self.peek().unwrap();
                             self.i += 1;
@@ -306,28 +311,59 @@ impl Regex {
 // ----------------------------------------------------------------- la table
 
 /// La table des formats de cette version de la norme.
-pub fn table_de(norme: &Norme) -> Resultat<Arc<Value>> {
-    json_en_cache(&dossier_du_code().join(norme.table_formats()?))
+pub fn table_de(norme: &Norme) -> Resultat<Arc<Table>> {
+    crate::norme::livree(&norme.table_formats()?)
 }
 
-/// {'longueur': [min, max], 'csl': [expression...]} dans la table de cette version -- {} si inconnue.
-pub fn format_en(norme: &Norme, rubrique: &str) -> Resultat<Value> {
-    let t = table_de(norme)?;
-    Ok(match t["formats"].get(rubrique) {
-        Some(f) if crate::valeur::vrai(f) => f.clone(),
-        _ => Value::Object(Default::default()),
-    })
+/// Une table des formats (`formats-dsn-base.json`, `formats-dsn-p27v01-base.json`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Table {
+    #[allow(dead_code)]
+    quoi: String,
+    #[allow(dead_code)]
+    note: String,
+    #[allow(dead_code)]
+    sha256_du_pdf: Option<String>,
+    #[allow(dead_code)]
+    sha256_du_classeur: Option<String>,
+    #[allow(dead_code)]
+    expressions_ecartees: Vec<Ecartee>,
+    /// Le format de chaque rubrique.
+    pub formats: BTreeMap<String, Format>,
 }
 
-/// Pour une saisie : le format de la premiere version livree qui en donne un -- {} si aucune.
-pub fn format_de(rubrique: &str) -> Resultat<Value> {
+/// Une expression du cahier que le releve n'a pas gardee (coupee a la mise en page).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ecartee {
+    #[allow(dead_code)]
+    rubrique: String,
+    #[allow(dead_code)]
+    coupee: String,
+}
+
+/// Le format d'une rubrique : sa longueur `[min, max]`, ses expressions de controle (CSL) quand elle en a.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Format {
+    pub longueur: [usize; 2],
+    pub csl: Option<Vec<String>>,
+}
+
+/// Le format de la rubrique dans la table de cette version, `None` si la table ne la connait pas.
+pub fn format_en(norme: &Norme, rubrique: &str) -> Resultat<Option<Format>> {
+    Ok(table_de(norme)?.formats.get(rubrique).cloned())
+}
+
+/// Pour une saisie : le format de la premiere version livree qui en donne un, `None` si aucune.
+pub fn format_de(rubrique: &str) -> Resultat<Option<Format>> {
     for n in crate::norme::versions()? {
-        let f = format_en(&n, rubrique)?;
-        if f.as_object().map_or(false, |o| !o.is_empty()) {
-            return Ok(f);
+        if let Some(f) = format_en(&n, rubrique)? {
+            return Ok(Some(f));
         }
     }
-    Ok(Value::Object(Default::default()))
+    Ok(None)
 }
 
 fn expressions(norme: &Norme, rubrique: &str) -> Resultat<Arc<Vec<Regex>>> {
@@ -338,9 +374,9 @@ fn expressions(norme: &Norme, rubrique: &str) -> Resultat<Arc<Vec<Regex>>> {
         return Ok(e.clone());
     }
     let mut v = Vec::new();
-    if let Some(csl) = format_en(norme, rubrique)?.get("csl").and_then(|c| c.as_array()) {
+    if let Some(csl) = format_en(norme, rubrique)?.and_then(|f| f.csl) {
         for c in csl {
-            v.push(Regex::compiler(c.as_str().unwrap_or(""))?);
+            v.push(Regex::compiler(&c)?);
         }
     }
     let v = Arc::new(v);
@@ -373,16 +409,11 @@ pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> Resultat<Vec<char>> {
 
 /// Pourquoi cette valeur ne va pas dans cette version -- "" si elle va, ou si on ne sait pas.
 pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> Resultat<String> {
-    let fmt = format_en(norme, rubrique)?;
-    if fmt.as_object().map_or(true, |o| o.is_empty()) {
-        return Ok(String::new());
-    }
-    if let Some(lon) = fmt.get("longueur").and_then(|l| l.as_array()).filter(|l| !l.is_empty()) {
-        let (mini, maxi) = (lon[0].as_i64().unwrap_or(0), lon[1].as_i64().unwrap_or(0));
-        let n = valeur.chars().count() as i64;
-        if !(mini <= n && n <= maxi) {
-            return Ok(format!("longueur {}, attendue entre {} et {}", n, mini, maxi));
-        }
+    let Some(fmt) = format_en(norme, rubrique)? else { return Ok(String::new()) };
+    let [mini, maxi] = fmt.longueur;
+    let n = valeur.chars().count();
+    if !(mini <= n && n <= maxi) {
+        return Ok(format!("longueur {}, attendue entre {} et {}", n, mini, maxi));
     }
     let exprs = expressions(norme, rubrique)?;
     if !exprs.is_empty() && !exprs.iter().any(|e| e.fullmatch(valeur)) {
@@ -442,20 +473,8 @@ pub fn mauvaises(texte: &str, norme: &Norme) -> Resultat<Vec<(String, String, St
     Ok(out)
 }
 
-fn libelles(norme: &Norme) -> Resultat<HashMap<String, String>> {
-    let t = crate::usages::table_de(norme)?;
-    let mut m = HashMap::new();
-    if let Some(u) = t["usages"].as_object() {
-        for (r, d) in u {
-            if let Some(l) = d.get("libelle").and_then(|l| l.as_str()).filter(|l| !l.is_empty()) {
-                m.insert(r.clone(), format!(" ({})", l));
-            }
-        }
-    }
-    Ok(m)
-}
-
-fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: &str, ou: Option<&(&str, &str, &str)>) -> Resultat<String> {
+fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, &str, &str)>) -> Resultat<String> {
+    let libelle: String = libelle.iter().map(|l| format!(" ({})", l)).collect();
     let ou = match ou {
         None => return Ok(format!("    {} = '{}' : {}{}", r, v, pourquoi, libelle)),
         Some(o) => o,
@@ -482,7 +501,7 @@ pub fn verifier_fichier(texte: &str) -> Resultat<()> {
     if mauv.is_empty() {
         return crate::norme::verifier_les_valeurs(texte, &norme);
     }
-    let libelles = libelles(&norme)?;
+    let usages = crate::usages::table_de(&norme)?;
     let mut saisies: Vec<&(&str, &str, &str)> = Vec::new();
     for (r, _, _) in &mauv {
         if let Some(s) = SAISIES.iter().find(|s| s.0 == r) {
@@ -501,12 +520,12 @@ pub fn verifier_fichier(texte: &str) -> Resultat<()> {
     };
     let mut dites = Vec::new();
     for (r, v, p) in mauv.iter().take(20) {
-        let lib = libelles.get(r).map(|s| s.as_str()).unwrap_or("");
+        let lib = usages.usages.get(r).map(|e| e.libelle.as_str());
         dites.push(dire(&norme, r, v, p, lib, saisies.iter().find(|s| s.0 == r).copied())?);
     }
     Err(socle::echec::avec(
         format!("Valeur(s) qui ne suivent pas le format de la norme :\n{}\n  Formats du cahier technique NEODeS.{}", dites.join("\n"), trou),
-        serde_json::json!({"fichier": norme.table_formats()?}),
+        socle::echec::APart { fichier: Some(norme.table_formats()?), ..socle::echec::APart::default() },
     ))
 }
 

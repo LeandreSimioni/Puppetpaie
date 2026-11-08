@@ -44,7 +44,7 @@ pub struct Depot<'a> {
     pub octets: &'a [u8],
     /// Le mois que le fichier declare ; pour un signalement, celui de son evenement (`evenement`).
     pub mois: Mois,
-    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement_lisible`).
+    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement`, `AAAA-MM-JJ`).
     pub evenement: Option<String>,
     pub reel: bool,
     pub qui: &'a str,

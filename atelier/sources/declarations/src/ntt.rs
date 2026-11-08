@@ -140,17 +140,19 @@ fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> Result
     let mut vus_nir: Vec<(&str, &str)> = Vec::new();
     let mut vus_ntt: Vec<(&str, &str)> = Vec::new();
     for i in individus {
-        let (nom, ntt) = (i.nom.as_deref().unwrap_or_default(), i.ntt.as_deref().unwrap_or_default());
-        if i.nir.is_empty() && ntt.is_empty() {
+        let nom = match i.nom.as_deref() {
+            Some(n) => n,
+            None => "Un individu sans nom (S21.G00.30.002)",
+        };
+        let nir = Some(i.nir.as_str()).filter(|n| !n.is_empty());
+        if nir.is_none() && i.ntt.is_none() {
             return Err(format!(
                 "{} est declare sans numero d'inscription au repertoire et sans numero technique temporaire. La norme exige l'un ou l'autre (CCH-12, S21.G00.30.020) : sans cela l'individu n'est identifie par rien.",
                 nom
             ));
         }
-        for (cle, vus, quoi) in [(i.nir.as_str(), &mut vus_nir, "NIR"), (ntt, &mut vus_ntt, "NTT")] {
-            if cle.is_empty() {
-                continue;
-            }
+        for (cle, vus, quoi) in [(nir, &mut vus_nir, "NIR"), (i.ntt.as_deref(), &mut vus_ntt, "NTT")] {
+            let Some(cle) = cle else { continue };
             if let Some((_, autre)) = vus.iter().find(|(c, _)| *c == cle) {
                 return Err(format!(
                     "Le meme {} ({}) identifie deux individus de la meme declaration, {} et {}. La norme l'interdit (CCH-14) : un identifiant qui designe deux personnes rend la declaration intracable.",

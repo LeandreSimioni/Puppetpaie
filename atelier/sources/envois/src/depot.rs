@@ -132,7 +132,7 @@ pub fn verifier(a: &DsnLue, reel: bool, mois_confirme: Option<&str>, presence_pr
         return Ok(());
     }
     if reel {
-        let attendu = a.confirmation_attendue();
+        let attendu = a.confirmation_attendue().map_err(depot_refuse)?;
         if let Some(m) = mois_confirme.filter(|m| !m.is_empty()) {
             if nettoye(m) != attendu {
                 return Err(depot_refuse(format!(

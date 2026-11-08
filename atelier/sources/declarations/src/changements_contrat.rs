@@ -135,12 +135,7 @@ fn mois_precedent(mois: &str) -> Resultat<String> {
 }
 
 fn ddmmaaaa(v: &str) -> Option<Jour> {
-    let c: Vec<char> = v.chars().collect();
-    if c.len() != 8 || !c.iter().all(char::is_ascii_digit) {
-        return None;
-    }
-    let s = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-    Jour::lire(&format!("{}-{}-{}", s(4, 8), s(2, 4), s(0, 2))).ok()
+    crate::dsn_lue::jour_dsn(v)
 }
 
 /// Les jours ou ces champs d'une fiche datee ont change (`depuis` : les jours ou un champ prend une valeur) : le `depuis` de chaque
@@ -155,18 +150,24 @@ fn changements_dates(depuis: impl Fn(&str) -> Vec<Option<Jour>>, champs: &[&str]
 
 /// « NOM Prénom, contrat <numéro> » : qui la phrase de refus désigne.
 fn qui(p: &Paie) -> String {
-    let cle = p.salarie.id.as_str();
-    format!(
-        "{}, contrat {}",
-        p.salarie.nomme().unwrap_or_else(|| cle.to_string()),
-        p.engagement.numero.as_deref().unwrap_or("sans numero").to_string()
-    )
+    let nom = match p.salarie.nomme() {
+        Some(n) => n,
+        None => p.salarie.id.as_str().to_string(),
+    };
+    match p.engagement.numero.as_deref() {
+        Some(n) => format!("{}, contrat {}", nom, n),
+        None => format!("{}, contrat sans numero", nom),
+    }
 }
 
 /// La date de la modification (41.001) du changement de `md`, declaree `avant` dans la DSN de `decl.mois`. Refus
 /// quand elle ne se lit pas, ou qu'elle ne tombe pas dans le mois declare (voir l'en-tete du module).
 #[allow(clippy::too_many_arguments)]
-fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, mois: &str, avant: &str, apres: &str) -> Resultat<Jour> {
+fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, mois: &str, avant: &str, apres: Option<&str>) -> Resultat<Jour> {
+    let apres = match apres {
+        Some(a) => a,
+        None => "(rien)",
+    };
     let (debut_m, fin_b) = (Mois::lire(mois)?.premier_jour(), Mois::lire(&decl.mois)?.dernier_jour());
     let fin_p = p.engagement.fin_periode()?;
     let mut candidats: Vec<(Jour, String)> = Vec::new();
@@ -176,7 +177,8 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
             candidats.push((j, "la date de modification de la saisie du mois (`date_modification`)".into()));
         }
     }
-    for (j, c) in changements_dates(|c| ctx.salarie_brut(p.salarie.id.as_str()).map_or_else(Vec::new, |b| b.depuis(c)), md.fiche)? {
+    // Sans fiche datee, aucun changement date.
+    for (j, c) in changements_dates(|c| ctx.salarie_brut(p.salarie.id.as_str()).into_iter().flat_map(|b| b.depuis(c)).collect(), md.fiche)? {
         candidats.push((j, format!("la fiche du salarie (`{}`)", c)));
     }
     for (j, c) in changements_dates(|c| ctx.entreprise_brute().depuis(c), md.entreprise)? {
@@ -207,7 +209,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
     let mut apres_declare: Vec<&(Jour, String)> = candidats.iter().filter(|(j, _)| *j > fin_b).collect();
     apres_declare.sort_by_key(|(j, _)| *j);
     apres_declare.dedup_by_key(|(j, _)| *j);
-    let quoi = format!("{} passe de '{}' (declare en {}) a '{}'", md.r40, avant, socle::mois::Mois::en_clair(&decl.mois), if apres.is_empty() { "(rien)" } else { apres });
+    let quoi = format!("{} passe de '{}' (declare en {}) a '{}'", md.r40, avant, socle::mois::Mois::en_clair(&decl.mois), apres);
     let ou_dater = {
         let mut o = Vec::new();
         if md.saisie {
@@ -299,10 +301,16 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
     // jour que la saisie du mois donne a son avenant ; sinon du dernier jour du mois declare : pour un identifiant autre
     // que le SIRET, « la date de modification du bloc changement peut correspondre a toute date » (§ 2.1.2.3.2, p. 21,
     // `chapitre-2-principes-de-constitution.txt`), au plus tard ce jour-la (CCH-15 de 41.001, p. 217).
-    let (avant, apres) = (valeur(&decl.bloc, "S21.G00.40.001").unwrap_or(""), valeur(ecrit, "S21.G00.40.001").unwrap_or(""));
+    fn debut_declare<'a>(bloc: &'a [(String, String)], ou: &str, p: &Paie) -> Resultat<&'a str> {
+        valeur(bloc, "S21.G00.40.001").ok_or_else(|| format!("{} : {} ne porte pas la date de debut du contrat (S21.G00.40.001).", qui(p), ou))
+    }
+    let (avant, apres) = (debut_declare(&decl.bloc, "la DSN deposee", p)?, debut_declare(ecrit, "le bloc contrat ecrit", p)?);
     if avant != apres {
-        let date = e.date_modification.as_deref().map(|t| Jour::lire(t).map_err(|_| socle::echec::a_la_cle(&format!("{} : la date de l'avenant ne se lit pas.", qui(p)), "date_modification", t)));
-        let date = date.transpose()?.unwrap_or(fin_m);
+        let date = match e.date_modification.as_deref() {
+            Some(t) => Jour::lire(t).map_err(|_| socle::echec::a_la_cle(&format!("{} : la date de l'avenant ne se lit pas.", qui(p)), "date_modification", t))?,
+            // Sans avenant date : le dernier jour du mois declare (§ 2.1.2.3.2, ci-dessus).
+            None => fin_m,
+        };
         if date > fin_m {
             return Err(socle::echec::cle(format!(
                 "{} : l'avenant prend effet le {}, après la fin du mois déclaré ; la norme l'interdit (CCH-15 de S21.G00.41.001, \
@@ -319,7 +327,11 @@ p. 217).",
         let fin_b = Mois::lire(&decl.mois)?.dernier_jour();
         // L'etablissement est celui que l'engagement dit (`engagement::calcul::etablissement_du_contrat`) ; le jour ou il
         // change est celui de l'avenant (`date_modification`).
-        let date = p.engagement.date_modification.as_deref().and_then(|d| Jour::lire(d).ok()).filter(|j| *j > fin_b && *j <= fin_m);
+        let date = match p.engagement.date_modification.as_deref() {
+            Some(d) => Some(Jour::lire(d)?),
+            None => None,
+        }
+        .filter(|j| *j > fin_b && *j <= fin_m);
         let Some(date) = date.as_ref() else {
             return Err(format!(
                 "{} : le contrat etait declare par l'etablissement {} (DSN de {}) et l'est maintenant par l'etablissement {}. \
@@ -341,13 +353,14 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
             // p. 234). INFERENCE, la meme pour toutes : une rubrique qui apparait ne fait pas de bloc 41.
             continue;
         };
-        let apres = valeur(ecrit, md.r40).unwrap_or("");
+        let apres = valeur(ecrit, md.r40);
         // A la casse pres : « 353b » (le catalogue, la nomenclature de l'Insee) et « 353B » (une fiche) sont un meme code.
-        if avant.eq_ignore_ascii_case(apres) {
+        if apres.is_some_and(|a| avant.eq_ignore_ascii_case(a)) {
             continue;
         }
         let date = date_du_changement(ctx, p, md, &decl, mois, avant, apres)?;
-        let debut = ddmmaaaa(valeur(ecrit, "S21.G00.40.001").unwrap_or("")).unwrap_or(e.debut);
+        let debut = ddmmaaaa(debut_declare(ecrit, "le bloc contrat ecrit", p)?)
+            .ok_or_else(|| format!("{} : la date de debut du bloc contrat ecrit (S21.G00.40.001) ne se lit pas.", qui(p)))?;
         let profondeur = Jour { jour: 1, ..date }.max(debut);
         modalites.push((
             md.r41,
@@ -403,7 +416,10 @@ pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, m
 /// date declaree ne se lit pas, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
 pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> Resultat<()> {
     let e = &r.apres.engagement;
-    let numero = e.numero.as_deref().unwrap_or_default().to_string();
+    let numero = match e.numero.as_deref() {
+        Some(n) => n,
+        None => "sans numero",
+    };
     if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
         return Ok(());
     }
@@ -421,7 +437,7 @@ date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.avant.engagement.debut.jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
-            serde_json::json!({"fichier": r.declare.fichier}),
+            socle::echec::APart { fichier: Some(r.declare.fichier.clone()), ..socle::echec::APart::default() },
         ));
     };
     if ancienne == nouveau.jjmmaaaa() {
@@ -434,7 +450,10 @@ jour de la correction (S21.G00.41.001, fiche net-entreprises 1952), et la correc
 n'est ecrit.",
             r.mois,
             numero,
-            ddmmaaaa(ancienne).map_or_else(|| ancienne.to_string(), |j| j.jj_mm_aaaa()),
+            match ddmmaaaa(ancienne) {
+                Some(j) => j.jj_mm_aaaa(),
+                None => ancienne.to_string(),
+            },
             nouveau.jj_mm_aaaa()
         ), "decidee_le"));
     };

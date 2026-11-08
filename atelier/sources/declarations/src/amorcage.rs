@@ -8,17 +8,14 @@
 use droit::fiche::Lue as _;
 use std::collections::HashSet;
 
-use serde_json::Value;
-
 use engagement::calcul::Paie;
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use crate::valeur::{en_texte, json_en_cache, vrai};
 use crate::dsn::{
-    affiliations, bloc_anciennete, bloc_contrat, g, liste, usage_admet, Fichier, LOGICIEL, VERSION,
+    affiliations, bloc_anciennete, bloc_contrat, usage_admet, Fichier, LOGICIEL, VERSION,
 };
 use crate::fctu::Echec;
-use socle::fichiers::{dossier_du_code, repr};
+use socle::fichiers::repr;
 use socle::num::Resultat;
 
 pub const NATURE: &str = "08";
@@ -34,18 +31,49 @@ pub const ANNULE: &str = "04";
 /// un nouveau (§ 1.4.3.4, p. 15).
 const TYPES: [(&str, &str); 2] = [(NORMALE, "normale"), (ANNULE, "annule")];
 
-fn motifs_de_la_norme() -> Resultat<Vec<Value>> {
-    let n = json_en_cache(&dossier_du_code().join("amorcage-base.json"))?;
-    Ok(liste(&n["motifs"]["codes"]).to_vec())
+/// `amorcage-base.json`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Base {
+    #[allow(dead_code)]
+    quoi: String,
+    #[allow(dead_code)]
+    note: String,
+    motifs: Motifs,
+}
+
+/// Les natures d'evenement declencheur (S20.G00.05.011).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Motifs {
+    #[allow(dead_code)]
+    note: String,
+    codes: Vec<Motif>,
+}
+
+/// Une nature d'evenement declencheur : son code, son libelle, et si le moteur l'emet (`saisissable`).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Motif {
+    code: String,
+    libelle: String,
+    saisissable: bool,
+    #[allow(dead_code)]
+    dgfip: bool,
+    #[allow(dead_code)]
+    organismes_complementaires: bool,
+}
+
+fn motifs_de_la_norme() -> Resultat<std::sync::Arc<Base>> {
+    crate::norme::livree("amorcage-base.json")
 }
 
 /// Le libelle du motif, « ? » s'il est inconnu.
 pub fn libelle_motif(motif: &str) -> Resultat<String> {
-    Ok(motifs_de_la_norme()?
-        .iter()
-        .find(|c| en_texte(&c["code"]) == motif)
-        .and_then(|c| c.get("libelle").map(en_texte))
-        .unwrap_or_else(|| "?".to_string()))
+    Ok(match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
+        Some(c) => c.libelle.clone(),
+        None => "?".to_string(),
+    })
 }
 
 /// Les parametres de `generer`, avec leurs defauts.
@@ -61,8 +89,9 @@ pub struct Options {
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
 pub fn verifier(paie: &Paie, motif: &str, type_declaration: &str, remplace: Option<&str>) -> Result<(), Echec> {
     let impossible = |m: String| Err(Echec::Impossible(m));
-    let tous = motifs_de_la_norme()?;
-    let m = match tous.iter().find(|c| en_texte(&c["code"]) == motif) {
+    let base = motifs_de_la_norme()?;
+    let tous = &base.motifs.codes;
+    let m = match tous.iter().find(|c| c.code == motif) {
         Some(m) => m,
         None => {
             return impossible(format!(
@@ -72,17 +101,17 @@ dans amorcage-base.json.",
             ))
         }
     };
-    if !vrai(g(m, "saisissable")) {
+    if !m.saisissable {
         let portes: Vec<String> = tous
             .iter()
-            .filter(|c| vrai(g(c, "saisissable")))
-            .map(|c| format!("{} ({})", en_texte(&c["code"]), en_texte(&c["libelle"])))
+            .filter(|c| c.saisissable)
+            .map(|c| format!("{} ({})", c.code, c.libelle))
             .collect();
         return impossible(format!(
             "Le motif {} ({}) existe dans la norme, mais ce moteur ne l'emet pas : il sert l'affiliation aux \
 organismes complementaires, pas la demande d'un taux de PAS. Les deux portes d'un salarie sont {}.",
             motif,
-            en_texte(&m["libelle"]),
+            m.libelle,
             portes.join(" et ")
         ));
     }
@@ -251,7 +280,8 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
         bloc_contrat(&mut f, paie, &etab, &orgs, 1, &bar, false, &[], NATURE, emplois)?;
         // L'anciennete, due des qu'une adhesion prevoyance est declaree.
-        let depuis = s.date_anciennete.dite().copied().unwrap_or(e.debut);
+        // Elle part de `date_anciennete` de la fiche, que la validation du premier engagement pose (comme le FCTU).
+        let depuis = *s.date_anciennete.exigee("date_anciennete")?;
         bloc_anciennete(&mut f, paie, 1.max(e.debut.moins(&depuis) + 1))?;
     }
 
