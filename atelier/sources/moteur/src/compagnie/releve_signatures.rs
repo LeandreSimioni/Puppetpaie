@@ -40,6 +40,8 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine);
     for a in &attendues {
+        // Une demande remise en main propre n'a pas d'adresse : personne n'y repond par courriel.
+        let Some(adresse) = a.adresse.as_deref() else { continue };
         let code = a.code.clone();
         let nom = a.nom.clone();
         let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a)) {
@@ -52,7 +54,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
                 ),
             ),
         };
-        let brut = envois::simulation_courriels::reponse_jouee(&a.adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
+        let brut = envois::simulation_courriels::reponse_jouee(adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
             .map_err(|m| erreur("ValueError", m))?;
         boite.repondre(&code, brut);
     }
@@ -179,7 +181,8 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
-        let acte = a.acte.clone();
+        // Une demande qui ne dit pas son acte est celle du contrat lui-meme.
+        let acte = a.acte.clone().unwrap_or_else(|| "contrat".into());
         let est_avenant = acte == "avenant";
         let mut notes = 0usize;
         for c in &contrats {

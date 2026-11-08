@@ -389,27 +389,33 @@ fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
         let aer = retours::aer_spectacle(o).unwrap_or_default();
         l.titre = "Archive d'attestations employeur (AER)".into();
         if aer.is_empty() {
-            let n = retours::membres_du_zip(o).len();
+            // Une archive qui ne se lit pas ne montre aucun fichier.
+            let n = retours::membres_du_zip(o).map(|m| m.len()).unwrap_or(0);
             l.phrases.push(format!("Une archive de {} fichier{}.", n, if n > 1 { "s" } else { "" }));
         } else {
             l.phrases.push(format!("{} attestation{} employeur rematérialisée{} :", aer.len(), if aer.len() > 1 { "s" } else { "" }, if aer.len() > 1 { "s" } else { "" }));
             for a in &aer {
-                l.phrases.push(format!("{}{}", a.qui, if a.periode.is_empty() { String::new() } else { format!(" (période {})", a.periode) }));
+                l.phrases.push(format!("{}{}", a.qui, a.periode.as_ref().map(|p| format!(" (période {})", p)).unwrap_or_default()));
             }
             l.phrases.push("Chaque AER se range aussi parmi les documents du mois, prête à partir au salarié.".into());
         }
         return l;
     }
-    if let Some(r) = retours::lire_rapport(o) {
-        let type_ = valeur_en_texte(&r["type"]);
-        l.titre = if vrai(&r["libelle"]) { valeur_en_texte(&r["libelle"]) } else if type_.is_empty() { "Compte rendu".into() } else { format!("Rapport {}", type_) };
-        if vrai(&r["message"]) {
-            l.phrases.push(valeur_en_texte(&r["message"]));
+    // Un rapport qui ne se lit pas n'en est pas un : son format est dit plus bas.
+    if let Ok(Some(rapport)) = retours::lire_rapport(o) {
+        l.titre = match (&rapport.libelle, &rapport.type_rapport) {
+            (Some(libelle), _) => libelle.clone(),
+            (None, Some(t)) if !t.is_empty() => format!("Rapport {}", t),
+            _ => "Compte rendu".into(),
+        };
+        if let Some(m) = &rapport.message {
+            l.phrases.push(m.clone());
         }
-        if r["essai_reel"] == json!("01") {
+        if rapport.essai_reel.as_deref() == Some(retours::ESSAI_TEST) {
             l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
         }
-        let etat = valeur_en_texte(&r["etat_envoi"]);
+        let r = socle::ecriture::en_valeur(&rapport);
+        let etat = rapport.etat_envoi.clone().unwrap_or_default();
         let envoi = match etat.as_str() {
             "OK" => "accepté",
             "KO" => "refusé",
@@ -419,21 +425,20 @@ fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
         if !envoi.is_empty() {
             l.phrases.push(format!("L'envoi est {} ({}).", envoi, etat));
         }
-        for d in r["declarations"].as_array().into_iter().flatten() {
-            let e = valeur_en_texte(&d["etat"]);
-            let mois = valeur_en_texte(&d["mois"]);
-            let ordre = valeur_en_texte(&d["ordre"]);
+        for d in &rapport.declarations {
+            let e = &d.etat;
+            let ordre = &d.ordre;
             l.phrases.push(format!(
                 "{}{}{} : {}.",
-                nature_dsn(&valeur_en_texte(&d["nature"]), &valeur_en_texte(&d["type"])),
-                if mois.is_empty() { String::new() } else { format!(" de {}", mois) },
+                nature_dsn(&d.nature, &d.type_declaration),
+                d.mois.map(|m| format!(" de {}", m)).unwrap_or_default(),
                 if ordre.is_empty() { String::new() } else { format!(", ordre {}", ordre) },
-                if verdict_en_mots(&e).is_empty() { if e.is_empty() { "sans état".to_string() } else { e.clone() } } else { format!("{} ({})", verdict_en_mots(&e), e) }
+                if verdict_en_mots(e).is_empty() { if e.is_empty() { "sans état".to_string() } else { e.clone() } } else { format!("{} ({})", verdict_en_mots(e), e) }
             ));
         }
-        for i in r["informations"].as_array().into_iter().flatten() {
-            let donnees: Vec<String> = i["donnees"].as_array().into_iter().flatten().map(|d| format!("{} : {}", valeur_en_texte(&d["nom"]), valeur_en_texte(&d["valeur"]))).collect();
-            let t = valeur_en_texte(&i["type"]);
+        for i in &rapport.informations {
+            let donnees: Vec<String> = i.donnees.iter().map(|d| format!("{} : {}", d.nom, d.valeur)).collect();
+            let t = &i.type_information;
             let quoi = match t.as_str() {
                 "atmp" => "Information : taux accident du travail et maladie professionnelle".to_string(),
                 "bmcc" => "Information : bonus-malus de la contribution chômage".to_string(),
@@ -443,17 +448,15 @@ fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
             l.phrases.push(if donnees.is_empty() { format!("{}.", quoi) } else { format!("{} — {}.", quoi, donnees.join(" ; ")) });
         }
         if nature == retours::NATURE_TAUX_PAS {
-            let n = retours::nombre_de_taux_pas(o);
+            // Un compte rendu qui ne se lit pas ne communique aucun taux.
+            let n = retours::taux_pas_d_octets(o).map(|t| t.releves.len()).unwrap_or(0);
             l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", n, if n > 1 { "s" } else { "" }));
         }
         l.anomalies = r["anomalies"].as_array().cloned().unwrap_or_default();
         // LE VERDICT EST CELUI DE LA PIECE : France Travail publie son compte rendu « cinéma, spectacle »
         // (nature 45) toujours au statut ANOBLOQUANTE, même quand il ne relève rien (guide « De la DSN à l'attestation
         // employeur », v3.2, p. 10, dépose dans `net-entreprises-base-connaissances/`). Ce que dit la piece passe devant.
-        let etats: Vec<String> = std::iter::once(valeur_en_texte(&r["etat_envoi"]))
-            .chain(r["declarations"].as_array().into_iter().flatten().map(|d| valeur_en_texte(&d["etat"])))
-            .filter(|e| !e.is_empty())
-            .collect();
+        let etats: Vec<String> = std::iter::once(etat.clone()).chain(rapport.declarations.iter().map(|d| d.etat.clone())).filter(|e| !e.is_empty()).collect();
         l.verdict = if etats.iter().any(|e| e == "KO") {
             "KO".into()
         } else if etats.iter().any(|e| e == "ANO") || !l.anomalies.is_empty() {
@@ -465,12 +468,13 @@ fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
         };
         return l;
     }
-    if let Some(crm) = retours::lire_neores(o) {
-        lire_neores(&crm, &mut l);
+    // Un compte rendu qui ne se lit pas n'est ni NEOReS ni d'organisme complementaire : son format est dit plus bas.
+    if let Ok(Some(crm)) = retours::lire_neores(o) {
+        lire_neores(&socle::ecriture::en_valeur(&crm), &mut l);
         return l;
     }
-    if let Some(crm) = retours::lire_crm_oc(o) {
-        lire_crm_oc(&crm, &mut l);
+    if let Ok(Some(crm)) = retours::lire_crm_oc(o) {
+        lire_crm_oc(&socle::ecriture::en_valeur(&crm), &mut l);
         return l;
     }
     l.traduite = false;

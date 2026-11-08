@@ -115,7 +115,7 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
                 &socle::paris::iso_secondes(socle::temps::secondes()),
             ),
         )
-        .map(pastilles_de_la_reprise)
+        .map(|r| pastilles_de_la_reprise(socle::ecriture::en_valeur(&r)))
         .map(|mut v| {
             // Ce que l'Historique en dit, en tete : le resume replie, l'explication, le nom du logiciel lu.
             let n = super::nombre(&v["ajoutes"]);

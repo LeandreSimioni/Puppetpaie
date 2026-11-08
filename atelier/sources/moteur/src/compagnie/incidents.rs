@@ -30,7 +30,7 @@ use serde_json::{json, Map, Value};
 
 use crate::compagnie::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
-use envois::etats::{get};
+use envois::valeur::get;
 use envois::valeur::{nom_type, valeur_en_texte, valeurs_egales, vrai};
 use socle::echec::R;
 use socle::echec::erreur;
@@ -334,17 +334,10 @@ pub fn noter(racine: &Path, n: &Note) -> Option<Value> {
 /// arrete sur une erreur, puis rend son resultat.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
-        let canal = if i.get("canal").and_then(Value::as_str) == Some("dpae") { DPAE } else { DSN };
+        let canal = if i.canal == envois::etats::DPAE { DPAE } else { DSN };
         let _ = noter(
             racine,
-            &Note {
-                nature: canal,
-                ou: i.get("ou").and_then(Value::as_str).unwrap_or(""),
-                quoi: i.get("quoi").and_then(Value::as_str).unwrap_or(""),
-                resume: i.get("resume").and_then(Value::as_str).unwrap_or(""),
-                detail: i.get("detail").cloned().unwrap_or(Value::Null),
-                ..Default::default()
-            },
+            &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: socle::ecriture::en_valeur(&i.detail), ..Default::default() },
         );
     }
     r.resultat
@@ -594,7 +587,7 @@ pub fn regrouper(racine: &Path, nature: Option<&str>) -> R<Vec<Value>> {
                 p.insert("derniere".into(), quand);
                 p.insert("versions".into(), json!([get(&l, "version")?.clone()]));
                 let cav = get(&l, "caviarde")?;
-                p.insert("caviarde".into(), Value::Array(if vrai(cav) { envois::etats::items(cav)?.into_iter().map(|c| c.into_owned()).collect() } else { Vec::new() }));
+                p.insert("caviarde".into(), Value::Array(if vrai(cav) { crate::dico::items(cav)?.into_iter().map(|c| c.into_owned()).collect() } else { Vec::new() }));
                 paquets.push((cle, p));
             }
             Some(i) => {
@@ -610,7 +603,7 @@ pub fn regrouper(racine: &Path, nature: Option<&str>) -> R<Vec<Value>> {
                 }
                 let cav = get(&l, "caviarde")?;
                 if vrai(cav) {
-                    for c in envois::etats::items(cav)? {
+                    for c in crate::dico::items(cav)? {
                         if let Some(Value::Array(cs)) = p.get_mut("caviarde") {
                             if !cs.iter().any(|x| valeurs_egales(x, &c)) {
                                 cs.push(c.into_owned());
@@ -980,7 +973,7 @@ fn concatener(a: &Value, b: &Value) -> R<Vec<Value>> {
 
 /// `tuple(c)` d'un element de `recus` : (empreinte, quand).
 fn paire(c: &Value) -> R<(Value, Value)> {
-    let v: Vec<Value> = envois::etats::items(c)?.into_iter().map(|x| x.into_owned()).collect();
+    let v: Vec<Value> = crate::dico::items(c)?.into_iter().map(|x| x.into_owned()).collect();
     Ok((v.first().cloned().unwrap_or(Value::Null), v.get(1).cloned().unwrap_or(Value::Null)))
 }
 

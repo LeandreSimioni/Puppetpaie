@@ -14,184 +14,226 @@
 //! (`reprendre_les_depots`), comme l'effectif se refait seul des retours 118. Un test que ce logiciel n'a pas envoye reste dehors (voir `reprise`).
 
 use droit::fiche::Lue as _;
-use serde_json::{json, Map, Value};
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
-use crate::valeur::vrai;
+use socle::mois::Mois;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
+use crate::retours::Bilan;
 
-fn texte(b: &Value, cle: &str) -> String {
-    b.get(cle).filter(|v| vrai(v)).map(crate::valeur::valeur_en_texte).unwrap_or_default()
+/// La reponse d'une ligne reprise sans certificat de conformite : le journal ecrit la reponse en texte
+/// (`journal::Envoi::reponse`), et la plate-forme n'en a pas dit.
+const SANS_CERTIFICAT: &str = "";
+
+/// Le depot que le bilan dit accepte : l'etat de la declaration, sinon celui de l'envoi, est OK.
+fn accepte(b: &Bilan) -> bool {
+    b.verdict().is_some_and(|v| v.eq_ignore_ascii_case("OK"))
 }
 
-fn accepte(b: &Value) -> bool {
-    let etat = if vrai(&b["etat_declaration"]) { texte(b, "etat_declaration") } else { texte(b, "etat_envoi") };
-    etat.to_uppercase() == "OK"
+/// Un depot reel (`essai_reel` 02), et non d'essai.
+fn reel(b: &Bilan) -> bool {
+    b.essai_reel.as_deref() == Some(crate::retours::ESSAI_REEL)
 }
 
 /// Un depot dont une piece de `retours/` temoigne.
 struct Atteste {
     flux: String,
-    bilan: Value,
+    bilan: Bilan,
     pieces: Vec<String>,
     deja: bool,
+}
+
+/// Les fichiers d'un dossier des retours dont le nom passe `garder`, tries ; aucun sans dossier.
+fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(String, PathBuf)>> {
+    let lecture = match std::fs::read_dir(dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&dossier, &e))),
+    };
+    let mut noms = Vec::new();
+    for e in lecture {
+        let e = e.map_err(|x| erreur("OSError", socle::echec::du_disque(&dossier, &x)))?;
+        let nom = e.file_name().to_string_lossy().into_owned();
+        if garder(&nom) && e.path().is_file() {
+            noms.push((nom, e.path()));
+        }
+    }
+    noms.sort();
+    Ok(noms)
 }
 
 /// Lecture pure.
 fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
     let dossier = ctx.racine.join(crate::retours::RETOURS);
     std::fs::create_dir_all(&dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
-    let mut noms: Vec<String> = std::fs::read_dir(&dossier)
-        .map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".xml"))
-        .collect();
-    noms.sort();
-    let mut par_flux: Vec<(String, Vec<(Value, String)>)> = vec![];
+    let mut par_flux: Vec<(String, Vec<(Bilan, String)>)> = vec![];
     let mut illisibles: Vec<String> = vec![];
-    for nom in &noms {
-        let octets = match std::fs::read(dossier.join(nom)) {
+    for (nom, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
+        let octets = match std::fs::read(&p) {
             Ok(o) => o,
-            Err(_) => {
-                illisibles.push(format!("{} (OSError)", nom));
+            Err(e) => {
+                illisibles.push(format!("{} (OSError : {})", nom, e.kind()));
                 continue;
             }
         };
-        let b = match crate::retours::bilan_ou_illisible(&octets) {
-            Ok(b) => b,
-            Err(classe) => {
+        let b = match crate::retours::bilan_d_octets(&octets) {
+            Ok(Some(b)) => b,
+            Ok(None) => continue,
+            Err(e) => {
+                let classe = match e.classe {
+                    Some(c) => c,
+                    None => "Exception",
+                };
                 illisibles.push(format!("{} ({})", nom, classe));
                 continue;
             }
         };
-        if b.is_null() {
-            continue;
-        }
-        let flux = texte(&b, "flux");
-        match par_flux.iter_mut().find(|(f, _)| *f == flux) {
+        match par_flux.iter_mut().find(|(f, _)| *f == b.flux) {
             Some((_, l)) => l.push((b, nom.clone())),
-            None => par_flux.push((flux, vec![(b, nom.clone())])),
+            None => par_flux.push((b.flux.clone(), vec![(b, nom.clone())])),
         }
     }
     let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)
         .map_err(socle::echec::Echec::from)?
         .iter()
-        .filter(|l| !l.flux().is_empty()).map(|l| l.flux().to_string())
+        .filter(|l| !l.flux().is_empty())
+        .map(|l| l.flux().to_string())
         .collect();
-    let mut out: Vec<Atteste> = par_flux
-        .into_iter()
-        .map(|(flux, couples)| {
-            let bilans: Vec<Value> = couples.iter().map(|(b, _)| b.clone()).collect();
-            let mut pieces: Vec<String> = couples.into_iter().map(|(_, n)| n).collect();
-            pieces.sort();
-            Atteste { deja: connus.contains(&flux), flux, bilan: crate::retours::fusionner_bilans(&bilans), pieces }
-        })
-        .collect();
-    out.sort_by(|a, b| texte(&a.bilan, "recu_le").cmp(&texte(&b.bilan, "recu_le")));
+    let mut out: Vec<Atteste> = Vec::new();
+    for (flux, couples) in par_flux {
+        let bilans: Vec<Bilan> = couples.iter().map(|(b, _)| b.clone()).collect();
+        let mut pieces: Vec<String> = couples.into_iter().map(|(_, n)| n).collect();
+        pieces.sort();
+        // Chaque flux a au moins un bilan : il ne s'y range que par lui.
+        let Some(bilan) = crate::retours::fusionner_bilans(&bilans) else { continue };
+        out.push(Atteste { deja: connus.contains(&flux), flux, bilan, pieces });
+    }
+    out.sort_by(|a, b| a.bilan.recu_le.cmp(&b.bilan.recu_le));
     Ok((out, illisibles))
+}
+
+/// UN DEPOT QUE LES RETOURS ATTESTENT, tel que la reprise le montre : son flux, quand il a ete recu, le mois qu'il
+/// declare, reel ou test, accepte ou non, si son verdict est connu, le logiciel qui l'a depose, ses pieces, et s'il est
+/// deja au journal. Ce que le bilan ne dit pas est vide.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DepotVu {
+    pub flux: String,
+    pub quand: Option<String>,
+    pub mois: Option<Mois>,
+    pub mode: Mode,
+    pub accepte: bool,
+    pub verdict_connu: bool,
+    pub logiciel: Option<String>,
+    pub pieces: Vec<String>,
+    pub deja: bool,
+}
+
+/// CE QUE LA REPRISE REND : les depots trouves, ceux qu'elle ajoute (ou ajouterait), ceux deja au journal, ceux qu'elle
+/// ne peut dater, les pieces illisibles, si elle a ecrit, et combien de retours se sont ranges en face.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Reprise {
+    pub trouves: Vec<DepotVu>,
+    pub ajoutes: Vec<DepotVu>,
+    pub deja: Vec<DepotVu>,
+    pub sans_mois: Vec<DepotVu>,
+    pub illisibles: Vec<String>,
+    pub ecrit: bool,
+    pub rattaches: i64,
 }
 
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les
 /// incidents que le rattachement des retours a releves (`moteur` les note).
-pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> AvecIncidents<Value> {
+pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> AvecIncidents<Reprise> {
     let mut incidents = Vec::new();
     let resultat = reprise_et_incidents(ctx, ecrire, qui, maintenant, &mut incidents);
     AvecIncidents { resultat, incidents }
 }
 
-fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str, incidents: &mut Vec<Value>) -> R<Value> {
+fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
-    let (mut trouves, mut ajoutes, mut deja, mut sans_mois) = (vec![], vec![], vec![], vec![]);
+    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
+    let mut a_ecrire: Vec<&Atteste> = Vec::new();
     for d in &attestes {
         let b = &d.bilan;
-        let reel = texte(b, "essai_reel") == "02";
         // UN TEST QUE CE LOGICIEL N'A PAS ENVOYE NE S'AFFICHE PAS ET NE SE REPREND PAS : sous le
         // meme compte net-entreprises, les essais de l'atelier (ligne de commande, `moteur --dev`, seances du nuage)
         // reviennent dans les retours de la compagnie. Un test n'engage rien : absent du journal, il vient d'ailleurs.
         // Il compte pourtant pour l'ordre (`ordre_signalements::dernier_ordre_des_mensuelles`, lu en silence). Un REEL
         // absent du journal est un depot de la compagnie (l'atelier n'en fait jamais) : il se reprend.
-        if !reel && !d.deja {
+        if !reel(b) && !d.deja {
             continue;
         }
-        let vue = json!({
-            "flux": d.flux,
-            "quand": texte(b, "recu_le"),
-            "mois": texte(b, "mois"),
-            "mode": if reel { "reel" } else { "test" },
-            "accepte": accepte(b),
-            "verdict_connu": vrai(&b["etat_declaration"]),
-            "logiciel": texte(b, "logiciel"),
-            "pieces": d.pieces,
-            "deja": d.deja,
-        });
-        trouves.push(vue.clone());
+        let vue = DepotVu {
+            flux: d.flux.clone(),
+            quand: b.recu_le.clone(),
+            mois: b.mois,
+            mode: Mode::de(reel(b)),
+            accepte: accepte(b),
+            verdict_connu: b.etat_declaration.is_some(),
+            logiciel: b.logiciel.clone(),
+            pieces: d.pieces.clone(),
+            deja: d.deja,
+        };
+        rapport.trouves.push(vue.clone());
         if d.deja {
-            deja.push(vue);
+            rapport.deja.push(vue);
             continue;
         }
-        if texte(b, "recu_le").is_empty() {
+        if b.recu_le.is_none() {
             // Sans date, la ligne ne saurait pas dire QUAND : on refuse plutot que de dater d'aujourd'hui.
-            sans_mois.push(vue);
+            rapport.sans_mois.push(vue);
             continue;
         }
-        ajoutes.push(vue);
+        rapport.ajoutes.push(vue);
+        a_ecrire.push(d);
     }
-    let mut rapport = Map::new();
-    rapport.insert("trouves".into(), Value::Array(trouves));
-    rapport.insert("ajoutes".into(), Value::Array(ajoutes.clone()));
-    rapport.insert("deja".into(), Value::Array(deja));
-    rapport.insert("sans_mois".into(), Value::Array(sans_mois));
-    rapport.insert("illisibles".into(), json!(illisibles));
-    rapport.insert("ecrit".into(), json!(ecrire));
-    rapport.insert("rattaches".into(), json!(0));
     if !ecrire {
-        return Ok(Value::Object(rapport));
+        return Ok(rapport);
     }
-    for vue in &ajoutes {
-        let Some(d) = attestes.iter().find(|x| Some(x.flux.as_str()) == vue["flux"].as_str()) else { continue };
+    for d in a_ecrire {
         let b = &d.bilan;
-        let reel = texte(b, "essai_reel") == "02";
-        let mois = texte(b, "mois");
-        let origine = format!("retours/{}", d.pieces.last().map_or("?", String::as_str));
-        let reponse = texte(b, "certificat");
-        let quand = texte(b, "recu_le");
+        let (Some(quand), Some(piece)) = (b.recu_le.clone(), d.pieces.last()) else { continue };
+        let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| erreur("ValueError", socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries")))).transpose()?;
         let detail = DetailDsn {
             reconstruit: true,
-            logiciel: Some(texte(b, "logiciel")),
-            type_declaration: Some(texte(b, "type_declaration")),
-            fraction: Some(texte(b, "fraction")),
-            ordre: Some(texte(b, "ordre")),
-            salaries: texte(b, "salaries").trim().parse().ok(),
-            contrats: Some(texte(b, "contrats")),
-            etat_envoi: Some(texte(b, "etat_envoi")),
-            etat_declaration: Some(texte(b, "etat_declaration")),
-            verdict_connu: Some(vrai(&b["etat_declaration"])),
+            logiciel: b.logiciel.clone(),
+            type_declaration: b.type_declaration.clone(),
+            fraction: b.fraction.clone(),
+            ordre: b.ordre.clone(),
+            salaries,
+            contrats: b.contrats.clone(),
+            etat_envoi: b.etat_envoi.clone(),
+            etat_declaration: b.etat_declaration.clone(),
+            verdict_connu: Some(b.etat_declaration.is_some()),
             pieces: Some(d.pieces.clone()),
             ..Default::default()
         };
-        let mut e = Envoi::nouveau(Mode::de(reel), qui, accepte(b), "net-entreprises", &reponse, detail);
-        e.mois = socle::mois::Mois::lire(&mois).ok();
+        let reponse = match &b.certificat {
+            Some(c) => c.as_str(),
+            None => SANS_CERTIFICAT,
+        };
+        let mut e = Envoi::nouveau(Mode::de(reel(b)), qui, accepte(b), "net-entreprises", reponse, detail);
+        e.mois = b.mois;
         e.flux = d.flux.clone();
         e.quand = quand;
-        e.origine = origine;
+        e.origine = format!("retours/{}", piece);
         journal::noter(&ctx.racine, Ligne::Dsn(e), None, maintenant).map_err(socle::echec::Echec::from)?;
     }
     // Les retours deja archives se rangent en face des lignes qui viennent d'apparaitre -- par le flux.
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
     if p.exists() {
-        let texte_j = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
-        let retours: Value = serde_json::from_slice(&texte_j).map_err(|e| erreur("JSONDecodeError", e.to_string()))?;
-        let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, retours.as_array().map(Vec::as_slice).unwrap_or(&[]));
+        let retours: Vec<crate::retours::Annonce> =
+            socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| erreur("ValueError", m))?;
+        let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
-        let n = r.resultat?;
-        rapport.insert("rattaches".into(), json!(n));
+        rapport.rattaches = r.resultat?;
     }
-    Ok(Value::Object(rapport))
+    Ok(rapport)
 }
 
 /// Remet au journal, sans qu'on le demande, les depots DSN que les retours archives attestent et que le journal ignore :
@@ -199,7 +241,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
 /// ajoutees. Idempotente (par le flux).
 pub fn reprendre_les_depots(ctx: &Contexte, qui: &str, maintenant: &str) -> AvecIncidents<usize> {
     let r = reprise(ctx, true, qui, maintenant);
-    AvecIncidents { resultat: r.resultat.map(|v| v.get("ajoutes").and_then(Value::as_array).map_or(0, Vec::len)), incidents: r.incidents }
+    AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents }
 }
 
 // ------------------------------------------------------------- la reprise du canal DPAE
@@ -218,35 +260,46 @@ fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, String)> {
     v
 }
 
-/// `20260904-224552_nature41_WSxxxx.txt` -> `WSxxxx`.
-fn flux_du_nom(nom: &str) -> String {
-    let reste = nom.splitn(3, '_').last().unwrap_or(nom);
-    reste.rsplit_once('.').map_or(reste, |(a, _)| a).to_string()
+/// `20260904-224552_nature41_WSxxxx.txt` -> `WSxxxx` ; aucun pour un nom qui n'a pas cette forme.
+fn flux_du_nom(nom: &str) -> Option<&str> {
+    let reste = nom.splitn(3, '_').nth(2)?;
+    Some(match reste.rsplit_once('.') {
+        Some((a, _)) => a,
+        None => reste,
+    })
+}
+
+/// Une embauche qu'un certificat de DPAE atteste : la cle du salarie, et son premier jour (AAAA-MM-JJ).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EmbaucheAttestee {
+    pub salarie: String,
+    pub debut: String,
+}
+
+/// UNE DPAE QU'UN CERTIFICAT DE L'URSSAF ATTESTE (nature 41) : son flux (tel que le nom de la piece le porte), quand elle
+/// a ete deposee et le mois de sa premiere embauche (quand le certificat les dit), la piece, et ses embauches.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DpaeAttestee {
+    pub flux: String,
+    pub quand: Option<String>,
+    pub mois: Option<String>,
+    pub piece: String,
+    pub embauches: Vec<EmbaucheAttestee>,
 }
 
 /// Les DPAE dont `retours/dpae/` porte le certificat (nature 41). Une entree par FLUX, avec
 /// les embauches qu'il declare ; les NIR qu'on ne sait rattacher a aucune fiche sont DITS, jamais devines. LECTURE PURE.
-pub fn embauches_attestees(ctx: &Contexte) -> (Vec<Value>, Vec<String>) {
+pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)> {
     let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
     let par_nir = salarie_par_nir(ctx);
-    let mut noms: Vec<String> = std::fs::read_dir(&dossier)
-        .map(|l| l.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("nature41")).collect())
-        .unwrap_or_default();
-    noms.sort();
-    let (mut sortie, mut inconnus): (Vec<Value>, Vec<String>) = (vec![], vec![]);
-    for nom in &noms {
-        let octets = match std::fs::read(dossier.join(nom)) {
-            Ok(o) => o,
-            Err(_) => {
-                inconnus.push(format!("{} (OSError)", nom));
-                continue;
-            }
-        };
+    let (mut sortie, mut inconnus): (Vec<DpaeAttestee>, Vec<String>) = (vec![], vec![]);
+    for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, "41"))? {
+        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
         let texte: String = octets.iter().map(|&b| b as char).collect();
-        let (mut embauches, mut quand, mut mois) = (Vec::<Value>::new(), String::new(), String::new());
+        let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte) {
-            let champ = |k: &str| ligne.iter().find(|(n, _)| *n == k).map(|(_, v)| v.trim().to_string()).unwrap_or_default();
-            let (nir, emb) = (champ("nir"), champ("date_embauche"));
+            let champ = |k: &str| ligne.iter().find(|(n, _)| *n == k).map(|(_, v)| v.trim().to_string()).filter(|v| !v.is_empty());
+            let (Some(nir), Some(emb)) = (champ("nir"), champ("date_embauche")) else { continue };
             let e: Vec<char> = emb.chars().collect();
             if e.len() != 8 {
                 continue;
@@ -259,94 +312,116 @@ pub fn embauches_attestees(ctx: &Contexte) -> (Vec<Value>, Vec<String>) {
                 inconnus.push(format!("NIR {} ({}), embauche du {}", nir, nom, debut));
                 continue;
             };
-            embauches.push(json!({"salarie": cle, "debut": debut}));
-            if mois.is_empty() {
-                mois = debut.chars().take(7).collect();
+            if mois.is_none() {
+                mois = Some(debut.chars().take(7).collect());
             }
-            let h: Vec<char> = champ("horodatage").chars().collect();
-            if quand.is_empty() && h.len() == 12 {
+            embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
+            let h: Vec<char> = champ("horodatage").into_iter().flat_map(|h| h.chars().collect::<Vec<_>>()).collect();
+            if quand.is_none() && h.len() == 12 {
                 let t = |a: usize, b: usize| -> String { h[a..b].iter().collect() };
-                quand = format!("{}-{}-{}T{}:{}:00", t(4, 8), t(2, 4), t(0, 2), t(8, 10), t(10, 12));
+                quand = Some(format!("{}-{}-{}T{}:{}:00", t(4, 8), t(2, 4), t(0, 2), t(8, 10), t(10, 12)));
             }
         }
+        let Some(flux) = flux_du_nom(&nom) else { continue };
         if !embauches.is_empty() {
-            sortie.push(json!({"flux": flux_du_nom(nom), "quand": quand, "mois": mois, "piece": nom, "embauches": embauches}));
+            sortie.push(DpaeAttestee { flux: flux.to_string(), quand, mois, piece: nom.clone(), embauches });
         }
     }
-    sortie.sort_by(|a, b| texte(a, "quand").cmp(&texte(b, "quand")));
-    (sortie, inconnus)
+    sortie.sort_by(|a, b| a.quand.cmp(&b.quand));
+    Ok((sortie, inconnus))
 }
 
+/// Une DPAE attestee telle que la reprise la montre : son flux entier quand un bilan le porte, reel ou test, acceptee
+/// ou non, deja au journal ou non.
+#[cfg(feature = "atelier")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DpaeVue {
+    #[serde(flatten)]
+    pub attestee: DpaeAttestee,
+    pub mode: Mode,
+    pub accepte: bool,
+    pub deja: bool,
+}
+
+/// Ce que la reprise du canal DPAE rend.
+#[cfg(feature = "atelier")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RepriseDpae {
+    pub trouves: Vec<DpaeVue>,
+    pub ajoutes: Vec<DpaeVue>,
+    pub deja: Vec<DpaeVue>,
+    pub inconnus: Vec<String>,
+    pub ecrit: bool,
+}
 
 /// Remet au journal les DPAE que les certificats de l'Urssaf attestent. Memes formes
 /// et memes regles que la reprise DSN : `ecrire` a faux par defaut (elle DIT), idempotente par le flux, chaque ligne porte `origine`.
-/// Rend `{"trouves", "ajoutes", "deja", "inconnus", "ecrit"}`. Aucun reseau, aucun depot, pas de mot de passe.
+/// Aucun reseau, aucun depot, pas de mot de passe.
 /// Elle sert l'outil de l'atelier `moteur journal --dpae` (`moteur::atelier::outils::journal`) : pas un geste de l'ecran.
 #[cfg(feature = "atelier")]
-pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> R<Value> {
-    let (attestees, inconnus) = embauches_attestees(ctx);
+pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> R<RepriseDpae> {
+    let (attestees, inconnus) = embauches_attestees(ctx)?;
     let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)
         .map_err(socle::echec::Echec::from)?
         .iter()
-        .filter(|l| !l.flux().is_empty()).map(|l| l.flux().to_string())
+        .filter(|l| !l.flux().is_empty())
+        .map(|l| l.flux().to_string())
         .collect();
 
     // Le bilan XML du meme flux, quand il est la : il porte l'idflux ENTIER et dit si le depot etait reel ou de test.
     let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
-    let mut noms: Vec<String> = std::fs::read_dir(&dossier)
-        .map(|l| l.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".xml")).collect())
-        .unwrap_or_default();
-    noms.sort();
-    let mut bilans: Vec<(String, Vec<Value>)> = Vec::new();
-    for nom in &noms {
-        let Ok(octets) = std::fs::read(dossier.join(nom)) else { continue };
-        let b = crate::retours::bilan_d_octets(&octets);
-        if b.is_null() {
-            continue;
-        }
-        let flux = texte(&b, "flux");
-        match bilans.iter_mut().find(|(f, _)| *f == flux) {
+    let mut bilans: Vec<(String, Vec<Bilan>)> = Vec::new();
+    for (_, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
+        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        let Some(b) = crate::retours::bilan_si_xml(&octets)? else { continue };
+        match bilans.iter_mut().find(|(f, _)| *f == b.flux) {
             Some((_, l)) => l.push(b),
-            None => bilans.push((flux, vec![b])),
+            None => bilans.push((b.flux.clone(), vec![b])),
         }
     }
 
-    let (mut trouves, mut ajoutes, mut deja) = (Vec::<Value>::new(), Vec::<Value>::new(), Vec::<Value>::new());
-    for e in &attestees {
+    let mut rapport = RepriseDpae { trouves: vec![], ajoutes: vec![], deja: vec![], inconnus, ecrit: ecrire };
+    for e in attestees {
         // Le nom de fichier tronque le flux ; le bilan XML porte l'entier. On rattache par prefixe, et on garde l'entier quand on le trouve.
-        let court = texte(e, "flux");
-        let entier = bilans.iter().map(|(f, _)| f.clone()).find(|f| f.starts_with(&court)).unwrap_or(court);
-        let b = bilans.iter().find(|(f, _)| *f == entier).map(|(_, l)| crate::retours::fusionner_bilans(l));
-        let mut vue = e.clone();
-        vue["flux"] = json!(entier);
-        vue["mode"] = json!(match &b {
-            Some(b) if texte(b, "essai_reel") != "02" => "test",
-            _ => "reel",
-        });
-        vue["accepte"] = json!(b.as_ref().map_or(true, accepte));
-        let deja_la = connus.contains(&entier);
-        vue["deja"] = json!(deja_la);
-        trouves.push(vue.clone());
-        if deja_la {
-            deja.push(vue);
+        let entier = match bilans.iter().find(|(f, _)| f.starts_with(&e.flux)) {
+            Some((f, _)) => f.clone(),
+            None => e.flux.clone(),
+        };
+        let b = bilans.iter().find(|(f, _)| *f == entier).and_then(|(_, l)| crate::retours::fusionner_bilans(l));
+        // Sans bilan, le certificat seul atteste un depot reel et accepte.
+        let (mode, accepte_) = match &b {
+            Some(b) => (Mode::de(reel(b)), accepte(b)),
+            None => (Mode::Reel, true),
+        };
+        let deja = connus.contains(&entier);
+        let vue = DpaeVue { attestee: DpaeAttestee { flux: entier, ..e }, mode, accepte: accepte_, deja };
+        rapport.trouves.push(vue.clone());
+        if deja {
+            rapport.deja.push(vue);
         } else {
-            ajoutes.push(vue);
+            rapport.ajoutes.push(vue);
         }
     }
 
     if ecrire {
-        for vue in &ajoutes {
-            let mois = texte(vue, "mois");
-            let origine = format!("retours/dpae/{}", texte(vue, "piece"));
-            let embauches: Vec<crate::journal::EmbaucheDeclaree> = socle::forme::lire(&vue["embauches"], "Une embauche attestée ne se lit pas.")?;
+        for vue in &rapport.ajoutes {
+            let a = &vue.attestee;
+            let embauches = a
+                .embauches
+                .iter()
+                .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut.clone(), fin: None }))
+                .collect::<R<Vec<_>>>()?;
             let detail = crate::journal::DetailDpae { reconstruit: true, embauches, certificat: true, ..Default::default() };
-            let mut e = Envoi::nouveau(Mode::de(texte(vue, "mode") != "test"), qui, vrai(&vue["accepte"]), "urssaf-dpae", "", detail);
-            e.mois = socle::mois::Mois::lire(&mois).ok();
-            e.flux = texte(vue, "flux");
-            e.quand = texte(vue, "quand");
-            e.origine = origine;
+            let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
+            e.mois = a.mois.as_deref().map(Mois::lire).transpose()?;
+            e.flux = a.flux.clone();
+            // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise (`journal::noter`).
+            if let Some(q) = &a.quand {
+                e.quand = q.clone();
+            }
+            e.origine = format!("retours/dpae/{}", a.piece);
             journal::noter(&ctx.racine, Ligne::Dpae(e), None, maintenant).map_err(socle::echec::Echec::from)?;
         }
     }
-    Ok(json!({"trouves": trouves, "ajoutes": ajoutes, "deja": deja, "inconnus": inconnus, "ecrit": ecrire}))
+    Ok(rapport)
 }

@@ -12,7 +12,7 @@
 //! balises et les attributs a espace de noms ecrits `{uri}nom`. Un XML qui ne se
 //! lit pas est une `ParseError` (la phrase est celle de `roxmltree`).
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
@@ -78,6 +78,12 @@ const RUBRIQUES_PAS: [(&str, &str); 3] = [
 /// Noms metier NEODeS des memes rubriques (cahier technique 2026.1, p. 244).
 const NOMS_METIER: [(&str, &str); 3] = [("tauxpas", "taux"), ("typetauxpas", "type"), ("idtauxpas", "identifiant")];
 
+/// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `transport::archiver`) est-elle celle d'un retour de nature
+/// `nature` ? Son deuxieme segment le dit.
+pub fn archive_de_nature(nom: &str, nature: &str) -> bool {
+    nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature)
+}
+
 /// `retours.libelle_nature`, sur la representation texte du code.
 pub fn libelle_nature(code: &str) -> String {
     match NATURES.iter().find(|(c, _)| *c == code) {
@@ -101,7 +107,7 @@ pub fn est_chiffre(c: char) -> bool {
 /// `$` accepte un saut de
 /// ligne final.
 fn est_nir(s: &str) -> bool {
-    let t = s.strip_suffix('\n').unwrap_or(s);
+    let t = sans_queue(s, '\n');
     let n = t.chars().count();
     (n == 13 || n == 15) && t.starts_with(['1', '2']) && t.chars().all(|c| c.is_ascii_digit())
 }
@@ -110,21 +116,6 @@ fn treize(s: &str) -> String {
     s.chars().take(13).collect()
 }
 
-fn texte_ou_null(t: &Option<String>) -> Value {
-    t.as_ref().map(|s| Value::String(s.clone())).unwrap_or(Value::Null)
-}
-
-/// Les valeurs JSON tenues pour fausses : `null`, `false`, `0`, `""`, `[]`, `{}`.
-fn faux(v: &Value) -> bool {
-    match v {
-        Value::Null => true,
-        Value::Bool(b) => !b,
-        Value::Number(n) => n.as_f64() == Some(0.0),
-        Value::String(s) => s.is_empty(),
-        Value::Array(a) => a.is_empty(),
-        Value::Object(o) => o.is_empty(),
-    }
-}
 
 // ------------------------------------------------------------------ le XML
 
@@ -145,7 +136,10 @@ struct Arbre {
 }
 
 fn local(tag: &str) -> &str {
-    tag.rsplit('}').next().unwrap_or(tag)
+    match tag.rsplit_once('}') {
+        Some((_, nom)) => nom,
+        None => tag,
+    }
 }
 
 fn nom_etendu(ns: Option<&str>, nom: &str) -> String {
@@ -184,7 +178,7 @@ impl Arbre {
 
 impl Noeud {
     /// `Element.get(nom)`.
-    fn get(&self, nom: &str) -> Option<&str> {
+    fn attribut(&self, nom: &str) -> Option<&str> {
         self.attributs.iter().find(|(k, _)| k == nom).map(|(_, v)| v.as_str())
     }
 
@@ -201,8 +195,8 @@ fn ajouter(a: &mut Arbre, n: roxmltree::Node) -> usize {
         if c.is_element() {
             break;
         }
-        if c.is_text() {
-            texte.push_str(c.text().unwrap_or(""));
+        if let Some(t) = c.text().filter(|_| c.is_text()) {
+            texte.push_str(t);
         }
     }
     a.n.push(Noeud {
@@ -254,6 +248,23 @@ fn chercher(c: &[char], depuis: usize, motif: &str) -> Option<usize> {
     (depuis..c.len()).find(|&i| commence_par(c, i, motif))
 }
 
+/// L'indice qui suit `motif` (de `saut` caracteres) cherche depuis `depuis` ; la fin du texte s'il n'y est pas (ce qui
+/// ne se ferme pas court jusqu'au bout, comme expat le lit).
+fn apres(c: &[char], depuis: usize, motif: &str, saut: usize) -> usize {
+    match chercher(c, depuis, motif) {
+        Some(k) => k + saut,
+        None => c.len(),
+    }
+}
+
+/// Le texte `s` sans `fin` en queue, s'il l'a.
+fn sans_queue(s: &str, fin: char) -> &str {
+    match s.strip_suffix(fin) {
+        Some(t) => t,
+        None => s,
+    }
+}
+
 fn blanc_xml(c: Option<&char>) -> bool {
     matches!(c, Some(' ' | '\t' | '\r' | '\n'))
 }
@@ -297,7 +308,10 @@ fn declaration_valide(d: &[char]) -> bool {
                 _ => i += 1,
             }
         }
-        let nom_fin = d[debut..i].iter().position(|&c| c == '=' || blanc_xml(Some(&c))).map(|p| debut + p).unwrap_or(i);
+        let nom_fin = match d[debut..i].iter().position(|&c| c == '=' || blanc_xml(Some(&c))) {
+            Some(p) => debut + p,
+            None => i,
+        };
         if i == debut {
             return None;
         }
@@ -396,7 +410,12 @@ fn controle_expat(s: &str) -> Resultat<()> {
         }
         matches!((c.get(k), c.get(k + 1)), (Some('"'), Some('"')) | (Some('\''), Some('\'')))
     };
-    let nom_a = |i: usize, c: &[char], fin: &dyn Fn(char) -> bool| -> usize { (i..c.len()).find(|&k| fin(c[k])).unwrap_or(c.len()) };
+    let nom_a = |i: usize, c: &[char], fin: &dyn Fn(char) -> bool| -> usize {
+        match (i..c.len()).find(|&k| fin(c[k])) {
+            Some(k) => k,
+            None => c.len(),
+        }
+    };
     let reference = |c: &[char], i: usize| -> Resultat<()> {
         // `&#` en c[i..] : chiffres decimaux, ou `x` et chiffres hexadecimaux, puis `;`.
         let (base, mut k) = if c.get(i + 2) == Some(&'x') { (16, i + 3) } else { (10, i + 2) };
@@ -422,9 +441,9 @@ fn controle_expat(s: &str) -> Resultat<()> {
             continue;
         }
         if commence_par(&c, i, "<!--") {
-            i = chercher(&c, i + 4, "-->").map(|k| k + 3).unwrap_or(c.len());
+            i = apres(&c, i + 4, "-->", 3);
         } else if commence_par(&c, i, "<![CDATA[") {
-            i = chercher(&c, i + 9, "]]>").map(|k| k + 3).unwrap_or(c.len());
+            i = apres(&c, i + 9, "]]>", 3);
         } else if commence_par(&c, i, "<?") {
             let fin = nom_a(i + 2, &c, &|x| blanc_xml(Some(&x)) || x == '?');
             let cible = &c[i + 2..fin];
@@ -433,7 +452,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
             if (!nom_valide(cible) || cible.contains(&':') || (xml && !est_declaration)) || !(blanc_xml(c.get(fin)) || commence_par(&c, fin, "?>")) {
                 return Err(mal_forme("XML mal forme : un caractere inattendu"));
             }
-            i = chercher(&c, fin, "?>").map(|k| k + 2).unwrap_or(c.len());
+            i = apres(&c, fin, "?>", 2);
         } else if commence_par(&c, i, "<!") {
             // DOCTYPE : son nom se verifie, on saute le reste, crochets et guillemets compris.
             let (mut profondeur, mut guill) = (0i32, None);
@@ -459,7 +478,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
                     ('[', None) => profondeur += 1,
                     (']', None) => profondeur -= 1,
                     ('<', None) if commence_par(&c, i, "<!--") => {
-                        i = chercher(&c, i + 4, "-->").map(|k| k + 2).unwrap_or(c.len());
+                        i = apres(&c, i + 4, "-->", 2);
                     }
                     ('>', None) if profondeur <= 0 => {
                         i += 1;
@@ -475,7 +494,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
             if pile.pop().is_some_and(|ouvert| ouvert != nom) {
                 return Err(mal_forme("XML mal forme : une balise fermee sans etre ouverte"));
             }
-            i = chercher(&c, i + 2, ">").map(|k| k + 1).unwrap_or(c.len());
+            i = apres(&c, i + 2, ">", 1);
         } else {
             let fin = nom_a(i + 1, &c, &|x| blanc_xml(Some(&x)) || x == '/' || x == '>');
             if fin > i + 1 && !nom_valide(&c[i + 1..fin]) {
@@ -547,7 +566,10 @@ fn controle_expat(s: &str) -> Resultat<()> {
 
 /// Un XML déjà en texte : sa déclaration d'encodage est sans effet.
 fn lire_texte(s: &str) -> Resultat<Arbre> {
-    lire_texte_nu(s.strip_prefix('\u{feff}').unwrap_or(s))
+    match s.strip_prefix('\u{feff}') {
+        Some(t) => lire_texte_nu(t),
+        None => lire_texte_nu(s),
+    }
 }
 
 /// Le texte sans son BOM : un second est un caractere de tete que XML refuse.
@@ -717,93 +739,121 @@ fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
             for &b in o {
                 match if b < 0x80 { b as u32 } else { WINDOWS_1252[b as usize - 0x80] } {
                     0xFFFD => return Err(invalide()),
-                    u => t.push(char::from_u32(u).unwrap_or('\u{fffd}')),
+                    u => t.push(char::from_u32(u).ok_or_else(invalide)?),
                 }
             }
             t
         }
         Codage::Utf16(_) => return Err(incorrect()),
-        Codage::Refuse | Codage::Autre | Codage::Introuvable => return Err(erreur_codage(&c, &nom.unwrap_or_default())),
+        Codage::Refuse | Codage::Autre | Codage::Introuvable => {
+            return Err(match &nom {
+                Some(n) => erreur_codage(&c, n),
+                None => echec("ParseError", "encodage inconnu"),
+            })
+        }
     };
     lire_texte_nu(&texte)
 }
 
 // ------------------------------------------------------- les bilans de depot
 
-const CHAMPS_BILAN: [&str; 16] = [
-    "flux",
-    "recu_le",
-    "essai_reel",
-    "etat_envoi",
-    "etat_declaration",
-    "mois",
-    "logiciel",
-    "type_rapport",
-    "type_declaration",
-    "fraction",
-    "ordre",
-    "salaries",
-    "contrats",
-    "conformite",
-    "certificat",
-    "siret_declarant",
-];
-
-/// `'01082026'` -> `'2026-08'` (S20.G00.05.005) ; rien s'il ne se lit pas.
-fn mois_lisible(brut: &str) -> String {
-    socle::mois::Mois::de_la_dsn(&nettoye(brut)).map(|m| m.to_string()).unwrap_or_default()
+/// UN BILAN DE DEPOT (un rapport AEE, CCO ou BAN), lu a plat : chaque champ est le texte du premier element de son nom
+/// qui en porte un ; un champ que le rapport ne porte pas est vide (`None`). Le flux, lui, est exige : un rapport sans
+/// `idflux` n'est le bilan d'aucun depot.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Bilan {
+    pub flux: String,
+    pub recu_le: Option<String>,
+    pub essai_reel: Option<String>,
+    pub etat_envoi: Option<String>,
+    pub etat_declaration: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
+    pub logiciel: Option<String>,
+    pub type_rapport: String,
+    pub type_declaration: Option<String>,
+    pub fraction: Option<String>,
+    pub ordre: Option<String>,
+    pub salaries: Option<String>,
+    pub contrats: Option<String>,
+    pub conformite: Option<String>,
+    pub certificat: Option<String>,
+    pub siret_declarant: Option<String>,
 }
 
-fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Option<Value> {
-    let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str()).unwrap_or("");
-    let flux = get("idflux");
-    if flux.is_empty() {
-        return None;
+impl Bilan {
+    /// Ce que le bilan dit de la declaration (son etat), sinon de l'envoi.
+    pub fn verdict(&self) -> Option<&str> {
+        self.etat_declaration.as_deref().or(self.etat_envoi.as_deref())
     }
-    let (d, h) = (get("date_reception"), get("heure_reception"));
-    let recu_le = if !d.is_empty() && !h.is_empty() { format!("{}T{}", d, h) } else { d.to_string() };
-    let etat_declaration = if !get("etat").is_empty() { get("etat") } else { get("etat_conformite") };
-    let valeurs = [
-        flux.to_string(),
+
+    /// Ce que `autre` dit et que celui-ci ne dit pas.
+    fn completer(&mut self, autre: &Bilan) {
+        fn prendre<T: Clone>(x: &mut Option<T>, y: &Option<T>) {
+            if x.is_none() {
+                x.clone_from(y);
+            }
+        }
+        prendre(&mut self.recu_le, &autre.recu_le);
+        prendre(&mut self.essai_reel, &autre.essai_reel);
+        prendre(&mut self.etat_envoi, &autre.etat_envoi);
+        prendre(&mut self.etat_declaration, &autre.etat_declaration);
+        prendre(&mut self.mois, &autre.mois);
+        prendre(&mut self.logiciel, &autre.logiciel);
+        prendre(&mut self.type_declaration, &autre.type_declaration);
+        prendre(&mut self.fraction, &autre.fraction);
+        prendre(&mut self.ordre, &autre.ordre);
+        prendre(&mut self.salaries, &autre.salaries);
+        prendre(&mut self.contrats, &autre.contrats);
+        prendre(&mut self.conformite, &autre.conformite);
+        prendre(&mut self.certificat, &autre.certificat);
+        prendre(&mut self.siret_declarant, &autre.siret_declarant);
+    }
+}
+
+/// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
+fn mois_du_rapport(brut: &str) -> Resultat<socle::mois::Mois> {
+    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| echec("ValueError", m))
+}
+
+fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Option<Bilan>> {
+    let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+    let Some(flux) = get("idflux") else { return Ok(None) };
+    let recu_le = match (get("date_reception"), get("heure_reception")) {
+        (Some(d), Some(h)) => Some(format!("{}T{}", d, h)),
+        (d, _) => d,
+    };
+    Ok(Some(Bilan {
+        flux,
         recu_le,
-        get("essai_reel").to_string(),
-        get("envoi_etat").to_string(),
-        etat_declaration.to_string(),
-        mois_lisible(get("mois")),
-        get("nom_logiciel").to_string(),
-        type_rapport.to_string(),
-        get("type").to_string(),
-        get("fraction").to_string(),
-        get("ordre").to_string(),
-        get("salaries").to_string(),
-        get("contrats").to_string(),
-        get("etat_conformite").to_string(),
-        get("certificat_conformite").to_string(),
-        get("siret").to_string(),
-    ];
-    let mut m = Map::new();
-    for (c, v) in CHAMPS_BILAN.iter().zip(valeurs) {
-        m.insert((*c).into(), Value::String(v));
-    }
-    Some(Value::Object(m))
+        essai_reel: get("essai_reel"),
+        etat_envoi: get("envoi_etat"),
+        etat_declaration: get("etat").or(get("etat_conformite")),
+        mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
+        logiciel: get("nom_logiciel"),
+        type_rapport: type_rapport.to_string(),
+        type_declaration: get("type"),
+        fraction: get("fraction"),
+        ordre: get("ordre"),
+        salaries: get("salaries"),
+        contrats: get("contrats"),
+        conformite: get("etat_conformite"),
+        certificat: get("certificat_conformite"),
+        siret_declarant: get("siret"),
+    }))
 }
 
-/// Un rapport AEE, CCO ou BAN lu, ou `null` si ce n'en est pas un.
-fn parse_bilan_depot(o: &[u8]) -> Value {
-    parse_bilan_depot_lu(o).unwrap_or(Value::Null)
-}
-
-/// `parse_bilan_depot`, mais un XML qui ne se lit pas est un refus (sa classe), pas « pas un bilan » : la reprise du
-/// journal le nomme (`illisibles`). Un XML bien forme qui n'est pas un rapport de depot rend `Null`.
-fn parse_bilan_depot_lu(o: &[u8]) -> Resultat<Value> {
+/// LE BILAN QUE PORTENT LES OCTETS `o` : `None` quand ce n'est pas un rapport de depot (un XML d'une autre forme, ou
+/// sans flux) ; un XML qui ne se lit pas est un refus (sa classe) : la reprise du journal le nomme (`illisibles`), le
+/// rattachement des retours le tient pour une piece sans bilan (`bilan_si_xml`).
+pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(nettoye(&texte))?;
     let racine = arbre.racine();
     if local(&racine.tag) != "rapport" {
-        return Ok(Value::Null);
+        return Ok(None);
     }
-    let Some(type_rapport) = racine.get("type").filter(|t| RAPPORTS_DEPOT.contains(t)) else {
-        return Ok(Value::Null);
+    let Some(type_rapport) = racine.attribut("type").filter(|t| RAPPORTS_DEPOT.contains(t)) else {
+        return Ok(None);
     };
     // Un balayage a plat, premiere occurrence gagnante.
     let mut champs: Vec<(String, String)> = Vec::new();
@@ -814,7 +864,16 @@ fn parse_bilan_depot_lu(o: &[u8]) -> Resultat<Value> {
             champs.push((nom.to_string(), t.to_string()));
         }
     }
-    Ok(bilan_depuis(&champs, type_rapport).unwrap_or(Value::Null))
+    bilan_depuis(&champs, type_rapport)
+}
+
+/// `bilan_d_octets`, une piece qui n'est pas du XML lisible n'ayant pas de bilan (une archive, un PDF) ; tout autre
+/// refus (un encodage inconnu, un mois illisible) remonte.
+pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
+    match bilan_d_octets(o) {
+        Err(Echec { classe: Some("ParseError"), .. }) => Ok(None),
+        autre => autre,
+    }
 }
 
 /// Les declarations qu'un certificat de conformite ou un bilan d'anomalies (nature 11, rapport `CCO` ou `BAN`) identifie,
@@ -823,31 +882,52 @@ fn parse_bilan_depot_lu(o: &[u8]) -> Resultat<Value> {
 /// dit d'une declaration : ni salarie, ni contrat, ni date d'evenement (schema des bilans `v01r08`, ceux qu'elle rend ;
 /// specification VT2.2, `atelier/reference/sources/gip-mds-api-dsn/`). Un XML illisible, ou qui
 /// n'est pas un rapport de depot, n'en identifie aucune.
-pub fn declarations_du_bilan(o: &[u8]) -> Vec<Value> {
-    let Ok(arbre) = lire_octets(o) else { return Vec::new() };
+pub fn declarations_du_bilan(o: &[u8]) -> Resultat<Vec<DeclarationIdentifiee>> {
+    let Some(arbre) = octets_arbre(o)? else { return Ok(Vec::new()) };
     let racine = arbre.racine();
-    if local(&racine.tag) != "rapport" || !racine.get("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)) {
-        return Vec::new();
+    if local(&racine.tag) != "rapport" || !racine.attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)) {
+        return Ok(Vec::new());
     }
-    let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).unwrap_or_default();
+    let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).filter(|t| !t.is_empty());
     let mut out = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
-        let (mut champs, mut codes): (Vec<(&str, &str)>, Vec<Value>) = (Vec::new(), Vec::new());
+        let (mut champs, mut codes): (Vec<(&str, &str)>, Vec<String>) = (Vec::new(), Vec::new());
         for x in arbre.sous(d) {
             let (nom, t) = (local(&x.tag), x.texte_net());
             if nom == "code" {
-                codes.push(json!(t));
+                codes.push(t.to_string());
             } else if !t.is_empty() && !champs.iter().any(|(n, _)| *n == nom) {
                 champs.push((nom, t));
             }
         }
-        let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map_or("", |(_, v)| *v);
-        out.push(json!({
-            "nature": get("nature"), "type": get("type"), "ordre": get("ordre"), "siren": get("SIREN"),
-            "nic": get("nic_affectation"), "etat": get("etat"), "essai_reel": essai_reel, "codes": codes,
-        }));
+        let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
+        out.push(DeclarationIdentifiee {
+            nature: get("nature"),
+            type_declaration: get("type"),
+            ordre: get("ordre"),
+            siren: get("SIREN"),
+            nic: get("nic_affectation"),
+            etat: get("etat"),
+            essai_reel: essai_reel.clone(),
+            codes,
+        });
     }
-    out
+    Ok(out)
+}
+
+/// UNE DECLARATION QU'UN BILAN IDENTIFIE (`declarations_du_bilan`) : ce que le bilan en dit, chaque champ vide quand il
+/// ne le porte pas, et les codes de ses anomalies.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DeclarationIdentifiee {
+    pub nature: Option<String>,
+    #[serde(rename = "type")]
+    pub type_declaration: Option<String>,
+    pub ordre: Option<String>,
+    pub siren: Option<String>,
+    pub nic: Option<String>,
+    pub etat: Option<String>,
+    pub essai_reel: Option<String>,
+    pub codes: Vec<String>,
 }
 
 /// L'arbre d'octets ; un XML mal forme n'en est pas un (`None`), tout autre refus (un
@@ -861,7 +941,7 @@ fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
 }
 
 /// `anomalies_du_bilan` : les motifs d'un BAN, en phrases lisibles.
-fn anomalies_du_bilan(o: &[u8]) -> Resultat<Vec<Value>> {
+pub fn anomalies_lisibles_d_octets(o: &[u8]) -> Resultat<Vec<String>> {
     let Some(arbre) = octets_arbre(o)? else {
         return Ok(Vec::new());
     };
@@ -882,14 +962,24 @@ fn anomalies_du_bilan(o: &[u8]) -> Resultat<Vec<Value>> {
         if !message.is_empty() {
             let cat = if categorie.is_empty() { String::new() } else { format!(" ({})", categorie) };
             let qui = if nom.is_empty() { String::new() } else { format!(" -- {}", nom) };
-            out.push(Value::String(format!("{}{}{}", message, cat, qui)));
+            out.push(format!("{}{}{}", message, cat, qui));
         }
     }
     Ok(out)
 }
 
-/// `anomalies_codees` : les anomalies d'un bilan, en codes.
-fn anomalies_codees(o: &[u8]) -> Resultat<Vec<Value>> {
+/// UNE ANOMALIE D'UN BILAN, en codes (`anomalies_codees_d_octets`) : chaque champ est le texte du premier element de son
+/// nom sous l'anomalie (vide s'il n'en porte pas), tel que le journal des incidents l'ecrit.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct AnomalieCodee {
+    pub categorie: String,
+    pub code: String,
+    pub message: String,
+    pub rubrique: String,
+}
+
+/// Les anomalies d'un bilan, en codes.
+pub fn anomalies_codees_d_octets(o: &[u8]) -> Resultat<Vec<AnomalieCodee>> {
     let Some(arbre) = octets_arbre(o)? else {
         return Ok(Vec::new());
     };
@@ -910,7 +1000,7 @@ fn anomalies_codees(o: &[u8]) -> Resultat<Vec<Value>> {
             }
         }
         if !code.is_empty() || !message.is_empty() {
-            out.push(json!({"code": code, "categorie": categorie, "message": message, "rubrique": rubrique}));
+            out.push(AnomalieCodee { categorie, code, message, rubrique });
         }
     }
     Ok(out)
@@ -918,102 +1008,179 @@ fn anomalies_codees(o: &[u8]) -> Resultat<Vec<Value>> {
 
 /// `fusionner_bilans` : un seul bilan par flux, le plus complet. Le bilan de
 /// declaration (CCO, BAN) l'emporte sur l'accuse de transport (AEE).
-pub fn fusionner_bilans(bilans: &[Value]) -> Value {
-    if bilans.is_empty() {
-        return Value::Null;
-    }
-    let rang = |b: &Value| match b.get("type_rapport").and_then(Value::as_str) {
-        Some("CCO" | "BAN") => 0,
-        Some("AEE") => 1,
+pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
+    let rang = |b: &Bilan| match b.type_rapport.as_str() {
+        "CCO" | "BAN" => 0,
+        "AEE" => 1,
         _ => 2,
     };
-    let mut tries: Vec<&Value> = bilans.iter().collect();
+    let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));
-    let mut base = tries[0].clone();
-    for autre in &tries[1..] {
-        for champ in [
-            "recu_le",
-            "essai_reel",
-            "etat_envoi",
-            "etat_declaration",
-            "mois",
-            "logiciel",
-            "type_declaration",
-            "fraction",
-            "ordre",
-            "salaries",
-            "contrats",
-            "conformite",
-            "certificat",
-            "siret_declarant",
-        ] {
-            if base.get(champ).map(faux).unwrap_or(true) {
-                if let Some(v) = autre.get(champ) {
-                    base[champ] = v.clone();
-                }
-            }
-        }
+    let (premier, autres) = tries.split_first()?;
+    let mut base = (*premier).clone();
+    for autre in autres {
+        base.completer(autre);
     }
-    base
+    Some(base)
 }
 
 // ------------------------------------------------ reponses de recherche (liste)
 
-fn json_lire(texte: &str) -> Resultat<Value> {
-    serde_json::from_str(texte).map_err(|e| echec("JSONDecodeError", e.to_string()))
+/// UN RETOUR QUE LA PLATE-FORME LISTE (guide de l'API DSN v6.8, §3.4.2, « Pour chaque flux et chaque retour » :
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`) : sa
+/// publication, sa production, l'OPS et le delegataire, sa nature, son statut, son identifiant et l'adresse de sa piece ;
+/// `libelle`, celui qu'un organisme joue de la compagnie fictive lui donne ; `flux`, l'identifiant du flux qui le porte.
+/// Un champ que la liste ne donne pas est vide.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Annonce {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publication: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub production: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ops: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegataire: Option<String>,
+    pub nature: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statut: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libelle: Option<String>,
+    pub flux: Option<String>,
 }
 
-/// La valeur de `cle` dans un objet JSON ; une autre forme est refusee.
-fn lire_cle<'a>(v: &'a Value, cle: &str) -> Resultat<Option<&'a Value>> {
-    match v {
-        Value::Object(m) => Ok(m.get(cle)),
-        autre => Err(echec("TypeError", socle::fichiers::attendu("un objet", crate::valeur::nom_type(autre)))),
+impl Annonce {
+    /// Ce qui distingue un retour : son flux, sa nature, sa publication.
+    pub fn cle(&self) -> (Option<&str>, &str, Option<&str>) {
+        (self.flux.as_deref(), self.nature.as_str(), self.publication.as_deref())
     }
+}
+
+/// UN DEPOT QUE LA PLATE-FORME LISTE (guide v6.8, §3.3.2) : l'identifiant de son flux, sa date, son statut (OK, KO).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Depot {
+    pub idflux: String,
+    pub date: String,
+    pub statut: String,
 }
 
 /// Un element seul (un objet) ou une liste d'elements : la reponse JSON de la plate-forme ecrit un objet quand il n'y
-/// en a qu'un. Rien (`null`) n'en fait aucun.
-fn un_ou_plusieurs(v: Option<&Value>) -> Resultat<Vec<Value>> {
-    match v {
-        None | Some(Value::Null) => Ok(Vec::new()),
-        Some(o @ Value::Object(_)) => Ok(vec![o.clone()]),
-        Some(Value::Array(a)) => Ok(a.clone()),
-        Some(autre) => Err(echec("TypeError", socle::fichiers::attendu("une liste", crate::valeur::nom_type(autre)))),
+/// en a qu'un.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum UnOuPlusieurs<T> {
+    Un(T),
+    Plusieurs(Vec<T>),
+}
+
+impl<T> UnOuPlusieurs<T> {
+    /// Les elements ; rien (une cle absente ou `null`) n'en fait aucun.
+    fn en_liste(u: Option<UnOuPlusieurs<T>>) -> Vec<T> {
+        u.into_iter()
+            .flat_map(|x| match x {
+                UnOuPlusieurs::Un(x) => vec![x],
+                UnOuPlusieurs::Plusieurs(l) => l,
+            })
+            .collect()
     }
 }
 
-fn liste_retours_json(d: &Value) -> Resultat<Vec<Value>> {
-    let racine = lire_cle(d, "retours")?.unwrap_or(d);
-    let mut out = Vec::new();
-    for f in &un_ou_plusieurs(lire_cle(racine, "flux")?)? {
-        let idf = lire_cle(f, "id")?.cloned().unwrap_or(Value::Null);
-        for r in &un_ou_plusieurs(lire_cle(f, "retour")?)? {
-            let Value::Object(m) = r else {
-                return Err(echec("TypeError", socle::fichiers::attendu("un objet", crate::valeur::nom_type(r))));
-            };
-            let mut m = m.clone();
-            m.insert("flux".into(), idf.clone());
-            out.push(Value::Object(m));
-        }
-    }
-    Ok(out)
+/// La reponse JSON (2.0) de la liste des retours : `{"retours": {"flux": [{"id", "retour": [...]}]}}`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListeJson {
+    retours: Option<RetoursJson>,
 }
 
-/// `{local(c.tag): (c.text or "").strip() for c in r}`
-fn enfants_en_dict(a: &Arbre, e: &Noeud) -> Map<String, Value> {
-    let mut m = Map::new();
-    for c in a.enfants(e) {
-        m.insert(local(&c.tag).to_string(), Value::String(c.texte_net().to_string()));
-    }
-    m
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RetoursJson {
+    flux: Option<UnOuPlusieurs<FluxJson>>,
 }
 
-/// `parse_liste_retours` : XML (1.0) ou JSON (2.0).
-fn parse_liste_retours(o: &[u8]) -> Resultat<Vec<Value>> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FluxJson {
+    id: Option<String>,
+    retour: Option<UnOuPlusieurs<RetourJson>>,
+}
+
+/// Un retour de la reponse JSON : l'annonce, sans son flux (celui du flux qui le porte).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RetourJson {
+    publication: Option<String>,
+    production: Option<String>,
+    ops: Option<String>,
+    delegataire: Option<String>,
+    nature: String,
+    statut: Option<String>,
+    id: Option<String>,
+    url: Option<String>,
+}
+
+/// La reponse JSON (2.0) de la liste des depots : `{"depots": {"declarant": {"siret", "nom", "prenom", "depot": [...]}}}`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DepotsJson {
+    depots: Option<DeclarantJson>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeclarantJson {
+    declarant: Option<DepotsDuDeclarant>,
+}
+
+/// Le declarant que la liste nomme : la releve ne lit que ses depots.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct DepotsDuDeclarant {
+    siret: Option<String>,
+    nom: Option<String>,
+    prenom: Option<String>,
+    depot: Option<UnOuPlusieurs<Depot>>,
+}
+
+const LISTE_ILLISIBLE: &str = "La liste que la plate-forme rend ne se lit pas.";
+
+/// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
+fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
+    a.enfants(e).map(|c| (local(&c.tag), c.texte_net())).filter(|(_, t)| !t.is_empty()).collect()
+}
+
+/// Les retours que la plate-forme liste : XML (1.0) ou JSON (2.0). Un champ que la plate-forme ne decrit pas refuse
+/// la liste.
+pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        return liste_retours_json(&json_lire(texte)?);
+        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec("JSONDecodeError", m))?;
+        let mut out = Vec::new();
+        for f in UnOuPlusieurs::en_liste(l.retours.and_then(|r| r.flux)) {
+            for r in UnOuPlusieurs::en_liste(f.retour) {
+                out.push(Annonce {
+                    publication: r.publication,
+                    production: r.production,
+                    ops: r.ops,
+                    delegataire: r.delegataire,
+                    nature: r.nature,
+                    statut: r.statut,
+                    id: r.id,
+                    url: r.url,
+                    libelle: None,
+                    flux: f.id.clone(),
+                });
+            }
+        }
+        return Ok(out);
     }
     let arbre = lire_texte(texte)?;
     let mut out = Vec::new();
@@ -1021,48 +1188,58 @@ fn parse_liste_retours(o: &[u8]) -> Resultat<Vec<Value>> {
         if local(&flux.tag) != "flux" {
             continue;
         }
-        let idf = match flux.get("id").filter(|s| !s.is_empty()) {
-            Some(i) => Value::String(i.to_string()),
-            None => arbre
-                .enfants(flux)
-                .find(|c| local(&c.tag) == "id")
-                .map(|c| Value::String(c.texte_net().to_string()))
-                .unwrap_or(Value::Null),
+        let idf = match flux.attribut("id").filter(|s| !s.is_empty()) {
+            Some(i) => Some(i.to_string()),
+            None => arbre.enfants(flux).find(|c| local(&c.tag) == "id").map(|c| c.texte_net().to_string()),
         };
         for r in arbre.enfants(flux) {
             if local(&r.tag) != "retour" {
                 continue;
             }
-            let mut m = enfants_en_dict(&arbre, r);
-            m.insert("flux".into(), idf.clone());
-            out.push(Value::Object(m));
+            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
+            let mut nature = None;
+            for (nom, t) in enfants_textes(&arbre, r) {
+                let t = Some(t.to_string());
+                match nom {
+                    "publication" => a.publication = t,
+                    "production" => a.production = t,
+                    "ops" => a.ops = t,
+                    "delegataire" => a.delegataire = t,
+                    "nature" => nature = t,
+                    "statut" => a.statut = t,
+                    "id" => a.id = t,
+                    "url" => a.url = t,
+                    autre => return Err(echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("flux.retour.{}", autre)))),
+                }
+            }
+            a.nature = nature.ok_or_else(|| echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, "flux.retour.nature")))?;
+            out.push(a);
         }
     }
     Ok(out)
 }
 
-/// `parse_liste_retours(octets)` : les retours que la plate-forme liste.
-pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Value>> {
-    parse_liste_retours(o)
-}
-
-/// `parse_liste_depots(octets)` : les depots que la plate-forme liste.
-pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Value>> {
-    parse_liste_depots(o)
-}
-
-/// `parse_liste_depots` : depots > declarant > depot{idflux, date, statut}.
-fn parse_liste_depots(o: &[u8]) -> Resultat<Vec<Value>> {
+/// Les depots que la plate-forme liste (depots > declarant > depot{idflux, date, statut}) : XML (1.0) ou JSON (2.0).
+pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let d = json_lire(texte)?;
-        let depots = lire_cle(&d, "depots")?.unwrap_or(&d);
-        let decl = lire_cle(depots, "declarant")?.cloned().unwrap_or(json!({}));
-        return un_ou_plusieurs(lire_cle(&decl, "depot")?);
+        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec("JSONDecodeError", m))?;
+        return Ok(UnOuPlusieurs::en_liste(d.depots.and_then(|x| x.declarant).and_then(|x| x.depot)));
     }
     let arbre = lire_texte(texte)?;
-    Ok(arbre.tous().filter(|el| local(&el.tag) == "depot").map(|el| Value::Object(enfants_en_dict(&arbre, el))).collect())
+    let mut out = Vec::new();
+    for el in arbre.tous().filter(|el| local(&el.tag) == "depot") {
+        let champs = enfants_textes(&arbre, el);
+        let champ = |k: &str| {
+            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", k))))
+        };
+        if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
+            return Err(echec("ValueError", socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", autre))));
+        }
+        out.push(Depot { idflux: champ("idflux")?, date: champ("date")?, statut: champ("statut")? });
+    }
+    Ok(out)
 }
 
 // ------------------------------------------------------- CRM 94 : taux du PAS
@@ -1088,10 +1265,43 @@ impl Entree94 {
         }
     }
 
-    fn json(&self) -> Value {
-        json!({"nir": texte_ou_null(&self.nir), "taux": texte_ou_null(&self.taux),
-               "type": texte_ou_null(&self.type_), "identifiant": texte_ou_null(&self.identifiant)})
+    /// Le releve, quand l'entree dit son NIR et son identifiant.
+    fn releve(&self) -> Option<ReleveTauxPas> {
+        Some(ReleveTauxPas { nir: self.nir.clone()?, taux: self.taux.clone(), type_taux: self.type_.clone(), identifiant: self.identifiant.clone()? })
     }
+}
+
+/// UN TAUX DE PAS QU'UN COMPTE RENDU DE NATURE 94 COMMUNIQUE : le NIR (13 caracteres), le taux, son type et l'identifiant
+/// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReleveTauxPas {
+    pub nir: String,
+    pub taux: Option<String>,
+    #[serde(rename = "type")]
+    pub type_taux: Option<String>,
+    pub identifiant: String,
+}
+
+/// LES TAUX DE PAS D'UN COMPTE RENDU, et la strategie qui les a lus (`None` : aucune n'a rien trouve).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TauxPasLus {
+    pub strategie: Option<&'static str>,
+    pub releves: Vec<ReleveTauxPas>,
+}
+
+/// UN TAUX DE PAS RATTACHE A LA FICHE DE SON SALARIE (`releves_vers_salaries`) : le releve, et la cle de la fiche.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TauxPasRattache {
+    #[serde(flatten)]
+    pub releve: ReleveTauxPas,
+    pub salarie: String,
+}
+
+/// Ce que `releves_vers_salaries` rend : les taux rattaches a une fiche, et ceux dont aucune fiche ne porte le NIR.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TauxPasRepartis {
+    pub rattaches: Vec<TauxPasRattache>,
+    pub orphelins: Vec<ReleveTauxPas>,
 }
 
 /// (nom local, valeurs des attributs, texte net) de chaque element.
@@ -1115,12 +1325,12 @@ fn rubrique_pas(v: &str) -> Option<&'static str> {
     RUBRIQUES_PAS.iter().find(|(k, _)| *k == v).map(|(_, c)| *c)
 }
 
-fn pas_rapport_crm(a: &Arbre) -> Vec<Value> {
+fn pas_rapport_crm(a: &Arbre) -> Vec<ReleveTauxPas> {
     let racine = a.racine();
     if local(&racine.tag) != "rapport" {
         return Vec::new();
     }
-    let Some(identifiant) = racine.get("identifiant").filter(|s| !s.is_empty()) else {
+    let Some(identifiant) = racine.attribut("identifiant").filter(|s| !s.is_empty()) else {
         return Vec::new();
     };
     let mut releves = Vec::new();
@@ -1128,23 +1338,19 @@ fn pas_rapport_crm(a: &Arbre) -> Vec<Value> {
         if local(&el.tag) != "salarie" {
             continue;
         }
-        let champs = enfants_en_dict(a, el);
-        let lu = |k: &str| champs.get(k).and_then(Value::as_str).unwrap_or("");
-        let nir = lu("NIR");
-        if nir.is_empty() {
-            continue;
-        }
-        let taux = lu("taux_imposition_PAS");
-        if !taux.is_empty() {
-            releves.push(json!({"nir": nir, "taux": taux, "type": "01", "identifiant": identifiant}));
-        } else {
-            releves.push(json!({"nir": nir, "taux": "0.00", "type": "13", "identifiant": "-1"}));
-        }
+        let champs = enfants_textes(a, el);
+        let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
+        let Some(nir) = lu("NIR") else { continue };
+        let (taux, type_taux, identifiant) = match lu("taux_imposition_PAS") {
+            Some(taux) => (taux, "01", identifiant.to_string()),
+            None => ("0.00".to_string(), "13", "-1".to_string()),
+        };
+        releves.push(ReleveTauxPas { nir, taux: Some(taux), type_taux: Some(type_taux.to_string()), identifiant });
     }
     releves
 }
 
-fn pas_par_code(a: &Arbre) -> Vec<Value> {
+fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
     let elements = a_plat(a);
     const RUB: &str = "S21.G00.50.008";
     // Les attributs (clés et valeurs) puis le texte de chaque élément.
@@ -1191,10 +1397,10 @@ fn pas_par_code(a: &Arbre) -> Vec<Value> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter(|r| r.complete()).map(Entree94::json).collect()
+    releves.iter().filter_map(Entree94::releve).collect()
 }
 
-fn pas_par_nom_metier(a: &Arbre) -> Vec<Value> {
+fn pas_par_nom_metier(a: &Arbre) -> Vec<ReleveTauxPas> {
     let elements = a_plat(a);
     let metier = |nom: &str| NOMS_METIER.iter().find(|(k, _)| *k == nom).map(|(_, c)| *c);
     if !elements.iter().any(|p| metier(&p.nom.to_lowercase()).is_some()) {
@@ -1221,7 +1427,7 @@ fn pas_par_nom_metier(a: &Arbre) -> Vec<Value> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter(|r| r.complete()).map(Entree94::json).collect()
+    releves.iter().filter_map(Entree94::releve).collect()
 }
 
 /// Un taux : un ou deux chiffres, un point, deux chiffres.
@@ -1233,7 +1439,7 @@ fn est_taux(v: &str) -> bool {
     (1..=2).contains(&p) && c.len() == p + 3 && c[..p].iter().all(char::is_ascii_digit) && c[p + 1..].iter().all(char::is_ascii_digit)
 }
 
-fn pas_par_balayage(a: &Arbre) -> Vec<Value> {
+fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
     let valeurs: Vec<String> = a_plat(a)
         .iter()
         .flat_map(|p| valeurs_de(p).into_iter().filter(|v| !v.is_empty()).map(str::to_string).collect::<Vec<_>>())
@@ -1258,14 +1464,14 @@ fn pas_par_balayage(a: &Arbre) -> Vec<Value> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter(|r| r.complete()).map(Entree94::json).collect()
+    releves.iter().filter_map(Entree94::releve).collect()
 }
 
 /// `extraire_taux_pas` : les quatre strategies, de la plus sure a la plus large.
-fn extraire_taux_pas(o: &[u8]) -> Resultat<Value> {
+pub fn taux_pas_d_octets(o: &[u8]) -> Resultat<TauxPasLus> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(&texte)?;
-    let strategies: [(&str, fn(&Arbre) -> Vec<Value>); 4] = [
+    let strategies: [(&'static str, fn(&Arbre) -> Vec<ReleveTauxPas>); 4] = [
         ("rapport CRM nominatif", pas_rapport_crm),
         ("rubriques codees", pas_par_code),
         ("noms metier NEODeS", pas_par_nom_metier),
@@ -1274,34 +1480,27 @@ fn extraire_taux_pas(o: &[u8]) -> Resultat<Value> {
     for (nom, f) in strategies {
         let releves = f(&arbre);
         if !releves.is_empty() {
-            return Ok(json!({"strategie": nom, "releves": releves}));
+            return Ok(TauxPasLus { strategie: Some(nom), releves });
         }
     }
-    Ok(json!({"strategie": null, "releves": []}))
+    Ok(TauxPasLus { strategie: None, releves: Vec::new() })
 }
 
-/// `releves_vers_salaries` : chaque releve a une fiche par le NIR ; `nirs` est la
-/// liste `[cle, nir]` des fiches qui en ont un, dans l'ordre du fichier.
-pub fn releves_vers_salaries(releves: &[Value], nirs: &[Value]) -> Value {
+/// Chaque releve a une fiche par le NIR ; `nirs` est la liste `(cle, nir)` des fiches qui en ont un, dans l'ordre du
+/// fichier.
+pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(String, String)]) -> TauxPasRepartis {
     let mut par_nir: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-    for p in nirs {
-        if let (Some(c), Some(n)) = (p.get(0).and_then(Value::as_str), p.get(1).and_then(Value::as_str)) {
-            par_nir.insert(n, c);
-        }
+    for (c, n) in nirs {
+        par_nir.insert(n, c);
     }
-    let (mut ok, mut orphelins) = (Vec::new(), Vec::new());
+    let (mut rattaches, mut orphelins) = (Vec::new(), Vec::new());
     for r in releves {
-        let nir = r.get("nir").filter(|n| !faux(n)).and_then(Value::as_str).unwrap_or("");
-        match par_nir.get(treize(nir).as_str()) {
-            Some(cle) => {
-                let mut m = r.as_object().cloned().unwrap_or_default();
-                m.insert("salarie".into(), Value::String((*cle).to_string()));
-                ok.push(Value::Object(m));
-            }
+        match par_nir.get(treize(&r.nir).as_str()) {
+            Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).to_string() }),
             None => orphelins.push(r.clone()),
         }
     }
-    json!({"rattaches": ok, "orphelins": orphelins})
+    TauxPasRepartis { rattaches, orphelins }
 }
 
 // ------------------------------------------------------------ l'AER, le .zip
@@ -1324,8 +1523,11 @@ fn mauvais(m: impl Into<String>) -> Echec {
     echec("BadZipFile", m)
 }
 
-fn cp437(o: &[u8]) -> String {
-    o.iter().map(|&b| if b < 0x80 { b as char } else { char::from_u32(CP437[b as usize - 0x80]).unwrap_or('\u{fffd}') }).collect()
+fn cp437(o: &[u8]) -> Resultat<String> {
+    o.iter()
+        .map(|&b| if b < 0x80 { Some(b as char) } else { char::from_u32(CP437[b as usize - 0x80]) })
+        .collect::<Option<String>>()
+        .ok_or_else(|| mauvais("un nom de membre illisible en cp437"))
 }
 
 /// Le nom d'un membre : UTF-8 si le drapeau 11 est leve, cp437 sinon.
@@ -1335,7 +1537,7 @@ fn nom_zip(o: &[u8], drapeaux: usize) -> Resultat<String> {
             .map(str::to_string)
             .map_err(|e| echec("UnicodeDecodeError", format!("texte illisible en UTF-8 a l'octet {}", e.valid_up_to())))
     } else {
-        Ok(cp437(o))
+        cp437(o)
     }
 }
 
@@ -1483,7 +1685,8 @@ fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
         let _ = prendre(&mut p, ln_comm);
         let drapeaux = u16_le(c, 8);
         let original = nom_zip(nom_brut, drapeaux)?;
-        let nom = original.split('\0').next().unwrap_or("").to_string();
+        // Le nom s'arrete au premier octet nul (`split` rend toujours un premier morceau).
+        let nom: String = original.chars().take_while(|&c| c != '\0').collect();
         let mut m = Membre {
             nom,
             original,
@@ -1597,14 +1800,13 @@ fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
     Ok(donnees)
 }
 
-/// Le dernier nom d'un chemin POSIX.
-fn nom_de_fichier(nom: &str) -> &str {
-    nom.split('/').rfind(|p| !p.is_empty() && *p != ".").unwrap_or("")
+/// Le dernier nom d'un chemin POSIX ; aucun pour un chemin qui n'en porte pas (`/`, `.`).
+fn nom_de_fichier(nom: &str) -> Option<&str> {
+    nom.split('/').rfind(|p| !p.is_empty() && *p != ".")
 }
 
-/// Le nom d'un fichier sans sa dernière extension.
-fn radical(nom: &str) -> &str {
-    let n = nom_de_fichier(nom);
+/// Le nom d'un fichier (`n`, sans son chemin) sans sa dernière extension.
+fn radical(n: &str) -> &str {
     match n.rfind('.') {
         Some(i) if i > 0 && i < n.len() - 1 => &n[..i],
         _ => n,
@@ -1614,7 +1816,7 @@ fn radical(nom: &str) -> &str {
 /// Le motif `_NOM_AER` : `AER_<siret>__<MMAAAA>_<code>_<JJMMAAAA>_<NOM>_<rang>_<id>.pdf`,
 /// majuscules ou minuscules. Rend `(MMAAAA, NOM)`.
 fn nom_aer(nom: &str) -> Option<(String, String)> {
-    let s = nom.strip_suffix('\n').unwrap_or(nom);
+    let s = sans_queue(nom, '\n');
     let c: Vec<char> = s.chars().collect();
     if c.len() < 4 || !"AER_".chars().zip(&c).all(|(a, b)| a.eq_ignore_ascii_case(b)) {
         return None;
@@ -1686,12 +1888,11 @@ fn nom_aer(nom: &str) -> Option<(String, String)> {
     None
 }
 
-/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (AAAA-MM ; vide quand le nom ne la
-/// dit pas), le salarie que le nom designe, et le PDF.
+/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (AAAA-MM, quand le nom la dit), le salarie que le nom designe, et le PDF.
 #[derive(Debug, Clone)]
 pub struct AttestationAer {
     pub nom_archive: String,
-    pub periode: String,
+    pub periode: Option<String>,
     pub qui: String,
     pub donnees: Vec<u8>,
 }
@@ -1707,17 +1908,19 @@ pub fn aer_spectacle(o: &[u8]) -> Resultat<Vec<AttestationAer>> {
     // `NameToInfo` garde le dernier membre de chaque nom.
     let mut out = Vec::new();
     for m in &membres {
-        if m.nom.ends_with('/') {
-            continue;
-        }
-        let (periode, qui) = match nom_aer(nom_de_fichier(&m.nom)) {
+        // Un dossier, ou un chemin qui ne nomme pas de fichier, n'est pas une attestation.
+        let Some(fichier) = nom_de_fichier(&m.nom).filter(|_| !m.nom.ends_with('/')) else { continue };
+        let (periode, qui) = match nom_aer(fichier) {
             Some((mmaaaa, qui)) => {
                 let c: Vec<char> = mmaaaa.chars().collect();
-                (format!("{}-{}", c[2..].iter().collect::<String>(), c[..2].iter().collect::<String>()), qui.replace('_', " "))
+                (Some(format!("{}-{}", c[2..].iter().collect::<String>(), c[..2].iter().collect::<String>())), qui.replace('_', " "))
             }
-            None => (String::new(), radical(&m.nom).to_string()),
+            None => (None, radical(fichier).to_string()),
         };
-        let dernier = membres.iter().rev().find(|x| x.nom == m.nom).unwrap_or(m);
+        let dernier = match membres.iter().rev().find(|x| x.nom == m.nom) {
+            Some(d) => d,
+            None => m,
+        };
         let donnees = lire_membre(o, dernier)?;
         out.push(AttestationAer { nom_archive: m.nom.clone(), periode, qui, donnees });
     }
@@ -1737,32 +1940,7 @@ pub fn rattacher(quis: &[&str], index: &[(String, String)]) -> Vec<Option<String
         .collect()
 }
 
-// ------------------------------------------------- ce que le journal en lit
-
-/// `parse_bilan_depot(octets)` : le bilan (`null` si ce n'est pas un rapport).
-pub fn bilan_d_octets(o: &[u8]) -> Value {
-    parse_bilan_depot(o)
-}
-
-/// Le bilan d'octets ; `Err(classe)` si le XML ne se lit pas (`journal-reprise` nomme la piece au lieu de la sauter).
-pub fn bilan_ou_illisible(o: &[u8]) -> Result<Value, &'static str> {
-    parse_bilan_depot_lu(o).map_err(|e| e.classe.unwrap_or("Exception"))
-}
-
-/// `anomalies_du_bilan(octets)`.
-pub fn anomalies_lisibles_d_octets(o: &[u8]) -> Result<Vec<Value>, Echec> {
-    anomalies_du_bilan(o)
-}
-
-/// `anomalies_codees(octets)`.
-pub fn anomalies_codees_d_octets(o: &[u8]) -> Result<Vec<Value>, Echec> {
-    anomalies_codees(o)
-}
-
-/// Les taux de PAS d'un compte rendu de nature 94 : `{"strategie", "releves"}`.
-pub fn taux_pas_d_octets(o: &[u8]) -> Result<Value, Echec> {
-    extraire_taux_pas(o)
-}
+// ------------------------------------------------- la notification du taux AT/MP
 
 /// UN TAUX AT/MP NOTIFIE, tel qu'un compte rendu de nature 34 le porte : l'etablissement de la declaration a laquelle il
 /// est rattache (`SIREN`, `nic_affectation`), puis un element `taux_AT` (`code_ctn`, `section`, `code_risque`,
@@ -1784,11 +1962,12 @@ pub struct TauxAtmpNotifie {
 
 /// AAAAMMJJ (le format du schema des bilans) ou AAAA-MM-JJ.
 fn jour_aaaammjj(t: &str) -> Option<socle::date::Jour> {
-    let c: String = t.chars().filter(char::is_ascii_digit).collect();
+    let c: Vec<u32> = t.chars().filter_map(|x| x.to_digit(10)).collect();
     if c.len() != 8 {
         return None;
     }
-    socle::date::Jour::nouveau(c[..4].parse().ok()?, c[4..6].parse().ok()?, c[6..8].parse().ok()?)
+    let nombre = |chiffres: &[u32]| chiffres.iter().fold(0, |n, d| n * 10 + d);
+    socle::date::Jour::nouveau(nombre(&c[..4]) as i32, nombre(&c[4..6]), nombre(&c[6..8]))
 }
 
 /// LES TAUX AT/MP QU'UNE NOTIFICATION DE NATURE 34 COMMUNIQUE. Le guide de l'API DSN (§5.26.1 : « CR métier taux AT »,
@@ -1837,7 +2016,10 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
                 code_risque,
                 taux,
                 date_effet,
-                date_calcul: jour_aaaammjj(&champ("date_calcul")),
+                date_calcul: match champ("date_calcul") {
+                    c if c.is_empty() => None,
+                    c => Some(jour_aaaammjj(&c).ok_or_else(|| illisible("date de calcul", &c))?),
+                },
             });
         }
     }
@@ -1881,31 +2063,38 @@ fn premier_texte<'a>(a: &'a Arbre, e: &'a Noeud, noms: &[&str]) -> &'a str {
 /// (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`) ; les noms
 /// d'elements sont ceux des pieces recues (`v01r08`) et des exemples du guide. `None` : ce n'est pas un rapport
 /// harmonise (un XML d'un autre format, un PDF, une archive), ou il ne se lit pas.
-pub fn lire_rapport(o: &[u8]) -> Option<Value> {
-    let arbre = lire_octets(o).ok()?;
+pub fn lire_rapport(o: &[u8]) -> Resultat<Option<Rapport>> {
+    let Some(arbre) = octets_arbre(o)? else { return Ok(None) };
     let racine = arbre.racine();
     if local(&racine.tag) != "rapport" {
-        return None;
+        return Ok(None);
     }
-    let type_rapport = racine.get("type").unwrap_or("").to_string();
-    let libelle = TYPES_RAPPORT.iter().find(|(c, _)| *c == type_rapport).map(|(_, l)| l.to_string()).unwrap_or_default();
+    let type_rapport = racine.attribut("type").map(str::to_string);
+    let libelle = TYPES_RAPPORT.iter().find(|(c, _)| Some(*c) == type_rapport.as_deref()).map(|(_, l)| l.to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
-    let etat_envoi = envoi.map(|e| premier_texte(&arbre, e, &["envoi_etat"])).unwrap_or("");
-    let essai_reel = envoi.map(|e| premier_texte(&arbre, e, &["essai_reel"])).unwrap_or("");
+    let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
+    let (etat_envoi, essai_reel) = (de_l_envoi("envoi_etat"), de_l_envoi("essai_reel"));
     let mut declarations = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
-        let id = arbre.sous(d).find(|x| local(&x.tag) == "declaration_identification").unwrap_or(d);
-        let bilan = arbre.sous(d).find(|x| local(&x.tag) == "declaration_bilan").unwrap_or(d);
-        declarations.push(json!({
-            "nature": premier_texte(&arbre, id, &["nature"]), "type": premier_texte(&arbre, id, &["type"]),
-            "ordre": premier_texte(&arbre, id, &["ordre"]), "mois": mois_lisible(premier_texte(&arbre, id, &["mois"])),
-            "etat": premier_texte(&arbre, bilan, &["etat", "etat_conformite"]),
-        }));
+        let sous_bloc = |nom: &str| match arbre.sous(d).find(|x| local(&x.tag) == nom) {
+            Some(x) => x,
+            None => d,
+        };
+        let (id, bilan) = (sous_bloc("declaration_identification"), sous_bloc("declaration_bilan"));
+        let mois = premier_texte(&arbre, id, &["mois"]);
+        declarations.push(DeclarationDuRapport {
+            nature: premier_texte(&arbre, id, &["nature"]).to_string(),
+            type_declaration: premier_texte(&arbre, id, &["type"]).to_string(),
+            ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
+            mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
+            etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
+        });
     }
     let mut anomalies = Vec::new();
     for a in arbre.tous().filter(|e| {
         let n = local(&e.tag);
-        n == "anomalie" || n.ends_with("_anomalie")
+        // `anomalie`, ou un nom qui finit en `…_anomalie` (`declaration_anomalie`, `envoi_anomalie`).
+        n.strip_suffix("anomalie").is_some_and(|debut| debut.is_empty() || debut.ends_with('_'))
     }) {
         let rubrique = match arbre.sous(a).find(|x| local(&x.tag) == "rubrique_declenchante") {
             Some(r) => premier_texte(&arbre, r, &["identifiant", "rubrique"]).to_string(),
@@ -1921,37 +2110,99 @@ pub fn lire_rapport(o: &[u8]) -> Option<Value> {
         if code.is_empty() && message.is_empty() {
             continue;
         }
-        anomalies.push(json!({
-            "code": code, "categorie": premier_texte(&arbre, a, &["categorie"]), "message": message, "rubrique": rubrique,
-            "ligne": premier_texte(&arbre, a, &["numero_ligne"]), "nombre": premier_texte(&arbre, a, &["nombre"]),
-            "salarie": salarie,
-        }));
+        anomalies.push(AnomalieDuRapport {
+            code: code.to_string(),
+            categorie: premier_texte(&arbre, a, &["categorie"]).to_string(),
+            message: message.to_string(),
+            rubrique,
+            ligne: premier_texte(&arbre, a, &["numero_ligne"]).to_string(),
+            nombre: premier_texte(&arbre, a, &["nombre"]).to_string(),
+            salarie,
+        });
     }
     let mut informations = Vec::new();
     for c in arbre.tous().filter(|e| local(&e.tag) == "information_collective") {
-        let donnees: Vec<Value> = arbre
+        let donnees = arbre
             .sous(c)
             .skip(1)
             .filter(|x| x.enfants.is_empty() && !x.texte_net().is_empty() && local(&x.tag) != "type")
-            .map(|x| json!({"nom": local(&x.tag), "valeur": x.texte_net()}))
+            .map(|x| DonneeCollective { nom: local(&x.tag).to_string(), valeur: x.texte_net().to_string() })
             .collect();
-        informations.push(json!({"type": premier_texte(&arbre, c, &["type"]), "donnees": donnees}));
+        informations.push(InformationCollective { type_information: premier_texte(&arbre, c, &["type"]).to_string(), donnees });
     }
-    Some(json!({
-        "type": type_rapport, "libelle": libelle, "message": racine.get("message").unwrap_or(""),
-        "etat_envoi": etat_envoi, "essai_reel": essai_reel, "declarations": declarations, "anomalies": anomalies,
-        "informations": informations,
+    Ok(Some(Rapport {
+        type_rapport,
+        libelle,
+        message: racine.attribut("message").map(str::to_string).filter(|m| !m.is_empty()),
+        etat_envoi,
+        essai_reel,
+        declarations,
+        anomalies,
+        informations,
     }))
 }
 
-/// Les noms des membres d'une archive ZIP (une archive d'AER, nature 43 ou 46) ; vide si ce n'en est pas une.
-pub fn membres_du_zip(o: &[u8]) -> Vec<String> {
-    repertoire_zip(o).map(|m| m.into_iter().map(|x| x.nom).filter(|n| !n.ends_with('/')).collect()).unwrap_or_default()
+/// UN RAPPORT AU FORMAT HARMONISE, lu pour qu'on le lise (`lire_rapport`). Le type, son libelle, le message, l'etat et
+/// l'essai de l'envoi sont vides quand le rapport ne les dit pas ; le texte d'un element (une declaration, une anomalie,
+/// une information) est celui que le rapport lui donne.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Rapport {
+    #[serde(rename = "type")]
+    pub type_rapport: Option<String>,
+    pub libelle: Option<String>,
+    pub message: Option<String>,
+    pub etat_envoi: Option<String>,
+    pub essai_reel: Option<String>,
+    pub declarations: Vec<DeclarationDuRapport>,
+    pub anomalies: Vec<AnomalieDuRapport>,
+    pub informations: Vec<InformationCollective>,
 }
 
-/// Le nombre de taux de PAS qu'un compte rendu de nature 94 communique (`extraire_taux_pas`, les quatre strategies).
-pub fn nombre_de_taux_pas(o: &[u8]) -> usize {
-    extraire_taux_pas(o).ok().and_then(|v| v["releves"].as_array().map(Vec::len)).unwrap_or(0)
+/// Une declaration d'un rapport : nature, type, ordre, mois (quand il le dit) et etat.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DeclarationDuRapport {
+    pub nature: String,
+    #[serde(rename = "type")]
+    pub type_declaration: String,
+    pub ordre: String,
+    pub mois: Option<socle::mois::Mois>,
+    pub etat: String,
+}
+
+/// Une anomalie d'un rapport, telle que la page l'affiche.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AnomalieDuRapport {
+    pub code: String,
+    pub categorie: String,
+    pub message: String,
+    pub rubrique: String,
+    pub ligne: String,
+    pub nombre: String,
+    pub salarie: String,
+}
+
+/// Une information collective d'un rapport (§2.6) : son type, et ses donnees.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InformationCollective {
+    #[serde(rename = "type")]
+    pub type_information: String,
+    pub donnees: Vec<DonneeCollective>,
+}
+
+/// Une donnee d'une information collective : son nom et sa valeur.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DonneeCollective {
+    pub nom: String,
+    pub valeur: String,
+}
+
+/// Les noms des membres d'une archive ZIP (une archive d'AER, nature 43 ou 46) ; vide si ce n'en est pas une.
+pub fn membres_du_zip(o: &[u8]) -> Resultat<Vec<String>> {
+    match repertoire_zip(o) {
+        Ok(m) => Ok(m.into_iter().map(|x| x.nom).filter(|n| !n.ends_with('/')).collect()),
+        Err(e) if e.classe == Some("BadZipFile") => Ok(Vec::new()),
+        Err(e) => Err(e),
+    }
 }
 
 // ------------------------------------------------ un compte rendu NEOReS, lu
@@ -2005,13 +2256,143 @@ const TYPES_PARAMETRE_NEORES: [(&str, &str); 6] = [
     ("A07", "effectif moyen CSA annuel (niveau entreprise)"),
 ];
 
-fn dans_table(table: &[(&str, &'static str)], code: &str) -> &'static str {
-    table.iter().find(|(c, _)| *c == code).map(|(_, l)| *l).unwrap_or("")
+/// Le libelle du code `code` dans `table` ; aucun pour un code absent ou que la table ne connait pas.
+fn dans_table(table: &[(&str, &'static str)], code: Option<&str>) -> Option<&'static str> {
+    table.iter().find(|(c, _)| Some(*c) == code).map(|(_, l)| *l)
 }
 
-/// Le texte de la rubrique `nom` (`RO_B004_R001`), enfant direct du bloc `e`, ou `""`.
-fn rubrique_de<'a>(a: &'a Arbre, e: &'a Noeud, nom: &str) -> &'a str {
-    a.enfants(e).find(|x| local(&x.tag) == nom).map(Noeud::texte_net).unwrap_or("")
+/// Le texte de la rubrique `nom` (`RO_B004_R001`), enfant direct du bloc `e` ; aucun si le bloc ne la porte pas, ou
+/// vide.
+fn rubrique_de<'a>(a: &'a Arbre, e: &'a Noeud, nom: &str) -> Option<&'a str> {
+    a.enfants(e).find(|x| local(&x.tag) == nom).map(Noeud::texte_net).filter(|t| !t.is_empty())
+}
+
+/// `rubrique_de`, en texte.
+fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
+    rubrique_de(a, e, nom).map(str::to_string)
+}
+
+/// UN INDIVIDU D'UN COMPTE RENDU NEOReS (`RO.B006`, `RO.B012`) : nom, prenom, matricule, debut et numero du contrat.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IndividuNeores {
+    pub nom: Option<String>,
+    pub prenom: Option<String>,
+    pub matricule: Option<String>,
+    pub debut_contrat: Option<String>,
+    pub contrat: Option<String>,
+}
+
+/// Une donnee DSN en jeu (`RO.B007`) : la rubrique, la valeur declaree et l'attendue, le cumul, la periode, le
+/// resultat, et les valeurs acceptees (`RO.B010`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DonneeNeores {
+    pub rubrique: Option<String>,
+    pub declaree: Option<String>,
+    pub attendue: Option<String>,
+    pub cumul: bool,
+    pub debut: Option<String>,
+    pub fin: Option<String>,
+    pub resultat: Option<&'static str>,
+    pub acceptees: Vec<String>,
+}
+
+/// Le detail d'une action (`RO.B005`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DetailNeores {
+    pub atypie: Option<String>,
+    pub debut: Option<String>,
+    pub fin: Option<String>,
+    pub montant: Option<String>,
+    pub substituable: Option<&'static str>,
+    pub rappel: Option<String>,
+    pub interlocuteur: Option<String>,
+    pub individus: Vec<IndividuNeores>,
+    pub donnees: Vec<DonneeNeores>,
+}
+
+/// Une cible d'action (`RO.B004`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ActionNeores {
+    pub code: Option<String>,
+    pub libelle: Option<String>,
+    pub type_code: Option<String>,
+    #[serde(rename = "type")]
+    pub type_action: Option<&'static str>,
+    pub resultat: Option<&'static str>,
+    pub individus: Option<String>,
+    pub contrats: Option<String>,
+    pub controle: Option<String>,
+    pub reference: Option<String>,
+    pub action: Option<String>,
+    pub aide: Option<String>,
+    pub consequences: Option<String>,
+    pub substituable: Option<&'static str>,
+    pub rappel: Option<String>,
+    pub exception: Option<String>,
+    pub details: Vec<DetailNeores>,
+}
+
+/// Un parametre (`RO.B008`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ParametreNeores {
+    #[serde(rename = "type")]
+    pub type_parametre: Option<String>,
+    pub libelle: Option<&'static str>,
+    pub valeur: Option<String>,
+    pub effet: Option<String>,
+    pub fin: Option<String>,
+    pub rubrique: Option<String>,
+    pub calcule_le: Option<String>,
+}
+
+/// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IdentiteNeores {
+    pub nir_declare: Option<String>,
+    pub nir_reference: Option<String>,
+    pub nom_declare: Option<String>,
+    pub nom_reference: Option<String>,
+    pub prenom_declare: Option<String>,
+    pub prenom_reference: Option<String>,
+    pub naissance_declaree: Option<String>,
+    pub naissance_reference: Option<String>,
+    pub matricule: Option<String>,
+}
+
+/// Une information (`RO.B011`) et ses individus (`RO.B012`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InformationNeores {
+    pub code: Option<String>,
+    pub libelle: Option<String>,
+    pub numero: Option<String>,
+    pub information: Option<String>,
+    pub reference: Option<String>,
+    pub aide: Option<String>,
+    pub individus: Vec<IndividuNeores>,
+}
+
+/// UN COMPTE RENDU NEOReS LU (`lire_neores`) ; une rubrique que le compte rendu ne porte pas est vide.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Neores {
+    pub version: Option<String>,
+    pub declencheur: Option<String>,
+    pub declencheur_libelle: Option<&'static str>,
+    pub code: Option<String>,
+    pub libelle: Option<String>,
+    pub remplace: bool,
+    pub organisme: Option<String>,
+    pub debut: Option<String>,
+    pub fin: Option<String>,
+    pub produit_le: Option<String>,
+    pub mois: Option<String>,
+    pub essai_reel: Option<String>,
+    pub ordre: Option<String>,
+    pub metier: Option<String>,
+    pub conformite: Option<String>,
+    pub actions: Vec<ActionNeores>,
+    pub parametres: Vec<ParametreNeores>,
+    pub identites: Vec<IdentiteNeores>,
+    pub informations: Vec<InformationNeores>,
 }
 
 /// Les blocs `nom` sous `e` (lui exclu), dans l'ordre du document.
@@ -2034,109 +2415,146 @@ fn blocs_sous<'a>(a: &'a Arbre, e: &'a Noeud, nom: &'a str) -> Vec<&'a Noeud> {
 /// - `parametres` (`RO.B008`) et `identites` (`RO.B009`) ; `informations` (`RO.B011`, `RO.B012`, CT 2027.1.0).
 ///
 /// `None` : aucun bloc NEOReS (`RO_B000` a `RO_B012`), ou le fichier ne se lit pas.
-pub fn lire_neores(o: &[u8]) -> Option<Value> {
-    let a = lire_octets(o).ok()?;
+pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
+    let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let est_bloc = |n: &Noeud| {
         let t = local(&n.tag);
         t.len() == 7 && t.starts_with("RO_B") && t[4..].chars().all(|c| c.is_ascii_digit())
     };
     if !a.tous().any(est_bloc) {
-        return None;
+        return Ok(None);
     }
     let premier = |nom: &str| a.tous().find(|x| local(&x.tag) == nom);
-    let r = |bloc: Option<&Noeud>, nom: &str| bloc.map(|b| rubrique_de(&a, b, nom).to_string()).unwrap_or_default();
+    let r = |bloc: Option<&Noeud>, nom: &str| bloc.and_then(|b| rubrique_texte(&a, b, nom));
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
-    let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).unwrap_or_default();
+    let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
     let declencheur = r(b001, "RO_B001_R001");
-    let individu = |b: &Noeud, p: &str| {
-        json!({
-            "nom": rubrique_de(&a, b, &format!("{}_R003", p)), "prenom": rubrique_de(&a, b, &format!("{}_R004", p)),
-            "matricule": rubrique_de(&a, b, &format!("{}_R005", p)), "debut_contrat": rubrique_de(&a, b, &format!("{}_R006", p)),
-            "contrat": rubrique_de(&a, b, &format!("{}_R007", p)),
-        })
+    let individu = |b: &Noeud, p: &str| IndividuNeores {
+        nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
+        prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
+        matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
+        debut_contrat: rubrique_texte(&a, b, &format!("{}_R006", p)),
+        contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
     };
     let mut actions = Vec::new();
     for c in a.tous().filter(|x| local(&x.tag) == "RO_B004") {
-        let rc = |nom: &str| rubrique_de(&a, c, nom).to_string();
+        let rc = |nom: &str| rubrique_texte(&a, c, nom);
         let mut details = Vec::new();
         for d in blocs_sous(&a, c, "RO_B005") {
-            let rd = |nom: &str| rubrique_de(&a, d, nom).to_string();
-            let individus: Vec<Value> = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect();
-            let donnees: Vec<Value> = blocs_sous(&a, d, "RO_B007")
+            let rd = |nom: &str| rubrique_texte(&a, d, nom);
+            let individus = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect();
+            let donnees = blocs_sous(&a, d, "RO_B007")
                 .into_iter()
-                .map(|b| {
-                    let acceptees: Vec<String> = blocs_sous(&a, b, "RO_B010").into_iter().map(|v| rubrique_de(&a, v, "RO_B010_R001").to_string()).collect();
-                    let resultat = rubrique_de(&a, b, "RO_B007_R009");
-                    json!({
-                        "rubrique": rubrique_de(&a, b, "RO_B007_R001"), "declaree": rubrique_de(&a, b, "RO_B007_R002"),
-                        "attendue": rubrique_de(&a, b, "RO_B007_R003"), "cumul": rubrique_de(&a, b, "RO_B007_R004") == "01",
-                        "debut": rubrique_de(&a, b, "RO_B007_R005"), "fin": rubrique_de(&a, b, "RO_B007_R006"),
-                        "resultat": dans_table(&RESULTATS_NEORES, resultat), "acceptees": acceptees,
-                    })
+                .map(|b| DonneeNeores {
+                    rubrique: rubrique_texte(&a, b, "RO_B007_R001"),
+                    declaree: rubrique_texte(&a, b, "RO_B007_R002"),
+                    attendue: rubrique_texte(&a, b, "RO_B007_R003"),
+                    cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
+                    debut: rubrique_texte(&a, b, "RO_B007_R005"),
+                    fin: rubrique_texte(&a, b, "RO_B007_R006"),
+                    resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
+                    acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
                 })
                 .collect();
-            details.push(json!({
-                "atypie": rd("RO_B005_R001"), "debut": rd("RO_B005_R002"), "fin": rd("RO_B005_R003"), "montant": rd("RO_B005_R004"),
+            details.push(DetailNeores {
+                atypie: rd("RO_B005_R001"),
+                debut: rd("RO_B005_R002"),
+                fin: rd("RO_B005_R003"),
+                montant: rd("RO_B005_R004"),
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
-                "substituable": dans_table(&SUBSTITUABLE_NEORES, &rd("RO_B005_R005")), "rappel": rd("RO_B005_R006"),
-                "interlocuteur": rd("RO_B005_R007"), "individus": individus, "donnees": donnees,
-            }));
+                substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
+                rappel: rd("RO_B005_R006"),
+                interlocuteur: rd("RO_B005_R007"),
+                individus,
+                donnees,
+            });
         }
-        actions.push(json!({
-            "code": rc("RO_B004_R001"), "libelle": rc("RO_B004_R002"), "type_code": rc("RO_B004_R003"), "type": dans_table(&TYPES_ACTION_NEORES, &rc("RO_B004_R003")),
-            "resultat": dans_table(&RESULTATS_NEORES, &rc("RO_B004_R006")), "individus": rc("RO_B004_R009"), "contrats": rc("RO_B004_R010"),
-            "controle": rc("RO_B004_R011"), "reference": rc("RO_B004_R012"), "action": rc("RO_B004_R013"), "aide": rc("RO_B004_R014"),
-            "consequences": rc("RO_B004_R015"), "substituable": dans_table(&SUBSTITUABLE_NEORES, &rc("RO_B004_R016")),
-            "rappel": rc("RO_B004_R017"), "exception": rc("RO_B004_R018"), "details": details,
-        }));
+        actions.push(ActionNeores {
+            code: rc("RO_B004_R001"),
+            libelle: rc("RO_B004_R002"),
+            type_code: rc("RO_B004_R003"),
+            type_action: dans_table(&TYPES_ACTION_NEORES, rubrique_de(&a, c, "RO_B004_R003")),
+            resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, c, "RO_B004_R006")),
+            individus: rc("RO_B004_R009"),
+            contrats: rc("RO_B004_R010"),
+            controle: rc("RO_B004_R011"),
+            reference: rc("RO_B004_R012"),
+            action: rc("RO_B004_R013"),
+            aide: rc("RO_B004_R014"),
+            consequences: rc("RO_B004_R015"),
+            substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, c, "RO_B004_R016")),
+            rappel: rc("RO_B004_R017"),
+            exception: rc("RO_B004_R018"),
+            details,
+        });
     }
-    let parametres: Vec<Value> = a
+    let parametres = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B008")
-        .map(|p| {
-            let t = rubrique_de(&a, p, "RO_B008_R001");
-            json!({
-                "type": t, "libelle": dans_table(&TYPES_PARAMETRE_NEORES, t), "valeur": rubrique_de(&a, p, "RO_B008_R002"),
-                "effet": rubrique_de(&a, p, "RO_B008_R003"), "fin": rubrique_de(&a, p, "RO_B008_R004"),
-                "rubrique": rubrique_de(&a, p, "RO_B008_R005"), "calcule_le": rubrique_de(&a, p, "RO_B008_R006"),
-            })
+        .map(|p| ParametreNeores {
+            type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
+            libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
+            valeur: rubrique_texte(&a, p, "RO_B008_R002"),
+            effet: rubrique_texte(&a, p, "RO_B008_R003"),
+            fin: rubrique_texte(&a, p, "RO_B008_R004"),
+            rubrique: rubrique_texte(&a, p, "RO_B008_R005"),
+            calcule_le: rubrique_texte(&a, p, "RO_B008_R006"),
         })
         .collect();
-    let identites: Vec<Value> = a
+    let identites = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B009")
         .map(|b| {
-            let x = |n: &str| rubrique_de(&a, b, n);
-            let declare = if x("RO_B009_R001").is_empty() { x("RO_B009_R002") } else { x("RO_B009_R001") };
-            json!({
-                "nir_declare": declare, "nir_reference": x("RO_B009_R003"),
-                "nom_declare": x("RO_B009_R004"), "nom_reference": x("RO_B009_R005"),
-                "prenom_declare": x("RO_B009_R006"), "prenom_reference": x("RO_B009_R007"),
-                "naissance_declaree": x("RO_B009_R008"), "naissance_reference": x("RO_B009_R009"), "matricule": x("RO_B009_R010"),
-            })
+            let x = |n: &str| rubrique_texte(&a, b, n);
+            IdentiteNeores {
+                nir_declare: x("RO_B009_R001").or(x("RO_B009_R002")),
+                nir_reference: x("RO_B009_R003"),
+                nom_declare: x("RO_B009_R004"),
+                nom_reference: x("RO_B009_R005"),
+                prenom_declare: x("RO_B009_R006"),
+                prenom_reference: x("RO_B009_R007"),
+                naissance_declaree: x("RO_B009_R008"),
+                naissance_reference: x("RO_B009_R009"),
+                matricule: x("RO_B009_R010"),
+            }
         })
         .collect();
-    let informations: Vec<Value> = a
+    let informations = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B011")
         .map(|b| {
-            let x = |n: &str| rubrique_de(&a, b, n);
-            let individus: Vec<Value> = blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect();
-            json!({
-                "code": x("RO_B011_R001"), "libelle": x("RO_B011_R002"), "numero": x("RO_B011_R003"), "information": x("RO_B011_R004"),
-                "reference": x("RO_B011_R005"), "aide": x("RO_B011_R006"), "individus": individus,
-            })
+            let x = |n: &str| rubrique_texte(&a, b, n);
+            InformationNeores {
+                code: x("RO_B011_R001"),
+                libelle: x("RO_B011_R002"),
+                numero: x("RO_B011_R003"),
+                information: x("RO_B011_R004"),
+                reference: x("RO_B011_R005"),
+                aide: x("RO_B011_R006"),
+                individus: blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect(),
+            }
         })
         .collect();
-    Some(json!({
-        "version": version,
-        "declencheur": declencheur, "declencheur_libelle": dans_table(&DECLENCHEURS_NEORES, &declencheur),
-        "code": r(b002, "RO_B002_R002"), "libelle": r(b002, "RO_B002_R003"), "remplace": r(b002, "RO_B002_R004") == "02",
-        "organisme": r(b002, "RO_B002_R005"), "debut": r(b002, "RO_B002_R008"), "fin": r(b002, "RO_B002_R009"),
-        "produit_le": r(b002, "RO_B002_R011"),
-        "mois": r(b000, "RO_B000_R006"), "essai_reel": r(b000, "RO_B000_R013"), "ordre": r(b000, "RO_B000_R012"),
-        "metier": r(b003, "RO_B003_R001"), "conformite": r(b003, "RO_B003_R002"),
-        "actions": actions, "parametres": parametres, "identites": identites, "informations": informations,
+    Ok(Some(Neores {
+        version,
+        declencheur_libelle: dans_table(&DECLENCHEURS_NEORES, declencheur.as_deref()),
+        declencheur,
+        code: r(b002, "RO_B002_R002"),
+        libelle: r(b002, "RO_B002_R003"),
+        remplace: r(b002, "RO_B002_R004").as_deref() == Some("02"),
+        organisme: r(b002, "RO_B002_R005"),
+        debut: r(b002, "RO_B002_R008"),
+        fin: r(b002, "RO_B002_R009"),
+        produit_le: r(b002, "RO_B002_R011"),
+        mois: r(b000, "RO_B000_R006"),
+        essai_reel: r(b000, "RO_B000_R013"),
+        ordre: r(b000, "RO_B000_R012"),
+        metier: r(b003, "RO_B003_R001"),
+        conformite: r(b003, "RO_B003_R002"),
+        actions,
+        parametres,
+        identites,
+        informations,
     }))
 }
 
@@ -2164,56 +2582,150 @@ const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérat
 /// attendue, date d'evenement, regroupement) avec leur `ContexteRetourMetier` (rubrique, libelle, valeur) -- d'ou le
 /// salarie (S21.G00.30.002 et .004). `None` : ce n'en est pas un, ou il ne se lit pas (il est en ISO-8859-1, qu'il
 /// declare : guide v6.8, §7.1).
-pub fn lire_crm_oc(o: &[u8]) -> Option<Value> {
-    let a = lire_octets(o).ok()?;
+pub fn lire_crm_oc(o: &[u8]) -> Resultat<Option<CrmOc>> {
+    let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
     if local(&racine.tag) != "Fichier" || !a.enfants(racine).any(|x| local(&x.tag) == "Declaration") {
-        return None;
+        return Ok(None);
     }
-    let at = |n: &Noeud, k: &str| n.get(k).map(nettoye).unwrap_or("").to_string();
+    let at = |n: &Noeud, k: &str| n.attribut(k).map(nettoye).filter(|t| !t.is_empty()).map(str::to_string);
     let mut declarations = Vec::new();
     for d in a.enfants(racine).filter(|x| local(&x.tag) == "Declaration") {
-        let mandats: Vec<Value> = a
+        let mandats = a
             .enfants(d)
             .filter(|x| matches!(local(&x.tag), "MandatNetE" | "MandatProp"))
-            .map(|m| json!({"net_entreprises": local(&m.tag) == "MandatNetE", "iban": at(m, "IBAN"), "bic": at(m, "BIC"), "ics": at(m, "ICS"), "url": at(m, "URLMandatProp")}))
+            .map(|m| MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url: at(m, "URLMandatProp") })
             .collect();
         let mut retours = Vec::new();
         for rm in a.enfants(d).filter(|x| local(&x.tag) == "RetourMetier") {
-            let contexte: Vec<Value> = a
+            let contexte: Vec<ContexteOc> = a
                 .enfants(rm)
                 .filter(|x| local(&x.tag) == "ContexteRetourMetier")
-                .map(|c| json!({"rubrique": at(c, "Rubrique"), "libelle": at(c, "Libelle"), "valeur": at(c, "Valeur"), "libelle_valeur": at(c, "LibelVal")}))
+                .map(|c| ContexteOc { rubrique: at(c, "Rubrique"), libelle: at(c, "Libelle"), valeur: at(c, "Valeur"), libelle_valeur: at(c, "LibelVal") })
                 .collect();
-            let du_contexte = |r: &str| contexte.iter().find(|c| c["rubrique"] == json!(r)).map(|c| texte_ou_vide(&c["valeur"])).unwrap_or_default();
-            let salarie = [du_contexte("S21.G00.30.002"), du_contexte("S21.G00.30.004")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" ");
-            retours.push(json!({
-                "code": at(rm, "CodeRetourMetier"), "libelle": at(rm, "LibelCodeRetourMetier"), "description": at(rm, "DescriptionRetour"),
-                "criticite": dans_table(&CRITICITES_OC, &at(rm, "CriticiteRetour")), "nombre": at(rm, "NbErreursSimilaires"),
-                "rubrique": at(rm, "RubriqueBlocRetour"), "libelle_rubrique": at(rm, "LibelRubBlocRetour"),
-                "valeur": at(rm, "ValeurRubriqueErreur"), "libelle_valeur": at(rm, "LibelValRubriqueErreur"),
-                "corrigee": at(rm, "ValeurCorrigeeAjoutee"), "libelle_corrigee": at(rm, "LibelValCorrigeeAjoutee"),
-                "date_evenement": at(rm, "DateEvt"), "salarie": salarie, "contexte": contexte,
-            }));
+            let du_contexte = |r: &str| contexte.iter().find(|c| c.rubrique.as_deref() == Some(r)).and_then(|c| c.valeur.clone());
+            let salarie = [du_contexte("S21.G00.30.002"), du_contexte("S21.G00.30.004")].into_iter().flatten().collect::<Vec<_>>().join(" ");
+            retours.push(RetourMetierOc {
+                code: at(rm, "CodeRetourMetier"),
+                libelle: at(rm, "LibelCodeRetourMetier"),
+                description: at(rm, "DescriptionRetour"),
+                criticite: dans_table(&CRITICITES_OC, at(rm, "CriticiteRetour").as_deref()),
+                nombre: at(rm, "NbErreursSimilaires"),
+                rubrique: at(rm, "RubriqueBlocRetour"),
+                libelle_rubrique: at(rm, "LibelRubBlocRetour"),
+                valeur: at(rm, "ValeurRubriqueErreur"),
+                libelle_valeur: at(rm, "LibelValRubriqueErreur"),
+                corrigee: at(rm, "ValeurCorrigeeAjoutee"),
+                libelle_corrigee: at(rm, "LibelValCorrigeeAjoutee"),
+                date_evenement: at(rm, "DateEvt"),
+                salarie: Some(salarie).filter(|s| !s.is_empty()),
+                contexte,
+            });
         }
         let code = at(d, "CodeRetourDecla");
-        declarations.push(json!({
-            "nature": at(d, "NatureDecla"), "type": at(d, "TypeDecla"), "ordre": at(d, "NoOrdreDecla"), "mois": mois_de_jjmmaaaa(&at(d, "DateMoisDec")),
-            "code_oc": at(d, "CodeOC"), "code_delegataire": at(d, "CodeDELEG"), "producteur": at(d, "NomProducteurCRM"),
-            "code_producteur": at(d, "CodeProducteurCRM"), "contact": at(d, "NomContact"), "courriel": at(d, "MailContact"), "telephone": at(d, "TelContact"),
-            "code_retour": code, "retour_global": dans_table(&RETOURS_GLOBAUX_OC, &code), "complement": at(d, "ComplementRetourDecla"),
-            "erreurs": at(d, "NbreErreur"), "critiques": at(d, "NbreCritique"), "affiliations": at(d, "NbreAff"), "radiations": at(d, "NbreRad"),
-            "salaries": at(d, "NbreSal"), "mandats": mandats, "retours": retours,
-        }));
+        declarations.push(DeclarationOc {
+            nature: at(d, "NatureDecla"),
+            type_declaration: at(d, "TypeDecla"),
+            ordre: at(d, "NoOrdreDecla"),
+            mois: at(d, "DateMoisDec").map(|m| mois_de_jjmmaaaa(&m)),
+            code_oc: at(d, "CodeOC"),
+            code_delegataire: at(d, "CodeDELEG"),
+            producteur: at(d, "NomProducteurCRM"),
+            code_producteur: at(d, "CodeProducteurCRM"),
+            contact: at(d, "NomContact"),
+            courriel: at(d, "MailContact"),
+            telephone: at(d, "TelContact"),
+            retour_global: dans_table(&RETOURS_GLOBAUX_OC, code.as_deref()),
+            code_retour: code,
+            complement: at(d, "ComplementRetourDecla"),
+            erreurs: at(d, "NbreErreur"),
+            critiques: at(d, "NbreCritique"),
+            affiliations: at(d, "NbreAff"),
+            radiations: at(d, "NbreRad"),
+            salaries: at(d, "NbreSal"),
+            mandats,
+            retours,
+        });
     }
-    Some(json!({"type_crm": at(racine, "TypCRM"), "essai_reel": at(racine, "CodeEnvoi"), "version": at(racine, "VersionCRM"), "declarations": declarations}))
+    Ok(Some(CrmOc { type_crm: at(racine, "TypCRM"), essai_reel: at(racine, "CodeEnvoi"), version: at(racine, "VersionCRM"), declarations }))
 }
 
-fn texte_ou_vide(v: &Value) -> String {
-    v.as_str().unwrap_or("").to_string()
+/// UN COMPTE RENDU D'ORGANISME COMPLEMENTAIRE LU (`lire_crm_oc`) ; un attribut que le fichier ne porte pas est vide.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CrmOc {
+    pub type_crm: Option<String>,
+    pub essai_reel: Option<String>,
+    pub version: Option<String>,
+    pub declarations: Vec<DeclarationOc>,
 }
 
-/// `DateMoisDec` est le dernier jour du mois au format JJMMAAAA (exemples de la fiche 692 : « 31032023 ») : `AAAA-MM`.
+/// Une `Declaration` du compte rendu.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DeclarationOc {
+    pub nature: Option<String>,
+    #[serde(rename = "type")]
+    pub type_declaration: Option<String>,
+    pub ordre: Option<String>,
+    pub mois: Option<String>,
+    pub code_oc: Option<String>,
+    pub code_delegataire: Option<String>,
+    pub producteur: Option<String>,
+    pub code_producteur: Option<String>,
+    pub contact: Option<String>,
+    pub courriel: Option<String>,
+    pub telephone: Option<String>,
+    pub code_retour: Option<String>,
+    pub retour_global: Option<&'static str>,
+    pub complement: Option<String>,
+    pub erreurs: Option<String>,
+    pub critiques: Option<String>,
+    pub affiliations: Option<String>,
+    pub radiations: Option<String>,
+    pub salaries: Option<String>,
+    pub mandats: Vec<MandatOc>,
+    pub retours: Vec<RetourMetierOc>,
+}
+
+/// Un mandat SEPA a creer (`MandatNetE`, `MandatProp`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MandatOc {
+    pub net_entreprises: bool,
+    pub iban: Option<String>,
+    pub bic: Option<String>,
+    pub ics: Option<String>,
+    pub url: Option<String>,
+}
+
+/// Un `RetourMetier`, et le salarie que son contexte nomme.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RetourMetierOc {
+    pub code: Option<String>,
+    pub libelle: Option<String>,
+    pub description: Option<String>,
+    pub criticite: Option<&'static str>,
+    pub nombre: Option<String>,
+    pub rubrique: Option<String>,
+    pub libelle_rubrique: Option<String>,
+    pub valeur: Option<String>,
+    pub libelle_valeur: Option<String>,
+    pub corrigee: Option<String>,
+    pub libelle_corrigee: Option<String>,
+    pub date_evenement: Option<String>,
+    pub salarie: Option<String>,
+    pub contexte: Vec<ContexteOc>,
+}
+
+/// Un `ContexteRetourMetier` : la rubrique, son libelle, la valeur et son libelle.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ContexteOc {
+    pub rubrique: Option<String>,
+    pub libelle: Option<String>,
+    pub valeur: Option<String>,
+    pub libelle_valeur: Option<String>,
+}
+
+/// `DateMoisDec` est le dernier jour du mois au format JJMMAAAA (exemples de la fiche 692 : « 31032023 ») : `AAAA-MM` ;
+/// une autre forme se montre telle qu'ecrite.
 fn mois_de_jjmmaaaa(brut: &str) -> String {
     match socle::date::Jour::lire(brut) {
         Ok(j) if brut.len() == 8 => j.mois_civil().to_string(),

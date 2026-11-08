@@ -8,7 +8,6 @@
 
 use super::analyse::{Args, Opt, Spec};
 use socle::date::Jour;
-use super::rendu::texte;
 use super::Cadre;
 use envois::releve_retours::{Client, Panne};
 use socle::echec::Echec;
@@ -74,10 +73,8 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
     }
     for (i, dep) in depots.iter().enumerate() {
         dire!("  depot {}", i + 1);
-        if let Some(o) = dep.as_object() {
-            for (k, v) in o {
-                dire!("     {:<24} {}", k, texte(v));
-            }
+        for (k, v) in [("idflux", &dep.idflux), ("date", &dep.date), ("statut", &dep.statut)] {
+            dire!("     {:<24} {}", k, v);
         }
         dire!();
     }

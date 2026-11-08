@@ -28,8 +28,6 @@
 use droit::fiche::Lue as _;
 use std::path::Path;
 
-use serde_json::Value;
-
 use droit::contexte::Contexte;
 use socle::echec::erreur;
 use crate::branchement::Branchement;
@@ -65,31 +63,55 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 /// declarent pour ce SIREN, essais et reels, acceptes ou non ; et le flux qui le porte. Le flux se lit dans le nom de
 /// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `transport::archiver`).
 pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i64, String)>, Echec> {
-    let dossier = racine.join(crate::retours::RETOURS);
-    let Ok(lecture) = std::fs::read_dir(&dossier) else { return Ok(None) };
-    let mut noms: Vec<String> = lecture.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("_nature11_")).collect();
-    noms.sort();
     let mut dernier: Option<(i64, String)> = None;
-    for nom in noms {
-        let p = dossier.join(&nom);
-        if !p.is_file() {
-            continue;
-        }
+    for (nom, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
-        let flux = nom.split_once("_nature11_").map(|(_, f)| f.rsplit_once('.').map_or(f, |(x, _)| x)).unwrap_or("").to_string();
-        for d in crate::retours::declarations_du_bilan(&octets) {
-            let texte = |k: &str| d.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-            if !crate::depot::SIGNALEMENTS.contains(&texte("nature").as_str()) || texte("siren") != siren {
+        // Le flux suit la nature dans le nom, avant l'extension.
+        let Some(apres) = nom.splitn(3, '_').nth(2) else { continue };
+        let flux = match apres.rsplit_once('.') {
+            Some((f, _)) => f,
+            None => apres,
+        };
+        for d in crate::retours::declarations_du_bilan(&octets)? {
+            let signalement = d.nature.as_deref().is_some_and(|n| crate::depot::SIGNALEMENTS.contains(&n));
+            if !signalement || d.siren.as_deref() != Some(siren) {
                 continue;
             }
-            if let Ok(o) = texte("ordre").parse::<i64>() {
-                if dernier.as_ref().is_none_or(|(m, _)| o > *m) {
-                    dernier = Some((o, flux.clone()));
-                }
+            let Some(o) = ordre_lu(d.ordre.as_deref(), &p)? else { continue };
+            if dernier.as_ref().is_none_or(|(m, _)| o > *m) {
+                dernier = Some((o, flux.to_string()));
             }
         }
     }
     Ok(dernier)
+}
+
+/// Les bilans (nature 11) archives dans `retours/`, par nom (`transport::archiver`) ; aucun sans dossier des retours.
+fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, Echec> {
+    let dossier = racine.join(crate::retours::RETOURS);
+    let lecture = match std::fs::read_dir(&dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(erreur("OSError", socle::echec::du_disque(&dossier, &e))),
+    };
+    let mut noms = Vec::new();
+    for e in lecture {
+        let nom = e.map_err(|x| erreur("OSError", socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let p = dossier.join(&nom);
+        if crate::retours::archive_de_nature(&nom, "11") && p.is_file() {
+            noms.push((nom, p));
+        }
+    }
+    noms.sort();
+    Ok(noms)
+}
+
+/// Un numero d'ordre lu (S20.G00.05.004, dans un bilan ou au journal) ; aucun s'il n'est pas dit, un refus s'il ne se
+/// lit pas (son fichier a part).
+fn ordre_lu(ordre: Option<&str>, ou: &Path) -> Result<Option<i64>, Echec> {
+    ordre
+        .map(|o| o.trim().parse::<i64>().map_err(|_| erreur("ValueError", socle::echec::du_disque(&ou, &format!("Un numéro d'ordre de déclaration ne se lit pas : {}.", o)))))
+        .transpose()
 }
 
 /// Le plus grand ordre des signalements d'ESSAI que ce dossier a deposes (`detail.ordre` des lignes `dsn` en test) :
@@ -98,10 +120,12 @@ fn dernier_ordre_des_essais(racine: &Path) -> Result<i64, Echec> {
     let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| erreur("ErreurOperation", m))?;
     let mut dernier = 0;
     for e in lignes.iter().filter_map(crate::journal::Ligne::dsn).filter(|e| e.mode == crate::journal::Mode::Test) {
-        if !crate::depot::SIGNALEMENTS.contains(&e.detail.nature.as_deref().unwrap_or("")) {
+        if !e.detail.nature.as_deref().is_some_and(|n| crate::depot::SIGNALEMENTS.contains(&n)) {
             continue;
         }
-        dernier = dernier.max(e.detail.ordre.as_deref().and_then(|o| o.trim().parse::<i64>().ok()).unwrap_or(0));
+        if let Some(o) = ordre_lu(e.detail.ordre.as_deref(), &crate::journal::chemin(racine))? {
+            dernier = dernier.max(o);
+        }
     }
     Ok(dernier)
 }
@@ -130,8 +154,10 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
     };
 
     let bilans = dernier_ordre_des_bilans(&ctx.racine, &siren(&ctx.entreprise)?)?;
-    let (plateforme, flux) = bilans.clone().unwrap_or((0, String::new()));
-    let dernier = journal.max(plateforme);
+    let dernier = match &bilans {
+        Some((plateforme, _)) => journal.max(*plateforme),
+        None => journal,
+    };
     if let Err(pourquoi) = lue {
         avertissements.push(format!(
             "La plate-forme n'a pas pu etre consultee ({}) : l'ordre {} suit le journal de ce dossier et les retours deja archives, qui ne savent que ce que ce dossier a depose et releve. Un signalement depose d'ailleurs sous le meme SIREN (un autre poste, une copie, un essai) peut avoir pris cet ordre : la plate-forme le refuserait (B1-208-10). Pour en etre sur : relever les retours, puis refaire le signalement.",
@@ -139,7 +165,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
             dernier + 1
         ));
     }
-    if plateforme > journal {
+    if let Some((plateforme, flux)) = bilans.filter(|(p, _)| *p > journal) {
         avertissements.push(format!(
             "Ordre {} : la plate-forme connait un signalement a l'ordre {} (flux {}) que le journal de ce dossier ne connait pas (il s'arretait a {}). Elle fait foi : le numero d'ordre d'un signalement ne se prend pas deux fois (cahier technique DSN 2026.1, §1.4.3.2, p. 14).",
             dernier + 1,
@@ -153,24 +179,21 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
 
 /// La conduite a tenir devant un signalement refuse B1-208-10, ou `None` si ce bilan n'en est pas un. Le bilan ne dit
 /// pas QUEL signalement tient deja cet ordre : la phrase donne les deux cas.
-pub fn conduite_b1_208_10(declaration: &Value, flux: &str) -> Option<String> {
-    let texte = |k: &str| declaration.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let nature = texte("nature");
-    if !crate::depot::SIGNALEMENTS.contains(&nature.as_str()) {
+pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, flux: Option<&str>) -> Option<String> {
+    let nature = declaration.nature.as_deref().filter(|n| crate::depot::SIGNALEMENTS.contains(n))?;
+    if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
     }
-    let codes = declaration.get("codes").and_then(Value::as_array).cloned().unwrap_or_default();
-    if !codes.iter().any(|c| c.as_str() == Some("B1-208-10")) {
-        return None;
-    }
-    let essai = if texte("essai_reel") == crate::retours::ESSAI_TEST { "essai" } else { "reel" };
+    let essai = if declaration.essai_reel.as_deref() == Some(crate::retours::ESSAI_TEST) { "essai" } else { "reel" };
+    // Ce que le bilan ne dit pas se dit tel.
+    let dit = |x: Option<&str>| match x {
+        Some(t) => t.to_string(),
+        None => "non dit".to_string(),
+    };
+    let (flux, ordre) = (dit(flux), dit(declaration.ordre.as_deref()));
     Some(format!(
         "Signalement {} de nature {} (flux {}, ordre {}) refuse B1-208-10, << il existe deja une declaration normale >> : pour un signalement, la plate-forme n'en accepte qu'un normal par SIRET et par numero d'ordre (cahier technique DSN 2026.1, §1.4.3.2, p. 14), et l'ordre {} etait deja pris -- par un depot que ce dossier ne connaissait peut-etre pas (un autre poste, une copie, un essai ; la base d'essai a sa propre memoire). Le bilan ne dit pas lequel. Si l'evenement n'est pas encore declare : refaire le signalement sans `--ordre`, il prend le suivant du plus grand ordre que la plate-forme et le journal connaissent. S'il l'est deja (un signalement accepte pour le meme salarie et le meme contrat) : il n'y a rien a renvoyer ; pour le corriger, c'est un annule-et-remplace (`--remplace`, S20.G00.05.006 = date de constitution et ordre du signalement accepte), a un ordre superieur (§1.4.3.4, p. 15).",
-        essai,
-        nature,
-        flux,
-        texte("ordre"),
-        texte("ordre")
+        essai, nature, flux, ordre, ordre
     ))
 }
 
@@ -205,39 +228,28 @@ pub struct MensuellesVues {
 ///
 /// `mois` (`AAAA-MM`) : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
 pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: &str, mois: &str) -> Result<MensuellesVues, Echec> {
-    let dossier = racine.join(crate::retours::RETOURS);
-    let Ok(lecture) = std::fs::read_dir(&dossier) else { return Ok(MensuellesVues::default()) };
-    let mut noms: Vec<String> = lecture.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("_nature11_")).collect();
-    noms.sort();
     let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
     let aaaamm = constitution.replace('-', "");
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur("ValueError", e.to_string()))?;
     let mut vues = MensuellesVues::default();
-    for nom in noms {
-        let p = dossier.join(&nom);
-        if !p.is_file() {
-            continue;
-        }
+    for (_, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
-        let bilan = crate::retours::bilan_d_octets(&octets);
-        if bilan.is_null() {
+        let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };
+        if bilan.essai_reel.as_deref() != Some(base) {
             continue;
         }
-        let champ = |k: &str| bilan.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-        if champ("essai_reel") != base {
-            continue;
-        }
+        let du_mois_recu = bilan.recu_le.as_deref().is_some_and(|r| r.starts_with(constitution));
+        let du_mois_declare = bilan.mois.is_some_and(|m| m.to_string() == mois);
         let mut du_siren = false;
-        for d in crate::retours::declarations_du_bilan(&octets) {
-            let texte = |k: &str| d.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-            if texte("nature") != crate::depot::MENSUELLE || texte("siren") != siren {
+        for d in crate::retours::declarations_du_bilan(&octets)? {
+            if d.nature.as_deref() != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
                 continue;
             }
             du_siren = true;
-            if champ("recu_le").starts_with(constitution) {
-                vues.ordre = vues.ordre.max(texte("ordre").parse::<i64>().unwrap_or(0));
+            if let Some(o) = ordre_lu(d.ordre.as_deref(), &p)?.filter(|_| du_mois_recu) {
+                vues.ordre = vues.ordre.max(o);
             }
-            if champ("mois") == mois && texte("etat").eq_ignore_ascii_case("OK") {
+            if du_mois_declare && d.etat.as_deref().is_some_and(|e| e.eq_ignore_ascii_case("OK")) {
                 vues.du_mois_acceptee = true;
             }
         }
@@ -246,7 +258,9 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         }
         for c in cite.captures_iter(&String::from_utf8_lossy(&octets)) {
             if let Some(reste) = c[1].strip_prefix(aaaamm.as_str()) {
-                vues.ordre = vues.ordre.max(reste.parse::<i64>().unwrap_or(0));
+                if let Some(o) = ordre_lu(Some(reste), &p)? {
+                    vues.ordre = vues.ordre.max(o);
+                }
             }
         }
     }

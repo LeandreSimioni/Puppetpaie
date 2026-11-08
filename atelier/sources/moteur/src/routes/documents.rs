@@ -261,10 +261,10 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<&str>, seulement: Option<
         let cles = envois::retours::rattacher(&liste.iter().map(|a| a.qui.as_str()).collect::<Vec<_>>(), &index);
         let mut de_ce_retour: HashMap<(String, String), Vec<Attestation>> = HashMap::new();
         for (a, cle) in liste.into_iter().zip(cles) {
-            if mois.is_some_and(|m| !m.is_empty()) && Some(a.periode.as_str()) != mois {
+            if mois.is_some_and(|m| !m.is_empty()) && a.periode.as_deref() != mois {
                 continue;
             }
-            de_ce_retour.entry((a.periode, a.qui.clone())).or_default().push(Attestation { nom_archive: a.nom_archive, qui: a.qui, donnees: a.donnees, cle });
+            de_ce_retour.entry((a.periode.unwrap_or_default(), a.qui.clone())).or_default().push(Attestation { nom_archive: a.nom_archive, qui: a.qui, donnees: a.donnees, cle });
         }
         vues.extend(de_ce_retour);
     }

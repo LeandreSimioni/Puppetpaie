@@ -194,15 +194,13 @@ fn manque(champ: &str, libelle: &str, phrase: String) -> Value {
 
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
-fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[Value], salarie: &str, numero: &str, debut: &str) -> Value {
+fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: &str, numero: &str, debut: &str) -> Value {
     if let Some(q) = journal.get(&(salarie.to_string(), numero.to_string())) {
         return json!({"couleur": "vert", "courte": "DPAE faite", "phrase": format!("DPAE déposée le {}", etats::quand_lisible(q))});
     }
-    let certifiee = certifiees.iter().find(|c| {
-        c.get("embauches").and_then(Value::as_array).is_some_and(|l| l.iter().any(|e| texte(e, "salarie") == salarie && texte(e, "debut") == debut))
-    });
+    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| e.salarie == salarie && e.debut == debut));
     if let Some(c) = certifiee {
-        return json!({"couleur": "vert", "courte": "DPAE faite", "phrase": format!("DPAE certifiée par l'Urssaf ({})", etats::quand_lisible(&texte(c, "quand")))});
+        return json!({"couleur": "vert", "courte": "DPAE faite", "phrase": format!("DPAE certifiée par l'Urssaf ({})", etats::quand_lisible(c.quand.as_deref().unwrap_or_default()))});
     }
     json!({"couleur": "gris", "courte": "avant PuppetPaie", "phrase": "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche"})
 }
@@ -448,7 +446,7 @@ pub(crate) fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<Value>> {
     }
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let embauches = etats::embauches_par_depot(&lignes);
-    let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx);
+    let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
     let mut cartes = Vec::new();
     for i in importes {
         let contrat = i.contrat_lu().map_err(Echec::from)?;

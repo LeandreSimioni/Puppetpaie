@@ -34,7 +34,9 @@ use socle::mois::Mois;
 use engagement;
 use engagement::etats::ARefaire;
 use engagement::numeros::NumeroContrat;
-use envois::etats::{self, est, get, quand_lisible, DOCUMENTS, DPAE, DSN, SIGNATURE};
+use crate::dico::est;
+use envois::etats::{self, quand_lisible, DOCUMENTS, DPAE, DSN, SIGNATURE};
+use envois::valeur::get;
 use envois::valeur::{valeur_en_texte, vrai};
 use socle::echec::R;
 use socle::echec::erreur;
@@ -1499,7 +1501,7 @@ impl<'a> Moteur<'a> {
                 passee: dpae_v.is_some_and(|d| d.passee),
                 refusee,
                 anomalies: dpae_v.map(|d| d.anomalies.clone()).unwrap_or_default(),
-                dossier: dpae_v.map(|d| d.dossier.clone()).unwrap_or_default(),
+                dossier: dpae_v.and_then(|d| d.dossier.clone()).unwrap_or_default(),
                 deja_existante: dpae_v.is_some_and(|d| d.deja_existante),
             };
             let k = (cle.clone(), numero.clone());

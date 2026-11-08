@@ -8,6 +8,7 @@ pub mod apercu_dsn;
 pub mod commandes;
 pub mod atelier;
 pub mod compagnie;
+pub mod dico;
 pub mod etat_garde;
 pub mod historique_mois;
 pub mod horloge;

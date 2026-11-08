@@ -8,7 +8,6 @@ use serde_json::json;
 use droit::contexte::Contexte;
 use envois::suites::Suites;
 use socle::echec::R;
-use envois::valeur::vrai;
 
 /// Ce que les suites laissent a dire : ce qu'il reste a faire, et ce qui n'a pas pu se faire.
 #[derive(Default)]
@@ -51,14 +50,13 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// fiche ne porte ne se rattache a personne. La validite court de la mise a disposition (`droit::pas`). Le compte rendu
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`droit::pas::EN_RETOUR_DE`) : son taux vaut pour les mois qui suivent.
-fn appliquer_taux_pas(ctx: &Contexte, crm: &[(serde_json::Value, std::path::PathBuf)]) -> R<()> {
+fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
     use serde_json::Value;
-    let nirs: Vec<Value> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| json!([cle, nir]))).collect();
+    let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur("ValueError", m))?;
-    let texte = |v: Option<&Value>| v.filter(|x| vrai(x)).map(envois::valeur::valeur_en_texte).unwrap_or_default();
-    let mois_declare = |retour: &Value| -> Option<String> {
-        let flux = texte(retour.get("flux"));
-        let l = journal.lignes.iter().find(|l| !flux.is_empty() && l.flux() == flux)?;
+    let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
+        let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
+        let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
         let nature = l.nature_dsn();
         (l.acte() == envois::journal::Acte::Dsn && nature == "01").then(|| l.mois().map(|m| m.to_string())).flatten()
     };
@@ -67,11 +65,10 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(serde_json::Value, std::path::Path
         let en_retour_de = mois_declare(retour);
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
-        let releves: Vec<Value> = lus.get("releves").and_then(Value::as_array).cloned().unwrap_or_default();
-        let r = envois::retours::releves_vers_salaries(&releves, &nirs);
-        for x in r.get("rattaches").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let mut m = x.as_object().cloned().unwrap_or_default();
-            m.insert("mis_a_disposition".into(), retour.get("publication").cloned().unwrap_or(Value::Null));
+        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
+        for x in &r.rattaches {
+            let Value::Object(mut m) = socle::ecriture::en_valeur(x) else { continue };
+            m.insert("mis_a_disposition".into(), json!(retour.publication));
             if let Some(mois) = &en_retour_de {
                 m.insert(droit::pas::EN_RETOUR_DE.into(), Value::String(mois.clone()));
             }
@@ -87,7 +84,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(serde_json::Value, std::path::Path
 /// l'annee de leur date d'effet (`routes::atmp::poser_notifie`). Seul l'etablissement de la fiche entreprise (son SIREN et
 /// son NIC) a un taux dans la configuration : une notification pour un autre, illisible, ou qui donne plusieurs codes
 /// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
-fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std::path::PathBuf)]) -> R<Vec<String>> {
+fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
     use std::collections::BTreeMap;
     let mut a_faire = Vec::new();
     let (siren, nic) = (ctx.entreprise.siren.portee(), ctx.entreprise.nic.portee());
@@ -96,7 +93,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std:
         _ => "et la fiche Entreprise ne dit pas son SIREN et son NIC".to_string(),
     };
     for (retour, chemin) in notifications {
-        let le = envois::releve_retours::date_publication(retour);
+        let le = envois::releve_retours::date_publication(retour).unwrap_or_else(|| "?".into());
         let le_iso = socle::date::Jour::lire(&le).map(|j| j.iso()).unwrap_or_default();
         let archive = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let source = format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive);
