@@ -27,5 +27,4 @@ pub mod produire_regularisations;
 pub mod signalement;
 pub mod urssaf;
 pub mod usages;
-pub mod valeur;
 pub mod versement_declare;

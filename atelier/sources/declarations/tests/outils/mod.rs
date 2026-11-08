@@ -1,4 +1,4 @@
-//! Les aides des tests des declarations : les oracles (communs aux crates), les donnees livrees, et une saisie de fiche
+//! Les aides des tests des declarations : les donnees livrees, et une saisie de fiche
 //! lue par la porte du socle, dans la forme que la table des cases donne a chacune (`socle::forme::lire_texte_selon`).
 
 #![allow(dead_code)]
@@ -6,10 +6,6 @@
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-
-#[path = "../../../socle/tests/outils/oracles.rs"]
-mod oracles;
-pub use oracles::*;
 
 /// Les donnees livrees (`logiciel/donnees`).
 pub fn code_livre() -> PathBuf {

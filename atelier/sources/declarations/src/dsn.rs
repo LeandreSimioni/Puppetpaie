@@ -1334,7 +1334,7 @@ compagnie ; rien n'est declare.",
     let niveau = choix.and_then(|c| c.niveau.portee());
     let enfants = match choix.and_then(|c| c.enfants.dite()) {
         Some(m) => m.entier()?,
-        None => Some(0),
+        None => None,
     }
     .filter(|n| (0..=99).contains(n));
     let conjoint = choix.is_some_and(|c| c.conjoint.oui());
