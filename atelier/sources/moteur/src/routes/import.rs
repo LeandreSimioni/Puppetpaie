@@ -228,7 +228,7 @@ pub(crate) fn poser_licence(f: &mut Map<String, Value>, licences: &[(String, Str
 
 /// La fiche Entreprise que les DSN donnent : ce qu'elles declarent de l'entreprise, son Siret, sa premiere licence.
 fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Map<String, Value>> {
-    let mut e = lecture.entreprise.fiche();
+    let mut e = dsn_aem::fiche_entreprise(&lecture.entreprise);
     if let (Some(s), Some(n)) = (&lecture.entreprise.siren, &lecture.entreprise.nic) {
         e.insert("siret".into(), json!(format!("{}{}", s, n)));
     }
@@ -395,7 +395,7 @@ pub(crate) fn apercu_lu(
             a_creer += 1;
         } else {
             let libelle = ctx.entreprise.raison_sociale.portee().unwrap_or("?").to_string();
-            let ec = ecarts("entreprise", &ctx.entreprise, &lecture.entreprise.fiche(), &lecture.dernier_mois)?;
+            let ec = ecarts("entreprise", &ctx.entreprise, &dsn_aem::fiche_entreprise(&lecture.entreprise), &lecture.dernier_mois)?;
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::import::completer::champs_a_completer("entreprise", &ctx.entreprise, &e)?;
             f.noter(&champs, &Origine::dsn(&lecture.dernier_mois));

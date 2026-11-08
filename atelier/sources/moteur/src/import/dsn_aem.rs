@@ -11,7 +11,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use declarations::dsn_lue::{en_fiche, Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
+use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::num::Decimal;
@@ -42,6 +42,19 @@ impl SalarieDeclare {
         }
         en_fiche(&Fiche { individu: &self.individu, emploi: &self.emploi })
     }
+}
+
+/// Une forme lue d'une DSN, ecrite en fiche : des textes, qui s'ecrivent toujours.
+pub(crate) fn en_fiche<T: Serialize>(t: &T) -> Map<String, Value> {
+    match socle::ecriture::en_valeur(t) {
+        Value::Object(m) => m,
+        _ => Map::new(),
+    }
+}
+
+/// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
+pub(crate) fn fiche_entreprise(e: &EntrepriseDeclaree) -> Map<String, Value> {
+    en_fiche(e)
 }
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
@@ -101,7 +114,7 @@ fn noms_tries(dossier: &Path) -> Vec<String> {
 pub(crate) fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     let mut out = LectureDsn::default();
     let mut lues: Vec<(socle::mois::Mois, DsnLue)> = Vec::new();
-    for f in declarations::dsn_lue::fichiers(dossier) {
+    for f in declarations::dsn_lue::fichiers(dossier)? {
         // Une DSN sans mois principal (S20.G00.05.005) ne dit pas quel mois elle declare : elle est ignoree, en le disant.
         match declarations::dsn_lue::lire_une_dsn(&f)?.and_then(|i| Some((i.mois?, i))) {
             Some(lue) => lues.push(lue),
@@ -171,7 +184,10 @@ pub(crate) fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let decl = SalarieDeclare {
                 nir: nir.clone(),
                 individu: ind.clone(),
-                emploi: c.map(|c| c.emploi.du_salarie()).unwrap_or_default(),
+                emploi: match c {
+                    Some(c) => c.emploi.du_salarie()?,
+                    None => EmploiDeclare::default(),
+                },
                 mois: mois.clone(),
                 initiales,
                 premier_contrat: premier,

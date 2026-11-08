@@ -286,7 +286,7 @@ fn deposer_les_dsn(
             continue;
         }
         // Un signalement qui ne part pas se nomme : le pas est celui de la DSN du mois.
-        let signalement = lue.nature_ou_mensuelle() != declarations::dsn_lue::MENSUELLE;
+        let signalement = lue.nature.as_deref() != Some(declarations::dsn_lue::MENSUELLE);
         for reel in [false, true] {
             a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, reel).map_err(|mut e| {
                 if signalement {

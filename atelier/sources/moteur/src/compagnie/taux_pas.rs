@@ -86,7 +86,7 @@ pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -
         .iter()
         .filter_map(|(cle, s)| s.nir.dite().filter(|n| !n.is_empty()).map(|n| (n.to_string(), cle.to_string())))
         .collect();
-    let fichiers = declarations::dsn_lue::fichiers(dossier);
+    let fichiers = declarations::dsn_lue::fichiers(dossier)?;
     // salarie -> mois -> releve (dans l'ordre d'insertion des salaries, mois tries).
     let mut trouve: Vec<(String, std::collections::BTreeMap<socle::mois::Mois, Value>)> = Vec::new();
     for f in fichiers {

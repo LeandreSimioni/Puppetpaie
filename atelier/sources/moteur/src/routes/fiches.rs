@@ -667,22 +667,16 @@ fn fautif(c: &champs::Champ, actuel: &Value) -> R<bool> {
         return Ok(champs::faute_de_norme(c, s)?.is_some());
     }
     let Some(rubrique) = c.rubrique.as_deref().filter(|r| !r.is_empty()) else { return Ok(false) };
-    let format = declarations::formats::format_de(rubrique)?;
-    if format.as_object().map_or(true, |o| o.is_empty()) {
-        return Ok(false);
-    }
-    let motifs = format.get("csl").and_then(Value::as_array).map_or(false, |l| !l.is_empty());
+    let Some(format) = declarations::formats::format_de(rubrique)? else { return Ok(false) };
+    let motifs = format.csl.as_ref().is_some_and(|l| !l.is_empty());
     let pas_un_texte = || erreur("TypeError", socle::fichiers::attendu("un texte", nom_type(actuel)));
-    let mut faute = false;
-    if let Some(lon) = format.get("longueur").and_then(Value::as_array).filter(|l| !l.is_empty()) {
-        let n = match actuel {
-            Value::Array(a) => a.len() as i64,
-            Value::Object(o) => o.len() as i64,
-            autre => return Err(erreur("TypeError", socle::fichiers::attendu("un texte ou une liste", nom_type(autre)))),
-        };
-        let (mini, maxi) = (lon[0].as_i64().unwrap_or(0), lon[1].as_i64().unwrap_or(0));
-        faute = !(mini <= n && n <= maxi);
-    }
+    let n = match actuel {
+        Value::Array(a) => a.len(),
+        Value::Object(o) => o.len(),
+        autre => return Err(erreur("TypeError", socle::fichiers::attendu("un texte ou une liste", nom_type(autre)))),
+    };
+    let [mini, maxi] = format.longueur;
+    let faute = !(mini <= n && n <= maxi);
     if !faute && motifs {
         return Err(pas_un_texte());
     }
@@ -1019,7 +1013,7 @@ fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: &Value) -> R<
     let (mut n, mut mois) = (0usize, Vec::<String>::new());
     if let Some(rubrique) = rubrique {
         for dossier in [pieces_importees(ctx), ctx.racine.join("sorties")] {
-            for f in declarations::dsn_lue::fichiers(&dossier) {
+            for f in declarations::dsn_lue::fichiers(&dossier)? {
                 let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
                 if d.declare(rubrique, &valeur) {
                     // Un signalement declare la valeur sans mois principal (S20.G00.05.005).
