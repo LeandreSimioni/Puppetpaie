@@ -279,10 +279,8 @@ fn nom_canonique(n: &str) -> String {
     n.split('-')
         .map(|m| {
             let mut c = m.chars();
-            match c.next() {
-                Some(p) => p.to_ascii_uppercase().to_string() + c.as_str(),
-                None => String::new(),
-            }
+            let premiere: String = c.next().map(|p| p.to_ascii_uppercase()).into_iter().collect();
+            premiere + c.as_str()
         })
         .collect::<Vec<_>>()
         .join("-")

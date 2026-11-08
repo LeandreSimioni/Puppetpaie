@@ -634,7 +634,7 @@ fn en_texte(v: &Value) -> String {
 /// L'application qui s'autorise, de ses identifiants lus (`identifiants`) : une application sans secret refuse.
 fn application_de(client_id: &Value, client_secret: &Value) -> R<Application> {
     if !vrai(client_secret) {
-        return Err(erreur_google("L'application Google ne dit pas son secret (client_secret) : la reposer, ou supprimer config/google.json."));
+        return Err(erreur_google(socle::echec::cle("L'application Google ne dit pas son secret : la reposer, ou retirer celle que la compagnie a posée.", "client_secret")));
     }
     Ok(Application { client_id: en_texte(client_id), client_secret: en_texte(client_secret) })
 }
