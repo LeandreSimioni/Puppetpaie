@@ -25,7 +25,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERAT
 use crate::routes::catalogue::Route;
 use droit::contexte::Contexte;
 use super::vers_route;
-use envois::google::{champ, en_texte, jeton_par_rafraichissement, DELAI, PERMISSIONS};
+use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
 use socle::echec::{erreur, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
 use crate::valeur::{nom_type, valeur_en_texte, vrai};
@@ -615,6 +615,38 @@ fn erreur_google(message: impl Into<String>) -> Echec {
     erreur("ErreurGoogle", message)
 }
 
+/// `(j or {}).get(cle)` : `Null` pour un jeton vide.
+fn champ(j: &Value, cle: &str) -> R<Value> {
+    if !vrai(j) {
+        return Ok(Value::Null);
+    }
+    match j {
+        Value::Object(o) => Ok(o.get(cle).cloned().unwrap_or(Value::Null)),
+        autre => Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(autre)))),
+    }
+}
+
+/// Le texte d'une valeur du jeton.
+fn en_texte(v: &Value) -> String {
+    valeur_en_texte(v)
+}
+
+/// L'application qui s'autorise, de ses identifiants lus (`identifiants`) : une application sans secret refuse.
+fn application_de(client_id: &Value, client_secret: &Value) -> R<Application> {
+    if !vrai(client_secret) {
+        return Err(erreur_google("L'application Google ne dit pas son secret (client_secret) : la reposer, ou supprimer config/google.json."));
+    }
+    Ok(Application { client_id: en_texte(client_id), client_secret: en_texte(client_secret) })
+}
+
+/// Le jeton de rafraichissement enregistre (aucun : le compte n'est pas lie), ou la phrase qui dit pourquoi il ne se lit
+/// pas.
+fn rafraichissement_dit(racine: &Path) -> Result<Option<String>, String> {
+    let j = lire_jeton_dit(racine)?;
+    let r = champ(&j, "rafraichissement").map_err(|e| e.message)?;
+    Ok(vrai(&r).then(|| en_texte(&r)))
+}
+
 /// (client_id, client_secret, origine).
 pub(crate) fn identifiants(racine: &Path) -> R<(Value, Value, String)> {
     let p = config(racine).join(FICHIER_IDENTIFIANTS);
@@ -732,7 +764,7 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
         return Err(refus.into());
     }
     let (id, secret, _origine) = identifiants(racine)?;
-    let autorisation = envois::drive::Autorisation { identifiants: (id, secret), jeton: lire_jeton_dit(racine), compte: compte_autorise(racine) };
+    let autorisation = envois::drive::Autorisation { application: application_de(&id, &secret)?, rafraichissement: rafraichissement_dit(racine), compte: compte_autorise(racine) };
     Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()))
 }
 
@@ -756,7 +788,8 @@ fn google_autoriser(ctx: &Contexte, charge: &Value) -> R<Value> {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         let _ = crate::interface::poste::ouvrir_adresse(u);
     };
-    let jeton = envois::google_autorisation::autoriser((id, secret), &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
+    let application = application_de(&id, &secret).map_err(|e| Echec { classe: Some("ErreurOperation"), message: e.message })?;
+    let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
     Ok(json!({"compte": sceller_le_jeton(&ctx.racine, &jeton)?}))
 }
 
@@ -830,7 +863,8 @@ fn rafraichir(ctx: &Contexte, client_id: &Value, client_secret: &Value) -> R<Opt
                 .into(),
         ));
     }
-    Ok(jeton_par_rafraichissement(&adresses_du_poste().jetons, client_id, client_secret, &rafraichissement, DELAI)?.err())
+    let application = application_de(client_id, client_secret)?;
+    Ok(jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &en_texte(&rafraichissement), DELAI)?.err())
 }
 
 /// `google-etat` : ce que la page dit du compte Google (lie, a quelle date), jamais le jeton.
