@@ -40,16 +40,6 @@ where
     table.deserialize(serde_path_to_error::Deserializer::new(v, &mut suivi)).map_err(|e| refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e)))
 }
 
-/// `lire_selon`, du texte JSON `texte`.
-pub fn lire_texte_selon<S, U>(texte: &str, table: S, phrase: &str) -> Resultat<U>
-where
-    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
-{
-    let mut d = serde_json::Deserializer::from_str(texte);
-    let mut suivi = serde_path_to_error::Track::new();
-    table.deserialize(serde_path_to_error::Deserializer::new(&mut d, &mut suivi)).map_err(|e| refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e)))
-}
-
 /// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
 pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> Resultat<U>
 where

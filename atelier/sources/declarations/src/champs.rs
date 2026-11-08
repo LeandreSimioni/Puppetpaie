@@ -620,7 +620,7 @@ impl Saisie {
         !self.cases.is_empty() || !self.notes.is_empty() || !self.autres.is_empty()
     }
 
-    /// La case `cle` vaut desormais `v`.
+    /// La case `cle` vaut `v`.
     pub fn poser(&mut self, cle: &str, v: Valeur) {
         match self.cases.iter_mut().find(|(k, _)| k == cle) {
             Some(c) => c.1 = v,
@@ -2238,14 +2238,9 @@ fn en_minuscule(libelle: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Une saisie de la fiche `nom`, lue de son texte par la porte (`socle::forme::lire_texte_selon`).
-    fn saisie(nom: &str, texte: &str) -> Saisie {
-        socle::forme::lire_texte_selon(texte, lecture(nom).unwrap(), "saisie de test").unwrap()
-    }
-
-    /// Une saisie d'une seule case texte.
+    /// Une saisie d'une seule case texte, lue selon la table comme une fiche (`Saisie::de_la_fiche`).
     fn une_case(nom: &str, cle: &str, valeur: &str) -> Saisie {
-        saisie(nom, &format!("{{{}: {}}}", socle::ecriture::json_en_ligne(cle), socle::ecriture::json_en_ligne(valeur)))
+        Saisie::de_la_fiche(nom, &std::collections::BTreeMap::from([(cle, valeur)])).unwrap()
     }
 
     /// La fiche offre ce que la norme 2026.1 admet : 40.003, 01, 02, 04, 98, 99, pas 03 ; 40.002, 03 « cadre dirigeant »,

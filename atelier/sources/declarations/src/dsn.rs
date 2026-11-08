@@ -553,7 +553,9 @@ impl Default for Options {
 pub struct Cotisation {
     pub bloc78: String,
     pub base78: Decimal,
-    pub code81: String,
+    /// Le code de cotisation (81.001) ; `None` : une base du bloc 78 sans cotisation (`cotisations_dsn` du bareme), qui
+    /// ne porte pas de montant.
+    pub code81: Option<String>,
     pub org: Option<String>,
     pub affectation: Option<String>,
     pub cle_total: Option<String>,
@@ -800,7 +802,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
         let mut l = Cotisation {
             bloc78: bloc78.clone(),
             base78: abattue(&c.base78)?,
-            code81: c.code81.clone().ok_or_else(|| socle::echec::livree("baremes", "cotisations_dsn.code81"))?,
+            code81: c.code81.clone(),
             org: c.org.clone(),
             affectation: c.affectation.clone(),
             cle_total: c.cle_total.clone().filter(|x| !x.is_empty()),
@@ -823,7 +825,11 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
                 None => pct(b, dec_du_taux(taux)?),
             });
         }
-        let unifie = l.code81 == AGIRC_ARRCO_UNIFIE;
+        // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
+        if l.montant.is_some() && l.code81.is_none() {
+            return Err(socle::echec::livree("baremes", "cotisations_dsn.code81"));
+        }
+        let unifie = l.code81.as_deref() == Some(AGIRC_ARRCO_UNIFIE);
         out.push(l);
         if unifie {
             let l131 = out[out.len() - 1].clone();
@@ -844,7 +850,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
             Cotisation {
                 bloc78: "31".into(),
                 base78: base(&bases, "zero")?,
-                code81: "059".into(),
+                code81: Some("059".into()),
                 org: None,
                 affectation: Some(affectation.clone()),
                 cle_total: None,
@@ -882,7 +888,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
                     out.push(Cotisation {
                         bloc78: "03".into(),
                         base78: brut_03,
-                        code81: code,
+                        code81: Some(code),
                         org,
                         affectation: None,
                         cle_total: Some(cle),
@@ -914,7 +920,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
             out.push(Cotisation {
                 bloc78: "03".into(),
                 base78: brut_03,
-                code81: code.into(),
+                code81: Some(code.into()),
                 org: urssaf.clone(),
                 affectation: None,
                 cle_total: Some(code.into()),
@@ -943,7 +949,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
                     "{} : une cotisation {} de {} sous une affiliation prevoyance que le salarie n'a pas ce mois-la \
 (S21.G00.70). La paie et l'affiliation se contredisent ; rien n'est declare.",
                     qui_contrat(p),
-                    c.code81,
+                    code_declare(&c)?,
                     mt(m)
                 ));
             }
@@ -1050,7 +1056,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     let part = |code: &str, base: Decimal, taux: f64, montant: Decimal| Cotisation {
         bloc78: l131.bloc78.clone(),
         base78: l131.base78,
-        code81: code.into(),
+        code81: Some(code.into()),
         org: Some(org.clone()),
         affectation: l131.affectation.clone(),
         cle_total: None,
@@ -2339,7 +2345,7 @@ pub fn bases_et_cotisations(
         let org = c.org.clone().filter(|o| !o.is_empty());
         // La CET patronale : « 146 » en P26V01 (guide Urssaf du 04/06/2026, p. 38) ; « 148 » en P27V01, le 146 y etant
         // « hors CET » (fiche net-entreprises 2556, l. 21 et 83-87). La version en decide (`cotisation_cet_patronale`).
-        let code81 = if c.cet { f.norme()?.cotisation_cet_patronale()? } else { c.code81.clone() };
+        let code81 = if c.cet { f.norme()?.cotisation_cet_patronale()? } else { code_declare(&c)?.to_string() };
         f.add("S21.G00.81.001", &code81);
         if let Some(o) = &org {
             f.add("S21.G00.81.002", o);
@@ -2444,7 +2450,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
                 None => TRANCHE_A,
             });
             f.add("S21.G00.79.004", "0.00");
-            f.add("S21.G00.81.001", &c.code81);
+            f.add("S21.G00.81.001", code_declare(&c)?);
             f.add("S21.G00.81.004", "0.00");
         }
         return Ok(());
@@ -2941,17 +2947,19 @@ impl Lecture {
 /// Les lignes 81 que le nominatif d'une paie declare (`cotisations`, comme `bases_et_cotisations` les ecrit), dans la
 /// forme ou `lignes_declarees` relit celles d'une DSN deposee.
 fn lignes_81(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Ligne81>> {
-    Ok(cotisations(p, bar)?
+    cotisations(p, bar)?
         .into_iter()
         .filter(|c| c.montant.is_some())
-        .map(|c| Ligne81 {
-            base: if c.org.is_some() || c.cle_total.is_some() { c.base81 } else { None },
-            code: c.code81,
-            org: c.org.filter(|o| !o.is_empty()),
-            montant: c.montant,
-            affiliation: c.affectation,
+        .map(|c| {
+            Ok(Ligne81 {
+                code: code_declare(&c)?.to_string(),
+                base: if c.org.is_some() || c.cle_total.is_some() { c.base81 } else { None },
+                org: c.org.filter(|o| !o.is_empty()),
+                montant: c.montant,
+                affiliation: c.affectation,
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// La reduction generale que l'Urssaf recouvre pour une paie (CTP 671 d'un technicien intermittent, 668 d'un
@@ -3105,7 +3113,7 @@ fn cumuler_totaux(totaux: &mut Vec<(String, Decimal)>, paies: &[&Paie], bar: &Ba
             };
             let cle = match &c.cle_total {
                 Some(cle) => cle.clone(),
-                None => c.code81.clone(),
+                None => code_declare(&c)?.to_string(),
             };
             ajouter(totaux, &cle, mul(s, m));
         }
@@ -3174,6 +3182,14 @@ fn technicien(p: &Paie) -> bool {
 }
 
 /// L'assiette d'une cotisation : la base de son taux (81.003), sinon celle de son bloc 78.
+/// Le code (81.001) d'une cotisation qui se declare : le bareme le dit pour toute cotisation qui porte un montant.
+fn code_declare(c: &Cotisation) -> Resultat<&str> {
+    match &c.code81 {
+        Some(code) => Ok(code),
+        None => Err(socle::echec::livree("baremes", "cotisations_dsn.code81")),
+    }
+}
+
 fn base_de_la_cotisation(c: &Cotisation) -> Decimal {
     match c.base81 {
         Some(b) => b,
@@ -3241,7 +3257,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> Resultat<HashMap<String
     // chaque contrat declare (DIDA : 987 -> 129, base 03).
     let mut cpf_cdd = zero();
     for p in paies {
-        for c in cotisations(p, bar)?.into_iter().filter(|c| c.code81 == CODE81_CPF_CDD) {
+        for c in cotisations(p, bar)?.into_iter().filter(|c| c.code81.as_deref() == Some(CODE81_CPF_CDD)) {
             cpf_cdd = add(cpf_cdd, base_de_la_cotisation(&c));
         }
     }
@@ -3252,7 +3268,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> Resultat<HashMap<String
     // atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md).
     let mut cfp = zero();
     for i in (0..paies.len()).filter(|i| perm(*i)) {
-        for c in cotisations(paies[i], bar)?.into_iter().filter(|c| c.code81 == CODE81_CFP) {
+        for c in cotisations(paies[i], bar)?.into_iter().filter(|c| c.code81.as_deref() == Some(CODE81_CFP)) {
             cfp = add(cfp, base_de_la_cotisation(&c));
         }
     }
@@ -5099,7 +5115,19 @@ mod tests {
         for f in ["entreprise.json", "salaries.json", "spectacles.json"] {
             std::fs::write(cfg.join(f), "{}").unwrap();
         }
-        std::fs::write(cfg.join("casc-svp.json"), format!(r#"{{"regularisations": [{{"mois": {}}}]}}"#, socle::ecriture::json_en_ligne(regularises))).unwrap();
+        let notee = crate::casc::CascSvp {
+            quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
+            regularisations: vec![crate::casc::RegularisationNotee {
+                annee: "2024".into(),
+                mois: regularises.iter().map(|m| m.to_string()).collect(),
+                montant: "0.00".into(),
+                calcule: "0.00".into(),
+                vire_le: "2025-01-15".into(),
+                note_le: "2025-01-16".into(),
+                qui: "test".into(),
+            }],
+        };
+        socle::ecriture::ecrire_json(&cfg.join("casc-svp.json"), &notee, 0).unwrap();
         Contexte::nouveau(&racine, Some(Jour::lire("2026-09-27").unwrap())).unwrap()
     }
 

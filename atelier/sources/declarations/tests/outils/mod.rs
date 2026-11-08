@@ -1,5 +1,5 @@
 //! Les aides des tests des declarations : les donnees livrees, et une saisie de fiche
-//! lue par la porte du socle, dans la forme que la table des cases donne a chacune (`socle::forme::lire_texte_selon`).
+//! lue dans la forme que la table des cases donne a chacune (`Saisie::de_la_fiche`).
 
 #![allow(dead_code)]
 
@@ -20,10 +20,9 @@ pub fn lire<T: DeserializeOwned>(racine: &Path, rel: &str) -> T {
         .unwrap_or_else(|e| panic!("{} : {}", chemin.display(), socle::echec::phrase_de(&e)))
 }
 
-/// La saisie de la fiche `nom` qui dit ces cases-la (des textes), lue par la porte comme une charge de l'ecran.
+/// La saisie de la fiche `nom` qui dit ces cases-la (des textes), lue selon la table comme une fiche
+/// (`Saisie::de_la_fiche`).
 pub fn saisie(nom: &str, cases: &[(&str, &str)]) -> declarations::champs::Saisie {
-    let texte: Vec<String> = cases.iter().map(|(k, v)| format!("{}: {}", socle::ecriture::json_en_ligne(k), socle::ecriture::json_en_ligne(v))).collect();
-    let lecture = declarations::champs::lecture(nom).unwrap_or_else(|e| panic!("{}", e.message));
-    socle::forme::lire_texte_selon(&format!("{{{}}}", texte.join(", ")), lecture, "La saisie du test ne se lit pas.")
-        .unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)))
+    let fiche: std::collections::BTreeMap<&str, &str> = cases.iter().copied().collect();
+    declarations::champs::Saisie::de_la_fiche(nom, &fiche).unwrap_or_else(|e| panic!("{}", e.message))
 }

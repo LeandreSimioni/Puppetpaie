@@ -807,12 +807,12 @@ fn connaissance(fiche: &FicheDeSuivi, de: DeQuoi, quoi: &str) -> Option<Depart> 
 pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret>> {
     let lu = envois::journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?;
     let (lignes, departs) = (lu.lignes, lu.departs);
-    let arret = declarations::dsn::Arret { saisi: crate::routes::imprevus::arret_de(a)? };
     let texte = |k: &str| a.get(k).map(en_texte).unwrap_or_default();
     let salarie = texte("salarie");
     let dj = texte("dernier_jour_travaille");
     // L'imprevu en sa forme, pour les regles du magasin ; illisible, il refuse. Seul un arret a un jour declare et des mois traverses.
     let lu = crate::routes::imprevus::forme(a)?;
+    let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| erreur("ValueError", m))?;
     let declare = declare_lu.map(|j| j.iso());
     let traverses: Vec<String> = match declare_lu {
@@ -829,10 +829,10 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, a: &Value) -> R<Vec<EnvoiDeLArret
         if traverses.iter().any(|m| m == mois) {
             return Ok(quand.replace('T', " ") >= saisi);
         }
-        if !engagement::imprevus::est_un_arret(&lu) {
-            return Ok(false);
+        match &arret {
+            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| erreur("ValueError", m)),
+            None => Ok(false),
         }
-        arret.a_reporter(mois, &departs).map_err(|m| erreur("ValueError", m))
     };
     let mut partis = Vec::new();
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {

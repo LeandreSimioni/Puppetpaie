@@ -752,7 +752,12 @@ pub fn lire_une_dsn(chemin: &Path) -> Result<Option<DsnLue>, Echec> {
     if !est_une_dsn(&octets) {
         return Ok(None);
     }
-    let nom = chemin.file_name().ok_or_else(|| Echec::from(format!("{} n'est pas un fichier.", chemin.display())))?;
+    let nom = chemin.file_name().ok_or_else(|| {
+        Echec::from(socle::echec::avec(
+            "Ce chemin n'est pas un fichier : le signaler au développeur.",
+            socle::echec::APart { chemin: Some(chemin.display().to_string()), ..socle::echec::APart::default() },
+        ))
+    })?;
     lire(&octets, &nom.to_string_lossy()).map(Some)
 }
 

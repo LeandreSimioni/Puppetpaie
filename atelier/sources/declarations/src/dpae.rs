@@ -622,7 +622,12 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
     if zipper {
         let nom = match chemin.file_name() {
             Some(n) => n.to_string_lossy().into_owned(),
-            None => return Err(format!("Le fichier de la DPAE ({}) n'a pas de nom : le signaler au développeur.", chemin.display())),
+            None => {
+                return Err(socle::echec::avec(
+                    "Le fichier de la DPAE n'a pas de nom : le signaler au développeur.",
+                    socle::echec::APart { chemin: Some(chemin.display().to_string()), ..socle::echec::APart::default() },
+                ))
+            }
         };
         let mut cz = chemin.as_os_str().to_os_string();
         cz.push(".zip");

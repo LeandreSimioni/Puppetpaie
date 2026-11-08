@@ -129,9 +129,12 @@ fn datees<T>(liste: &Option<Vec<Datee<T>>>, ecrite: fn(&Option<T>) -> Option<Str
 /// (§ 4.4.12, p. 99) -- il ira dans la DSN du mois ou il prend effet.
 pub fn identite_du_mois(salarie: &FicheSalarie, brute: Option<&FicheSalarieDatee>, fin: &Jour) -> Resultat<FicheSalarie> {
     let Some(brute) = brute else {
-        return Err(format!(
-            "{} : sa fiche n'est pas dans les fiches salariés de la compagnie (config/salaries.json), ses identifiants du mois ne se lisent pas. Rien n'est écrit.",
-            qui(&salarie.champs)
+        return Err(socle::echec::avec(
+            format!(
+                "{} : sa fiche n'est pas dans les fiches salariés de la compagnie, ses identifiants du mois ne se lisent pas. Rien n'est écrit.",
+                qui(&salarie.champs)
+            ),
+            socle::echec::APart { fichier: Some("config/salaries.json".to_string()), ..socle::echec::APart::default() },
         ));
     };
     let au: ChampsSalarie = brute.au(fin);

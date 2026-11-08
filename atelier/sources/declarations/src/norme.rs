@@ -193,11 +193,13 @@ impl Norme {
     pub fn cotisation_cet_patronale(&self) -> Resultat<String> {
         self.entree(|e| match &e.cotisation_cet_patronale {
             Some(code) => Ok(code.clone()),
-            None => Err(format!(
-                "Contribution d'equilibre technique (CET) patronale dans un fichier en norme {} : le code de cotisation \
-(S21.G00.81.001) sous lequel elle se declare n'est pas tranche. {} (logiciel/donnees/{}, `cotisation_cet_patronale`.) \
-Rien n'est ecrit.",
-                self.version, e.note, BASE
+            None => Err(socle::echec::avec(
+                format!(
+                    "Contribution d'equilibre technique (CET) patronale dans un fichier en norme {} : le code de cotisation \
+(S21.G00.81.001) sous lequel elle se declare n'est pas tranche. {} Rien n'est ecrit.",
+                    self.version, e.note
+                ),
+                APart { fichier: Some(BASE.to_string()), cle: Some("cotisation_cet_patronale".to_string()), ..APart::default() },
             )),
         })?
     }
@@ -230,12 +232,13 @@ fn plages(quelle: QuellePlage) -> Resultat<String> {
 pub fn de_la_mensuelle(mois: &str) -> Resultat<Norme> {
     match choisir(|e| &e.mensuelle, mois)? {
         Some(n) => Ok(n),
-        None => Err(format!(
-            "DSN de {} : aucune version de la norme DSN livree avec le logiciel ne couvre ce mois principal declare \
-(logiciel/donnees/{} : {}). La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
-            mois,
-            BASE,
-            plages(|e| &e.mensuelle)?
+        None => Err(socle::echec::avec(
+            format!(
+                "DSN de {} : aucune version de la norme DSN livree avec le logiciel ne couvre ce mois principal declare. \
+La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
+                mois
+            ),
+            APart { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.mensuelle)?), ..APart::default() },
         )),
     }
 }
@@ -245,12 +248,13 @@ pub fn de_la_mensuelle(mois: &str) -> Resultat<Norme> {
 pub fn du_signalement(constitution: &Jour) -> Resultat<Norme> {
     match choisir(|e| &e.signalements, &constitution.iso())? {
         Some(n) => Ok(n),
-        None => Err(format!(
-            "Signalement constitue le {} : aucune version de la norme DSN livree avec le logiciel ne couvre ce jour \
-(logiciel/donnees/{} : {}). La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
-            constitution.jj_mm_aaaa(),
-            BASE,
-            plages(|e| &e.signalements)?
+        None => Err(socle::echec::avec(
+            format!(
+                "Signalement constitue le {} : aucune version de la norme DSN livree avec le logiciel ne couvre ce jour. \
+La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
+                constitution.jj_mm_aaaa()
+            ),
+            APart { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.signalements)?), ..APart::default() },
         )),
     }
 }
