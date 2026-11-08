@@ -595,7 +595,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
     mois.dedup();
     let mut out: Vec<Version> = Vec::new();
     for m in mois {
-        let siens = |cle: &str, n: &str, _: &engagement::stock::Ecrit| contrats.iter().any(|c| c.mois == m && c.salarie.as_str() == cle && c.numero_dit() == n);
+        let siens = |cle: &str, n: &str, _: &engagement::stock::Ecrit| contrats.iter().any(|c| c.mois == m && c.salarie.as_str() == cle && c.numero_dit() == Some(n));
         for x in versions_du_mois(ctx, &m.to_string(), departs, siens)? {
             if !out.contains(&x) {
                 out.push(x);

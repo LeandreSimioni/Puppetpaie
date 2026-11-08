@@ -275,14 +275,14 @@ impl Ligne {
         self.dsn().and_then(|e| e.detail.etablissement.as_deref()).filter(|n| !n.is_empty())
     }
 
-    /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; vide si la ligne ne la dit pas.
-    pub fn nature_dsn(&self) -> &str {
-        self.dsn().and_then(|e| e.detail.nature.as_deref()).unwrap_or("")
+    /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
+    pub fn nature_dsn(&self) -> Option<&str> {
+        self.dsn().and_then(|e| e.detail.nature.as_deref())
     }
 
     /// Une DSN de signalement (arret, reprise, fin de contrat, amorcage).
     pub fn signalement(&self) -> bool {
-        declarations::norme::SIGNALEMENTS.contains(&self.nature_dsn())
+        self.nature_dsn().is_some_and(|n| declarations::norme::SIGNALEMENTS.contains(&n))
     }
 }
 
@@ -444,20 +444,20 @@ pub struct RetourOrganisme {
 }
 
 impl RetourOrganisme {
-    pub fn verdict(&self) -> &str {
-        self.verdict.as_deref().unwrap_or("")
+    pub fn verdict(&self) -> Option<&str> {
+        self.verdict.as_deref()
     }
 
     pub fn ko(&self) -> bool {
-        self.verdict() == "KO"
+        self.verdict() == Some("KO")
     }
 
-    pub fn anomalies(&self) -> &[String] {
-        self.anomalies.as_deref().unwrap_or(&[])
+    pub fn anomalies(&self) -> Option<&[String]> {
+        self.anomalies.as_deref()
     }
 
-    pub fn personnes(&self) -> &[PersonneCertifiee] {
-        self.dpae.as_deref().unwrap_or(&[])
+    pub fn personnes(&self) -> Option<&[PersonneCertifiee]> {
+        self.dpae.as_deref()
     }
 
     /// Le meme compte rendu (sa nature et sa publication).
@@ -573,9 +573,9 @@ impl ContratParti {
         self.acte.as_deref() == Some("avenant")
     }
 
-    /// Le numero du contrat, tel qu'il sert de cle : son texte, ou `""`.
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    /// Le numero du contrat, tel qu'il sert de cle ; `None` si la ligne ne le dit pas.
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 }
 
@@ -657,8 +657,8 @@ pub struct RetourContrat {
 }
 
 impl RetourContrat {
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 
     /// Une reponse « Je signe » relevee par courriel.
@@ -690,15 +690,15 @@ pub struct ContratAttendu {
     pub debut: String,
     pub fin: Option<String>,
     pub numero: Option<NumeroContrat>,
-    pub spectacle: String,
+    pub spectacle: Option<String>,
     pub fichier: String,
     pub avenant: Option<i64>,
     pub mois: Mois,
 }
 
 impl ContratAttendu {
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 }
 

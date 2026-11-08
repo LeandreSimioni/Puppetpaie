@@ -100,7 +100,7 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
     let lignes = envois::journal::lu(&ctx.racine).map_err(|m| erreur("OSError", m))?.lignes;
     let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie.as_str() == cle));
     let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true)
-        .filter(|l| l.accepte() && l.nature_dsn() == declarations::amorcage::NATURE && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
+        .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
     let Some(l) = derniere else { return Ok(None) };
     let quand = l.quand().to_string();

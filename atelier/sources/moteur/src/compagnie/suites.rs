@@ -57,8 +57,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
         let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
         let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
-        let nature = l.nature_dsn();
-        (l.acte() == envois::journal::Acte::Dsn && nature == "01").then(|| l.mois().map(|m| m.to_string())).flatten()
+        (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some("01")).then(|| l.mois().map(|m| m.to_string())).flatten()
     };
     let mut tous = Vec::new();
     for (retour, chemin) in crm {

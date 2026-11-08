@@ -402,7 +402,7 @@ pub fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Choisis>, 
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs).map_err(Echec::from)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
-            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", c.avenant.map(|a| a.to_string()).unwrap_or_default(), c.numero_dit())).collect::<Vec<_>>().join("; ")
+            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", c.avenant.map(|a| a.to_string()).unwrap_or_default(), c.numero_dit().unwrap_or_default())).collect::<Vec<_>>().join("; ")
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
@@ -453,8 +453,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             for p in ps {
                 let debut = p.engagement.debut.iso();
                 // Le contrat qui part est remplace, lui (son numero) : un autre contrat du salarie n'a rien a remplacer.
-                let n = p.engagement.numero.as_deref().unwrap_or_default().to_string();
-                let Some(parti) = envois::etats::contrat_parti(&lignes, k, &n) else {
+                let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_deref()) else {
                     return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, jj(&debut)?)));
                 };
                 if debut <= aujourdhui {

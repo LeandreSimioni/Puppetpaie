@@ -195,7 +195,7 @@ fn manque(champ: &str, libelle: &str, phrase: String) -> Value {
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
 fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: &str, numero: &str, debut: &str) -> Value {
-    if let Some(q) = journal.get(&(salarie.to_string(), numero.to_string())) {
+    if let Some(q) = journal.get(&(salarie.to_string(), Some(numero.to_string()))) {
         return json!({"couleur": "vert", "courte": "DPAE faite", "phrase": format!("DPAE déposée le {}", etats::quand_lisible(q))});
     }
     let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| e.salarie == salarie && e.debut == debut));

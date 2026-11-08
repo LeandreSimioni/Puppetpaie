@@ -1472,7 +1472,8 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let contrats: Vec<&envois::journal::ContratParti> = l.signature().map(|s| s.detail.contrats.iter().filter(|c| c.fichier == nom).collect()).unwrap_or_default();
     let mut paies: Vec<Paie> = Vec::new();
     for c in &contrats {
-        let (cle, numero, mois_c) = (c.salarie.to_string(), c.numero_dit().to_string(), c.mois.to_string());
+        let numero = c.numero_dit().ok_or_else(|| valeur(format!("journal : un contrat de {} est parti sans numero", nom)))?.to_string();
+        let (cle, mois_c) = (c.salarie.to_string(), c.mois.to_string());
         let version = l
             .versions()
             .unwrap_or_default()
@@ -1510,7 +1511,8 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero_dit())
                     .ok_or_else(|| valeur(format!("journal : {} remplace un contrat qui n'est pas parti avant lui", nom)))?;
                 let numero = parti.numero.as_ref().map(|n| n.to_string()).unwrap_or_else(|| "(sans numéro)".to_string());
-                remplacements.push(((c.salarie.to_string(), c.debut.clone(), c.numero_dit().to_string()), (numero, jj(&parti.date())?)));
+                let le_sien = c.numero_dit().ok_or_else(|| valeur(format!("journal : un contrat de {} est parti sans numero", nom)))?;
+                remplacements.push(((c.salarie.to_string(), c.debut.clone(), le_sien.to_string()), (numero, jj(&parti.date())?)));
             }
         }
         documents::contrat::ecrire_contrat(&ctx_j, &paies, &ent, vers, &remplacements).map_err(Echec::from)

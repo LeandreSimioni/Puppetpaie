@@ -143,9 +143,11 @@ fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &str) -> String {
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
 fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> Value {
-    let piece = match r.avenant {
-        None => format!("Contrat n° {}", r.numero_dit()),
-        Some(a) => format!("Avenant n° {} au contrat n° {}", a, r.numero_dit()),
+    let piece = match (r.avenant, r.numero_dit()) {
+        (None, Some(n)) => format!("Contrat n° {}", n),
+        (None, None) => "Contrat sans numéro".to_string(),
+        (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),
+        (Some(a), None) => format!("Avenant n° {} au contrat sans numéro", a),
     };
     let quand = etats::quand_lisible(&r.quand);
     let (titre, phrase) = if !r.recu {
@@ -807,10 +809,11 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             }
             let anomalies: Vec<Value> = r
                 .anomalies()
-                .iter()
+                .into_iter()
+                .flatten()
                 .map(|a| json!({"code": "", "categorie": "", "message": a, "rubrique": "", "ligne": "", "nombre": "", "salarie": "", "ligne_dit": null}))
                 .collect();
-            for d in r.personnes() {
+            for d in r.personnes().into_iter().flatten() {
                 let etat = if d.enregistree { "enregistrée".to_string() } else if d.deja_existante { "déjà enregistrée auparavant".into() } else { format!("refusée : {}", d.libelle) };
                 phrases.push(format!("{} {} : {}.", d.nom, d.prenom, etat));
             }
@@ -819,7 +822,10 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     };
     // L'organisme que la piece nomme passe devant celui de la nature (« l'organisme complementaire » : lequel).
     let organisme = if lu_organisme.is_empty() { organisme.to_string() } else { lu_organisme };
-    let verdict = if lu_verdict.is_empty() { r.verdict().to_string() } else { lu_verdict };
+    let verdict = match r.verdict() {
+        Some(v) if lu_verdict.is_empty() => v.to_string(),
+        _ => lu_verdict,
+    };
     // Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut), le reste une information.
     let lu = if verdict.is_empty() { statut.clone() } else { verdict.clone() };
     let pastille = (!lu.is_empty()).then(|| {

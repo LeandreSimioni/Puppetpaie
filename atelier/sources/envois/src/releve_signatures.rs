@@ -39,6 +39,8 @@ pub fn souche_contresignee(nom: &str) -> Option<&str> {
 }
 
 const SUJET_CONTRESIGNE: &str = "Ton contrat signé - {spectacle}";
+/// Le contrat d'un permanent ne porte pas de spectacle.
+const SUJET_CONTRESIGNE_SANS_SPECTACLE: &str = "Ton contrat signé";
 const SUJET_CONTRESIGNE_PLURIEL: &str = "Tes contrats signés - {mois} {annee}";
 const CORPS_CONTRESIGNE: &str = "Bonjour {prenom},\n\nNous avons bien reçu ta signature le {quand}. Ci-joint {quoi}, signé des deux parties : c'est l'exemplaire à conserver.\n\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
@@ -95,10 +97,11 @@ impl ReleveSignatures {
                     .iter()
                     .map(|c| {
                         n += 1;
-                        let numero = c.numero_dit().to_string();
-                        match c.avenant {
-                            Some(a) => format!("avenant {} au {}", a, numero),
-                            None => numero,
+                        match (c.avenant, c.numero_dit()) {
+                            (Some(a), Some(n)) => format!("avenant {} au {}", a, n),
+                            (Some(a), None) => format!("avenant {} au contrat sans numéro", a),
+                            (None, Some(n)) => n.to_string(),
+                            (None, None) => "contrat sans numéro".to_string(),
                         }
                     })
                     .collect();
@@ -223,17 +226,21 @@ pub struct Contresigne<'a> {
 pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contresigne, qui: &str) -> R<()> {
     let a = c.a;
     let nb = c.contrats.len();
-    let mut spectacles: Vec<String> = Vec::new();
+    let mut spectacles: Vec<Option<&str>> = Vec::new();
     for x in c.contrats {
-        if !spectacles.contains(&x.spectacle) {
-            spectacles.push(x.spectacle.clone());
+        if !spectacles.contains(&x.spectacle.as_deref()) {
+            spectacles.push(x.spectacle.as_deref());
         }
     }
     // Le numero de l'avenant : celui du contrat, sinon celui de la demande.
     let numero = c.contrats.first().and_then(|x| x.avenant.filter(|v| *v != 0).or(a.avenant));
+    let avenant_signe = if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" };
     let (sujet, quoi) = if c.est_avenant {
         (
-            format!("{} - {}", if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" }, spectacles[0]),
+            match spectacles[0] {
+                Some(s) => format!("{} - {}", avenant_signe, s),
+                None => avenant_signe.to_string(),
+            },
             match (nb, numero) {
                 (1, Some(n)) => format!("l'avenant n° {} à ton contrat", n),
                 (1, None) => "l'avenant à ton contrat".to_string(),
@@ -243,7 +250,10 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     } else {
         (
             if nb == 1 || spectacles.len() == 1 {
-                envoi::formater(SUJET_CONTRESIGNE, &[("spectacle", spectacles[0].clone())])
+                match spectacles[0] {
+                    Some(s) => envoi::formater(SUJET_CONTRESIGNE, &[("spectacle", s.to_string())]),
+                    None => SUJET_CONTRESIGNE_SANS_SPECTACLE.to_string(),
+                }
             } else {
                 envoi::formater(SUJET_CONTRESIGNE_PLURIEL, &[("mois", c.nom_mois.to_string()), ("annee", c.an.to_string())])
             },

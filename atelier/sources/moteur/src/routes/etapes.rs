@@ -848,13 +848,13 @@ pub(crate) struct SaisieMois {
 /// Les etats du journal et de la saisie, calcules une fois par processus : ce que le journal des envois dit de chaque
 /// contrat (`envois::etats`), lu tel qu'il est.
 pub(crate) struct Globales {
-    pub(crate) dpae: HashMap<Paire, etats::EtatEmbauche>,
+    pub(crate) dpae: HashMap<etats::Paire, etats::EtatEmbauche>,
     /// Le jour ou chaque contrat est revenu signe.
-    pub(crate) recus: HashMap<Paire, String>,
-    pub(crate) renvoyes: HashSet<Paire>,
-    pub(crate) avenants: HashMap<Paire, Vec<envois::journal::AvenantParti>>,
+    pub(crate) recus: HashMap<etats::Paire, String>,
+    pub(crate) renvoyes: HashSet<etats::Paire>,
+    pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
     /// Comment chaque contrat est parti la derniere fois : `imprime` ou `courriel`.
-    pub(crate) par: HashMap<Paire, &'static str>,
+    pub(crate) par: HashMap<etats::Paire, &'static str>,
 }
 
 // ------------------------------------------------------------ l'etat d'un engagement
@@ -1474,7 +1474,9 @@ impl<'a> Moteur<'a> {
             // LA DPAE DE CET ENGAGEMENT : partie (`departs`), et ce qui en est revenu (la ligne qui la porte, par le numero du
             // contrat). Refusee au bilan, elle n'est pas partie ; la ligne dit quand elle a ete refusee.
             let numero = p.engagement.numero.as_deref().unwrap_or_default().to_string();
-            let mut dpae_v = g.dpae.get(&(cle.clone(), numero.clone()));
+            // Le contrat tel que le journal le designe (`envois::etats::Paire`).
+            let k: etats::Paire = (cle.clone(), p.engagement.numero.as_deref().map(str::to_string));
+            let mut dpae_v = g.dpae.get(&k);
             let mut partie_le = departs.de(&cle, &numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dpae).map(|d| d.le.clone()).max();
             // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie (`ARefaire::Dpae`) : la DPAE de
             // l'ancienne date vaut-elle (`crate::regularisation::dpae_d_une_date_changee`) ?
@@ -1503,7 +1505,6 @@ impl<'a> Moteur<'a> {
                 dossier: dpae_v.and_then(|d| d.dossier.clone()).unwrap_or_default(),
                 deja_existante: dpae_v.is_some_and(|d| d.deja_existante),
             };
-            let k = (cle.clone(), numero.clone());
             let avenant = refaire.iter().any(|a| matches!(a, ARefaire::Avenant { .. }));
             let mut signature = etat_signature(
                 contrat_parti_le(&departs, &cle, p.engagement.numero.as_deref()),

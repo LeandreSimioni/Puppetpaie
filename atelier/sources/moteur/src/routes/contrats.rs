@@ -670,8 +670,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
     let quoi: Vec<String> = impression
         .contrats
         .iter()
-        .map(|x| format!("contrat n° {}", x.numero_dit()))
-        .chain(impression.avenants.iter().map(|x| format!("avenant n° {} au contrat n° {}", x.avenant.map(|a| a.to_string()).unwrap_or_default(), x.numero_dit())))
+        .map(|x| format!("contrat n° {}", x.numero_dit().unwrap_or_default()))
+        .chain(impression.avenants.iter().map(|x| format!("avenant n° {} au contrat n° {}", x.avenant.map(|a| a.to_string()).unwrap_or_default(), x.numero_dit().unwrap_or_default())))
         .collect();
     Ok(Imprimes { phrase: format!("À faire signer en main propre : {} ; imprimés.", quoi.join(", ")), impression })
 }
@@ -861,15 +861,14 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             continue;
         }
         let cle_s = p.salarie.id.to_string();
-        let numero_t = p.engagement.numero.as_deref().unwrap_or_default().to_string();
-        let k = (cle_s.clone(), numero_t.clone());
+        let k: envois::etats::Paire = (cle_s.clone(), p.engagement.numero.as_deref().map(str::to_string));
         let etat = crate::routes::etapes::etat_signature(
             crate::routes::etapes::contrat_parti_le(&departs, &cle_s, p.engagement.numero.as_deref()),
             g.par.get(&k).copied(),
             g.recus.get(&k),
             g.renvoyes.contains(&k),
             g.avenants.get(&k),
-            avenants.contains(&k),
+            p.engagement.numero.as_deref().is_some_and(|n| avenants.contains(&(cle_s.clone(), n.to_string()))),
             ailleurs,
         );
         if ailleurs && !etat.caduc && !etat.avenant_attendu {
@@ -1161,7 +1160,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     }
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
-    let Some(parti) = envois::etats::contrat_parti(&lignes, salarie, numero_voulu) else { return Ok(None) };
+    let Some(parti) = envois::etats::contrat_parti(&lignes, salarie, Some(numero_voulu)) else { return Ok(None) };
     let mois_parti = parti.mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_parti, None, &departs)?;
@@ -1204,7 +1203,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let p = &paies[i];
     let g = m.globales()?;
-    let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(salarie.to_string(), numero_parti.clone())), &parti);
+    let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(salarie.to_string(), parti.numero.as_ref().map(|n| n.to_string()))), &parti);
     let ent = documents::avenant::ent_du_mois(ctx, &mois_parti)?;
     let modele = documents::avenant::modele_du_contrat(&ent.gabarits, &*p.engagement.nat().map_err(Echec::from)?)?;
     let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
@@ -1311,7 +1310,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         .collect::<Vec<_>>();
     let effet = changes.first().map_or_else(|| debut.iso(), |x| x.jour.iso());
     let g = Moteur::nouveau(ctx).globales()?;
-    let deja: Vec<AvenantParti> = g.avenants.get(&(salarie.to_string(), numero.to_string())).cloned().unwrap_or_default();
+    let deja: Vec<AvenantParti> = g.avenants.get(&(salarie.to_string(), Some(numero.to_string()))).cloned().unwrap_or_default();
     let signes = deja.iter().filter(|a| a.signe.is_some()).filter_map(|a| a.numero).max().unwrap_or(0);
     let nomme = ContratNomme::de(p)?;
     Ok(Some(AvenantLu {
@@ -1368,14 +1367,14 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
 
     // La ligne d'un contrat (une embauche d'une DPAE, un contrat parti, un contrat revenu) est-elle celle du contrat n°
     // `numero` (de ce salarie, quand il est dit) ?
-    let ce_contrat = |s: &str, n: &str| n == numero && le_salarie.as_deref().is_none_or(|x| x == s);
+    let ce_contrat = |s: &str, n: Option<&str>| n == Some(numero.as_str()) && le_salarie.as_deref().is_none_or(|x| x == s);
     let mut dpae = Vec::new();
     for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, true).filter_map(journal::Ligne::dpae) {
         let Some(fichier) = e.fichier.as_deref().filter(|f| !f.is_empty()) else { continue };
         if !e.accepte {
             continue;
         }
-        if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_deref().unwrap_or(""))) {
+        if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
             qui.get_or_insert_with(|| x.salarie.to_string());
             dpae.push(piece(racine, "DPAE déposée".into(), &e.quand, e.mois, fichier));
         }

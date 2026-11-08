@@ -802,7 +802,7 @@ fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         // Une embauche que l'etat ne connait pas (une ligne non acceptee) n'est ni passee ni refusee.
         let embauches: Vec<Option<&etats::EtatEmbauche>> = du_flux(Quoi::Dpae.acte())
             .and_then(Ligne::dpae)
-            .map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.to_string(), x.numero.as_deref().unwrap_or("").to_string()))).collect())
+            .map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.to_string(), x.numero.as_deref().map(str::to_string)))).collect())
             .unwrap_or_default();
         passe = !embauches.is_empty() && embauches.iter().all(|x| x.is_some_and(|x| x.passee));
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
@@ -1071,7 +1071,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         });
         let numero = cle.and_then(|c| numeros.get(&(c.clone(), debut.clone()))).cloned();
         let deja = match &numero {
-            Some(n) => cle.is_some_and(|c| faites.contains_key(&(c.clone(), n.clone()))),
+            Some(n) => cle.is_some_and(|c| faites.contains_key(&(c.clone(), Some(n.clone())))),
             None => false,
         };
         lignes.push(EmbaucheDuFichier {

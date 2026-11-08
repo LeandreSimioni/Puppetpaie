@@ -532,8 +532,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if !l.reel() {
         return Ok(None);
     }
-    let nature = l.nature_dsn();
-    if !nature.is_empty() && nature != "01" {
+    if l.nature_dsn().is_some_and(|n| !n.is_empty() && n != "01") {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois().map(|m| m.to_string()), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
