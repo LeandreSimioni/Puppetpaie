@@ -369,10 +369,10 @@ fn ecart_secondes(a: &str, b: &str) -> Option<i64> {
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
 /// situation d'usage, pas un defaut du logiciel.
-const REFUS_PAR_CLASSE: [Classe; 17] = [
+const REFUS_PAR_CLASSE: [Classe; 15] = [
     Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FabriqueRefus, Classe::FicheRefusee,
     Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::VersionExigee, Classe::CompteursVerrouilles,
-    Classe::Manque, Classe::Illisible, Classe::MalFormee, Classe::FichierAbsent, Classe::RouteInconnue,
+    Classe::Manque, Classe::Illisible, Classe::FichierAbsent,
     Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable,
 ];
 
