@@ -154,7 +154,9 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         };
         let c = &mut cumul[i];
-        c.base = add(c.base, base.filter(|b| !b.is_zero()).unwrap_or(zero));
+        if let Some(b) = base.filter(|b| !b.is_zero()) {
+            c.base = add(c.base, b);
+        }
         c.part_sal = add(c.part_sal, if ms.is_zero() { zero } else { ms });
         c.part_pat = add(c.part_pat, if mp.is_zero() { zero } else { mp });
     };
@@ -336,8 +338,8 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
 }
 
 /// Le nom de la DSN d'un mois dans un etat : partie, ou a deposer.
-fn nom_de_la_dsn(m: &str, partie: bool) -> String {
-    format!("DSN de {}{}", libelle_mois(m).unwrap_or_else(|_| m.to_string()), if partie { "" } else { " (à déposer)" })
+fn nom_de_la_dsn(m: &str, partie: bool) -> R<String> {
+    Ok(format!("DSN de {}{}", libelle_mois(m)?, if partie { "" } else { " (à déposer)" }))
 }
 
 /// SIRET -> libelle, lu dans les organismes de la compagnie (`Contexte::organismes`).
@@ -366,10 +368,10 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
                 None => o.organisme.clone(),
             };
             let mut l = Ligne::nouvelle();
-            l.t("mois", m.clone()).t("organisme", organisme).t("identifiant", o.organisme.clone()).t("reference", o.reference.clone().unwrap_or_default());
+            l.t("mois", m.clone()).t("organisme", organisme).t("identifiant", o.organisme.clone()).ot("reference", o.reference.clone());
             l.t("du", o.debut.jj_mm_aaaa()).t("au", o.fin.jj_mm_aaaa()).od("montant", Some(o.montant));
             l.t("mode", "prélèvement SEPA");
-            l.t("date", o.date_paiement.map(|j| j.jj_mm_aaaa()).unwrap_or_default()).t("fichier", nom_de_la_dsn(&m, partie));
+            l.ot("date", o.date_paiement.map(|j| j.jj_mm_aaaa())).t("fichier", nom_de_la_dsn(&m, partie)?);
             lignes.push(l);
         }
     }
@@ -462,22 +464,20 @@ fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
     }
     let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
     let texte = String::from_utf8_lossy(&octets).into_owned();
-    let texte = texte.strip_prefix('\u{feff}').unwrap_or(&texte).to_string();
-    let rangs = lire_csv(&texte, ';');
+    let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
     let Some((entete, corps)) = rangs.split_first() else { return Ok(Vec::new()) };
-    let col = |nom: &str| entete.iter().position(|e| e == nom);
-    let (i_code, i_lib, i_fin) = (col("Code"), col("Libellé"), col("Date de fin"));
+    let illisible = |quoi: &str| erreur("ValueError", socle::echec::avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }));
+    let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
+    let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
     let mut out: Vec<(String, String)> = Vec::new();
     for r in corps {
-        let cel = |i: Option<usize>| i.and_then(|i| r.get(i)).cloned().unwrap_or_default();
-        let code = cel(i_code).trim_matches('\'').to_string();
-        let lib = cel(i_lib);
-        if code.is_empty() {
-            continue;
-        }
+        // Une ligne sans code n'en decrit aucun ; une cellule de fin absente (une ligne courte) : pas de fin.
+        let Some(code) = r.get(i_code).map(|c| c.trim_matches('\'').to_string()).filter(|c| !c.is_empty()) else { continue };
+        let lib = r.get(i_lib).cloned().ok_or_else(|| illisible(&format!("le libellé du code {}", code)))?;
+        let sans_fin = r.get(i_fin).is_none_or(|f| f.is_empty());
         match out.iter_mut().find(|(c, _)| *c == code) {
             Some(x) => {
-                if cel(i_fin).is_empty() {
+                if sans_fin {
                     x.1 = lib;
                 }
             }
@@ -500,13 +500,13 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
     for (m, _nic, f, partie) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
         for bordereau in f.bordereaux {
             let mut l = Ligne::nouvelle();
-            l.t("mois", m.clone()).t("ctp", "").t("libelle", format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(&m, partie)));
+            l.t("mois", m.clone()).t("ctp", "").t("libelle", format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(&m, partie)?));
             l.t("periode", format!("{} au {}", bordereau.debut.jj_mm_aaaa(), bordereau.fin.jj_mm_aaaa())).od("total", Some(bordereau.total));
             lignes.push(l);
             for b in bordereau.lignes {
                 let mut l = Ligne::nouvelle();
                 let code = b.code.clone();
-                l.t("mois", m.clone()).t("ctp", code.clone()).t("libelle", ctp.iter().find(|(c, _)| *c == code).map(|(_, v)| v.clone()).unwrap_or_default());
+                l.t("mois", m.clone()).t("ctp", code.clone()).ot("libelle", ctp.iter().find(|(c, _)| *c == code).map(|(_, v)| v.clone()));
                 l.t("qualifiant", match b.qualifiant.as_str() {
                     "920" => "920 — assiette plafonnée".to_string(),
                     "921" => "921 — assiette déplafonnée".to_string(),
@@ -601,7 +601,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         // UNE ANNEE QUE LE LOGICIEL NE TIENT PAS EN ENTIER : la compagnie n'y a de paies (ecrites ou importees) qu'a
         // partir d'un mois apres janvier ; les mois d'avant manquent, la tranche A et la contribution sont partielles.
-        let premier = p.dispo.keys().next().and_then(|m| socle::mois::Mois::lire(m).ok()).filter(|m| m.annee().to_string() == an);
+        let premier = p.dispo.keys().next().map(|m| socle::mois::Mois::lire(m)).transpose().map_err(|e| erreur("ValueError", e))?.filter(|m| m.annee().to_string() == an);
         let regle = if let Some(premier) = premier.filter(|m| m.numero() > 1) {
             let titre = |m: socle::mois::Mois| m.libelle(socle::mois::Graphie::Titre);
             let (janvier, avant) = (socle::mois::Mois::nouveau(premier.annee(), 1)?, premier.precedent());
@@ -699,24 +699,35 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)));
             cpnef = plus_grand(borne(c.plancher.map(|n| n.0), "plancher")?, plus_petit(borne(c.plafond.map(|n| n.0), "plafond")?, brut_cpnef));
         }
-        let effectif = ctx.effectif().ok().and_then(|e| e.valeur(annee_entiere(&an).unwrap_or(0)));
-        if effectif.is_none() {
-            avert.push(format!("{} : l'effectif de l'année n'est pas connu (retours de nature 118) ; le taux des permanents est celui de la plus petite tranche d'effectif.", an));
-        }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
             .ok_or_else(|| erreur("KeyError", socle::fichiers::absent("contribution_conventionnelle_permanents")))?
             .par_effectif;
-        let eff = effectif.unwrap_or(0.0);
-        let tranche = tranches
-            .iter()
-            .find(|x| x.jusqu_a.map_or(true, |j| eff <= j as f64))
-            .ok_or_else(|| erreur("StopIteration", socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?;
-        let taux_p = tranche.taux;
-        let permanents = eur2(div(mul(masse_permanents, taux_p), Decimal::ONE_HUNDRED));
+        // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
+        // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
+        let taux_p = match ctx.effectif()?.valeur(annee_entiere(&an)?) {
+            Some(eff) => Some(
+                tranches
+                    .iter()
+                    .find(|x| x.jusqu_a.is_none_or(|j| eff <= j as f64))
+                    .ok_or_else(|| erreur("StopIteration", socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?
+                    .taux,
+            ),
+            None if masse_permanents.is_zero() => None,
+            None => {
+                return Err(refus(format!(
+                    "{} : l'effectif de l'année n'est pas connu (retours de nature 118), et le taux de la contribution conventionnelle des permanents en dépend : relever les retours. Rien n'est écrit.",
+                    an
+                )))
+            }
+        };
+        let permanents = match taux_p {
+            Some(t) => eur2(div(mul(masse_permanents, t), Decimal::ONE_HUNDRED)),
+            None => zero,
+        };
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("masse_permanents", masse_permanents).d("cpnef", cpnef).d("taux_permanents", taux_p).d("permanents", permanents);
+        l.t("annee", an.clone()).d("masse", masse).d("masse_permanents", masse_permanents).d("cpnef", cpnef).od("taux_permanents", taux_p).d("permanents", permanents);
         l.d("total_ht", add(cpnef, permanents));
         l.t("a_payer", format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
         lignes.push(l);
@@ -792,14 +803,17 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(pl) = f.plafond {
             m = plus_petit(m, pl.0);
         }
-        let collecteur = f.collecteur.clone().filter(|c| !c.is_empty()).unwrap_or_else(|| "l'organisme collecteur de la branche".to_string());
+        // A qui payer, si la couche le dit.
+        let a_payer: String = std::iter::once(format!("en {}", annee_entiere(&an)? + 1))
+            .chain(f.collecteur.iter().filter(|c| !c.is_empty()).map(|c| format!(", à {}", c)))
+            .collect();
         if let Some(a) = f.avertissement.clone().filter(|a| !a.is_empty()) {
             if !avert.contains(&a) {
                 avert.push(a);
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("taux", taux).d("montant", m).t("a_payer", format!("en {}, à {}", annee_entiere(&an)? + 1, collecteur));
+        l.t("annee", an.clone()).d("masse", masse).d("taux", taux).d("montant", m).t("a_payer", a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());

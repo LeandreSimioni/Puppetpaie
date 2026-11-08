@@ -165,7 +165,10 @@ fn entiere(texte: &str, largeur: usize, faute: fn(&str) -> Option<String>) -> Re
     if n <= largeur {
         return Ok(texte.to_string());
     }
-    Err(faute(texte).unwrap_or_else(|| format!("« {} » a {} caractères : la zone de la DPAE en a {} (norme DPAE v5.3).", texte, n, largeur)))
+    Err(match faute(texte) {
+        Some(f) => f,
+        None => format!("« {} » a {} caractères : la zone de la DPAE en a {} (norme DPAE v5.3).", texte, n, largeur),
+    })
 }
 
 /// UNE ZONE DE TEXTE de `largeur` caracteres, « cadrés à gauche, complétés par des blancs » (l. 30) : `texte` dans le
@@ -423,10 +426,10 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
     // declare l'individu sous son numero technique temporaire. La zone reste
     // donc a blanc, sur ses 13 caracteres.
     let nir = match s.nir.portee() {
-        Some(nir) => entiere(nir, zone("nir"), droit::fiche::Nir::faute)?,
-        None => String::new(),
+        Some(nir) => ljust(&entiere(nir, zone("nir"), droit::fiche::Nir::faute)?, zone("nir")),
+        None => " ".repeat(zone("nir")),
     };
-    poser(&mut buf, "nir", &ljust(&nir, zone("nir")))?;
+    poser(&mut buf, "nir", &nir)?;
     poser(&mut buf, "date_naissance", &s.date_naissance.exigee("date_naissance")?.jjmmaaaa())?;
     poser(&mut buf, "lieu_naissance", &zone_texte(s.lieu_naissance.ecrite("lieu_naissance")?, &LIEU, zone("lieu_naissance"), droit::fiche::LieuNaissance::faute)?)?;
     let (a, b) = RESERVE_APRES_LIEU;
