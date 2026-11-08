@@ -1429,7 +1429,7 @@ mod essais {
         let ligne = |verdict: &str| -> Vec<envois::journal::Ligne> {
             vec![serde_json::from_value(json!({"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
                     "fichier": "SignalementFinContrat_FANCHON_20260313.dsn", "empreinte": null, "qui": "t", "destinataire": "", "flux": "", "reponse": "", "trace": null,
-                    "detail": {"nature": "07", "evenement": "2026-03-13", "repetition": null, "ordre_test": null},
+                    "detail": {"nature": "07", "evenement": "2026-03-13", "reconstruit": false, "repetition": null, "ordre_test": null},
                     "retours": [{"nature": "11", "verdict": verdict, "libelle": "", "statut": null, "publication": null}]}))
             .unwrap()]
         };

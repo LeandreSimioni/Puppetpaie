@@ -24,6 +24,12 @@ use crate::envoi::Message;
 /// Les formules qui closent nos modeles : ce qui les suit est la signature.
 const FORMULES: [&str; 2] = ["Bien à toi,", "Bien cordialement,"];
 
+/// Les balises retirees avec ce qu'elles contiennent.
+const BALISES_ET_CONTENU: [&str; 12] = ["script", "style", "iframe", "object", "embed", "form", "noscript", "template", "head", "title", "svg", "math"];
+
+/// Les balises retirees, leur contenu garde.
+const BALISES_SEULES: [&str; 10] = ["html", "body", "meta", "link", "base", "input", "button", "textarea", "select", "option"];
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Signature {
     /// Le nom affiche devant l'adresse (vide : l'adresse seule).
@@ -83,11 +89,11 @@ fn re(motif: &str) -> Regex {
 pub fn nettoyer(html: &str) -> String {
     let mut h = html.to_string();
     h = re(r"(?s)<!--.*?-->").replace_all(&h, "").into_owned();
-    for balise in ["script", "style", "iframe", "object", "embed", "form", "noscript", "template", "head", "title", "svg", "math"] {
+    for balise in BALISES_ET_CONTENU {
         h = re(&format!(r"(?is)<{b}\b[^>]*>.*?</{b}\s*>", b = balise)).replace_all(&h, "").into_owned();
         h = re(&format!(r"(?is)</?{b}\b[^>]*>", b = balise)).replace_all(&h, "").into_owned();
     }
-    for balise in ["html", "body", "meta", "link", "base", "input", "button", "textarea", "select", "option"] {
+    for balise in BALISES_SEULES {
         h = re(&format!(r"(?is)</?{b}\b[^>]*>", b = balise)).replace_all(&h, "").into_owned();
     }
     h = re(r#"(?is)\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)"#).replace_all(&h, "").into_owned();
@@ -105,12 +111,12 @@ pub fn en_texte(html: &str) -> String {
     let mut lignes: Vec<String> = Vec::new();
     for l in t.split('\n') {
         let l = l.split_whitespace().collect::<Vec<_>>().join(" ");
-        if l.is_empty() && lignes.last().map_or(true, |d: &String| d.is_empty()) {
+        if l.is_empty() && lignes.last().is_none_or(|d: &String| d.is_empty()) {
             continue;
         }
         lignes.push(l);
     }
-    while lignes.last().map_or(false, |l| l.is_empty()) {
+    while lignes.last().is_some_and(|l| l.is_empty()) {
         lignes.pop();
     }
     lignes.join("\n")
@@ -126,8 +132,9 @@ fn decoder_entites(t: &str) -> String {
     o = num
         .replace_all(&o, |c: &regex::Captures| {
             let v = &c[1];
-            let n = if let Some(h) = v.strip_prefix('x').or_else(|| v.strip_prefix('X')) { u32::from_str_radix(h, 16).ok() } else { v.parse().ok() };
-            n.and_then(char::from_u32).map(String::from).unwrap_or_default()
+            let n = if let Some(h) = v.strip_prefix('x').or_else(|| v.strip_prefix('X')) { u32::from_str_radix(h, 16) } else { v.parse::<u32>() };
+            // Une entite qui ne nomme aucun caractere (hors d'Unicode, ou trop longue pour un code) s'efface.
+            n.into_iter().filter_map(char::from_u32).collect::<String>()
         })
         .into_owned();
     // `&amp;` en dernier : `&amp;lt;` reste `&lt;`.
