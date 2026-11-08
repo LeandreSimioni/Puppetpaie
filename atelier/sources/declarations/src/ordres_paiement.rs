@@ -128,7 +128,8 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: &str, jour_echeance: u32) -> 
         let objet = format!("{}{} {}", if regularisation { "Régularisation : " } else { "" }, quoi, periode);
         let objet = {
             let mut c = objet.chars();
-            c.next().map(|p| p.to_uppercase().chain(c).collect::<String>()).unwrap_or_default()
+            let tete: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
+            tete + c.as_str()
         };
         let jour_norme = norme.and_then(|v| v.jour_de_paiement);
         let (date, quand, source): (Option<Jour>, String, &str) = if let Some(j) = o.date_paiement {

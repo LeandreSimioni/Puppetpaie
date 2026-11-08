@@ -128,7 +128,13 @@ fn datees<T>(liste: &Option<Vec<Datee<T>>>, ecrite: fn(&Option<T>) -> Option<Str
 /// mois declare n'entre pas dans sa DSN, sans quoi 31.001 depasserait le dernier jour du mois principal declare
 /// (§ 4.4.12, p. 99) -- il ira dans la DSN du mois ou il prend effet.
 pub fn identite_du_mois(salarie: &FicheSalarie, brute: Option<&FicheSalarieDatee>, fin: &Jour) -> Resultat<FicheSalarie> {
-    let au: ChampsSalarie = brute.map(|b| b.au(fin)).unwrap_or_default();
+    let Some(brute) = brute else {
+        return Err(format!(
+            "{} : sa fiche n'est pas dans les fiches salariés de la compagnie (config/salaries.json), ses identifiants du mois ne se lisent pas. Rien n'est écrit.",
+            qui(&salarie.champs)
+        ));
+    };
+    let au: ChampsSalarie = brute.au(fin);
     let mut sortie = salarie.clone();
     for i in &IDENTIFIANTS {
         (i.poser)(&mut sortie.champs, &au);
@@ -227,7 +233,10 @@ pub fn derniere_declaree(ctx: &Contexte, salarie: &droit::fiche::SalarieDuContra
 }
 
 fn qui(salarie: &ChampsSalarie) -> String {
-    let nom = salarie.nomme().unwrap_or_else(|| "?".to_string());
+    let nom = match salarie.nomme() {
+        Some(n) => n,
+        None => "?".to_string(),
+    };
     match salarie.code_salarie.portee() {
         Some(matricule) => format!("{} (matricule {})", nom, strip(matricule)),
         None => format!("{} (sans matricule)", nom),
@@ -235,7 +244,10 @@ fn qui(salarie: &ChampsSalarie) -> String {
 }
 
 fn decrire(d: &Declaree) -> String {
-    let dite = |c: &Option<String>| c.clone().unwrap_or_else(|| "?".to_string());
+    let dite = |c: &Option<String>| match c {
+        Some(v) => v.clone(),
+        None => "?".to_string(),
+    };
     format!(
         "{} {}, ne(e) le {}, {}",
         dite(&d.prenoms),
@@ -251,7 +263,8 @@ fn decrire(d: &Declaree) -> String {
 /// Le jour d'effet que la fiche datee `brute` donne au changement de `champ` depuis la valeur `declaree` : le `depuis`
 /// de la valeur qui suit la derniere qui la porte, au plus tard la fin du mois declare (`fin`).
 fn date_d_effet(brute: Option<&FicheSalarieDatee>, identifiant: &Identifiant, declaree: &str, fin: &Jour) -> Resultat<Option<Jour>> {
-    let valeurs = brute.map(identifiant.datees).unwrap_or_default();
+    let Some(brute) = brute else { return Ok(None) };
+    let valeurs = (identifiant.datees)(brute);
     let mut meilleur: Option<Jour> = None;
     for paire in valeurs.windows(2) {
         let ((_, v), (suivant, _)) = (&paire[0], &paire[1]);

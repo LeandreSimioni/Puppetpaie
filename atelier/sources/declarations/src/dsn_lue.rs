@@ -686,7 +686,7 @@ fn jjmmaaaa(v: &str) -> String {
 }
 
 /// Une date de la DSN, JJMMAAAA, qui est un jour.
-fn jour_dsn(v: &str) -> Option<Jour> {
+pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
     if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }

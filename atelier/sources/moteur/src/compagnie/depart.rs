@@ -705,10 +705,13 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         // constitue.
         if refabriquer_sur(ctx, Some(&lu), &f_dsn, le_mois, n.as_deref())?.is_none() {
             // Ce que la DSN de cet etablissement corrige des mois passes : elle le dit a son depot.
-            let portees = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_deref() {
+            let portees: Vec<Value> = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_deref() {
                 Some(x) => x,
                 None => fiche.nic.ecrite("nic").map_err(valeur)?,
-            })?;
+            })?
+            .iter()
+            .map(socle::ecriture::en_valeur)
+            .collect();
             let forme = Forme { type_dsn, ordre, etablissement: n, constitution: ctx.aujourdhui, remplacee_versait_pas };
             a_ecrire.push((f_dsn.clone(), fabriquer_du_present(ctx, &lu, mois, &forme)?.texte, portees));
         }

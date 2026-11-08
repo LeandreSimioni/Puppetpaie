@@ -9,8 +9,6 @@
 //! quelles ; elle ne fabrique aucun bulletin : celui de la paie corrigee part avec les documents de son mois.
 
 
-use serde_json::{json, Value};
-
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
@@ -59,7 +57,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).and_then(|e| e.veille()).map_err(refus_valeur)?;
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(refus_valeur)?.veille();
     Ok(ctx.aujourdhui > limite)
 }
 
@@ -104,13 +102,18 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
         let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, &mois)? else { continue };
         for d in corrections_dues(ctx, &mois, mois_courant, departs)? {
             let apres = d.valide.paie(ctx, &data, d.rang)?;
-            let version = d.valide.version().unwrap_or_default();
-            let decidee_le = d.valide.le().get(..10).and_then(|t| Jour::lire(t).ok());
+            let version = d.valide.version().ok_or_else(|| {
+                erreur(
+                    "MoisNonRegularisable",
+                    format!("Correction de {} pour {} : la validation de l'engagement ne porte pas son numéro de version, ce qu'elle déclare ne se dit pas. La revalider.", mois, documents::tableaux_export::qui_souple(&apres.salarie)),
+                )
+            })?;
+            let decidee_le = decidee_le(d.valide.le())?;
             if d.declarees.is_empty() {
                 out.push(ajout(mois.clone(), version, decidee_le, apres)?);
                 continue;
             }
-            let numero = apres.engagement.numero.as_deref().unwrap_or_default().to_string();
+            let numero = apres.engagement.numero.clone();
             let refus = |quoi: &str| {
                 erreur(
                     "MoisNonRegularisable",
@@ -118,13 +121,16 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
                         "Correction de {} pour {} (contrat {}) : {}. Une regularisation annule ce qui a ete DECLARE : elle le lit dans la version de l'engagement sur laquelle la DSN est partie, elle ne le recalcule pas. La DSN de {} ne se produit pas tant que ce n'est pas regle.",
                         mois,
                         documents::tableaux_export::qui_souple(&apres.salarie),
-                        if numero.is_empty() { "sans numero" } else { numero.as_str() },
+                        match numero.as_deref() {
+                            Some(n) => n,
+                            None => "sans numero",
+                        },
                         quoi,
                         mois_courant
                     ),
                 )
             };
-            if numero.is_empty() {
+            if numero.is_none() {
                 return Err(refus("le numero sous lequel le contrat a ete declare (S21.G00.40.009) n'est pas connu"));
             }
             let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, &mois, mois_courant)
@@ -163,12 +169,18 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &st
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
             .map_err(refus_valeur)?
-            .ok_or_else(|| refus_valeur(format!("{} : aucune DSN partie n'a declare le contrat {} de ce mois", mois, n.objet().carte().numero.clone().unwrap_or_default())))?;
+            .ok_or_else(|| {
+                let numero = match n.objet().carte().numero.as_deref() {
+                    Some(numero) => format!("le contrat {}", numero),
+                    None => "un contrat sans numero".to_string(),
+                };
+                refus_valeur(format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
+            })?;
         let apres = lu.avant.annulee();
         out.push(Reg {
             mois: mois.to_string(),
             version: n.version(),
-            decidee_le: n.le().get(..10).and_then(|t| Jour::lire(t).ok()),
+            decidee_le: decidee_le(n.le())?,
             taux_pas_origine: lu.versement.taux_pas.clone(),
             avant: lu.avant,
             declare: lu.versement,
@@ -179,10 +191,20 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &st
     Ok(out)
 }
 
+/// La version de l'engagement d'un mois corrige qu'une DSN porte (`versions_portees`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct VersionPortee {
+    pub salarie: String,
+    pub numero: String,
+    pub version: u64,
+    /// Le mois corrige (`AAAA-MM`).
+    pub mois: String,
+}
+
 /// LES VERSIONS QUE PORTENT LES CORRECTIONS `regs` (`regularisations_pour`, lues par la fabrication de la DSN) pour
 /// l'etablissement `nic` : pour chacune, la version de l'engagement du mois corrige, `{"salarie", "numero", "version",
 /// "mois": <le mois corrige>}`. Ce que la DSN fabriquee dit porter, et ce que la ligne du journal de son depot emporte.
-pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Value>> {
+pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<VersionPortee>> {
     let fiche = &ctx.entreprise;
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
@@ -190,12 +212,10 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Value>
         if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(refus_valeur)? != nic {
             continue;
         }
-        let v = json!({
-            "salarie": r.apres.salarie.id.to_string(),
-            "numero": r.apres.engagement.numero.as_deref().unwrap_or_default().to_string(),
-            "version": r.version,
-            "mois": r.mois,
-        });
+        let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
+            erreur("MoisNonRegularisable", format!("{} : la correction de {} n'a pas de numero de contrat (S21.G00.40.009).", r.mois, documents::tableaux_export::qui_souple(&r.apres.salarie)))
+        })?;
+        let v = VersionPortee { salarie: r.apres.salarie.id.to_string(), numero: numero.to_string(), version: r.version, mois: r.mois.clone() };
         if !out.contains(&v) {
             out.push(v);
         }
@@ -245,7 +265,10 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
             documents::tableaux_export::qui_souple(s),
-            r.apres.engagement.numero.as_deref().unwrap_or("None"),
+            match r.apres.engagement.numero.as_deref() {
+                Some(n) => n,
+                None => "None",
+            },
             socle::mois::Mois::en_clair(&r.mois),
             euros(r.declare.brut),
             euros(r.apres.brut),
@@ -269,6 +292,14 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
             decidee_le: r.decidee_le,
         })
         .collect()
+}
+
+/// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
+fn decidee_le(le: &str) -> R<Option<Jour>> {
+    match le.get(..10) {
+        Some(jour) => Jour::lire(jour).map(Some).map_err(refus_valeur),
+        None => Ok(None),
+    }
 }
 
 fn refus_valeur(m: String) -> Echec {
