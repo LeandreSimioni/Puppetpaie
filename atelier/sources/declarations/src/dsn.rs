@@ -1470,7 +1470,7 @@ fn licence_du_contrat(f: &mut Fichier, nature_dsn: &str, ent: &ChampsEntreprise,
     if !licence.trim().is_empty() {
         return si_admise(f, nature_dsn, "S21.G00.40.049", Some(licence));
     }
-    if crate::demarrage::licence_exigee(ent, spectacle) && usage_admet(f, "S21.G00.40.049", nature_dsn)? {
+    if crate::demarrage::licence_exigee(ent, spectacle)? && usage_admet(f, "S21.G00.40.049", nature_dsn)? {
         return Err("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit.".to_string());
     }
     Ok(())
@@ -4095,8 +4095,11 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
             vues.push(s);
         }
     }
-    let mut fiches: Vec<(&str, String, &dyn crate::champs::ParCase)> = vec![("entreprise", "la fiche entreprise".to_string(), ent)];
-    fiches.extend(vues.iter().map(|s| ("salarie", format!("la fiche de {}", s.nomme().unwrap_or_else(|| s.id.to_string())), &s.champs as &dyn crate::champs::ParCase)));
+    let mut saisies = vec![("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(|e| e.message)?)];
+    for s in &vues {
+        saisies.push(("salarie", format!("la fiche de {}", s.nomme().unwrap_or_else(|| s.id.to_string())), crate::champs::Saisie::de_la_fiche("salarie", &s.champs).map_err(|e| e.message)?));
+    }
+    let fiches: Vec<(&str, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match crate::champs::refus_des_manques("dsn", &fiches, if caisse_conges { &[] } else { &[documents::conges_spectacles::CLE_ADHERENT] }).map_err(|e| e.message)? {
         Some(m) => Err(m),
         None => Ok(()),

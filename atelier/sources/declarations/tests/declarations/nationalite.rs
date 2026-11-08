@@ -10,24 +10,23 @@
 //! le pays hors liste : une décision d'éditeur ; le registre : C. trav., D1221-23
 //! (`atelier/reference/sources/code-du-travail/xml/D1221-23.xml`).
 
-use serde_json::{json, Value};
+use crate::outils::saisie;
+use declarations::champs::{Anomalie, Gravite, Saisie};
 use std::collections::HashMap;
 
 #[test]
 fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
-    let erreurs = |v: Value| -> Vec<Value> {
-        declarations::champs::verifier_fiche("salarie", v.as_object().unwrap())
+    let erreurs = |s: Saisie| -> Vec<Anomalie> {
+        declarations::champs::verifier_fiche("salarie", &s)
             .unwrap()
             .into_iter()
-            .filter(|a| a["champ"] == "code_nationalite_dsn" && a["gravite"] == "erreur")
+            .filter(|a| a.champ == "code_nationalite_dsn" && a.gravite == Gravite::Erreur)
             .collect()
     };
     let avec = |k: &[(&str, &str)]| {
-        let mut b = json!({"nom": "ANDERSEN", "prenom": "INGRID", "sexe": "2"});
-        for (c, v) in k {
-            b[*c] = json!(v);
-        }
-        b
+        let mut cases = vec![("nom", "ANDERSEN"), ("prenom", "INGRID"), ("sexe", "2")];
+        cases.extend_from_slice(k);
+        saisie("salarie", &cases)
     };
     assert_eq!(erreurs(avec(&[("code_nationalite_dsn", "03")])).len(), 1, "un 03 sans pays se dit dans la fiche");
     assert!(erreurs(avec(&[("code_nationalite_dsn", "03"), ("pays_nationalite", "NO")])).is_empty());

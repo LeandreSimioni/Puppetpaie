@@ -17,8 +17,23 @@
 //!   les Conges Spectacles « avant toute deduction forfaitaire specifique ».
 //! La reduction generale sous DFS : arrete du 4 decembre 2019, art. 1er (`dfs/arrete-2019-reduction-generale/`).
 
-use crate::outils::lire;
-use serde_json::{json, Value};
+use std::collections::BTreeMap;
+
+use crate::outils::{lire, saisie};
+use declarations::champs::Gravite;
+use serde::de::IgnoredAny;
+use serde::Deserialize;
+
+/// Du bareme livre, la seule partie que ce test lit : les professions de la DFS.
+#[derive(Deserialize)]
+struct Bareme {
+    deduction_forfaitaire: Dfs,
+}
+
+#[derive(Deserialize)]
+struct Dfs {
+    professions: BTreeMap<String, IgnoredAny>,
+}
 
 #[test]
 fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_option() {
@@ -26,9 +41,7 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     // « 25 »), et l'accord du salarie quand l'option repose sur lui ; la fiche entreprise dit l'option de l'employeur
     // (arrete du 4 septembre 2025, art. 9, I, al. 2 et 3). Le moteur verifie les valeurs (`champs::verifier_fiche`).
     let erreur = |nom: &str, cle: &str, v: &str| -> bool {
-        let mut f = serde_json::Map::new();
-        f.insert(cle.into(), json!(v));
-        declarations::champs::verifier_fiche(nom, &f).unwrap().iter().any(|a| a["champ"] == cle && a["gravite"] == "erreur")
+        declarations::champs::verifier_fiche(nom, &saisie(nom, &[(cle, v)])).unwrap().iter().any(|a| a.champ == cle && a.gravite == Gravite::Erreur)
     };
     assert!(erreur("salarie", "deduction_forfaitaire", "25"), "une categorie n'est plus une profession");
     for profession in ["musicien", "choriste", "chef_orchestre", "regisseur_theatre", "artiste_dramatique", "artiste_lyrique",
@@ -44,12 +57,11 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     }
     assert!(erreur("entreprise", "deduction_forfaitaire_option", "oui"));
     // Les professions de la fiche sont celles du bareme de l'annee, et aucune autre.
-    let bar: Value = lire(&crate::outils::code_livre(), "baremes/2026.json");
-    let mut du_bareme: Vec<String> = bar["deduction_forfaitaire"]["professions"].as_object().unwrap().keys().cloned().collect();
-    du_bareme.sort();
+    let bar: Bareme = lire(&crate::outils::code_livre(), "baremes/2026.json");
+    let du_bareme: Vec<String> = bar.deduction_forfaitaire.professions.into_keys().collect();
     let champs = declarations::champs::fiche("salarie").unwrap();
     let c = champs.iter().find(|c| c.cle == "deduction_forfaitaire").unwrap();
-    let mut de_la_fiche: Vec<String> = c.choix.iter().filter_map(|x| x.as_str()).filter(|x| !x.is_empty()).map(String::from).collect();
+    let mut de_la_fiche: Vec<String> = c.choix.iter().filter(|x| !x.is_empty()).cloned().collect();
     de_la_fiche.sort();
     assert_eq!(de_la_fiche, du_bareme);
 }

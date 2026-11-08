@@ -52,7 +52,7 @@ use serde_json::{json, Map, Value};
 
 use crate::import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use droit::contexte::Contexte;
-use declarations::champs::ParCase;
+use crate::import::completer::ParCase;
 use socle::date::Jour;
 use envois::valeur::valeur_en_texte;
 use socle::echec::R;
@@ -1541,7 +1541,7 @@ fn lisibles_de_la_piece_sur(nom: &str, fiche: &Map<String, Value>, proposees: &M
         if lisible_piece == lisible || compare(officiel_piece) != compare(officiel) {
             continue;
         }
-        let reconstitue = declarations::champs::combler_affichage(nom, &Map::from_iter([(c.cle.clone(), json!(officiel))]))?;
+        let reconstitue = crate::routes::fiches::combler_affichage(nom, &Map::from_iter([(c.cle.clone(), json!(officiel))]))?;
         if reconstitue.get(source) == Some(&json!(lisible)) {
             out.insert(source.to_string(), json!(lisible_piece));
         }
@@ -1575,7 +1575,7 @@ fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Map<String, Val
         f.insert("date_anciennete".into(), json!(premier.iso()));
     }
     lisibles_de_la_piece("salarie", &mut f)?;
-    let mut f = declarations::champs::combler_affichage("salarie", &f)?;
+    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -1669,7 +1669,7 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Map<String, Value>> {
     }
     crate::routes::import::poser_licence(&mut f, &licences_lues(lus));
     lisibles_de_la_piece("entreprise", &mut f)?;
-    let mut f = declarations::champs::combler_affichage("entreprise", &f)?;
+    let mut f = crate::routes::fiches::combler_affichage("entreprise", &f)?;
     if f.get("raison_sociale").is_some_and(vrai) && !f.get("nom_affichage").is_some_and(vrai) {
         let t = ri::titre_de(f.get("raison_sociale"));
         f.insert("nom_affichage".into(), json!(t));
@@ -1908,7 +1908,7 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Ma
         f.insert("date_anciennete".into(), json!(premier.iso()));
     }
     lisibles_de_la_piece("salarie", &mut f)?;
-    let mut f = declarations::champs::combler_affichage("salarie", &f)?;
+    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -1939,7 +1939,7 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Map<String, Value>> {
         f.insert(documents::conges_spectacles::CLE_ADHERENT.into(), json!(a));
     }
     lisibles_de_la_piece("entreprise", &mut f)?;
-    let mut f = declarations::champs::combler_affichage("entreprise", &f)?;
+    let mut f = crate::routes::fiches::combler_affichage("entreprise", &f)?;
     if f.get("raison_sociale").is_some_and(vrai) && !f.get("nom_affichage").is_some_and(vrai) {
         let t = ri::titre_de(f.get("raison_sociale"));
         f.insert("nom_affichage".into(), json!(t));

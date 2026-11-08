@@ -10,10 +10,39 @@
 //! Un champ que la piece ne porte pas ne s'invente pas (regle 1) : on ne complete que de ce que la DSN ou le bulletin
 //! imprime, par le meme chemin que la fiche qu'il creerait.
 
-use declarations::champs::ParCase;
 use serde_json::{Map, Value};
 
 use socle::echec::R;
+
+/// UNE FICHE QUE L'IMPORT CONFRONTE A SES PIECES, case par case, par le nom que `champs-base.json` donne a chacune : une
+/// fiche lue par sa forme (`droit::fiche::case_en`), ou ce que l'import composerait.
+pub(crate) trait ParCase {
+    fn case(&self, cle: &str) -> Option<Value>;
+}
+
+impl ParCase for Value {
+    fn case(&self, cle: &str) -> Option<Value> {
+        self.get(cle).cloned()
+    }
+}
+
+impl ParCase for Map<String, Value> {
+    fn case(&self, cle: &str) -> Option<Value> {
+        self.get(cle).cloned()
+    }
+}
+
+macro_rules! par_sa_forme {
+    ($($t:ty),*) => {
+        $(impl ParCase for $t {
+            fn case(&self, cle: &str) -> Option<Value> {
+                droit::fiche::case_en(self, cle, serde_json::value::Serializer).and_then(Result::ok)
+            }
+        })*
+    };
+}
+
+par_sa_forme!(droit::fiche::ChampsSalarie, droit::fiche::ChampsEntreprise, droit::fiche::ChampsSpectacle);
 
 /// Le titre que l'import donne a un spectacle dont il ne connait que le numero d'objet.
 pub(crate) const A_COMPLETER: &str = "A COMPLETER";
@@ -66,7 +95,7 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &dyn ParCase, proposees: &Map
     for (k, v) in &out {
         fusion.insert(k.clone(), v.clone());
     }
-    let comble = declarations::champs::combler_affichage(nom, &fusion)?;
+    let comble = crate::routes::fiches::combler_affichage(nom, &fusion)?;
     for c in &champs {
         let Some(src) = c.derive_de.as_deref().filter(|d| !d.is_empty()) else { continue };
         if !out.contains_key(&c.cle) || !vide(dite(src).as_ref()) {

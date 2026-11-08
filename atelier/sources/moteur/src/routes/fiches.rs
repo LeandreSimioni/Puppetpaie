@@ -412,31 +412,59 @@ pub(crate) struct Permanents {
 /// `permanents` : rend le curseur (`contexte::emploie_des_permanents`) : la page montre ou replie ce qui ne vaut que
 /// pour les permanents selon cette reponse, et ne le decide pas elle-meme quand on coche la case.
 fn permanents(ctx: &Contexte, charge: ChargePermanents) -> R<Permanents> {
-    let saisie = charge.entreprise.map(Value::Object);
-    let entreprise: &dyn declarations::champs::ParCase = match &saisie {
-        Some(e) => e,
-        None => &ctx.entreprise,
+    let entreprise = match &charge.entreprise {
+        Some(e) => saisie("entreprise", e)?,
+        None => champs::Saisie::de_la_fiche("entreprise", &ctx.entreprise)?,
     };
     let nom = charge.nom.as_deref().unwrap_or("entreprise");
-    let autre = Value::Object(charge.donnees.unwrap_or_default());
-    let donnees: &dyn declarations::champs::ParCase = if nom == "entreprise" { entreprise } else { &autre };
-    let p = permanents_de(entreprise);
+    let donnees = if nom == "entreprise" { entreprise.clone() } else { saisie(nom, &charge.donnees.unwrap_or_default())? };
+    let p = permanents_de(&entreprise);
     Ok(Permanents {
         phrase: if p { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
         permanents: p,
-        montres: montres(ctx, nom, donnees, entreprise)?,
+        montres: montres(ctx, nom, &donnees, &entreprise)?,
     })
 }
 
+/// LA SAISIE D'UNE FICHE (`nom`) que l'ecran, l'import ou l'ouverture proposent, lue a la porte dans la forme que la
+/// table des cases donne a chacune (`champs::lecture`) : une case qui n'a pas sa forme se refuse, avec son chemin.
+pub(crate) fn saisie(nom: &str, donnees: &Map<String, Value>) -> R<champs::Saisie> {
+    Ok(socle::forme::lire_selon(&Value::Object(donnees.clone()), champs::lecture(nom)?, "Une case de la fiche n'a pas la forme que sa ligne décrit : la corriger.")?)
+}
+
+/// LA FORME LISIBLE DE DEPART des fiches qui n'en ont pas (`champs::a_combler`), posee sur une copie de `donnees` : une
+/// vue, pas une migration.
+pub(crate) fn combler_affichage(nom: &str, donnees: &Map<String, Value>) -> R<Map<String, Value>> {
+    let mut sortie = donnees.clone();
+    for c in champs::a_combler(nom, &saisie(nom, donnees)?)? {
+        match c.bloc {
+            None => {
+                sortie.insert(c.cle, Value::String(c.texte));
+            }
+            Some(b) => {
+                if let Some(Value::Object(p)) = sortie.get_mut(b) {
+                    p.insert(c.cle, Value::String(c.texte));
+                }
+            }
+        }
+    }
+    Ok(sortie)
+}
+
+/// Les anomalies d'une fiche (`champs::Anomalie`), telles que la page et l'import les lisent.
+pub(crate) fn anomalies_en_json(anomalies: &[champs::Anomalie]) -> Vec<Value> {
+    anomalies.iter().map(socle::ecriture::en_valeur).collect()
+}
+
 /// Le curseur des permanents (`contexte::emploie_des_permanents`) de la fiche entreprise telle que l'ecran la saisit.
-fn permanents_de(entreprise: &dyn declarations::champs::ParCase) -> bool {
-    entreprise.case("emploie_des_permanents") == Some(Value::Bool(true))
+fn permanents_de(entreprise: &champs::Saisie) -> bool {
+    entreprise.case("emploie_des_permanents") == Some(&champs::Valeur::OuiNon(true))
 }
 
 /// CE QUE LA FICHE `nom` MONTRE pour `donnees` : chaque case que `champs::Champ::montre` dit a l'ecran, d'apres la
 /// fiche, l'entreprise `entreprise` (ses permanents, ses conditions) et les etablissements de la compagnie. La page ne
 /// montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, donnees: &dyn declarations::champs::ParCase, entreprise: &dyn declarations::champs::ParCase) -> R<Vec<String>> {
+pub(crate) fn montres(ctx: &Contexte, nom: &str, donnees: &champs::Saisie, entreprise: &champs::Saisie) -> R<Vec<String>> {
     let permanents = permanents_de(entreprise);
     let etablissements = super::ouverture::choix_d_etablissement(ctx).is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
@@ -763,7 +791,10 @@ fn deriver_etablissements(donnees: &mut Map<String, Value>) -> R<()> {
     let fiche = champs::fiche("entreprise")?;
     let derive = |cle: &str, lisible: &Value| -> R<Option<Value>> {
         let Some(c) = fiche.iter().find(|c| c.cle == cle) else { return Ok(None) };
-        Ok(Some(champs::normaliser(c, lisible)?))
+        Ok(Some(match lisible {
+            Value::String(t) => Value::String(champs::normaliser(c, t)?),
+            autre => autre.clone(),
+        }))
     };
     let mut sortie = Vec::new();
     for e in liste {
@@ -825,7 +856,7 @@ pub(crate) fn deriver(nom: &str, donnees: &mut Map<String, Value>, forcer: bool)
         if texte.is_empty() {
             continue;
         }
-        let attendu = champs::normaliser(&c, &Value::String(texte))?;
+        let attendu = Value::String(champs::normaliser(&c, &texte)?);
         let actuel = donnees.get(&c.cle).cloned();
         if actuel.as_ref() == Some(&attendu) {
             continue;
@@ -935,7 +966,7 @@ fn suggestions(nom: &str, donnees: &Map<String, Value>) -> R<Value> {
 pub(crate) fn verifier(nom: &str, donnees: &Map<String, Value>) -> R<Vec<Value>> {
     let mut copie = donnees.clone();
     deriver(nom, &mut copie, false)?;
-    champs::verifier_fiche(nom, &copie)
+    Ok(anomalies_en_json(&champs::verifier_fiche(nom, &saisie(nom, &copie)?)?))
 }
 
 /// LES ANOMALIES QUE L'ECRITURE TROUVERA : celles d'une fiche que l'import cree, derivee comme `ecrire_fiche` la
@@ -949,7 +980,7 @@ pub(crate) fn verifier(nom: &str, donnees: &Map<String, Value>) -> R<Vec<Value>>
 pub(crate) fn verifier_comme_a_l_ecriture(nom: &str, donnees: &Map<String, Value>) -> R<Vec<Value>> {
     let mut copie = donnees.clone();
     deriver(nom, &mut copie, true)?;
-    let mut anomalies = champs::verifier_fiche(nom, &copie)?;
+    let mut anomalies = anomalies_en_json(&champs::verifier_fiche(nom, &saisie(nom, &copie)?)?);
     avec_libelles(nom, &mut anomalies)?;
     Ok(anomalies)
 }
@@ -977,12 +1008,14 @@ fn verifier_fiche(charge: &Value) -> R<Value> {
     let mut copie = copie_en_objet(donnees)?;
     let nom = nom_de_fiche(nom_brut)?;
     deriver(nom, &mut copie, false)?;
-    let mut anomalies = champs::verifier_fiche(nom, &copie)?;
+    let lue = saisie(nom, &copie)?;
+    let mut anomalies = champs::verifier_fiche(nom, &lue)?;
     // Une case que la fiche ne decrit pas se dit comme a l'ecriture (`ecrire_fiche`).
-    anomalies.extend(champs::cases_inconnues(nom, &copie, true)?);
+    anomalies.extend(champs::cases_inconnues(nom, &lue, true)?);
+    let anomalies = anomalies_en_json(&anomalies);
     let objet = donnees.as_object();
     let declare = match objet {
-        Some(o) => champs::apercu_derive(nom, o)?,
+        Some(o) => socle::ecriture::en_valeur(&champs::apercu_derive(nom, &saisie(nom, o)?)?),
         None if champs::fiche(nom)?.iter().any(champs::Champ::calcule) => {
             return Err(erreur("AttributeError", socle::fichiers::attendu("un objet", nom_type(donnees))));
         }
@@ -1135,7 +1168,7 @@ pub(crate) fn changements(ctx: &Contexte, nom: &str, ancienne: &Value, copie: Ma
         if let Some(c) = c.filter(|c| c.calcule()) {
             let source = c.derive_de.as_deref().unwrap_or("");
             let lisible = champs_fiche.iter().find(|x| x.cle == source);
-            let vue = champs::combler_affichage(nom, anc)?;
+            let vue = combler_affichage(nom, anc)?;
             o.insert("libelle".into(), json!(lisible.map_or(&c.libelle, |l| &l.libelle)));
             o.insert("avant_lisible".into(), vue.get(source).cloned().unwrap_or(Value::Null));
             o.insert("apres_lisible".into(), donnees.get(source).cloned().unwrap_or(Value::Null));
@@ -1472,7 +1505,7 @@ fn cle_neuve(nom: &str, donnees: &Map<String, Value>, existants: &FichierDeFiche
 /// Les cases a cocher arrivees en texte redeviennent booleennes.
 fn coercer_booleens(nom: &str, donnees: &mut Map<String, Value>) -> R<()> {
     for c in champs::fiche(nom)? {
-        if c.forme != "booleen" {
+        if c.forme != champs::Forme::Booleen {
             continue;
         }
         let Some(v) = donnees.get(&c.cle) else { continue };
@@ -1567,7 +1600,7 @@ pub(crate) fn changements_a_dater(nom: &str, ancienne: &Value, donnees: &Map<Str
     // (`booleen_defaut`), les jours travailles du lundi au vendredi (`droit::conges::JoursTravailles`). La laisser ainsi
     // ne change rien.
     let mut defauts: HashMap<String, Value> =
-        champs::fiche(nom)?.into_iter().filter(|c| c.forme == "booleen").map(|c| (c.cle, Value::Bool(c.booleen_defaut))).collect();
+        champs::fiche(nom)?.into_iter().filter(|c| c.forme == champs::Forme::Booleen).map(|c| (c.cle, Value::Bool(c.booleen_defaut))).collect();
     defauts.insert("jours_travailles".into(), json!(droit::conges::JOURS_DE_LA_SEMAINE[..5]));
     let mut cles: Vec<String> = donnees
         .iter()
@@ -2046,7 +2079,7 @@ cette fiche-là, ou corrigez le numéro.",
         }
     }
     let mut anomalies = crate::routes::fiches::verifier(nom, &entiere)?;
-    anomalies.extend(champs::cases_inconnues(nom, &donnees, !matches!(forcer, Forcer::Tout))?);
+    anomalies.extend(anomalies_en_json(&champs::cases_inconnues(nom, &saisie(nom, &donnees)?, !matches!(forcer, Forcer::Tout))?));
     if forcer.refuse(&anomalies) {
         return Err(fiche_refusee(nom, &anomalies));
     }
@@ -2196,7 +2229,8 @@ pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preu
     };
     let expediteur = client.compte().to_lowercase();
     let code = fq::code_fiche().map_err(|m| erreur("OSError", m))?;
-    let q = fq::questionnaire(&code, &fq::posees(&|c| champs::utile("salarie", c)), &|_| String::new());
+    let utiles = champs::utiles("salarie")?;
+    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom = strip(prenom).to_string();
     let virgule_prenom = if prenom.is_empty() { String::new() } else { format!(" {}", prenom) };
@@ -2480,7 +2514,8 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
         // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
         ("iban", "FR7630001007941234567890185".to_string()),
     ]);
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| champs::utile("salarie", c)), &|cle| reponses.get(cle).cloned().unwrap_or_default());
+    let utiles = champs::utiles("salarie").map_err(|e| e.message)?;
+    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|cle| reponses.get(cle).cloned().unwrap_or_default());
     let sujet = bouton.map(|b| b.0.clone()).unwrap_or_else(|| "Re: fiche".to_string());
     envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code))
 }

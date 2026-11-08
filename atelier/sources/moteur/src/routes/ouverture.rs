@@ -292,9 +292,11 @@ impl VueFiche {
 /// montre (`fiches::montres`, que la fiche de l'entreprise `ent` commande).
 fn fiche_verifiee(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Value, ent: &Value) -> R<VueFiche> {
     let d = objet(donnees, nom)?;
-    let anomalies = champs::verifier_fiche(nom, d)?;
-    let comble = champs::combler_affichage(nom, d)?;
-    let declare = champs::apercu_derive(nom, &comble)?;
+    let lue = super::fiches::saisie(nom, d)?;
+    let anomalies = super::fiches::anomalies_en_json(&champs::verifier_fiche(nom, &lue)?);
+    let comble = super::fiches::combler_affichage(nom, d)?;
+    let lue = lue.comblee(nom)?;
+    let declare = socle::ecriture::en_valeur(&champs::apercu_derive(nom, &lue)?);
     // Sa pastille : archivee (une information), ses erreurs (a corriger, la compagnie le peut), ce qui est a verifier,
     // ou complete.
     let erreurs = anomalies.iter().filter(|a| a["gravite"] == "erreur").count();
@@ -352,7 +354,7 @@ fn fiche_verifiee(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Value,
     let geste_dit = if comble.get("actif") == Some(&Value::Bool(false)) { "Réactiver" } else { "Archiver" };
     let matricule_dit = (nom == "salarie" && !lu("code_salarie").is_empty()).then(|| format!("matricule {}", lu("code_salarie")));
     let donnees = brut(&Value::Object(comble));
-    let montres = super::fiches::montres(ctx, nom, &donnees, ent)?;
+    let montres = super::fiches::montres(ctx, nom, &lue, &super::fiches::saisie("entreprise", objet(ent, "entreprise")?)?)?;
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -725,9 +727,9 @@ struct EcranDesFiches {
 /// La description des cases de chaque fiche (`champs::description`, lue de `champs-base.json`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct Descriptions {
-    entreprise: Value,
-    salarie: Value,
-    spectacle: Value,
+    entreprise: Vec<champs::Description<'static>>,
+    salarie: Vec<champs::Description<'static>>,
+    spectacle: Vec<champs::Description<'static>>,
 }
 
 /// LA FICHE A FAIRE REMPLIR PAR LA PERSONNE : ce que dit l'invitation, et ce qui lui manque sans boite liee.
@@ -817,7 +819,12 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let deduction = match ctx.entreprise.deduction_forfaitaire_option.code() {
         None => "La compagnie ne l'applique pas : c'est une option de l'employeur, qui se règle dans la fiche de l'entreprise (« Avancé — cas particuliers »). Une fois l'option posée, la profession et l'accord du salarié se disent ici.".to_string(),
         Some(option) => {
-            let nom = description_entreprise.as_array().into_iter().flatten().find(|c| c["cle"] == "deduction_forfaitaire_option").map(|c| super::mot(&c["libelles"][option])).filter(|n| !n.is_empty()).unwrap_or_else(|| option.to_string());
+            let nom = description_entreprise
+                .iter()
+                .find(|c| c.cle == "deduction_forfaitaire_option")
+                .and_then(|c| c.libelles.and_then(|l| l.de(option)))
+                .filter(|n| !n.is_empty())
+                .map_or_else(|| option.to_string(), str::to_string);
             format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)
         }
     };

@@ -155,7 +155,7 @@ pub(crate) fn titre_de(v: Option<&Value>) -> String {
 }
 
 /// Les champs DECLARES que la DSN disait autrement que la fiche.
-fn ecarts(nom: &str, fiche: &dyn declarations::champs::ParCase, declare: &Map<String, Value>, mois: &str) -> R<Vec<Ecart>> {
+fn ecarts(nom: &str, fiche: &dyn crate::import::completer::ParCase, declare: &Map<String, Value>, mois: &str) -> R<Vec<Ecart>> {
     let mut out = Vec::new();
     for c in declarations::champs::fiche(nom)? {
         let Some(b) = declare.get(&c.cle).filter(|_| c.declare) else { continue };
@@ -211,7 +211,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Map<String, Value>> {
             f.insert("emploi_affichage".into(), Value::String(l));
         }
     }
-    let mut f = declarations::champs::combler_affichage("salarie", &f)?;
+    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -233,7 +233,7 @@ fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Map<String, Value>> {
         e.insert("siret".into(), json!(format!("{}{}", s, n)));
     }
     poser_licence(&mut e, &lecture.licences);
-    let mut e = declarations::champs::combler_affichage("entreprise", &e)?;
+    let mut e = crate::routes::fiches::combler_affichage("entreprise", &e)?;
     if e.get("raison_sociale").is_some_and(vrai) && !e.get("nom_affichage").is_some_and(vrai) {
         let t = titre_de(e.get("raison_sociale"));
         e.insert("nom_affichage".into(), json!(t));

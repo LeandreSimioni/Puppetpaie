@@ -78,13 +78,14 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 let c = fiche.iter().find(|c| c.cle == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
                 assert!(montre(&c.cle), "{} : « {} » demande, case masquee", nom, champ);
             }
+            let lue = declarations::champs::Saisie::de_la_fiche("entreprise", &ent).unwrap();
             for c in &fiche {
-                if c.exige(&ent) {
+                if c.exige(&lue) {
                     assert!(montre(&c.cle), "{} : « {} » exige et masque", nom, c.cle);
                 }
             }
             let demandee = par_champ(&m, "licence_spectacle").len() == 1;
-            let (montree, exigee) = (montre("licence_spectacle"), declarations::demarrage::licence_exigee(&ent, spectacle));
+            let (montree, exigee) = (montre("licence_spectacle"), declarations::demarrage::licence_exigee(&ent, spectacle).unwrap());
             assert_eq!(demandee, exigee, "{} : la licence demandee si et seulement si exigee", nom);
             assert!(!exigee || montree, "{} : la licence exigee, case masquee", nom);
             match idcc.as_str() {

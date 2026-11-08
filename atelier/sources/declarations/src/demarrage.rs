@@ -138,10 +138,7 @@ fn champ(cle: &str) -> Resultat<(String, String)> {
 fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Resultat<Manque> {
     let mut l = Manque::bloquante(cle, libelle, bloque, ou, champ, trouver);
     if let Some(k) = champ {
-        let c = champ_entreprise(k)?;
-        if !c.champs.is_empty() {
-            l.cases = Some(crate::champs::cases_dites(&c));
-        }
+        l.cases = champ_entreprise(k)?.champs.as_deref().map(crate::champs::cases_dites);
     }
     Ok(l)
 }
@@ -160,11 +157,10 @@ fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Opt
 /// - dans une convention ou la case se montre (`si` : 1790, 3252), la compagnie engage pour un spectacle
 ///   (`spectacle` : un spectacle configure pour « Pour demarrer », un contrat de spectacle pour la DSN). Un lieu en 1790
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
-pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> bool {
-    crate::champs::champ("entreprise", "licence_spectacle")
-        .ok()
-        .flatten()
-        .is_some_and(|c| c.exige(ent) || (spectacle && crate::champs::condition_remplie(&c.si, ent)))
+pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> Resultat<bool> {
+    let c = champ_entreprise("licence_spectacle")?;
+    let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(|e| e.message)?;
+    Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
 
 /// La compagnie emploie-t-elle des intermittents ? Un spectacle actif le dit : un CDDU se rattache a un spectacle.
@@ -200,6 +196,11 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<bool> {
     Ok(false)
 }
 
+/// La fiche typee `fiche` de la fiche `nom`, dans la forme d'une saisie, pour dire ce qui lui manque.
+fn saisie<F: Serialize + ?Sized>(nom: &str, fiche: &F) -> Resultat<crate::champs::Saisie> {
+    crate::champs::Saisie::de_la_fiche(nom, fiche).map_err(|e| e.message)
+}
+
 /// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
 /// dit qui (`salarie` : sa cle et son nom).
 fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>) -> Manque {
@@ -207,10 +208,9 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
         Some((r, _)) => r.to_string(),
         None => m.ecran.clone(),
     };
-    let (bloque, utile, sinon) = if m.actes.is_empty() {
-        (None, Some(crate::champs::actes_en_clair(&m.utile)), Some(m.sinon))
-    } else {
-        (Some(crate::champs::actes_en_clair(&m.actes)), None, None)
+    let (bloque, utile, sinon) = match m.sert {
+        crate::champs::Sert::Exigee(actes) => (crate::champs::actes_en_clair(&actes), None, None),
+        crate::champs::Sert::Utile { gestes, sinon } => (None, crate::champs::actes_en_clair(&gestes), sinon),
     };
     Manque {
         cle: match salarie {
@@ -226,7 +226,7 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
         champ: Some(racine),
         case: Some(m.ecran),
         trouver: m.aide,
-        cases: Some(m.cases).filter(|c| !c.is_empty()),
+        cases: m.cases,
         salarie: salarie.map(|(s, _)| s.to_string()),
         spectacle: None,
         qui: salarie.map(|(_, n)| n.to_string()),
@@ -245,7 +245,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // CE QUE LES ACTES EXIGENT DES FICHES (`exige_par` de `champs-base.json`, que chaque acte lit aussi :
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
-    for m in crate::champs::manquants("entreprise", ent).map_err(|e| e.message)? {
+    for m in crate::champs::manquants("entreprise", &saisie("entreprise", ent)?).map_err(|e| e.message)? {
         if m.cle == documents::conges_spectacles::CLE_ADHERENT && !intermittents {
             continue;
         }
@@ -257,7 +257,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             Some(n) => n,
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("salarie", &s.champs).map_err(|e| e.message)? {
+        for m in crate::champs::manquants("salarie", &saisie("salarie", &s.champs)?).map_err(|e| e.message)? {
             out.push(ligne(m, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -269,7 +269,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             Some(t) => t.to_string(),
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("spectacle", sp).map_err(|e| e.message)? {
+        for m in crate::champs::manquants("spectacle", &saisie("spectacle", sp)?).map_err(|e| e.message)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.to_string());
@@ -315,7 +315,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // QUAND ELLE EST EXIGEE de la compagnie (`exige_si` de `champs-base.json`, lu par `dsn::licence_du_contrat` aussi) :
     // en 1790 et en 3252 la case se montre sans etre exigee, dans l'audiovisuel elle ne se montre pas.
     // Elle peut etre datee (une par periode) : le contexte la resout au jour.
-    if ctx.licence(&ctx.aujourdhui).is_none_or(|l| l.trim().is_empty()) && licence_exigee(ent, intermittents) {
+    if ctx.licence(&ctx.aujourdhui).is_none_or(|l| l.trim().is_empty()) && licence_exigee(ent, intermittents)? {
         let (libelle, aide) = champ("licence_spectacle")?;
         out.push(manque("licence_spectacle", libelle, "la DSN", ENTREPRISE, Some("licence_spectacle"), aide)?);
     }

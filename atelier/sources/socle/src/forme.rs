@@ -30,6 +30,35 @@ pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> Resultat<T>
     serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, None, &e))
 }
 
+/// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
+/// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, comme `lire`.
+pub fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> Resultat<U>
+where
+    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
+{
+    let mut suivi = serde_path_to_error::Track::new();
+    table.deserialize(serde_path_to_error::Deserializer::new(v, &mut suivi)).map_err(|e| refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e)))
+}
+
+/// `lire_selon`, du texte JSON `texte`.
+pub fn lire_texte_selon<S, U>(texte: &str, table: S, phrase: &str) -> Resultat<U>
+where
+    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
+{
+    let mut d = serde_json::Deserializer::from_str(texte);
+    let mut suivi = serde_path_to_error::Track::new();
+    table.deserialize(serde_path_to_error::Deserializer::new(&mut d, &mut suivi)).map_err(|e| refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e)))
+}
+
+/// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
+pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> Resultat<U>
+where
+    T: serde::Serialize + ?Sized,
+    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
+{
+    lire_selon(&crate::ecriture::en_valeur(t), table, phrase)
+}
+
 /// Le fichier JSON `fichier` lu en `T` (`lire_texte`, sa lecture notee au registre d'un calcul suivi :
 /// `fichiers::lire_texte`). Le disque qui refuse se dit par `echec::du_disque` ; une forme fausse par `phrase`, le
 /// chemin du fichier, la cle et le detail a part.
