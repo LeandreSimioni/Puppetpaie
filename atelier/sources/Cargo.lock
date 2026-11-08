@@ -468,7 +468,6 @@ dependencies = [
  "rust_decimal",
  "rust_xlsxwriter",
  "serde",
- "serde_json",
  "socle",
 ]
 

@@ -84,10 +84,10 @@ pub(crate) struct EcritureRendue {
     libelle: String,
     debit: String,
     credit: String,
-    analytique: String,
+    analytique: Option<String>,
     mois: String,
-    auxiliaire: String,
-    auxiliaire_libelle: String,
+    auxiliaire: Option<String>,
+    auxiliaire_libelle: Option<String>,
 }
 
 /// Ce que rend `export-compta` : sa phrase, l'annee et ses mois (de `du` a `au`), les ecritures et leurs totaux, le
