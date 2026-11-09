@@ -383,8 +383,9 @@ pub struct Modification {
 pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<Vec<Modification>> {
     let (avant, apres) = (&pour_la_fabrique(avant), &pour_la_fabrique(apres));
     let mut out = Vec::new();
-    for (n, (titre, corps)) in m.articles.iter().enumerate() {
-        let n = n + 1;
+    for (i, (titre, corps)) in m.articles.iter().enumerate() {
+        // Le numero que le contrat signe lui donne ; un paragraphe qu'il taisait prend celui du texte a jour.
+        let n = if modele::s_imprime(corps, avant) { m.numero_imprime(i, avant) } else { m.numero_imprime(i, apres) };
         let (mut anciens, mut neufs, mut blocs): (Vec<String>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
         for (i, bloc) in corps.iter().enumerate() {
             // Un alinea conditionnel ote s'ecrit vide (`modele::retenu`).

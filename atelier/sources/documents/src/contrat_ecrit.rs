@@ -75,9 +75,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             let qui_remplace = ecrit(eng, |c| c.personne_remplacee.as_deref()).ok_or_else(|| {
                 format!("Le contrat de {} est conclu pour un remplacement : il comporte « le nom et la qualification professionnelle de la personne remplacée » (L. 1242-12, 1°). L'écrire dans l'engagement (Plus d'options › Personne remplacée). Rien n'est écrit.", nom)
             })?;
-            m.insert(Marqueur::ContratPersonneRemplacee, format!(", en remplacement de {}", qui_remplace));
-        } else {
-            m.insert(Marqueur::ContratPersonneRemplacee, String::new());
+            m.insert(Marqueur::ContratPersonneRemplacee, qui_remplace);
         }
     }
     // LE LIEU DE TRAVAIL (R1221-34, 2°) : celui que l'engagement dit ; sans lui, le siege de l'employeur (INFERENCE : un
@@ -226,8 +224,8 @@ impl Organismes {
 /// Les valeurs que tout contrat ecrit porte, quelle que soit sa nature : la categorie d'emploi (R1221-34, 3°), le motif
 /// d'un contrat d'usage, la periode d'essai (L1242-12, 6° ; R1221-34, 7°), les organismes de retraite complementaire et
 /// de prevoyance (L1242-12, 8° ; R1221-34, 14°), les mentions de renvoi (R1221-34, 8° a 10° et 14°, que R1221-35 permet
-/// de dire par un renvoi aux textes), et les clauses particulieres -- celles de l'engagement, sinon celles que la
-/// compagnie ecrit une fois dans sa configuration.
+/// de dire par un renvoi aux textes), et les clauses particulieres de l'engagement, s'il en dit (le modele les imprime
+/// par un alinea `[si contrat.clauses_particulieres]`).
 pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &FormeDEngagement, nat: &Nature, m: &mut Valeurs) -> Resultat<()> {
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
@@ -294,15 +292,9 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     }
     protection.push('.');
     m.insert(Marqueur::MentionsProtectionSociale, protection);
-    let clauses = ecrit(eng, |c| c.clauses_particulieres.as_deref()).or_else(|| texte(ent.clauses_particulieres.remplie()).map(str::to_string));
-    // Le contrat dit qu'il n'en a aucune.
-    m.insert(
-        Marqueur::ContratClausesParticulieres,
-        match clauses {
-            Some(c) => c,
-            None => "Aucune.".to_string(),
-        },
-    );
+    if let Some(c) = ecrit(eng, |c| c.clauses_particulieres.as_deref()) {
+        m.insert(Marqueur::ContratClausesParticulieres, c);
+    }
     Ok(())
 }
 
@@ -320,7 +312,7 @@ pub struct ModeleDuContrat {
 pub const EN_FRANCAIS: &str = "Le contrat de travail écrit est rédigé en français (code du travail, L. 1221-3) : une traduction peut s'ajouter au texte français, jamais le remplacer.";
 
 /// Les valeurs qui peuvent etre vides : un modele ne les cite que dans un alinea qui commence par `[si ce.marqueur]`.
-const PEUVENT_ETRE_VIDES: [Marqueur; 3] = [Marqueur::SpectacleNumeroObjet, Marqueur::RemunerationPeriode, Marqueur::RemunerationHorsBrut];
+const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqueur::RemunerationPeriode, Marqueur::RemunerationHorsBrut, Marqueur::ContratPersonneRemplacee, Marqueur::ContratClausesParticulieres];
 
 /// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
 #[derive(Serialize)]
@@ -446,14 +438,14 @@ pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
     (Marqueur::ContratDebut, "la date d'embauche", "tous"),
     (Marqueur::ContratFin, "la date du terme", "cddu_spectacle cdd"),
     (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", "cddu_spectacle cdd"),
-    (Marqueur::ContratPersonneRemplacee, "« , en remplacement de » et la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
+    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
     (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", "cddu_spectacle"),
     (Marqueur::ContratLieu, "le lieu de travail", "tous"),
     (Marqueur::ContratDatePaiement, "la date du paiement", "tous"),
     (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", "cdd cdi"),
     (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", "cdd cdi"),
     (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", "tous"),
-    (Marqueur::ContratClausesParticulieres, "les clauses particulières (celles de l'engagement, sinon celles de la configuration), ou « Aucune. »", "tous"),
+    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", "tous"),
     (Marqueur::RemunerationDetail, "la rémunération et ses composantes", "tous"),
     (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", "tous"),
     (Marqueur::RemunerationBrut, "le brut du (premier) mois", "tous"),

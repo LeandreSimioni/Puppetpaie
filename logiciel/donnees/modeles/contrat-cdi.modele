@@ -67,7 +67,7 @@ ARTICLE: Fin du contrat
 {{mentions.rupture}}
 
 ARTICLE: Clauses particulières
-{{contrat.clauses_particulieres}}
+[si contrat.clauses_particulieres] {{contrat.clauses_particulieres}}
 
 SIGNATURES:
 Fait en double exemplaire à {{employeur.commune}}, le {{contrat.debut}}.

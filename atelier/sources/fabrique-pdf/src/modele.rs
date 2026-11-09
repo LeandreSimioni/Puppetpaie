@@ -158,13 +158,25 @@ pub fn retenu<'a>(alinea: &'a str, vals: &Valeurs) -> Option<&'a str> {
     }
 }
 
+/// Un paragraphe s'imprime s'il n'a aucun alinéa ou si l'un d'eux s'écrit : celui dont chaque alinéa est ôté se tait
+/// entier, titre compris (le paragraphe « Clauses particulières » d'un contrat qui n'en a pas).
+pub fn s_imprime(alineas: &[String], vals: &Valeurs) -> bool {
+    alineas.is_empty() || alineas.iter().any(|a| retenu(a, vals).is_some())
+}
+
 impl Modele {
-    /// Le modèle tel qu'il s'écrit avec ces valeurs : les alinéas conditionnels retenus ou ôtés (`retenu`).
+    /// Le numéro que l'article d'indice `i` porte une fois imprimé avec ces valeurs : les paragraphes tus ne comptent pas.
+    pub fn numero_imprime(&self, i: usize, vals: &Valeurs) -> usize {
+        self.articles[..=i].iter().filter(|(_, a)| s_imprime(a, vals)).count()
+    }
+
+    /// Le modèle tel qu'il s'écrit avec ces valeurs : les alinéas conditionnels retenus ou ôtés (`retenu`), les
+    /// paragraphes tus ôtés (`s_imprime`).
     pub fn retenir(&self, vals: &Valeurs) -> Modele {
         let garder = |alineas: &[String]| alineas.iter().filter_map(|a| retenu(a, vals)).map(str::to_string).collect::<Vec<_>>();
         Modele {
             preambule: garder(&self.preambule),
-            articles: self.articles.iter().map(|(t, a)| (t.clone(), garder(a))).collect(),
+            articles: self.articles.iter().filter(|(_, a)| s_imprime(a, vals)).map(|(t, a)| (t.clone(), garder(a))).collect(),
             signatures: garder(&self.signatures),
             ..self.clone()
         }

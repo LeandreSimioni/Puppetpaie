@@ -44,9 +44,8 @@ fn un_modele_de_cdd_sans_son_motif_ni_le_terme_est_refuse() {
 fn la_personne_remplacee_n_est_due_que_pour_un_remplacement() {
     let nat = droit::natures::nature("cdd").unwrap();
     let t = texte("contrat-cdd.modele").replace("{{contrat.personne_remplacee}}", "");
-    let vide = Valeurs::from([(Marqueur::ContratPersonneRemplacee, String::new())]);
-    assert!(manques(&nat, &t, Some(&vide)).unwrap().is_empty());
-    let avec = Valeurs::from([(Marqueur::ContratPersonneRemplacee, ", en remplacement de Mme X, chargée de production".to_string())]);
+    assert!(manques(&nat, &t, Some(&Valeurs::new())).unwrap().is_empty());
+    let avec = Valeurs::from([(Marqueur::ContratPersonneRemplacee, "Mme X, chargée de production".to_string())]);
     let dits = manques(&nat, &t, Some(&avec)).unwrap().join(" ");
     assert!(dits.contains("L. 1242-12, 1°"), "{}", dits);
 }

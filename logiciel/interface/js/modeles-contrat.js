@@ -69,10 +69,6 @@ async function dessinerModelesContrat(cible, ouvert = null) {
   cible.innerHTML = `
     <p class="intro">${echapper(m.ecran.intro)}</p>
     <p class="discret">${echapper(m.ecran.en_francais)}</p>
-    <h3>Clauses particulières</h3>
-    <p class="discret">${echapper(m.ecran.clauses)}</p>
-    <textarea id="clauses-compagnie" rows="3" style="width:100%">${echapper(m.clauses_particulieres || "")}</textarea>
-    <div><button type="button" id="clauses-enregistrer">Enregistrer les clauses</button></div>
     <ol class="discret">${m.ecran.comment.map((x) => `<li>${echapper(x)}</li>`).join("")}</ol>
     ${m.natures.map((n) => `
       <h3>${echapper(n.nom.charAt(0).toUpperCase() + n.nom.slice(1))} <span class="discret">— ${echapper(n.libelle)}</span></h3>
@@ -91,18 +87,6 @@ async function dessinerModelesContrat(cible, ouvert = null) {
       dire(r.phrase);
     } catch (e) {
       dire(e.message, "erreur");
-    }
-  };
-  document.getElementById("clauses-enregistrer").onclick = async (ev) => {
-    ev.target.disabled = true;
-    try {
-      const r = await api("clauses-particulieres", { texte: document.getElementById("clauses-compagnie").value });
-      ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
-      dire(r.phrase);
-    } catch (e) {
-      dire(e.message, "erreur");
-    } finally {
-      ev.target.disabled = false;
     }
   };
   cible.querySelectorAll(".modele-contrat").forEach((bloc) => {

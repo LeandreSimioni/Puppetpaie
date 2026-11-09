@@ -92,7 +92,7 @@ ARTICLE: Droits voisins
 La rémunération ci-dessus couvre la seule prestation de travail. Toute fixation, reproduction ou communication au public de l'interprétation fera l'objet d'une autorisation écrite distincte et, le cas échéant, d'une rémunération séparée.
 
 ARTICLE: Clauses particulières
-{{contrat.clauses_particulieres}}
+[si contrat.clauses_particulieres] {{contrat.clauses_particulieres}}
 
 ARTICLE: Litiges
 En cas de litige portant sur l'interprétation ou l'application du présent contrat, les parties conviennent de s'en remettre à l'appréciation des tribunaux compétents, après épuisement des voies amiables.
@@ -143,6 +143,8 @@ Fait en double exemplaire à {{employeur.commune}}, le {{contrat.debut}}.
 #       modele qui l'omet est refuse s'il y en a.
 #   spectacle.titre               spectacle.numero_objet (vide sans numero)
 #
-#     ^ periode, hors_brut et numero_objet peuvent etre vides : chacun ne
-#       s'ecrit que dans un alinea qui commence par [si ce.marqueur].
+#     ^ periode, hors_brut, numero_objet et clauses_particulieres (celles
+#       que l'engagement dit) peuvent etre vides : chacun ne s'ecrit que
+#       dans un alinea qui commence par [si ce.marqueur]. Un paragraphe dont
+#       aucun alinea ne s'ecrit ne s'imprime pas.
 # ---------------------------------------------------------------------------

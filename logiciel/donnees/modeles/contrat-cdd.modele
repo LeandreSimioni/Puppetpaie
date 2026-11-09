@@ -31,7 +31,9 @@ Le salarié : **{{salarie.nom_complet}}**, né(e) le {{salarie.date_naissance}} 
 Il a été convenu et arrêté ce qui suit.
 
 ARTICLE: Objet et motif du contrat
-Le salarié est engagé par contrat de travail à durée déterminée pour le motif suivant : {{contrat.motif}}{{contrat.personne_remplacee}}.
+Le salarié est engagé par contrat de travail à durée déterminée pour le motif suivant : {{contrat.motif}}.
+
+[si contrat.personne_remplacee] Il est engagé en remplacement de {{contrat.personne_remplacee}}.
 
 La convention collective applicable est la convention collective nationale « {{employeur.convention}} » (IDCC {{employeur.idcc}}).
 
@@ -69,7 +71,7 @@ ARTICLE: Fin du contrat
 {{mentions.rupture}}
 
 ARTICLE: Clauses particulières
-{{contrat.clauses_particulieres}}
+[si contrat.clauses_particulieres] {{contrat.clauses_particulieres}}
 
 SIGNATURES:
 Fait en double exemplaire à {{employeur.commune}}, le {{contrat.debut}}.

@@ -21,7 +21,6 @@
 //! L'avenant garde ici son modele propre d'une nature, pose en texte entier dans `gabarits/` (`poser-modele-avenant`) ;
 //! les clauses particulieres de la compagnie (`clauses_particulieres` de sa fiche) s'ecrivent ici une fois.
 
-use droit::fiche::Lue as _;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -177,18 +176,6 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 0,
         ecran: ECRAN,
     },
-    Fiche {
-        route: Route::ClausesParticulieres,
-        geste: "Écrire les clauses particulières que chaque contrat reprend dès aujourd'hui.",
-        charge: &[Champ { nom: "texte", libelle: Affiche::new("Clauses"), forme: Forme::Texte, sens: "les clauses ; vide : aucune", avance: false }],
-        exemple: r#"{"texte":"Les répétitions ont lieu au théâtre."}"#,
-        rend: "phrase",
-        refus: &[OPERATION],
-        acte: Acte::Ecrit,
-        avance: true,
-        phrase: 60,
-        ecran: ECRAN,
-    },
 ];
 
 /// Une route de ce module, branchee sur l'enveloppe.
@@ -211,7 +198,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ModeleContratParDefaut => en_json(par_defaut(ctx, charge.lire()?)?),
         Route::PoserModeleAvenant => en_json(poser_avenant(ctx, charge.lire()?)?),
         Route::RetirerModeleAvenant => en_json(retirer_avenant(ctx, charge.lire()?)?),
-        Route::ClausesParticulieres => en_json(clauses(ctx, charge.lire()?)?),
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -603,12 +589,6 @@ struct ChargeAvenant {
     texte: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeClauses {
-    texte: String,
-}
-
 /// L'engagement d'un apercu : le mois de sa carte, la cle de son salarie, son debut.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -664,7 +644,6 @@ struct NatureDite {
 #[derive(Debug, Serialize)]
 struct EcranDesModeles {
     intro: &'static str,
-    clauses: &'static str,
     comment: [&'static str; 3],
     en_francais: &'static str,
     avenant: String,
@@ -675,7 +654,6 @@ struct EcranDesModeles {
 struct Modeles {
     phrase: String,
     natures: Vec<NatureDite>,
-    clauses_particulieres: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ecran: Option<EcranDesModeles>,
 }
@@ -725,12 +703,6 @@ struct Apercu {
     chemin: String,
 }
 
-/// Ce que rend `clauses-particulieres`.
-#[derive(Debug, Serialize)]
-struct ClausesEcrites {
-    phrase: &'static str,
-}
-
 impl Dite for Modeles {
     fn phrase(&self) -> &str {
         &self.phrase
@@ -749,11 +721,6 @@ impl Dite for Apercu {
     }
 }
 
-impl Dite for ClausesEcrites {
-    fn phrase(&self) -> &str {
-        self.phrase
-    }
-}
 
 // ------------------------------------------------------------------ les gestes
 
@@ -800,7 +767,6 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
     Ok(Modeles {
         phrase: format!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()),
         natures: sortie,
-        clauses_particulieres: ctx.entreprise.clauses_particulieres.portee().map(String::from),
         ecran: None,
     })
 }
@@ -1113,21 +1079,11 @@ fn retirer_avenant(ctx: &Contexte, c: ChargeNature) -> R<Modeles> {
     modeles(ctx, "Modèle d'avenant de la compagnie retiré : le modèle livré revient. ")
 }
 
-/// LES CLAUSES PARTICULIERES DE LA COMPAGNIE : `{texte}`, reprises dans chaque contrat a partir d'aujourd'hui ;
-/// l'engagement peut dire les siennes (« Plus d'options »). Vide : aucune.
-fn clauses(ctx: &Contexte, c: ChargeClauses) -> R<ClausesEcrites> {
-    let texte = c.texte.trim();
-    let clauses = if texte.is_empty() { None } else { Some(texte) };
-    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::clauses_particulieres(clauses.map(str::to_string)), Some(ctx.aujourdhui))?;
-    Ok(ClausesEcrites { phrase: "Clauses particulières enregistrées." })
-}
-
 /// CE QUE L'ECRAN DES MODELES DE CONTRAT DIT (`ecran` de `modeles-contrat`) : a quoi sert un modele, les clauses
 /// particulieres, comment faire celui de la compagnie, le francais, et ce que cite un modele d'avenant.
 fn ecran_des_modeles() -> EcranDesModeles {
     EcranDesModeles {
         intro: "Chaque contrat que le logiciel fait signer suit un modèle. Le modèle de base de chaque sorte de contrat porte déjà ce que la loi exige, rempli de lui-même depuis l'engagement et la configuration ; il suit les mises à jour et ne se modifie pas. La compagnie le copie en modèles spéciaux, choisit celui par défaut, et un engagement peut en choisir un autre (Avancé). Un contrat parti garde son texte.",
-        clauses: "Ce qu'elle ajoute à chacun de ses contrats (confidentialité, image, déplacements…). Un engagement peut dire les siennes à la place, dans « Plus d'options ».",
         comment: [
             "« Copier la base » fait un modèle spécial, qui garde la base dont il part : si elle change avec une mise à jour, le modèle dit quels paragraphes ont changé.",
             "Un modèle spécial s'écrit paragraphe par paragraphe : un titre, des alinéas. Une donnée s'insère par la liste et se remplit d'elle-même ; un alinéa peut ne s'écrire que si une donnée est remplie ; **texte** met en gras.",
