@@ -169,11 +169,11 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     }
     let mut chemins = Vec::new();
     // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`). Les refus des
-    // outils de l'atelier (la crate `atelier`, hors de cette liste) et du scenario du banc (la forme d'un fichier de
-    // scenario) vont au developpeur.
+    // outils de l'atelier (la crate `atelier`, hors de cette liste), du scenario du banc (la forme d'un fichier de
+    // scenario) et de la publication (le journal du workflow « Publier ») vont au developpeur.
     for crate_ in LE_LOGICIEL {
-        let scenario = espace().join("routes/src/scenario.rs");
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != scenario) {
+        let (scenario, publication) = (espace().join("routes/src/scenario.rs"), espace().join("moteur/src/publication"));
+        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != scenario && !p.starts_with(&publication)) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
                 if chemin {
