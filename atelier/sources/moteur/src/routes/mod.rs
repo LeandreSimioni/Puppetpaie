@@ -201,14 +201,14 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(etapes::ROUTES) => brute(etapes::route(o, &ctx, route, c)),
         _ if dans(engagement::ROUTES) => brute(engagement::route(o, &ctx, route, c)),
         _ if dans(contrats::ROUTES) => brute(contrats::route(o, &ctx, route, c)),
-        _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),
+        _ if dans(modeles_contrat::ROUTES) => modeles_contrat::route(&porte, charge),
         _ if dans(documents::ROUTES) => brute(documents::route(o, &ctx, route, c)),
         _ if dans(depots::ROUTES) => brute(depots::route(o, &ctx, route, c)),
         _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.
         _ if dans(crate::obligations::ROUTES) => brute(crate::obligations::route(&ctx, route, c)),
         _ if dans(fiches::ROUTES) => brute(fiches::route(o, &ctx, route, c)),
-        _ if dans(identite::ROUTES) => brute(identite::route(o, &ctx, route, c)),
+        _ if dans(identite::ROUTES) => identite::route(&porte, charge),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
         _ if dans(coffre::ROUTES) => brute(coffre::route(o, &ctx, route, c)),
