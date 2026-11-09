@@ -83,6 +83,10 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "le salarié : sa subrogation se tire de son contrat", avance: false },
             Champ { nom: "contrat", libelle: Affiche::new("Contrat"), forme: Forme::Texte, sens: "le contrat suspendu, quand plusieurs couvrent le jour", avance: true },
             Champ { nom: "date_accident", libelle: Affiche::new("Jour de l'accident"), forme: Forme::Date, sens: "le jour de l'accident", avance: true },
+            Champ { nom: "reprise", libelle: Affiche::new("Reprise"), forme: Forme::Date, sens: "le jour de la reprise, s'il est connu", avance: true },
+            Champ { nom: "connaissance_arret", libelle: Affiche::new("Arrêt connu le"), forme: Forme::Date, sens: "le jour où la compagnie a connu l'arrêt", avance: true },
+            Champ { nom: "connaissance_accident", libelle: Affiche::new("Accident connu le"), forme: Forme::Date, sens: "le jour où la compagnie a connu l'accident ; vide : le jour de l'accident", avance: true },
+            Champ { nom: "connaissance_heure", libelle: Affiche::new("Accident connu à"), forme: Forme::Texte, sens: "l'heure où la compagnie a connu l'accident, HH:MM ; vide : minuit", avance: true },
         ],
         exemple: r#"{"motif":"01","dernier_jour":"2026-11-02","debut":"2026-11-03","fin":"2026-11-10","salarie":"SVOBODA"}"#,
         rend: OBLIGATIONS_REND,
@@ -99,7 +103,7 @@ pub const ROUTES: &[Fiche] = &[
             SALARIE_ARRETE,
             DERNIER_JOUR,
             Champ { nom: "de", libelle: Affiche::new("De"), forme: Forme::Texte, sens: "arret ou accident", avance: false },
-            Champ { nom: "jour", libelle: Affiche::new("Jour"), forme: Forme::Date, sens: "le jour ; vide : le moteur reprend sa présomption", avance: false },
+            Champ { nom: "jour", libelle: Affiche::new("Jour"), forme: Forme::Date, sens: "le jour ; vide : le moteur reprend sa présomption (avec une heure, pour l'accident : le jour de l'accident)", avance: false },
             Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
         ],
         exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","de":"arret","jour":"2026-11-02"}"#,
@@ -143,8 +147,14 @@ pub const A_VENIR: &str = "a_venir";
 pub const INDETERMINE: &str = "indetermine";
 pub const A_LA_CHARGE_DU_SALARIE: &str = "a_la_charge_du_salarie";
 
-/// Minuit, en minutes depuis minuit : le debut d'un jour.
+/// Minuit, en minutes depuis minuit : le debut d'un jour. L'heure de connaissance de l'accident que la compagnie ne dit
+/// pas : decision de Leandre (09/11/2026, ticket #406 du prive) -- pre-remplie a minuit du jour de connaissance, a
+/// verifier ; les 48 heures (CSS R. 441-3) se comptent depuis elle. Elle ne sert qu'a l'echeance : aucune declaration
+/// ne la porte.
 const DEBUT_DU_JOUR: u32 = 0;
+
+/// Ce que la saisie dit de l'heure de connaissance de l'accident tant qu'elle n'est pas dite (minuit, `DEBUT_DU_JOUR`).
+const HEURE_A_VERIFIER: &str = "Minuit par défaut : si vous connaissez l'heure, la corriger donne plus de temps.";
 
 const JOURS: [&str; 7] =["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
@@ -462,11 +472,20 @@ impl FaitDit {
     }
 }
 
-/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`).
+/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`), et le
+/// jour et l'heure que la page met dans ses cases sans ecraser une saisie : ceux qui sont dits ; pour l'accident, ceux
+/// dont les 48 heures partent -- le jour de l'accident tant que la connaissance n'est pas dite, minuit (`DEBUT_DU_JOUR`)
+/// tant que l'heure ne l'est pas, et alors la phrase qui dit de la verifier (`heure_dite`).
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnaissanceDemandee {
     pub de: &'static str,
     titre: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jour: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heure: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heure_dite: Option<&'static str>,
 }
 
 /// Une suite de la declaration d'accident (les reserves, la feuille d'accident) : ce qu'elle est, son texte, jusqu'a
@@ -649,8 +668,17 @@ impl Obligation {
             CleDObligation::DeclarationAccident => Some(("accident", "Connaissance de l'accident")),
             _ => None,
         };
-        self.connaissance = match connaissance {
-            Some((de, titre)) if self.depart.is_some() && self.subrogation != Some(true) => Some(ConnaissanceDemandee { de, titre }),
+        self.connaissance = match (connaissance, &self.depart) {
+            (Some((de, titre)), Some(depart)) if self.subrogation != Some(true) => {
+                let accident = self.cle == CleDObligation::DeclarationAccident;
+                let jour = (accident || depart.saisi).then(|| depart.jour.clone());
+                let heure = match accident {
+                    true => Some(depart.heure.clone().unwrap_or_else(|| heure_lisible(DEBUT_DU_JOUR))),
+                    false => depart.saisi.then(|| depart.heure.clone()).flatten(),
+                };
+                let heure_dite = (accident && depart.heure.is_none()).then_some(HEURE_A_VERIFIER);
+                Some(ConnaissanceDemandee { de, titre, jour, heure, heure_dite })
+            }
             _ => None,
         };
         self
@@ -1000,7 +1028,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         match depart {
             None => out.push(m.indeterminee("La date de l'accident n'est pas saisie : les quarante-huit heures ne se comptent pas.")),
             Some(depart) => {
-                // INFERENCE : un depart sans heure dite court du debut de son jour (le delai le plus court).
+                // Un depart sans heure dite court de minuit (`DEBUT_DU_JOUR`, decision du 09/11/2026, #406).
                 let minute = match depart.minute {
                     Some(m) => m,
                     None => DEBUT_DU_JOUR,
@@ -1238,7 +1266,7 @@ pub(crate) struct ConnaissanceDite {
 }
 
 /// `arret-connaissance` : le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident ; un `jour` vide efface ce
-/// qui etait dit (le moteur reprend sa presomption).
+/// qui etait dit (le moteur reprend sa presomption), sauf pour l'accident avec une heure : c'est le jour de l'accident.
 fn arret_connaissance(ctx: &Contexte, c: ChargeConnaissance) -> R<ObligationsDeLArret> {
     let (_, a) = l_arret_de(ctx, &c.salarie, &c.dernier_jour)?;
     let saisie = connaissance_saisie(ctx, &a, c.de, &ConnaissanceDite { jour: c.jour, heure: c.heure })?;
@@ -1255,8 +1283,12 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
             a.salarie, a.motif
         )));
     }
-    let j = jour_saisi(ctx, &dite.jour, "La connaissance")?;
     let heure = heure_saisie(dite.heure.as_deref())?;
+    // Une heure dite sans jour : le jour de l'accident, celui que la saisie pre-remplit (`ConnaissanceDemandee`).
+    let j = match (jour_saisi(ctx, &dite.jour, "La connaissance")?, &heure, de) {
+        (None, Some(_), DeQuoi::Accident) => jour_facultatif(&a.date_accident)?,
+        (j, _, _) => j,
+    };
     if let (Some(j), DeQuoi::Accident, Some(acc)) = (j, de, jour_facultatif(&a.date_accident)?) {
         if j < acc {
             return Err(refus(format!(
@@ -1491,15 +1523,18 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
         Some(s) => ArretLu { reprise: jour_tape(&c.reprise), date_accident: jour_tape(&c.date_accident), ..ArretLu::de(s)? },
         None => ArretLu { motif: tape(&c.motif), dernier, debut: None, fin, reprise: jour_tape(&c.reprise), subrogation: None, date_accident: jour_tape(&c.date_accident), prolongations: &[] },
     };
-    // Ce que la compagnie dit avoir connu, tape et lisible.
-    let connue = |jour: &Option<String>, heure: Option<&str>| {
-        jour_tape(jour).map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.filter(|h| lire_heure(h).is_some()).map(String::from), saisi_le: compagnie::maintenant() })
+    // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
+    // l'accident, comme a l'enregistrement (`connaissance_saisie`).
+    let connue = |jour: Option<Jour>, heure: Option<&str>| {
+        jour.map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.map(String::from), saisi_le: compagnie::maintenant() })
     };
+    let heure_accident = tape(&c.connaissance_heure).filter(|h| lire_heure(h).is_some());
+    let jour_accident = jour_tape(&c.connaissance_accident).or_else(|| heure_accident.and(jour_tape(&c.date_accident)));
     let fiche = FicheDeSuivi {
         salarie: String::new(),
         dernier_jour_travaille: String::new(),
-        connaissance_arret: connue(&c.connaissance_arret, None),
-        connaissance_accident: connue(&c.connaissance_accident, tape(&c.connaissance_heure)),
+        connaissance_arret: connue(jour_tape(&c.connaissance_arret), None),
+        connaissance_accident: connue(jour_accident, heure_accident),
         accident_declare: None,
         attestation_salaire: None,
     };
