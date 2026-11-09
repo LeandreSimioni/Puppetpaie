@@ -116,7 +116,9 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         return Err(format!("Le contrat de {} ne dit aucune rémunération : la paie de son premier mois n'a pas de salaire de base. Rien n'est écrit.", nom));
     }
     m.insert(Marqueur::RemunerationDetail, et(&morceaux));
-    m.insert(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(&paie.remuneration));
+    if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
+        m.insert(Marqueur::RemunerationHorsBrut, h);
+    }
     m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
     m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
     // LA PERIODICITE DU PAIEMENT (R1221-34, 11°) : une fois par mois (L3242-1). INFERENCE : par virement, comme le contrat
@@ -411,14 +413,14 @@ pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
     (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", "tous"),
     (Marqueur::ContratClausesParticulieres, "les clauses particulières (celles de l'engagement, sinon celles de la configuration), ou « Aucune. »", "tous"),
     (Marqueur::RemunerationDetail, "la rémunération et ses composantes", "tous"),
-    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements), vide sinon", "tous"),
+    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", "tous"),
     (Marqueur::RemunerationBrut, "le brut du (premier) mois", "tous"),
     (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", "tous"),
-    (Marqueur::RemunerationPeriode, "« pour le mois de … » quand le contrat se poursuit après le mois", "cddu_spectacle"),
+    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", "cddu_spectacle"),
     (Marqueur::RemunerationCachets, "le nombre de cachets", "cddu_spectacle"),
     (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", "cddu_spectacle"),
     (Marqueur::SpectacleTitre, "le titre du spectacle", "cddu_spectacle"),
-    (Marqueur::SpectacleObjet, "son numéro d'objet, entre parenthèses (vide sans numéro)", "cddu_spectacle"),
+    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", "cddu_spectacle"),
     (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", "tous"),
     (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", "tous"),
     (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", "tous"),

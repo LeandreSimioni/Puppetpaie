@@ -201,28 +201,24 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> Resu
 }
 
 /// Ce que le contrat verse EN PLUS du brut -- les lignes non soumises qui s'ajoutent (defraiements,
-/// indemnites hors assiette), convenues comme le reste : « , auxquels s'ajoutent 3 défraiements au
-/// forfait à 20,20 € hors brut ». Vide sans elles : la phrase du modele reste alors mot pour mot
-/// celle d'avant. Une ligne qui retranche (un acompte) n'est pas une clause du contrat.
-pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> String {
+/// indemnites hors assiette), convenues comme le reste : « 3 défraiements au forfait à 20,20 € ». `None` sans elles :
+/// l'alinea du modele qui les dit ne s'ecrit pas (`[si remuneration.hors_brut]`). Une ligne qui retranche (un acompte)
+/// n'est pas une clause du contrat.
+pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
     let morceaux: Vec<String> =
         remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > socle::num::Decimal::ZERO).map(ligne_citee).collect();
-    if morceaux.is_empty() {
-        String::new()
-    } else {
-        format!(", auxquels s'ajoutent {} hors brut", et(&morceaux))
-    }
+    (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 
-/// « pour le mois d'octobre 2026 » quand le contrat se poursuit.
-fn periode_remuneration(e: &Eng) -> Resultat<String> {
+/// « le mois d'octobre 2026 » quand le contrat se poursuit apres le mois : le total et le net sont ceux de ce mois.
+fn periode_remuneration(e: &Eng) -> Resultat<Option<String>> {
     if e.f.dernier_mois {
-        return Ok(String::new());
+        return Ok(None);
     }
     let mois = Mois::lire(&e.f.mois)?;
     let nom = mois.nom(socle::mois::Graphie::Accentuee);
     let de = if nom.chars().next().is_some_and(|c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
-    Ok(format!(" pour le mois {}{} {}", de, nom, mois.annee()))
+    Ok(Some(format!("le mois {}{} {}", de, nom, mois.annee())))
 }
 
 /// Les jours joues, et OU chacun se joue quand ils different.
@@ -273,8 +269,12 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     let paiement = e.f.date_paiement.as_deref().filter(|p| !p.is_empty()).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
     poser(Marqueur::ContratDatePaiement, Jour::lire(paiement)?.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
-    poser(Marqueur::RemunerationPeriode, periode_remuneration(e)?);
-    poser(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(remuneration));
+    if let Some(p) = periode_remuneration(e)? {
+        poser(Marqueur::RemunerationPeriode, p);
+    }
+    if let Some(h) = remuneration_hors_brut(remuneration) {
+        poser(Marqueur::RemunerationHorsBrut, h);
+    }
     poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
@@ -286,9 +286,10 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
     // l. 1161-1162) : un spectacle qui n'en a pas encore fait son contrat, qui n'en dit rien. Le bulletin, lui, l'exige
-    // (`exige_par` de `champs-base.json`). Le marqueur est un morceau de phrase : sans numero, il ne dit rien.
-    let objet = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty());
-    poser(Marqueur::SpectacleObjet, if let Some(n) = objet { format!(" (numéro d'objet France Travail {})", n) } else { String::new() });
+    // (`exige_par` de `champs-base.json`). Sans numero, pas de valeur : l'alinea qui le dit ne s'ecrit pas.
+    if let Some(n) = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        poser(Marqueur::SpectacleNumeroObjet, n.to_string());
+    }
     Ok(m)
 }
 
@@ -387,7 +388,9 @@ pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<V
         let n = n + 1;
         let (mut anciens, mut neufs, mut blocs): (Vec<String>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
         for (i, bloc) in corps.iter().enumerate() {
-            let (ancien, neuf) = (normaliser(&texte_brut(bloc, avant)?), normaliser(&texte_brut(bloc, apres)?));
+            // Un alinea conditionnel ote s'ecrit vide (`modele::retenu`).
+            let ecrit = |v: &modele::Valeurs| -> Resultat<String> { modele::retenu(bloc, v).map(|t| texte_brut(t, v).map(|s| normaliser(&s))).transpose().map(Option::unwrap_or_default) };
+            let (ancien, neuf) = (ecrit(avant)?, ecrit(apres)?);
             if ancien != neuf {
                 anciens.push(ancien);
                 neufs.push(neuf);

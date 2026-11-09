@@ -139,6 +139,38 @@ pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
     Ok(m)
 }
 
+/// UN ALINÉA CONDITIONNEL : `[si employeur.licence] texte` ne s'écrit que si la valeur de ce marqueur n'est pas vide.
+/// Rend (le marqueur, le texte de l'alinéa) ; `None` : l'alinéa s'écrit toujours.
+pub fn condition(alinea: &str) -> Option<(&str, &str)> {
+    let reste = alinea.trim_start_matches(est_blanc).strip_prefix("[si ")?;
+    let (cle, texte) = reste.split_once(']')?;
+    let cle = strip(cle);
+    let (a, b) = cle.split_once('.')?;
+    let nom = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+    (nom(a) && nom(b)).then(|| (cle, texte.trim_start_matches(est_blanc)))
+}
+
+/// L'alinéa tel qu'il s'écrit avec ces valeurs : son texte, ou `None` s'il est conditionné par une valeur vide ou absente.
+pub fn retenu<'a>(alinea: &'a str, vals: &Valeurs) -> Option<&'a str> {
+    match condition(alinea) {
+        Some((cle, texte)) => vals.get(cle).filter(|v| !strip(v).is_empty()).map(|_| texte),
+        None => Some(alinea),
+    }
+}
+
+impl Modele {
+    /// Le modèle tel qu'il s'écrit avec ces valeurs : les alinéas conditionnels retenus ou ôtés (`retenu`).
+    pub fn retenir(&self, vals: &Valeurs) -> Modele {
+        let garder = |alineas: &[String]| alineas.iter().filter_map(|a| retenu(a, vals)).map(str::to_string).collect::<Vec<_>>();
+        Modele {
+            preambule: garder(&self.preambule),
+            articles: self.articles.iter().map(|(t, a)| (t.clone(), garder(a))).collect(),
+            signatures: garder(&self.signatures),
+            ..self.clone()
+        }
+    }
+}
+
 /// Lit le fichier `chemin` (UTF-8) et le découpe.
 pub fn lire_fichier(chemin: &str) -> Result<Modele, Refus> {
     let octets = std::fs::read(chemin)

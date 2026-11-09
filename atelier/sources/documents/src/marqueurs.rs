@@ -70,7 +70,7 @@ marqueurs! {
     RemunerationBrut = "remuneration.brut",
     RemunerationNetEstime = "remuneration.net_estime",
     SpectacleTitre = "spectacle.titre",
-    SpectacleObjet = "spectacle.objet",
+    SpectacleNumeroObjet = "spectacle.numero_objet",
     CertificatDate = "certificat.date",
     ContratClausesParticulieres = "contrat.clauses_particulieres",
     ContratDureeTravail = "contrat.duree_travail",
