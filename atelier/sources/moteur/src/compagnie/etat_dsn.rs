@@ -19,7 +19,7 @@ use socle::mois::Mois;
 /// Où en est la DSN d'un mois : « passee », « attente », « refusee » (le journal) ; « importee » (la DSN de l'ancien
 /// logiciel) ; « sans_trace » (un mois tenu avant dont rien ne garde la DSN, qui ne se réclame pas) ; « a_deposer » (un
 /// mois de ce logiciel dont la DSN n'est pas partie).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Etat {
     Passee,
@@ -33,7 +33,9 @@ pub(crate) enum Etat {
 /// L'état de la DSN d'un mois : `etat`, ce que l'écran en dit (`courte`, `phrase` ; aucun mot pour une DSN à déposer),
 /// le jour du dépôt (`quand`, au journal), et pour une DSN du journal les `anomalies` du bilan et si France Travail a
 /// renvoyé l'attestation employeur qu'il en édite (`aer_recue`).
-#[derive(Debug, Clone, Serialize)]
+/// Il se relit avec la reponse qui le porte (le refus d'une seconde DSN du mois, `routes::enveloppe::APart`).
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EtatDsn {
     pub(crate) etat: Etat,
     #[serde(skip_serializing_if = "Option::is_none")]

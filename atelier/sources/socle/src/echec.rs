@@ -278,10 +278,6 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
     crate::memoire::tenu(les_echecs())
 }
 
-/// `Echec`, sous le nom que lui donnent `routes::rappels`, `routes::dossier_salarie` et `routes::engagement` du moteur ;
-/// un refus n'a qu'un type.
-pub type Refus = Echec;
-
 // ============================================================================================ ce qui va a part
 
 /// Entre la phrase d'un refus et ce qu'il porte a part : un chemin, une cle, un fichier, une donnee pour la page.

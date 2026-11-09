@@ -35,11 +35,15 @@ use socle::mois::Mois;
 pub use envois::depot_acte::DepotFait;
 use socle::echec::Echec;
 
-/// Une erreur qui porte une donnee de plus pour la page (`etat`, `manques`...) : sa phrase et la donnee
-/// voyagent ensemble dans le message, que l'enveloppe separe (`routes::enveloppe::Refus` : la phrase, et la donnee dans
-/// `a_part`).
-pub(crate) fn avec_donnee<T: serde::Serialize>(classe: Classe, message: impl Into<String>, cle: &str, donnee: T) -> Echec {
-    Echec { classe: Some(classe), message: socle::echec::avec(message, std::collections::BTreeMap::from([(cle, donnee)])) }
+/// UN REFUS DE DEPOT QUI PORTE OU EN EST CE QUI LE REFUSE (la DSN du mois, le test du fichier) : sa phrase, et l'etat a
+/// part (`routes::enveloppe::APart`, case `etat`).
+fn avec_etat<T: serde::Serialize>(classe: Classe, message: impl Into<String>, etat: &T) -> Echec {
+    /// Ce que le refus porte a part : l'etat.
+    #[derive(serde::Serialize)]
+    struct Etat<'a, T> {
+        etat: &'a T,
+    }
+    Echec { classe: Some(classe), message: socle::echec::avec(message, Etat { etat }) }
 }
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
@@ -215,7 +219,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
     // celui d'un test revient bel et bien (constate sur des DPAE de test : le certificat 41 les dit enregistrees,
     // code 99).
     if let (etats::EtatDuTest::Testee, Some(l)) = (etat.etat, &etat.conforme) {
-        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu.map(str::to_string), contournement: None });
+        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu.clone(), contournement: None });
     }
     let raison = contournement.trim();
     if !raison.is_empty() {
@@ -227,7 +231,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
         }
         return Ok(Ouverture { test: None, flux: None, empreinte: etat.empreinte.clone(), compte_rendu: None, contournement: Some(raison.to_string()) });
     }
-    Err(avec_donnee(Classe::RepetitionManquante, phrase_repetition(quoi.nom(), &etat), "etat", &etat))
+    Err(avec_etat(Classe::RepetitionManquante, phrase_repetition(quoi.nom(), &etat), &etat))
 }
 
 /// LES ENGAGEMENTS QU'UN SIGNALEMENT COUVRE : un signalement porte un individu, un contrat, un evenement
@@ -476,14 +480,13 @@ pub fn deposer_dsn_dans(
             // L'ANNULE-ET-REMPLACE EN REGLE PART SANS QU'ON FORCE RIEN (ses gardes passent toujours).
             let remplace = verifier_depot_remplacement(ctx, le_mois, &apercu, nic)?;
             if etat_mois.partie() && !remplace && !forcer {
-                return Err(avec_donnee(
+                return Err(avec_etat(
                     Classe::DsnDejaDeposee,
                     format!(
                         "{}{}. Rien n'est parti : la plate-forme n'accepte pas une seconde DSN normale pour le même mois (cahier technique DSN §1.4.3.2). Pour corriger, refaites la DSN du mois : elle sortira en annule-et-remplace.",
                         { let l = socle::mois::Mois::en_clair(&mois); l[..1].to_uppercase() + &l[1..] },
                         etat_mois.phrase.iter().map(|p| format!(" : {}", p)).collect::<String>()
                     ),
-                    "etat",
                     &etat_mois,
                 ));
             }

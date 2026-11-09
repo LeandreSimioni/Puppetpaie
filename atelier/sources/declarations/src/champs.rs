@@ -1892,7 +1892,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
 
 /// La gravite d'une anomalie : « erreur » quand la donnee est certainement fausse, « avertissement » quand elle est
 /// seulement suspecte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Gravite {
     Erreur,
@@ -1900,8 +1900,10 @@ pub enum Gravite {
 }
 
 /// UNE ANOMALIE D'UNE FICHE : la case (`champ`), sa gravite, ce qui ne va pas ; si l'ecran peut passer outre (`forcable`)
-/// et pourquoi ; le libelle de la case, que le moteur pose quand la page le montre (`libelle`).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// et pourquoi ; le libelle de la case, que le moteur pose quand la page le montre (`libelle`). Elle se relit avec la
+/// reponse qui la porte (le refus d'une fiche, `routes::enveloppe::APart`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Anomalie {
     pub champ: String,
     pub gravite: Gravite,

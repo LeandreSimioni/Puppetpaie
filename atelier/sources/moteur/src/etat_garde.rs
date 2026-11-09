@@ -38,7 +38,6 @@ use std::sync::{Arc, Condvar, LockResult, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
@@ -429,7 +428,7 @@ impl Serialize for ALaPage<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             // La reponse telle que la porte l'a ecrite, et non le texte qui la garde.
-            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Value>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
+            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
             ALaPage::Faite(r) => r.serialize(s),
         }
     }

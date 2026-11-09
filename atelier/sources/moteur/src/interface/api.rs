@@ -172,7 +172,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
                 duree_ms: duree.as_millis() as u64,
                 mois,
                 mois_illisible,
-                refus: (!r.a_part.est_vide()).then_some(&r.a_part),
+                refus: r.a_part.as_ref(),
             };
             let trace = crate::compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
             if let Err(e) = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
