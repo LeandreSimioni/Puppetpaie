@@ -157,7 +157,7 @@ fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, 
             if v.get("pret").and_then(Value::as_bool) == Some(true) && !frais {
                 v["veille"] = etat_veille.unwrap_or_else(|| json!({"minutes": 0, "dernier": {}, "en_cours": false}));
                 v["maj"] = crate::compagnie::maj::RECHERCHE.etat();
-                v["signalements"] = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).map(Rendu::brut)).en_json();
+                v["signalements"] = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).and_then(crate::routes::enveloppe::en_json)).en_json();
             }
             rendu(Ok(v))
         }

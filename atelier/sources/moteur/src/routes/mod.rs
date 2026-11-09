@@ -173,7 +173,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
     // ECRIRE AU DEVELOPPEUR, ET CE QUI S'Y RATTACHE, SE SERT AUSSI SANS COMPAGNIE : depuis l'accueil, ou en ligne de
     // commande sans `--racine` (`filet::sans_compagnie`).
     if catalogue::dans(filet::ROUTES, route).is_some() && !crate::service::compagnie_nommee(o) {
-        return brute(filet::route_sans_compagnie(o, route, charge.brute()));
+        return filet::route_sans_compagnie(o, route, charge);
     }
     // Le catalogue lui-meme, ce que `moteur routes --json` imprime : il ne porte sur aucune compagnie non plus.
     if route == Route::Routes {
@@ -212,7 +212,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
         _ if dans(coffre::ROUTES) => brute(coffre::route(o, &ctx, route, c)),
-        _ if dans(filet::ROUTES) => brute(filet::route(o, &ctx, route, c)),
+        _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
         _ if dans(archives::ROUTES) => brute(archives::route(o, &ctx, route, c)),
         _ if dans(historique::ROUTES) => brute(historique::route(o, &ctx, route, c)),

@@ -137,7 +137,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> Value {
 
 /// Ce que l'ecran « Ce qui est parti chez l'editeur » montre de chaque annee partie, la plus recente en tete : exactement ce
 /// qui a quitte le poste (`contenu`), et quand.
-pub fn pour_l_ecran(racine: &Path) -> Vec<Value> {
+pub fn pour_l_ecran(racine: &Path) -> Vec<AnneePartie> {
     let mut v: Vec<(String, Value)> = parties(racine).into_iter().collect();
     v.sort_by(|a, b| b.0.cmp(&a.0));
     v.into_iter()
@@ -145,12 +145,24 @@ pub fn pour_l_ecran(racine: &Path) -> Vec<Value> {
             let an: i64 = annee.parse().ok()?;
             let paies = e.get("paies").and_then(Value::as_u64)?;
             let poste = e.get("poste").cloned().unwrap_or(Value::Null);
-            Some(json!({
-                "annee": an,
-                "paies": paies,
-                "parti_le": e.get("parti_le").cloned().unwrap_or(Value::Null),
-                "contenu": {"annee": an, "paies": paies, "poste": poste},
-            }))
+            Some(AnneePartie { annee: an, paies, parti_le: e.get("parti_le").and_then(Value::as_str).map(String::from), contenu: ContenuParti { annee: an, paies, poste } })
         })
         .collect()
+}
+
+/// Une annee partie, telle que l'ecran du filet la montre : son nombre de paies, quand il est parti, et ce qui est parti.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AnneePartie {
+    pub annee: i64,
+    pub paies: u64,
+    pub parti_le: Option<String>,
+    pub contenu: ContenuParti,
+}
+
+/// Exactement ce qui a quitte le poste pour une annee.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ContenuParti {
+    pub annee: i64,
+    pub paies: u64,
+    pub poste: Value,
 }
