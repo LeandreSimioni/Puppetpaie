@@ -49,7 +49,7 @@ impl<'a> Comparateur<'a> {
                     if j >= bhi {
                         break;
                     }
-                    let k = j.checked_sub(1).and_then(|p| j2len.get(&p)).copied().unwrap_or(0) + 1;
+                    let k = j.checked_sub(1).and_then(|p| j2len.get(&p)).copied().into_iter().sum::<usize>() + 1;
                     nouveau.insert(j, k);
                     if k > bestsize {
                         besti = i + 1 - k;

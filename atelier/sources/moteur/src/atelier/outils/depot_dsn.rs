@@ -19,7 +19,7 @@ pub static SPEC: Spec = Spec {
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    faire(cadre, args).unwrap_or_else(|e| super::refus(&e))
+    super::code(faire(cadre, args))
 }
 
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
@@ -31,20 +31,20 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         None => None,
         Some(t) => match t.trim().parse::<i64>() {
             Ok(n) => Some(n),
-            Err(_) => {
-                dire!("--ordre N : un entier positif.");
+            Err(e) => {
+                dire!("--ordre N : un entier positif ({}).", e);
                 return Ok(2);
             }
         },
     };
     refuser_si_pas_redirige(cadre, Organisme::Dsn, "le depot de test")?;
-    let designee = match socle::mois::Mois::lire(fichier) {
-        Ok(m) => crate::routes::depots::designee(&cadre.ctx, &crate::routes::depots::Designation::du_mois(crate::routes::depots::Quoi::Dsn, m))?.0,
-        Err(_) => fichier.to_string(),
+    let designee = match socle::mois::Mois::du_texte(fichier) {
+        Some(m) => crate::routes::depots::designee(&cadre.ctx, &crate::routes::depots::Designation::du_mois(crate::routes::depots::Quoi::Dsn, m))?.0,
+        None => fichier.to_string(),
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();
-    let environnement = args.texte("environnement").unwrap_or("production");
+    let environnement = super::avec_defaut(args, "environnement")?;
     let fait = depot_acte::deposer_dsn_dans(&cadre.ctx, &designee, false, Some(&Preuve::default()), "atelier", environnement, false, "", ordre)?;
     dire!("Depot de TEST {} ({}) : rien n'est conserve.", fait.mois, environnement);
     dire!("Reponse du point de depot :\n{}", if fait.reponse.is_empty() { "(vide)" } else { fait.reponse.as_str() });
