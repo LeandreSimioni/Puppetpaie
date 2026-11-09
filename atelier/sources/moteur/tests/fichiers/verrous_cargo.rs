@@ -51,12 +51,31 @@ fn dependances(verrou: &Path, nom: &str) -> Option<BTreeSet<String>> {
     dans_le_bloc.then_some(deps)
 }
 
+/// Les dependances que le `Cargo.toml` du paquet ne prend que pour ses essais (`[dev-dependencies]`) : le verrou de
+/// l'espace les porte, celui de la fenetre non (Cargo ne resout pas les essais d'un paquet pris par son chemin).
+fn des_essais_seulement(paquet: &str) -> BTreeSet<String> {
+    let t = std::fs::read_to_string(sources().join(paquet).join("Cargo.toml")).unwrap();
+    let noms = |section: &str| -> BTreeSet<String> {
+        t.split(&format!("\n{}\n", section))
+            .nth(1)
+            .map(|s| s.split("\n[").next().unwrap())
+            .into_iter()
+            .flat_map(|s| s.lines())
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| l.split([' ', '=']).next().unwrap().to_string())
+            .collect()
+    };
+    noms("[dev-dependencies]").difference(&noms("[dependencies]")).cloned().collect()
+}
+
 #[test]
 fn le_verrou_de_la_fenetre_connait_les_dependances_du_moteur_et_de_la_fabrique() {
     let fenetre = sources().join("fenetre/Cargo.lock");
-    for (paquet, verrou) in [("socle", "Cargo.lock"), ("droit", "Cargo.lock"), ("engagement", "Cargo.lock"), ("documents", "Cargo.lock"), ("declarations", "Cargo.lock"), ("envois", "Cargo.lock"), ("moteur", "Cargo.lock"), ("fabrique-pdf", "fabrique-pdf/Cargo.lock")] {
+    for (paquet, verrou) in [("socle", "Cargo.lock"), ("droit", "Cargo.lock"), ("engagement", "Cargo.lock"), ("documents", "Cargo.lock"), ("declarations", "Cargo.lock"), ("envois", "Cargo.lock"), ("compagnie", "Cargo.lock"), ("import", "Cargo.lock"), ("moteur", "Cargo.lock"), ("fabrique-pdf", "fabrique-pdf/Cargo.lock")] {
         let sien = sources().join(verrou);
-        let attendu = dependances(&sien, paquet).unwrap_or_else(|| panic!("{} absent de son propre verrou", paquet));
+        let essais = des_essais_seulement(paquet);
+        let attendu: BTreeSet<String> = dependances(&sien, paquet).unwrap_or_else(|| panic!("{} absent de son propre verrou", paquet)).difference(&essais).cloned().collect();
         let vu = dependances(&fenetre, paquet).unwrap_or_else(|| panic!("{} absent du verrou de la fenetre", paquet));
         let manquantes: Vec<_> = attendu.difference(&vu).collect();
         let en_trop: Vec<_> = vu.difference(&attendu).collect();
