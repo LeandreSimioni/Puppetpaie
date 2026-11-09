@@ -36,7 +36,7 @@ fn de_la_validation_a_l_attestation() {
     assert!(engagement::stock::vue_du_mois(&c, "2026-03").unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie.as_deref() != Some("FULLER"))), "un motif refuse : rien n'est ecrit");
     reussi(&valider(&c, "2026-03", None, &saisie("02"), "2026-02-25"));
     // Le contrat CDD se fabrique depuis l'engagement valide : un modele qui tairait une mention de L1242-12 se refuse
-    // (`refuser_les_mentions_absentes`), le PDF imprime porte donc la nature, le motif de recours et le terme.
+    // (`documents::contrat_ecrit::manques`), le PDF imprime porte donc la nature, le motif de recours et le terme.
     let contrat = json!({"mois": "2026-03", "contrats": [{"salarie": "FULLER", "debut": "2026-03-02"}]});
     reussi(&route(&c, "contrats-imprimer", contrat, "2026-02-25"));
     assert!(c.join("sorties/2026-03/envoi/Contrat_FULLER_FU2.26.01_Mars2026.pdf").exists(), "le contrat CDD de FULLER");

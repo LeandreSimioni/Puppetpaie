@@ -139,6 +139,23 @@ pub fn pour_la_fabrique(v: &Valeurs) -> fabrique_pdf::modele::Valeurs {
     v.iter().map(|(k, x)| (k.nom().to_string(), x.clone())).collect()
 }
 
+/// Les champs que ce texte cite, dans l'ordre : chacun connu (`Ok`) ou non (`Err`, son nom).
+pub fn cites(texte: &str) -> Vec<Result<Marqueur, String>> {
+    let mut sortie = Vec::new();
+    let mut i = 0;
+    while let Some(k) = texte[i..].find("{{") {
+        let a = i + k;
+        match fabrique_pdf::modele::marqueur_en(texte, a) {
+            Some((cle, fin)) => {
+                sortie.push(Marqueur::lire(cle).ok_or_else(|| cle.to_string()));
+                i = fin;
+            }
+            None => i = a + 2,
+        }
+    }
+    sortie
+}
+
 /// UN MORCEAU D'UN MODELE : du texte, ou un marqueur.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Morceau {

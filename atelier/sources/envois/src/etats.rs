@@ -1259,6 +1259,8 @@ pub struct Parti {
     pub fichier: String,
     pub quand: String,
     pub signe: Option<String>,
+    /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
+    pub modele: Option<String>,
 }
 
 impl Parti {
@@ -1277,7 +1279,7 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &str, numero: Option<&str>) -> O
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
             for c in e.detail.contrats.iter().filter(|c| c.salarie.as_str() == salarie && c.numero_dit() == numero && !c.est_avenant()) {
-                parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None });
+                parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None, modele: c.modele.clone() });
             }
         }
         for d in revenus(l) {

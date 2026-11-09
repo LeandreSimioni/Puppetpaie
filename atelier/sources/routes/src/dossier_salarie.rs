@@ -759,7 +759,14 @@ fn mois_puppetpaie(
                 continue;
             }
             let chemin = tmp.join(format!("C_{}_{}.pdf", cle, mois));
-            documents::contrat::ecrire_contrat(ctx, &a_lui, &ent, &chemin, &[])?;
+            // Chaque contrat avec le modele fige a son depart ; un contrat qui n'est pas parti, avec celui qu'il suit.
+            let lignes = envois::journal::lu(&ctx.racine).map_err(Echec::from)?.lignes;
+            let mut modeles = Vec::new();
+            for p in &a_lui {
+                let parti = envois::etats::contrat_parti(&lignes, cle, p.engagement.numero.as_deref());
+                modeles.push(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?);
+            }
+            documents::contrat::ecrire_contrat(ctx, &a_lui, &modeles, &ent, &chemin, &[])?;
             marquer(&chemin, aujourdhui)?;
             for i in 0..pages_pdf(&chemin)? {
                 pages.push(Page { categorie: CONTRATS, cle: cle.clone(), tri: format!("{}-01", mois), source: chemin.clone(), numero: i });

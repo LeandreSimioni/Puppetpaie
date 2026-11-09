@@ -55,6 +55,7 @@ const AIDES: &[(&str, &str)] = &[
     ("personne_remplacee", "Le contrat d'un remplacement nomme la personne remplacée et sa qualification (L. 1242-12, 1°)."),
     ("repartition_horaire", "À temps partiel, le contrat dit la répartition des heures entre les jours de la semaine ou les semaines du mois (L. 3123-6) : par exemple, lundi, mardi et jeudi, de 9 h à 17 h."),
     ("clauses_particulieres", "À la place des clauses particulières de la compagnie (Configuration › Modèles de contrat) ; vide : celles de la compagnie."),
+    ("modele_contrat", "Le modèle que suit le contrat de cet engagement ; vide : le modèle par défaut de sa nature (Configuration › Modèles de contrat)."),
     ("engagement_licenciement", "La convocation à l'entretien préalable (L1232-2 ; L1332-2 pour une faute)."),
     ("signature_convention", "La date de signature de la convention de rupture (L1237-13)."),
     ("dernier_paye", "Le dernier jour payé au salaire habituel : la fin du contrat, sauf préavis non effectué."),

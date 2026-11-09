@@ -316,9 +316,10 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(String, Vec<UnAven
 }
 
 /// Le contrat tel qu'il part, pour le journal : qui, quand, sous quel numero, dans quel fichier, et ce qu'il dit, clause
-/// par clause. La version de l'engagement sur laquelle il part, la ligne du journal la porte (`journal::versions_des_contrats`).
+/// par clause, et le modele qu'il suit (`modele`, son empreinte, `modeles_figes`). La version de l'engagement sur
+/// laquelle il part, la ligne du journal la porte (`journal::versions_des_contrats`).
 #[allow(clippy::too_many_arguments)]
-fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path, titre: &str, mois: &str, ent: &droit::contexte::EntrepriseDuDocument) -> R<ContratParti> {
+fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path, titre: &str, mois: &str, ent: &droit::contexte::EntrepriseDuDocument, modele: String) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: IdSalarie::lire(cle)?,
         debut: p.engagement.debut.iso(),
@@ -340,7 +341,21 @@ fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path,
         empreinte: None,
         message: None,
         ailleurs: false,
+        modele: Some(modele),
     })
+}
+
+/// LES MODELES QUE SUIVENT CES CONTRATS QUI PARTENT (`modeles_contrat::du_contrat`), chacun fige avec la compagnie : les
+/// modeles, et leurs empreintes, que le journal note.
+fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit::ModeleDuContrat>, Vec<String>)> {
+    let mut modeles = Vec::new();
+    let mut figes = Vec::new();
+    for p in ps {
+        let m = crate::modeles_contrat::du_contrat(ctx, p)?;
+        figes.push(crate::modeles_contrat::figer(ctx, &m)?);
+        modeles.push(m);
+    }
+    Ok((modeles, figes))
 }
 
 /// Le nom du PDF des contrats d'un salarie : `Contrat_<cle>_<numero>_<mois>.pdf`, `Contrats_..._<n1>+<n2>_...` quand il en
@@ -400,10 +415,11 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Cho
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
     for (cle, ps, _) in &par_salarie {
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, ""));
-        documents::contrat::ecrire_contrat(ctx, ps, &ent, &pdf, &[])?;
+        let (modeles, figes) = modeles_figes(ctx, ps)?;
+        documents::contrat::ecrire_contrat(ctx, ps, &modeles, &ent, &pdf, &[])?;
         fichiers.push(pdf.to_string_lossy().into_owned());
-        for p in ps.iter() {
-            contrats.push(entree_du_contrat(ctx, p, cle, &pdf, &p.titre()?, &s_mois, &ent)?);
+        for (p, fige) in ps.iter().zip(figes) {
+            contrats.push(entree_du_contrat(ctx, p, cle, &pdf, &p.titre()?, &s_mois, &ent, fige)?);
         }
     }
     let mut saisies: HashMap<String, (engagement::saisie::VueDuMois, Vec<Paie>)> = HashMap::new();
@@ -510,7 +526,8 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         let code = code_signature()?;
         // Le contrat qui en remplace un autre porte son propre nom : le PDF parti avant lui reste sur le disque.
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" }));
-        documents::contrat::ecrire_contrat(ctx, ps, &ent, &pdf, &remplacements)?;
+        let (modeles, figes) = modeles_figes(ctx, ps)?;
+        documents::contrat::ecrire_contrat(ctx, ps, &modeles, &ent, &pdf, &remplacements)?;
         // Le PDF tel qu'il part : son exemplaire contresigne commencera par ces octets-la (`depart::contresigner`).
         let empreinte = envois::journal::empreinte_fichier(&pdf).map_err(|m| erreur(Classe::Disque, m))?;
         let mut spectacles: Vec<String> = Vec::new();
@@ -584,9 +601,9 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             vec![pdf.clone()],
         )?;
         messages.push(message);
-        for (p, t) in ps.iter().zip(&titres) {
+        for ((p, t), fige) in ps.iter().zip(&titres).zip(figes) {
             let debut = p.engagement.debut.iso();
-            let mut c = entree_du_contrat(ctx, p, cle, &pdf, t, &s_mois, &ent)?;
+            let mut c = entree_du_contrat(ctx, p, cle, &pdf, t, &s_mois, &ent, fige)?;
             // Ce qu'il faut pour reconnaitre la reponse : le code, et l'adresse dont elle doit venir.
             c.code = Some(code.clone());
             c.adresse = Some(adresse.clone());
@@ -896,7 +913,15 @@ fn avenant_ecrit(
         }
         None => {
             let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_deref()), a.mois.etiquette()));
-            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, &jj(&a.date_contrat)?, &jj(&a.effet)?, aujourdhui_jj, ailleurs)?;
+            // Le modele du contrat qu'il modifie : celui avec lequel ce contrat est parti.
+            let du_contrat = if ailleurs {
+                None
+            } else {
+                let j = envois::journal::lu(&ctx.racine).map_err(Echec::from)?;
+                let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
+                Some(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?)
+            };
+            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, &jj(&a.date_contrat)?, &jj(&a.effet)?, aujourdhui_jj, du_contrat.as_ref())?;
             f
         }
     };
@@ -925,6 +950,7 @@ fn avenant_ecrit(
         // Un avenant au contrat signe hors du logiciel : la piece se refait de meme (`depart::refaire_le_contrat`), et le
         // PDF du contrat signe, depose dans son dossier, part avec lui.
         ailleurs,
+        modele: None,
     };
     Ok((pdf, c, p.clone()))
 }

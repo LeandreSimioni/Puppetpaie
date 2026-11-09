@@ -10,9 +10,8 @@
 
 
 use droit::fiche::Lue as _;
-use std::path::Path;
 
-use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{pour_la_fabrique, Marqueur, Valeurs};
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 
@@ -455,12 +454,6 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
     Ok(m)
 }
 
-/// Le modele du contrat ecrit de la nature `nat`, celui de la compagnie s'il est dans ses gabarits, lu.
-pub fn modele_du_contrat(gabarits: &Path, nat: &droit::natures::Nature) -> Resultat<Modele> {
-    let nom = nat.modele_contrat().ok_or_else(|| format!("La nature {} n'a pas de contrat écrit.", nat.libelle))?;
-    let chemin = socle::fichiers::modele_de(&nom, Some(gabarits), gabarits);
-    ModeleLu::du_fichier(&chemin).map_err(|r| r.message)?.decoupe(&chemin.to_string_lossy())
-}
 
 // ------------------------------------------- l'avenant d'un contrat signe ailleurs
 

@@ -615,6 +615,18 @@ imprime à `lire_engagements(ctx, Some(paies))`, qui les substitue à celles de
 leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
 (`service::droits`) lisent la même chose.
 
+### Le modèle d'un contrat, et le contrat parti
+
+Un modèle de contrat est un texte `.modele` : ses `ARTICLE:` sont les paragraphes du contrat, dans l'ordre ; un alinéa
+qui commence par `[si un.champ]` ne s'écrit que si ce champ a une valeur (`fabrique_pdf::modele::retenu`), ce qui
+remplace tout morceau de phrase vide calculé dans le code. Chaque nature a sa **base**, livrée, qui suit les mises à jour
+et ne se modifie pas ; la compagnie en copie des **modèles spéciaux** (`gabarits/contrats/modeles.json`, chacun sa base
+et l'empreinte de son texte au jour de la copie), choisit le défaut de chaque nature, et un engagement en choisit un
+(sa case `modele_contrat`). Le vérificateur (`documents::contrat_ecrit::manques`) dit, article par article, le champ
+inconnu, la condition fausse ou la mention exigée qui manque. **Un contrat parti garde son texte** : au départ, le texte
+de son modèle se fige sous son empreinte (`gabarits/contrats/partis/`), que la ligne du journal note
+(`ContratParti::modele`) ; le refaire ou lui faire un avenant relit ce texte-là (`routes::modeles_contrat`).
+
 ### Les conseils « Le saviez-vous ? »
 
 Une **option de la compagnie** (fiche Entreprise, `conseils`, décochée par défaut) : sans elle, aucune route ne rend

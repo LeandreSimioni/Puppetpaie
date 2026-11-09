@@ -565,6 +565,10 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub ailleurs: bool,
+    /// L'empreinte du texte du modele avec lequel ce contrat est parti, fige sous ce nom avec la compagnie
+    /// (`routes::modeles_contrat::figer`) ; un avenant ne la porte pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modele: Option<String>,
 }
 
 impl ContratParti {
