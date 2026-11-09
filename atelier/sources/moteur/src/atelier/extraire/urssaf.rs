@@ -34,9 +34,9 @@ use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
-use super::{date_du_releve, nom_de, Releve};
+use super::{date_du_releve, nom_de, EnOrdre, Releve};
 use socle::date::Jour;
 use socle::fichiers::repr;
 use socle::num::Resultat;
@@ -184,46 +184,64 @@ fn zfill(texte: &str, n: usize) -> String {
     }
 }
 
+/// Le referentiel `urssaf-dpae-base.json`, apres `quoi` et `note`.
+#[derive(Serialize)]
+struct Urssaf {
+    organismes: Vec<Organisme>,
+    par_ancienne_region: EnOrdre<String>,
+    par_departement: EnOrdre<String>,
+}
+
+/// Un organisme de la Table des Urssaf.
+#[derive(Serialize)]
+struct Organisme {
+    code: String,
+    codification: String,
+    nom: String,
+    siret: String,
+    emetteur: String,
+}
+
 /// Les organismes de la Table des Urssaf (windows-1252 : « Numéro », « Dénomination »), tries par code.
-fn organismes(table: &Path) -> Resultat<Vec<Value>> {
+fn organismes(table: &Path) -> Resultat<Vec<Organisme>> {
     let nom = nom_de(table);
     let octets = std::fs::read(table).map_err(|e| format!("{} illisible ({})", table.display(), e))?;
     let t = Table::lire(&cp1252(&octets, &nom)?, ';');
-    let mut liste: Vec<(String, Value)> = Vec::new();
+    let mut liste: Vec<Organisme> = Vec::new();
     for l in &t.rangs {
-        let cod = strip(t.get(l, "Codification").unwrap_or(""));
-        if !cod.starts_with('U') {
-            continue;
-        }
+        let Some(cod) = t.get(l, "Codification").map(strip).filter(|c| c.starts_with('U')) else { continue };
         let code: String = cod.chars().skip(1).collect();
         // Les valeurs du CSV sont entourees d'apostrophes pour qu'un tableur ne mange pas les zeros de tete.
-        let sans_apostrophes = |c: &str| strip(t.get(l, c).unwrap_or("")).trim_matches('\'').to_string();
-        liste.push((
-            code.clone(),
-            json!({
-                "code": code,
-                "codification": cod,
-                "nom": strip(t.get(l, "Dénomination").unwrap_or("")),
-                "siret": sans_apostrophes("SIRET"),
-                "emetteur": sans_apostrophes("Numéro National Emetteur"),
-            }),
-        ));
+        let sans_apostrophes = |c: &str| -> Resultat<String> { Ok(strip(t.exige(l, c, &nom)?).trim_matches('\'').to_string()) };
+        liste.push(Organisme {
+            code,
+            codification: cod.to_string(),
+            nom: strip(t.exige(l, "Dénomination", &nom)?).to_string(),
+            siret: sans_apostrophes("SIRET")?,
+            emetteur: sans_apostrophes("Numéro National Emetteur")?,
+        });
     }
-    liste.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(liste.into_iter().map(|(_, o)| o).collect())
+    liste.sort_by(|a, b| a.code.cmp(&b.code));
+    Ok(liste)
 }
 
 /// Ancienne region -> code Urssaf, depuis la liste des sites du reseau. Le filtre `codes` (la Table des Urssaf) tranche
-/// le cas de la Normandie : la liste des sites y porte encore 237 et 257, la Table ne connait que 287.
-fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<Map<String, Value>> {
+/// le cas de la Normandie : la liste des sites y porte encore 237 et 257, la Table ne connait que 287. Un site sans code
+/// ou sans region ne dit rien.
+fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String>> {
     let octets = std::fs::read(sites).map_err(|e| format!("{} illisible ({})", sites.display(), e))?;
-    let texte = String::from_utf8(octets).map_err(|_| format!("{} n'est pas en UTF-8", sites.display()))?;
-    let t = Table::lire(texte.strip_prefix('\u{feff}').unwrap_or(&texte), ';');
+    let texte = String::from_utf8(octets).map_err(|e| format!("{} n'est pas en UTF-8 ({})", sites.display(), e))?;
+    let sans_bom = match texte.strip_prefix('\u{feff}') {
+        Some(t) => t,
+        None => &texte,
+    };
+    let t = Table::lire(sans_bom, ';');
     let mut trouve: Vec<(String, BTreeSet<String>)> = Vec::new();
     for l in &t.rangs {
-        let ur = strip(t.get(l, "code_organisme_ur_regionale").unwrap_or(""));
-        let reg = zfill(strip(t.get(l, "code_ancienne_region").unwrap_or("")), 2);
-        if !ur.is_empty() && !reg.is_empty() && codes.contains(ur) {
+        let rempli = |nom: &str| t.get(l, nom).map(strip).filter(|v| !v.is_empty());
+        let (Some(ur), Some(reg)) = (rempli("code_organisme_ur_regionale"), rempli("code_ancienne_region")) else { continue };
+        let reg = zfill(reg, 2);
+        if codes.contains(ur) {
             match trouve.iter_mut().find(|(r, _)| *r == reg) {
                 Some((_, v)) => {
                     v.insert(ur.to_string());
@@ -244,17 +262,19 @@ fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<Map<String, Va
             ambigus.join(", ")
         ));
     }
-    Ok(trouve.into_iter().map(|(r, v)| (r, Value::String(v.into_iter().next().unwrap_or_default()))).collect())
+    // Chaque region n'a qu'un code (les ambigus refusent ci-dessus).
+    Ok(EnOrdre(trouve.into_iter().flat_map(|(r, v)| v.into_iter().map(move |c| (r.clone(), c))).collect()))
 }
 
 /// Departement -> code Urssaf, par l'ancienne region du COG 2015 (le premier `.txt` de l'archive, en latin-1, tabule).
-fn par_departement(cog: &Path, regions: &Map<String, Value>, codes: &BTreeSet<String>) -> Resultat<Map<String, Value>> {
+fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String>> {
     let f = std::fs::File::open(cog).map_err(|e| format!("{} illisible ({})", cog.display(), e))?;
     let mut z = zip::ZipArchive::new(f).map_err(|e| format!("{} : archive illisible ({})", cog.display(), e))?;
-    let nom = (0..z.len())
-        .filter_map(|i| z.by_index_raw(i).ok().map(|e| e.name().to_string()))
-        .find(|n| n.ends_with(".txt"))
-        .ok_or_else(|| format!("{} : aucun .txt dans l'archive", cog.display()))?;
+    let mut noms = Vec::new();
+    for i in 0..z.len() {
+        noms.push(z.by_index_raw(i).map_err(|e| format!("{} : entree {} illisible ({})", cog.display(), i, e))?.name().to_string());
+    }
+    let nom = noms.into_iter().find(|n| n.ends_with(".txt")).ok_or_else(|| format!("{} : aucun .txt dans l'archive", cog.display()))?;
     let mut octets = Vec::new();
     z.by_name(&nom)
         .and_then(|mut e| e.read_to_end(&mut octets).map_err(Into::into))
@@ -269,7 +289,7 @@ fn par_departement(cog: &Path, regions: &Map<String, Value>, codes: &BTreeSet<St
             codes.contains(&dep).then(|| dep.clone())
         } else {
             let region = zfill(strip(t.exige(l, "REGION", &nom)?), 2);
-            regions.get(&region).and_then(Value::as_str).map(str::to_string)
+            regions.valeur(&region).cloned()
         };
         match code {
             Some(c) if !c.is_empty() => match sortie.iter_mut().find(|(d, _)| *d == dep) {
@@ -297,20 +317,19 @@ fn par_departement(cog: &Path, regions: &Map<String, Value>, codes: &BTreeSet<St
         }
     }
     sortie.sort();
-    Ok(sortie.into_iter().map(|(d, c)| (d, Value::String(c))).collect())
+    Ok(EnOrdre(sortie))
 }
 
 /// Le releve : les organismes, les anciennes regions, les departements.
 pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> Resultat<Releve> {
     let organismes = organismes(table)?;
-    let codes: BTreeSet<String> = organismes.iter().filter_map(|o| o["code"].as_str().map(str::to_string)).collect();
+    let codes: BTreeSet<String> = organismes.iter().map(|o| o.code.clone()).collect();
     let regions = par_region(sites, &codes)?;
     let departements = par_departement(cog, &regions, &codes)?;
     let bilan = vec![format!("{} organismes, {} departements", organismes.len(), departements.len())];
-    let donnees = json!({
-        "quoi": "Les organismes de recouvrement et leur code a trois chiffres, tel que la DPAE l'attend en C_URSSAF \
-                  (positions 133-136, annexe II.1 de la norme), et le departement dont chacun releve.",
-        "note": format!(
+    let quoi = "Les organismes de recouvrement et leur code a trois chiffres, tel que la DPAE l'attend en C_URSSAF \
+                (positions 133-136, annexe II.1 de la norme), et le departement dont chacun releve.";
+    let note = format!(
             "Trois sources relevees et datees -- `moteur sources` : urssaf-table-des-urssaf (les codes, {}), \
              urssaf-liste-des-sites (region -> code, {}), insee-cog-2015-departements (departement -> ancienne region, {}), \
              deposees dans atelier/reference/sources/. Extrait par `moteur extraire urssaf` le {} ; ne pas editer a la main. \
@@ -320,10 +339,7 @@ pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> Resultat<
              de la fiche gagne toujours. \
              Par defaut : 117 -- Urssaf Ile-de-France, la valeur du gabarit quand ni la fiche ni le departement ne disent rien.",
             nom_de(table), nom_de(sites), nom_de(cog), date_du_releve(jour)
-        ),
-        "organismes": organismes,
-        "par_ancienne_region": regions,
-        "par_departement": departements,
-    });
-    Ok(Releve { donnees, indent: 2, saut_final: true, bilan })
+        );
+    let corps = Urssaf { organismes, par_ancienne_region: regions, par_departement: departements };
+    Ok(Releve::nouveau(quoi, note, corps, 2, true, bilan))
 }

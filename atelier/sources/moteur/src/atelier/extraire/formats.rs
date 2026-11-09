@@ -39,17 +39,63 @@
 use std::path::Path;
 
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
 use super::usages::{en_classeur, version_du_cahier};
-use super::{date_du_releve, en_transcription, nom_de, sha256, Releve, Transcription};
+use super::{date_du_releve, en_transcription, nom_de, sha256, EnOrdre, Releve, Transcription};
 use socle::date::Jour;
 use socle::lecture_xlsx::{self, Cellule};
 use socle::num::Resultat;
 use socle::texte::{blanc as espace, strip};
 
-/// Une expression ecartee : (rubrique, expression).
-type Ecartee = (String, String);
+const QUOI: &str = "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max] et ses expressions de \
+                      controle CSL. Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit \
+                      contenir. Ce n'est pas un validateur : il verifie la FORME d'une valeur, pas sa justesse : un montant \
+                      faux au bon format passe.";
+
+/// Le referentiel des formats, apres `quoi` et `note`.
+#[derive(Serialize)]
+struct Formats {
+    #[serde(flatten)]
+    empreinte: Empreinte,
+    expressions_ecartees: Vec<Ecartee>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    types_inconnus: Vec<SansType>,
+    formats: EnOrdre<Format>,
+}
+
+/// L'empreinte du texte depose lu : le classeur, ou le cahier en PDF.
+#[derive(Serialize)]
+enum Empreinte {
+    #[serde(rename = "sha256_du_classeur")]
+    Classeur(String),
+    #[serde(rename = "sha256_du_pdf")]
+    Pdf(String),
+}
+
+/// Le format d'une rubrique : sa longueur [min, max], ses expressions de controle que le moteur compile.
+#[derive(Serialize)]
+struct Format {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    longueur: Option<[i64; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    csl: Option<Vec<String>>,
+}
+
+/// Une expression ecartee : la rubrique, et l'expression que le moteur ne compile pas.
+#[derive(Serialize)]
+struct Ecartee {
+    rubrique: String,
+    coupee: String,
+}
+
+/// Une rubrique dont le type de donnees n'est pas dans la feuille des types : la case telle qu'elle est (vide : `null`).
+#[derive(Serialize)]
+struct SansType {
+    rubrique: String,
+    #[serde(rename = "type")]
+    type_: Option<Cellule>,
+}
 
 /// L'expression est-elle de celles que le moteur sait compiler ?
 fn compile(expression: &str) -> bool {
@@ -94,7 +140,8 @@ fn csl_trouvees(corps: &str) -> Vec<String> {
         let mut positions = vec![fin_blancs];
         let mut q = fin_blancs;
         while q > apres {
-            q -= corps[..q].chars().next_back().map_or(1, char::len_utf8);
+            let Some(c) = corps[..q].chars().next_back() else { break };
+            q -= c.len_utf8();
             positions.push(q);
         }
         // `(.*?)` paresseux : la premiere ligne vide a partir du debut du groupe.
@@ -119,7 +166,7 @@ fn csl_trouvees(corps: &str) -> Vec<String> {
 }
 
 /// Les formats lus dans le texte du cahier.
-fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<Map<String, Value>> {
+fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<Format>> {
     let rubrique = Regex::new(r"(?m)^[\s\x1c-\x1f]*(S\d\d\.G00\.\d\d\.\d\d\d)[\s\x1c-\x1f]*$").expect("motif");
     let longueur = Regex::new(r"\[(\d+),(\d+)\]").expect("motif");
     // `RUBRIQUE.split(texte)` : [avant, id, corps, id, corps...].
@@ -135,7 +182,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<Map<String,
     if let Some((rid, debut)) = ouvert {
         morceaux.push((rid, &texte[debut..]));
     }
-    let mut out = Map::new();
+    let mut out = EnOrdre::new();
     // Chaque identifiant apparait deux fois : dans la liste des rubriques du bloc (sans format) et dans sa definition
     // (avec). On garde celle qui porte un format, et la derniere si plusieurs en portent.
     for (rid, corps) in morceaux {
@@ -144,37 +191,40 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<Map<String,
         // faisait refuser un NIC pourtant accepte cinquante fois).
         let csl: Vec<String> = csl_trouvees(corps)
             .iter()
-            .map(|c| strip(&c.replace('\n', "")).split(' ').next().unwrap_or("").to_string())
+            .map(|c| {
+                let c = strip(&c.replace('\n', "")).to_string();
+                match c.split_once(' ') {
+                    Some((avant, _)) => avant.to_string(),
+                    None => c,
+                }
+            })
             .collect();
         let lon = longueur.captures(corps);
         if csl.is_empty() && lon.is_none() {
             continue;
         }
-        let mut fmt = Map::new();
-        if let Some(l) = lon {
-            let n = |i: usize| l[i].parse::<i64>().map_err(|_| format!("{} : longueur illisible {}", rid, &l[0]));
-            fmt.insert("longueur".into(), json!([n(1)?, n(2)?]));
-        }
-        if !csl.is_empty() {
-            // Plusieurs CSL = plusieurs formes admises (CSL 00, CSL 01...), sans doublon, dans l'ordre.
-            let mut vues: Vec<&String> = Vec::new();
-            let mut bonnes = Vec::new();
-            for c in &csl {
-                if vues.contains(&c) {
-                    continue;
-                }
-                vues.push(c);
-                if compile(c) {
-                    bonnes.push(Value::String(c.clone()));
-                } else {
-                    ecartees.push((rid.to_string(), c.clone()));
-                }
+        let longueur = match lon {
+            Some(l) => {
+                let n = |i: usize| l[i].parse::<i64>().map_err(|e| format!("{} : longueur illisible {} ({})", rid, &l[0], e));
+                Some([n(1)?, n(2)?])
             }
-            if !bonnes.is_empty() {
-                fmt.insert("csl".into(), Value::Array(bonnes));
+            None => None,
+        };
+        // Plusieurs CSL = plusieurs formes admises (CSL 00, CSL 01...), sans doublon, dans l'ordre.
+        let mut vues: Vec<&String> = Vec::new();
+        let mut bonnes = Vec::new();
+        for c in &csl {
+            if vues.contains(&c) {
+                continue;
+            }
+            vues.push(c);
+            if compile(c) {
+                bonnes.push(c.clone());
+            } else {
+                ecartees.push(Ecartee { rubrique: rid.to_string(), coupee: c.clone() });
             }
         }
-        out.insert(rid.to_string(), Value::Object(fmt));
+        out.poser(rid.to_string(), Format { longueur, csl: Some(bonnes).filter(|b| !b.is_empty()) });
     }
     Ok(out)
 }
@@ -229,8 +279,8 @@ fn entier_de(c: &Cellule) -> Resultat<i64> {
 fn relever_xlsx(
     chemin: &Path,
     ecartees: &mut Vec<Ecartee>,
-    sans_type: &mut Vec<(String, Value)>,
-) -> Resultat<Map<String, Value>> {
+    sans_type: &mut Vec<SansType>,
+) -> Resultat<EnOrdre<Format>> {
     let mut types: std::collections::HashMap<String, Vec<Option<Cellule>>> = std::collections::HashMap::new();
     let mut entete_types: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Data Types")? {
@@ -246,8 +296,8 @@ fn relever_xlsx(
             }
         }
     }
-    let entete_types = entete_types.unwrap_or_default();
-    let mut out = Map::new();
+    let entete_types = entete_types.ok_or_else(|| format!("{} : la feuille « Data Types » est vide", chemin.display()))?;
+    let mut out = EnOrdre::new();
     let mut entete: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Fields")? {
         let Some(e) = &entete else {
@@ -260,34 +310,38 @@ fn relever_xlsx(
         let bloc = champ_exige(e, &r, "Block Id", "Fields")?;
         let id = champ_exige(e, &r, "Id", "Fields")?;
         let type_id = champ_exige(e, &r, "DataType Id", "Fields")?;
-        let texte = |c: Option<&Cellule>| strip(&lecture_xlsx::cellule_en_texte(&c.cloned())).to_string();
-        let rid = format!("{}.{}", texte(bloc), texte(id));
+        let texte = |c: Option<&Cellule>, nom: &str| match c {
+            Some(c) => Ok(strip(&c.en_texte()).to_string()),
+            None => Err(format!("la feuille « Fields » a une ligne sans « {} »", nom)),
+        };
+        let rid = format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?);
         let genre = type_id.and_then(|t| types.get(&cle(t)));
         let Some(genre) = genre else {
-            sans_type.push((rid, json!(type_id)));
+            sans_type.push(SansType { rubrique: rid, type_: type_id.cloned() });
             continue;
         };
-        let mut fmt = Map::new();
         let lg = |nom: &str| champ(&entete_types, genre, nom).flatten();
-        if let (Some(min), Some(max)) = (lg("Lg Min"), lg("Lg Max")) {
-            fmt.insert("longueur".into(), json!([entier_de(min)?, entier_de(max)?]));
-        }
+        let longueur = match (lg("Lg Min"), lg("Lg Max")) {
+            (Some(min), Some(max)) => Some([entier_de(min)?, entier_de(max)?]),
+            _ => None,
+        };
         let expression = match lg("Regexp") {
-            Some(Cellule::Texte(s)) => strip(s).to_string(),
+            Some(Cellule::Texte(s)) => Some(strip(s).to_string()).filter(|e| !e.is_empty()),
             Some(c) if c.vrai() => {
                 return Err(format!("{} : l'expression du type n'est pas un texte ({})", rid, c.en_texte()))
             }
-            _ => String::new(),
+            _ => None,
         };
-        if !expression.is_empty() {
-            if compile(&expression) {
-                fmt.insert("csl".into(), json!([expression]));
-            } else {
-                ecartees.push((rid.clone(), expression));
+        let csl = match expression {
+            Some(e) if compile(&e) => Some(vec![e]),
+            Some(e) => {
+                ecartees.push(Ecartee { rubrique: rid.clone(), coupee: e });
+                None
             }
-        }
-        if !fmt.is_empty() {
-            out.insert(rid, Value::Object(fmt));
+            None => None,
+        };
+        if longueur.is_some() || csl.is_some() {
+            out.poser(rid, Format { longueur, csl });
         }
     }
     Ok(out)
@@ -352,53 +406,31 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
     let mut bilan = vec![format!(
         "{} rubriques, dont {} avec expression de controle",
         formats.len(),
-        formats.values().filter(|f| f["csl"].as_array().is_some_and(|a| !a.is_empty())).count()
+        formats.0.iter().filter(|(_, f)| f.csl.is_some()).count()
     )];
-    for (r, c) in &ecartees {
+    for e in &ecartees {
         bilan.push(format!(
             "  ecartee (le moteur ne la compile pas) : {} -- {}",
-            r,
-            c.chars().take(40).collect::<String>()
+            e.rubrique,
+            e.coupee.chars().take(40).collect::<String>()
         ));
     }
-    for (r, t) in &sans_type {
-        bilan.push(format!("  type de donnees inconnu : {} -- {}", r, t));
+    for s in &sans_type {
+        bilan.push(format!("  type de donnees inconnu : {} -- {}", s.rubrique, socle::ecriture::json_en_ligne(&s.type_)));
     }
-    let mut donnees = Map::new();
-    donnees.insert(
-        "quoi".into(),
-        json!(
-            "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max] et ses expressions de \
-               controle CSL. Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit \
-               contenir. Ce n'est pas un validateur : il verifie la FORME d'une valeur, pas sa justesse : un montant \
-               faux au bon format passe."
-        ),
-    );
-    donnees.insert(
-        "note".into(),
-        Value::String(format!(
+    let note = format!(
             "{} Toute declaration que le moteur ecrit (DSN, signalement, FCTU) passe ce releve avant d'etre ecrite \
                (`declarations::formats::verifier_fichier`), et `declarations/tests/declarations/usages_formats_ntt.rs` \
                en eprouve les expressions motif par motif. Une expression qui refuserait une valeur reellement acceptee \
                serait fausse, et c'est elle qu'on retire -- un controle faux refuse une declaration licite, ce qui est \
                pire que pas de controle.",
             provenance
-        )),
-    );
-    donnees.insert(
-        (if classeur { "sha256_du_classeur" } else { "sha256_du_pdf" }).into(),
-        Value::String(empreinte),
-    );
-    donnees.insert(
-        "expressions_ecartees".into(),
-        Value::Array(ecartees.iter().map(|(r, c)| json!({"rubrique": r, "coupee": c})).collect()),
-    );
-    if !sans_type.is_empty() {
-        donnees.insert(
-            "types_inconnus".into(),
-            Value::Array(sans_type.iter().map(|(r, t)| json!({"rubrique": r, "type": t})).collect()),
         );
-    }
-    donnees.insert("formats".into(), Value::Object(formats));
-    Ok(Releve { donnees: Value::Object(donnees), indent: 1, saut_final: false, bilan })
+    let corps = Formats {
+        empreinte: if classeur { Empreinte::Classeur(empreinte) } else { Empreinte::Pdf(empreinte) },
+        expressions_ecartees: ecartees,
+        types_inconnus: sans_type,
+        formats,
+    };
+    Ok(Releve::nouveau(QUOI, note, corps, 1, false, bilan))
 }

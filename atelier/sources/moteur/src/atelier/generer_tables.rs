@@ -333,6 +333,9 @@ fn nfkd_ascii(u: &Ucd) -> String {
     s
 }
 
+/// Le point de code d'un octet que la page ne definit pas : U+FFFD, le caractere de remplacement.
+const NON_DEFINI: u32 = 0xFFFD;
+
 /// Une page de code de `Public/MAPPINGS` (`0xXX<tab>0xXXXX<tab>#NOM`) : les octets 0x80 a 0xFF, U+FFFD pour un octet
 /// que la page ne definit pas (`#UNDEFINED`) : un tel octet se remplace, il ne fait pas echouer la lecture.
 fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
@@ -352,7 +355,7 @@ fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
                 None => return Err(format!("{} : {:?}", nom, l)),
             },
             // L'octet sans point de code : la page ne le definit pas.
-            None => 0xFFFD,
+            None => NON_DEFINI,
         };
         vus += 1;
     }
