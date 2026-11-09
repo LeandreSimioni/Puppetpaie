@@ -11,7 +11,6 @@ pub mod commandes;
 pub mod extraire;
 pub mod generer_tables;
 pub mod guet;
-pub mod publier;
 pub mod releve;
 pub mod sources;
 pub mod verifier_avant_commit;

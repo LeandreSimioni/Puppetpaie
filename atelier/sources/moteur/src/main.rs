@@ -36,9 +36,9 @@ fn main() -> std::process::ExitCode {
         // Le catalogue des routes, tire de leurs fiches.
         Some("routes") => return std::process::ExitCode::from(routes::catalogue::commande(&args[1..]).clamp(0, 255) as u8),
         // La fenetre, dans le navigateur du poste : `moteur interface`.
-        // La mise a jour : verifier, appliquer, revenir ; publier et la cle, chez l'editeur.
+        // La mise a jour : verifier, appliquer, revenir ; et la publication par GitHub.
         Some("maj") => {
-            let code = match moteur::atelier::commandes::publication::commande(&args[1..]) {
+            let code = match moteur::publication::commande(&args[1..]) {
                 Some(code) => code,
                 None => moteur::commandes::maj::commande(&args[1..]),
             };

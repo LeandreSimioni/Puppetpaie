@@ -2,26 +2,17 @@
 //! public (`.github/workflows/publier.yml`) fabrique `logiciel/`, attend l'approbation de l'editeur, signe par
 //! `publier_depuis_l_environnement` et pose les archives, `derniere.json` et l'installeur dans une Release, que
 //! `maj::DEPOT_PAR_DEFAUT` lit. Ce que les installations recoivent, verifient et appliquent est dans `compagnie::maj` ;
-//! la forme des archives y est ecrite en tete : c'est un contrat avec toutes les installations posees.
-//!
-//! LA CLE DE SIGNATURE DU POSTE DE L'EDITEUR (`config/maj-cle-privee.bin`). Sa graine est scellee par la CLE MAITRESSE
-//! DU COFFRE (`Coffre::proteger_par_le_coffre`), dans un petit JSON (`FORMAT_CLE`) : elle s'ouvre partout ou le coffre
-//! s'ouvre, par la cle du poste, ou ailleurs par le mot de passe du logiciel (tape, ou la seance). Elle depend donc du
-//! coffre qui l'a scellee : sans lui, rien ne l'ouvre, et un coffre neuf ne l'ouvrira pas. UNE CLE SCELLEE PAR LA CLE DU
-//! POSTE SEULE s'ouvre encore sur le poste qui l'a faite, et s'y RESCELLE par le coffre a cette ouverture (`cle_privee`) :
-//! c'est la seule facon de la sauver sans changer la paire, donc sans faire parvenir une nouvelle cle publique a chaque
-//! compagnie. `moteur maj --cle` fait cette ouverture sans publier.
+//! la forme des archives y est ecrite en tete : c'est un contrat avec toutes les installations posees. La seule cle qui
+//! signe est celle de GitHub (`CLE_PUBLIQUE_GITHUB`), dont la graine n'existe que dans le travail approuve.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use compagnie::coffre::{Coffre, FICHIER_CLE_PRIVEE};
 use compagnie::maj::{
-    b64, code, condensat, courante, derniere_lue, ecrire_json, installation, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de, reglage,
-    signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
+    b64, condensat, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de,
+    signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
 };
 
@@ -30,11 +21,6 @@ type R<T> = Result<T, String>;
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
 pub const VARIABLE_GRAINE: &str = "PUPPETPAIE_CLE_SIGNATURE";
-const DESCRIPTION_CLE: &str = "PuppetPaie : cle de signature des mises a jour";
-/// Ce que porte `maj-cle-privee.bin` : `{"format": FORMAT_CLE, "scelle": <base64>}`, la graine scellee par
-/// la cle maitresse du coffre. Tout autre contenu est refuse.
-const FORMAT_CLE: &str = "puppetpaie/maj-cle/scellee-par-le-coffre";
-const SANS_CLE: &str = "pas de cle privee : les compagnies refuseraient une archive non signee (moteur maj --cle pour la fabriquer)";
 /// Ce qui ne part jamais dans une archive, ni ne bouge a la bascule.
 const EXCLUS: [&str; 6] = [".git", ".avant", ".apres", "__pycache__", ".pytest_cache", "target"];
 /// Les programmes d'un systeme Unix, dans son dossier de `logiciel/` (`linux/`, `mac/`) : la fenetre, et le moteur (pour un
@@ -42,7 +28,7 @@ const EXCLUS: [&str; 6] = [".git", ".avant", ".apres", "__pycache__", ".pytest_c
 /// Un zip ne garde le bit d'execution que si on l'y marque : `archiver` le marque sur eux, `deballer` le remet.
 const PROGRAMMES_UNIX: [&str; 2] = ["puppetpaie", "moteur"];
 
-pub fn signer(octets: &[u8], privee: &[u8]) -> R<String> {
+fn signer(octets: &[u8], privee: &[u8]) -> R<String> {
     use ed25519_dalek::Signer;
     let k = <[u8; 32]>::try_from(privee).map_err(|_| "cle privee illisible (32 octets attendus)")?;
     Ok(socle::base64::ecrire(&ed25519_dalek::SigningKey::from_bytes(&k).sign(octets).to_bytes()))
@@ -88,8 +74,8 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
-const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
-    ["config/coffre.bin", routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
+const HORS_D_UNE_FICTIVE_LIVREE: [&str; 5] =
+    ["config/coffre.bin", routes::coffre::JETON_GOOGLE, "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -220,7 +206,7 @@ fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
 /// L'ARCHIVE DE MISE A JOUR d'un systeme (`SYSTEMES`) ou de tous (`TOUT_SYSTEME`) : LE CONTENU DE `logiciel/` A SA RACINE,
 /// sans `fictives/`. Sa forme est un contrat avec toutes les installations posees (la tete de ce fichier) : elle ne change
 /// plus. C'est elle que `derniere.json` nomme sous `archives`, que l'editeur signe, que `telecharger` prend.
-pub fn archiver(code: &Path, systeme: &str) -> R<Vec<u8>> {
+fn archiver(code: &Path, systeme: &str) -> R<Vec<u8>> {
     zipper(&entrees_du_logiciel(code, systeme, "")?, &[])
 }
 
@@ -228,7 +214,7 @@ pub fn archiver(code: &Path, systeme: &str) -> R<Vec<u8>> {
 /// de chacune et `.livraison.json` (`entrees_des_fictives`), et l'empreinte de la livraison. Signee comme les archives de
 /// mise a jour, nommee dans `derniere.json` sous `fictives` ; une installation ne la telecharge que si l'empreinte n'est
 /// pas celle qu'elle retient (`preparer_les_fictives`).
-pub fn archiver_fictives(code: &Path) -> R<(Vec<u8>, String)> {
+fn archiver_fictives(code: &Path) -> R<(Vec<u8>, String)> {
     let (entrees, en_plus, empreinte) = entrees_des_fictives(code)?;
     Ok((zipper(&entrees, &en_plus)?, empreinte))
 }
@@ -243,7 +229,7 @@ pub fn archiver_fictives(code: &Path) -> R<(Vec<u8>, String)> {
 /// Celle de TOUS LES SYSTEMES est le dossier portable : elle porte aussi, a sa racine, le marqueur `PORTABLE.json`
 /// (`coffre::MARQUEUR_PORTABLE`) ; decompressee sur une cle USB, elle s'ouvre sous Windows, Linux et macOS, et la cle du
 /// poste naitra a cote.
-pub fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
+fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
     let mut entrees = entrees_du_logiciel(code, systeme, &format!("{}/", LOGICIEL))?;
     let (fictives, mut en_plus, _) = entrees_des_fictives(code)?;
     entrees.extend(fictives);
@@ -254,7 +240,7 @@ pub fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
 }
 
 /// Le nom de l'archive des fictives d'une version : `puppetpaie-<version>-fictives.zip`.
-pub fn nom_des_fictives(version: &str) -> String {
+fn nom_des_fictives(version: &str) -> String {
     format!("puppetpaie-{}-fictives.zip", version)
 }
 
@@ -306,68 +292,6 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<String> {
     Ok(empreinte)
 }
 
-/// CE QUE PORTE `maj-cle-privee.bin` : son format (`FORMAT_CLE`) et la graine scellee par le coffre, en base64.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CleScellee {
-    format: String,
-    scelle: String,
-}
-
-/// Le scelle d'une cle au format `FORMAT_CLE` ; tout autre contenu refuse.
-fn scelle_par_le_coffre(chemin: &Path) -> R<Vec<u8>> {
-    const AUTRE: &str = "config/maj-cle-privee.bin n'est pas une cle scellee par le coffre : elle ne s'ouvre pas (`moteur maj --cle --remplacer` en fait une autre)";
-    let cle: CleScellee = socle::forme::lire_fichier(chemin, AUTRE)?;
-    if cle.format != FORMAT_CLE {
-        return Err(AUTRE.to_string());
-    }
-    b64(&cle.scelle).map_err(|e| format!("{} ({})", AUTRE, e))
-}
-
-/// Ecrit la cle scellee par le coffre, d'un coup (`socle::ecriture::ecrire_json`) : jamais un fichier coupe en route
-/// sous le vrai nom.
-fn ecrire_cle(chemin: &Path, scelle: &[u8]) -> R<()> {
-    socle::ecriture::ecrire_json(chemin, &CleScellee { format: FORMAT_CLE.to_string(), scelle: socle::base64::ecrire(scelle) }, 2)
-}
-
-/// La graine de la cle privee, ouverte par ce qui ouvre le coffre. Un fichier qui n'est pas au format `FORMAT_CLE` est
-/// refuse : il ne s'ouvre pas.
-fn cle_privee(coffre: &Coffre) -> R<Option<Vec<u8>>> {
-    let p = coffre.racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE);
-    if !p.exists() {
-        return Ok(None);
-    }
-    let scelle = scelle_par_le_coffre(&p)?;
-    coffre.deproteger_par_le_coffre(&scelle, DESCRIPTION_CLE).map(Some).map_err(|e| e.message)
-}
-
-/// La cle privee de la compagnie de `coffre`, ouverte par ce qui ouvre le coffre (le poste, sa cle, le mot de passe du
-/// logiciel) ; refus sans cle.
-pub fn cle_de_signature(coffre: &Coffre) -> R<Vec<u8>> {
-    cle_privee(coffre)?.ok_or_else(|| SANS_CLE.into())
-}
-
-pub(crate) fn exiger_editeur(racine: &Path, quoi: &str) -> R<()> {
-    if compagnie::installation::est_copie(racine) {
-        return Err(format!("Copie de developpement : {} ne part jamais d'ici.", quoi));
-    }
-    if !reglage(&installation())?.1 {
-        return Err("Ce poste n'est pas celui de l'editeur (le reglage de l'installation, maj/reglage.json, dit \"editeur\": true).".into());
-    }
-    Ok(())
-}
-
-/// Chez l'editeur : la paire de cles qui signe les archives. La privee, scellee par la cle maitresse du coffre (refuse
-/// sans mot de passe du logiciel : elle serait perdue avec le poste) ; la publique, rendue, a reporter dans `CLE_PUBLIQUE`.
-/// Une cle qui existe deja n'est jamais remplacee sans `remplacer`.
-/// La cle de signature posee : ou, sa cle publique, et si le code porte deja celle-ci (`CLE_PUBLIQUE`).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ClePosee {
-    pub chemin: String,
-    pub cle_publique: String,
-    pub correspond: bool,
-}
-
 /// La cle de GitHub fabriquee : le fichier de la graine (secrete), celui de la cle publique, et la cle publique.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CleDeGithub {
@@ -376,54 +300,11 @@ pub struct CleDeGithub {
     pub cle_publique: String,
 }
 
-pub fn generer_cle(racine: &Path, remplacer: bool) -> R<ClePosee> {
-    exiger_editeur(racine, "la cle de signature")?;
-    generer_cle_au_poste(&Coffre::du_poste(racine, ""), remplacer)
-}
-
-/// `generer_cle`, le poste donne (`coffre` : la compagnie et la cle de ce poste). Le reglage de l'installation (« ce poste
-/// est celui de l'editeur ») se regarde dans `generer_cle` ; ici, seule une copie est refusee.
-pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<ClePosee> {
-    let racine = coffre.racine.as_path();
-    if compagnie::installation::est_copie(racine) {
-        return Err("Copie de developpement : la cle de signature ne part jamais d'ici.".into());
-    }
-    let chemin = racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE);
-    if chemin.exists() && !remplacer {
-        return Err(format!(
-            "Une cle privee existe deja ({}). --remplacer pour en faire une autre : les compagnies devront alors recevoir la nouvelle cle publique par une autre voie.",
-            chemin.display()
-        ));
-    }
-    let mut graine = [0u8; 32];
-    getrandom::fill(&mut graine).map_err(|e| e.to_string())?;
-    let k = ed25519_dalek::SigningKey::from_bytes(&graine);
-    let publique = socle::base64::ecrire(k.verifying_key().as_bytes());
-    let scelle = coffre.proteger_par_le_coffre(&graine, DESCRIPTION_CLE).map_err(|e| e.message)?;
-    ecrire_cle(&chemin, &scelle)?;
-    Ok(ClePosee { chemin: chemin.display().to_string(), correspond: publique == CLE_PUBLIQUE, cle_publique: publique })
-}
-
-/// Chez l'editeur : les archives signees et `derniere.json` dans le depot (un dossier).
-pub fn publier(racine: &Path, depot: Option<&str>, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
-    exiger_editeur(racine, "la publication d'une version")?;
-    let depot = match depot {
-        Some(d) => d.to_string(),
-        None => reglage(&installation())?.0.ok_or("Aucun depot : le donner en argument ou dans le reglage de l'installation (maj/reglage.json).")?,
-    };
-    if depot.starts_with("http://") || depot.starts_with("https://") {
-        return Err("publier ecrit dans un dossier ; pour un depot en ligne, y deposer ensuite les archives et derniere.json".into());
-    }
-    let privee = cle_de_signature(&Coffre::du_poste(racine, ""))?;
-    publier_signe(&code(), Path::new(&depot), &privee, CLE_PUBLIQUE, notes, calcul, exigee)
-}
-
-/// Le coeur de `publier`, le logiciel, la graine et la cle publique donnes : les archives de `c` (une par systeme dont la
+/// LA PUBLICATION, le logiciel, la graine et la cle publique donnes : les archives de `c` (une par systeme dont la
 /// fenetre y est, et celle de tous les systemes, qui porte ceux-la et le dit sous `systemes`), chacune signee et verifiee,
 /// et `derniere.json` qui les nomme, dans le dossier `d` ; a cote, les archives d'installation (Linux, Mac, tous), ni
-/// signees ni nommees, rendues sous `installations`. Le moteur livre n'y passe que par `publier` (la cle du poste, `CLE_PUBLIQUE`) ;
-/// les essais de bout en bout y passent une cle d'essai (`tests/fichiers/mise_a_jour.rs`).
-pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
+/// signees ni nommees, rendues sous `installations`.
+fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     let version = courante(c)?;
     let depot = d.display().to_string();
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
@@ -458,7 +339,7 @@ pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, note
         let octets = archiver(c, systeme)?;
         let signature = signer(&octets, privee)?;
         if !signature_valide(&octets, &signature, cle_publique) {
-            return Err("la cle privee de ce poste ne correspond pas a la cle publique du code : refaire `moteur maj --cle` et reporter la cle publique".into());
+            return Err(autre_graine());
         }
         let nom = nom_d_archive(&version, systeme);
         let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
@@ -470,7 +351,7 @@ pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, note
     let (octets, empreinte) = archiver_fictives(c)?;
     let signature = signer(&octets, privee)?;
     if !signature_valide(&octets, &signature, cle_publique) {
-        return Err("la cle privee de ce poste ne correspond pas a la cle publique du code : refaire `moteur maj --cle` et reporter la cle publique".into());
+        return Err(autre_graine());
     }
     let nom = nom_des_fictives(&version);
     let fictives = FictivesPubliees { archive: nom.clone(), sha256: condensat(&octets), signature, empreinte };
@@ -517,7 +398,7 @@ pub struct Publication {
 }
 
 impl Publication {
-    /// Ce que `moteur maj --publier` et `--publier-github` disent des archives publiees : leur nom et leur taille.
+    /// Ce que `moteur maj --publier-github` dit des archives publiees : leur nom et leur taille.
     pub(crate) fn dire_les_archives(&self) -> String {
         self.tailles.iter().map(|(nom, n)| format!("{} ({} Ko)", nom, n / 1024)).collect::<Vec<_>>().join(", ")
     }
@@ -557,7 +438,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
 
 /// `publier_signe` depuis une graine en base64 (celle du secret de GitHub), verifiee contre `cle_publique` : refuse si
 /// la cle publique n'est pas reportee (vide) ou si la graine n'est pas la sienne. Aucun message ne porte la graine.
-pub fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
+fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     if cle_publique.is_empty() {
         return Err("la cle publique de GitHub n'est pas reportee dans le code (compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie".into());
     }
@@ -566,13 +447,12 @@ pub fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_
         Ok(g) if g.len() == 32 => g,
         _ => return Err(format!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE)),
     };
-    publier_signe(logiciel, sortie, &graine, cle_publique, notes, calcul, exigee).map_err(|e| {
-        if e.starts_with("la cle privee de ce poste") {
-            format!("la graine de {} n'est pas celle de CLE_PUBLIQUE_GITHUB : rien n'est publie", VARIABLE_GRAINE)
-        } else {
-            e
-        }
-    })
+    publier_signe(logiciel, sortie, &graine, cle_publique, notes, calcul, exigee)
+}
+
+/// Le refus d'une graine qui n'est pas celle de la cle publique : rien n'est publie.
+fn autre_graine() -> String {
+    format!("la graine de {} n'est pas celle de CLE_PUBLIQUE_GITHUB : rien n'est publie", VARIABLE_GRAINE)
 }
 
 /// LA PUBLICATION PAR LE FLUX DE GITHUB (`moteur maj --publier-github --logiciel L --sortie S`) : les archives de `L`

@@ -3,7 +3,6 @@
 //! (`lancer` : le releve des textes, les referentiels, les tables Unicode, le guet, le garde avant commit, les bulletins
 //! fictifs).
 
-pub mod publication;
 pub mod sources;
 #[cfg(feature = "atelier")]
 pub mod outils;
@@ -14,8 +13,8 @@ use crate::commandes::Commande;
 pub fn commandes() -> Vec<Commande> {
     #[allow(unused_mut)]
     let mut v = vec![
-        // L'outil de l'editeur, avant chaque publication : refuse ailleurs que sur son poste (le reglage de l'installation, `maj::reglage`).
-        Commande { nom: "sources", aide: "les sources des donnees livrees, et leur veille (poste de l'editeur)", cachee: true, spec: &sources::SPEC, executer: sources::executer },
+        // Avant chaque publication.
+        Commande { nom: "sources", aide: "les sources des donnees livrees, et leur veille", cachee: false, spec: &sources::SPEC, executer: sources::executer },
     ];
     // LES OUTILS DE L'ATELIER sur une compagnie (`outils`) : le binaire de l'atelier seulement.
     #[cfg(feature = "atelier")]

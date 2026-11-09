@@ -1689,12 +1689,11 @@ impl serde::Serialize for Aides {
 }
 
 
-/// LA VERSION DU LOGICIEL (`maj-etat`) : l'installee, si l'editeur est pose, le depot d'ou l'on recoit, la version
+/// LA VERSION DU LOGICIEL (`maj-etat`) : l'installee, le depot d'ou l'on recoit, la version
 /// prete et ce qu'elle dit (`calcul`, `exigee`), la signature, la version d'avant, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Version {
     courante: String,
-    editeur: bool,
     depot: String,
     prete: Option<String>,
     calcul: String,
@@ -1710,7 +1709,7 @@ pub(crate) fn version() -> R<Version> {
     let code = compagnie::maj::dossier_installe().map_err(plain)?;
     // La mise a jour est celle de l'INSTALLATION : son reglage (`maj::reglage`), sa version prete (`maj::prete`).
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| plain("Le logiciel n'est dans aucune installation."))?;
-    let (depot, editeur) = compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
+    let depot = compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
     let prete = compagnie::maj::prete(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
     let courante = |code: &Path| compagnie::maj::courante(code).map_err(plain);
     let courante_v = courante(&code)?;
@@ -1726,7 +1725,6 @@ pub(crate) fn version() -> R<Version> {
     Ok(Version {
         phrase: format!("Version installée : {}.{}", courante_v, dite),
         courante: courante_v,
-        editeur,
         // Le depot d'ou l'on recoit : celui qui est pose, sinon celui du moteur (`maj::DEPOT_PAR_DEFAUT`).
         depot: compagnie::maj::depot(depot),
         prete,

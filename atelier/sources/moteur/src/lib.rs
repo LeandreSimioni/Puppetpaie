@@ -10,3 +10,4 @@ extern crate socle;
 pub mod commandes;
 pub mod atelier;
 pub mod interface;
+pub mod publication;

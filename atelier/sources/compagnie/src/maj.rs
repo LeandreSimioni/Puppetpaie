@@ -1,5 +1,5 @@
-//! La mise a jour d'une installation : verifier, appliquer, revenir. La publication, chez l'editeur, est dans
-//! `atelier::publier`.
+//! La mise a jour d'une installation : verifier, appliquer, revenir. La publication, par le flux « Publier » de GitHub,
+//! est dans `moteur::publication`.
 //!
 //! UNE MISE A JOUR PAR INSTALLATION. Il n'y a qu'un logiciel par installation, et c'est lui qui se met a jour, pas une
 //! compagnie : tout se passe dans `<installation>/maj/` (a cote de `logiciel/`, que la bascule ne touche pas), sans
@@ -249,22 +249,17 @@ fn logiciel_de(inst: &Path) -> PathBuf {
 
 const REGLAGE: &str = "reglage.json";
 
-/// `maj/reglage.json`, pose a la main : le depot d'ou l'installation recoit, et si ce poste est celui de l'editeur.
+/// `maj/reglage.json`, pose a la main : le depot d'ou l'installation recoit.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reglage {
     depot: Option<String>,
-    editeur: Option<bool>,
 }
 
-/// Le reglage de l'installation, `maj/reglage.json` : (depot pose, editeur), ou rien de pose s'il n'existe pas.
-/// `editeur` ne sert qu'a autoriser la publication : le poste de l'editeur recoit comme les autres.
-pub fn reglage(inst: &Path) -> R<(Option<String>, bool)> {
-    let r: Option<Reglage> = lire_forme(&dossier_maj(inst).join(REGLAGE), "Le réglage de la mise à jour ne se lit pas : il ne dit que le dépôt d'où l'installation reçoit, et si ce poste est celui de l'éditeur.")?;
-    Ok(match r {
-        Some(r) => (r.depot.filter(|s| !s.is_empty()), r.editeur == Some(true)),
-        None => (None, false),
-    })
+/// Le depot que pose le reglage de l'installation, `maj/reglage.json`, ou rien de pose s'il n'existe pas.
+pub fn reglage(inst: &Path) -> R<Option<String>> {
+    let r: Option<Reglage> = lire_forme(&dossier_maj(inst).join(REGLAGE), "Le réglage de la mise à jour ne se lit pas : il ne dit que le dépôt d'où l'installation reçoit.")?;
+    Ok(r.and_then(|r| r.depot).filter(|s| !s.is_empty()))
 }
 
 /// Le depot d'ou l'installation recoit : celui qui est pose, sinon celui du depot public (`DEPOT_PAR_DEFAUT`).
@@ -363,7 +358,7 @@ fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -
     lire_tout(&mut f, Some(attendus)).map_err(dit)
 }
 
-/// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `atelier::publier::publier_signe` et que lit chaque installation, une
+/// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `moteur::publication` et que lit chaque installation, une
 /// seule forme, stricte (une cle qu'elle ne connait pas refuse tout le fichier : une cle ajoutee a la publication coupe
 /// donc les installations posees de leurs mises a jour). `archive`, `sha256` et `signature` a la racine sont ceux de
 /// l'archive de Windows, pour les installations qui ne lisent qu'une archive ; `compagnie::maj` ne les lit pas.
@@ -832,7 +827,7 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
     let mut absents: Vec<&'static str> = Vec::new();
     if !manquants.is_empty() {
         let hors_ligne = |e: &str| format!("Le dépôt ne répond pas ({}). {} Reconnectez-vous, puis recommencez.", e, rien);
-        let depot = depot_de_la_version(&depot(reglage(inst)?.0), &version);
+        let depot = depot_de_la_version(&depot(reglage(inst)?), &version);
         let d = derniere_dite(&depot).map_err(|(mot, e)| if mot == HORS_LIGNE { hors_ligne(&e) } else { format!("Le dépôt ne donne pas la version {} ({}). {}", version_lue(&version), e, rien) })?;
         if d.version != version {
             return Err(format!("Le dépôt n'a plus la version installée ({}) : mettez PuppetPaie à jour, puis recommencez. {}", version_lue(&version), rien));
@@ -1206,7 +1201,7 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
     };
     let cour = version_lue(&courante_ici);
     let depot = match reglage(inst) {
-        Ok((d, _)) => self::depot(d),
+        Ok(d) => self::depot(d),
         Err(e) if calme => return format!("version {} ({} ; nouvel essai au tour suivant)", cour, e),
         Err(e) => return echec(REGLAGE_ILLISIBLE, None, format!("version {} ({})", cour, e)),
     };

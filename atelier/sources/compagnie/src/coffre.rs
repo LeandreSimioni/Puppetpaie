@@ -7,11 +7,6 @@
 //! pose, depuis quand) sont en clair et scellent les secrets avec elles.
 //!
 //! Les secrets ne passent que par l'entree et la sortie standard.
-//!
-//! LA CLE MAITRESSE SCELLE AUSSI LA CLE DE SIGNATURE DES MISES A JOUR : un poste perdu ne
-//! doit pas empecher de publier. `proteger_par_le_coffre` scelle par elle ce qui doit
-//! s'ouvrir partout ou le coffre s'ouvre : la cle du poste, ou le mot de passe du logiciel sur un autre poste. Ce qui est
-//! scelle ainsi depend du coffre : un coffre qui le porte ne s'efface pas en se vidant (`scelle_ailleurs`).
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -33,15 +28,6 @@ pub const VERSION: i64 = 2;
 pub const CONSULTATION: &str = "consultation";
 pub const DEPOT: &str = "depot";
 pub const DESCRIPTION: &str = "PuppetPaie - mots de passe des organismes";
-/// LA CLE DE SIGNATURE DES MISES A JOUR (`config/maj-cle-privee.bin`), sur le poste de l'editeur : sa graine est scellee
-/// par la cle maitresse du coffre (`atelier::publier` l'ecrit et l'ouvre).
-pub const FICHIER_CLE_PRIVEE: &str = "maj-cle-privee.bin";
-
-/// La compagnie de `racine` porte-t-elle une cle de signature (scellee par son coffre) ? Ne lit que la presence du
-/// fichier, n'ouvre rien.
-pub fn cle_de_signature_posee(racine: &Path) -> bool {
-    racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE).is_file()
-}
 
 const SCRYPT_N: u64 = 32768;
 const SCRYPT_R: u64 = 8;
@@ -53,8 +39,6 @@ pub const LONGUEUR_MINIMALE_LOGICIEL: usize = 6;
 const AAD_POSTE: &[u8] = b"puppetpaie/enveloppe/poste";
 const AAD_MOTDEPASSE: &[u8] = b"puppetpaie/enveloppe/motdepasse";
 const AAD_GARDEE: &[u8] = b"puppetpaie/ouverture-gardee";
-/// Ce que la cle maitresse scelle hors du coffre : ce prefixe, puis la description de ce qui est scelle.
-const AAD_MAITRESSE: &str = "puppetpaie/maitresse/";
 
 pub struct Service {
     pub nom: &'static str,
@@ -554,7 +538,7 @@ fn mot_de_passe_tape() -> Option<String> {
 /// n'importe quel ordinateur, quel que soit le systeme. La cle du poste vit alors dans ce dossier, pas sur la machine.
 pub const MARQUEUR_PORTABLE: &str = "PORTABLE.json";
 /// Ce que porte le marqueur : sa presence seule compte, la phrase le dit a qui ouvre le fichier. L'archive d'installation
-/// de tous les systemes le porte (`atelier::publier::archiver_installation`), la route `portable-completer` le pose ;
+/// de tous les systemes le porte (`moteur::publication`, l'archive d'installation), la route `portable-completer` le pose ;
 /// l'installeur Windows ecrit la meme phrase (`atelier/installeur/puppetpaie.nsi`).
 pub const CONTENU_PORTABLE: &str = "{\"_quoi\": \"Ce dossier est une installation PORTABLE de PuppetPaie : le logiciel, ses donnees et la cle qui les scelle (cle-poste.bin) vivent ici, ensemble, et s'ouvrent sur n'importe quel ordinateur. Effacer ce fichier rattache le coffre a la machine.\"}\n";
 
@@ -782,52 +766,6 @@ impl Coffre {
             )));
         };
         desceller(&cle, donnees, description.as_bytes())
-    }
-
-    /// Scelle `donnees` par la cle maitresse de ce coffre : ce qui est scelle ainsi s'ouvre partout ou le coffre
-    /// s'ouvre, la cle de ce poste ou le mot de passe du logiciel ailleurs. N'ecrit rien. Refuse sans coffre, ou sans mot
-    /// de passe du logiciel : seule la cle de ce poste l'ouvrirait, et ce qui est scelle partirait avec le poste.
-    pub fn proteger_par_le_coffre(&self, donnees: &[u8], description: &str) -> R<Vec<u8>> {
-        let contenu = match self.lire_fichier()? {
-            Some(c) if c.enveloppes.motdepasse.is_some() => c,
-            Some(_) | None => {
-                return Err(refus_a(
-                    format!(
-                        "Le coffre de cette compagnie n'a pas de mot de passe du logiciel : scelle par lui, « {} » ne \
-                         s'ouvrirait que sur ce poste et serait perdu avec lui. Rien n'a ete ecrit. Poser d'abord le mot \
-                         de passe du logiciel :\n\
-                         \x20 route mot-de-passe-changer",
-                        description
-                    ),
-                    &self.chemin(),
-                ))
-            }
-        };
-        let Some(maitresse) = self.ouvrir(&contenu, None)? else { return Err(self.refus_ferme()?) };
-        sceller(&maitresse, donnees, format!("{}{}", AAD_MAITRESSE, description).as_bytes())
-    }
-
-    /// Ouvre ce que `proteger_par_le_coffre` a scelle : par la cle de ce poste, sinon par le mot de passe du logiciel tape
-    /// pour la commande, sinon par la seance (`ouvrir`).
-    pub fn deproteger_par_le_coffre(&self, scelle: &[u8], description: &str) -> R<Vec<u8>> {
-        let Some(contenu) = self.lire_fichier()? else {
-            return Err(refus_a(
-                format!(
-                    "« {} » est scelle par le coffre de la compagnie, et il n'y a pas de coffre ici : rien d'autre ne \
-                     l'ouvre, et un coffre neuf ne l'ouvrira pas. Remettre le coffre de l'ancien poste, qui l'a scelle.",
-                    description
-                ),
-                &self.chemin(),
-            ));
-        };
-        let Some(maitresse) = self.ouvrir(&contenu, None)? else { return Err(self.refus_ferme()?) };
-        desceller(&maitresse, scelle, format!("{}{}", AAD_MAITRESSE, description).as_bytes())
-    }
-
-    /// Ce que la cle maitresse scelle hors du coffre, s'il y en a (la cle de signature des mises a jour) : tant qu'il est
-    /// la, le coffre ne s'efface pas quand il ne porte plus rien. Sa cle maitresse est la seule qui l'ouvre.
-    fn scelle_ailleurs(&self) -> bool {
-        cle_de_signature_posee(&self.racine)
     }
 
     // ------------------------------------------------------------ le fichier
@@ -1060,7 +998,7 @@ impl Coffre {
         let mut secrets = self.secrets(&contenu, &maitresse)?;
         contenu.fiches.remove(service);
         secrets.remove(service);
-        if contenu.fiches.is_empty() && contenu.enveloppes.motdepasse.is_none() && !self.scelle_ailleurs() {
+        if contenu.fiches.is_empty() && contenu.enveloppes.motdepasse.is_none() {
             effacer(&self.chemin())?;
             return Ok(true);
         }
@@ -1199,7 +1137,7 @@ impl Coffre {
             return Ok(false);
         }
         let (maitresse, mut c) = self.ouvrir_ou_lever(ancien)?;
-        if c.fiches.is_empty() && !self.scelle_ailleurs() {
+        if c.fiches.is_empty() {
             effacer(&self.chemin())?;
             return Ok(true);
         }

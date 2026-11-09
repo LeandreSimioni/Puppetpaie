@@ -1,15 +1,12 @@
-//! `moteur sources [--verifier] [--relever] [--json]` : d'ou viennent les donnees livrees, de quand elles datent, et -- avec
+//! `moteur-atelier sources [--verifier] [--relever] [--json]` : d'ou viennent les donnees livrees, de quand elles datent, et -- avec
 //! `--verifier` -- si la source en ligne a bouge depuis qu'on l'a lue (le travail est dans
 //! `sources.rs` et `kali.rs`).
 //!
-//! UN OUTIL DE L'EDITEUR, lance avant chaque publication ; rien pour une compagnie, qui ne fait que recevoir la mise a
-//! jour signee. Il est dans le `moteur` livre, comme `moteur maj --publier`, parce que c'est ce
-//! programme-la que le poste de l'editeur fait tourner (il ne compile pas le Rust ; `moteur-atelier` n'est jamais livre),
-//! et il est refuse ailleurs que sur ce poste, de la meme facon que la publication (`maj::exiger_editeur` :
-//! le reglage de l'installation, `"editeur": true`, et jamais depuis une copie). CACHEE : elle n'apparait pas dans l'aide.
+//! UN OUTIL DE L'ATELIER, lance avant chaque publication ; rien pour une compagnie, qui ne fait que recevoir la mise a
+//! jour signee.
 //!
 //! ATTENTION : `--verifier` va au RESEAU (chaque source « telechargement », et l'index KALI de la DILA). Lecture seule,
-//! hors `atelier/reference/sources/` de l'installation (le depot, sur le poste de l'editeur ; `sources::COPIES`) : le
+//! hors `atelier/reference/sources/` de l'installation (le depot ; `sources::COPIES`) : le
 //! resume des livraisons KALI (`veille-kali.json`), et avec `--relever`, la nouvelle version d'une source a cote de
 //! l'ancienne et le XML des textes KALI touches (`kali/`).
 
@@ -26,10 +23,6 @@ pub static SPEC: Spec = Spec {
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    if let Err(m) = crate::atelier::publier::exiger_editeur(&cadre.racine, "la verification des sources") {
-        eprintln!("{} La verification des sources est un outil de l'editeur, lance avant chaque publication.", m);
-        return 1;
-    }
     let code = cadre.ctx.code.clone();
     let manifeste = match crate::atelier::sources::manifeste(&code) {
         Ok(m) => m,

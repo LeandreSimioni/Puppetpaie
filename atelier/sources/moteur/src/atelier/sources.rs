@@ -1,12 +1,12 @@
-//! Les sources des donnees livrees avec le logiciel, et leur veille. Un outil de l'EDITEUR, lance avant chaque
-//! publication (`moteur sources --verifier`) ; une compagnie ne fait que recevoir la mise a jour signee.
+//! Les sources des donnees livrees avec le logiciel, et leur veille. Un outil de l'ATELIER, lance avant chaque
+//! publication (`moteur-atelier sources --verifier`) ; une compagnie ne fait que recevoir la mise a jour signee.
 //!
 //! `donnees/sources.json` dit, pour chaque texte dont derive un fichier de donnees (nomenclature des emplois, catalogue
 //! des metiers, minima, baremes), ce qu'il contient, de quand il date, quand on l'a releve, ou en est la copie et quel est
 //! son condensat. Ce module le lit (`Manifeste`) et sait retourner voir si la source en ligne a bouge.
 //!
 //! Le principe : une donnee ne se recopie pas d'un editeur, elle se lit dans le texte qui fait foi ; la copie est gardee
-//! dans le depot public, a cote du code (`atelier/reference/sources/` de l'installation de l'editeur, qui est le depot :
+//! dans le depot public, a cote du code (`atelier/reference/sources/` du depot :
 //! les textes de reference rendent le logiciel verifiable) pour qu'on puisse toujours montrer d'ou
 //! vient un nombre ; et quand le condensat en ligne ne colle plus, c'est le signal de RELIRE -- pas de remplacer le
 //! fichier a l'aveugle, puisque les donnees derivees ont ete ecrites a la main depuis la lecture. `--relever` pose la
@@ -116,8 +116,8 @@ pub fn manifeste(code: &Path) -> R<Manifeste> {
     socle::forme::lire_fichier(&p, &format!("{} ne se lit pas.", p.display()))
 }
 
-/// Ou vivent les copies : `atelier/reference/sources/` de l'installation (`maj::installation`), c'est-a-dire du depot
-/// sur le poste de l'editeur, a cote de `logiciel/`. Une compagnie n'y est pour rien : ce sont les textes du logiciel.
+/// Ou vivent les copies : `atelier/reference/sources/` de l'installation (`maj::installation`), c'est-a-dire du depot,
+/// a cote de `logiciel/`. Une compagnie n'y est pour rien : ce sont les textes du logiciel.
 pub const COPIES: &str = "atelier/reference/sources";
 
 pub fn dossier(installation: &Path) -> PathBuf {

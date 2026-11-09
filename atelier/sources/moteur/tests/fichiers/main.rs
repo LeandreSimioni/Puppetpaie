@@ -19,7 +19,6 @@ mod faux_drive;
 mod bridage;
 mod bulletin_lu;
 mod caviardage;
-mod cle_de_signature;
 mod coffre;
 mod sources;
 mod donnees_reelles;
