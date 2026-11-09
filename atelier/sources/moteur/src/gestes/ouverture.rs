@@ -832,7 +832,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
     // LES ECARTS DE CALCUL DES PAIES IMPORTEES qui ne sont pas encore comparees (`import::ecarts::noter`) : une
     // compagnie completee depuis l'import compare celles que le calcul refusait. Ils partent avec les autres incidents.
-    if let Err(e) = crate::import::ecarts::noter(ctx) {
+    if let Err(e) = import::ecarts::noter(ctx) {
         r.incidents.push(format!("Écarts de calcul de l'import : {}", e.message));
     }
 

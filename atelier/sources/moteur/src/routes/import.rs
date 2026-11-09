@@ -19,9 +19,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::import::dsn_aem::{self, SalarieDeclare};
-use crate::import::proposee;
-use crate::import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Importation, Origine};
+use import::dsn_aem::{self, SalarieDeclare};
+use import::proposee;
+use import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Importation, Origine};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::{Ecran, Place};
@@ -98,7 +98,7 @@ pub const ROUTES: &[Fiche] = &[
 /// Une route de ce module.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     // Chaque PDF de la boite aux lettres se releve une fois pour toute la route (`import::releve`).
-    let _releves = crate::import::releve::Releves::ouvrir();
+    let _releves = import::releve::Releves::ouvrir();
     let ctx = porte.ctx;
     match porte.route {
         // `{"dossier": ...}` (vide ou absent : `import/` de la compagnie) : la boite aux lettres entiere, bulletins
@@ -319,10 +319,10 @@ pub(crate) struct Apercu {
     /// LES CONTRATS QUE L'IMPORT RETIENT, de toutes les pieces (AEM deposees, AEM en PDF, bulletins, certificats) : le
     /// registre de l'import les a dits nouveaux (`import::attestes`). Chacun avec le NIR qui le rattache (`salarie` vaut
     /// `<a creer>` tant que la fiche n'existe pas) et le bloc du compte rendu qui le compte.
-    pub(crate) contrats_attestes: Vec<crate::import::attestes::Retenu>,
+    pub(crate) contrats_attestes: Vec<import::attestes::Retenu>,
     /// CE QUE L'IMPORT CHANGE AUX CONTRATS DE L'HISTORIQUE : le contrat qu'un certificat atteste, reduit aux mois qu'il atteste
     /// seul ou retire, celui d'une AEM que le bulletin remplace (`import::attestes`).
-    pub(crate) contrats_changes: Vec<crate::import::attestes::Change>,
+    pub(crate) contrats_changes: Vec<import::attestes::Change>,
     /// La suite des licences que les pieces donnent (mois `AAAA-MM`, numero), la plus ancienne d'abord.
     pub(crate) licences: Vec<(String, String)>,
     /// Les contrats que la DSN declare payes sans que les nets de leur versement se rattachent a eux (`PaieDuContrat::nets`).
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
         }
         let source = if o.aem { "AEM" } else { "DSN" };
         let sp = SpectacleDesPieces {
-            titre: crate::import::proposee::A_COMPLETER,
+            titre: import::proposee::A_COMPLETER,
             numero_objet: o.numero.clone(),
             alias: Vec::new(),
             actif: o.dernier >= seuil,
@@ -776,7 +776,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         pastille_repris: socle::ecran::Pastille::de("fait", "fait"),
         attend_editeur,
         a_dire: crate::importation::nature::a_dire(racine)?,
-        guide: crate::import::guide::guide(),
+        guide: import::guide::guide(),
         repris_dit,
         repris_titre,
     })
@@ -801,7 +801,7 @@ struct EtatImportation {
     /// Les contrats repris dont la nature reste a dire, par salarie.
     a_dire: Vec<crate::importation::nature::ADire>,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
-    guide: crate::import::guide::Guide,
+    guide: import::guide::Guide,
     repris_dit: Option<String>,
     repris_titre: String,
 }
@@ -941,7 +941,7 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
     let mut out = Vec::new();
     for l in compagnie::incidents::lire(racine, None, false)? {
         // Les ecarts de calcul de l'import sont l'etude de l'editeur (`import::ecarts`) : rien n'y attend la compagnie.
-        if l.ou == crate::import::ecarts::OU {
+        if l.ou == import::ecarts::OU {
             continue;
         }
         // Un refus (un dossier mal tape, un export absent) se dit a l'ecran ; il n'attend pas l'editeur.

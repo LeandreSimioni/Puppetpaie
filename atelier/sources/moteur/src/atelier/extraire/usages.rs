@@ -34,7 +34,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::{case, date_du_releve, en_transcription, nom_de, propre, remplie, sha256, somme_compensee, EnOrdre, Rang, Releve, Transcription};
-use crate::import::releve::PageRelevee;
+use import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
 use socle::num::Resultat;
@@ -239,7 +239,7 @@ fn releve_xlsx(source: &Path) -> Resultat<(Rang, Vec<Rang>)> {
 fn lire_le_cahier(source: &Path) -> Resultat<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
     let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(|r| r.0)?;
-    let releve = crate::import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, r.phrase()))?;
+    let releve = import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, r.phrase()))?;
     let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
     match (pages.iter().min(), pages.iter().max()) {
         (Some(premiere), Some(derniere)) => Ok((entete, lignes, (*premiere, *derniere))),

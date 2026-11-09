@@ -375,9 +375,9 @@ fn est_un_pdf(o: &[u8]) -> bool {
 
 /// Un PDF : la fabrique l'ouvre (dans le meme processus) et releve chaque page.
 fn lire_pdf(f: &mut Fichier) {
-    let r = match crate::import::releve::du_pdf(&f.disque) {
+    let r = match crate::releve::du_pdf(&f.disque) {
         Ok(r) => r,
-        Err(crate::import::releve::Refus::Fabrique(r)) => {
+        Err(crate::releve::Refus::Fabrique(r)) => {
             f.sorte = Sorte::Illisible;
             // Le refus de la fabrique commence par le chemin du disque : seule la cause compte ici.
             let cause = match r.strip_prefix(&*f.disque.to_string_lossy()) {
@@ -389,7 +389,7 @@ fn lire_pdf(f: &mut Fichier) {
             f.raison = Some(format!("PDF que la fabrique n'ouvre pas : {}", cause));
             return;
         }
-        Err(crate::import::releve::Refus::Releve(e)) => {
+        Err(crate::releve::Refus::Releve(e)) => {
             f.sorte = Sorte::Illisible;
             f.raison = Some(format!("PDF dont le releve ne se lit pas ({})", e));
             return;

@@ -20,7 +20,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu
 use envois::etats;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::num::Decimal;
-use crate::import::proposee::A_COMPLETER;
+use crate::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
 fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {
@@ -29,14 +29,14 @@ fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {
 
 /// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde : sa copie (relative a la compagnie), et le
 /// salarie qu'il paie.
-pub(crate) struct BulletinRepris {
-    pub(crate) chemin: String,
-    pub(crate) salarie: String,
+pub struct BulletinRepris {
+    pub chemin: String,
+    pub salarie: String,
 }
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
-pub(crate) fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
+pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
     let mut out: Vec<BulletinRepris> = Vec::new();
     for p in engagement::importe::paies_lues(racine).map_err(Echec::from)? {
         if p.mois != mois {
@@ -56,7 +56,7 @@ pub(crate) fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepri
 }
 
 /// Les mois que les engagements importes touchent, qu'aucun engagement de la saisie ne touche.
-pub(crate) fn mois_importes(racine: &Path) -> R<Vec<String>> {
+pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
     let mois: BTreeSet<String> = engagement::importe::tous(racine).map_err(Echec::from)?.iter().flat_map(Importe::mois).collect();
     let mut out = Vec::new();
     for m in mois {
@@ -74,7 +74,7 @@ pub(crate) fn mois_importes(racine: &Path) -> R<Vec<String>> {
 /// (`produire_regularisations::regularisations_pour` : cahier technique DSN 2026.1, § 2.1.2.1,
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`). La DSN de l'ancien logiciel ne se
 /// refait pas ici (regle 4).
-pub(crate) fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAncienLogiciel>> {
+pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAncienLogiciel>> {
     if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(Echec::from)?.is_none() {
         return Ok(None);
     }
@@ -101,10 +101,10 @@ pub(crate) fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<D
 
 /// La DSN d'un mois deposee par l'ancien logiciel (`dsn_de_l_ancien_logiciel`) : le mois de la DSN qui porte ce que la
 /// saisie y ajoute, combien d'engagements s'y declarent, et la phrase qui le dit.
-pub(crate) struct DsnDeLAncienLogiciel {
-    pub(crate) porteur: String,
-    pub(crate) engagements: usize,
-    pub(crate) phrase: String,
+pub struct DsnDeLAncienLogiciel {
+    pub porteur: String,
+    pub engagements: usize,
+    pub phrase: String,
 }
 
 /// LA DSN MENSUELLE D'UN MOIS DE L'ANCIEN LOGICIEL NE SE FABRIQUE PAS ICI (regle 4 ; un mois importe ne recoit pas
@@ -112,7 +112,7 @@ pub(crate) struct DsnDeLAncienLogiciel {
 /// ce logiciel (`importe` : `compagnie::etat_dsn` le dit « aucune trace de sa DSN ») -- l'ancien logiciel a calcule ces
 /// paies, sa DSN est la sienne, et elle se garde en l'important (la route `importer`). Le refus que `fabriquer_dsn`
 /// oppose avant d'ecrire quoi que ce soit, le seul.
-pub(crate) fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<()> {
+pub fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<()> {
     let phrase = match dsn_de_l_ancien_logiciel(ctx, mois)? {
         Some(d) => format!("{} Elle ne se refait pas ici.", d.phrase),
         None if compagnie::etat_dsn::importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
@@ -282,7 +282,7 @@ pub(crate) struct SpectacleDeCarte {
 
 /// UNE CARTE D'ENGAGEMENT IMPORTE, telle que la page Paie la dessine (`carteImportee` de js/saisie-mois.js).
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct CarteImportee {
+pub struct CarteImportee {
     quoi_dit: String,
     origine_dit: Option<String>,
     spectacle_dit: Option<String>,
@@ -503,7 +503,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
 /// LES ETAPES D'UN MOIS TENU AVANT (`bilan_du_mois`, le panneau du mois) : tout s'est fait ailleurs,
 /// aucune etape n'a de bouton -- ni « Fermer le mois », ni « Deposer la DSN » (regle 4). La DSN dit ce qu'on en
 /// sait (`compagnie::etat_dsn`) ; sans trace, elle reste en alerte, sans geste.
-pub(crate) fn etapes(vue: &VueImportee) -> EtapesImportees {
+pub fn etapes(vue: &VueImportee) -> EtapesImportees {
     let cartes = &vue.paies;
     let n = cartes.len();
     let pl = |n: usize| if n > 1 { "s" } else { "" };
@@ -548,23 +548,23 @@ pub(crate) fn etapes(vue: &VueImportee) -> EtapesImportees {
 }
 
 /// LES ETAPES D'UN MOIS TENU AVANT (`etapes`), une par etape du mois.
-pub(crate) struct EtapesImportees {
-    pub(crate) dpae: EtapeImportee,
-    pub(crate) signature: EtapeImportee,
-    pub(crate) dsn: EtapeImportee,
-    pub(crate) documents: EtapeImportee,
+pub struct EtapesImportees {
+    pub dpae: EtapeImportee,
+    pub signature: EtapeImportee,
+    pub dsn: EtapeImportee,
+    pub documents: EtapeImportee,
 }
 
 /// Une etape d'un mois tenu avant : ce qu'on en sait, ce que la case en dit en court, et sa phrase.
-pub(crate) struct EtapeImportee {
-    pub(crate) teinte: Teinte,
-    pub(crate) courte: Option<String>,
-    pub(crate) phrase: Option<String>,
+pub struct EtapeImportee {
+    pub teinte: Teinte,
+    pub courte: Option<String>,
+    pub phrase: Option<String>,
 }
 
 /// Ce qu'on sait d'une etape d'un mois tenu avant : faite ailleurs, refusee, ou sans trace ici.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Teinte {
+pub enum Teinte {
     Faite,
     Refusee,
     SansTrace,
@@ -573,7 +573,7 @@ pub(crate) enum Teinte {
 /// LES CARTES DES ENGAGEMENTS IMPORTES QUI TOUCHENT `mois`, qu'il soit tenu avant ce logiciel ou qu'il ait aussi des
 /// engagements de la saisie : une carte par engagement importe, son contrat atteste et ce qui lui a ete verse ce
 /// mois-la, dans l'ordre de leur debut.
-pub(crate) fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
+pub fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
     let importes = importes_du_mois(&ctx.racine, mois)?;
     if importes.is_empty() {
         return Ok(Vec::new());
@@ -596,14 +596,14 @@ pub(crate) fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
 
 /// LE MOIS TENU AVANT : la DSN que le moteur en sait, une carte par engagement importe, les totaux de ce qui est connu
 /// et combien de cartes sont incompletes.
-pub(crate) struct VueImportee {
+pub struct VueImportee {
     pub(crate) dsn: compagnie::etat_dsn::EtatDsn,
     pub(crate) paies: Vec<CarteImportee>,
 }
 
 /// LE MOIS TENU AVANT, comme le panneau du mois le lit : `None` si un engagement de la saisie touche le mois ou si aucun
 /// engagement importe ne le touche.
-pub(crate) fn vue(ctx: &Contexte, mois: &str) -> R<Option<VueImportee>> {
+pub fn vue(ctx: &Contexte, mois: &str) -> R<Option<VueImportee>> {
     if !compagnie::etat_dsn::importe(&ctx.racine, mois)? {
         return Ok(None);
     }

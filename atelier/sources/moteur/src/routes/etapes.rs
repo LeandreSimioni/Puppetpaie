@@ -2017,9 +2017,9 @@ impl<'a> Moteur<'a> {
         let mois = &le_mois.to_string();
         // UN MOIS TENU AVANT CE LOGICIEL : ses etapes se sont faites ailleurs ; chaque case le dit (« mois importé »),
         // sans geste. Ce que l'import en dit (`import::mois::etapes`) se lit tel qu'il est.
-        if let Some(vue) = crate::import::mois::vue(self.ctx, mois)? {
-            use crate::import::mois::Teinte;
-            let b = crate::import::mois::etapes(&vue);
+        if let Some(vue) = import::mois::vue(self.ctx, mois)? {
+            use import::mois::Teinte;
+            let b = import::mois::etapes(&vue);
             let colonnes = vec!["G".to_string()];
             let etapes = ORDRE
                 .iter()

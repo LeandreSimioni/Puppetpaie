@@ -375,7 +375,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
     let lu = |k: &str| comble.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == "spectacle" && lu("titre").is_some_and(|t| t.eq_ignore_ascii_case(crate::import::proposee::A_COMPLETER));
+    let sans_titre = nom == "spectacle" && lu("titre").is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
     // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
     let titre_dit = match (cle, lu("titre")) {
         (None, _) => "Nouveau spectacle".to_string(),
@@ -1038,7 +1038,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
         let depose = lu.deposee();
         let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
-        if importe && !crate::import::mois::bulletins_repris(&ctx.racine, nom)?.is_empty() {
+        if importe && !import::mois::bulletins_repris(&ctx.racine, nom)?.is_empty() {
             sortes.insert(0, "bulletins repris");
         }
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
@@ -1058,7 +1058,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             _ if importe => false,
             // La DSN de l'ancien logiciel, et la saisie qui ajoute au mois : ce qui reste a declarer va dans une DSN
             // suivante (`import::mois::dsn_de_l_ancien_logiciel`).
-            Etat::Importee => crate::import::mois::dsn_de_l_ancien_logiciel(ctx, nom)?.is_some_and(|d| d.engagements > 0),
+            Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, nom)?.is_some_and(|d| d.engagements > 0),
             Etat::Passee => m.etat_remplacement(socle::mois::Mois::lire(nom)?, None)?.a_envoyer,
             Etat::Attente => false,
             _ => true,
@@ -1106,7 +1106,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
 fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<String>)> {
     let mut mois = mois_connus(&ctx.racine)?;
     // Les mois tenus avant ce logiciel sont des mois comme les autres : l'Historique les montre aussi.
-    for im in crate::import::mois::mois_importes(&ctx.racine)? {
+    for im in import::mois::mois_importes(&ctx.racine)? {
         if !mois.iter().any(|(x, _)| *x == im) {
             mois.push((im, Vec::new()));
         }
@@ -1632,7 +1632,7 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         demo: crate::accueil::suppression::mention(&ctx.racine).map_err(plain)?,
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
-        commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine).map_err(plain)?,
+        commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine).map_err(plain)?,
         historique,
         historique_incomplet,
         salaries,

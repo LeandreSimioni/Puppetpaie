@@ -137,11 +137,11 @@ pub struct PageCertificat {
 
 /// Les pages du PDF qui sont des certificats d'emploi Congés Spectacles, lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> Result<Vec<PageCertificat>, String> {
-    let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
     Ok(r.releve.pages.iter().enumerate().filter_map(|(i, p)| lire_page(p, i + 1)).collect())
 }
 
-fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
+fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
     let mut mots = Vec::new();
     for m in &p.mots {
         let texte = m.texte.trim().to_string();
@@ -235,7 +235,7 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
 
 /// Une date `JJ/MM/AAAA` (un mot) ou `JJ MM AAAA` (trois), en tete de `mots` : la date, et le nombre de mots pris.
 pub(crate) fn date_en_tete(mots: &[String]) -> Option<(Jour, usize)> {
-    if let Some(d) = mots.first().and_then(|m| crate::import::bulletin_lu::lire_date(m)) {
+    if let Some(d) = mots.first().and_then(|m| crate::bulletin_lu::lire_date(m)) {
         return Some((d, 1));
     }
     let [j, m, a, ..] = mots else { return None };
@@ -255,7 +255,7 @@ fn texte(mots: &[String]) -> Option<String> {
 /// Un montant arrondi a l'euro (« 1 234 », « 480 ») : des chiffres, des blancs de milliers.
 fn montant(mots: &[String]) -> Option<Decimal> {
     let t: String = mots.concat();
-    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::import::bulletin_lu::lire_nombre(&t)).flatten()
+    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::bulletin_lu::lire_nombre(&t)).flatten()
 }
 
 /// Le NIR imprime en tete du rang : treize caracteres (chiffres, et 2A ou 2B pour un ne en Corse), puis sa cle de deux
@@ -285,7 +285,7 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, us
 
 /// Une page : `None` si ce n'est pas un certificat d'emploi Congés Spectacles (son titre, la Caisse, ses rubriques de
 /// contrat).
-fn lire_page(p: &crate::import::releve::PageRelevee, page: usize) -> Option<PageCertificat> {
+fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertificat> {
     let rangs = en_rangs(mots_de(p));
     let js: Vec<Vec<(String, usize)>> = rangs.iter().map(|r| jetons_du_rang(r)).collect();
     let titre = js.iter().position(|j| contient(j, "certificat d emploi"))?;
@@ -348,7 +348,7 @@ fn lire_page(p: &crate::import::releve::PageRelevee, page: usize) -> Option<Page
                 }
                 "base" => c.base_conge = montant(&v),
                 "brut" => c.brut = montant(&v),
-                "date" => c.signe_le = v.first().and_then(|m| crate::import::bulletin_lu::lire_date(m)),
+                "date" => c.signe_le = v.first().and_then(|m| crate::bulletin_lu::lire_date(m)),
                 _ => {}
             }
         }

@@ -1,12 +1,12 @@
 //! Identifie les sources du binaire : `PAIE_SOURCES` (FNV-1a 64 bits sur les fichiers de `src/` du socle, du droit, de
-//! l'engagement, de la compagnie et du moteur, et sur le verrou de l'espace `Cargo.lock`, dans l'ordre des noms). L'etat
-//! garde de l'ouverture (`etat_garde`) porte cette marque : un autre moteur ne reprend pas un resultat qu'il n'a pas
-//! calcule.
+//! l'engagement, de la compagnie, de l'import et du moteur, et sur le verrou de l'espace `Cargo.lock`, dans l'ordre des
+//! noms). L'etat garde de l'ouverture (`etat_garde`) porte cette marque : un autre moteur ne reprend pas un resultat qu'il
+//! n'a pas calcule.
 
 use std::path::{Path, PathBuf};
 
 /// Ce que la marque couvre : les sources de ces crates, et le verrou commun.
-const DOSSIERS: [&str; 5] = ["../socle/src", "../droit/src", "../engagement/src", "../compagnie/src", "src"];
+const DOSSIERS: [&str; 6] = ["../socle/src", "../droit/src", "../engagement/src", "../compagnie/src", "../import/src", "src"];
 const VERROU: &str = "../Cargo.lock";
 
 fn fichiers(dossier: &Path, out: &mut Vec<PathBuf>) {

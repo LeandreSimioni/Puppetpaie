@@ -1,5 +1,5 @@
 //! L'IMPORT AU NIVEAU DES ROUTES : ce que l'import compose et ecrit pour les routes de « Reprendre l'historique »
-//! (`routes::import`, `routes::archives`), sur ce que l'import lit des pieces (`crate::import`). L'apercu du dossier
+//! (`routes::import`, `routes::archives`), sur ce que l'import lit des pieces (la crate `import`). L'apercu du dossier
 //! (`bulletins`), ce qui s'ecrit (`ecrite` : les engagements importes ; `fiches` : les fiches creees ou completees par
 //! le chemin des fiches ; `completer` : ce qu'une fiche qui existe recoit), la nature des contrats que les bulletins
 //! n'ont pas dite (`nature`), ce que les DSN reprises disent de la configuration (`parametrage`), la regularisation
@@ -15,7 +15,7 @@ pub mod incident;
 pub mod nature;
 pub mod parametrage;
 
-impl crate::routes::enveloppe::Dite for crate::import::reponse::Importation {
+impl crate::routes::enveloppe::Dite for import::reponse::Importation {
     fn phrase(&self) -> &str {
         &self.phrase
     }

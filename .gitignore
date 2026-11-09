@@ -157,7 +157,7 @@ atelier/sources/fenetre/gen/schemas/windows-schema.json
 /compagnies/
 atelier/prive-dev/
 import/
-!atelier/sources/moteur/src/import/
+!atelier/sources/import/
 logiciel/donnees/google-application.json
 
 # La sortie de atelier/installeur/construire.sh (Publier la refait a chaque version).

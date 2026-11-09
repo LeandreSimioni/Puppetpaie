@@ -463,7 +463,7 @@ fn pas_avant(ctx: &Contexte, mois: &str) -> R<()> {
 /// deja declare dont l'annule-et-remplace n'est plus admis.
 pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFabriquee> {
     let mois = &le_mois.to_string();
-    crate::import::mois::refuser_la_dsn_de_l_ancien_logiciel(ctx, mois)?;
+    import::mois::refuser_la_dsn_de_l_ancien_logiciel(ctx, mois)?;
     let _verrou = documents::ecrire_documents::prendre_le_verrou(ctx, qui)?;
     crate::routes::mois::refuser_si_clos(ctx, mois)?;
     pas_avant(ctx, mois)?;

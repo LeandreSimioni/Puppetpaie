@@ -44,7 +44,7 @@ pub fn guide() -> Guide {
             "Une AEM ou une AER Cinéma Spectacle remplace un bulletin qui manque.",
             "Au moins une DSN déposée pré-remplit la configuration de la compagnie.",
         ],
-        accepte: crate::import::tri::ACCEPTE,
+        accepte: crate::tri::ACCEPTE,
         pieces: vec![
             Piece {
                 quoi: "Les bulletins de paie, en PDF",

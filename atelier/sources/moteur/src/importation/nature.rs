@@ -432,7 +432,7 @@ impl crate::routes::enveloppe::Dite for NatureDite {
 /// l'ecran (`dire`). Il en manque, ou la nature declaree n'est pas d'un permanent : rien ne se choisit, l'ecran le
 /// demande. Rend ce que chaque nature dite a fait, en phrases ; une nature lue que l'ecriture refuse se dit aussi.
 pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>> {
-    let lecture = crate::import::dsn_aem::lire_dsn(&racine.join("historique").join("bulletins"))?;
+    let lecture = import::dsn_aem::lire_dsn(&racine.join("historique").join("bulletins"))?;
     let permises = natures_permanentes()?;
     let mut faits = Vec::new();
     for x in a_dire(racine)? {

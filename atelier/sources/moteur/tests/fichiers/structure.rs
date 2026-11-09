@@ -164,7 +164,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     let mut chemins = Vec::new();
     // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`). Les refus des
     // outils de l'editeur et du scenario du banc (la forme d'un fichier de scenario) vont au developpeur.
-    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         let (atelier, scenario) = (espace().join("moteur/src/atelier"), espace().join("moteur/src/scenario.rs"));
         for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| !p.starts_with(&atelier) && *p != scenario) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
@@ -701,7 +701,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
 /// Les crates de l'espace, de bas en haut : chacune ne prend qu'a celles d'en dessous.
 #[test]
 fn une_crate_ne_prend_qu_a_celles_du_dessous() {
-    const ORDRE: [&str; 8] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"];
+    const ORDRE: [&str; 9] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"];
     for (rang, nom) in ORDRE.iter().enumerate() {
         let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
         let deps = t.split("\n[dependencies]").nth(1).unwrap_or("").split("\n[").next().unwrap();
@@ -726,9 +726,8 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
 /// ne place pas fait echouer le test, comme une flèche qui monte.
 #[test]
 fn un_module_du_moteur_ne_prend_qu_aux_crates_du_dessous() {
-    const ORDRE: [&str; 4] = ["import", "routes", "moteur", "atelier"];
-    const CIBLES: [(&str, &str); 21] = [
-        ("import", "import"),
+    const ORDRE: [&str; 3] = ["routes", "moteur", "atelier"];
+    const CIBLES: [(&str, &str); 20] = [
         ("routes", "routes"),
         ("service", "routes"),
         ("etat_garde", "routes"),
@@ -791,7 +790,7 @@ fn code_et_tests(t: &str) -> String {
 }
 
 /// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
-const COUCHES_FERMEES: [&str; 8] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"];
+const COUCHES_FERMEES: [&str; 9] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"];
 
 /// LES PORTES : les deux couches qui ont la bibliotheque du JSON. Le socle lit et ecrit les fichiers ; le moteur recoit
 /// la charge d'une route et rend sa reponse. Hors de leur bord, leur JSON brut se lit au texte.
@@ -843,7 +842,7 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// Le verrou n'a aucune exception : quand il echoue, on corrige le code ou la donnee.
 #[test]
 fn une_couche_fermee_ne_lit_que_des_formes() {
-    const ORDRE: [&str; 8] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"];
+    const ORDRE: [&str; 9] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"];
     assert_eq!(COUCHES_FERMEES, ORDRE[..COUCHES_FERMEES.len()], "les couches se ferment de bas en haut, dans l'ordre des crates");
     // Les portes ont la bibliotheque du JSON : hors du bord, leur JSON brut se lit au texte. Toute autre couche fermee ne
     // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
@@ -937,7 +936,7 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
     assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
     assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "`ecrire_datee` date ses cases en un seul endroit");
-    for p in ["compagnie", "moteur"].into_iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != fiches) {
+    for p in ["compagnie", "import", "moteur"].into_iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != fiches) {
         let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
         let t = std::fs::read_to_string(&p).unwrap();
         assert!(!t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
@@ -1027,7 +1026,7 @@ fn un_seul_endroit_ecrit_un_fichier_d_engagements() {
     const LECTEURS: [&str; 2] = ["moteur/src/gestes/exercice_ecrit.rs", "moteur/src/commandes/actes.rs"];
     let stock = espace().join("engagement/src/stock.rs");
     assert_eq!(std::fs::read_to_string(&stock).unwrap().matches("ecrire_json(").count(), 1, "stock.rs n'ecrit que par `poser`");
-    for crate_ in ["engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != stock) {
             if std::fs::read_to_string(&p).unwrap().contains("stock::chemin(") {
                 let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
@@ -1049,7 +1048,7 @@ fn une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit() {
     let texte = std::fs::read_to_string(&paies).unwrap();
     assert_eq!(texte.matches("stock::lire_dans(").count(), 1, "paies.rs ne lit un fichier de paies que par `fichier`");
     assert_eq!(texte.matches("stock::poser_dans(").count(), 1, "paies.rs n'ecrit un fichier de paies que par `ecrire`");
-    for crate_ in ["engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != paies && *p != stock) {
             let t = std::fs::read_to_string(&p).unwrap();
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
@@ -1512,7 +1511,7 @@ fn textes_html(t: &str) -> Vec<String> {
 fn un_seul_endroit_ecrit_un_montant() {
     let maison = espace().join("socle/src/texte.rs");
     let mut fautes = Vec::new();
-    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != maison) {
             let t = std::fs::read_to_string(&p).unwrap();
             let lignes: Vec<&str> = t.lines().collect();
@@ -2018,7 +2017,7 @@ fn la_carte_valide_a_une_variante_par_nature_et_par_motif() {
 #[test]
 fn chaque_forme_lue_refuse_une_cle_inconnue() {
     let mut fautes = Vec::new();
-    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         for f in sources(&espace().join(crate_).join("src")) {
             let texte = std::fs::read_to_string(&f).unwrap();
             let lignes: Vec<&str> = texte.lines().collect();
@@ -2072,7 +2071,7 @@ fn scripts_de(html: &str) -> String {
 fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     let depot = espace().join("../..");
     let mut fichiers = Vec::new();
-    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"] {
+    for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"] {
         fichiers.extend(sources(&espace().join(crate_).join("src")));
     }
     fichiers.sort();

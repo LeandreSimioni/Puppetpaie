@@ -31,7 +31,7 @@ use serde::Deserialize;
 use socle::forme::Nombre;
 
 use super::bulletins_fictifs::{page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
-use crate::import::bulletin_lu::{jetons, Table};
+use import::bulletin_lu::{jetons, Table};
 use socle::date::Jour;
 use socle::num::{eur2, Decimal, Resultat};
 

@@ -160,7 +160,7 @@ pub(crate) fn de_mois_en_clair(mois: &str) -> String {
 /// revalide (`produire_regularisations::regularisations_pour`). Celle que l'ancien logiciel a deposee ne se remplace
 /// jamais ici (regle 4, `import::mois::dsn_de_l_ancien_logiciel`).
 pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<DsnDeposee>> {
-    if let Some(porteur) = crate::import::mois::dsn_de_l_ancien_logiciel(ctx, &mois.to_string())?.map(|d| d.porteur) {
+    if let Some(porteur) = import::mois::dsn_de_l_ancien_logiciel(ctx, &mois.to_string())?.map(|d| d.porteur) {
         return Ok(Some(DsnDeposee::Corrigee { porteur }));
     }
     let dsn = compagnie::etat_dsn::du_mois(ctx, mois, None)?;

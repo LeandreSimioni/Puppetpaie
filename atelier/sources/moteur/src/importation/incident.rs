@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 
 use compagnie::incidents;
 use crate::importation::bulletins::DossierLu;
-use crate::import::tri::Sorte;
+use import::tri::Sorte;
 use droit::contexte::Contexte;
 use socle::texte::sans_accent;
 
@@ -70,7 +70,7 @@ fn vocabulaire() -> Result<&'static HashSet<String>, String> {
         return Ok(v);
     }
     let mut v: HashSet<String> = MOTS_DES_PIECES.iter().map(|m| m.to_string()).collect();
-    for s in crate::import::bulletin_lu::textes_de_la_table()? {
+    for s in import::bulletin_lu::textes_de_la_table()? {
         for m in jeton().find_iter(&s) {
             if m.as_str().chars().all(char::is_alphabetic) {
                 v.insert(plie(m.as_str()));
@@ -179,7 +179,7 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
 /// raison, masquees.
 #[derive(serde::Serialize)]
 struct Detail<'a> {
-    sort: crate::import::reponse::Sort,
+    sort: import::reponse::Sort,
     logiciel: Option<&'a str>,
     pages: usize,
     forme: Vec<FormeDePage<'a>>,
@@ -191,10 +191,10 @@ struct Detail<'a> {
 #[derive(serde::Serialize)]
 struct FormeDePage<'a> {
     page: usize,
-    sort: crate::import::reponse::Sort,
+    sort: import::reponse::Sort,
     raison: String,
     #[serde(flatten)]
-    releve: Option<&'a crate::import::tri::PageLue>,
+    releve: Option<&'a import::tri::PageLue>,
 }
 
 #[cfg(test)]

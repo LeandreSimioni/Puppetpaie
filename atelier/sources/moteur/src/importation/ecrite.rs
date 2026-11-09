@@ -27,7 +27,7 @@ use socle::date::Jour;
 use socle::echec::erreur;
 use socle::num::{Decimal, Resultat};
 use socle::echec::Echec;
-use crate::import::reponse::{Copie, EtatFiche, Importation};
+use import::reponse::{Copie, EtatFiche, Importation};
 
 type R<T> = Result<T, Echec>;
 
@@ -586,7 +586,7 @@ fn depots_attestes_au_journal(ctx: &Contexte) -> R<usize> {
 /// LES ECARTS DE CALCUL PARTENT A CHAQUE IMPORT (`import::ecarts`), lus avec les fiches telles que l'import les a
 /// ecrites ; rien ne s'en dit a l'ecran.
 fn rapporter_les_ecarts(frais: &Contexte) -> R<usize> {
-    crate::import::ecarts::rapporter(frais)
+    import::ecarts::rapporter(frais)
 }
 fn avertissement_differents(differents: &[String], ou: &str) -> String {
     format!(
@@ -701,8 +701,8 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     reponse.parametrage = faits;
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
-    let ecrite = |f: &crate::import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);
-    let de = |l: &[crate::import::reponse::FicheImportee]| l.iter().filter(|f| ecrite(f)).count();
+    let ecrite = |f: &import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);
+    let de = |l: &[import::reponse::FicheImportee]| l.iter().filter(|f| ecrite(f)).count();
     // Les fiches ecrites, par sorte : l'entreprise, les salaries, les spectacles.
     let mut fiches: Vec<String> = Vec::new();
     if reponse.entreprise.as_ref().is_some_and(ecrite) {
@@ -721,7 +721,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(Echec::from)?;
     {
         for sp in frais.spectacles.values().filter(|sp| !sp.archivee()) {
-            if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(crate::import::proposee::A_COMPLETER)) {
+            if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(import::proposee::A_COMPLETER)) {
                 if sp.titre_propose.as_deref().is_some_and(|t| !t.is_empty()) {
                     proposes += 1;
                 } else {

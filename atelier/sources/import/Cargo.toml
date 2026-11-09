@@ -1,0 +1,33 @@
+[package]
+name = "import"
+version = "0.1.0"
+edition = "2021"
+description = "L'import de PuppetPaie au-dessus de la compagnie : le passé d'une compagnie, tenu dans un autre logiciel, tel que ses pièces le disent (DSN, AEM, bulletins, certificats Congés Spectacles)."
+license = "EUPL-1.2"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+socle = { path = "../socle" }
+droit = { path = "../droit" }
+engagement = { path = "../engagement" }
+# Les documents que fabrique un engagement valide.
+documents = { path = "../documents" }
+# Les déclarations que fabrique un engagement valide.
+declarations = { path = "../declarations" }
+# Ce qui part et revient, et le journal de ce qui est parti.
+envois = { path = "../envois" }
+# L'état de la DSN d'un mois, l'installation, le journal des incidents.
+compagnie = { path = "../compagnie" }
+serde = { workspace = true }
+# Les motifs du caviardage (ce qui part chez l'editeur), des ecarts et du tri ;
+# sans les optimisations par defaut, qui pesent sur le binaire.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# L'empreinte d'une piece de la boite d'import (`tri.rs`).
+sha2 = { workspace = true }
+# Une archive zip deposee dans la boite d'import (`tri.rs`) : lecture.
+zip = { workspace = true }
+# Les pages d'un PDF importe, relevees par la fabrique dans le meme processus (`releve.rs`).
+fabrique-pdf = { path = "../fabrique-pdf" }

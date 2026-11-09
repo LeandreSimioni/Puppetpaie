@@ -227,7 +227,7 @@ impl Origine {
 
 /// UNE CASE, EN MOTS DANS UNE PHRASE : un texte ou un nombre tel qu'il s'ecrit, oui ou non, des mots a la suite, une
 /// structure (`cle valeur`), ses lignes (chacune ses valeurs).
-pub(crate) fn en_mots(v: &Valeur) -> String {
+pub fn en_mots(v: &Valeur) -> String {
     let valeurs = |s: &Saisie| s.cases().iter().map(|(_, x)| en_mots(x)).collect::<Vec<_>>().join(" ");
     match v {
         Valeur::Texte(t) => t.clone(),
@@ -341,7 +341,7 @@ impl FicheImportee {
     /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
     pub fn poser(&mut self, donnees: &Saisie, anomalies: Vec<Anomalie>) {
         let mut cases = Saisie::default();
-        crate::import::proposee::fondre(&mut cases, donnees);
+        crate::proposee::fondre(&mut cases, donnees);
         self.donnees = cases;
         self.anomalies = anomalies;
     }
@@ -668,7 +668,7 @@ pub struct Importation {
 }
 
 /// « 3 bulletins » : `n` et le mot, au pluriel quand il le faut ; rien pour zero.
-pub(crate) fn n_mots(n: usize, mot: &str) -> String {
+pub fn n_mots(n: usize, mot: &str) -> String {
     match n {
         0 => String::new(),
         1 => format!("1 {}", mot),

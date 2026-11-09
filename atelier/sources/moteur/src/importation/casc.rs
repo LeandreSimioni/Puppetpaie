@@ -250,7 +250,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur(Classe::Disque, m))?;
     let depuis = base.depuis.clone();
-    let mut candidats: Vec<String> = crate::import::mois::mois_importes(&ctx.racine)?
+    let mut candidats: Vec<String> = import::mois::mois_importes(&ctx.racine)?
         .into_iter()
         .filter(|m| m.as_str() >= depuis.as_str() && !faits.contains(m))
         .collect();

@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use serde::Serialize;
 
-use crate::import::caviardage::{self, Connus};
+use crate::caviardage::{self, Connus};
 use compagnie::incidents;
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;

@@ -18,7 +18,7 @@
 //! Tout cela suit l'ecriture des fiches et des engagements : ce qui ne se pose pas se dit, en phrases, et l'import reste
 //! fait.
 
-use crate::import::dsn_aem::LectureDsn;
+use import::dsn_aem::LectureDsn;
 use declarations::dsn_lue::Adhesion;
 use droit::contexte::Contexte;
 use droit::organismes::Ligne;
@@ -69,7 +69,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
 /// Le role d'un contrat attendu (`role` de `organismes-base.json` : `prevoyance`, `sante`) que le libelle d'une adhesion
 /// nomme, et lui seul : « SANTE CCNEAC » nomme la sante, « PREVOYANCE CCNEAC » la prevoyance, « CCNEAC » rien.
 fn role_nomme(libelle: &str) -> Option<&'static str> {
-    let mots = crate::import::bulletin_lu::jetons(libelle);
+    let mots = import::bulletin_lu::jetons(libelle);
     let a = |m: &str| mots.iter().any(|x| x == m);
     match (a("prevoyance"), a("sante")) {
         (true, false) => Some("prevoyance"),
@@ -161,7 +161,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
 
 /// Ce que les DSN reprises de la compagnie (`historique/bulletins/`) disent de sa configuration, pose ; rend ce qui l'a ete.
 pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
-    let lecture = match crate::import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
+    let lecture = match import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
         Ok(l) => l,
         Err(e) => return vec![e.phrase()],
     };
@@ -213,7 +213,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
 /// Les contrats des permanents que les DSN reprises portent, poses quand la compagnie se met a employer un permanent
 /// (la nature d'un contrat repris dite, `import::nature::dire`) : l'ecran ne les attendait pas encore a l'import.
 pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> socle::echec::R<Vec<String>> {
-    let lecture = crate::import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
+    let lecture = import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
     let mut faits = Vec::new();
     if lecture.fichiers > 0 {
         poser_organismes(ctx, &lecture, &mut faits);

@@ -1,5 +1,6 @@
 //! Le moteur de PuppetPaie au-dessus de la compagnie (la crate `compagnie` : ce qui la garde, et l'installation qui la
-//! porte sur le poste) : la ligne de commande `moteur`, les routes de l'interface, l'import (`import`) et l'atelier
+//! porte sur le poste) et de l'import (la crate `import` : ce que les pieces d'un autre logiciel disent) : la ligne de
+//! commande `moteur`, les routes de l'interface, ce que l'import ecrit pour elles (`importation`) et l'atelier
 //! (`atelier`). Au niveau des routes, ce que l'accueil fait des compagnies (`accueil`) et ce que la veille dit a la page
 //! (`veille`).
 //!
@@ -16,7 +17,6 @@ pub mod etat_garde;
 pub mod gestes;
 pub mod historique_mois;
 pub mod horloge;
-pub mod import;
 pub mod importation;
 pub mod interface;
 pub mod metier;

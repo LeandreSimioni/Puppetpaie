@@ -60,6 +60,8 @@ ureq = { workspace = true }
 getrandom = { workspace = true }
 # Ce qui garde et fait vivre la compagnie : l'installation, le coffre, la preuve d'un acte reel, la mise a jour.
 compagnie = { path = "../compagnie" }
+# Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
+import = { path = "../import" }
 # Les courriels joués de la démonstration (`simulation_courriels.rs`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"
 # La messagerie (`courriel.rs`, `envoi.rs`) : SMTP par `lettre` (sans son batisseur de messages : on lui passe nos

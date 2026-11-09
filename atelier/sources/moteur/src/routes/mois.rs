@@ -253,7 +253,7 @@ struct SaisieDuMois {
     mois: Mois,
     phrase: String,
     /// Les cartes importees (`import::mois::cartes`).
-    importes: Vec<crate::import::mois::CarteImportee>,
+    importes: Vec<import::mois::CarteImportee>,
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
@@ -554,7 +554,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
-    let importes = crate::import::mois::cartes(ctx, &texte_mois)?;
+    let importes = import::mois::cartes(ctx, &texte_mois)?;
     let ferme = ferme_aux_neufs(ctx, &texte_mois)?;
     // CE QUE L'ECRAN DIT DE LA SAISIE : pour un mois importe, `ferme_aux_neufs`.
     let phrase = match (&ferme, existe) {

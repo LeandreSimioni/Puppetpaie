@@ -672,7 +672,7 @@ struct LigneDetaillee {
 
 /// LES TEXTES DE LA TABLE LIVREE, tels qu'ecrits : ses notes, ses libelles, ses signatures, les rubriques de ses lignes
 /// (le vocabulaire que le masque des incidents garde : `import::incident`).
-pub(crate) fn textes_de_la_table() -> Resultat<Vec<String>> {
+pub fn textes_de_la_table() -> Resultat<Vec<String>> {
     let t: TableEcrite = socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join(FICHIER_TABLE), "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?;
     let e = &t.entetes;
     let r = &t.resumes;
@@ -989,8 +989,8 @@ pub enum Refus {
 }
 
 impl Refus {
-    pub fn code(&self) -> crate::import::reponse::Sort {
-        use crate::import::reponse::Sort;
+    pub fn code(&self) -> crate::reponse::Sort {
+        use crate::reponse::Sort;
         match self {
             Refus::SansTexte(_) => Sort::SansTexte,
             Refus::SansEntetes(_) => Sort::SansEntetes,
@@ -1061,7 +1061,7 @@ pub fn lire(chemin: &Path) -> Resultat<Vec<Lecture>> {
 
 /// La meme, avec une table donnee.
 pub fn lire_avec(chemin: &Path, table: &Table) -> Resultat<Vec<Lecture>> {
-    let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
     let avertissements = &r.avertissements;
     Ok(r.releve
         .pages
@@ -1076,7 +1076,7 @@ pub fn lire_avec(chemin: &Path, table: &Table) -> Resultat<Vec<Lecture>> {
         .collect())
 }
 
-fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
+fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
     let mut mots: Vec<Mot> = Vec::new();
     for m in &p.mots {
         let texte = m.texte.clone();
@@ -1093,7 +1093,7 @@ fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
     mots
 }
 
-fn lire_page(p: &crate::import::releve::PageRelevee, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
+fn lire_page(p: &crate::releve::PageRelevee, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
     let mots = mots_de(p);
     if mots.is_empty() {
         let mut detail = format!("aucun mot ({} police(s), {} image(s), {} trait(s))", p.polices.len(), p.images.len(), p.traits.len());

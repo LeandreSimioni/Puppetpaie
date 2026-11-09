@@ -146,7 +146,7 @@ fn l_apercu_annonce_ce_que_l_ecriture_trouvera() {
     let partiraient: Vec<String> = compagnie::incidents::lire(&racine, None, false)
         .unwrap()
         .iter()
-        .filter(|l| l.ou == moteur::import::ecarts::OU)
+        .filter(|l| l.ou == import::ecarts::OU)
         .map(|l| socle::ecriture::json_en_ligne(&compagnie::incidents::pour_l_editeur(&racine, l)))
         .collect();
     assert!(!partiraient.is_empty(), "l'import n'a rien rapporte de ses ecarts");

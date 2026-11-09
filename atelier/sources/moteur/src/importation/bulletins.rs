@@ -51,7 +51,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::RoundingStrategy;
 use serde::Serialize;
 
-use crate::import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
+use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
 use engagement::importe::EmploiImprime;
@@ -59,14 +59,14 @@ use socle::date::Jour;
 use socle::echec::R;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
-use crate::import::proposee;
-use crate::import::tri::Sorte;
+use import::proposee;
+use import::tri::Sorte;
 use socle::num::Decimal;
 use socle::texte::euros;
-use crate::import::attestes::{Atteste, Registre};
+use import::attestes::{Atteste, Registre};
 use engagement::importe::{Attestation, ContratAtteste, ContratLu, Declaration, PaieLue, PaieVersee};
 use crate::routes::import::{self as ri, ACreer, Apercu, SpectacleDesPieces, A_CREER};
-use crate::import::reponse::{
+use import::reponse::{
     BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
     Origine, PageVu, ParSort, Sort, Source, TriVu,
 };
@@ -114,7 +114,7 @@ struct Lu {
 /// de travail), et le nom de la copie de chaque fichier repris (par rang dans le tri).
 pub(crate) struct DossierLu {
     pub(crate) ap: Apercu,
-    pub(crate) tri: crate::import::tri::Tri,
+    pub(crate) tri: import::tri::Tri,
     pub(crate) copies: BTreeMap<usize, String>,
 }
 
@@ -138,7 +138,7 @@ pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<
 
 /// Le nom de la copie d'un fichier dans `historique/bulletins/` : l'empreinte, rien de personnel. `None` pour ce qui ne
 /// se reprend pas.
-pub(crate) fn nom_copie(f: &crate::import::tri::Fichier) -> Option<String> {
+pub(crate) fn nom_copie(f: &import::tri::Fichier) -> Option<String> {
     let ext = match f.sorte {
         Sorte::Dsn => "dsn",
         // `importation::lire_aem` ne lit que les `*.txt`.
@@ -211,7 +211,7 @@ fn idcc_lu(texte: &str) -> Option<String> {
 }
 
 fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashMap<String, String>) -> R<DossierLu> {
-    let mut tri = crate::import::tri::trier(dossier, travail)?;
+    let mut tri = import::tri::trier(dossier, travail)?;
     for f in &mut tri.fichiers {
         if let Some(nom) = deposes.get(&f.chemin) {
             f.chemin = nom.clone();
@@ -220,13 +220,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // 1. Les DSN et AEM : ce que chacune dit de son employeur. Elles ne sont copiees la ou l'import existant
     // les lit qu'apres l'etape 3, et seulement celles de la compagnie.
-    let pieces: Vec<(usize, bool, crate::import::dsn_aem::Employeur)> = tri
+    let pieces: Vec<(usize, bool, import::dsn_aem::Employeur)> = tri
         .fichiers
         .iter()
         .enumerate()
         .filter_map(|(i, f)| match f.sorte {
-            Sorte::Dsn => Some(crate::import::dsn_aem::employeur_dsn(&f.disque).map(|e| (i, false, e))),
-            Sorte::Aem => Some(crate::import::dsn_aem::employeur_aem(&f.disque).map(|e| (i, true, e))),
+            Sorte::Dsn => Some(import::dsn_aem::employeur_dsn(&f.disque).map(|e| (i, false, e))),
+            Sorte::Aem => Some(import::dsn_aem::employeur_aem(&f.disque).map(|e| (i, true, e))),
             _ => None,
         })
         .collect::<R<_>>()?;
@@ -256,7 +256,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         // bulletins ; l'AER Cinéma Spectacle par ses champs, les AEM par leurs rubriques. Un fichier dont une de ces
         // lectures ne se fait pas n'est pas repris, et le dit.
         let octets = std::fs::read(&f.disque).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&f.disque, &e)))?;
-        let lues = (crate::import::certificat_lu::lire(&f.disque), crate::import::aem_lu::lire_aer(&octets), crate::import::aem_lu::lire(&f.disque));
+        let lues = (import::certificat_lu::lire(&f.disque), import::aem_lu::lire_aer(&octets), import::aem_lu::lire(&f.disque));
         let (certificats_du_fichier, aer, aem) = match lues {
             (Ok(c), Ok(r), Ok(a)) => (c, r, a),
             (Err(m), _, _) | (_, Err(m), _) | (_, _, Err(m)) => {
@@ -281,14 +281,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             pages_certificats.extend(1..=f.pages.len());
             for pa in colonnes {
                 match pa.lecture {
-                    crate::import::aem_lu::Lecture::Lue(a) => {
+                    import::aem_lu::Lecture::Lue(a) => {
                         let c = a.commun();
                         certificats.push(Attestee { fichier: i, c, aem: Some(a) });
                     }
-                    crate::import::aem_lu::Lecture::Refusee { sort, raison, .. } => {
+                    import::aem_lu::Lecture::Refusee { sort, raison, .. } => {
                         cr.push(PageCr { page: pa.page, sort, raison, infos: InfosPage::default() });
                     }
-                    crate::import::aem_lu::Lecture::Notice => {}
+                    import::aem_lu::Lecture::Notice => {}
                 }
             }
         }
@@ -298,14 +298,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 continue;
             }
             match pa.lecture {
-                crate::import::aem_lu::Lecture::Lue(a) => {
+                import::aem_lu::Lecture::Lue(a) => {
                     let c = a.commun();
                     certificats.push(Attestee { fichier: i, c, aem: Some(a) });
                 }
-                crate::import::aem_lu::Lecture::Refusee { sort, raison, .. } => {
+                import::aem_lu::Lecture::Refusee { sort, raison, .. } => {
                     cr.push(PageCr { page: pa.page, sort, raison, infos: InfosPage::default() });
                 }
-                crate::import::aem_lu::Lecture::Notice => {
+                import::aem_lu::Lecture::Notice => {
                     cr.push(PageCr { page: pa.page, sort: Sort::Annexe, raison: "la notice de l'AEM : rien à reprendre".into(), infos: InfosPage::default() });
                 }
             }
@@ -368,12 +368,12 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         pieces.iter().filter(|(_, aem, _)| *aem).flat_map(|(_, _, e)| e.sirens.iter().cloned()).collect();
     sirens_autres.extend(lus.iter().filter_map(|l| siret_lu(&l.b)).map(|s| s[..9].to_string()));
     sirens_autres.extend(certificats.iter().filter_map(|c| c.c.siret.as_ref()).map(|s| s[..9].to_string()));
-    let siren = crate::import::dsn_aem::siren_de_reference(&ctx.entreprise, &sirens_dsn, &sirens_autres);
+    let siren = import::dsn_aem::siren_de_reference(&ctx.entreprise, &sirens_dsn, &sirens_autres);
     let mut gardes_cert: Vec<Attestee> = Vec::new();
     for c in certificats {
         let raison = match (&c.c.siret, &siren) {
             (Some(s), Some(r)) if &s[..9] != r => Some(format!("{} d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris", c.nom())),
-            (Some(_), None) => Some(crate::import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
+            (Some(_), None) => Some(import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
             _ => None,
         };
         match raison {
@@ -389,7 +389,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             (Some(s), Some(r)) if &s[..9] != r => {
                 Some("bulletin d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris".to_string())
             }
-            (Some(_), None) => Some(crate::import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
+            (Some(_), None) => Some(import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
             _ => None,
         };
         match ecart {
@@ -414,7 +414,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut avertis: BTreeMap<usize, String> = BTreeMap::new();
     for (i, aem, e) in &pieces {
         let f = &tri.fichiers[*i];
-        match crate::import::dsn_aem::verdict_entreprise(*aem, e, siren.as_deref()) {
+        match import::dsn_aem::verdict_entreprise(*aem, e, siren.as_deref()) {
             Err(raison) => {
                 ecartes.insert(*i, raison);
                 continue;
@@ -551,7 +551,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     continue;
                 }
                 if registre.pareils(&c.nir, &c.debut.iso(), &c.fin.iso(), "AEM").is_empty() {
-                    registre.ajouter(&c.nir, crate::import::dsn_aem::ligne_du_contrat(c, &cle_de(&c.nir)), "AEM", "declarations");
+                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, &cle_de(&c.nir)), "AEM", "declarations");
                     nouveaux += 1;
                 }
             }
@@ -1061,7 +1061,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
                 let pareils = registre.pareils(&l.nir, &debut, &fin, "bulletin");
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(compte.brut));
-                let en_mots = crate::import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
+                let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
                 if pareils.iter().any(|a| a.compte() == le_sien) {
                     phrases.push("contrat déjà attesté".into());
                     EtatContrat::Deja
@@ -1127,7 +1127,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Some((nir?, debut, fin))
         })
         .collect();
-    let chevauche = crate::import::attestes::chevauche;
+    let chevauche = import::attestes::chevauche;
     // Un compte ou une date d'une paie, dans une phrase : « ? » quand elle ne le dit pas.
     let dit = |x: Option<String>| match x {
         Some(t) => t,
@@ -2048,8 +2048,8 @@ fn libelle_champ(champ: &str) -> &str {
 /// `aem` : ce que l'AEM dit de plus (les heures, les cachets, les jours, le numero d'objet, le statut, la naissance).
 struct Attestee {
     fichier: usize,
-    c: crate::import::certificat_lu::Certificat,
-    aem: Option<crate::import::aem_lu::Aem>,
+    c: import::certificat_lu::Certificat,
+    aem: Option<import::aem_lu::Aem>,
 }
 
 impl Attestee {
@@ -2082,7 +2082,7 @@ impl Attestee {
 /// champ) : son nom de naissance, son prenom, son NIR et sa cle, son adresse, son emploi et ce que le metier du
 /// catalogue qu'il nomme donne (`statut_et_metier`), cadre ou non, et le debut de son premier contrat.
 fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Saisie> {
-    let dernier = |g: &dyn Fn(&crate::import::certificat_lu::Certificat) -> Option<String>| ls.iter().rev().find_map(|l| g(&l.c).filter(|x| !x.trim().is_empty()));
+    let dernier = |g: &dyn Fn(&import::certificat_lu::Certificat) -> Option<String>| ls.iter().rev().find_map(|l| g(&l.c).filter(|x| !x.trim().is_empty()));
     let adresse = ls.iter().rev().find_map(|l| adresse_lue(&l.c.adresse));
     let s = SalarieLu {
         nir: nir.to_string(),
@@ -2133,7 +2133,7 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Saisie> {
 
 /// Artiste ou technicien : la fiche qui existe, sinon celle que l'import cree (DSN, bulletin), sinon le metier du
 /// catalogue que nomme l'emploi du certificat, sous la convention de l'import (`idcc`). `None` : rien ne le dit.
-fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACreer], nir: &str, c: &crate::import::certificat_lu::Certificat, idcc: Option<&str>) -> R<Option<String>> {
+fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACreer], nir: &str, c: &import::certificat_lu::Certificat, idcc: Option<&str>) -> R<Option<String>> {
     if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k.as_str())).and_then(|f| f.statut.dite()) {
         return Ok(Some(s.as_str().to_string()));
     }
@@ -2147,7 +2147,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACree
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,
 /// `import::ecrite`), et ce qu'il compte en mots : la periode du mois (`aem_lu::Aem::periode`), ses heures, ses
 /// cachets isoles et groupes, ses jours, son brut et son numero d'objet, tels qu'imprimes.
-fn contrat_de_l_aem(a: &crate::import::aem_lu::Aem, salarie: &str, copie: &str) -> Result<(ContratLu, String), String> {
+fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> Result<(ContratLu, String), String> {
     let (Some((debut, fin)), Some(brut)) = (a.periode(), a.brut) else {
         return Err("l'AEM ne dit pas tout ce qu'un contrat demande".into());
     };
@@ -2174,7 +2174,7 @@ fn contrat_de_l_aem(a: &crate::import::aem_lu::Aem, salarie: &str, copie: &str) 
 /// annexes-8-10.txt`, l. 5802) ; le certificat n'a qu'une case pour les deux. Inference : pour un artiste, elle compte
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
-fn contrat_du_certificat(c: &crate::import::certificat_lu::Certificat, statut: Option<&str>, salarie: &str, copie: &str) -> Result<(ContratLu, String), String> {
+fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: &str, copie: &str) -> Result<(ContratLu, String), String> {
     let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
         return Err("le certificat ne dit pas tout ce qu'un contrat demande".into());
     };

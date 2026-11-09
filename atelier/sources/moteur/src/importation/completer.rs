@@ -55,7 +55,7 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) 
     }
     // La fiche, case par case, et ce qui la complete : ce que l'ecran en ferait (`comblee`).
     let mut fusion = fiche.clone();
-    crate::import::proposee::fondre(&mut fusion, &out);
+    import::proposee::fondre(&mut fusion, &out);
     let comble = fusion.comblee(nom)?;
     for c in &champs {
         let Some(src) = c.derive_de.as_deref().filter(|d| !d.is_empty()) else { continue };
@@ -84,7 +84,7 @@ pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: &'static str, cle: Optio
         return;
     }
     match liste.iter_mut().find(|a| a.nom == nom && a.cle.as_deref() == cle) {
-        Some(a) => crate::import::proposee::completer_de(&mut a.champs, champs),
+        Some(a) => import::proposee::completer_de(&mut a.champs, champs),
         None => liste.push(ACompleter { nom, cle: cle.map(String::from), champs: champs.clone() }),
     }
 }

@@ -39,7 +39,7 @@ use socle::mois::Mois;
 use socle::num::entier_de_chiffres;
 use socle::num::Decimal;
 
-use crate::import::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
+use crate::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
 
 /// Ce qui marque une case cochee, a droite de son libelle (« Ñ » : la coche d'une police sans table).
 const MARQUES: [&str; 5] = ["Ñ", "✔", "✓", "☒", "X"];
@@ -269,7 +269,7 @@ impl Aem {
 #[derive(Clone, Debug)]
 pub enum Lecture {
     Lue(Aem),
-    Refusee { sort: crate::import::reponse::Sort, raison: String, partiel: Option<Aem> },
+    Refusee { sort: crate::reponse::Sort, raison: String, partiel: Option<Aem> },
     Notice,
 }
 
@@ -281,7 +281,7 @@ pub struct PageAem {
 
 /// Les pages du PDF qui sont des AEM (ou leur notice), lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
-    let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
     let pages: Vec<Vec<Mot>> = r.releve.pages.iter().map(mots_de).collect();
     let notices: Vec<bool> = pages.iter().map(|m| est_notice(m)).collect();
     let mut out = Vec::new();
@@ -290,10 +290,10 @@ pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
         if notices[i] {
             out.push(PageAem { page, lecture: Lecture::Notice });
         } else if notices.iter().any(|n| *n) && illisible(mots) {
-            out.push(PageAem { page, lecture: Lecture::Refusee { sort: crate::import::reponse::Sort::SansTexte, raison: ILLISIBLE.into(), partiel: None } });
+            out.push(PageAem { page, lecture: Lecture::Refusee { sort: crate::reponse::Sort::SansTexte, raison: ILLISIBLE.into(), partiel: None } });
         } else if let Some(a) = lire_page(mots, page) {
             let lecture = match a.manque() {
-                Some(raison) => Lecture::Refusee { sort: crate::import::reponse::Sort::Incomplet, raison, partiel: Some(a) },
+                Some(raison) => Lecture::Refusee { sort: crate::reponse::Sort::Incomplet, raison, partiel: Some(a) },
                 None => Lecture::Lue(a),
             };
             out.push(PageAem { page, lecture });
@@ -383,7 +383,7 @@ pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
             faute: None,
         };
         let lecture = match a.manque() {
-            Some(raison) => Lecture::Refusee { sort: crate::import::reponse::Sort::Incomplet, raison: raison.replacen("AEM", "AER", 1), partiel: Some(a) },
+            Some(raison) => Lecture::Refusee { sort: crate::reponse::Sort::Incomplet, raison: raison.replacen("AEM", "AER", 1), partiel: Some(a) },
             None => Lecture::Lue(a),
         };
         out.push(PageAem { page, lecture });
@@ -391,7 +391,7 @@ pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
     Ok(Some(out))
 }
 
-fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
+fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
     let mut mots = Vec::new();
     for m in &p.mots {
         let texte = m.texte.trim().to_string();
@@ -615,7 +615,7 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         a.brut = mots
             .iter()
             .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + 40.0 && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2.0 + 10.0)
-            .filter_map(|m| crate::import::bulletin_lu::lire_nombre(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
+            .filter_map(|m| crate::bulletin_lu::lire_nombre(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|x| x.1);
     }
