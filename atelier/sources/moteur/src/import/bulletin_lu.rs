@@ -47,10 +47,6 @@
 //! et le bulletin l'emporte sur ce qu'il compte lui-meme.
 
 use std::path::Path;
-use std::str::FromStr;
-
-use serde_json::{json, Map, Value};
-
 use socle::date::Jour;
 use socle::num::{Decimal, Resultat};
 
@@ -153,11 +149,24 @@ pub fn lire_nombre(texte: &str) -> Option<Decimal> {
     if s.matches('.').count() > 1 || s.ends_with('.') {
         return None;
     }
-    Decimal::from_str(&s).ok().map(|d| if negatif { -d } else { d })
+    socle::num::decimal_lu(&s).map(|d| if negatif { -d } else { d })
+}
+
+/// Le texte sans son signe moins de tete.
+fn sans_signe(t: &str) -> &str {
+    match t.strip_prefix('-') {
+        Some(r) => r,
+        None => t,
+    }
+}
+
+/// La valeur de chiffres deja verifies (quatre au plus).
+fn chiffres(t: &str) -> u32 {
+    t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'))
 }
 
 fn ressemble_nombre(t: &str) -> bool {
-    let t = t.strip_prefix('-').unwrap_or(t);
+    let t = sans_signe(t);
     t.starts_with(|c: char| c.is_ascii_digit()) && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')
 }
 
@@ -169,15 +178,15 @@ pub fn lire_date(texte: &str) -> Option<Jour> {
     if p.len() != 3 || p.iter().any(|x| x.is_empty() || !x.chars().all(|c| c.is_ascii_digit())) {
         return None;
     }
-    let an: i32 = match p[2].len() {
-        4 => p[2].parse().ok()?,
-        2 => 2000 + p[2].parse::<i32>().ok()?,
+    let an = match p[2].len() {
+        4 => chiffres(p[2]) as i32,
+        2 => 2000 + chiffres(p[2]) as i32,
         _ => return None,
     };
     if p[0].len() > 2 || p[1].len() > 2 {
         return None;
     }
-    Jour::nouveau(an, p[1].parse().ok()?, p[0].parse().ok()?)
+    Jour::nouveau(an, chiffres(p[1]), chiffres(p[0]))
 }
 
 /// Un mot qui n'est que ponctuation (« — », « · », « : », « - », « | ») : il borne une valeur, il n'en est pas.
@@ -309,7 +318,10 @@ impl Page {
     }
 
     fn indice(&self, m: &Mot) -> usize {
-        self.mots.iter().position(|x| std::ptr::eq(x, m)).unwrap_or(0)
+        match self.mots.iter().position(|x| std::ptr::eq(x, m)) {
+            Some(i) => i,
+            None => unreachable!("un mot de la page est un des mots de la page"),
+        }
     }
 }
 
@@ -320,15 +332,20 @@ fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
     candidats.sort_by(|a, b| a.cy().total_cmp(&b.cy()).then(a.x0.total_cmp(&b.x0)));
     let milliers = |t: &str| t.len() == 3 && t.chars().all(|c| c.is_ascii_digit());
     let tete = |t: &str| {
-        let t = t.strip_prefix('-').unwrap_or(t);
-        let mut groupes = t.split(' ');
-        let premier = groupes.next().unwrap_or("");
-        (1..=3).contains(&premier.len()) && premier.chars().all(|c| c.is_ascii_digit()) && groupes.all(milliers)
+        let t = sans_signe(t);
+        let (premier, reste) = match t.split_once(' ') {
+            Some((p, r)) => (p, Some(r)),
+            None => (t, None),
+        };
+        (1..=3).contains(&premier.len()) && premier.chars().all(|c| c.is_ascii_digit()) && reste.into_iter().flat_map(|r| r.split(' ')).all(milliers)
     };
     let mut sortie: Vec<(String, Boite)> = Vec::new();
     for m in candidats {
         if let Some((texte, boite)) = sortie.last_mut() {
-            let suite = m.texte.split([',', '.']).next().unwrap_or("");
+            let suite = match m.texte.split_once([',', '.']) {
+                Some((s, _)) => s,
+                None => m.texte.as_str(),
+            };
             let colle = (m.cy() - boite.cy()).abs() <= 1.5 && m.x0 >= boite.x1 - 0.5 && m.x0 - boite.x1 < ECART_MILLIERS;
             if colle && tete(texte) && milliers(suite) {
                 texte.push(' ');
@@ -571,107 +588,203 @@ pub struct Table {
     lignes: Vec<LigneTable>,
 }
 
-/// Un texte, ou une liste de textes : leurs jetons.
-fn phrases(v: Option<&Value>, ou: &str) -> Resultat<Vec<Vec<String>>> {
-    let liste: Vec<&Value> = match v {
-        Some(Value::String(_)) => vec![v.unwrap()],
-        Some(Value::Array(a)) => a.iter().collect(),
-        _ => return Err(format!("{} : un texte ou une liste de textes est attendu", ou)),
-    };
-    let mut sortie = Vec::new();
-    for x in liste {
-        let p = jetons(x.as_str().ok_or_else(|| format!("{} : un texte est attendu", ou))?);
-        if p.is_empty() {
-            return Err(format!("{} : un libellé vide", ou));
+/// LA TABLE TELLE QU'ELLE S'ECRIT (`bulletins-lecture-base.json`), lue en sa forme : une cle inconnue (une mention, un
+/// en-tete, un resume) ou qui manque la refuse en la nommant ; ses libelles se verifient ensuite (`Table::de`).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TableEcrite {
+    quoi: String,
+    note: String,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    mentions: Vec<(String, Libelles)>,
+    entetes: EntetesEcrits,
+    resumes: ResumesEcrits,
+    titres: Libelles,
+    annexe: Libelles,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    familles: Vec<(String, Libelles)>,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    cotisations: Vec<(String, Libelles)>,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    cumuls: Vec<(String, Libelles)>,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    logiciels: Vec<(String, Signature)>,
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    lignes: Vec<(String, Option<LigneEcrite>)>,
+}
+
+/// Un libelle, ou une liste de libelles.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum Libelles {
+    Un(String),
+    Plusieurs(Vec<String>),
+}
+
+/// Les mots des en-tetes de colonnes, par ce qu'ils annoncent.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EntetesEcrits {
+    libelle: Libelles,
+    base: Libelles,
+    taux: Libelles,
+    montant: Libelles,
+    salarie: Libelles,
+    employeur: Libelles,
+    periode: Libelles,
+    cumul: Libelles,
+}
+
+/// Les libelles des rangs qui resument le tableau.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResumesEcrits {
+    brut: Libelles,
+    total: Libelles,
+    net_social: Libelles,
+    net_avant_impot: Libelles,
+    pas: Libelles,
+    net_imposable: Libelles,
+}
+
+/// La signature d'un logiciel : les libelles qui doivent tous se trouver sur la page.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Signature {
+    signature: Libelles,
+}
+
+/// Ce que la table dit d'un libelle de ligne : sa rubrique, ou sa rubrique et les heures d'une unite (`null` : connu,
+/// sans rubrique sure).
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum LigneEcrite {
+    Rubrique(String),
+    Detail(LigneDetaillee),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LigneDetaillee {
+    rubrique: String,
+    heures: Option<socle::forme::Nombre>,
+}
+
+/// LES TEXTES DE LA TABLE LIVREE, tels qu'ecrits : ses notes, ses libelles, ses signatures, les rubriques de ses lignes
+/// (le vocabulaire que le masque des incidents garde : `import::incident`).
+pub(crate) fn textes_de_la_table() -> Resultat<Vec<String>> {
+    let t: TableEcrite = socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join(FICHIER_TABLE), "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?;
+    let e = &t.entetes;
+    let r = &t.resumes;
+    let mut libelles: Vec<&Libelles> = vec![&e.libelle, &e.base, &e.taux, &e.montant, &e.salarie, &e.employeur, &e.periode, &e.cumul];
+    libelles.extend([&r.brut, &r.total, &r.net_social, &r.net_avant_impot, &r.pas, &r.net_imposable, &t.titres, &t.annexe]);
+    libelles.extend(t.mentions.iter().chain(&t.familles).chain(&t.cotisations).chain(&t.cumuls).map(|(_, l)| l));
+    libelles.extend(t.logiciels.iter().map(|(_, s)| &s.signature));
+    let mut out = vec![t.quoi.clone(), t.note.clone()];
+    for l in libelles {
+        match l {
+            Libelles::Un(x) => out.push(x.clone()),
+            Libelles::Plusieurs(v) => out.extend(v.iter().cloned()),
         }
-        sortie.push(p);
     }
-    if sortie.is_empty() {
-        return Err(format!("{} : aucun libellé", ou));
+    for (_, l) in &t.lignes {
+        match l {
+            Some(LigneEcrite::Rubrique(r)) => out.push(r.clone()),
+            Some(LigneEcrite::Detail(d)) => out.push(d.rubrique.clone()),
+            None => {}
+        }
     }
-    Ok(sortie)
+    Ok(out)
 }
 
-fn libelles(v: Option<&Value>, ou: &str) -> Resultat<Vec<String>> {
-    Ok(phrases(v, ou)?.into_iter().map(|p| p.join(" ")).collect())
-}
-
-/// Des mots seuls (un en-tete de colonne se lit mot a mot).
-fn mots_seuls(v: Option<&Value>, ou: &str) -> Resultat<Vec<String>> {
-    let p = phrases(v, ou)?;
-    if let Some(x) = p.iter().find(|x| x.len() != 1) {
-        return Err(format!("{} : « {} » n'est pas un mot seul", ou, x.join(" ")));
+impl Libelles {
+    /// Les jetons de chaque libelle : un libelle vide, ou aucun, se refuse.
+    fn phrases(&self, ou: &str) -> Resultat<Vec<Vec<String>>> {
+        let liste: Vec<&String> = match self {
+            Libelles::Un(t) => vec![t],
+            Libelles::Plusieurs(l) => l.iter().collect(),
+        };
+        let mut sortie = Vec::new();
+        for x in liste {
+            let p = jetons(x);
+            if p.is_empty() {
+                return Err(format!("{} : un libellé vide", ou));
+            }
+            sortie.push(p);
+        }
+        if sortie.is_empty() {
+            return Err(format!("{} : aucun libellé", ou));
+        }
+        Ok(sortie)
     }
-    Ok(p.into_iter().map(|mut x| x.remove(0)).collect())
+
+    /// Les libelles canoniques.
+    fn canoniques(&self, ou: &str) -> Resultat<Vec<String>> {
+        Ok(self.phrases(ou)?.into_iter().map(|p| p.join(" ")).collect())
+    }
+
+    /// Des mots seuls (un en-tete de colonne se lit mot a mot).
+    fn mots_seuls(&self, ou: &str) -> Resultat<Vec<String>> {
+        let p = self.phrases(ou)?;
+        if let Some(x) = p.iter().find(|x| x.len() != 1) {
+            return Err(format!("{} : « {} » n'est pas un mot seul", ou, x.join(" ")));
+        }
+        Ok(p.into_iter().map(|mut x| x.remove(0)).collect())
+    }
 }
 
-/// Un objet de listes de libelles : (cle, libelles canoniques).
-fn groupes(v: Option<&Value>, ou: &str) -> Resultat<Vec<(String, Vec<String>)>> {
-    let o = v.and_then(Value::as_object).ok_or_else(|| socle::echec::livree("table de lecture des bulletins", ou))?;
-    o.iter().map(|(k, x)| Ok((k.clone(), libelles(Some(x), &format!("{}.{}", ou, k))?))).collect()
+/// Des groupes de libelles : (cle, libelles canoniques).
+fn groupes(g: &[(String, Libelles)], ou: &str) -> Resultat<Vec<(String, Vec<String>)>> {
+    g.iter().map(|(k, x)| Ok((k.clone(), x.canoniques(&format!("{}.{}", ou, k))?))).collect()
 }
 
 impl Table {
     /// La table livree (`logiciel/donnees/bulletins-lecture-base.json`).
     pub fn livree() -> Resultat<Table> {
         let chemin = socle::fichiers::dossier_du_code().join(FICHIER_TABLE);
-        Table::depuis(&*crate::valeur::json_en_cache(&chemin)?)
+        Table::de(socle::forme::lire_fichier(&chemin, "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?)
     }
 
-    /// Une table, verifiee : une mention, un en-tete, un resume ou une forme inconnue est un refus qui le nomme.
-    pub fn depuis(v: &Value) -> Resultat<Table> {
-        let m = v.get("mentions").and_then(Value::as_object).ok_or_else(|| socle::echec::livree("table de lecture des bulletins", "mentions"))?;
+    /// La table, verifiee : une mention inconnue, un libelle vide ou en double est un refus qui le nomme.
+    fn de(t: TableEcrite) -> Resultat<Table> {
         let mut mentions = Vec::new();
-        for (n, x) in m.iter() {
+        for (n, x) in &t.mentions {
             let &(nom, sorte, section, rangs, employeur) =
                 MENTIONS.iter().find(|c| c.0 == n).ok_or_else(|| format!("mentions.{} : mention inconnue", n))?;
-            mentions.push(Mention { nom, sorte, section, rangs, employeur, libelles: phrases(Some(x), &format!("mentions.{}", n))? });
+            mentions.push(Mention { nom, sorte, section, rangs, employeur, libelles: x.phrases(&format!("mentions.{}", n))? });
         }
-        let e = v.get("entetes").ok_or_else(|| socle::echec::livree("table de lecture des bulletins", "entetes"))?;
-        if let Some(k) = e.as_object().and_then(|o| o.keys().find(|k| !matches!(k.as_str(), "libelle" | "base" | "taux" | "montant" | "salarie" | "employeur" | "periode" | "cumul"))) {
-            return Err(format!("entetes.{} : en-tête inconnu", k));
-        }
-        let mot = |k: &str| mots_seuls(e.get(k), &format!("entetes.{}", k));
+        let e = &t.entetes;
         let entetes = Entetes {
-            libelle: mot("libelle")?,
-            base: mot("base")?,
-            taux: mot("taux")?,
-            montant: mot("montant")?,
-            salarie: mot("salarie")?,
-            employeur: mot("employeur")?,
-            periode: mot("periode")?,
-            cumul: mot("cumul")?,
+            libelle: e.libelle.mots_seuls("entetes.libelle")?,
+            base: e.base.mots_seuls("entetes.base")?,
+            taux: e.taux.mots_seuls("entetes.taux")?,
+            montant: e.montant.mots_seuls("entetes.montant")?,
+            salarie: e.salarie.mots_seuls("entetes.salarie")?,
+            employeur: e.employeur.mots_seuls("entetes.employeur")?,
+            periode: e.periode.mots_seuls("entetes.periode")?,
+            cumul: e.cumul.mots_seuls("entetes.cumul")?,
         };
-        let r = groupes(v.get("resumes"), "resumes")?;
-        if let Some((k, _)) = r.iter().find(|(k, _)| !matches!(k.as_str(), "brut" | "total" | "net_social" | "net_avant_impot" | "pas" | "net_imposable")) {
-            return Err(format!("resumes.{} : résumé inconnu", k));
-        }
-        let resume = |k: &str| r.iter().find(|(x, _)| x == k).map(|(_, l)| l.clone()).ok_or_else(|| format!("resumes.{} manque", k));
+        let r = &t.resumes;
         let resumes = Resumes {
-            brut: resume("brut")?,
-            total: resume("total")?,
-            net_social: resume("net_social")?,
-            net_avant_impot: resume("net_avant_impot")?,
-            pas: resume("pas")?,
-            net_imposable: resume("net_imposable")?,
+            brut: r.brut.canoniques("resumes.brut")?,
+            total: r.total.canoniques("resumes.total")?,
+            net_social: r.net_social.canoniques("resumes.net_social")?,
+            net_avant_impot: r.net_avant_impot.canoniques("resumes.net_avant_impot")?,
+            pas: r.pas.canoniques("resumes.pas")?,
+            net_imposable: r.net_imposable.canoniques("resumes.net_imposable")?,
         };
-        let mut logiciels = Vec::new();
-        if let Some(o) = v.get("logiciels").and_then(Value::as_object) {
-            for (k, x) in o.iter() {
-                logiciels.push((k.clone(), phrases(x.get("signature"), &format!("logiciels.{}.signature", k))?));
-            }
-        }
+        let logiciels = t.logiciels.iter().map(|(k, x)| Ok((k.clone(), x.signature.phrases(&format!("logiciels.{}.signature", k))?))).collect::<Resultat<_>>()?;
         Ok(Table {
             mentions,
             entetes,
             resumes,
-            titres: libelles(v.get("titres"), "titres")?,
-            annexe: phrases(v.get("annexe"), "annexe")?,
-            familles: groupes(v.get("familles"), "familles")?,
-            cotisations: groupes(v.get("cotisations"), "cotisations")?,
-            cumuls: groupes(v.get("cumuls"), "cumuls")?,
+            titres: t.titres.canoniques("titres")?,
+            annexe: t.annexe.phrases("annexe")?,
+            familles: groupes(&t.familles, "familles")?,
+            cotisations: groupes(&t.cotisations, "cotisations")?,
+            cumuls: groupes(&t.cumuls, "cumuls")?,
             logiciels,
-            lignes: lignes_de(v.get("lignes"))?,
+            lignes: lignes_de(&t.lignes)?,
         })
     }
 
@@ -707,33 +820,23 @@ impl Table {
     }
 }
 
-fn lignes_de(v: Option<&Value>) -> Resultat<Vec<LigneTable>> {
-    let catalogue = crate::valeur::json_en_cache(&socle::fichiers::dossier_du_code().join("rubriques-base.json"))?;
-    let hors_assiette = |code: &str| catalogue["rubriques"][code]["soumis"] == Value::Bool(false);
+fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> Resultat<Vec<LigneTable>> {
+    let livrees = droit::catalogue::livrees()?;
+    let hors_assiette = |code: &str| livrees.iter().any(|r| r.code == code && !r.soumis);
     let mut lignes: Vec<LigneTable> = Vec::new();
-    let Some(l) = v.and_then(Value::as_object) else { return Err(socle::echec::livree("table de lecture des bulletins", "lignes")) };
-    for (libelle, valeur) in l.iter() {
+    for (libelle, valeur) in l {
         let o = format!("lignes.{}", libelle);
         let (rubrique, heures) = match valeur {
-            Value::Null => (None, None),
-            Value::String(s) if !s.is_empty() => (Some(s.clone()), None),
-            Value::Object(m) => {
-                if let Some(k) = m.keys().find(|k| !matches!(k.as_str(), "rubrique" | "heures")) {
-                    return Err(format!("{} : cle inconnue « {} » (rubrique, heures)", o, k));
-                }
-                let r = m.get("rubrique").and_then(Value::as_str).filter(|s| !s.is_empty());
-                let r = r.ok_or_else(|| socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)))?.to_string();
-                let h = match m.get("heures") {
-                    None => None,
-                    Some(x) => match crate::valeur::dec(x) {
-                        Ok(h) if x.is_number() && h > Decimal::ZERO => Some(h),
-                        _ => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o))),
-                    },
-                };
-                (Some(r), h)
-            }
-            _ => return Err(socle::echec::livree("table de lecture des bulletins", &o)),
+            None => (None, None),
+            Some(LigneEcrite::Rubrique(s)) => (Some(s.clone()), None),
+            Some(LigneEcrite::Detail(d)) => match d.heures {
+                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o))),
+                h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
+            },
         };
+        if rubrique.as_deref() == Some("") {
+            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)));
+        }
         let c = canon(libelle);
         if lignes.iter().any(|x| x.canon == c) {
             return Err(format!("{} : libellé en double", o));
@@ -746,7 +849,9 @@ fn lignes_de(v: Option<&Value>) -> Resultat<Vec<LigneTable>> {
 
 // --------------------------------------------------------------------------------------------- le bulletin lu
 
-#[derive(Clone, Debug, Default, PartialEq)]
+/// CE QU'UNE PAGE LUE DIT, telle qu'elle s'ecrit : les montants en textes exacts (`"1421.13"`), les dates en ISO,
+/// l'absent en `null`.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Entreprise {
     pub nom: Option<String>,
     pub adresse: Vec<String>,
@@ -757,7 +862,7 @@ pub struct Entreprise {
     pub licence: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Salarie {
     /// Le nom tel qu'il est ecrit (premier rang de son adresse).
     pub nom_complet: Option<String>,
@@ -775,7 +880,7 @@ pub struct Salarie {
 
 /// Une ligne de paie : soumise (imprimee avant le brut, d'une rubrique dans l'assiette) ou non (un defraiement, apres
 /// les cotisations ou au-dessus du brut).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct LignePaie {
     pub quantite: Option<Decimal>,
     pub libelle: String,
@@ -790,7 +895,7 @@ pub struct LignePaie {
     pub heures: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Cotisation {
     /// La cle de la famille (`familles` de la table) sous laquelle la ligne est ecrite.
     pub famille: Option<String>,
@@ -808,7 +913,7 @@ pub struct Cotisation {
     pub hors_total: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Pas {
     pub base: Option<Decimal>,
     pub taux: Option<Decimal>,
@@ -816,13 +921,13 @@ pub struct Pas {
     pub cumul: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Cumul {
     pub periode: Option<Decimal>,
     pub cumul: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct BulletinLu {
     /// Le logiciel que sa signature nomme (`logiciels` de la table) ; `None` : un autre.
     pub logiciel: Option<String>,
@@ -839,6 +944,7 @@ pub struct BulletinLu {
     pub debut: Jour,
     pub fin: Jour,
     /// Les intervalles « du ... au ... » des dates travaillees, tels qu'ecrits.
+    #[serde(serialize_with = "intervalles")]
     pub dates_travaillees: Vec<(Jour, Jour)>,
     /// Les memes, jour par jour.
     pub jours_travailles: Vec<Jour>,
@@ -857,6 +963,7 @@ pub struct BulletinLu {
     pub regle_le: Option<Jour>,
     pub mode_reglement: Option<String>,
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
+    #[serde(serialize_with = "en_objet")]
     pub cumuls: Vec<(String, Cumul)>,
     pub avertissements: Vec<String>,
 }
@@ -929,82 +1036,19 @@ pub struct Lecture {
     pub resultat: Result<BulletinLu, Refus>,
 }
 
-impl Lecture {
-    pub fn to_json(&self) -> Value {
-        match &self.resultat {
-            Ok(b) => json!({"page": self.page, "bulletin": b.to_json()}),
-            Err(r) => json!({"page": self.page, "refus": r.code(), "raison": r.raison()}),
-        }
+/// Les intervalles des dates travaillees, chacun `{"debut", "fin"}`.
+fn intervalles<S: serde::Serializer>(l: &[(Jour, Jour)], s: S) -> Result<S::Ok, S::Error> {
+    #[derive(serde::Serialize)]
+    struct Intervalle<'a> {
+        debut: &'a Jour,
+        fin: &'a Jour,
     }
+    s.collect_seq(l.iter().map(|(debut, fin)| Intervalle { debut, fin }))
 }
 
-fn d(x: &Option<Decimal>) -> Value {
-    x.map_or(Value::Null, |v| Value::String(v.to_string()))
-}
-
-fn t(x: &Option<String>) -> Value {
-    x.as_ref().map_or(Value::Null, |v| Value::String(v.clone()))
-}
-
-fn j(x: &Option<Jour>) -> Value {
-    x.map_or(Value::Null, |v| Value::String(v.iso()))
-}
-
-impl BulletinLu {
-    /// Les montants en chaines (`"1421.13"`, exacts), les dates en ISO, l'absent en `null`.
-    pub fn to_json(&self) -> Value {
-        let e = &self.entreprise;
-        let s = &self.salarie;
-        let mut cumuls = Map::new();
-        for (n, c) in &self.cumuls {
-            cumuls.insert(n.clone(), json!({"periode": d(&c.periode), "cumul": d(&c.cumul)}));
-        }
-        json!({
-            "logiciel": t(&self.logiciel),
-            "numero": t(&self.numero),
-            "entreprise": {
-                "nom": t(&e.nom), "adresse": e.adresse, "siret": t(&e.siret), "naf": t(&e.naf),
-                "urssaf": t(&e.urssaf), "convention": t(&e.convention), "licence": t(&e.licence),
-            },
-            "salarie": {
-                "nom_complet": t(&s.nom_complet), "nom": t(&s.nom), "prenom": t(&s.prenom), "nir": t(&s.nir),
-                "naissance": j(&s.naissance), "adresse": s.adresse, "code": t(&s.code), "emploi": t(&s.emploi),
-                "statut": t(&s.statut), "abattement": d(&s.abattement), "conges_spectacles": t(&s.conges_spectacles),
-            },
-            "numero_objet": t(&self.numero_objet),
-            "spectacle": t(&self.spectacle),
-            "analytique": t(&self.analytique),
-            "contrat": t(&self.contrat),
-            "debut": self.debut.iso(),
-            "fin": self.fin.iso(),
-            "dates_travaillees": self.dates_travaillees.iter().map(|(a, b)| json!({"debut": a.iso(), "fin": b.iso()})).collect::<Vec<_>>(),
-            "jours_travailles": self.jours_travailles.iter().map(Jour::iso).collect::<Vec<_>>(),
-            "lignes": self.lignes.iter().map(|l| json!({
-                "quantite": d(&l.quantite), "libelle": l.libelle, "taux": d(&l.taux), "montant": d(&l.montant),
-                "soumis": l.soumis, "rubrique": t(&l.rubrique), "heures": d(&l.heures),
-            })).collect::<Vec<_>>(),
-            "brut": self.brut.to_string(),
-            "cotisations": self.cotisations.iter().map(|c| json!({
-                "famille": t(&c.famille), "libelle": c.libelle, "cotisation": t(&c.cotisation), "base": d(&c.base),
-                "taux_employeur": d(&c.taux_employeur), "montant_employeur": d(&c.montant_employeur),
-                "taux_salarie": d(&c.taux_salarie), "montant_salarie": d(&c.montant_salarie), "hors_total": c.hors_total,
-            })).collect::<Vec<_>>(),
-            "total_employeur": d(&self.total_employeur),
-            "total_salarie": d(&self.total_salarie),
-            "net_social": d(&self.net_social),
-            "net_avant_impot": d(&self.net_avant_impot),
-            "net_imposable": d(&self.net_imposable),
-            "pas": self.pas.as_ref().map_or(Value::Null, |p| json!({
-                "base": d(&p.base), "taux": d(&p.taux), "montant": d(&p.montant), "cumul": d(&p.cumul),
-            })),
-            "net_a_payer": self.net_a_payer.to_string(),
-            "cout_employeur": d(&self.cout_employeur),
-            "regle_le": j(&self.regle_le),
-            "mode_reglement": t(&self.mode_reglement),
-            "cumuls": cumuls,
-            "avertissements": self.avertissements,
-        })
-    }
+/// Des paires (cle, valeur), ecrites en objet dans leur ordre.
+fn en_objet<S: serde::Serializer, T: serde::Serialize>(l: &[(String, T)], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_map(l.iter().map(|(k, v)| (k, v)))
 }
 
 // --------------------------------------------------------------------------------------------- la lecture
@@ -1019,8 +1063,8 @@ pub fn lire(chemin: &Path) -> Resultat<Vec<Lecture>> {
 pub fn lire_avec(chemin: &Path, table: &Table) -> Resultat<Vec<Lecture>> {
     let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
     let avertissements = &r.avertissements;
-    let pages = r.releve.get("pages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-    Ok(pages
+    Ok(r.releve
+        .pages
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -1032,28 +1076,27 @@ pub fn lire_avec(chemin: &Path, table: &Table) -> Resultat<Vec<Lecture>> {
         .collect())
 }
 
-fn mots_de(p: &Value) -> Vec<Mot> {
+fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
     let mut mots: Vec<Mot> = Vec::new();
-    for m in p.get("mots").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
-        let texte = m.get("texte").and_then(Value::as_str).unwrap_or("").to_string();
-        let r: Vec<f64> = m.get("rect").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
-        if texte.is_empty() || r.len() != 4 {
+    for m in &p.mots {
+        let texte = m.texte.clone();
+        if texte.is_empty() {
             continue;
         }
+        let [x0, y0, x1, y1] = m.rect;
         // Un meme mot ecrit deux fois au meme endroit (des cumuls imprimes en double) ne compte qu'une fois.
-        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - r[0]).abs() < 0.05 && (x.y0 - r[1]).abs() < 0.05);
+        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < 0.05 && (x.y0 - y0).abs() < 0.05);
         if !double {
-            mots.push(Mot { jetons: jetons(&texte), texte, x0: r[0], y0: r[1], x1: r[2], y1: r[3] });
+            mots.push(Mot { jetons: jetons(&texte), texte, x0, y0, x1, y1 });
         }
     }
     mots
 }
 
-fn lire_page(p: &Value, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
+fn lire_page(p: &crate::import::releve::PageRelevee, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
     let mots = mots_de(p);
     if mots.is_empty() {
-        let n = |k: &str| p.get(k).and_then(Value::as_array).map_or(0, Vec::len);
-        let mut detail = format!("aucun mot ({} police(s), {} image(s), {} trait(s))", n("polices"), n("images"), n("traits"));
+        let mut detail = format!("aucun mot ({} police(s), {} image(s), {} trait(s))", p.polices.len(), p.images.len(), p.traits.len());
         if !signale.is_empty() {
             detail.push_str(&format!(" ; la fabrique a signale : {}", signale.join(" ; ")));
         }
@@ -1184,9 +1227,7 @@ impl Morceau<'_> {
 
 /// Une ligne d'adresse « 99999 Commune ».
 fn code_postal(ligne: &str) -> bool {
-    let mut it = ligne.splitn(2, ' ');
-    let cp = it.next().unwrap_or("");
-    cp.len() == 5 && cp.chars().all(|c| c.is_ascii_digit()) && it.next().is_some_and(|r| !r.trim().is_empty())
+    ligne.split_once(' ').is_some_and(|(cp, r)| cp.len() == 5 && cp.chars().all(|c| c.is_ascii_digit()) && !r.trim().is_empty())
 }
 
 /// Un bloc d'adresse : le nom au premier rang, l'adresse ensuite.
@@ -1241,12 +1282,11 @@ impl<'a> Lecteur<'a> {
                 }
             }
         }
-        let blocs = self.blocs(limite);
-        let (entreprise, salarie) = match (&tableau, blocs) {
-            (Err(_), Ok(b)) => b,
-            (Err(_), Err(_)) => (None, None),
-            (Ok(_), b) => b?,
-        };
+        // Une page dont le tableau ne se lit pas se refuse par lui, quoi que disent ses blocs d'adresse.
+        if let Err(r) = &tableau {
+            return Err(r.clone());
+        }
+        let (entreprise, salarie) = self.blocs(limite)?;
         let texte = |valeurs: &[(&str, Valeur)], n: &str| {
             valeurs.iter().find(|(k, _)| *k == n).and_then(|(_, v)| if let Valeur::Texte(s) = v { Some(s.clone()) } else { None })
         };
@@ -1280,8 +1320,8 @@ impl<'a> Lecteur<'a> {
         let Some(tableau) = tableau? else {
             return Err(Refus::SansEntetes(format!(
                 "aucun rang ne titre le tableau des lignes (« {} », suivi de « {} » et des parts) : le brut et les cotisations ne se rangent pas",
-                self.t.entetes.libelle.first().map_or("libellé", String::as_str),
-                self.t.entetes.base.first().map_or("base", String::as_str)
+                self.t.entetes.libelle.join(" » ou « "),
+                self.t.entetes.base.join(" » ou « ")
             )));
         };
 
@@ -1307,7 +1347,9 @@ impl<'a> Lecteur<'a> {
         let dates_travaillees = valeurs
             .iter()
             .find_map(|(k, v)| if let (true, Valeur::Intervalles(l)) = (*k == "dates_travaillees", v) { Some(l.clone()) } else { None })
-            .unwrap_or_default();
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         let mut jours_travailles = Vec::new();
         for (a, b) in &dates_travaillees {
             let n = b.moins(a);
@@ -1327,7 +1369,7 @@ impl<'a> Lecteur<'a> {
             return Err(Refus::Incomplet("ni le nom du salarié (son adresse) ni son NIR ne se trouvent".into()));
         }
         let (debut, fin) = periode.ok_or_else(|| Refus::Incomplet(format!("la période (« {} du ... au ... ») ne se trouve pas", self.libelle_de("periode"))))?;
-        let brut = corps.lu.brut.ok_or_else(|| Refus::Incomplet(format!("le brut (« {} ») ne se trouve pas", self.t.resumes.brut.first().map_or("", String::as_str))))?;
+        let brut = corps.lu.brut.ok_or_else(|| Refus::Incomplet(format!("le brut (« {} ») ne se trouve pas", self.t.resumes.brut.join(" » ou « "))))?;
         // La somme recue (10°) est le net avant impot moins l'impot preleve (R. 3243-1, 9° et 10° ; le modele de
         // l'arrete du 25/02/2016 les imprime l'un sous l'autre) : un bulletin qui imprime les deux termes sans la
         // somme (un impot nul) la dit par cette identite, et le compte rendu dit qu'elle a ete lue ainsi.
@@ -1355,7 +1397,7 @@ impl<'a> Lecteur<'a> {
             numero: texte(&valeurs, "numero"),
             entreprise: Entreprise {
                 nom: entreprise.as_ref().and_then(|e| e.lignes.first().cloned()),
-                adresse: entreprise.map(|e| e.lignes.into_iter().skip(1).collect()).unwrap_or_default(),
+                adresse: entreprise.into_iter().flat_map(|e| e.lignes.into_iter().skip(1)).collect(),
                 siret: texte(&valeurs, "siret"),
                 naf: texte(&valeurs, "naf"),
                 urssaf: texte(&valeurs, "urssaf"),
@@ -1393,7 +1435,10 @@ impl<'a> Lecteur<'a> {
 
     /// Le premier libelle d'une mention, pour le dire dans un refus.
     fn libelle_de(&self, nom: &str) -> String {
-        self.t.mention(nom).and_then(|m| m.libelles.first()).map(|p| p.join(" ")).unwrap_or_else(|| nom.to_string())
+        match self.t.mention(nom).and_then(|m| m.libelles.first()) {
+            Some(p) => p.join(" "),
+            None => nom.to_string(),
+        }
     }
 
     fn dans_section(&self, cy: f64, section: Section, limite: f64, pied: Option<f64>) -> bool {
@@ -1458,7 +1503,11 @@ impl<'a> Lecteur<'a> {
             pris
         };
         let mut mots = suite(rep.x1, rep.cy(), rep.x1 - 0.5, VALEUR_LOIN);
-        let x_valeur = mots.iter().find(|&&i| !ponctuation(&p.mots[i].texte)).map_or(rep.x0, |&i| p.mots[i].x0);
+        // La valeur commence a son premier mot qui n'est pas une ponctuation ; sans lui, au libelle.
+        let x_valeur = match mots.iter().find(|&&i| !ponctuation(&p.mots[i].texte)) {
+            Some(&i) => p.mots[i].x0,
+            None => rep.x0,
+        };
         let x_suite = x_valeur.min(rep.x0) - 3.0;
         let mut cy = rep.cy();
         let mut n = 1;
@@ -1468,10 +1517,14 @@ impl<'a> Lecteur<'a> {
                 .min_by(|&a, &b| p.mots[a].cy().total_cmp(&p.mots[b].cy()).then(p.mots[a].x0.total_cmp(&p.mots[b].x0)));
             let Some(h) = haut else { break };
             // Le rang suivant commence ou commence la valeur (ou son libelle), et pas par le libelle d'une mention.
-            let premier = (0..p.mots.len())
+            // `h` est de ce rang : le rang a toujours un premier mot.
+            let premier = match (0..p.mots.len())
                 .filter(|&i| (p.mots[i].cy() - p.mots[h].cy()).abs() <= TOLERANCE && p.mots[i].x0 >= x_suite)
                 .min_by(|&a, &b| p.mots[a].x0.total_cmp(&p.mots[b].x0))
-                .unwrap_or(h);
+            {
+                Some(i) => i,
+                None => h,
+            };
             let aligne = (p.mots[premier].x0 - x_valeur).abs() <= 3.0 || (p.mots[premier].x0 - rep.x0).abs() <= 3.0;
             if self.debuts[premier].is_some() || !aligne {
                 break;
@@ -1805,7 +1858,11 @@ impl<'a> Lecteur<'a> {
         if let Some(k) = sortie.iter().position(|r| resume(&canon(&r.libelle), &self.t.resumes.net_avant_impot)) {
             sortie.truncate(k + 1);
         }
-        let bas = sortie.last().map_or(f64::INFINITY, |r| r.cy + TOLERANCE);
+        // Le corps descend jusqu'a son dernier rang ; sans rang, il n'a pas de bas.
+        let bas = match sortie.last() {
+            Some(r) => r.cy + TOLERANCE,
+            None => f64::INFINITY,
+        };
         if sous.as_ref().is_some_and(|(y, _)| *y > bas) {
             sous = None;
         }
@@ -2025,7 +2082,10 @@ impl<'a> Lecteur<'a> {
             }
         }
         for (k, (y, cols, cumul)) in entetes.iter().enumerate() {
-            let jusqu_a = entetes.get(k + 1).map_or(y + GRILLE_HAUTEUR, |e| e.0.min(y + GRILLE_HAUTEUR));
+            let jusqu_a = match entetes.get(k + 1) {
+                Some(e) => e.0.min(y + GRILLE_HAUTEUR),
+                None => y + GRILLE_HAUTEUR,
+            };
             let seuil = cols.iter().map(|c| c.boite.x0).fold(f64::INFINITY, f64::min) - LIBELLE_MARGE;
             let dans = |cy: f64| cy > y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { 0.0 };
             let libelles: Vec<&Mot> = p.mots.iter().filter(|m| dans(m.cy()) && m.x1 <= seuil && !p.dans_un_nombre(m, seuil)).collect();
@@ -2176,7 +2236,7 @@ fn controler(b: &mut BulletinLu) {
 /// Ce qu'un bulletin compte pour les droits, sous la forme de `cumul::Engagement` : les heures sont celles de
 /// travail HORS cachets (un cachet se convertit au moment du decompte), l'enseignement est dedans, pas en plus.
 /// `None` : inconnu, pas devine.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Compteurs {
     pub cachets: Option<Decimal>,
     /// Les heures de travail hors cachets : heures, services de repetition, enseignement.
@@ -2189,20 +2249,11 @@ pub struct Compteurs {
     pub avertissements: Vec<String>,
 }
 
-impl Compteurs {
-    pub fn to_json(&self) -> Value {
-        json!({
-            "cachets": d(&self.cachets),
-            "heures": d(&self.heures),
-            "heures_enseignement": d(&self.heures_enseignement),
-            "jours": d(&self.jours),
-            "avertissements": self.avertissements,
-        })
-    }
-}
-
 fn nombre_ecrit(x: Option<Decimal>) -> String {
-    x.map_or_else(|| "?".to_string(), |v| v.normalize().to_string())
+    match x {
+        Some(v) => v.normalize().to_string(),
+        None => "?".to_string(),
+    }
 }
 
 /// Ce que les lignes d'un bulletin comptent, avant toute confrontation a ses cumuls. `sans_duree` : une ligne a des

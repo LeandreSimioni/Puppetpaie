@@ -243,10 +243,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 continue;
             }
         };
-        let cr = pages.entry(i).or_default();
         // LES CERTIFICATS D'EMPLOI CONGES SPECTACLES du fichier : ils se lisent a part (`certificat_lu`), pas comme des
-        // bulletins.
-        let certificats_du_fichier = crate::import::certificat_lu::lire(&f.disque).unwrap_or_default();
+        // bulletins ; l'AER Cinéma Spectacle par ses champs, les AEM par leurs rubriques. Un fichier dont une de ces
+        // lectures ne se fait pas n'est pas repris, et le dit.
+        let octets = std::fs::read(&f.disque).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&f.disque, &e)))?;
+        let lues = (crate::import::certificat_lu::lire(&f.disque), crate::import::aem_lu::lire_aer(&octets), crate::import::aem_lu::lire(&f.disque));
+        let (certificats_du_fichier, aer, aem) = match lues {
+            (Ok(c), Ok(r), Ok(a)) => (c, r, a),
+            (Err(m), _, _) | (_, Err(m), _) | (_, _, Err(m)) => {
+                illisibles.insert(i, m.replace(&*f.disque.to_string_lossy(), &f.chemin));
+                continue;
+            }
+        };
+        let cr = pages.entry(i).or_default();
         let mut pages_certificats: HashSet<usize> = certificats_du_fichier.iter().map(|c| c.page).collect();
         for pc in certificats_du_fichier {
             match pc.resultat {
@@ -259,23 +268,23 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         }
         // L'AER CINEMA SPECTACLE (`aem_lu::lire_aer`) : un formulaire entier, chaque periode attestee comme une AEM.
-        if let Some(colonnes) = std::fs::read(&f.disque).ok().and_then(|o| crate::import::aem_lu::lire_aer(&o)) {
+        if let Some(colonnes) = aer {
             pages_certificats.extend(1..=f.pages.len());
-            for lecture in colonnes {
-                match lecture {
+            for pa in colonnes {
+                match pa.lecture {
                     crate::import::aem_lu::Lecture::Lue(a) => {
                         let c = a.commun();
                         certificats.push(Attestee { fichier: i, c, aem: Some(a) });
                     }
-                    crate::import::aem_lu::Lecture::Refusee { sort, raison, partiel } => {
-                        cr.push(PageCr { page: partiel.map_or(1, |a| a.page), sort, raison, infos: InfosPage::default() });
+                    crate::import::aem_lu::Lecture::Refusee { sort, raison, .. } => {
+                        cr.push(PageCr { page: pa.page, sort, raison, infos: InfosPage::default() });
                     }
                     crate::import::aem_lu::Lecture::Notice => {}
                 }
             }
         }
         // LES AEM EN PDF du fichier (`aem_lu`), et la notice du formulaire.
-        for pa in crate::import::aem_lu::lire(&f.disque).unwrap_or_default() {
+        for pa in aem {
             if !pages_certificats.insert(pa.page) {
                 continue;
             }
@@ -779,7 +788,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut objets_aem: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for a in certificats.iter().filter_map(|c| c.aem.as_ref()) {
         if let (Some(o), Some(m)) = (a.numero_objet.as_deref().filter(|o| !o.is_empty()), &a.mois) {
-            objets_aem.entry(o.to_uppercase()).or_default().push(m.clone());
+            objets_aem.entry(o.to_uppercase()).or_default().push(m.to_string());
         }
     }
     for (numero, mois) in objets_aem {
@@ -1866,7 +1875,7 @@ impl Attestee {
 
     /// Le mois dont elle parle : celui de l'AEM, celui de la fin du certificat.
     fn mois(&self) -> Option<String> {
-        self.aem.as_ref().and_then(|a| a.mois.clone()).or_else(|| self.c.fin.map(|f| f.mois_civil().to_string()))
+        self.aem.as_ref().and_then(|a| a.mois).or_else(|| self.c.fin.map(|f| f.mois_civil())).map(|m| m.to_string())
     }
 }
 

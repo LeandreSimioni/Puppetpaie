@@ -308,6 +308,12 @@ fn base() -> Resultat<Base> {
     )
 }
 
+/// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
+/// toute configuration (la table de lecture des bulletins s'y rapporte).
+pub fn livrees() -> Resultat<Vec<Rubrique>> {
+    base()?.rubriques.into_iter().map(|(c, v)| construire(&c, v, "base")).collect()
+}
+
 /// Le seuil et la fenetre des annexes VIII et X.
 pub fn annexes() -> Resultat<Annexes> {
     Ok(base()?.annexes)

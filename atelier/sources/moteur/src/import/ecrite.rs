@@ -624,7 +624,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
     // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
     let (tri, copie, noms, deposes) = crate::import::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |mut lu| {
         let (copie, noms) = copier_repris(ctx, &lu)?;
-        crate::import::incident::noter_les_non_lus(ctx, &lu);
+        crate::import::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = std::mem::take(&mut lu.ap.reponse.tri);
         // La copie se relit sous le nom du fichier depose.
         let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.clone(), lu.tri.fichiers[*i].chemin.clone())).collect();

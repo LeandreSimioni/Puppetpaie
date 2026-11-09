@@ -25,8 +25,6 @@
 
 use std::path::Path;
 
-use serde_json::Value;
-
 use socle::date::Jour;
 use socle::num::Decimal;
 
@@ -140,20 +138,18 @@ pub struct PageCertificat {
 /// Les pages du PDF qui sont des certificats d'emploi Congés Spectacles, lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> Result<Vec<PageCertificat>, String> {
     let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
-    let releve = &r.releve;
-    let pages = releve.get("pages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-    Ok(pages.iter().enumerate().filter_map(|(i, p)| lire_page(p, i + 1)).collect())
+    Ok(r.releve.pages.iter().enumerate().filter_map(|(i, p)| lire_page(p, i + 1)).collect())
 }
 
-fn mots_de(p: &Value) -> Vec<Mot> {
+fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
     let mut mots = Vec::new();
-    for m in p.get("mots").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
-        let texte = m.get("texte").and_then(Value::as_str).unwrap_or("").trim().to_string();
-        let r: Vec<f64> = m.get("rect").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
-        if texte.is_empty() || r.len() != 4 {
+    for m in &p.mots {
+        let texte = m.texte.trim().to_string();
+        if texte.is_empty() {
             continue;
         }
-        mots.push(Mot { texte, x0: r[0], cy: (r[1] + r[3]) / 2.0, y0: r[1] });
+        let [x0, y0, _, y1] = m.rect;
+        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2.0, y0 });
     }
     mots
 }
@@ -195,7 +191,7 @@ fn contient(js: &[(String, usize)], phrase: &str) -> bool {
 fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
     let js = jetons_du_rang(r);
     let mut out: Vec<(&'static str, Vec<String>)> = Vec::new();
-    // (cle, premier jeton de la valeur, mot de la rubrique)
+    // (cle, premier jeton de la valeur, premier jeton de la rubrique)
     let mut bornes: Vec<(&'static str, usize, usize)> = Vec::new();
     let mut k = 0;
     let mut suivantes: Vec<&str> = Vec::new();
@@ -213,7 +209,7 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
         match trouve {
             // Une rubrique commence un mot : « FIN » ne se lit pas dans la valeur « 14/03/2025 », ni au milieu d'un mot.
             Some((c, n, s)) if k == 0 || js[k - 1].1 != js[k].1 => {
-                bornes.push((c, k + n, js[k].1));
+                bornes.push((c, k + n, k));
                 suivantes = s;
                 k += n;
             }
@@ -221,7 +217,11 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
         }
     }
     for (i, (c, debut, _)) in bornes.iter().enumerate() {
-        let fin_jeton = bornes.get(i + 1).map_or(js.len(), |b| b.1 - rubrique_longueur(b.0));
+        // La valeur va jusqu'a la rubrique suivante du rang, ou jusqu'au bout du rang.
+        let fin_jeton = match bornes.get(i + 1) {
+            Some(b) => b.2,
+            None => js.len(),
+        };
         let premier = js.get(*debut).map(|j| j.1);
         let dernier = if fin_jeton > *debut { js.get(fin_jeton - 1).map(|j| j.1) } else { None };
         let mots = match (premier, dernier) {
@@ -231,10 +231,6 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
         out.push((c, mots));
     }
     out
-}
-
-fn rubrique_longueur(cle: &str) -> usize {
-    RANGS.iter().map(|(c, p, _)| (*c, *p)).chain(SUIVANTES.iter().copied()).find(|(c, _)| *c == cle).map_or(0, |(_, p)| p.split(' ').count())
 }
 
 /// Une date `JJ/MM/AAAA` (un mot) ou `JJ MM AAAA` (trois), en tete de `mots` : la date, et le nombre de mots pris.
@@ -247,7 +243,8 @@ pub(crate) fn date_en_tete(mots: &[String]) -> Option<(Jour, usize)> {
     if !(ok(j, 2) || ok(j, 1)) || !(ok(m, 2) || ok(m, 1)) || !ok(a, 4) {
         return None;
     }
-    Jour::nouveau(a.parse().ok()?, m.parse().ok()?, j.parse().ok()?).map(|d| (d, 3))
+    let n = |t: &str| t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
+    Jour::nouveau(n(a) as i32, n(m), n(j)).map(|d| (d, 3))
 }
 
 fn texte(mots: &[String]) -> Option<String> {
@@ -288,7 +285,7 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, us
 
 /// Une page : `None` si ce n'est pas un certificat d'emploi Congés Spectacles (son titre, la Caisse, ses rubriques de
 /// contrat).
-fn lire_page(p: &Value, page: usize) -> Option<PageCertificat> {
+fn lire_page(p: &crate::import::releve::PageRelevee, page: usize) -> Option<PageCertificat> {
     let rangs = en_rangs(mots_de(p));
     let js: Vec<Vec<(String, usize)>> = rangs.iter().map(|r| jetons_du_rang(r)).collect();
     let titre = js.iter().position(|j| contient(j, "certificat d emploi"))?;
@@ -345,7 +342,7 @@ fn lire_page(p: &Value, page: usize) -> Option<PageCertificat> {
                         c.fin = Some(d);
                         let reste = &v[n..];
                         if let [x] = reste {
-                            c.nombre = x.parse::<i64>().ok().filter(|n| *n >= 0);
+                            c.nombre = socle::num::entier_de_chiffres(x);
                         }
                     }
                 }
