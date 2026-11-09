@@ -28,7 +28,7 @@
 //! ouvrir, l'echeancier, les rappels, ce qui manque pour demarrer, les conseils) ; lui s'ecrit, pour qu'une compagnie
 //! s'ouvre tout de suite au lancement suivant. Meme empreinte (dates et tailles), mais de TOUTE la compagnie ; meme
 //! file, qui le refait a l'ouverture, apres chaque ecriture et chaque tour de veille ; meme service sans processus
-//! (`FileDesEtats::ouverture`, route `ouverture` de `interface/api.rs`) : ses lectures justes (refaites si besoin), avec
+//! (`FileDesEtats::demarrage`, route `demarrage`) : ses lectures justes (refaites si besoin), avec
 //! l'ecran du mois a ouvrir, marque `perime` s'il l'est. Ce qui se refait, la fenetre le fait faire et dit ce que
 //! fait le moteur (`phrase`), au lieu d'une roue muette.
 
@@ -46,7 +46,7 @@ use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
-use crate::routes::catalogue::{Acte, Ecran, Fiche, Route, ILLISIBLE, MOIS};
+use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
 use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu, Reponse};
 use crate::routes::etapes::{Bilan, ChargeMois};
 
@@ -62,12 +62,39 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Mois,
         geste: "Lire tout l'écran d'un mois d'un coup : engagements, étapes, imprévus.",
-        charge: &[MOIS],
+        charge: &[
+            MOIS,
+            Champ {
+                nom: "attendre",
+                libelle: Affiche::new("État frais"),
+                forme: Forme::OuiNon,
+                sens: "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime",
+                avance: true,
+            },
+        ],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…)",
+        rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…), perime",
         refus: &[ILLISIBLE],
         acte: Acte::Lit,
         avance: false,
+        phrase: 0,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::Demarrage,
+        geste: "Lire d'un coup ce que l'écran d'une compagnie montre en s'ouvrant.",
+        charge: &[Champ {
+            nom: "patienter",
+            libelle: Affiche::new("Patienter"),
+            forme: Forme::Nombre,
+            sens: "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait",
+            avance: true,
+        }],
+        exemple: r#"{"patienter":400}"#,
+        rend: "pret ; prêt : le mois à ouvrir et son écran, aujourdhui, les lectures de l'ouverture (etat, echeancier, rappels…), la veille, la mise à jour, les signalements ; sinon la phrase de ce que fait le moteur",
+        refus: &[ILLISIBLE],
+        acte: Acte::Lit,
+        avance: true,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -469,22 +496,88 @@ impl EtatDeLOuverture {
     }
 }
 
-/// L'ouverture d'une compagnie, prete : le mois a ouvrir, le jour du moteur, les lectures de l'ouverture et l'ecran de
-/// ce mois (aucun quand la page ne relit que les lectures, `frais`).
+/// CE QUE L'ECRAN D'UNE COMPAGNIE LIT EN S'OUVRANT (`demarrage`), d'un coup : pret, le mois a ouvrir et son ecran, le jour
+/// du moteur, les lectures de l'ouverture (`LECTURES_OUVERTURE`), et ce qui se lit a cote (`ACote`). Pas encore pret (la
+/// fenetre n'attend que `patienter`) : la phrase de ce que fait le moteur, et rien d'autre.
 #[derive(Serialize)]
-struct Ouverte<'a> {
+pub struct Demarrage<'a> {
+    phrase: String,
     pret: bool,
-    mois: Mois,
-    aujourdhui: String,
-    lectures: BTreeMap<&'a str, ALaPage<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mois: Option<Mois>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aujourdhui: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lectures: Option<BTreeMap<&'a str, ALaPage<'a>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ecran: Option<EcranDuMois<'a>>,
+    /// La veille de la fenetre : hors d'elle, aucune.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    veille: Option<crate::interface::veille::EtatDeLaVeille>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maj: Option<crate::compagnie::maj::EtatDeLaRecherche>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signalements: Option<Reponse>,
 }
 
-/// L'ouverture qui se fait encore : ce que fait le moteur.
-#[derive(Serialize)]
-struct EnAttente {
-    pret: bool,
-    phrase: String,
+impl Dite for Demarrage<'_> {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// CE QUI SE LIT A COTE DE L'ETAT GARDE, a chaque demarrage : ce qui vit dans la memoire de la fenetre (la veille, la
+/// recherche de la mise a jour) et ce que l'etat garde ne suit pas (les signalements, `journal/signalements.json`).
+pub struct ACote {
+    pub veille: Option<crate::interface::veille::EtatDeLaVeille>,
+    pub maj: crate::compagnie::maj::EtatDeLaRecherche,
+    pub signalements: Reponse,
+}
+
+impl ACote {
+    /// Ce qui se lit a cote pour `racine` ; `veille` : celle de la fenetre, s'il y en a une.
+    pub fn de(racine: &Path, veille: Option<crate::interface::veille::EtatDeLaVeille>) -> ACote {
+        let signalements = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).and_then(en_json));
+        ACote { veille, maj: crate::compagnie::maj::RECHERCHE.etat(), signalements }
+    }
+}
+
+impl<'a> Demarrage<'a> {
+    /// La compagnie prete : l'ouverture `ouv`, l'ecran de `etat` (perime ou non), et ce qui se lit a cote.
+    fn pret(racine: &Path, ouv: &'a EtatDeLOuverture, etat: &'a EtatDuMois, perime: bool, jour: &Jour, a_cote: ACote) -> Demarrage<'a> {
+        let ecran = etat.ecran(racine, perime);
+        Demarrage {
+            phrase: ecran.phrase.to_string(),
+            pret: true,
+            mois: Some(etat.mois),
+            aujourdhui: Some(jour.iso()),
+            lectures: Some(ouv.a_la_page()),
+            ecran: Some(ecran),
+            veille: a_cote.veille,
+            maj: Some(a_cote.maj),
+            signalements: Some(a_cote.signalements),
+        }
+    }
+
+    /// Pas encore pret : ce que fait le moteur.
+    fn en_attente(phrase: String) -> Demarrage<'static> {
+        Demarrage { phrase, pret: false, mois: None, aujourdhui: None, lectures: None, ecran: None, veille: None, maj: None, signalements: None }
+    }
+}
+
+/// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeDemarrage {
+    patienter: u64,
+}
+
+/// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeEcranDuMois {
+    mois: Mois,
+    attendre: Option<bool>,
 }
 
 // ------------------------------------------------------------------------------------------------- refaire
@@ -618,14 +711,30 @@ fn garde_juste(o: &HashMap<String, String>, ctx: &Contexte, cle: Cle) -> R<Garde
 /// premiers lisent les etats du mois (`etapes::les_deux_etats`), le troisieme refait tout l'ecran (ses lectures se font
 /// par les routes, d'ou `o`).
 pub fn route(o: &HashMap<String, String>, porte: &Porte, charge: &Charge) -> R<Rendu> {
-    let ChargeMois { mois } = charge.lire()?;
     match porte.route {
-        Route::EtatParEngagement => Ok(crate::routes::etapes::les_deux_etats(porte.ctx, mois)?.0),
-        Route::EtatDuMois => du_mois(&porte.ctx.racine, &crate::routes::etapes::les_deux_etats(porte.ctx, mois)?.1),
+        Route::EtatParEngagement => {
+            let ChargeMois { mois } = charge.lire()?;
+            Ok(crate::routes::etapes::les_deux_etats(porte.ctx, mois)?.0)
+        }
+        Route::EtatDuMois => {
+            let ChargeMois { mois } = charge.lire()?;
+            du_mois(&porte.ctx.racine, &crate::routes::etapes::les_deux_etats(porte.ctx, mois)?.1)
+        }
+        // Hors de la fenetre, l'etat se refait toujours : `attendre` n'y change rien.
         Route::Mois => {
+            let ChargeEcranDuMois { mois, .. } = charge.lire()?;
             let etat = refaire(o, porte.ctx, Cle::Mois(mois))?.du_mois()?;
             let ecran: EcranDuMois = etat.ecran(&porte.ctx.racine, false);
             en_json(ecran)
+        }
+        // Hors de la fenetre, l'ouverture et son mois se refont : rien a patienter, aucune veille.
+        Route::Demarrage => {
+            let _: ChargeDemarrage = charge.lire()?;
+            let jour = jour()?;
+            let ouv = refaire(o, porte.ctx, Cle::Ouverture)?.de_l_ouverture()?;
+            let etat = refaire(o, porte.ctx, Cle::Mois(ouv.mois(&jour)))?.du_mois()?;
+            let r: Demarrage = Demarrage::pret(&porte.ctx.racine, &ouv, &etat, false, &jour, ACote::de(&porte.ctx.racine, None));
+            en_json(r)
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -1044,8 +1153,9 @@ impl FileDesEtats {
     /// L'ECRAN DE `mois` (la route `mois` de la fenetre) : le dernier etat connu, tout de suite, meme perime -- marque
     /// `perime`, et refait aussitot, devant tous les autres. `attendre` (la page qui veut l'etat frais) ou aucun etat
     /// garde : l'etat frais, une fois refait.
-    pub fn ecran(&self, mois: &str, attendre: bool) -> R<Value> {
-        let m = Mois::lire(mois).map_err(|e| erreur(Classe::Refuse, socle::echec::a_la_cle("Le mois ne se lit pas : il s'écrit AAAA-MM.", "mois", e)))?;
+    pub fn ecran(&self, charge: &Charge) -> R<Rendu> {
+        let ChargeEcranDuMois { mois: m, attendre } = charge.lire()?;
+        let attendre = attendre == Some(true);
         let cle = Cle::Mois(m);
         self.verrou().affiche = Some(m);
         let jour = jour()?;
@@ -1058,7 +1168,7 @@ impl FileDesEtats {
             _ => (self.attendre(cle)?, false),
         };
         let etat = etat.du_mois()?;
-        Ok(socle::ecriture::en_valeur(&etat.ecran(&self.racine, perime)))
+        en_json(etat.ecran(&self.racine, perime))
     }
 
     /// L'etat garde `cle`, s'il y en a un (juste, si `juste` l'exige) ; sinon il est demande devant et attendu jusqu'a
@@ -1119,27 +1229,22 @@ impl FileDesEtats {
     /// `aujourdhui` : LE JOUR DU MOTEUR, celui que la page prend pour tout ce qu'elle date ou presente au jour (une
     /// date d'effet proposee, l'annee du taux AT/MP, le mois en cours de la grille) -- jamais l'horloge du navigateur :
     /// au banc d'essai le moteur a son temps simule (`temps`), et c'est le seul qui vaille (regle 2).
-    pub fn ouverture(&self, patienter: Duration, frais: bool) -> R<Value> {
+    pub fn demarrage(&self, charge: &Charge, a_cote: impl FnOnce() -> ACote) -> R<Rendu> {
+        let ChargeDemarrage { patienter } = charge.lire()?;
         let jour = jour()?;
-        if frais {
-            let ouv = self.attendre(Cle::Ouverture)?.de_l_ouverture()?;
-            let ouverte = Ouverte { pret: true, mois: ouv.mois(&jour), aujourdhui: jour.iso(), lectures: ouv.a_la_page(), ecran: None };
-            return Ok(socle::ecriture::en_valeur(&ouverte));
-        }
-        let limite = Instant::now() + patienter;
-        let attente = || socle::ecriture::en_valeur(&EnAttente { pret: false, phrase: self.phrase() });
-        let Some((ouv, _)) = self.obtenir(Cle::Ouverture, &jour, limite, true)? else { return Ok(attente()) };
+        let limite = Instant::now() + Duration::from_millis(patienter.min(5000));
+        let attente = || en_json(Demarrage::en_attente(self.phrase()));
+        let Some((ouv, _)) = self.obtenir(Cle::Ouverture, &jour, limite, true)? else { return attente() };
         let ouv = ouv.de_l_ouverture()?;
         let mois = ouv.mois(&jour);
         self.verrou().affiche = Some(mois);
-        let Some((etat, mois_juste)) = self.obtenir(Cle::Mois(mois), &jour, limite, false)? else { return Ok(attente()) };
+        let Some((etat, mois_juste)) = self.obtenir(Cle::Mois(mois), &jour, limite, false)? else { return attente() };
         // Refait en fond, devant : ses cartes sont ce qui se voit le plus.
         if !mois_juste {
             self.demander(Cle::Mois(mois), true);
         }
         let etat = etat.du_mois()?;
-        let ouverte = Ouverte { pret: true, mois, aujourdhui: jour.iso(), lectures: ouv.a_la_page(), ecran: Some(etat.ecran(&self.racine, !mois_juste)) };
-        Ok(socle::ecriture::en_valeur(&ouverte))
+        en_json(Demarrage::pret(&self.racine, &ouv, &etat, !mois_juste, &jour, a_cote()))
     }
 
     /// La compagnie n'est plus tenue : son travail s'arrete apres le calcul en cours, et qui attendait est libere. Le fil

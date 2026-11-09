@@ -123,19 +123,29 @@ impl Default for Options {
 /// LA CHARGE DE LA ROUTE `ouverture` : chaque option dite, ou absente. Les interrupteurs disent `false` pour ne pas faire
 /// (sauvegarder, retours, signatures, filet, incidents_editeur) et `true` pour faire autrement (veille, sauvegarde_seule) ;
 /// `jours`, `pas_avant` et `racine_drive` remplacent ce que fait un passage ordinaire (`Options::default`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeOuverture {
-    sauvegarder: Option<bool>,
-    retours: Option<bool>,
-    signatures: Option<bool>,
-    filet: Option<bool>,
-    veille: Option<bool>,
-    incidents_editeur: Option<bool>,
-    sauvegarde_seule: Option<bool>,
-    jours: Option<i64>,
-    pas_avant: Option<i64>,
-    racine_drive: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sauvegarder: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retours: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signatures: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filet: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub veille: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incidents_editeur: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sauvegarde_seule: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jours: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pas_avant: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub racine_drive: Option<String>,
 }
 
 impl Options {

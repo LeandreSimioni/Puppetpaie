@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 use http::{Reponse, Requete};
 use crate::etat_garde::{Fil, FileDesEtats};
@@ -36,6 +36,7 @@ use veille::Veille;
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
 use socle::echec::Classe;
+use socle::memoire::tenu;
 
 pub const MINUTES_VEILLE: u64 = 20;
 
@@ -102,6 +103,106 @@ const NOMS_ACCUEIL: &str = r#"["choisir", "verifier", "accueil", "fermer", "rede
 /// rendu et choisir un dossier (`poste.rs`), le site de l'editeur (`site`), la veille de la fenetre (`js/veille.js`).
 const NOMS_LOGICIEL: &str = r#"["accueil", "maj", "redemarrer", "site", "ouvrir", "choisir_dossier", "veille", "veille_etape", "veille_maintenant"]"#;
 
+/// UN ARGUMENT D'UN GESTE DE LA FENETRE (`window.pywebview.api.<nom>(...)`, poste en liste) : un texte, ou un oui-non.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Argument {
+    Texte(String),
+    OuiNon(bool),
+}
+
+/// Le texte `i` des arguments d'un geste, ou le refus du geste qui ne le porte pas.
+fn texte(args: &[Argument], i: usize) -> Result<&str, String> {
+    match args.get(i) {
+        Some(Argument::Texte(t)) => Ok(t),
+        Some(Argument::OuiNon(_)) | None => Err(format!("Ce geste de la fenêtre attend un texte en argument {}.", i + 1)),
+    }
+}
+
+/// Le oui-non `i` des arguments d'un geste, ou le refus du geste qui ne le porte pas.
+fn oui_non(args: &[Argument], i: usize) -> Result<bool, String> {
+    match args.get(i) {
+        Some(Argument::OuiNon(b)) => Ok(*b),
+        Some(Argument::Texte(_)) | None => Err(format!("Ce geste de la fenêtre attend un oui ou un non en argument {}.", i + 1)),
+    }
+}
+
+/// CE QUE REND UN GESTE DE LA FENETRE (`Fenetre::lanceur`), lu par la page comme une route : `ok` et ce que le geste dit,
+/// ou son refus.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Geste {
+    /// Fait ; `recharger` : la fenetre revient sur `/`, le serveur sait quelle page montrer.
+    Fait { ok: bool, recharger: bool },
+    Dit { ok: bool, phrase: String },
+    /// Le dossier choisi ; aucun quand la boite a ete fermee.
+    Dossier { ok: bool, dossier: Option<String> },
+    Veille { ok: bool, etat: Box<veille::EtatDeLaVeille> },
+    Etape { ok: bool, etat: veille::EtapeDeLaVeille },
+    Maj { ok: bool, etat: crate::compagnie::maj::EtatDeLaRecherche },
+    Refuse { ok: bool, refus: Refus },
+}
+
+/// CE QUE REND UN GESTE DU BANC D'ESSAI (`Fenetre::atelier`).
+#[cfg(feature = "atelier")]
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Atelier {
+    Etat {
+        ok: bool,
+        simule: bool,
+        jour: String,
+        heure: String,
+        secondes: f64,
+        scenario: Option<String>,
+        compagnie: Option<String>,
+        simulee: bool,
+        ajoutee: bool,
+    },
+    Jour {
+        ok: bool,
+        jour: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        veille: Option<veille::EtatDeLaVeille>,
+    },
+    Fait { ok: bool },
+    Refuse { ok: bool, refus: Refus },
+}
+
+/// La charge du geste `jour` du banc.
+#[cfg(feature = "atelier")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeJour {
+    jour: String,
+}
+
+/// Ce que le scenario retient du geste `jour` : le jour, et si la compagnie ouverte a passe sa veille.
+#[cfg(feature = "atelier")]
+#[derive(Serialize)]
+struct GesteJour {
+    jour: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    veille: Option<bool>,
+}
+
+/// Ce que le scenario retient du geste `simuler` : la compagnie devenue fictive aux envois simules.
+#[cfg(feature = "atelier")]
+#[derive(Serialize)]
+struct GesteSimuler {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compagnie: Option<String>,
+}
+
+/// Ce que le scenario retient de son debut : le jour, le logiciel, le format du scenario.
+#[cfg(feature = "atelier")]
+#[derive(Serialize)]
+struct GesteDebut {
+    jour: String,
+    logiciel: String,
+    format: u64,
+}
+
 #[derive(Clone)]
 enum Phase {
     Accueil,
@@ -134,6 +235,19 @@ pub struct Fenetre {
     pub fermer: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
 
+/// La cle d'une compagnie dans la fenetre : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se
+/// nomme par son chemin, qui le designe encore.
+fn cle_du_dossier(p: &Path) -> PathBuf {
+    match std::fs::canonicalize(p) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => p.to_path_buf(),
+        Err(e) => {
+            eprintln!("{}", socle::echec::du_disque(&p, &e));
+            p.to_path_buf()
+        }
+    }
+}
+
 fn echapper(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#x27;")
 }
@@ -152,7 +266,11 @@ fn version() -> String {
 
 #[cfg(not(feature = "atelier"))]
 fn version() -> String {
-    crate::compagnie::maj::version_lue(&std::fs::read_to_string(compagnies::logiciel().join("VERSION")).unwrap_or_else(|_| "0.0.0".into()))
+    let p = compagnies::logiciel().join("VERSION");
+    match std::fs::read_to_string(&p) {
+        Ok(v) => crate::compagnie::maj::version_lue(&v),
+        Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e)),
+    }
 }
 
 fn ressources() -> PathBuf {
@@ -167,11 +285,18 @@ fn empreinte() -> String {
     use std::sync::OnceLock;
     type Signature = socle::num::Resultat<Option<(u128, u64)>>;
     let mut noms: Vec<(String, Signature)> = Vec::new();
+    // Un dossier qui ne se lit pas entre dans l'empreinte par son erreur : la page se refera quand il se lira.
     for dossier in ["", "js"] {
-        let Ok(it) = std::fs::read_dir(ressources().join(dossier)) else { continue };
+        let it = match std::fs::read_dir(ressources().join(dossier)) {
+            Ok(it) => it,
+            Err(e) => {
+                noms.push((format!("{}/", dossier), Err(e.to_string())));
+                continue;
+            }
+        };
         for e in it.flatten() {
             let nom = e.file_name().to_string_lossy().into_owned();
-            if e.file_type().is_ok_and(|t| t.is_file()) && (nom.ends_with(".css") || nom.ends_with(".js")) {
+            if matches!(e.file_type(), Ok(t) if t.is_file()) && (nom.ends_with(".css") || nom.ends_with(".js")) {
                 let nom = if dossier.is_empty() { nom } else { format!("{}/{}", dossier, nom) };
                 let sig = socle::fichiers::signature(&ressources().join(&nom));
                 noms.push((nom, sig));
@@ -183,55 +308,64 @@ fn empreinte() -> String {
     // que rien n'a bouge depuis la derniere page -- la relecture et le condensat de 800 Ko a chaque `GET /` coutaient.
     static DERNIERE: OnceLock<Mutex<Option<(Vec<(String, Signature)>, String)>>> = OnceLock::new();
     let memo = DERNIERE.get_or_init(|| Mutex::new(None));
-    if let Some((vus, e)) = memo.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+    if let Some((vus, e)) = tenu(memo).as_ref() {
         if *vus == noms {
             return e.clone();
         }
     }
     let mut h = Sha256::new();
     for (nom, _) in &noms {
-        if let Ok(o) = std::fs::read(ressources().join(nom)) {
-            h.update(nom.as_bytes());
-            h.update([0u8]);
-            h.update((o.len() as u64).to_le_bytes());
-            h.update(&o);
+        h.update(nom.as_bytes());
+        h.update([0u8]);
+        match std::fs::read(ressources().join(nom)) {
+            Ok(o) => {
+                h.update((o.len() as u64).to_le_bytes());
+                h.update(&o);
+            }
+            Err(e) => h.update(e.to_string().as_bytes()),
         }
     }
     let e: String = h.finalize().iter().take(6).map(|b| format!("{:02x}", b)).collect();
-    *memo.lock().unwrap_or_else(|p| p.into_inner()) = Some((noms, e.clone()));
+    *tenu(memo) = Some((noms, e.clone()));
     e
 }
 
 /// Un fichier de la page (`interface/`), servi tel quel. Le chemin arrive decode : il n'est pris que s'il est fait de
 /// noms ordinaires (ni `..`, ni `.`, ni racine, ni lecteur, ni `\`, ni `:`), d'une extension connue, et si, resolu,
-/// il est un fichier SOUS `interface/`. Tout le reste est un 404.
-fn fichier_de_la_page(chemin: &str) -> Option<(Vec<u8>, &'static str)> {
+/// il est un fichier SOUS `interface/`. Tout le reste est un 404 (`Ok(None)`) ; un fichier qui est la mais ne se lit
+/// pas, l'erreur du disque.
+fn fichier_de_la_page(chemin: &str) -> Result<Option<(Vec<u8>, &'static str)>, String> {
     use std::path::Component;
-    let rel = chemin.strip_prefix('/')?;
+    let Some(rel) = chemin.strip_prefix('/') else { return Ok(None) };
     if rel.is_empty() || rel.contains('\\') || rel.contains(':') || rel.contains('\0') {
-        return None;
+        return Ok(None);
     }
     if rel.split('/').any(|s| s.is_empty() || s == "." || s == "..") {
-        return None;
+        return Ok(None);
     }
     let rel = Path::new(rel);
     if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
-        return None;
+        return Ok(None);
     }
-    let mime = match rel.extension().and_then(|e| e.to_str())? {
-        "css" => "text/css; charset=utf-8",
-        "js" => "application/javascript; charset=utf-8",
-        "png" => "image/png",
-        "svg" => "image/svg+xml",
-        "html" => "text/html; charset=utf-8",
-        _ => return None,
+    let mime = match rel.extension().and_then(|e| e.to_str()) {
+        Some("css") => "text/css; charset=utf-8",
+        Some("js") => "application/javascript; charset=utf-8",
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("html") => "text/html; charset=utf-8",
+        _ => return Ok(None),
     };
-    let racine = std::fs::canonicalize(ressources()).ok()?;
-    let vrai = std::fs::canonicalize(racine.join(rel)).ok()?;
+    let present = |p: &Path| match std::fs::canonicalize(p) {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(&p, &e)),
+    };
+    let Some(racine) = present(&ressources())? else { return Ok(None) };
+    let Some(vrai) = present(&racine.join(rel))? else { return Ok(None) };
     if !vrai.starts_with(&racine) || !vrai.is_file() {
-        return None;
+        return Ok(None);
     }
-    std::fs::read(&vrai).ok().map(|o| (o, mime))
+    std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e))
 }
 
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`instance::dossier_local`).
@@ -255,7 +389,7 @@ fn jeton(local: &Path) -> String {
 
 /// Un JSON pose dans la page, dans un `<script type="application/json">` : rien ne peut y fermer la balise.
 fn json_dans_la_page(v: &impl serde::Serialize) -> String {
-    serde_json::to_string(v).unwrap_or_default().replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
+    socle::ecriture::json_en_ligne(v).replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
 }
 
 fn page(corps: &str, jeton: &str, noms: &str) -> String {
@@ -268,51 +402,49 @@ fn page(corps: &str, jeton: &str, noms: &str) -> String {
     )
 }
 
-fn logo_en_ligne(logo: Option<&str>) -> String {
-    match logo.map(Path::new) {
-        Some(p) => {
-            let mime = if p.extension().is_some_and(|e| e == "svg") { "image/svg+xml" } else { "image/png" };
-            std::fs::read(&p).map(|o| format!("data:{};base64,{}", mime, socle::base64::ecrire(&o))).unwrap_or_default()
+/// Le logo d'une tuile, pose dans la page ; un logo qui ne se lit pas laisse l'initiale, et le dit sur la sortie d'erreur.
+fn logo_en_ligne(logo: &Path) -> Option<String> {
+    let mime = if logo.extension().is_some_and(|e| e == "svg") { "image/svg+xml" } else { "image/png" };
+    match std::fs::read(logo) {
+        Ok(o) => Some(format!("data:{};base64,{}", mime, socle::base64::ecrire(&o))),
+        Err(e) => {
+            eprintln!("Un logo de l'accueil ne se lit pas : {}", socle::echec::du_disque(&logo, &e));
+            None
         }
-        None => String::new(),
     }
 }
 
-/// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit.
+/// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit (`routes::accueil::liste`).
 fn page_accueil() -> String {
-    let lu = api::route_de_l_installation(Route::Compagnies, &Charge::vide());
-    let r = lu.resultat().unwrap_or(&Value::Null);
-    let t = |c: &Value, k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let r = crate::routes::accueil::liste(&compagnies::base());
     let mut tuiles = Vec::new();
-    for c in r["compagnies"].as_array().into_iter().flatten() {
-        let (nom, couleur, reelle) = (t(c, "nom"), t(c, "couleur"), c["reelle"] == json!(true));
-        let logo = logo_en_ligne(c.get("logo").and_then(Value::as_str));
-        let medaillon = if logo.is_empty() {
-            format!("<span class=\"initiale\">{}</span>", echapper(&nom.chars().take(1).collect::<String>()))
+    for c in &r.compagnies {
+        let medaillon = match c.logo.as_deref().map(Path::new).and_then(logo_en_ligne) {
+            Some(logo) => format!("<img src=\"{}\" alt=\"\">", logo),
+            None => format!("<span class=\"initiale\">{}</span>", echapper(&c.nom.chars().take(1).collect::<String>())),
+        };
+        let marque = if c.reelle {
+            CRAYON.replace("%s", &c.couleur)
+        } else if c.remise_a_zero {
+            ZERO.to_string()
         } else {
-            format!("<img src=\"{}\" alt=\"\">", logo)
+            String::new()
         };
         tuiles.push((
-            reelle,
+            c.reelle,
             format!(
                 "<div class=\"tuile{}\" data-id=\"{}\"{}><div class=\"tete\"><div class=\"medaillon\">{}</div>{}</div><div class=\"corps\"><span class=\"nom\">{}</span><span class=\"lieu\">{}</span></div></div>",
-                if reelle { "" } else { " fictive" },
-                echapper(&t(c, "id")),
-                if reelle { format!(" style=\"--cie:{}\"", couleur) } else { String::new() },
+                if c.reelle { "" } else { " fictive" },
+                echapper(&c.id),
+                if c.reelle { format!(" style=\"--cie:{}\"", c.couleur) } else { String::new() },
                 medaillon,
-                if reelle {
-                    CRAYON.replace("%s", &couleur)
-                } else if c["remise_a_zero"] == json!(true) {
-                    ZERO.to_string()
-                } else {
-                    String::new()
-                },
-                echapper(&nom),
-                echapper(&t(c, "lieu"))
+                marque,
+                echapper(&c.nom),
+                echapper(&c.lieu)
             ),
         ));
     }
-    let bride = r["bride"] == json!(true);
+    let bride = r.bride;
     let grille = if bride {
         // BRIDE, LE « + » AUSSI : il ajoute une fictive (la route `compagnie-ajouter`), apres le message.
         format!("<div class=\"grille\">{}{}</div>{}", tuiles.iter().map(|(_, t)| t.as_str()).collect::<String>(), TUILE_AJOUTER, AVIS_AJOUTER)
@@ -330,13 +462,13 @@ fn page_accueil() -> String {
         g
     };
     // AU DEBLOCAGE : tant qu'il reste des compagnies creees en demo, la question se pose a chaque accueil.
-    let a_garder = r["a_garder"].as_array().cloned().unwrap_or_default();
-    let grille = if a_garder.is_empty() {
+    let grille = if r.a_garder.is_empty() {
         grille
     } else {
-        let liste: String = a_garder
+        let liste: String = r
+            .a_garder
             .iter()
-            .map(|c| format!("<li><label><input type=\"checkbox\" value=\"{}\" checked> {}</label></li>", echapper(&t(c, "id")), echapper(&t(c, "nom"))))
+            .map(|c| format!("<li><label><input type=\"checkbox\" value=\"{}\" checked> {}</label></li>", echapper(&c.id), echapper(&c.nom)))
             .collect();
         format!("{}{}", grille, GARDER.replace("{{LISTE}}", &liste))
     };
@@ -344,7 +476,7 @@ fn page_accueil() -> String {
     // compagnie n'est jamais lu comme une marque a remplacer.
     ACCUEIL
         .replace("{{VERSION_DITE}}", &format!("version {}", version()))
-        .replace("{{AUTEUR}}", &json_dans_la_page(&r["auteur"]))
+        .replace("{{AUTEUR}}", &json_dans_la_page(&r.auteur))
         .replace("{{EMPREINTE}}", &empreinte())
         .replace(
             "{{SOUS_TITRE}}",
@@ -366,7 +498,7 @@ pub fn page_logiciel(racine: &Path, jeton: &str) -> Result<String, String> {
             "{{STYLE_COMPAGNIE}}",
             &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", compagnies::couleur(racine)) },
         )
-        .replace("{{PHRASES}}", &PHRASES_DE_LA_FENETRE.to_string())
+        .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if crate::compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
     let cale = CALE.replace("{{JETON}}", jeton).replace("{{NOMS}}", NOMS_LOGICIEL);
     // Avant le PREMIER script de la page (`/js/tuyau.js`, qui definit `api`) : la cale doit exister avant lui.
@@ -392,7 +524,11 @@ impl Fenetre {
     }
 
     pub fn ecrire(&self, texte: &str) {
-        let chemin = self.journal.lock().ok().and_then(|j| j.clone()).unwrap_or_else(|| self.local.join("interface.log"));
+        // Aucune compagnie ouverte encore : le journal de la fenetre est dans son dossier sur le poste.
+        let chemin = match tenu(&self.journal).clone() {
+            Some(j) => j,
+            None => self.local.join("interface.log"),
+        };
         if let Some(d) = chemin.parent() {
             let _ = std::fs::create_dir_all(d);
         }
@@ -402,14 +538,14 @@ impl Fenetre {
     }
 
     fn phase(&self) -> Phase {
-        self.phase.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        tenu(&self.phase).clone()
     }
 
     /// La phase change. La compagnie qu'on quitte arrete sa veille ; sa file reste au fil (elle se rouvrira sans attendre),
     /// et ne passe plus devant les autres. Revenir a l'accueil : aucune compagnie devant.
     fn poser_phase(&self, p: Phase) {
         let accueil = matches!(p, Phase::Accueil);
-        let avant = std::mem::replace(&mut *self.phase.lock().unwrap_or_else(|e| e.into_inner()), p);
+        let avant = std::mem::replace(&mut *tenu(&self.phase), p);
         if let Phase::Ouverte { veille, .. } = avant {
             veille.arreter();
         }
@@ -425,8 +561,8 @@ impl Fenetre {
 
     /// La file de la compagnie `racine` sur le fil de la fenetre : celle qu'il tient deja, sinon une neuve.
     fn file_de(&self, racine: &Path) -> Arc<FileDesEtats> {
-        let cle = std::fs::canonicalize(racine).unwrap_or_else(|_| racine.to_path_buf());
-        let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
+        let cle = cle_du_dossier(racine);
+        let mut files = tenu(&self.files);
         files.entry(cle).or_insert_with(|| self.fil.file(racine, None)).clone()
     }
 
@@ -464,7 +600,7 @@ impl Fenetre {
 
     /// Les secondes depuis la derniere requete autorisee (le guet du navigateur : plus de page, plus de serveur).
     pub fn silence(&self) -> Duration {
-        self.temoin.lock().map(|t| t.elapsed()).unwrap_or_default()
+        tenu(&self.temoin).elapsed()
     }
 
     /// La compagnie choisie devient celle de la fenetre ; une fictive s'ouvre sans mot de passe.
@@ -479,7 +615,7 @@ impl Fenetre {
             let _ = std::fs::create_dir_all(d);
         }
         let _ = std::fs::write(&journal, "");
-        *self.journal.lock().unwrap_or_else(|e| e.into_inner()) = Some(journal);
+        *tenu(&self.journal) = Some(journal);
         self.ecrire(&format!("Compagnie : {}\n", racine.display()));
         // La compagnie choisie passe devant les autres sur le fil des le choix : son calcul local se fait pendant qu'on
         // tape son mot de passe.
@@ -507,21 +643,21 @@ impl Fenetre {
     /// file quitte le fil des calculs (le calcul en cours se finit). Ensuite rien de la fenetre n'ecrit plus dans son
     /// dossier, et rien ne la refait apparaitre.
     fn lacher(&self, racine: &Path) {
-        let cle = std::fs::canonicalize(racine).unwrap_or_else(|_| racine.to_path_buf());
+        let cle = cle_du_dossier(racine);
         if let Phase::Ouverte { racine: r, veille, .. } = self.phase() {
-            if std::fs::canonicalize(&r).unwrap_or(r) == cle {
+            if cle_du_dossier(&r) == cle {
                 veille.arreter_et_attendre();
                 self.poser_phase(Phase::Accueil);
             }
         }
         // Le journal de la fenetre est celui de la derniere compagnie ouverte, meme revenu a l'accueil : il ne doit plus
         // recreer son dossier.
-        let mut journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
+        let mut journal = tenu(&self.journal);
         if journal.as_ref().is_some_and(|j| j.starts_with(racine) || j.starts_with(&cle)) {
             *journal = None;
         }
         drop(journal);
-        let file = self.files.lock().unwrap_or_else(|e| e.into_inner()).remove(&cle);
+        let file = tenu(&self.files).remove(&cle);
         if let Some(f) = file {
             f.quitter();
         }
@@ -534,14 +670,14 @@ impl Fenetre {
         if !matches!(crate::compagnie::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
         }
-        let garde = self.administrateur.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let garde = tenu(&self.administrateur).clone();
         garde.is_some_and(|m| matches!(crate::compagnie::administrateur::mot_de_passe_ouvre(&crate::compagnie::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
     }
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
         if matches!(crate::compagnie::administrateur::est_rattachee(&compagnies::base(), racine), Ok(true)) {
-            *self.administrateur.lock().unwrap_or_else(|e| e.into_inner()) = Some(motdepasse.to_string());
+            *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
     }
 
@@ -560,16 +696,16 @@ impl Fenetre {
     }
 
     fn autorise(&self, r: &Requete) -> bool {
-        let fourni = r.params.get("jeton").cloned().or_else(|| r.entete("x-jeton").map(String::from)).or_else(|| r.cookie(&self.nom_du_cookie()));
+        let fourni = r.param("jeton").map(String::from).or_else(|| r.entete("x-jeton").map(String::from)).or_else(|| r.cookie(&self.nom_du_cookie()));
         let ok = fourni.is_some_and(|f| egal_en_temps_constant(f.as_bytes(), self.jeton.as_bytes()));
         if ok {
-            *self.temoin.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+            *tenu(&self.temoin) = Instant::now();
         }
         ok
     }
 
     fn fermer_le_logiciel(&self) {
-        if let Some(f) = self.fermer.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(f) = tenu(&self.fermer).as_ref() {
             f();
         }
     }
@@ -582,8 +718,7 @@ impl Fenetre {
     /// - `simuler` : la compagnie ouverte, une fictive ajoutee par le « + », devient une fictive aux envois simules
     ///   (`scenario::rendre_simulee`).
     #[cfg(feature = "atelier")]
-    fn atelier(&self, geste: &str, charge: &Value) -> Value {
-        let refus = |m: String| json!({"ok": false, "refus": Refus::nouveau(Classe::Refuse, m)});
+    fn atelier(&self, geste: &str, corps: &[u8]) -> Result<Atelier, String> {
         let phase = self.phase();
         let ouverte = match &phase {
             Phase::Ouverte { racine, .. } => Some(racine.clone()),
@@ -591,67 +726,58 @@ impl Fenetre {
         };
         let enr = crate::atelier::scenario::enregistreur_actif();
         match geste {
-            "etat" => json!({"ok": true,
-                "simule": socle::temps::simule(),
-                "jour": socle::temps::jour_de_paris().iso(),
-                "heure": socle::paris::iso_secondes(socle::temps::secondes()),
-                "secondes": socle::temps::secondes(),
-                "scenario": enr.map(|e| e.dossier().display().to_string()),
-                "compagnie": ouverte.as_ref().map(|r| r.display().to_string()),
-                "simulee": ouverte.as_ref().is_some_and(|r| crate::compagnie::bridage::branchement(r).joue()),
-                "ajoutee": ouverte.as_ref().is_some_and(|r| compagnies::est_ajoutee(r))}),
+            "etat" => Ok(Atelier::Etat {
+                ok: true,
+                simule: socle::temps::simule(),
+                jour: socle::temps::jour_de_paris().iso(),
+                heure: socle::paris::iso_secondes(socle::temps::secondes()),
+                secondes: socle::temps::secondes(),
+                scenario: enr.map(|e| e.dossier().display().to_string()),
+                compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
+                simulee: ouverte.as_ref().is_some_and(|r| crate::compagnie::bridage::branchement(r).joue()),
+                ajoutee: ouverte.as_ref().is_some_and(|r| compagnies::est_ajoutee(r)),
+            }),
             "jour" => {
                 if !socle::temps::simule() {
-                    return refus("Le temps n'est pas simule : lancer l'interface avec --jour.".into());
+                    return Err("Le temps n'est pas simule : lancer l'interface avec --jour.".into());
                 }
-                let Some(jour) = charge.get("jour").and_then(Value::as_str).and_then(|j| socle::date::Jour::lire(j).ok()) else {
-                    return refus("Il faut {\"jour\": \"AAAA-MM-JJ\"}.".into());
-                };
+                let texte = std::str::from_utf8(corps).map_err(|e| e.to_string())?;
+                let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
+                let jour = socle::date::Jour::lire(&jour)?;
                 let instant = socle::temps::instant_de(jour, 9);
                 if instant <= socle::temps::secondes() {
-                    return refus(format!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
+                    return Err(format!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
                 }
                 socle::temps::couler_depuis(instant);
                 if let Some(e) = enr {
-                    let _ = e.geste("jour", || {
-                        let mut m = serde_json::Map::new();
-                        m.insert("jour".into(), json!(jour.iso()));
-                        // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
-                        // seulement la (`scenario::rejouer`).
-                        if ouverte.is_some() {
-                            m.insert("veille".into(), json!(true));
-                        }
-                        Ok(((), m))
-                    });
+                    // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
+                    // seulement la (`scenario::rejouer`).
+                    e.geste("jour", || Ok(((), GesteJour { jour: jour.iso(), veille: ouverte.is_some().then_some(true) })))?;
                 }
                 self.ecrire(&format!("Banc d'essai : le calendrier avance au {}.\n", jour.iso()));
-                match phase {
+                let veille = match phase {
                     Phase::Ouverte { veille, etats, .. } => {
                         let v = veille.tour(false, false);
                         etats.tout_verifier();
-                        json!({"ok": true, "jour": jour.iso(), "veille": v})
+                        Some(v)
                     }
-                    _ => json!({"ok": true, "jour": jour.iso()}),
-                }
+                    Phase::Accueil | Phase::MotDePasse { .. } => None,
+                };
+                Ok(Atelier::Jour { ok: true, jour: jour.iso(), veille })
             }
             "simuler" => {
-                let Some(racine) = ouverte else { return refus("Aucune compagnie n'est ouverte.".into()) };
-                let faire = || crate::atelier::scenario::rendre_simulee(&racine).map(|()| {
-                    let mut m = serde_json::Map::new();
-                    if let Some(e) = enr {
-                        m.insert("compagnie".into(), json!(e.compagnie(&racine)));
-                    }
-                    ((), m)
-                });
-                match enr.map_or_else(|| faire().map(|_| ()), |e| e.geste("simuler", faire)) {
-                    Ok(()) => {
-                        self.ecrire("Banc d'essai : la compagnie devient une fictive aux envois simules.\n");
-                        json!({"ok": true})
-                    }
-                    Err(m) => refus(m),
+                let racine = ouverte.ok_or("Aucune compagnie n'est ouverte.")?;
+                let faire = || {
+                    crate::atelier::scenario::rendre_simulee(&racine).map(|()| ((), GesteSimuler { compagnie: enr.map(|e| e.compagnie(&racine)) }))
+                };
+                match enr {
+                    Some(e) => e.geste("simuler", faire)?,
+                    None => faire().map(|_| ())?,
                 }
+                self.ecrire("Banc d'essai : la compagnie devient une fictive aux envois simules.\n");
+                Ok(Atelier::Fait { ok: true })
             }
-            _ => refus(format!("Geste d'atelier inconnu : {}.", geste)),
+            _ => Err(format!("Geste d'atelier inconnu : {}.", geste)),
         }
     }
 
@@ -666,10 +792,16 @@ impl Fenetre {
                 self.lacher(&c.racine);
             }
         }
-        let vrai = |k: &str| charge.brute().get(k).is_some_and(crate::valeur::vrai);
-        if nom == Route::AdministrateurTableau && !vrai("garde") && !vrai("relever") {
-            if self.administrateur.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
-                return match Charge::de(json!({"relever": true})) {
+        if nom == Route::AdministrateurTableau {
+            let c: crate::routes::accueil::ChargeTableau = match charge.lire() {
+                Ok(c) => c,
+                Err(e) => return RouteReponse::de(nom, Err(e)),
+            };
+            if c.garde == Some(true) || c.relever == Some(true) {
+                return api::route_de_l_installation(nom, charge);
+            }
+            if tenu(&self.administrateur).is_some() {
+                return match Charge::de_forme(&crate::routes::accueil::ChargeTableau { relever: Some(true), garde: None }) {
                     Ok(c) => api::route_de_l_installation(nom, &c),
                     Err(e) => RouteReponse::de(nom, Err(e)),
                 };
@@ -684,73 +816,72 @@ impl Fenetre {
     }
 
     /// Les gestes de la fenetre elle-meme (`window.pywebview.api.<nom>(...)`, `NOMS_ACCUEIL`, `NOMS_LOGICIEL`).
-    fn lanceur(&self, nom: &str, args: &[Value]) -> Value {
-        let a = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("").to_string();
-        let ok = |recharger: bool| json!({"ok": true, "recharger": recharger});
-        let refus = |m: String| json!({"ok": false, "refus": Refus::nouveau(Classe::Refuse, m)});
+    fn lanceur(&self, nom: &str, args: &[Argument]) -> Geste {
+        match self.geste(nom, args) {
+            Ok(g) => g,
+            Err(m) => Geste::Refuse { ok: false, refus: Refus::nouveau(Classe::Refuse, m) },
+        }
+    }
+
+    fn geste(&self, nom: &str, args: &[Argument]) -> Result<Geste, String> {
+        let fait = |recharger: bool| Geste::Fait { ok: true, recharger };
         match (nom, self.phase()) {
-            ("choisir", Phase::Accueil) => match compagnies::racine_choisie(&compagnies::base(), &a(0)).and_then(|r| self.prendre(r)) {
-                Ok(()) => ok(true),
-                Err(m) => refus(m),
-            },
-            ("basculer", Phase::Accueil) => match crate::compagnie::bridage::basculer() {
-                Ok(()) => ok(true),
-                Err(m) => refus(m),
-            },
-            ("verifier", Phase::MotDePasse { racine, .. }) => match crate::compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(&a(0)) {
-                Ok(true) => {
-                    self.retenir_administrateur(&racine, &a(0));
-                    self.ouvrir(racine);
-                    ok(true)
+            ("choisir", Phase::Accueil) => {
+                let r = compagnies::racine_choisie(&compagnies::base(), texte(args, 0)?)?;
+                self.prendre(r)?;
+                Ok(fait(true))
+            }
+            ("basculer", Phase::Accueil) => {
+                crate::compagnie::bridage::basculer()?;
+                Ok(fait(true))
+            }
+            ("verifier", Phase::MotDePasse { racine, .. }) => {
+                let motdepasse = texte(args, 0)?;
+                if !crate::compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(motdepasse).map_err(|e| e.message)? {
+                    return Err("Mot de passe refusé.".into());
                 }
-                Ok(false) => refus("Mot de passe refusé.".into()),
-                Err(e) => refus(e.message),
-            },
+                self.retenir_administrateur(&racine, motdepasse);
+                self.ouvrir(racine);
+                Ok(fait(true))
+            }
             ("accueil", _) => {
                 self.ecrire("Retour a l'accueil.\n");
                 self.poser_phase(Phase::Accueil);
-                ok(true)
+                Ok(fait(true))
             }
             ("fermer", _) => {
                 self.fermer_le_logiciel();
-                ok(false)
+                Ok(fait(false))
             }
             // LES GESTES DU POSTE (`poste.rs`) : ouvrir ce qu'une route a rendu (un chemin), choisir un dossier.
             ("ouvrir", Phase::Ouverte { racine, .. }) => {
-                match poste::ouvrir_pour_la_page(&racine, &a(0), args.get(1).and_then(Value::as_bool) == Some(true)) {
-                    Ok(phrase) => json!({"ok": true, "phrase": phrase}),
-                    Err(m) => refus(m),
-                }
+                let phrase = poste::ouvrir_pour_la_page(&racine, texte(args, 0)?, oui_non(args, 1)?)?;
+                Ok(Geste::Dit { ok: true, phrase })
             }
-            ("choisir_dossier", Phase::Ouverte { .. }) => match poste::choisir_dossier(&a(0)) {
-                Ok(d) => json!({"ok": true, "dossier": d}),
-                Err(m) => refus(m),
-            },
+            ("choisir_dossier", Phase::Ouverte { .. }) => Ok(Geste::Dossier { ok: true, dossier: poste::choisir_dossier(texte(args, 0)?)? }),
             // LA VEILLE DE LA FENETRE : son etat, l'etape du passage en cours, un passage tout de suite (un passage appelle
             // la route `ouverture`, qui releve et sauvegarde).
-            ("veille", Phase::Ouverte { veille, .. }) => json!({"ok": true, "etat": veille.etat()}),
-            ("veille_etape", Phase::Ouverte { veille, .. }) => json!({"ok": true, "etat": veille.etape()}),
-            ("veille_maintenant", Phase::Ouverte { veille, .. }) => json!({"ok": true, "etat": veille.tour(false, false)}),
+            ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.etat()) }),
+            ("veille_etape", Phase::Ouverte { veille, .. }) => Ok(Geste::Etape { ok: true, etat: veille.etape() }),
+            ("veille_maintenant", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.tour(false, false)) }),
             // Ou en est la recherche de la mise a jour : l'accueil et la page d'une compagnie l'affichent.
-            ("maj", _) => json!({"ok": true, "etat": crate::compagnie::maj::RECHERCHE.etat()}),
+            ("maj", _) => Ok(Geste::Maj { ok: true, etat: crate::compagnie::maj::RECHERCHE.etat() }),
             // Le site de l'editeur, dans le navigateur du poste : la fenetre ne quitte jamais sa page.
-            ("site", _) => match poste::ouvrir_site(&a(0)) {
-                Ok(()) => ok(false),
-                Err(m) => refus(m),
-            },
+            ("site", _) => {
+                poste::ouvrir_site(texte(args, 0)?)?;
+                Ok(fait(false))
+            }
             // « Redemarrer pour mettre a jour » : la version prete part au relais, puis le logiciel se ferme comme par sa
             // croix (la veille s'arrete) ; le relais attend sa fin, installe et rouvre la fenetre neuve. Rien de pret :
             // refuse, et rien ne se ferme.
-            ("redemarrer", _) => match crate::compagnie::maj::redemarrer_pour_mettre_a_jour(&crate::compagnie::maj::installation(), &crate::compagnie::maj::RECHERCHE) {
-                Ok(v) => {
-                    self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", crate::compagnie::maj::version_lue(&v)));
-                    self.poser_phase(Phase::Accueil);
-                    self.fermer_le_logiciel();
-                    ok(false)
-                }
-                Err(m) => refus(m),
-            },
-            _ => refus(format!("Geste inconnu ici : {}.", nom)),
+            ("redemarrer", _) => {
+                let v = crate::compagnie::maj::redemarrer_pour_mettre_a_jour(&crate::compagnie::maj::installation(), &crate::compagnie::maj::RECHERCHE)?;
+                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", crate::compagnie::maj::version_lue(&v)));
+                self.poser_phase(Phase::Accueil);
+                self.fermer_le_logiciel();
+                Ok(fait(false))
+            }
+            _ => Err(format!("Geste inconnu ici : {}.", nom)),
         }
     }
 
@@ -760,32 +891,37 @@ impl Fenetre {
         if r.methode == "POST" {
             // Un refus du serveur, avant toute route ou tout geste, se dit comme le refus d'une route (`refus`), que la page
             // lit de meme pour un geste de la fenetre.
-            let refus = |code: u16, classe: Classe, message: String| Reponse::json(code, &RouteReponse::refusee(Refus::nouveau(classe, message)).en_json());
+            let refus = |code: u16, classe: Classe, message: String| Reponse::json(code, &RouteReponse::refusee(Refus::nouveau(classe, message)));
             if !self.autorise(&r) {
                 return refus(403, Classe::NonAutorise, "Cette page n'est plus reconnue par PuppetPaie (jeton absent) : fermez la fenêtre et relancez le logiciel.".into());
             }
-            let charge: Value = match serde_json::from_slice(if r.corps.is_empty() { b"{}" } else { &r.corps }) {
-                Ok(v) => v,
-                Err(_) => return refus(400, Classe::DemandeIllisible, "La demande ne se lit pas : ce n'est pas du JSON.".into()),
-            };
             if let Some(nom) = r.chemin.strip_prefix("/lanceur/") {
-                let args = charge.as_array().cloned().unwrap_or_default();
-                return Reponse::json(200, &self.lanceur(nom, &args));
+                let texte = match std::str::from_utf8(&r.corps) {
+                    Ok(t) => t,
+                    Err(e) => return refus(400, Classe::DemandeIllisible, format!("La demande ne se lit pas : ce n'est pas du texte ({}).", e)),
+                };
+                return match socle::forme::lire_texte::<Vec<Argument>>(texte, "Les arguments d'un geste de la fenêtre sont une liste de textes et de oui-non.") {
+                    Ok(args) => Reponse::json(200, &self.lanceur(nom, &args)),
+                    Err(m) => refus(400, Classe::DemandeIllisible, m),
+                };
             }
             #[cfg(feature = "atelier")]
             if let Some(nom) = r.chemin.strip_prefix("/atelier/") {
-                return Reponse::json(200, &self.atelier(nom, &charge));
+                return match self.atelier(nom, &r.corps) {
+                    Ok(a) => Reponse::json(200, &a),
+                    Err(m) => Reponse::json(200, &Atelier::Refuse { ok: false, refus: Refus::nouveau(Classe::Refuse, m) }),
+                };
             }
             if let Some(texte) = r.chemin.strip_prefix("/api/") {
                 // LE NOM DE LA ROUTE SE LIT ICI, UNE FOIS : un nom qui n'est celui d'aucune route se refuse ; une charge qui
                 // n'est pas un objet aussi.
                 let nom = match crate::routes::enveloppe::route_nommee(texte) {
                     Ok(n) => n,
-                    Err(e) => return Reponse::json(200, &RouteReponse::refusee(Refus::de(None, e)).en_json()),
+                    Err(e) => return Reponse::json(200, &RouteReponse::refusee(Refus::de(None, e))),
                 };
-                let charge = match Charge::de(charge) {
+                let charge = match Charge::du_texte(&r.corps) {
                     Ok(c) => c,
-                    Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e)).en_json()),
+                    Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e))),
                 };
                 // LA SEULE PORTE DE LA PAGE VERS LE MOTEUR : une route du catalogue. Celle de l'installation se sert a tout
                 // moment ; celle d'une compagnie, quand la compagnie est ouverte -- ou quand elle n'a pas encore de mot de
@@ -798,12 +934,12 @@ impl Fenetre {
                     let debut = Instant::now();
                     let rendu = self.route_de_l_installation(nom, &charge);
                     self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                    return Reponse::json(200, &rendu.en_json());
+                    return Reponse::json(200, &rendu);
                 }
                 let (racine, veille, etats) = match self.phase() {
                     Phase::Ouverte { racine, veille, etats } => (racine, Some(veille), Some(etats)),
                     Phase::MotDePasse { racine, premiere: true } => (racine, None, None),
-                    _ => return Reponse::json(200, &RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Aucune compagnie n'est ouverte.")).en_json()),
+                    _ => return Reponse::json(200, &RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Aucune compagnie n'est ouverte."))),
                 };
                 // LE JOURNAL DE L'INTERFACE note chaque route et sa duree (de quoi mesurer l'ouverture sur le poste) :
                 // l'heure, le nom, les millisecondes, et la classe d'un refus. Jamais la charge : elle peut porter un mot
@@ -817,24 +953,30 @@ impl Fenetre {
                 // (`suppression::route`) ; la fenetre lache d'abord ce qu'elle tient de la compagnie (sa veille, sa file
                 // des etats, son journal), et ne note rien apres dans un dossier qui n'est plus. Un passage de la veille en
                 // cours ecrit dans ce dossier : on attend qu'il finisse.
-                if nom == Route::CompagnieSupprimer && charge.brute().get("confirme").is_some_and(crate::valeur::vrai) {
-                    let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
-                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
-                    } else {
-                        match suppression::route(&racine, charge.brute(), &|r| self.lacher(r)) {
-                            Ok(v) => RouteReponse::de(nom, Ok(Rendu::brut(v))),
-                            Err(m) => RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, m)),
-                        }
+                if nom == Route::CompagnieSupprimer {
+                    let c: suppression::ChargeSupprimer = match charge.lire() {
+                        Ok(c) => c,
+                        Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e))),
                     };
-                    if rendu.est_rendue() {
-                        self.ecrire(&format!("Compagnie supprimee : {}.\n", racine.display()));
+                    if c.confirme == Some(true) {
+                        let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
+                            RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
+                        } else {
+                            match suppression::route(&racine, c, charge.mot_de_passe(), &|r| self.lacher(r)) {
+                                Ok(s) => RouteReponse::de(nom, crate::routes::enveloppe::en_json(s)),
+                                Err(m) => RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, m)),
+                            }
+                        };
+                        if rendu.est_rendue() {
+                            self.ecrire(&format!("Compagnie supprimee : {}.\n", racine.display()));
+                        }
+                        return Reponse::json(200, &rendu);
                     }
-                    return Reponse::json(200, &rendu.en_json());
                 }
                 let debut = Instant::now();
                 let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                return Reponse::json(200, &rendu.en_json());
+                return Reponse::json(200, &rendu);
             }
             return refus(404, Classe::RouteInconnue, "Cette adresse n'est ni une route ni un geste de la fenêtre.".into());
         }
@@ -875,11 +1017,15 @@ impl Fenetre {
                 // UNE FEUILLE OU UN SCRIPT NOMME PAR SON EMPREINTE (`?v=`, `empreinte`) se garde : la page
                 // d'une compagnie charge vingt-cinq fichiers, qu'elle ne redemande plus a chaque ouverture. Ce qui change
                 // change d'empreinte, donc d'adresse : rien de perime ne se garde.
-                Some((o, mime)) if r.params.contains_key("v") && (c.ends_with(".js") || c.ends_with(".css")) => {
+                Ok(Some((o, mime))) if r.params.contains_key("v") && (c.ends_with(".js") || c.ends_with(".css")) => {
                     Reponse::nouvelle(200, mime, o).avec("Cache-Control", "max-age=31536000, immutable")
                 }
-                Some((o, mime)) => Reponse::nouvelle(200, mime, o),
-                None => texte(404),
+                Ok(Some((o, mime))) => Reponse::nouvelle(200, mime, o),
+                Ok(None) => texte(404),
+                Err(m) => {
+                    self.ecrire(&format!("{}\n", m));
+                    texte(404)
+                }
             },
         }
     }
@@ -891,25 +1037,34 @@ impl Fenetre {
         if !self.autorise(r) || !crate::compagnie::bridage::branchement(&racine).joue() {
             return interdit;
         }
-        let nom = r.params.get("c").cloned().unwrap_or_default();
-        let rang: usize = r.params.get("p").and_then(|p| p.parse().ok()).unwrap_or(0);
+        let rien = || Reponse::nouvelle(404, "text/plain", Vec::new());
+        let panne = |m: String| Reponse::nouvelle(500, "text/plain; charset=utf-8", m.into_bytes());
+        // `c` : le courriel joue ; `p` : le rang de sa piece jointe.
+        let (Some(nom), Some(rang)) = (r.param("c"), r.param("p")) else { return rien() };
+        let rang: usize = match rang.parse() {
+            Ok(n) => n,
+            Err(e) => return panne(format!("Le rang de la pièce ne se lit pas : {}.", e)),
+        };
         let joues = match envois::simulation_courriels::courriels(&racine) {
             Ok(j) => j,
-            Err(e) => return Reponse::nouvelle(500, "text/plain", e.phrase().into_bytes()),
+            Err(e) => return panne(e.phrase()),
         };
-        let Some(brut) = joues.into_iter().find(|(n, _)| *n == nom).map(|(_, o)| o) else {
-            return Reponse::nouvelle(404, "text/plain", Vec::new());
+        let Some(brut) = joues.into_iter().find(|(n, _)| n == nom).map(|(_, o)| o) else { return rien() };
+        let m = match mailparse::parse_mail(&brut) {
+            Ok(m) => m,
+            Err(e) => return panne(format!("Le courriel joué ne se lit pas : {}.", e)),
         };
-        let Ok(m) = mailparse::parse_mail(&brut) else { return Reponse::nouvelle(404, "text/plain", Vec::new()) };
         let mut feuilles = Vec::new();
         envois::simulation_courriels::feuilles(&m, &mut feuilles);
-        let pieces: Vec<_> = feuilles.into_iter().filter(|f| envois::simulation_courriels::nom_de_fichier(f).is_some()).collect();
-        let Some(piece) = pieces.get(rang) else { return Reponse::nouvelle(404, "text/plain", Vec::new()) };
-        let octets = piece.get_body_raw().unwrap_or_default();
+        let pieces: Vec<_> = feuilles.into_iter().filter_map(|f| envois::simulation_courriels::nom_de_fichier(f).map(|n| (f, n))).collect();
+        let Some((piece, nom_pdf)) = pieces.get(rang) else { return rien() };
+        let octets = match piece.get_body_raw() {
+            Ok(o) => o,
+            Err(e) => return panne(format!("La pièce jointe ne se lit pas : {}.", e)),
+        };
         if piece.ctype.mimetype != "application/pdf" || !octets.starts_with(b"%PDF") {
-            return Reponse::nouvelle(404, "text/plain", Vec::new());
+            return rien();
         }
-        let nom_pdf = envois::simulation_courriels::nom_de_fichier(piece).unwrap_or_else(|| "piece.pdf".into());
         let sur: String = nom_pdf.chars().map(|c| if c.is_alphanumeric() || "._-".contains(c) { c } else { '_' }).collect();
         Reponse::nouvelle(200, "application/pdf", octets)
             .avec("Content-Disposition", format!("inline; filename=\"{}\"", sur))
@@ -924,23 +1079,22 @@ impl Fenetre {
         if !self.autorise(r) {
             return interdit;
         }
-        let demande = r.params.get("modele").map(String::as_str).unwrap_or_default();
-        let Some(modele) = crate::routes::bulletin::modele_de_l_adresse(demande) else {
+        let Some(modele) = r.param("modele").and_then(crate::routes::bulletin::modele_de_l_adresse) else {
             return Reponse::nouvelle(404, "text/plain", Vec::new());
         };
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
-        let charge = crate::routes::bulletin::ChargeModele { modele: modele.cle().to_string() };
-        let pdf = serde_json::to_value(charge)
-            .ok()
-            .and_then(|c| Charge::de(c).ok())
-            .and_then(|c| api::route(&racine, Route::BulletinModeleApercu, &c).ok())
-            .and_then(|v| crate::routes::lire_charge::<crate::routes::bulletin::ApercuModele>(&v).ok())
-            .and_then(|a| socle::base64::lire(&a.pdf).ok());
-        match pdf {
-            Some(octets) if octets.starts_with(b"%PDF") => Reponse::nouvelle(200, "application/pdf", octets)
+        let lire = || -> Result<Vec<u8>, String> {
+            let charge = Charge::de_forme(&crate::routes::bulletin::ChargeModele { modele: modele.cle().to_string() }).map_err(|e| e.phrase())?;
+            let v = api::route(&racine, Route::BulletinModeleApercu, &charge).en_resultat().map_err(|x| x.phrase)?;
+            let a: crate::routes::bulletin::ApercuModele = crate::routes::lire_charge(&v).map_err(|e| e.phrase())?;
+            socle::base64::lire(&a.pdf).map_err(|e| format!("L'aperçu du bulletin ne se lit pas : {}.", e))
+        };
+        match lire() {
+            Ok(octets) if octets.starts_with(b"%PDF") => Reponse::nouvelle(200, "application/pdf", octets)
                 .avec("Content-Disposition", format!("inline; filename=\"apercu-bulletin-{}.pdf\"", if modele == documents::bulletin::Modele::Complet { "complet" } else { "simplifie" }))
                 .avec("Content-Security-Policy", "default-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"),
-            _ => Reponse::nouvelle(500, "text/plain; charset=utf-8", "L'aperçu du bulletin ne s'est pas fait."),
+            Ok(_) => Reponse::nouvelle(500, "text/plain; charset=utf-8", "L'aperçu du bulletin n'est pas un PDF."),
+            Err(m) => Reponse::nouvelle(500, "text/plain; charset=utf-8", m),
         }
     }
 
@@ -952,7 +1106,10 @@ impl Fenetre {
         }
         let Phase::Ouverte { racine, .. } = self.phase() else { return rien() };
         if quoi == "cachet-automatique" {
-            let ent = droit::contexte::Contexte::nouveau(&racine, None).map(|c| c.entreprise).unwrap_or_default();
+            let ent = match droit::contexte::Contexte::nouveau(&racine, None) {
+                Ok(c) => c.entreprise,
+                Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::Echec::from(e).phrase()),
+            };
             return match engagement::cachet::svg(&ent) {
                 Some(d) => Reponse::nouvelle(200, "image/svg+xml; charset=utf-8", d),
                 None => rien(),
@@ -980,11 +1137,17 @@ impl Fenetre {
 /// refuse. Ni la charge ni la reponse : seulement de quoi mesurer.
 pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> String {
     let heure = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
-    let refus = match rendu.refus() {
-        None => String::new(),
-        Some(r) => format!(" refus {}", socle::echec::classe_notee(r.classe)),
+    // L'heure seule (`HH:MM:SS`), apres la date de l'horodatage.
+    let a_l_heure = match heure.get(11..) {
+        Some(h) => h,
+        None => heure.as_str(),
     };
-    format!("{} route {} {} ms{}\n", heure.get(11..).unwrap_or(""), nom, duree.as_millis(), refus)
+    let mut ligne = format!("{} route {} {} ms", a_l_heure, nom, duree.as_millis());
+    if let Some(r) = rendu.refus() {
+        ligne.push_str(&format!(" refus {}", socle::echec::classe_notee(r.classe)));
+    }
+    ligne.push('\n');
+    ligne
 }
 
 fn egal_en_temps_constant(a: &[u8], b: &[u8]) -> bool {
@@ -1065,7 +1228,11 @@ pub fn lire_options(args: &[String]) -> Result<Options, String> {
                 i += 1;
             }
             "--port" if i + 1 < args.len() => {
-                o.port = Some(args[i + 1].parse().ok().filter(|p| *p > 0).ok_or_else(|| format!("Port illisible : {}. {}", args[i + 1], USAGE))?);
+                let port: u16 = args[i + 1].parse().map_err(|e| format!("Port illisible : {} ({}). {}", args[i + 1], e, USAGE))?;
+                if port == 0 {
+                    return Err(format!("Port illisible : 0. {}", USAGE));
+                }
+                o.port = Some(port);
                 i += 2;
             }
             "--veille" if i + 1 < args.len() => {
@@ -1114,7 +1281,10 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
     let dernier = enr.and_then(|e| e.dernier_instant());
     let depart = match (jour, dernier) {
         (Some(j), Some(t)) if socle::temps::instant_de(j, 9) <= t => {
-            return Err(socle::echec::avec(format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)), serde_json::json!({"jour": j.iso()})))
+            return Err(socle::echec::avec(
+                format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
+                socle::echec::APart { detail: Some(j.iso()), ..Default::default() },
+            ))
         }
         (Some(j), _) => Some(socle::temps::instant_de(j, 9)),
         (None, Some(t)) => Some(t + 60.0),
@@ -1127,13 +1297,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         // LES ALEAS DU BANC sont ceux du rejeu (`temps::aleas`) : la compagnie du banc et son rejeu s'ecrivent pareil, et
         // `scenario::verifier` le controle. Le banc n'est jamais un poste.
         socle::temps::aleas_fixes();
-        e.geste("debut", || {
-            let mut m = serde_json::Map::new();
-            m.insert("jour".into(), json!(socle::temps::jour_de_paris().iso()));
-            m.insert("logiciel".into(), json!(version()));
-            m.insert("format".into(), json!(crate::atelier::scenario::FORMAT));
-            Ok(((), m))
-        })?;
+        e.geste("debut", || Ok(((), GesteDebut { jour: socle::temps::jour_de_paris().iso(), logiciel: version(), format: crate::atelier::scenario::FORMAT })))?;
     }
     Ok(reste)
 }
@@ -1161,7 +1325,7 @@ pub fn commande(args: &[String]) -> i32 {
     let devant: Arc<Mutex<Option<(String, PathBuf)>>> = Arc::new(Mutex::new(None));
     let pour_devant = devant.clone();
     let instance = prendre_instance(move || {
-        if let Some((a, profil)) = pour_devant.lock().ok().and_then(|a| a.clone()) {
+        if let Some((a, profil)) = tenu(&pour_devant).clone() {
             navigateur::ouvrir(&a, &profil, &|_| {});
         }
     });
@@ -1189,14 +1353,14 @@ pub fn commande(args: &[String]) -> i32 {
     };
     // Les compagnies de l'installation se tiennent a jour en fond, des maintenant, sans rien ouvrir (`prechauffer`).
     f.prechauffer();
-    *f.fermer.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(|| {
+    *tenu(&f.fermer) = Some(Box::new(|| {
         std::thread::spawn(|| {
             std::thread::sleep(Duration::from_millis(200));
             std::process::exit(0);
         });
     }));
     let url = f.adresse("puppetpaie.localhost", port);
-    *devant.lock().unwrap_or_else(|e| e.into_inner()) = Some((url.clone(), f.dossier_local().join("navigateur")));
+    *tenu(&devant) = Some((url.clone(), f.dossier_local().join("navigateur")));
     dire!("{}", url);
     let navigateur = if options.sans_navigateur { None } else { navigateur::ouvrir(&url, &f.dossier_local().join("navigateur"), &|t| f.ecrire(t)) };
     // Le navigateur a nous : sa fermeture arrete PuppetPaie. Sinon, plus aucune page depuis cinq minutes l'arrete
@@ -1223,14 +1387,20 @@ pub fn commande(args: &[String]) -> i32 {
 
 /// CE QUE LA PAGE DIT QUAND LE MOTEUR NE PEUT PLUS LE DIRE : le serveur qui ne repond plus, une reponse illisible. La
 /// fenetre les pose dans la page qu'elle sert (`{{PHRASES}}` de `index.html`), la page n'en ecrit aucune.
-static PHRASES_DE_LA_FENETRE: std::sync::LazyLock<serde_json::Value> = std::sync::LazyLock::new(|| {
-    serde_json::json!({
-        "perdu": "Le serveur ne répond plus : la fenêtre PuppetPaie a été fermée, ou le terminal qui la faisait tourner. Rien de ce qui est à l'écran n'est enregistré. Relancer PuppetPaie, puis recharger cette page.",
-        "perdu_court": "Le serveur PuppetPaie ne répond plus. Rien n'a été enregistré.",
-        "illisible": "PuppetPaie a répondu sans dire pourquoi. Rien n'est sûr d'avoir été enregistré.",
-        "lecture_absente": "Lecture absente de l'état du mois.",
-    })
-});
+#[derive(Serialize)]
+struct PhrasesDeLaFenetre {
+    perdu: &'static str,
+    perdu_court: &'static str,
+    illisible: &'static str,
+    lecture_absente: &'static str,
+}
+
+const PHRASES_DE_LA_FENETRE: PhrasesDeLaFenetre = PhrasesDeLaFenetre {
+    perdu: "Le serveur ne répond plus : la fenêtre PuppetPaie a été fermée, ou le terminal qui la faisait tourner. Rien de ce qui est à l'écran n'est enregistré. Relancer PuppetPaie, puis recharger cette page.",
+    perdu_court: "Le serveur PuppetPaie ne répond plus. Rien n'a été enregistré.",
+    illisible: "PuppetPaie a répondu sans dire pourquoi. Rien n'est sûr d'avoir été enregistré.",
+    lecture_absente: "Lecture absente de l'état du mois.",
+};
 
 /// CE QUE DISENT L'ACCUEIL DES COMPAGNIES ET LES PAGES DU MOT DE PASSE, que la fenetre sert (`pages/`) : chacune a sa
 /// place dans le gabarit (`{{P:cle}}`), y compris dans ses scripts (sans guillemet droit ni retour a la ligne).

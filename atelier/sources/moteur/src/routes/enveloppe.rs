@@ -104,6 +104,20 @@ impl Charge {
         }
     }
 
+    /// La charge ecrite depuis sa forme `t` : ce qu'une route du moteur demande a une autre (la veille a l'ouverture).
+    pub fn de_forme<T: Serialize>(t: &T) -> R<Charge> {
+        Charge::de(socle::ecriture::en_valeur(t))
+    }
+
+    /// La charge ecrite en texte (le corps d'une demande de la page ; vide : `{}`), ou le refus de la demande illisible.
+    pub fn du_texte(corps: &[u8]) -> R<Charge> {
+        if corps.is_empty() {
+            return Ok(Charge::vide());
+        }
+        let texte = std::str::from_utf8(corps).map_err(|e| erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() })))?;
+        Charge::de(socle::forme::lire_texte(texte, "La demande ne se lit pas : ce n'est pas du JSON.").map_err(|m| erreur(Classe::DemandeIllisible, m))?)
+    }
+
     /// LA CHARGE LUE EN SA FORME `T` (`serde`, `deny_unknown_fields`), sans le mot de passe de l'enveloppe : une cle que
     /// la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle
     /// fautive a part ; rien ne s'ecrit.

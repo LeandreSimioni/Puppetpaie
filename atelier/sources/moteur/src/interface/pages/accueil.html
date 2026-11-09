@@ -253,7 +253,7 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault(); e.stopPropagation();
       // La compagnie se crée par sa route ; la fenêtre l'ouvre ensuite, comme une tuile.
-      let r = await appel("compagnie-ajouter", { nom: nom.value, venue: venue || "neuve" });
+      let r = await appel("compagnie-ajouter", { nom: nom.value, venue });
       if (r.ok) r = await window.pywebview.api.choisir(r.resultat.id);
       document.getElementById("venue-erreur").textContent = r.ok ? "" : r.refus.phrase;
     });

@@ -156,9 +156,9 @@ fn operation(m: String) -> Echec {
 /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeAjouter {
-    nom: String,
-    venue: compagnies::Venue,
+pub(crate) struct ChargeAjouter {
+    pub(crate) nom: String,
+    pub(crate) venue: compagnies::Venue,
 }
 
 /// La charge de `compagnie-couleur`.
@@ -185,11 +185,13 @@ struct ChargeGarder {
 }
 
 /// La charge de `administrateur-tableau` : le tableau garde, ou refait (apres un releve, s'il est demande).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeTableau {
-    garde: Option<bool>,
-    relever: Option<bool>,
+pub(crate) struct ChargeTableau {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) garde: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) relever: Option<bool>,
 }
 
 /// La charge de `administrateur-deposer` : en reel, ou en test (le mot de passe est a l'enveloppe).
@@ -208,35 +210,36 @@ struct ChargePortable {
 
 /// Une compagnie de l'accueil, telle qu'une tuile la montre.
 #[derive(Debug, Serialize)]
-struct Tuile {
-    id: String,
-    nom: String,
-    lieu: String,
+pub(crate) struct Tuile {
+    pub(crate) id: String,
+    pub(crate) nom: String,
+    pub(crate) lieu: String,
     chemin: String,
-    reelle: bool,
-    remise_a_zero: bool,
-    couleur: String,
-    logo: Option<String>,
+    pub(crate) reelle: bool,
+    pub(crate) remise_a_zero: bool,
+    pub(crate) couleur: String,
+    pub(crate) logo: Option<String>,
 }
 
-/// Ce que rend `compagnies`.
+/// Ce que rend `compagnies`, et ce que l'accueil de la fenetre dessine (`interface::page_accueil`).
 #[derive(Debug, Serialize)]
-struct Liste {
+pub(crate) struct Liste {
     phrase: String,
-    compagnies: Vec<Tuile>,
-    bride: bool,
-    a_garder: Vec<suppression::Gardee>,
+    pub(crate) compagnies: Vec<Tuile>,
+    pub(crate) bride: bool,
+    pub(crate) a_garder: Vec<suppression::Gardee>,
     phrases: Vec<String>,
-    auteur: crate::interface::auteur::Auteur,
+    pub(crate) auteur: crate::interface::auteur::Auteur,
 }
 
 /// Ce que rend `compagnie-ajouter` : la compagnie, et le chemin que la fenetre ouvre.
-#[derive(Debug, Serialize)]
-struct Ajoutee {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Ajoutee {
     phrase: String,
     id: String,
     nom: String,
-    chemin: String,
+    pub(crate) chemin: String,
 }
 
 /// Ce que rend `compagnie-couleur`.
@@ -369,7 +372,7 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
 }
 
 /// Les compagnies de l'installation, dans l'ordre des tuiles de l'accueil, et ce que l'accueil en dit.
-fn liste(inst: &std::path::Path) -> Liste {
+pub(crate) fn liste(inst: &std::path::Path) -> Liste {
     let cies: Vec<Tuile> = compagnies::liste_de(inst)
         .into_iter()
         .map(|c| Tuile {

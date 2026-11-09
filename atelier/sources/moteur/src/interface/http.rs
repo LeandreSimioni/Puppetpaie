@@ -21,6 +21,11 @@ pub struct Requete {
 }
 
 impl Requete {
+    /// Le parametre `nom` de l'adresse (`?nom=…`), s'il y est.
+    pub fn param(&self, nom: &str) -> Option<&str> {
+        self.params.get(nom).map(String::as_str)
+    }
+
     pub fn entete(&self, nom: &str) -> Option<&str> {
         self.entetes.get(&nom.to_ascii_lowercase()).map(String::as_str)
     }
@@ -45,8 +50,9 @@ impl Reponse {
         Reponse { code, type_mime: type_mime.into(), corps: corps.into(), entetes: Vec::new() }
     }
 
-    pub fn json(code: u16, v: &serde_json::Value) -> Reponse {
-        Reponse::nouvelle(code, "application/json; charset=utf-8", serde_json::to_vec(v).unwrap_or_default())
+    /// Une reponse en JSON, ecrite depuis sa forme (`socle::ecriture`).
+    pub fn json<T: serde::Serialize + ?Sized>(code: u16, v: &T) -> Reponse {
+        Reponse::nouvelle(code, "application/json; charset=utf-8", socle::ecriture::json_en_ligne(v).into_bytes())
     }
 
     pub fn avec(mut self, nom: &str, valeur: impl Into<String>) -> Reponse {

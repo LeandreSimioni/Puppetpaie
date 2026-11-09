@@ -873,16 +873,18 @@ mod enregistreur {
 
         /// Un geste qui n'est pas une route (`debut`, `ajouter`, `simuler`, `jour`), fait par `f` sous le meme tour et au
         /// meme instant fige ; `f` rend ce qu'on ajoute a la ligne, ou son refus (rien n'est alors enregistre).
-        pub fn geste<T>(&self, nom: &str, f: impl FnOnce() -> Result<(T, Map<String, Value>), String>) -> Result<T, String> {
+        pub fn geste<T, G: serde::Serialize>(&self, nom: &str, f: impl FnOnce() -> Result<(T, G), String>) -> Result<T, String> {
             let mut n = self.tour.lock().unwrap_or_else(|p| p.into_inner());
             let quand = socle::temps::secondes();
             socle::temps::figer(quand);
             let rendu = f();
             socle::temps::defiger();
-            let (t, mut plus) = rendu?;
+            let (t, plus) = rendu?;
             let mut ligne = Map::new();
             ligne.insert("geste".into(), json!(nom));
-            ligne.append(&mut plus);
+            if let Value::Object(mut plus) = socle::ecriture::en_valeur(&plus) {
+                ligne.append(&mut plus);
+            }
             self.ecrire(&mut n, ligne, quand);
             Ok(t)
         }

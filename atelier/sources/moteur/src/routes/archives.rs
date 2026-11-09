@@ -152,7 +152,10 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let SansCharge {} = charge.lire()?;
             en_json(dossier_formes(ctx)?)
         }
-        Route::ExportsPeriodes => en_json(exports_periodes(ctx, charge.lire()?)?),
+        Route::ExportsPeriodes => {
+            let SansCharge {} = charge.lire()?;
+            en_json(exports_periodes(ctx)?)
+        }
         Route::RetenirLogiciel => en_json(retenir_logiciel(ctx, charge.lire()?)?),
         Route::CascRegularise => en_json(casc_regularise(ctx, charge.lire()?)?),
         Route::Exporter => en_json(exporter(ctx, &charge.lire()?)?),
@@ -350,18 +353,10 @@ fn etat_concerne(ctx: &Contexte, etat: &str) -> bool {
     true
 }
 
-/// La charge de `exports-periodes` : deux faits du poste, que la fenetre constate (`interface::api`) -- la bibliotheque
-/// des classeurs est-elle la (`xlsx`), la fabrique des PDF est-elle installee (`pdf`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeExportsPeriodes {
-    xlsx: Option<bool>,
-    pdf: Option<bool>,
-}
 
 /// CE QUE REND `exports-periodes` : sa phrase, les mois et les annees qu'il y a matiere a exporter, les etats que la
 /// compagnie peut demander, les formats et les regroupements (tels que les tables des exports les livrent), le dossier
-/// des exports, les deux faits du poste, le logiciel du comptable, et ce que l'ecran dit (`ecran`).
+/// des exports, le logiciel du comptable, et ce que l'ecran dit (`ecran`).
 #[derive(Debug, Serialize)]
 struct ExportsPossibles {
     phrase: String,
@@ -371,8 +366,6 @@ struct ExportsPossibles {
     formats: Vec<documents::plan_comptable::FormatLivre>,
     regroupements: Vec<documents::plan_comptable::RegroupementLivre>,
     dossier: String,
-    xlsx: bool,
-    pdf: bool,
     compta: LogicielDuComptable,
     ecran: EcranDesExports,
 }
@@ -386,14 +379,13 @@ struct EcranDesExports {
     regroupement: &'static str,
     analytique: &'static str,
     format_libre: &'static str,
-    brique_absente: &'static str,
     coordonnees: &'static str,
     dossier: String,
     categories: &'static str,
 }
 
 /// Les mois et les annees qu'il y a matiere a exporter, les etats, les formats, et le logiciel du comptable.
-fn exports_periodes(ctx: &Contexte, c: ChargeExportsPeriodes) -> R<ExportsPossibles> {
+fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
     let t = tables();
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat)).cloned().collect();
@@ -405,7 +397,6 @@ fn exports_periodes(ctx: &Contexte, c: ChargeExportsPeriodes) -> R<ExportsPossib
         regroupement: "Le total ne bouge pas : seule la répartition des lignes change.",
         analytique: "Les salaires bruts ventilés par spectacle. Le code de chaque spectacle se règle sur sa fiche : Configuration › Spectacles, case « Code analytique ». Vide, il est tiré du titre.",
         format_libre: "Le format se choisit ci-dessous.",
-        brique_absente: "brique absente, le CSV sera écrit",
         coordonnees: "Le NIR, la naissance, l'adresse. Sans la case, rien de tout cela ne sort ; un fichier qui les porte ne s'envoie qu'à qui en a besoin.",
         dossier: format!("{} — et nulle part ailleurs : un export emporte des salaires", dossier),
         categories: "Une seule case : un PDF. Plusieurs : un ZIP, un PDF par catégorie.",
@@ -418,8 +409,6 @@ fn exports_periodes(ctx: &Contexte, c: ChargeExportsPeriodes) -> R<ExportsPossib
         formats: t.formats.clone(),
         regroupements: t.regroupements.clone(),
         dossier,
-        xlsx: c.xlsx == Some(true),
-        pdf: c.pdf == Some(true),
         compta: etat_logiciel(ctx)?,
         ecran,
     })

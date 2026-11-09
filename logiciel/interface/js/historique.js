@@ -177,14 +177,13 @@ function dessinerRetour(r) {
 }
 
 /** LA LISTE DES MOIS SUIT L'ÉTAT GARDÉ. Elle se peint d'abord avec ce
- *  que la page sait ; puis le moteur rend l'état frais de l'ouverture
- *  (`etat_garde`, refait après chaque écriture : `ouverture` avec `frais`), et
- *  la liste se repeint s'il a changé — un dépôt fait depuis l'ouverture s'y
+ *  que la page sait ; puis le moteur rend l'état frais de la compagnie
+ *  (la route `etat`), et la liste se repeint s'il a changé — un dépôt fait depuis l'ouverture s'y
  *  voit sans recharger. La page n'y décide rien : elle relit. Les mois dépliés
  *  le restent. */
 async function rafraichirHistorique() {
   let etat;
-  try { etat = lectureDe(await appelerMoteur("ouverture", { frais: true }), "etat"); } catch (e) { return; }
+  try { etat = await api("etat"); } catch (e) { return; }
   if (!etat || JSON.stringify(etat.historique) === JSON.stringify(ETAT.historique)) return;
   ETAT.historique = etat.historique;
   if (document.getElementById("vue-historique").classList.contains("cachee")) return;

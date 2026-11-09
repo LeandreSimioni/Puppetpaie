@@ -40,7 +40,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::compagnies::{self, Compagnie};
 use crate::compagnie::administrateur::Poste;
@@ -62,27 +62,35 @@ pub enum Genre {
     Reelle,
 }
 
-fn absolu(p: &Path) -> PathBuf {
-    let c = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+/// Le dossier `p` resolu, et comparable (sous Windows, sans le `\\?\` de `canonicalize`) ; un dossier qui ne se resout
+/// pas se refuse.
+fn absolu(p: &Path) -> Result<PathBuf, String> {
+    let c = std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(&p, &e))?;
     let t = c.to_string_lossy();
-    t.strip_prefix(r"\\?\").map(PathBuf::from).unwrap_or(c)
+    Ok(match t.strip_prefix(r"\\?\") {
+        Some(s) => PathBuf::from(s),
+        None => c.clone(),
+    })
 }
 
 /// La compagnie `racine` est-elle une compagnie de l'installation `inst` -- `prive/`, `compagnies/<nom>`,
 /// `fictives/<nom>`, et rien d'autre (ni `logiciel/`, ni un dossier cache) ?
-fn de_l_installation(inst: &Path, racine: &Path) -> bool {
-    let (i, r) = (absolu(inst), absolu(racine));
-    let nom = r.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if nom.is_empty() || nom.starts_with('.') || !r.join(droit::contexte::ENTREPRISE).is_file() {
-        return false;
+fn de_l_installation(inst: &Path, racine: &Path) -> Result<bool, String> {
+    let (i, r) = (absolu(inst)?, absolu(racine)?);
+    let Some(nom) = r.file_name().map(|n| n.to_string_lossy().into_owned()) else { return Ok(false) };
+    if nom.starts_with('.') || !r.join(droit::contexte::ENTREPRISE).is_file() {
+        return Ok(false);
     }
-    r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(compagnies::DOSSIER_FICTIVES))
+    Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(compagnies::DOSSIER_FICTIVES)))
 }
 
 /// Ce qu'est `racine` pour sa suppression, ou pourquoi elle ne se supprime pas.
 pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
-    if !de_l_installation(inst, racine) {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie de ce logiciel : rien n'a été supprimé.", serde_json::json!({"chemin": racine.to_string_lossy()})));
+    if !de_l_installation(inst, racine)? {
+        return Err(socle::echec::avec(
+            "Ce dossier n'est pas une compagnie de ce logiciel : rien n'a été supprimé.",
+            socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
+        ));
     }
     if compagnies::est_ajoutee(racine) {
         return Ok(Genre::Ajoutee);
@@ -99,47 +107,99 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
 /// LA QUESTION de la suppression, telle que la page la pose (route `compagnie-supprimer`, sans `confirme`) : le nom, le genre, et pour
 /// une compagnie reelle le rappel de la conservation et la sauvegarde a proposer (un Drive lie : la date du dernier
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
-pub fn question(racine: &Path) -> Result<Value, String> {
+pub fn question(racine: &Path) -> Result<Suppression, String> {
     let inst = crate::compagnie::administrateur::installation_de(racine);
+    let nom = compagnies::nom_de(racine);
     let g = match genre(&inst, racine) {
         Ok(g) => g,
-        Err(phrase) => return Ok(json!({"nom": compagnies::nom_de(racine), "phrase": phrase})),
+        Err(phrase) => return Ok(Suppression { phrase, ..Suppression::de(nom) }),
     };
-    let nom = compagnies::nom_de(racine);
-    let titre_dit = format!("Supprimer {} ?", nom);
-    let mut v = json!({"nom": nom, "titre_dit": titre_dit, "genre": if g == Genre::Ajoutee { "ajoutee" } else { "reelle" }, "mot_de_passe": g == Genre::Reelle});
-    if g == Genre::Reelle {
-        v["conservation"] = json!(CONSERVATION);
-        let liee = racine.join(socle::fichiers::CONFIG).join(crate::routes::coffre::FICHIER_JETON).is_file();
-        let derniere = crate::compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
-        let phrase = match &derniere {
-            Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", crate::routes::quand(q)),
-            None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),
-        };
-        v["sauvegarde"] = json!({"liee": liee, "derniere": derniere, "phrase": phrase});
+    let sauvegarde = match g {
+        Genre::Reelle => {
+            let liee = racine.join(socle::fichiers::CONFIG).join(crate::routes::coffre::FICHIER_JETON).is_file();
+            let derniere = crate::compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
+            let phrase = match &derniere {
+                Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", crate::routes::quand(q)),
+                None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),
+            };
+            Some(SauvegardeAProposer { liee, derniere, phrase })
+        }
+        Genre::Ajoutee => None,
+    };
+    Ok(Suppression {
+        phrase: format!("Supprimer {} ?", nom),
+        titre_dit: Some(format!("Supprimer {} ?", nom)),
+        genre: Some(if g == Genre::Ajoutee { "ajoutee" } else { "reelle" }),
+        mot_de_passe: Some(g == Genre::Reelle),
+        conservation: (g == Genre::Reelle).then_some(CONSERVATION),
+        sauvegarde,
+        avertissement: Some(format!("Tout le dossier de {} sera effacé de ce poste : fiches, paies, documents, journaux. Cela ne se défait pas.", nom)),
+        ..Suppression::de(nom)
+    })
+}
+
+/// La charge de `compagnie-supprimer` : effacer (`confirme`), ou seulement dire ce qui sera efface. Le mot de passe du
+/// logiciel est celui de l'enveloppe (`Charge::mot_de_passe`).
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeSupprimer {
+    pub confirme: Option<bool>,
+}
+
+/// La sauvegarde a proposer avant de supprimer une compagnie reelle : un Drive lie, la date du dernier passage, la phrase.
+#[derive(Debug, serde::Serialize)]
+pub struct SauvegardeAProposer {
+    liee: bool,
+    derniere: Option<String>,
+    phrase: String,
+}
+
+/// CE QUE REND `compagnie-supprimer` : sans `confirme`, la question (le nom, le genre, ce qui sera efface, la
+/// conservation et la sauvegarde d'une compagnie reelle) -- sans genre, la phrase qui dit pourquoi elle ne se supprime
+/// pas ; avec, la compagnie supprimee.
+#[derive(Debug, serde::Serialize)]
+pub struct Suppression {
+    phrase: String,
+    nom: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titre_dit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    genre: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mot_de_passe: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conservation: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sauvegarde: Option<SauvegardeAProposer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    avertissement: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supprimee: Option<String>,
+}
+
+impl Suppression {
+    fn de(nom: String) -> Suppression {
+        Suppression { phrase: String::new(), nom, titre_dit: None, genre: None, mot_de_passe: None, conservation: None, sauvegarde: None, avertissement: None, supprimee: None }
     }
-    Ok(v)
+}
+
+impl crate::routes::enveloppe::Dite for Suppression {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
 }
 
 /// LA ROUTE `compagnie-supprimer` : avertir, puis effacer. Sans `confirme` : la question (`question`) et l'avertissement,
 /// qui dit ce qui sera efface ; rien ne bouge. Avec `confirme` : la suppression (`supprimer`), la preuve d'une compagnie
-/// reelle comprise (le `motdepasse` que la page a fait taper ; sinon le moteur le demande lui-meme a un humain). `avant` :
+/// reelle comprise (`motdepasse`, que la page a fait taper ; sinon le moteur le demande lui-meme a un humain). `avant` :
 /// ce que la fenetre lache de la compagnie avant qu'elle parte (rien, par `moteur route`).
-pub fn route(racine: &Path, charge: &Value, avant: &dyn Fn(&Path)) -> Result<Value, String> {
-    if !charge.get("confirme").is_some_and(crate::valeur::vrai) {
-        let mut q = question(racine)?;
-        if q.get("genre").is_some() {
-            q["avertissement"] = json!(format!(
-                "Tout le dossier de {} sera effacé de ce poste : fiches, paies, documents, journaux. Cela ne se défait pas.",
-                compagnies::nom_de(racine)
-            ));
-        }
-        return Ok(q);
+pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&str>, avant: &dyn Fn(&Path)) -> Result<Suppression, String> {
+    if charge.confirme != Some(true) {
+        return question(racine);
     }
     let inst = crate::compagnie::administrateur::installation_de(racine);
-    let motdepasse = charge.get("motdepasse").and_then(Value::as_str);
     let nom = supprimer(&inst, racine, motdepasse, &Poste::de_ce_poste(), avant)?;
-    Ok(json!({"supprimee": nom, "phrase": format!("{} est supprimée de ce poste.", nom)}))
+    Ok(Suppression { phrase: format!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
 }
 
 /// La preuve d'une suppression reelle : le mot de passe du logiciel, verifie sur le coffre de la compagnie. Vide : le
@@ -182,11 +242,19 @@ pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &P
 /// suivant (`effacer_les_restes`). Echoue seulement si le renommage echoue : alors rien n'a bouge.
 fn effacer(racine: &Path) -> Result<(), String> {
     let parent = racine.parent().ok_or("Un dossier sans parent ne se supprime pas.")?;
-    let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let instant = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let nom = racine.file_name().ok_or("Un dossier sans nom ne se supprime pas.")?.to_string_lossy().into_owned();
+    let instant = socle::temps::maintenant_ms();
     let cache = parent.join(format!("{}{}-{}", PREFIXE_RESTE, nom, instant));
-    std::fs::rename(racine, &cache).map_err(|e| socle::echec::avec("La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.", serde_json::json!({"chemin": racine.to_string_lossy(), "detail": e.to_string()})))?;
-    let _ = std::fs::remove_dir_all(&cache);
+    std::fs::rename(racine, &cache).map_err(|e| {
+        socle::echec::avec(
+            "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.",
+            socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+        )
+    })?;
+    // Ce qui resiste reste cache, et part au lancement suivant (`effacer_les_restes`).
+    if let Err(e) = std::fs::remove_dir_all(&cache) {
+        eprintln!("{}", socle::echec::du_disque(&cache, &e));
+    }
     Ok(())
 }
 

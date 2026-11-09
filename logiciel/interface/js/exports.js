@@ -33,8 +33,6 @@ async function dessinerExports() {
   }
   const opt = (v, t, sel) =>
     `<option value="${echapper(v)}"${sel ? " selected" : ""}>${echapper(t)}</option>`;
-  // Un format dont la brique manque se choisit quand même — le moteur écrit
-  // alors le CSV et le dit —, mais l'étiquette prévient avant le clic.
   // D'ABORD LA CATEGORIE, PUIS L'ETAT, PUIS SES QUESTIONS : rien n'est choisi d'office, et chaque choix deroule le
   // suivant. Une categorie d'un seul etat le choisit d'elle-meme.
   const fams = familles(p.etats);
@@ -221,7 +219,6 @@ function dessinerQuestions(opt) {
   const p = EXPORTS;
   const forme = p.etats.find((e) => e.etat === document.getElementById("x-etat").value);
   const q = new Set(forme.questions);
-  const manque = { xlsx: !p.xlsx, pdf: !p.pdf };
   document.getElementById("exports-resultat").innerHTML = "";
   document.getElementById("x-suite").innerHTML = `
     <div class="champs">
@@ -259,7 +256,7 @@ function dessinerQuestions(opt) {
         <label for="x-format">Format</label>
         <select id="x-format">
           ${p.formats.filter((f) => (forme.formats || []).includes(f.format)).map((f) => opt(f.format,
-            f.quoi + (manque[f.format] ? " — " + p.ecran.brique_absente : ""),
+            f.quoi,
             f.format === "csv")).join("")}
         </select>
       </div>` : ""}
