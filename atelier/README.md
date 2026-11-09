@@ -977,7 +977,7 @@ reprend où elle s'était arrêtée) ; la
 première fois, elle remonte l'index (environ un an) jusqu'à la dernière fiche
 de chaque convention, pour savoir ensuite rattacher un texte à la sienne : une
 minute, une fois. L'ouverture d'une compagnie ne la fait pas
-(`moteur/src/compagnie/ouverture.rs`) : c'est l'éditeur qui la lance.
+(`moteur/src/gestes/ouverture.rs`) : c'est l'éditeur qui la lance.
 
 Quand une source a changé, le référentiel qu'elle nourrit se **relève** par
 **`moteur extraire`** (`moteur/src/atelier/extraire/`) : `naf` (les deux classeurs INSEE →
@@ -1643,7 +1643,7 @@ et l'horloge de la fictive joue ce qui était dû. La notice entière, celle
 qu'un agent suit : `outils/banc/LISEZ-MOI.md` ; le modèle d'une partie :
 `outils/banc/exemple.js`.
 
-Pendant ce temps, **l'enregistreur** (`moteur/src/atelier/scenario.rs`, dans le seul
+Pendant ce temps, **l'enregistreur** (`moteur/src/scenario.rs`, dans le seul
 binaire de l'atelier) consigne chaque route que la fenêtre sert, avec sa
 charge, son instant et ce qu'on avait déposé (`gestes.jsonl`, `pieces/`).
 Le scénario se **rejoue** sans navigateur, depuis un dossier vide, dans une

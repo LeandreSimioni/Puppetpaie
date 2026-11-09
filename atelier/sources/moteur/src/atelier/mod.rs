@@ -1,17 +1,18 @@
 //! L'ATELIER : les outils de l'editeur et des seances, a cote du produit. Le releve des textes (LEGI, KALI, la veille
 //! des sources), les referentiels extraits des textes deposes, les tables Unicode generees, le garde avant commit, le
-//! guet du contexte, les scenarios du banc, et la publication des versions (la cle de l'editeur).
+//! guet du contexte, la publication des versions (la cle de l'editeur), et leurs commandes (`commandes`). Le scenario
+//! d'une compagnie fictive, que le logiciel livre rejoue, n'en est pas : il est au niveau des routes (`scenario`).
 //!
-//! Seuls la redirection vers de faux serveurs locaux, les bulletins fictifs et les outils sur une compagnie (`outils` : les
-//! taux de PAS, les AER, la reprise des DPAE, l'enquete des retours, le depot de test a un ordre) n'existent que dans le binaire de
-//! l'atelier (`--features atelier`, jamais livre).
+//! Seuls la redirection vers de faux serveurs locaux, les bulletins fictifs et les outils sur une compagnie
+//! (`commandes::outils` : les taux de PAS, les AER, la reprise des DPAE, l'enquete des retours, le depot de test a un
+//! ordre) n'existent que dans le binaire de l'atelier (`--features atelier`, jamais livre).
 
+pub mod commandes;
 pub mod extraire;
 pub mod generer_tables;
 pub mod guet;
 pub mod publier;
 pub mod releve;
-pub mod scenario;
 pub mod sources;
 pub mod verifier_avant_commit;
 
@@ -21,8 +22,6 @@ pub mod bulletins_fictifs;
 pub mod fabriquer_bulletins;
 #[cfg(feature = "atelier")]
 pub mod redirection;
-#[cfg(feature = "atelier")]
-pub mod outils;
 
 /// UN OBJET DONT L'ORDRE COMPTE (un referentiel ecrit dans l'ordre de son texte depose, un resume dans l'ordre ou il
 /// s'est lu) : ses paires `(cle, valeur)`, lues (`socle::forme::en_ordre`, une cle repetee refuse) et ecrites

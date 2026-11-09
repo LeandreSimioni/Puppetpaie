@@ -42,28 +42,17 @@ fn main() -> std::process::ExitCode {
         Some("essai") => return std::process::ExitCode::from(moteur::compagnie::essai::commande(&args[1..]).clamp(0, 255) as u8),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer. L'atelier seulement.
         #[cfg(feature = "atelier")]
-        Some("scenario") => return std::process::ExitCode::from(moteur::atelier::scenario::commande(&args[1..]).clamp(0, 255) as u8),
-        // Les bulletins fictifs d'un logiciel precedent, pour une compagnie qui s'importe. L'atelier seulement.
-        #[cfg(feature = "atelier")]
-        Some("fabriquer-bulletins") => {
-            return std::process::ExitCode::from(moteur::atelier::fabriquer_bulletins::commande(&args[1..]).clamp(0, 255) as u8)
-        }
+        Some("scenario") => return std::process::ExitCode::from(moteur::scenario::commande(&args[1..]).clamp(0, 255) as u8),
         Some("interface") => return std::process::ExitCode::from(moteur::interface::commande(&args[1..]).clamp(0, 255) as u8),
-        Some("generer-tables") => return std::process::ExitCode::from(moteur::atelier::generer_tables::commande(&args[1..]).clamp(0, 255) as u8),
-        Some("extraire") => return std::process::ExitCode::from(moteur::atelier::extraire::commande(&args[1..]).clamp(0, 255) as u8),
-        // Les codes (LEGI) et les conventions collectives (KALI) releves chez la DILA, dans `atelier/reference/sources`.
-        // Les tables des missions a l'etranger de la DGFiP, relevees avant chaque publication.
-        Some("releve-missions") => return std::process::ExitCode::from(moteur::atelier::releve::missions::commande(&args[1..]).clamp(0, 255) as u8),
-        Some(q @ ("releve-codes" | "releve-conventions")) => {
-            let commande = if q == "releve-codes" { moteur::atelier::releve::codes::commande } else { moteur::atelier::releve::conventions::commande };
-            return std::process::ExitCode::from(commande(&args[1..]).clamp(0, 255) as u8);
+        // Les commandes de l'editeur que l'on lance par leur nom (`atelier::commandes::lancer`) ; le reste est la ligne de
+        // commande du produit et celles de l'editeur qui passent par son cadre (`moteur [--dev] COMMANDE ...`).
+        Some(nom) => {
+            let code = match moteur::atelier::commandes::lancer(nom, &args[1..]) {
+                Some(code) => code,
+                None => moteur::commandes::executer(&args, moteur::atelier::commandes::commandes()),
+            };
+            return std::process::ExitCode::from(code.clamp(0, 255) as u8);
         }
-        // Outil d'atelier : la veille du contexte d'un sous-agent (`guet.rs`).
-        Some("guet") => return std::process::ExitCode::from(moteur::atelier::guet::commande(&args[1..]).clamp(0, 255) as u8),
-        // Le garde avant commit (le crochet `atelier/.githooks/pre-commit`) : les donnees reelles dans ce que git emporterait.
-        Some("verifier-avant-commit") => return std::process::ExitCode::from(moteur::atelier::verifier_avant_commit::commande(&args[1..]).clamp(0, 255) as u8),
-        // Le reste est la ligne de commande du produit (`moteur [--dev] COMMANDE ...`).
-        Some(_) => return std::process::ExitCode::from(moteur::commandes::executer(&args).clamp(0, 255) as u8),
         None => usage(),
     }
 }

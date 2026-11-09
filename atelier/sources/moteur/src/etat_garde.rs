@@ -692,7 +692,7 @@ fn ouverture_ecrite(racine: &Path) -> Option<EtatDeLOuverture> {
     }
 }
 
-/// L'etat de `cle` (le banc d'essai le rejoue : `atelier::scenario`) : celui de l'ouverture, ecrit, s'il est juste ;
+/// L'etat de `cle` (le banc d'essai le rejoue : `scenario`) : celui de l'ouverture, ecrit, s'il est juste ;
 /// sinon refait.
 pub fn lire(o: &Options, ctx: &Contexte, cle: &str) -> R<()> {
     garde_juste(o, ctx, Cle::lire(cle)?).map(drop)
@@ -1037,7 +1037,7 @@ impl FileDesEtats {
         };
         // LE BANC D'ESSAI : ce que l'etat refait ecrit entre dans le scenario (`scenario::Enregistreur::fond`).
         #[cfg(feature = "atelier")]
-        let rendu = match crate::atelier::scenario::enregistreur_actif() {
+        let rendu = match crate::scenario::enregistreur_actif() {
             Some(e) => e.fond(&self.racine, &cle.to_string(), refaire),
             None => refaire(),
         };

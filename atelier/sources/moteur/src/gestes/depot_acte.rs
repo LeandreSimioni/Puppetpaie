@@ -255,7 +255,7 @@ pub fn deposer_dsn(
 }
 
 /// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`) et l'ordre d'un essai, que seul
-/// l'outil de l'atelier donne (`atelier::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
+/// l'outil de l'atelier donne (`atelier::commandes::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
 /// un depot REEL n'y a pas de sens et reste refuse ici, car le journal le noterait comme une declaration partie.
 ///
 /// `ordre_d_essai` : l'ordre au-dessous duquel un ESSAI de mensuelle ne part pas, donne par qui sait ce que la base

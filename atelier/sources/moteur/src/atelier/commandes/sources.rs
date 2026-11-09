@@ -15,9 +15,9 @@
 
 use crate::atelier::sources::{EnLigne, EtatSource};
 
-use super::analyse::{Args, Opt, Spec};
-use super::rendu::rendre;
-use super::Cadre;
+use crate::commandes::analyse::{Args, Opt, Spec};
+use crate::commandes::rendu::rendre;
+use crate::commandes::Cadre;
 
 pub static SPEC: Spec = Spec {
     commande: "sources",

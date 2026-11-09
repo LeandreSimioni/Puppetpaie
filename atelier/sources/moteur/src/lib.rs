@@ -17,5 +17,6 @@ pub mod interface;
 pub mod obligations;
 pub mod regularisation;
 pub mod routes;
+pub mod scenario;
 pub mod service;
 pub mod simulation_courriels;

@@ -146,7 +146,7 @@ impl Charge {
     }
 
     /// LE TEXTE QUE LA CHARGE PORTE A `cle`, s'il y en a un : un dossier ou un fichier qu'une route lit (le banc d'essai le
-    /// recopie dans son scenario, `atelier::scenario`).
+    /// recopie dans son scenario, `scenario`).
     pub fn texte(&self, cle: &str) -> Option<&str> {
         self.0.get(cle).and_then(Value::as_str)
     }

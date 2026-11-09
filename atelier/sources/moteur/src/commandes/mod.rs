@@ -1,7 +1,8 @@
 //! La ligne de commande de ce qui n'est pas un geste de l'ecran, `moteur COMMANDE ...` : le coffre (la seance, et les
 //! secrets tapes sans echo, que l'entree standard ne porte jamais), la restauration d'un poste neuf depuis le Drive, et
-//! les outils de l'editeur (`sources`, `depots`). Un geste de l'ecran se fait par sa route : `moteur routes` les dit,
-//! `moteur route` en sert une (`--texte` : ses phrases).
+//! l'enquete des depots (`depots`). Les commandes de l'editeur (`atelier::commandes`) passent par le meme cadre : `main`
+//! les donne a `executer`. Un geste de l'ecran se fait par sa route : `moteur routes` les dit, `moteur route` en sert une
+//! (`--texte` : ses phrases).
 //!
 //! Une commande = un module, qui declare ses options (`analyse::Spec`) et rend un code de sortie ; sa sortie est un
 //! texte, ou l'enveloppe `--json` (`rendu::rendre`).
@@ -38,7 +39,6 @@ pub mod compagnie;
 pub mod depots;
 pub mod rendu;
 pub mod restaurer;
-pub mod sources;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -108,71 +108,58 @@ impl Cadre {
     }
 }
 
-type Executer = fn(&Cadre, &Args) -> i32;
+pub type Executer = fn(&Cadre, &Args) -> i32;
 
-struct Commande {
-    nom: &'static str,
-    aide: &'static str,
-    cachee: bool,
-    spec: &'static Spec,
-    executer: Executer,
+pub struct Commande {
+    pub nom: &'static str,
+    pub aide: &'static str,
+    pub cachee: bool,
+    pub spec: &'static Spec,
+    pub executer: Executer,
 }
 
-fn commandes() -> Vec<Commande> {
-    #[allow(unused_mut)]
+/// Les commandes du produit, puis `de_l_editeur` (`atelier::commandes::commandes`), dans cet ordre.
+fn commandes(de_l_editeur: Vec<Commande>) -> Vec<Commande> {
     let mut v = vec![
         Commande { nom: "coffre", aide: "les mots de passe des organismes, scelles sur le disque (ce qui est pose)", cachee: false, spec: &coffre::SPEC, executer: coffre::executer },
         // L'enquete de l'editeur sur le poste d'une compagnie : elle marche, elle ne figure pas dans l'aide.
         Commande { nom: "depots", aide: "lister les depots vus par net-entreprises (enquete)", cachee: true, spec: &depots::SPEC, executer: depots::executer },
-        // L'outil de l'editeur, avant chaque publication : refuse ailleurs que sur son poste (le reglage de l'installation, `maj::reglage`).
-        Commande { nom: "sources", aide: "les sources des donnees livrees, et leur veille (poste de l'editeur)", cachee: true, spec: &sources::SPEC, executer: sources::executer },
         Commande { nom: "restaurer", aide: "redescendre le dossier prive du Drive (poste neuf, ordinateur perdu)", cachee: false, spec: &restaurer::SPEC, executer: restaurer::executer },
     ];
-    // LES OUTILS DE L'ATELIER sur une compagnie (`atelier::outils`) : le binaire de l'atelier seulement.
-    #[cfg(feature = "atelier")]
-    {
-        use crate::atelier::outils::{aer, depot_dsn, journal, pas, retours};
-        v.extend([
-            Commande { nom: "pas", aide: "les taux de PAS connus ; --amorcer, --demander (atelier)", cachee: false, spec: &pas::SPEC, executer: pas::executer },
-            Commande { nom: "aer", aide: "ranger de nouveau les AER recues ; --forcer (atelier)", cachee: false, spec: &aer::SPEC, executer: aer::executer },
-            Commande { nom: "journal", aide: "--dpae : reprendre au journal les DPAE attestees (atelier)", cachee: false, spec: &journal::SPEC, executer: journal::executer },
-            Commande { nom: "retours", aide: "l'enquete des retours : plage, flux, plate-forme (atelier)", cachee: false, spec: &retours::SPEC, executer: retours::executer },
-            Commande { nom: "depot-dsn", aide: "un depot de test a un ordre, ou chez l'editeur (atelier)", cachee: false, spec: &depot_dsn::SPEC, executer: depot_dsn::executer },
-        ]);
-    }
+    v.extend(de_l_editeur);
     v
 }
 
-fn aide() -> String {
+fn aide(table: &[Commande]) -> String {
     let mut t = String::from(
         "usage: moteur [--dev] COMMANDE [options]\n\nPuppetPaie - paie du spectacle vivant\n\ncommandes :\n",
     );
-    for c in commandes().iter().filter(|c| !c.cachee) {
+    for c in table.iter().filter(|c| !c.cachee) {
         t.push_str(&format!("  {:<11} {}\n", c.nom, c.aide));
     }
     t.push_str("\nTout ce que fait la fenetre : `moteur routes` (le catalogue), `moteur route` (une route, `--texte` : ses phrases). `moteur pdf` est la fabrique de PDF.\n");
     t
 }
 
-/// `moteur [--dev] COMMANDE ...`. Rend le code de sortie.
-pub fn executer(args: &[String]) -> i32 {
+/// `moteur [--dev] COMMANDE ...`, parmi les commandes du produit et `de_l_editeur`. Rend le code de sortie.
+pub fn executer(args: &[String], de_l_editeur: Vec<Commande>) -> i32 {
     let mut args = args;
     let mut dev = false;
     if args.first().map(String::as_str) == Some("--dev") {
         dev = true;
         args = &args[1..];
     }
+    let table = commandes(de_l_editeur);
     let Some(nom) = args.first().map(String::as_str) else {
-        eprintln!("{}", aide());
+        eprintln!("{}", aide(&table));
         return 2;
     };
     if matches!(nom, "-h" | "--help" | "--aide" | "aide") {
-        dire!("{}", aide());
+        dire!("{}", aide(&table));
         return 0;
     }
-    let table = commandes();
     let Some(c) = table.iter().find(|c| c.nom == nom) else {
-        eprintln!("moteur: error: commande inconnue : {}\n\n{}", nom, aide());
+        eprintln!("moteur: error: commande inconnue : {}\n\n{}", nom, aide(&table));
         return 2;
     };
     let reste = &args[1..];

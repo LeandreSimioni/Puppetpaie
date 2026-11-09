@@ -376,7 +376,7 @@ Le domaine `modification_du_contrat` (L1221-1, L1222-6) ajouté à `moteur/src/a
 `documents::avenant::changements_en_clair` ; `documents::contrat::ecrire_avenant` (`avenant.reference`,
 `modification.phrase`) ; les modèles `avenant-permanent.modele` et `avenant-cddu.modele` (le paragraphe
 `{{modification.phrase}}`) ; `moteur/src/routes/contrats.rs` (`avenant-apercu`, `signature-apercu`) ;
-`moteur/src/compagnie/signature.rs` (le dossier du contrat signé, joint à l'envoi de l'avenant).
+`moteur/src/gestes/signature.rs` (le dossier du contrat signé, joint à l'envoi de l'avenant).
 
 ## La période d'essai et sa durée maximale : L1242-10 (CDD), L1221-19 à L1221-24 (CDI) (relevé du 29/10/2026)
 

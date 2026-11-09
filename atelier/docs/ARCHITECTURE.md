@@ -138,7 +138,7 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,
   bulletin rectificatif, DSN) se tire de la comparaison entre le présent et la version sur laquelle chaque envoi est
   parti. L'engagement ne lit jamais le journal : le moteur lui passe ce qui est parti (`engagement/src/departs.rs`).
-- **Chaque document se fabrique à son départ** (`moteur/src/compagnie/depart.rs`) : la DSN à son dépôt (`fabriquer_dsn`, route
+- **Chaque document se fabrique à son départ** (`moteur/src/gestes/depart.rs`) : la DSN à son dépôt (`fabriquer_dsn`, route
   `depot-apercu`, la DSN désignée par son mois), dès qu'un engagement du mois est validé, sans attendre DPAE ni contrat ; le bulletin et le certificat
   Congés Spectacles à l'envoi des documents (`fabriquer_documents`), qui écrit dans la paie le numéro du bulletin
   (`N/AAAA`, la suite de l'année, après le plus haut que porte une paie de l'année, importée comprise) et le premier
@@ -279,7 +279,7 @@ datée, vérifiable**.
   textes de chaque convention, trous de l'index) ; à la première veille,
   l'index est remonté jusqu'à la dernière fiche de chaque convention.
   L'ouverture d'une compagnie ne fait pas cette vérification
-  (`moteur/src/compagnie/ouverture.rs`) : c'est l'éditeur
+  (`moteur/src/gestes/ouverture.rs`) : c'est l'éditeur
   qui la lance, avant chaque publication.
 - `moteur releve-codes` (`moteur/src/atelier/releve/codes.rs`)
   — **les articles de loi eux-mêmes**, lus dans la base **LEGI**
@@ -521,7 +521,7 @@ leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
 
 Une **option de la compagnie** (fiche Entreprise, `conseils`, décochée par défaut) : sans elle, aucune route ne rend
 rien. Le texte, ses chiffres et ses sources sont des données (`logiciel/donnees/conseils.json`, chaque citation lue à
-l'identique dans un texte déposé, `tests/fichiers/sources.rs`) ; `moteur/src/compagnie/conseils.rs` n'a que les conditions.
+l'identique dans un texte déposé, `tests/fichiers/sources.rs`) ; `moteur/src/gestes/conseils.rs` n'a que les conditions.
 Trois familles, qui parlent à l'employeur :
 
 | | où | ce qui décide |
@@ -1441,7 +1441,7 @@ pour la DSN, l'Urssaf pour la DPAE), jamais
 par un portail : un contrat écrit, des retours lus par programme, et une
 erreur qui se voit (un code Urssaf faux, qu'un portail laisserait passer, fait refuser le dépôt).
 
-Trois garde-fous, tous dans le moteur (`moteur/src/compagnie/depot_acte.rs`, `moteur/src/compagnie/demande.rs`) :
+Trois garde-fous, tous dans le moteur (`moteur/src/compagnie/preuve.rs`, `moteur/src/gestes/depot_acte.rs`, `moteur/src/compagnie/demande.rs`) :
 
 - **Une preuve par acte.** Rien ne part en réel sans le mot de passe du
   logiciel tapé au moment de l'acte (`README.md`) ; la séance qui ouvre le
@@ -1469,7 +1469,7 @@ de faire tourner un ou deux mois en parallèle et de comparer.
 
 Une installation (le dossier qui porte `logiciel/`, `prive/`, `compagnies/*`, `fictives/*`) appartient à une personne,
 l'**administrateur**, qui peut y gérer plusieurs compagnies d'un seul mot de passe ; qui veut deux administrateurs
-installe un second logiciel. `moteur/src/compagnie/administrateur.rs` :
+installe un second logiciel. `moteur/src/gestes/administrateur.rs` :
 
 - **Rien de neuf dans le chiffrement.** Chaque compagnie garde son coffre (`config/coffre.bin`) et sa clé maîtresse, scellée
   par la clé du poste et par le mot de passe du logiciel. Rattacher une compagnie, c'est sceller cette enveloppe par le mot
@@ -1645,7 +1645,7 @@ et `maj/journal.log` le dit.
 
 ## L'exercice : rappels, clôture, export compta
 
-`moteur/src/compagnie/exercice_ecrit.rs` (la clôture,
+`moteur/src/gestes/exercice_ecrit.rs` (la clôture,
 l'export compta) et `moteur/src/routes/rappels.rs` (les rappels). Trois choses qui regardent plus loin
 que le mois affiché.
 
