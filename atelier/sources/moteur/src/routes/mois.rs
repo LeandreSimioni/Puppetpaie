@@ -2207,7 +2207,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
         let cle = format!("{}|{}", en_texte(&socle::ecriture::en_valeur(&v.salarie.nom)), en_texte(&socle::ecriture::en_valeur(&v.salarie.prenom)));
         match salaries.iter_mut().find(|(c, _, _)| *c == cle) {
             Some((_, _, vs)) => vs.push(v),
-            None => salaries.push((cle, super::nom_a_l_ecran(&p.salarie), vec![v])),
+            None => salaries.push((cle, super::nom_a_l_ecran(&p.salarie, &p.salarie.id.to_string()), vec![v])),
         }
     }
     let par_salarie = salaries

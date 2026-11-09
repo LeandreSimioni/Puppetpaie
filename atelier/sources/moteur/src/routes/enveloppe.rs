@@ -145,6 +145,32 @@ impl Charge {
         }
     }
 
+    /// LE TEXTE QUE LA CHARGE PORTE A `cle`, s'il y en a un : un dossier ou un fichier qu'une route lit (le banc d'essai le
+    /// recopie dans son scenario, `atelier::scenario`).
+    pub fn texte(&self, cle: &str) -> Option<&str> {
+        self.0.get(cle).and_then(Value::as_str)
+    }
+
+    /// La charge qui porte le texte `texte` a `cle` (le rejeu d'un scenario y nomme la piece qu'il a posee).
+    pub fn poser_texte(&mut self, cle: &str, texte: String) {
+        if let Value::Object(m) = &mut self.0 {
+            m.insert(cle.to_string(), Value::String(texte));
+        }
+    }
+
+    /// LA CHARGE SANS AUCUN MOT DE PASSE TAPE : la valeur de toute cle `motdepasse…` qui porte un texte, a toute
+    /// profondeur, vide. Un scenario du banc la garde ainsi.
+    pub fn sans_les_mots_de_passe(&self) -> Charge {
+        fn vider(v: &Value) -> Value {
+            match v {
+                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), if k.starts_with(MOT_DE_PASSE) && x.is_string() { Value::String(String::new()) } else { vider(x) })).collect()),
+                Value::Array(a) => Value::Array(a.iter().map(vider).collect()),
+                x => x.clone(),
+            }
+        }
+        Charge(vider(&self.0))
+    }
+
     /// LA CHARGE D'UN PROGRAMME (`moteur route` : un LLM, un script) SANS SES SECRETS : aucun secret ne s'y lit. Le mot
     /// de passe du logiciel de toute route, et ceux d'une route du coffre (`routes::coffre::SECRETS`), en sont retires ;
     /// la route les demande alors elle-meme a un humain.
@@ -157,11 +183,6 @@ impl Charge {
                 }
             }
         }
-    }
-
-    /// LA CHARGE EN JSON, pour une route qui n'est pas encore branchee sur l'enveloppe (son module la lit lui-meme).
-    pub fn brute(&self) -> &Value {
-        &self.0
     }
 }
 
@@ -221,11 +242,6 @@ impl Rendu {
             Ok(_) => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet.")),
             Err(e) => Err(erreur(Classe::DefautDuLogiciel, socle::echec::avec("Défaut du logiciel : la réponse de la route ne s'écrit pas.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))),
         }
-    }
-
-    /// Ce qu'une route qui n'est pas encore branchee a rendu, en JSON.
-    pub fn brut(v: Value) -> Rendu {
-        Rendu(v)
     }
 
     /// A-t-il sa phrase, un texte non vide ?
@@ -408,9 +424,30 @@ impl Reponse {
         self.issue.as_ref().err()
     }
 
-    /// Le rendu ou le refus, pris.
-    pub fn en_resultat(self) -> Result<Value, Refus> {
-        self.issue
+    /// LE RENDU LU EN SA FORME `T` (ce qu'une route rend, relu par le moteur qui l'a demandee : la fenetre, le banc), ou
+    /// le refus. Un rendu qui n'a pas la forme attendue est un defaut du logiciel.
+    pub fn lire<T: DeserializeOwned>(&self) -> Result<T, Refus> {
+        match &self.issue {
+            Ok(v) => socle::forme::lire(v, "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, erreur(Classe::DefautDuLogiciel, m))),
+            Err(r) => Err(r.clone()),
+        }
+    }
+
+    /// LES TEXTES DE LA LISTE QUE LE RENDU PORTE A `cle` (les pas que l'horloge d'une fictive a joues : `phrases` de
+    /// `horloge-rattraper`, `horloge` de `ouverture`) ; aucun pour un refus.
+    pub fn textes(&self, cle: &str) -> Vec<String> {
+        match &self.issue {
+            Ok(v) => v.get(cle).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from).collect(),
+            Err(Refus { .. }) => Vec::new(),
+        }
+    }
+
+    /// Le refus, s'il y a lieu, pris ; le rendu ne se lit pas ici (`lire`).
+    pub fn en_refus(self) -> Result<(), Refus> {
+        match self.issue {
+            Ok(_) => Ok(()),
+            Err(r) => Err(r),
+        }
     }
 
     /// La reponse en JSON : ce que `moteur route` imprime et ce que `/api/<route>` rend. Un rendu et un refus sont des

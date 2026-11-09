@@ -130,6 +130,12 @@ pub fn basculer() -> Result<(), String> {
     basculer_de(&crate::interface::compagnies::base())
 }
 
+/// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
+/// d'un scenario (`atelier::scenario`).
+pub fn brider(inst: &Path) -> Result<(), String> {
+    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
+}
+
 /// Le geste, sur l'installation `inst`.
 pub fn basculer_de(inst: &Path) -> Result<(), String> {
     if paquet_soude_de(inst) {

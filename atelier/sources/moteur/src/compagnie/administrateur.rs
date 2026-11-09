@@ -1135,7 +1135,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
         let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::routes::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         crate::compagnie::coffre::oublier_mot_de_passe_tape();
-        let (parti, phrase, refus, classe, flux) = match rep.en_resultat() {
+        let (parti, phrase, refus, classe, flux) = match rep.en_refus() {
             Ok(_) => {
                 let phrase = if reel {
                     "Partie pour de vrai : son bilan arrive avec les retours."

@@ -30,10 +30,7 @@
 //!    chaque classe qu'elle refuse ;
 //! 5. dans `servir`, son bras est `m::route(&porte, charge)`.
 //!
-//! Ce qui lit encore une charge en JSON hors des routes (`Charge::brute`, `lire_charge`) et rend le sien (`Rendu::brut`)
-//! passe par `brut`, qui s'efface avec le dernier qui s'en sert.
-//!
-//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`) est ici.
+//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`, le nom d'un salarie) est ici.
 
 use std::path::Path;
 
@@ -43,9 +40,7 @@ use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{lire_charge, nom_a_l_ecran};
 
-mod brut;
 pub mod enveloppe;
 pub mod ouverture;
 pub mod depots;
@@ -73,6 +68,15 @@ pub mod mois;
 pub mod accueil;
 pub mod catalogue;
 pub mod affiche;
+
+/// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
+/// designe par sa cle, `cle`.
+pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+    match sal.nomme() {
+        Some(n) => n,
+        None => cle.to_string(),
+    }
+}
 
 /// La pile d'un fil qui sert des routes dans la fenetre : 8 Mo, celle du fil principal d'un `moteur route` sous Linux (un
 /// fil neuf n'en a que 2). Un calcul qui remonte les mois d'avant s'y empile ; un debordement de pile ne se rattrape pas

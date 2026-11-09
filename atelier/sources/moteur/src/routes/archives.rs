@@ -1112,7 +1112,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         };
         // Un engagement dont la fiche n'est plus la se dit par sa cle.
         let nom = match ctx.salaries.get(cle) {
-            Some(f) => crate::routes::nom_a_l_ecran(f),
+            Some(f) => crate::routes::nom_a_l_ecran(f, cle),
             None => cle.to_string(),
         };
         salaries.push(DroitsDUnSalarie { cle: cle.to_string(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });

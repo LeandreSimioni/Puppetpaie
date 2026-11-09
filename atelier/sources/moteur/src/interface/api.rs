@@ -183,17 +183,6 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     rendu
 }
 
-/// Ce que le scenario du banc retient d'une compagnie ajoutee (`scenario::rejouer`, le geste `ajouter`) : son nom, sa
-/// venue quand elle vient d'un logiciel precedent, et son dossier.
-#[cfg(feature = "atelier")]
-#[derive(serde::Serialize)]
-struct GesteAjouter {
-    nom: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    venue: Option<&'static str>,
-    compagnie: String,
-}
-
 /// UNE ROUTE DE L'INSTALLATION (`routes::accueil` : l'accueil des compagnies), servie sans compagnie : l'installation est
 /// celle du programme.
 pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
@@ -203,16 +192,15 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     #[cfg(feature = "atelier")]
     if nom == Route::CompagnieAjouter {
         if let Some(e) = crate::atelier::scenario::enregistreur_actif() {
-            let rendu = e.geste("ajouter", || {
+            // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue quand elle vient d'un logiciel
+            // precedent, et son dossier.
+            use crate::atelier::scenario::{Genre, Geste};
+            let rendu = e.geste(|| {
                 let a: crate::routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
                 let r = crate::routes::dans_la_fenetre(&o, nom, charge);
-                let v = match r.refus() {
-                    Some(x) => return Err(x.phrase.clone()),
-                    None => r.resultat().ok_or("La compagnie ajoutée ne se dit pas.")?,
-                };
-                let ajoutee: crate::routes::accueil::Ajoutee = crate::routes::lire_charge(v).map_err(|x| x.phrase())?;
-                let venue = (a.venue != crate::interface::compagnies::Venue::Neuve).then(|| a.venue.mot());
-                let geste = GesteAjouter { nom: a.nom, venue, compagnie: e.compagnie(std::path::Path::new(&ajoutee.chemin)) };
+                let ajoutee: crate::routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
+                let venue = (a.venue != crate::interface::compagnies::Venue::Neuve).then_some(a.venue);
+                let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
             return match rendu {

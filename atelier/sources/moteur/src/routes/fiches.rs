@@ -229,8 +229,7 @@ pub const ROUTES: &[Fiche] = &[
         ecran: Ecran::Dessine(Place::Fiches),
     },
 ];
-/// Une route de ce module, branchee sur l'enveloppe. La suppression de la compagnie lit encore sa charge en JSON
-/// (`Charge::brute`, `interface::suppression`) et rend le sien (`Rendu::brut`).
+/// Une route de ce module, branchee sur l'enveloppe.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
