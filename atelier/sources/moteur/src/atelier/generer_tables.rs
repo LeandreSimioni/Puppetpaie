@@ -227,7 +227,10 @@ fn ecrire_intervalles(s: &mut String, v: &[(u32, u32)]) {
 }
 
 fn en_tete(s: &mut String, fichiers: &[&str], version: Option<&str>) {
-    let _ = writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer.{}", version.map(|v| format!(" Unicode {}.", v)).unwrap_or_default());
+    let _ = match version {
+        Some(v) => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer. Unicode {}.", v),
+        None => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer."),
+    };
     for f in fichiers {
         let _ = writeln!(s, "//! Lu dans `atelier/reference/sources/{}`.", f);
     }

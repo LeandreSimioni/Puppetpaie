@@ -1183,5 +1183,5 @@ fn designation(d: &Declaration) -> R<Designation> {
 
 /// Une charge de route, telle que `servir_la_route` la lit.
 fn en_charge(c: impl serde::Serialize) -> R<crate::routes::enveloppe::Charge> {
-    crate::routes::enveloppe::Charge::de(socle::ecriture::en_valeur(&c))
+    crate::routes::enveloppe::Charge::de_forme(&c)
 }

@@ -57,8 +57,6 @@ pub fn en_texte(v: &Value) -> String {
     }
 }
 
-
-
 // ------------------------------------------------------------ un nombre
 
 /// Le decimal d'un nombre JSON (entier ou flottant, par sa forme ecrite la plus courte) ou d'une chaine.

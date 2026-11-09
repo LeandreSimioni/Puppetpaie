@@ -733,7 +733,18 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
                 None => fiche.nic.ecrite("nic").map_err(valeur)?,
             })?;
             // La ligne du journal de son depot les emporte en sa forme (`envois::journal::Version`).
-            let portees: Vec<envois::journal::Version> = socle::forme::lire(&socle::ecriture::en_valeur(&portees), "Une correction portée par la DSN ne se lit pas.").map_err(valeur)?;
+            let portees: Vec<envois::journal::Version> = portees
+                .iter()
+                .map(|p| -> Result<envois::journal::Version, String> {
+                    Ok(envois::journal::Version {
+                        salarie: droit::contexte::IdSalarie::lire(&p.salarie)?,
+                        numero: engagement::numeros::NumeroContrat::lire(&p.numero)?,
+                        version: p.version,
+                        mois: Some(socle::mois::Mois::lire(&p.mois)?),
+                    })
+                })
+                .collect::<Result<_, String>>()
+                .map_err(valeur)?;
             let forme = Forme { type_dsn, ordre, etablissement: n, constitution: ctx.aujourdhui, remplacee_versait_pas };
             a_ecrire.push((f_dsn.clone(), fabriquer_du_present(ctx, &lu, mois, &forme)?.texte, portees));
         }
