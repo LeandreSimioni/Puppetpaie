@@ -1,5 +1,5 @@
 //! LE BRIDAGE PAR DEFAUT (le logiciel n'est jamais debloque par defaut : bride tant que rien ne dit qu'il est
-//! debloque) : `moteur/src/compagnie/bridage.rs`, sur des installations de test.
+//! debloque) : `compagnie/src/bridage.rs`, sur des installations de test.
 //!
 //! - une installation neuve (une archive de la Release decompressee : `logiciel/` sans `EDITION.json`, rien a cote) est
 //!   bridee, et le geste de l'accueil la debloque (`.edition.json`), puis la rebride ;

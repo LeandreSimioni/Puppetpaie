@@ -12,7 +12,7 @@
 # suivis par Git de `logiciel/` (ni `logiciel/linux/` ni `logiciel/mac/`, qui ne sont pas suivis), et les fictives
 # livrees telles que les porte leur archive, marques comprises (le moteur Linux les pose : `moteur maj --poser-fictives`) --,
 # et la fenetre fraichement compilee a la place de `logiciel/puppetpaie.exe`. Rien sur le bridage : sans rien qui dise
-# « debloque », le logiciel est bride (ticket #246, moteur/src/compagnie/bridage.rs).
+# « debloque », le logiciel est bride (ticket #246, compagnie/src/bridage.rs).
 #
 # Usage :
 #   atelier/installeur/construire.sh                     tout
@@ -87,7 +87,7 @@ cd "$DEPOT"
 # Les fichiers suivis par Git de `logiciel/`, et eux seuls.
 git ls-files -z logiciel > "$PREPA/liste.z"
 # L'installeur est celui de WINDOWS : les programmes de Linux et de Mac (`logiciel/linux/`, `logiciel/mac/`, que le flux
-# « Publier » pose pour les archives de ces systemes et celle de tous ; moteur/src/compagnie/maj.rs) ne sont jamais suivis
+# « Publier » pose pour les archives de ces systemes et celle de tous ; compagnie/src/maj.rs) ne sont jamais suivis
 # (.gitignore), donc jamais poses. Si l'un l'etait, l'installeur s'arrete plutot que de les livrer a Windows.
 if grep -zqE '^logiciel/(linux|mac)/' "$PREPA/liste.z"; then
     echo "Des programmes Linux ou Mac sont suivis par Git dans logiciel/ : l'installeur Windows ne les pose pas." >&2

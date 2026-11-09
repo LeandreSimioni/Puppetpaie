@@ -559,7 +559,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
 /// la cle publique n'est pas reportee (vide) ou si la graine n'est pas la sienne. Aucun message ne porte la graine.
 pub fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     if cle_publique.is_empty() {
-        return Err("la cle publique de GitHub n'est pas reportee dans le code (moteur/src/compagnie/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie".into());
+        return Err("la cle publique de GitHub n'est pas reportee dans le code (compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie".into());
     }
     // Le refus ne dit pas pourquoi la base64 ne se lit pas : il ne porte rien de la graine.
     let graine = match b64(graine_b64.trim()) {

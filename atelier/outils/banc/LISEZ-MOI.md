@@ -118,7 +118,7 @@ moteur-atelier fabriquer-bulletins description.json /tmp/banc-<nom>/bulletins --
 ```
 
 La compagnie ajoutée par ce chemin s'ouvre sur Configuration › Reprendre l'historique, et son guide (ce qu'on met dans le
-dossier, ce qui s'en lit : `moteur/src/import/guide.rs`) tant que rien n'est repris. Le joueur dépose les bulletins dans le
+dossier, ce qui s'en lit : `import/src/guide.rs`) tant que rien n'est repris. Le joueur dépose les bulletins dans le
 dossier que la page désigne (`import/` de la compagnie, ou le champ du dossier), puis « Importer » (`#import-tout`) : tout
 se reprend d'un geste, et la page dit au-dessus ce qui reste à dire (la nature des contrats, les congés, « Pour
 démarrer »). Le dépôt se fait comme

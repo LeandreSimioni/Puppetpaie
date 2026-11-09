@@ -46,7 +46,7 @@ pub fn installation(dossier: &Path, version: &str) -> PathBuf {
 }
 
 /// Le geste de l'accueil sur une installation de test : `.edition.json` « debloque » a cote de `logiciel/`. Sans lui,
-/// une installation est BRIDEE (`moteur/src/compagnie/bridage.rs`) : elle ne propose ni ne rattache de compagnie reelle.
+/// une installation est BRIDEE (`compagnie/src/bridage.rs`) : elle ne propose ni ne rattache de compagnie reelle.
 /// Un test qui fait vivre des compagnies reelles dans son installation la debloque ainsi, et le dit.
 pub fn debloquer(installation: &Path) {
     std::fs::create_dir_all(installation).unwrap();

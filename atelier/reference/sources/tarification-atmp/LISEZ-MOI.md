@@ -74,7 +74,7 @@ la sécurité sociale qu'ils appliquent (D. 242-6-2, D. 242-6-14) sont relevés 
   risque sans TC (ou en Alsace-Moselle) ne vaut pas au-delà de son année, et le taux notifié se demande. La route
   `taux-atmp` dit le taux en vigueur, celui d'avant et celui à venir (Configuration › Entreprise),
   `declarations::demarrage::poses` dans « Pour démarrer ».
-- `moteur::import::parametrage` : le code risque et le taux qu'une DSN importée déclare (S21.G00.40.040, .043).
+- `moteur::importation::parametrage` : le code risque et le taux qu'une DSN importée déclare (S21.G00.40.040, .043).
 - **Le décret n° 2026-951 du 13/10/2026** (transcription `legifrance-decret-2026-951-atmp-niveau-entreprise-20261030.md`) :
   pour les cotisations dues **à compter de 2027**, une entreprise en tarification individuelle ou mixte a un taux
   déterminé au niveau de l'entreprise « pour chaque établissement ou groupe d'établissements appartenant à la même

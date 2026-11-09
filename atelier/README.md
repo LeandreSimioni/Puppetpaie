@@ -145,7 +145,7 @@ se supprime pas, elle se remet à zéro. Le dossier est renommé en dossier cach
 `derniere.json` nomme et que le logiciel télécharge tout seul) ne sert pas à
 installer : elle porte le contenu de `logiciel/` à sa racine, et rien d'autre.
 Cette forme est un contrat avec toutes les installations déjà posées, dont le
-code la déballe telle quelle : elle ne change plus (tête de `moteur/src/compagnie/maj.rs`).
+code la déballe telle quelle : elle ne change plus (tête de `compagnie/src/maj.rs`).
 
 **Les compagnies fictives voyagent à part** (`puppetpaie-<version>-fictives.zip`,
 signée, nommée dans `derniere.json` sous `fictives` avec l'empreinte de son
@@ -160,7 +160,7 @@ renommée, une fictive faite sur le poste) n'est jamais touché, ni rien hors de
 Le flux « Publier » compile les programmes des trois systèmes (Linux et Mac ne
 sont posés dans `logiciel/linux/` et `logiciel/mac/` que par lui : jamais
 suivis par Git) et publie les quatre archives de mise à jour ensemble (une par système, et une tout-système) ;
-chaque installation prend celle de son système (`moteur/src/compagnie/maj.rs`). Au
+chaque installation prend celle de son système (`compagnie/src/maj.rs`). Au
 lancement de « Publier », on choisit ce qu'on publie (`systemes` : `tous`,
 `windows-linux`, `windows`) : seules les archives fabriquées sont publiées,
 celle de tous porte ce qui a été fabriqué (et le dit, `systemes` dans
@@ -293,7 +293,7 @@ service certifié : le procédé identifie le signataire (son adresse) et le lie
 à l'acte (le code, le message gardé).
 
 Le jeton est écrit dans `config/google-jeton.bin`, scellé par la clé de ce
-poste (AES-256-GCM, voir `moteur/src/compagnie/coffre.rs`) — illisible sur une autre
+poste (AES-256-GCM, voir `compagnie/src/coffre.rs`) — illisible sur une autre
 machine, et illisible dans une sauvegarde du dossier privé, puisque la clé vit
 ailleurs.
 
@@ -368,7 +368,7 @@ clé qui signe les mises à jour) est scellée par la clé
 maîtresse du coffre : elle s'ouvre où il s'ouvre, et seulement avec lui.
 
 **Un coffre d'un autre format ne se convertit pas** : il refuse (`VERSION`, en tête de
-`moteur/src/compagnie/coffre.rs`), et trois mots de passe se retapent en une minute. On
+`compagnie/src/coffre.rs`), et trois mots de passe se retapent en une minute. On
 supprime les trois fichiers — `coffre.bin`, `google-jeton.bin` et
 `maj-cle-privee.bin` — et on repose :
 
@@ -381,7 +381,7 @@ moteur maj --cle --remplacer     # si ce poste publie les mises à jour
 ```
 
 La dernière ligne rend une nouvelle clé publique, à reporter dans
-`moteur/src/compagnie/maj.rs` (`CLE_PUBLIQUE`). Les versions publiées depuis GitHub sont signées par l'autre clé
+`compagnie/src/maj.rs` (`CLE_PUBLIQUE`). Les versions publiées depuis GitHub sont signées par l'autre clé
 (`CLE_PUBLIQUE_GITHUB`), que ce geste ne touche pas.
 
 ### Le mot de passe du logiciel, et ce qu'il autorise
@@ -424,7 +424,7 @@ vérifié contre le fichier : un script qui se trompe de mois est arrêté.
 | déposer en réel, envoyer, faire signer | **non** | oui, mot de passe retapé |
 
 **Ce que garder les mots de passe demande.** Le logiciel travaille seul parce qu'il garde les mots de passe des
-organismes ; ce qui les protège est écrit en tête de `moteur/src/compagnie/coffre.rs`. Le secret ne sort jamais, ni
+organismes ; ce qui les protège est écrit en tête de `compagnie/src/coffre.rs`. Le secret ne sort jamais, ni
 par l'état du coffre, ni en clair sur le disque (`tests/fichiers/coffre.rs`) ; les modules qui parlent au réseau
 (la crate `envois`) ne peuvent pas ouvrir le coffre : ils n'en dépendent pas, ils reçoivent un mot de passe (règle 3).
 
@@ -1546,7 +1546,7 @@ sinon l'adresse par défaut du code). Si elle existe,
 l'archive de son système (`derniere.json` en nomme quatre : `windows`, `linux`,
 `mac`, et `tout-systeme`, prise si la sienne manque) est téléchargée dans le
 fil de fond, vérifiée (condensat, puis **signature de l'éditeur**, une par
-archive — Ed25519, la clé publique est dans `moteur/src/compagnie/maj.rs`,
+archive — Ed25519, la clé publique est dans `compagnie/src/maj.rs`,
 `CLE_PUBLIQUE` : un dépôt compromis ne peut pas glisser une version qui n'est
 pas la nôtre), déballée dans `maj/`, à côté de `logiciel/`, et **contrôlée** :
 son programme doit lire la configuration de chaque compagnie de l'installation.

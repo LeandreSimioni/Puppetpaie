@@ -75,5 +75,5 @@
 
 ### Où le moteur s'en sert
 
-`atelier/sources/moteur/src/import/dsn_aem.rs` : le courriel du contact DSN (S20.G00.07.003) et celui d'un salarié
+`atelier/sources/import/src/dsn_aem.rs` : le courriel du contact DSN (S20.G00.07.003) et celui d'un salarié
 (S21.G00.30.018) se reprennent tels que la DSN de l'ancien logiciel les déclare, capitales comprises.

@@ -1,7 +1,7 @@
 # Le dossier de configuration d'une personne, selon son système (relevé du 09/11/2026)
 
 Où vit la clé du poste quand rien ne la déplace (`PUPPETPAIE_CLE`) et qu'aucun dossier portable ne la garde :
-`moteur/src/compagnie/coffre.rs`, `dossier_cle_de` ; et où vit ce qui appartient à la personne sur ce poste (le profil
+`compagnie/src/coffre.rs`, `dossier_cle_de` ; et où vit ce qui appartient à la personne sur ce poste (le profil
 du navigateur de la fenêtre, son jeton) : `moteur/src/interface/navigateur.rs`, `dossier_utilisateur`. Le système dit où une application range sa configuration (une
 variable d'environnement) et, quand la variable ne le dit pas, quel dossier il lui donne par défaut : c'est ce défaut que
 le moteur prend, et rien d'autre.

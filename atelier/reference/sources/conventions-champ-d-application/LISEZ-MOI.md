@@ -35,5 +35,5 @@ l'un ni l'autre entrepôt ne porte, et Légifrance refuse les robots. KALI dit s
   de l'import est celle de la fiche Entreprise, sinon celle que déclarent les DSN (S21.G00.11.022, S21.G00.40.017), sinon
   celle que les bulletins impriment, sinon celle des AEM ; aucune, la fiche Entreprise la demande (`idcc`). Les bulletins
   d'une autre convention que celle de l'import se disent en avertissement.
-- `atelier/sources/moteur/src/import/dsn_aem.rs` (`LectureDsn::conventions_divergentes`) : des contrats d'une même DSN sous
+- `atelier/sources/import/src/dsn_aem.rs` (`LectureDsn::conventions_divergentes`) : des contrats d'une même DSN sous
   d'autres conventions que l'établissement, une convention qui change d'une DSN à l'autre, se disent.

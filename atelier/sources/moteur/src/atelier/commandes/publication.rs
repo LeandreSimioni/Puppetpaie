@@ -30,7 +30,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
         generer_cle_github(&dossier).map(|r| {
             format!(
                 "Cle de GitHub fabriquee.\nLa GRAINE (secrete) est dans : {}\n  l'ouvrir, copier tout son contenu dans le secret PUPPETPAIE_CLE_SIGNATURE de l'environnement \
-                 « publication » du depot public, puis EFFACER ce fichier.\nLa cle publique (pas secrete), aussi dans {} :\n  {}\n  a reporter dans moteur/src/compagnie/maj.rs, CLE_PUBLIQUE_GITHUB.",
+                 « publication » du depot public, puis EFFACER ce fichier.\nLa cle publique (pas secrete), aussi dans {} :\n  {}\n  a reporter dans compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB.",
                 r.graine, r.publique, r.cle_publique
             )
         })
@@ -55,7 +55,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
         if drapeau("--cle") {
             generer_cle(&racine, drapeau("--remplacer")).map(|r| {
                 format!(
-                    "Cle privee ecrite (scellee par le coffre : le mot de passe du logiciel l'ouvre sur un autre poste) : {}\nCle publique, a reporter dans moteur/src/compagnie/maj.rs, CLE_PUBLIQUE :\n  {}{}",
+                    "Cle privee ecrite (scellee par le coffre : le mot de passe du logiciel l'ouvre sur un autre poste) : {}\nCle publique, a reporter dans compagnie/src/maj.rs, CLE_PUBLIQUE :\n  {}{}",
                     r.chemin,
                     r.cle_publique,
                     if r.correspond { "" } else { "\n  (le code porte une autre cle publique : tant qu'elle n'est pas reportee, `publier` refuse)" }

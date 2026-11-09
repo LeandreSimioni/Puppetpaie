@@ -24,7 +24,11 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`atelier/sources/Cargo.toml`, en tête).
 
 ```
-                         moteur   la ligne de commande, les routes et la page ; la compagnie, l'import, l'atelier
+                         moteur   la ligne de commande, les routes et la page ; l'atelier
+                           │
+                         import   les pièces d'un autre logiciel, telles qu'elles le disent
+                           │
+                        compagnie l'installation, le coffre, la mise à jour, la sauvegarde, les incidents
                            │
          ┌─────────────────┼─────────────────┐
        envois        declarations ──────► documents
@@ -45,6 +49,8 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `documents` | contrat, avenant, bulletin, certificat Congés Spectacles, AER, questionnaire, récapitulatif annuel, bordereau, prélèvement, états de paie, du personnel et de comptabilité, plan comptable | ne calcule rien |
 | `declarations` | DSN mensuelle et signalements, DPAE, régularisations, bloc 44, CSA, OETH, CASC-SVP, et la norme qui les contrôle (usages, formats, natures, champs) ; prend à `documents` | ne calcule rien, n'envoie rien |
 | `envois` | ce qui part et revient : net-entreprises, DPAE, signature, courriel, Drive, retours et bilans ; le journal de ce qui est parti ; le branchement (le monde, le simulateur, le message) | ne fabrique rien, n'ouvre jamais le coffre |
+| `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, le filet, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
+| `import` | le passé d'une compagnie tenu dans un autre logiciel, tel que ses pièces le disent : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les certificats et les AEM en PDF, ce qu'une pièce atteste (`attestes`), les fiches proposées, le mois importé, les écarts de calcul, le caviardage | n'écrit rien pour une route : c'est `moteur/src/importation/` |
 | `moteur` | tout le reste, en dossiers (ci-dessous) | |
 
 À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page) et `fabrique-pdf/`.
@@ -55,8 +61,8 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 |---|---|
 | `routes/` | `moteur route` : une route par geste de l'écran, derrière un aiguillage (`mod.rs`) ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) |
 | `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille |
-| `compagnie/` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : le coffre et ses deux mots de passe, la demande d'un acte réel et ses portes (`depot_acte`), le départ des pièces (`depart`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, l'ouverture, l'administrateur, le filet, les incidents, les conseils, la clôture et l'export compta (`exercice_ecrit`) |
-| `import/` | le passé d'une compagnie tenu dans un autre logiciel : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les engagements importés (`ecrite`), la nature à dire, la CASC-SVP des mois importés, les écarts de calcul, le caviardage des écarts et le document pas lu |
+| `gestes/` | les gestes de la compagnie qui appellent des routes : les portes d'un dépôt réel (`depot_acte`), le départ des pièces (`depart`), le passage de la sauvegarde, l'ouverture, l'administrateur, la clôture et l'export compta (`exercice_ecrit`) |
+| `importation/` | ce que l'import compose et écrit pour les routes : les engagements importés (`ecrite`), la nature à dire, la CASC-SVP des mois importés, le document pas lu |
 | `atelier/` | les outils de l'éditeur, jamais à l'écran : le relevé des textes (`releve/` : LEGI, KALI), les référentiels extraits (`extraire/`), les tables Unicode, la vérification avant commit, le guet, les scénarios du banc, la publication des versions et la clé de l'éditeur (`publier`) ; la redirection vers de faux serveurs et les bulletins fictifs n'existent que dans le binaire de l'atelier (`--features atelier`) |
 | `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, les outils de l'éditeur ; les gestes passent par `moteur route` |
 
@@ -87,7 +93,7 @@ fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.
 ```
 
 Plus d'AEM à produire : la compagnie est en 100 % DSN, France Travail édite l'attestation lui-même et la renvoie
-(la relève des retours) ; l'import relit les AEM d'un ancien logiciel (`moteur/src/import/dsn_aem.rs`, `lire_aem`). La source :
+(la relève des retours) ; l'import relit les AEM d'un ancien logiciel (`import/src/dsn_aem.rs`, `lire_aem`). La source :
 le courriel de France Travail du 28/05/2026 (`reference-privee/sources/francetravail-100-dsn/
 francetravail-courriel-fin-phase-pilote-100-dsn-20260528.pdf`, dépôt privé) — fin des AEM, AE Cinéma Spectacle remise
 au salarié, `S21.G00.40.025` vide ; la date vaut pour la compagnie qui l'a reçu, une autre reçoit la sienne.
@@ -446,7 +452,7 @@ décrit plus haut, avec le barème.
 ## L'AEM V5
 
 Le moteur n'émet pas d'AEM : il relit, à l'import, celles qu'un ancien logiciel a déposées
-(`moteur/src/import/dsn_aem.rs`, `lire_aem`). Enregistrements de 1000 caractères, latin-1, séparés par CRLF. La
+(`import/src/dsn_aem.rs`, `lire_aem`). Enregistrements de 1000 caractères, latin-1, séparés par CRLF. La
 queue numérique est celle-ci :
 
 | Position | Contenu |
@@ -548,7 +554,7 @@ d'heures ».
 
 Une compagnie qui arrive d'un autre logiciel met tout ce qu'elle a dans sa boîte aux lettres `import/` (DSN, AEM,
 bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engagements importés**
-(`moteur/src/import/`, routes `importation-apercu`, `importer`, `importation-etat`).
+(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`).
 
 - **Le tri** (`import/tri.rs`) : chaque fichier reçoit une sorte, par son contenu, jamais par son nom (`dsn`, `aem`,
   `pdf_texte`, `pdf_sans_texte`, `archive`…). Une DSN d'une autre entreprise que la compagnie n'est pas lue.
@@ -1441,7 +1447,7 @@ pour la DSN, l'Urssaf pour la DPAE), jamais
 par un portail : un contrat écrit, des retours lus par programme, et une
 erreur qui se voit (un code Urssaf faux, qu'un portail laisserait passer, fait refuser le dépôt).
 
-Trois garde-fous, tous dans le moteur (`moteur/src/compagnie/preuve.rs`, `moteur/src/gestes/depot_acte.rs`, `moteur/src/compagnie/demande.rs`) :
+Trois garde-fous, tous dans le moteur (`compagnie/src/preuve.rs`, `moteur/src/gestes/depot_acte.rs`, `compagnie/src/demande.rs`) :
 
 - **Une preuve par acte.** Rien ne part en réel sans le mot de passe du
   logiciel tapé au moment de l'acte (`README.md`) ; la séance qui ouvre le
@@ -1559,7 +1565,7 @@ l'instant où l'horloge le trouve, et les documents suivent. Ce qui vient après
 ## La version, et la mise à jour dans l'ombre
 
 `VERSION` (une date, `AAAA.MM.JJ`, comparée en entiers). Ce qu'une installation reçoit, vérifie et applique est dans
-`moteur/src/compagnie/maj.rs` ; ce que l'éditeur publie (les archives, la signature, sa clé) dans
+`compagnie/src/maj.rs` ; ce que l'éditeur publie (les archives, la signature, sa clé) dans
 `moteur/src/atelier/publier.rs`. **Une mise à jour par installation** : tout se passe dans `<installation>/maj/`, à
 côté de `logiciel/`, et l'installation de l'éditeur reçoit comme les autres. Un dépôt est une adresse qui sert
 `derniere.json` et les archives de `logiciel/`.
