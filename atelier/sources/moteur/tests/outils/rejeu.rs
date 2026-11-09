@@ -1,6 +1,6 @@
 //! LE REJEU D'UN SCENARIO ET SES SORTIES.
 //!
-//! Un scenario enregistre au banc d'essai (`moteur/src/scenario.rs`, `atelier/outils/banc/`) est fige dans
+//! Un scenario enregistre au banc d'essai (`routes/src/scenario.rs`, `atelier/outils/banc/`) est fige dans
 //! `tests/donnees/scenarios/<nom>/` (`gestes.jsonl`, `pieces/`) ; `rejouer` le rejoue dans un `dossier_de_test`, dans le
 //! processus du test, et `sorties` releve ce que la compagnie en a tire. `rejouer_et_comparer` compare ce releve a
 //! l'oracle `tests/donnees/scenarios/<nom>/sorties.json` (reecrit par `PUPPETPAIE_REECRIRE_ORACLES=1`).

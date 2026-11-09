@@ -142,8 +142,8 @@ pièce brute.
   retour métier, son salarié lu dans le contexte). Test : `paie/tests/routes/historique_mois.rs`,
   `les_comptes_rendus_neores_et_des_organismes_complementaires_se_traduisent` (un CRC fabriqué en fictif).
 - `envois/src/retours.rs`, `taux_atmp_d_octets` (30/10/2026) : la notification de nature 34 lue d'après `taux_AT` (ci-dessus,
-  « La notification du taux AT/MP ») ; `moteur/src/gestes/suites.rs`, `appliquer_taux_atmp`, et
-  `moteur/src/routes/atmp.rs`, `recue` : le code risque et le taux de l'établissement de la compagnie s'inscrivent dans
+  « La notification du taux AT/MP ») ; `routes/src/gestes/suites.rs`, `appliquer_taux_atmp`, et
+  `routes/src/atmp.rs`, `recue` : le code risque et le taux de l'établissement de la compagnie s'inscrivent dans
   la case de la fiche entreprise à leur date d'effet (`config/entreprise.json`, `taux_atmp`), avec la notification pour
   source, s'ils en diffèrent ; un autre établissement, une notification illisible ou à plusieurs codes se disent, sans
   rien poser.

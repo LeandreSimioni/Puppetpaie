@@ -940,7 +940,7 @@ pub fn emploie_des_permanents(entreprise: &ChampsEntreprise) -> bool {
 /// LA CLE D'UN SALARIE : celle de sa fiche dans `config/salaries.json`, interne au logiciel (aucun texte n'en fixe la
 /// forme). Elle se retrouve d'un nom par `Contexte::cle_du_salarie`, ou se lit d'un fichier, d'une charge (`lire`, ou
 /// `serde` : la meme chaine) ; un type a part, pour qu'elle ne se confonde pas avec un autre texte (un nom, un numero).
-/// INFERENCE du code : une cle n'est jamais vide (`moteur::routes::fiches::cle_neuve` refuse de nommer une fiche sans
+/// INFERENCE du code : une cle n'est jamais vide (`routes::fiches::cle_neuve` refuse de nommer une fiche sans
 /// nom) ; rien de plus ne vaut pour toutes les cles qui existent (celles qu'un import ou un jeu d'essai a ecrites).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]

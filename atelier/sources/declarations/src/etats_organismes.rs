@@ -290,7 +290,7 @@ fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs:
 }
 
 /// La DSN d'un mois et d'un etablissement (`None` : le principal) : celle qui est partie, telle qu'elle est partie, ou
-/// celle qui partirait, et si elle est partie. La fournit qui lit le journal des envois (`moteur::gestes::depart::dsn_du_mois`).
+/// celle qui partirait, et si elle est partie. La fournit qui lit le journal des envois (`routes::gestes::depart::dsn_du_mois`).
 pub type DsnDuMois<'a> = &'a dyn Fn(&Contexte, &str, Option<&str>) -> socle::echec::R<Option<(crate::dsn::Fabriquee, bool)>>;
 
 /// LA DSN DE CHAQUE MOIS DE LA PERIODE, par etablissement (le principal d'abord) : celle qui est partie telle qu'elle est

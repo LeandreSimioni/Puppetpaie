@@ -637,7 +637,7 @@ pub fn pourquoi_rate(ligne: &Ligne) -> String {
 /// (`ok`, `ko`, `attendu`, ou rien sans test conforme), les essais rates du meme contenu et ceux d'un contenu d'avant sous
 /// le meme nom, la couleur et les mots de l'encart qui le dit.
 ///
-/// Elle se relit avec la reponse qui la porte (le refus d'un depot reel sans test, `moteur::routes::enveloppe::APart`).
+/// Elle se relit avec la reponse qui la porte (le refus d'un depot reel sans test, `routes::enveloppe::APart`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repetition {

@@ -144,7 +144,7 @@ pub static TEXTES: &[Texte] = &[
             // (D3142-1-1 : deux periodes d'au moins une journee), pris dans l'annee du deces ; le salarie << informe
             // l'employeur vingt-quatre heures au moins avant le debut de chaque periode d'absence >>. C'est le motif d'arret
             // 19 de la DSN ; ses indemnites journalieres sont celles de L331-9 du code de la securite sociale (plus bas).
-            // `moteur/src/obligations.rs` (l'attestation de salaire hors DSN, `obligations-base.json`).
+            // `routes/src/obligations.rs` (l'attestation de salaire hors DSN, `obligations-base.json`).
             Domaine { cle: "conge_de_deuil", titre: "Le conge de deuil d'un enfant", numeros: &["L3142-1-1", "D3142-1-1"] },
             // LE REGISTRE UNIQUE DU PERSONNEL : ses
             // mentions (D1221-23 : la nationalite, 1°) sont ce que
@@ -310,13 +310,13 @@ pub static TEXTES: &[Texte] = &[
             // avec la mensuelle du mois, sauf la fin du contrat et -- quand l'employeur n'est PAS subroge -- le debut et la
             // fin de l'arret, << dans un delai fixe par arrete [...] qui ne peut exceder cinq jours ouvres >> (l'arrete du
             // 2 juillet 2013, plus bas) ; ses exceptions : aucune retenue sur le salaire du mois (1°), les fins de CDD
-            // d'usage du 3° de L1242-2 (2°). `moteur/src/obligations.rs`.
+            // d'usage du 3° de L1242-2 (2°). `routes/src/obligations.rs`.
             Domaine { cle: "signalements", titre: "Les signalements d'evenement de la DSN et leur delai", numeros: &["R133-13", "R133-14"] },
             // LA DECLARATION D'ACCIDENT DU TRAVAIL. Hors DSN : L441-2 la met a la charge de l'employeur << de
             // tout accident dont il a eu connaissance >>, R441-3 en fixe le delai (quarante-huit heures, non compris les
             // dimanches et jours feries), R441-2 celui de la victime envers l'employeur (vingt-quatre heures), R441-6 les
             // reserves motivees (dix jours francs). L411-1 et L411-2 disent que l'accident de trajet en est un ; L441-5 la
-            // feuille d'accident ; R441-4 l'attestation de salaire que la DSN remplit (R133-14, IV). `moteur/src/obligations.rs`.
+            // feuille d'accident ; R441-4 l'attestation de salaire que la DSN remplit (R133-14, IV). `routes/src/obligations.rs`.
             Domaine { cle: "accident_du_travail", titre: "La declaration d'un accident du travail ou de trajet", numeros: &["L411-1", "L411-2", "L441-1", "L441-2", "L441-4", "L441-5", "R441-1", "R441-2", "R441-3", "R441-4", "R441-6", "R441-7"] },
             // LA MALADIE PROFESSIONNELLE N'EST PAS DECLAREE PAR L'EMPLOYEUR : L461-5 la met << par les soins de la
             // victime >>, R461-5 lui donne quinze jours. Le motif d'arret 05 n'appelle donc pas de declaration d'accident.
@@ -327,7 +327,7 @@ pub static TEXTES: &[Texte] = &[
             // le salaire (L3142-2) est subroge de plein droit. D331-7 : l'indemnisation se fractionne comme le conge.
             // R323-10 : l'attestation de salaire que l'employeur adresse a la caisse pour les indemnites journalieres, et que
             // la DSN remplit d'ordinaire (R133-14, IV) -- pas pour le deuil, que la DSN ne couvre pas (la page de
-            // net-entreprises, `accident-du-travail/`). `moteur/src/obligations.rs`, l'obligation `attestation_salaire`.
+            // net-entreprises, `accident-du-travail/`). `routes/src/obligations.rs`, l'obligation `attestation_salaire`.
             Domaine { cle: "conge_de_deuil", titre: "Le conge de deuil d'un enfant : ses indemnites journalieres et l'attestation de salaire", numeros: &["L331-9", "D331-7", "R323-10"] },
             // LES INDEMNITES JOURNALIERES ET LA SUBROGATION : L321-1 (l'indemnite journaliere), L323-1 et R323-1 (due
             // « pour chaque jour ouvrable ou non », a partir du quatrieme jour), L323-4, R323-4, R323-5 et R323-9 (son montant,
@@ -389,7 +389,7 @@ pub static TEXTES: &[Texte] = &[
     // la fin du contrat et de l'arret non subroge a << un arrete conjoint du ministre charge de la securite sociale et du
     // ministre charge de l'emploi, qui ne peut exceder cinq jours ouvres >>. C'est celui-ci (Legifrance, JORFTEXT000027683422) :
     // son article 1er fixe ce delai a cinq jours ouvres. Un arrete, pas un code, range sous son JORFTEXT comme celui de 1975.
-    // `moteur/src/obligations.rs`, et `logiciel/donnees/obligations-base.json`.
+    // `routes/src/obligations.rs`, et `logiciel/donnees/obligations-base.json`.
     Texte {
         cle: "evenements-dsn-2013",
         legitext: "JORFTEXT000027683422",

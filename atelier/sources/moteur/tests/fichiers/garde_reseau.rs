@@ -31,7 +31,7 @@ fn espace() -> PathBuf {
 const SORTIES: [&str; 8] = ["ureq::Agent", "ureq::get(", "ureq::post(", "TcpStream::connect", "SmtpTransport::", "UdpSocket", "\"xdg-open\"", "rundll32"];
 
 /// Les crates de l'espace, dont les envois, ou vivent les transports.
-const CRATES: [&str; 9] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "moteur"];
+const CRATES: [&str; 10] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"];
 
 /// Les fichiers qui n'ouvrent de connexion que vers la machine elle-meme, nommes dans leur crate (`src/...`), ou qu'elle soit.
 const LOCAUX: [(&str, &str); 2] = [

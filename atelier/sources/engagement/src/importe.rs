@@ -396,7 +396,7 @@ impl Importe {
 
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste ; une piece qui ne la
     /// porte pas et ne la laisse pas a dire est celle d'un contrat d'usage : son bulletin porte une marque du spectacle
-    /// (numero d'objet ou Congés Spectacles, `moteur::importation::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
+    /// (numero d'objet ou Congés Spectacles, `routes::importation::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
     /// `None` : elle reste a dire (`a_dire`).
     pub fn nature(&self) -> Option<String> {
         match self.nature_dite() {

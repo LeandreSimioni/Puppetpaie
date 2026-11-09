@@ -67,14 +67,14 @@ la sécurité sociale qu'ils appliquent (D. 242-6-2, D. 242-6-14) sont relevés 
 - `droit::bareme::risques_atmp`, `droit::bareme::taux_de_l_arrete` : la lecture de cette table ; le taux d'un risque TC
   (et celui d'un autre établissement nouvellement créé, D. 242-6-17) ; rien en Alsace-Moselle.
 - Le code risque et le taux du siège et de chaque autre établissement sont une case de la configuration, datée
-  (`taux_atmp` : code, taux, `depuis`, `provenance` ; `moteur::routes::atmp`) : chaque ligne vaut à partir de sa date,
+  (`taux_atmp` : code, taux, `depuis`, `provenance` ; `routes::atmp`) : chaque ligne vaut à partir de sa date,
   écrite par l'import, la notification reçue, la saisie, et le taux collectif de l'annexe 1 de l'arrêté pour un risque
-  « TC » (D. 242-6-14, I), que `moteur::routes::atmp::inscrire_l_arrete` inscrit au 1er janvier, à l'ouverture, dès que
+  « TC » (D. 242-6-14, I), que `routes::atmp::inscrire_l_arrete` inscrit au 1er janvier, à l'ouverture, dès que
   le socle de l'année est livré. La paie ne lit que la case (`droit::bareme::taux_atmp_de_l_annee`) ; la ligne d'un
   risque sans TC (ou en Alsace-Moselle) ne vaut pas au-delà de son année, et le taux notifié se demande. La route
   `taux-atmp` dit le taux en vigueur, celui d'avant et celui à venir (Configuration › Entreprise),
   `declarations::demarrage::poses` dans « Pour démarrer ».
-- `moteur::importation::parametrage` : le code risque et le taux qu'une DSN importée déclare (S21.G00.40.040, .043).
+- `routes::importation::parametrage` : le code risque et le taux qu'une DSN importée déclare (S21.G00.40.040, .043).
 - **Le décret n° 2026-951 du 13/10/2026** (transcription `legifrance-decret-2026-951-atmp-niveau-entreprise-20261030.md`) :
   pour les cotisations dues **à compter de 2027**, une entreprise en tarification individuelle ou mixte a un taux
   déterminé au niveau de l'entreprise « pour chaque établissement ou groupe d'établissements appartenant à la même
@@ -86,7 +86,7 @@ la sécurité sociale qu'ils appliquent (D. 242-6-2, D. 242-6-14) sont relevés 
 - **Les autres établissements** (Configuration › Entreprise › Avancé) : chacun son code risque et son taux
   (`etablissements[].taux_atmp`, D. 242-6-1, `../code-de-la-securite-sociale/xml/D242-6-1.xml`) ; le classement suit l'activité
   exercée dans l'établissement (arrêté du 17/10/1995, art. 1, I, 1°). Un code laissé vide prend celui de la compagnie pour
-  l'année de l'ouverture (une INFÉRENCE, dite à l'écran avec ces textes : `moteur::routes::fiches::ecrire_etablissements`,
-  `moteur::routes::atmp::d_un_etablissement`) ; un taux laissé vide est celui de l'annexe 1 pour un risque « TC »
+  l'année de l'ouverture (une INFÉRENCE, dite à l'écran avec ces textes : `routes::fiches::ecrire_etablissements`,
+  `routes::atmp::d_un_etablissement`) ; un taux laissé vide est celui de l'annexe 1 pour un risque « TC »
   (`droit::bareme::taux_atmp_applique`, lu par `bareme_atmp` pour la compagnie comme pour ses établissements). Tout autre
   taux se saisit tel que la CARSAT le notifie à l'établissement.

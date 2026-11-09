@@ -66,10 +66,10 @@ pub enum GenreSuspension {
 /// R323-1, 1°) et ce que la DSN declare (`dernier_jour_declare`) ; `jours_deja_indemnises` et les indemnites journalieres
 /// par jour, brutes et nettes de CSG et CRDS (`ij_brute`, `ij_nette`, et `_majoree` au-dela du vingt-huitieme jour d'un
 /// accident du travail) sont ceux du maintien de salaire d'un permanent (`maintien`) ; `prolongations` garde chaque avis de
-/// prolongation saisi (`moteur::routes::imprevus::arret_prolonger`), dont le moteur tire le signalement rectificatif
+/// prolongation saisi (`routes::imprevus::arret_prolonger`), dont le moteur tire le signalement rectificatif
 /// qu'une subrogation prolongee appelle (`obligations::de_l_arret`) ; `reprises` garde chaque reprise notee ou effacee
 /// (`arret_reprise`). Par ces deux traces, l'arret se relit tel qu'il etait a un instant passe
-/// (`moteur::routes::imprevus::arret_a_l_instant`).
+/// (`routes::imprevus::arret_a_l_instant`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArretSaisi {

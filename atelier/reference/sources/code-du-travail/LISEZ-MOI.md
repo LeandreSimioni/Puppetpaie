@@ -292,7 +292,7 @@ compagnie (`conges::jours_ouvrables`, L3141-3) ; « dans les deux jours ouvrable
 lendemain de l'embauche.
 
 **Où le moteur s'en sert** : `atelier/sources/droit/src/echeances.rs` (`remise_du_contrat`), lu par
-`moteur/src/routes_mois.rs` (`etat_par_engagement`, `echeances` de chaque engagement ; l'échéance de la case Contrats
+`routes/src/mois.rs` (`etat_par_engagement`, `echeances` de chaque engagement ; l'échéance de la case Contrats
 de `bilan_du_mois`). Test : `droit/tests/droit/clauses.rs`
 (`la_remise_du_contrat_suit_l1242_13_et_la_1285_pour_ses_musiciens`).
 
@@ -347,8 +347,8 @@ celui de l'avenant, les **mentions obligatoires**, chacune par son marqueur et l
 renvoi) ; `atelier/sources/documents/src/contrat_ecrit.rs` (`marqueurs_au_mois`, `poser_les_mentions`,
 `refuser_les_mentions_absentes`, `champs_des_modeles`) ; `documents/src/contrat.rs` (le contrat et l'avenant refusés si
 leur modèle tait une mention) ; les modèles `logiciel/donnees/modeles/contrat-cdd.modele`, `contrat-cdi.modele`,
-`avenant-permanent.modele`, `contrat-cddu.modele` ; `moteur/src/routes/modeles_contrat.rs` (le modèle de la compagnie
-vérifié avant d'être posé) ; `moteur/src/routes/mois.rs` (`champs_du_contrat_ecrit` : la personne remplacée,
+`avenant-permanent.modele`, `contrat-cddu.modele` ; `routes/src/modeles_contrat.rs` (le modèle de la compagnie
+vérifié avant d'être posé) ; `routes/src/mois.rs` (`champs_du_contrat_ecrit` : la personne remplacée,
 L1242-12 1°, et la répartition d'un temps partiel, L3123-6, que l'engagement appelle). Tests :
 `documents/tests/documents/contrat_ecrit.rs`.
 
@@ -375,8 +375,8 @@ Le domaine `modification_du_contrat` (L1221-1, L1222-6) ajouté à `moteur/src/a
 (l'avenant à faire d'un contrat signé ailleurs) ; `engagement::versions::termes_changes` ;
 `documents::avenant::changements_en_clair` ; `documents::contrat::ecrire_avenant` (`avenant.reference`,
 `modification.phrase`) ; les modèles `avenant-permanent.modele` et `avenant-cddu.modele` (le paragraphe
-`{{modification.phrase}}`) ; `moteur/src/routes/contrats.rs` (`avenant-apercu`, `signature-apercu`) ;
-`moteur/src/gestes/signature.rs` (le dossier du contrat signé, joint à l'envoi de l'avenant).
+`{{modification.phrase}}`) ; `routes/src/contrats.rs` (`avenant-apercu`, `signature-apercu`) ;
+`routes/src/gestes/signature.rs` (le dossier du contrat signé, joint à l'envoi de l'avenant).
 
 ## La période d'essai et sa durée maximale : L1242-10 (CDD), L1221-19 à L1221-24 (CDI) (relevé du 29/10/2026)
 

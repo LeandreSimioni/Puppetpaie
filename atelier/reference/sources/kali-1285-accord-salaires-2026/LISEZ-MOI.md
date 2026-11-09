@@ -28,7 +28,7 @@ de l'arrêté, et ce qu'on en lit). Les grilles des articles 1.x sont transcrite
 - `logiciel/donnees/baremes/2026.json`, `par_convention."1285".bareme.tarifs_conventionnels` : `repas` et `nuitee`, listes
   datées (20,70 / 74,30 jusqu'au 18/09/2026 ; 21,40 / 76,60 depuis le 19/09/2026, date de l'extension) ; la note `_source`
   dit pourquoi le 19/09 et pas le 01/09. Lues par `engagement::tarif_conventionnel` (le taux d'une ligne « Repas » ou
-  « Nuitée » saisie sans taux, `engagement::lignes_au_tarif`) et par `moteur::routes::mois::dire_les_tarifs` (la phrase
+  « Nuitée » saisie sans taux, `engagement::lignes_au_tarif`) et par `routes::mois::dire_les_tarifs` (la phrase
   qui dit d'où vient le montant).
 - Les minima de l'article 1 (au 01/08/2026) : `logiciel/donnees/minima-conventionnels.json` n'en porte qu'une partie, sous
   `1285.non_etendu` (cachets dramatiques et répétitions, pour les adhérents d'une organisation signataire).

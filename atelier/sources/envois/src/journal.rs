@@ -347,7 +347,7 @@ thread_local! {
 }
 
 /// `f`, chaque ligne qu'il note portant `quand` et `origine` : un pas que l'horloge d'une compagnie fictive joue a sa
-/// date (`moteur::horloge`).
+/// date (`routes::horloge`).
 pub fn dater_pendant<T>(quand: &str, origine: &str, f: impl FnOnce() -> T) -> T {
     let avant = DATE.with(|d| d.replace(Some((quand.to_string(), origine.to_string()))));
     let r = f();

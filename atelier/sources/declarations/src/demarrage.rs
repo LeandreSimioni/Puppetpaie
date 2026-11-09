@@ -424,7 +424,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
 
 /// LA LIGNE QUI DEMANDE LES CONGES ACQUIS AVANT PUPPETPAIE d'un salarie au mois (`salarie`, `nom` tel que l'ecran le dit),
 /// paye ici depuis `depuis` : la case `conges_reprise` de sa fiche, ou elle mene. « Pour démarrer » la dit, et la carte
-/// d'un contrat commence avant le logiciel la montre avant sa validation (`moteur::routes::mois`).
+/// d'un contrat commence avant le logiciel la montre avant sa validation (`routes::mois`).
 pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
     let le = depuis.jj_mm_aaaa();
     let mut l = Manque::utile(
@@ -487,8 +487,8 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
 }
 
 /// CE QUE LE MOTEUR A INSCRIT DE LUI-MEME, et qui se dit avec ce qui manque : le taux AT/MP de l'annee, quand il vient de
-/// la notification de la CARSAT recue avec les retours (`moteur::routes::atmp::recue`, avec sa date) ou du taux collectif
-/// de l'arrete pour un risque « TC » (`moteur::routes::atmp::inscrire_l_arrete`), d'apres sa `provenance`. Le libelle est celui de
+/// la notification de la CARSAT recue avec les retours (`routes::atmp::recue`, avec sa date) ou du taux collectif
+/// de l'arrete pour un risque « TC » (`routes::atmp::inscrire_l_arrete`), d'apres sa `provenance`. Le libelle est celui de
 /// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
     let an = ctx.aujourdhui.an;

@@ -312,7 +312,7 @@ impl Drop for Derivation {
 /// La cle d'un mois au memo de la derivation : la compagnie, le mois, le salarie, le registre de lectures ouvert sur ce
 /// fil (`fichiers::generation`, 0 sans registre) et l'etat de la validation en cours (`etats::marque_de_validation`). Un
 /// calcul suivi ne se sert ainsi que des mois relus par lui-meme (leurs lectures se notent), meme dans une derivation
-/// ouverte avant lui (`moteur::routes::etapes::mois_a_ouvrir`).
+/// ouverte avant lui (`routes::etapes::mois_a_ouvrir`).
 fn cle_du_memo(ctx: &Contexte, mois: &str, cle: &str) -> (String, String) {
     (
         ctx.racine.display().to_string(),

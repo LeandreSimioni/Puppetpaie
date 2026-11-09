@@ -72,7 +72,7 @@ fn des_essais_seulement(paquet: &str) -> BTreeSet<String> {
 #[test]
 fn le_verrou_de_la_fenetre_connait_les_dependances_du_moteur_et_de_la_fabrique() {
     let fenetre = sources().join("fenetre/Cargo.lock");
-    for (paquet, verrou) in [("socle", "Cargo.lock"), ("droit", "Cargo.lock"), ("engagement", "Cargo.lock"), ("documents", "Cargo.lock"), ("declarations", "Cargo.lock"), ("envois", "Cargo.lock"), ("compagnie", "Cargo.lock"), ("import", "Cargo.lock"), ("moteur", "Cargo.lock"), ("fabrique-pdf", "fabrique-pdf/Cargo.lock")] {
+    for (paquet, verrou) in [("socle", "Cargo.lock"), ("droit", "Cargo.lock"), ("engagement", "Cargo.lock"), ("documents", "Cargo.lock"), ("declarations", "Cargo.lock"), ("envois", "Cargo.lock"), ("compagnie", "Cargo.lock"), ("import", "Cargo.lock"), ("routes", "Cargo.lock"), ("moteur", "Cargo.lock"), ("fabrique-pdf", "fabrique-pdf/Cargo.lock")] {
         let sien = sources().join(verrou);
         let essais = des_essais_seulement(paquet);
         let attendu: BTreeSet<String> = dependances(&sien, paquet).unwrap_or_else(|| panic!("{} absent de son propre verrou", paquet)).difference(&essais).cloned().collect();

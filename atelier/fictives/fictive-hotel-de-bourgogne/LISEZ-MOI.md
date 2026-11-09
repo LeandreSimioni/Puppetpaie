@@ -9,7 +9,7 @@ intermittents, venue d'un logiciel précédent (sPAIEctacle) au 1er janvier 2026
 | | |
 |---|---|
 | `papiers-2025/` | ce qu'elle importe : les 110 bulletins de 2025 de l'ancien logiciel, un PDF par bulletin (`<mois>-<code du salarié>-<rang>.pdf`), et la DSN de décembre 2025 qu'il a déposée (`DSN_Decembre2025.dsn`) |
-| `gestes.jsonl` | **le parcours de référence de 2026** : un scénario (`moteur/src/scenario.rs`) écrit comme l'administratrice l'aurait joué, par les routes seulement (celles de l'écran et du LLM), du 2 janvier 2026 au 30 janvier 2027 |
+| `gestes.jsonl` | **le parcours de référence de 2026** : un scénario (`routes/src/scenario.rs`) écrit comme l'administratrice l'aurait joué, par les routes seulement (celles de l'écran et du LLM), du 2 janvier 2026 au 30 janvier 2027 |
 | `description.json` | la compagnie, ses salariés et ses bulletins de 2025, dont `moteur-atelier fabriquer-bulletins description.json papiers-2025 --gabarit spaiectacle` refait les PDF |
 
 L'année 2025 a été jouée dans PuppetPaie, par les routes, comme l'administratrice l'aurait jouée (les trois CDI repris à

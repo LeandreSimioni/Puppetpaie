@@ -1092,12 +1092,12 @@ cases! {
 
 cases! {
     /// LA NOTIFICATION DE LA CARSAT d'ou viennent un code risque et un taux (retour DSN de nature 34,
-    /// `moteur::routes::atmp::recue`) : le jour ou elle a paru, celui de son calcul, sa date d'effet.
+    /// `routes::atmp::recue`) : le jour ou elle a paru, celui de son calcul, sa date d'effet.
     pub struct NotificationAtmp { le: Jour, calcul: Jour, effet: Jour }
 }
 
 choix! {
-    /// D'OU VIENT UNE LIGNE DU TAUX AT/MP (`moteur::routes::atmp`) : la saisie, l'import des DSN reprises, la notification
+    /// D'OU VIENT UNE LIGNE DU TAUX AT/MP (`routes::atmp`) : la saisie, l'import des DSN reprises, la notification
     /// de la CARSAT recue avec les retours, le taux collectif de l'arrete de l'annee.
     pub enum ProvenanceAtmp { Saisie = "saisie", Import = "import", Notification = "notification", Arrete = "arrete" }
 }

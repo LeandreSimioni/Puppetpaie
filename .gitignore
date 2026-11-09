@@ -74,7 +74,7 @@ atelier/prive-dev/config/.jeton-interface
 # portable, le profil de son navigateur et le jeton de sa page.
 /.fenetre.json
 /.fenetre/
-# CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (moteur/src/routes/filet.rs, `sans_compagnie`) : les messages ecrits a
+# CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (routes/src/filet.rs, `sans_compagnie`) : les messages ecrits a
 # l'accueil, leur depart et l'identite du poste.
 /.accueil/
 
@@ -114,7 +114,7 @@ demo/*/journal/interface.log
 fictives/.livraison.json
 fictives/*/.livree.json
 # LES FICTIVES DE REFERENCE : leur scenario est dans `atelier/fictives/<nom>/` ; `moteur maj --marquer-fictives` les
-# refait dans `fictives/<nom>` (moteur/src/scenario.rs, `livrer`). Elles se refont, elles ne se suivent pas.
+# refait dans `fictives/<nom>` (routes/src/scenario.rs, `livrer`). Elles se refont, elles ne se suivent pas.
 fictives/fictive-fil-de-fer/
 # LES FICTIVES AJOUTEES SUR UN POSTE (ticket #236) : le « + » d'un logiciel bride les pose sous `fictives/ajoutee-…`,
 # avec les donnees qu'on y met -- de vraies donnees, souvent. Elles n'entrent jamais dans le depot (ni dans une

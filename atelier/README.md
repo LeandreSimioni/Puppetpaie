@@ -63,7 +63,7 @@ l'historique de la compagnie ; le dossier `import/` peut ensuite être vidé.
 **L'import COPIE ce qu'il reprend** — les DSN, les AEM et les PDF dont une
 page au moins est reprise — dans `historique/bulletins/`, sous le nom de sa
 copie (une empreinte : rien de personnel dans le nom), et relit l'aperçu
-**dans ces copies** (`moteur/src/importation/ecrite.rs`). Un fichier déjà copié
+**dans ces copies** (`routes/src/importation/ecrite.rs`). Un fichier déjà copié
 n'est jamais écrasé ; s'il revient avec un autre contenu sous le même nom,
 l'import le signale. Pour que le dossier d'un salarié ait ses années
 CoolPaie, les PDF sont à sortir de CoolPaie avant :
@@ -139,7 +139,7 @@ confirmation, une compagnie réelle sur le mot de passe du logiciel (le double
 des bulletins se conserve cinq ans, article L3243-4) ; une fictive livrée ne
 se supprime pas, elle se remet à zéro. Le dossier est renommé en dossier caché
 (`.supprimee-…`) puis effacé ; un reste s'efface au lancement suivant
-(`moteur/src/accueil/suppression.rs`).
+(`routes/src/accueil/suppression.rs`).
 
 **L'archive de mise à jour** (`puppetpaie-<version>-<système>.zip`, celle que
 `derniere.json` nomme et que le logiciel télécharge tout seul) ne sert pas à
@@ -782,7 +782,7 @@ Ce que le moteur refuse plutôt que de le deviner :
   suspendu, et un arrêt qui disparaît en silence est un arrêt non déclaré.
 
 **Ce que chaque arrêt fait naître, et pour quand** : la route `arrets` le rend
-sous chaque arrêt (`moteur/src/obligations.rs`, règles dans
+sous chaque arrêt (`routes/src/obligations.rs`, règles dans
 `logiciel/donnees/obligations-base.json`, chacune avec son texte déposé) — le
 signalement et son délai, la déclaration d'accident du travail (hors DSN,
 quarante-huit heures), et pour un **deuil d'enfant** (motif 19), à la place du
@@ -977,7 +977,7 @@ reprend où elle s'était arrêtée) ; la
 première fois, elle remonte l'index (environ un an) jusqu'à la dernière fiche
 de chaque convention, pour savoir ensuite rattacher un texte à la sienne : une
 minute, une fois. L'ouverture d'une compagnie ne la fait pas
-(`moteur/src/gestes/ouverture.rs`) : c'est l'éditeur qui la lance.
+(`routes/src/gestes/ouverture.rs`) : c'est l'éditeur qui la lance.
 
 Quand une source a changé, le référentiel qu'elle nourrit se **relève** par
 **`moteur extraire`** (`moteur/src/atelier/extraire/`) : `naf` (les deux classeurs INSEE →
@@ -1643,7 +1643,7 @@ et l'horloge de la fictive joue ce qui était dû. La notice entière, celle
 qu'un agent suit : `outils/banc/LISEZ-MOI.md` ; le modèle d'une partie :
 `outils/banc/exemple.js`.
 
-Pendant ce temps, **l'enregistreur** (`moteur/src/scenario.rs`, dans le seul
+Pendant ce temps, **l'enregistreur** (`routes/src/scenario.rs`, dans le seul
 binaire de l'atelier) consigne chaque route que la fenêtre sert, avec sa
 charge, son instant et ce qu'on avait déposé (`gestes.jsonl`, `pieces/`).
 Le scénario se **rejoue** sans navigateur, depuis un dossier vide, dans une

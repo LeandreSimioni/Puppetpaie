@@ -4,7 +4,7 @@
 //! avec le logiciel). La copie de developpement (`prive-dev/`) n'est jamais proposee. Bride (`bridage.rs`), l'accueil ne
 //! montre que les fictives. Une compagnie est une copie, une fictive (livree ou ajoutee) d'apres son marqueur ; ajoutee,
 //! elle dit le jour et le chemin de son ajout (`creation.json`). En ajouter une, en supprimer une, garder au deblocage
-//! celles qu'on a ajoutees en demo : `moteur::accueil`.
+//! celles qu'on a ajoutees en demo : `routes::accueil`.
 
 use std::path::{Path, PathBuf};
 
