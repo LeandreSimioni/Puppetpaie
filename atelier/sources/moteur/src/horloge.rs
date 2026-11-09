@@ -339,9 +339,9 @@ enum Geste {
     /// L'avenant du contrat (`salarie`, `debut`) part a la signature, puis revient signe.
     Avenant { mois: Mois, salarie: String, debut: Jour, nom: String },
     /// Le signalement d'arret (04) ou de reprise (05) de l'arret de `salarie` au `dernier` jour travaille.
-    Arret { mois: Mois, salarie: String, dernier: String, cle: crate::obligations::CleDObligation, nature: crate::routes::imprevus::NatureSignalement },
+    Arret { mois: Mois, salarie: String, dernier: Jour, cle: crate::obligations::CleDObligation, nature: crate::routes::imprevus::NatureSignalement },
     /// Le signalement de fin du contrat de `salarie` qui finit le `fin`.
-    Fin { mois: Mois, salarie: String, fin: String },
+    Fin { mois: Mois, salarie: String, fin: Jour },
     /// La DSN du mois, fabriquee a son echeance.
     Dsn { mois: Mois, echeance: Jour },
     /// Les documents du mois aux salaries.
@@ -524,7 +524,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
             calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.debut, nom: c.nom } });
         }
     }
-    calendrier.extend(signalements_dus(ctx, le_mois, jour, false));
+    calendrier.extend(signalements_dus(ctx, le_mois, jour, false)?);
 
     let suivant = le_mois.dernier_jour().plus_jours(1).map_err(Echec::from)?;
     if jour < suivant {
@@ -701,25 +701,24 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }
         Geste::Arret { mois, salarie, dernier, cle, nature } => pas(d, quoi, quand, |ctx| {
             // ENCORE DU au jour du pas ? Le visiteur a pu le faire.
-            let a = crate::routes::imprevus::tous_les_arrets(ctx)?
-                .into_iter()
-                .find(|x| valeur_en_texte(&x["salarie"]) == *salarie && valeur_en_texte(&x["dernier_jour_travaille"]) == *dernier);
+            let iso = dernier.iso();
+            let a = crate::routes::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == iso);
             let Some(a) = a else { return Ok(false) };
-            let encore = crate::obligations::de_l_arret(ctx, &crate::routes::imprevus::arret_de(&a)?, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?
+            let encore = crate::obligations::de_l_arret(ctx, &a, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?
                 .iter()
                 .any(|o| o.cle == *cle && due(o, ctx.aujourdhui).is_some());
             if !encore {
                 return Ok(false);
             }
             d.reverifier()?;
-            crate::routes::imprevus::signaler_l_arret(ctx, &crate::routes::imprevus::ChargeArretSignaler::de(salarie.clone(), Jour::lire(dernier)?, *nature), None)?;
+            crate::routes::imprevus::signaler_l_arret(ctx, &crate::routes::imprevus::ChargeArretSignaler::de(salarie.clone(), *dernier, *nature), None)?;
             deposer_les_dsn(d, ctx, *mois, |x| x.nature.as_deref() == Some(nature.code()), &mut Vec::new())?;
             Ok(true)
         }),
         Geste::Fin { mois, salarie, fin } => pas(d, quoi, quand, |ctx| {
-            let encore = crate::routes::imprevus::fins_a_signaler(ctx, &mois.to_string(), ctx.aujourdhui)?
+            let encore = crate::routes::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui)?
                 .iter()
-                .any(|x| valeur_en_texte(&x.salarie) == *salarie && valeur_en_texte(&x.fin) == *fin && due(&x.obligation, ctx.aujourdhui).is_some());
+                .any(|x| x.salarie.as_str() == salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui).is_some());
             if !encore {
                 return Ok(false);
             }
@@ -899,40 +898,39 @@ fn due(o: &crate::obligations::Obligation, jour: Jour) -> Option<Jour> {
 /// pour CSS R. 133-14, II ; norme DSN, chapitre 2, § 2.5.3) peut finir apres l'echeance de la DSN du mois (une fin le
 /// 30/01, signalee jusqu'au 06/02, quand la DSN de janvier est due le 05/02), et un mois fait ne se relit plus. Pas celui
 /// qui attend la saisie : il est a la personne.
-fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) -> Vec<Pas> {
-    let mois = &le_mois.to_string();
+fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) -> R<Vec<Pas>> {
     let du = |o: &crate::obligations::Obligation| if cloture { a_faire(o) } else { due(o, jour) };
     let mut dus = Vec::new();
     use crate::routes::imprevus::NatureSignalement;
     let natures = [(crate::obligations::CleDObligation::SignalementArret, NatureSignalement::Arret, "d'arrêt"), (crate::obligations::CleDObligation::SignalementReprise, NatureSignalement::Reprise, "de reprise")];
-    let arrets = crate::routes::imprevus::tous_les_arrets(ctx).unwrap_or_default();
-    if let Ok(suivi) = crate::obligations::Suivi::lire(ctx) {
-        for a in arrets.iter().filter(|a| valeur_en_texte(&a["dernier_jour_travaille"]).starts_with(mois)) {
-            let obligations = crate::routes::imprevus::arret_de(a).and_then(|a| crate::obligations::de_l_arret(ctx, &a, &suivi, jour)).unwrap_or_default();
-            for (cle, nature, dit) in natures {
-                let Some(butoir) = obligations.iter().find(|o| o.cle == cle).and_then(du) else { continue };
-                let (salarie, dernier) = (valeur_en_texte(&a["salarie"]), valeur_en_texte(&a["dernier_jour_travaille"]));
-                dus.push(Pas {
-                    quand: format!("{}T09:30:00", butoir.iso()),
-                    quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, salarie, le(&dernier)),
-                    geste: Geste::Arret { mois: le_mois, salarie, dernier, cle, nature },
-                });
-            }
+    let suivi = crate::obligations::Suivi::lire(ctx)?;
+    for a in crate::routes::imprevus::tous_les_arrets(ctx)? {
+        let dernier = Jour::lire(&a.dernier_jour_travaille).map_err(|m| erreur(Classe::Illisible, m))?;
+        if dernier.mois_civil() != le_mois {
+            continue;
+        }
+        let obligations = crate::obligations::de_l_arret(ctx, &a, &suivi, jour)?;
+        for (cle, nature, dit) in natures {
+            let Some(butoir) = obligations.iter().find(|o| o.cle == cle).and_then(du) else { continue };
+            dus.push(Pas {
+                quand: format!("{}T09:30:00", butoir.iso()),
+                quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, a.salarie, dernier.jj_mm_aaaa()),
+                geste: Geste::Arret { mois: le_mois, salarie: a.salarie.clone(), dernier, cle, nature },
+            });
         }
     }
-    for f in crate::routes::imprevus::fins_a_signaler(ctx, mois, jour).unwrap_or_default() {
+    for f in crate::routes::imprevus::fins_a_signaler(ctx, le_mois, jour)? {
         let Some(butoir) = du(&f.obligation) else { continue };
         if cloture && !f.a_saisir.is_empty() {
             continue;
         }
-        let (salarie, fin) = (valeur_en_texte(&f.salarie), valeur_en_texte(&f.fin));
         dus.push(Pas {
             quand: format!("{}T09:30:00", butoir.iso()),
-            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", salarie, le(&fin)),
-            geste: Geste::Fin { mois: le_mois, salarie, fin },
+            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.fin.jj_mm_aaaa()),
+            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.to_string(), fin: f.fin },
         });
     }
-    dus
+    Ok(dus)
 }
 
 // ------------------------------------------------------------------ ce qui fait un mois
@@ -952,7 +950,7 @@ fn empreinte_du_mois(racine: &Path, mois: &str) -> String {
 /// UN MOIS FAIT : toutes ses etapes sont vertes (`etapes_restantes`, ce que l'ecran montre) et aucun signalement n'est a
 /// faire que l'horloge puisse ecrire, sa date butoir passee ou non (`signalements_dus`).
 fn mois_fait(ctx: &Contexte, mois: socle::mois::Mois, jour: Jour) -> R<bool> {
-    Ok(Moteur::nouveau(ctx).etapes_restantes(mois)?.is_empty() && signalements_dus(ctx, mois, jour, true).is_empty())
+    Ok(Moteur::nouveau(ctx).etapes_restantes(mois)?.is_empty() && signalements_dus(ctx, mois, jour, true)?.is_empty())
 }
 
 /// L'annee `annee` est-elle finie pour l'horloge : passee fin janvier de l'annee d'apres, et close et exportee, ou sans

@@ -1455,15 +1455,19 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Ok(contrat) => contrat,
         Err(e) => return Ok(Err(e.message)),
     };
-    let motif = tape(&c.motif).into_iter().collect::<String>();
-    let imp = crate::routes::imprevus::arret_a_ecrire(&cle.to_string(), &contrat, &motif, &dernier, &debut, &fin, jour_tape(&c.date_accident), None, "");
-    let (sub, sub_debut, sub_fin) = crate::routes::imprevus::subrogation_de(ctx, &imp)?;
-    let mut arret = crate::routes::imprevus::arret_de(&imp)?;
-    arret.subrogation = sub.as_str().map(String::from);
-    if arret.subrogation.as_deref() == Some("01") {
-        arret.subrogation_debut = sub_debut.as_str().map(String::from);
-        arret.subrogation_fin = sub_fin.as_str().map(String::from);
-    }
+    let Some(motif) = tape(&c.motif) else { return Ok(Err("le motif n'est pas encore dit.".to_string())) };
+    let mut arret = crate::routes::imprevus::arret_a_ecrire(crate::routes::imprevus::ArretDit {
+        cle: &cle,
+        contrat: &contrat,
+        motif,
+        dernier_jour: dernier,
+        debut,
+        fin,
+        date_accident: jour_tape(&c.date_accident),
+        jours_deja_indemnises: None,
+        note: None,
+    });
+    crate::routes::imprevus::poser_la_subrogation(ctx, &mut arret)?;
     Ok(Ok(arret))
 }
 

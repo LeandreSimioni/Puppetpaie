@@ -5302,7 +5302,7 @@ mod tests {
                 reprises: Vec::new(),
                 saisi_le: "2026-06-21T10:00:00".into(),
                 qui: "interface".into(),
-                note: String::new(),
+                note: None,
             },
         }
     }

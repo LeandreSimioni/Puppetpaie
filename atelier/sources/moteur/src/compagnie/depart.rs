@@ -671,7 +671,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     let jour = |v: &Value| -> R<String> { crate::valeur::d(v).map(|j| j.jj_mm_aaaa()).map_err(valeur) };
     let mut non_signales = 0;
     for a in arrets {
-        let resume = crate::routes::imprevus::resume_arret(ctx, &nomenclature, a)?;
+        let resume = crate::routes::imprevus::resume_arret(ctx, &nomenclature, &arret_de(a).map_err(valeur)?)?;
         let reprise = a.get("reprise").filter(|r| vrai(r));
         let fin = match reprise {
             Some(r) => r.clone(),
@@ -1416,14 +1416,18 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
                 let texte = declarations::amorcage::generer(&ctx_j, paie, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(|e| valeur(e.message().to_string()))?;
                 declarations::dsn::ecrire(&texte, cible).map_err(valeur)
             }
-            declarations::fctu::NATURE => crate::routes::imprevus::signaler_fin(&ctx_j, &json!({"mois": mois, "salarie": premier, "ordre": ordre, "le": jour.iso()}), true).map(|_| ()),
+            declarations::fctu::NATURE => {
+                let charge = crate::routes::imprevus::ChargeFinContratSignaler::refait(socle::mois::Mois::lire(mois).map_err(valeur)?, premier.clone(), ordre, jour);
+                crate::routes::imprevus::signaler_la_fin(&ctx_j, &charge, true).map(|_| ())
+            }
             n => {
                 // L'arret tel qu'il etait a l'ecriture : celui de ses etats d'alors que l'empreinte reconnait.
                 let dernier = crate::routes::imprevus::dernier_jour_saisi(&ctx_j, &premier, &evenement)?;
-                let charge = json!({"salarie": premier, "dernier_jour": dernier.iso(), "nature": n, "ordre": ordre, "le": jour.iso()});
+                let nature = crate::routes::imprevus::NatureSignalement::du_code(n)?;
+                let charge = crate::routes::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());
                 for a in crate::routes::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &crate::routes::maintenant())? {
-                    crate::routes::imprevus::signaler_arret(&ctx_j, &charge, &a)?;
+                    crate::routes::imprevus::signaler_l_arret(&ctx_j, &charge, Some(&a))?;
                     rendu = garder_si_identique(l, &[cible.to_path_buf()]);
                     if rendu.is_ok() {
                         break;

@@ -35,7 +35,6 @@ use serde_json::{json, Map, Value};
 
 use socle::date::repr_texte;
 use socle::echec::{erreur, Classe, Echec, R};
-use crate::valeur::vrai;
 use droit::contexte::Contexte;
 use crate::valeur::{valeur_ecrite, valeur_en_texte};
 use crate::service::contexte;
@@ -211,7 +210,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),
         _ if dans(documents::ROUTES) => documents::route(&porte, charge),
         _ if dans(depots::ROUTES) => depots::route(&porte, charge),
-        _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
+        _ if dans(imprevus::ROUTES) => imprevus::route(&porte, charge),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.
         _ if dans(crate::obligations::ROUTES) => crate::obligations::route(&porte, charge),
         _ if dans(fiches::ROUTES) => brute(fiches::route(o, &ctx, route, c)),
@@ -227,7 +226,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         Route::HistoriqueMois => crate::historique_mois::route(&porte, charge),
         _ if dans(dossier_salarie::ROUTES) => dossier_salarie::route(&porte, charge),
         _ if dans(ouverture::ROUTES) => brute(ouverture::route(o, &ctx, route, c)),
-        _ if dans(rappels::ROUTES) => brute(rappels::route(o, &ctx, route, c)),
+        _ if dans(rappels::ROUTES) => rappels::route(&porte, charge),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
         _ if dans(crate::compagnie::conseils::ROUTES) => brute(crate::compagnie::conseils::route(&ctx, route, c)),
         // L'ouverture du logiciel et la veille : sauvegarder, relever les retours, les signatures et les fiches, sans
@@ -469,16 +468,6 @@ pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie) -> String {
     sal.nomme().unwrap_or_default()
 }
 
-/// `sortie_json.brut` d'une valeur lue d'un fichier : un dictionnaire perd ses
-/// cles qui commencent par `_`.
-pub(crate) fn brut(v: &Value) -> Value {
-    match v {
-        Value::Object(o) => Value::Object(o.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, x)| (k.clone(), brut(x))).collect()),
-        Value::Array(a) => Value::Array(a.iter().map(brut).collect()),
-        autre => autre.clone(),
-    }
-}
-
 /// Un fichier lu en UTF-8 : un refus du disque sous sa classe (`FichierAbsent`, `Disque`), un texte qui n'est pas de
 /// l'UTF-8 `Illisible`.
 fn lire_texte(p: &Path) -> R<String> {
@@ -522,11 +511,3 @@ pub(crate) fn jour_en_clair(v: &Value) -> String {
     socle::date::Jour::lire(&t).map(|j| j.jj_mm_aaaa()).unwrap_or(t)
 }
 
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
-pub(crate) fn periode_en_clair(debut: &Value, fin: &Value) -> String {
-    if vrai(fin) {
-        format!("du {} au {}", jour_en_clair(debut), jour_en_clair(fin))
-    } else {
-        format!("depuis le {}", jour_en_clair(debut))
-    }
-}

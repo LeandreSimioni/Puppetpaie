@@ -65,7 +65,7 @@ fn le_nir_qui_arrive_vaut_de_tout_temps_et_le_signalement_porte_le_ntt_declare()
         "lieu": "Salle Jean-Moulin, 39100 Dole", "dates": ["2026-02-06", "2026-02-07", "2026-02-08"], "planning": []}]}), jour));
     reussi(&route(&c, "arret-enregistrer", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "debut": "2026-02-07", "fin": "2026-02-08",
         "motif": "01"}), jour));
-    let f = reussi(&route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06"}), jour))["fichier"]
+    let f = reussi(&route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "nature": "04"}), jour))["fichier"]
         .as_str()
         .unwrap()
         .to_string();
@@ -88,7 +88,7 @@ fn le_nir_qui_arrive_vaut_de_tout_temps_et_le_signalement_porte_le_ntt_declare()
     std::fs::write(&journal, format!("{}{}\n", lignes, reel)).unwrap();
     let parti = std::fs::read(&f).unwrap();
     reussi(&route(&c, "arret-prolonger", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "fin": "2026-02-10"}), jour));
-    let r = route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06"}), jour);
+    let r = route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "nature": "04"}), jour);
     assert_eq!(r["ok"], json!(false), "{}", r);
     assert_eq!(std::fs::read(&f).unwrap(), parti, "le signalement parti a ete reecrit");
     // Effacé, il se refait tel qu'il est parti : d'après l'arrêt d'avant la prolongation.

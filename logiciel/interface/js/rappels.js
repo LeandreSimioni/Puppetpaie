@@ -464,7 +464,7 @@ async function agirSurRappel(r) {
 function boiteRevueSpectacles(r, charge) {
   const lignes = (r.spectacles || []).map((s, i) => `
     <label class="coche"><input type="checkbox" class="rv-garde" data-cle="${echapper(s.cle)}" checked>
-      ${echapper(s.titre)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
+      ${echapper(s.nomme)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
   ouvrirBoite(`
     <h3>${echapper(r.titre_boite)}</h3>
     <p>${echapper(r.question)}</p>
