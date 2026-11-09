@@ -45,9 +45,6 @@ use socle::num::{Decimal, Resultat};
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
 pub const IMPORTE: &str = "importe";
 
-/// Dans la ligne du contrat qu'un bulletin atteste : sa nature reste a dire (le bulletin d'un permanent ne la porte pas).
-pub const A_DIRE: &str = "nature_a_dire";
-
 // ------------------------------------------------------------------ la forme
 
 /// LA ZONE `importe` D'UN ENGAGEMENT : le jour de l'import, le contrat atteste, s'il l'est, et les paies versees, par

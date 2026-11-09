@@ -530,7 +530,20 @@ impl Espace {
                 }
                 (crate_de(fichier), m.into_iter().chain(module[k..].iter().cloned()).collect())
             }
-            autre => (autre.to_string(), module[1..].to_vec()),
+            // Un module fils du fichier (`suppression::Gardee` dans `accueil.rs` : `accueil/suppression.rs`), sinon une crate.
+            autre => {
+                let fils: Vec<String> = ici.iter().chain(module).cloned().collect();
+                let chemin = fils.join("/");
+                let est_fils = (0..self.fichiers.len()).any(|n| {
+                    let p = self.fichiers[n].to_string_lossy().replace('\\', "/");
+                    crate_de(n) == crate_de(fichier) && (p.ends_with(&format!("/src/{}.rs", chemin)) || p.ends_with(&format!("/src/{}/mod.rs", chemin)))
+                });
+                if est_fils {
+                    (crate_de(fichier), fils)
+                } else {
+                    (autre.to_string(), module[1..].to_vec())
+                }
+            }
         };
         let chemin = reste.join("/");
         (0..self.fichiers.len()).find(|&n| {
