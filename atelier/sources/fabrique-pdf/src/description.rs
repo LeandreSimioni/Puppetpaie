@@ -900,13 +900,6 @@ fn lire_modele(
             if x.phrase.is_none() && x.numero.is_none() {
                 return refus(format!("{} : modification {} : ni \"numero\" ni \"phrase\"", ou, i + 1));
             }
-            if x.avant.len() != x.apres.len() {
-                return refus(format!(
-                    "{} : modification {} : \"avant\" et \"apres\" n'ont pas le même nombre de paragraphes",
-                    ou,
-                    i + 1
-                ));
-            }
         }
     }
     let modifications: Vec<style_contrat::Modification> = dites

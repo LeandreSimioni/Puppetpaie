@@ -131,7 +131,7 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
       <button type="button" class="lien" data-partie="avenant" ${contrat ? "" : "disabled"}>Avenant</button>
     </div>
     ${lu.manques.length ? `<div class="encart erreur">${lu.manques.map(echapper).join("<br>")}</div>` : ""}
-    ${lu.base_changee.length ? `<div class="encart">${lu.base_changee.map(echapper).join("<br>")}</div>` : ""}
+    ${lu.base_changee && lu.base_changee.length ?`<div class="encart">${lu.base_changee.map(echapper).join("<br>")}</div>` : ""}
     <p class="discret">${echapper(lu.en_francais)}</p>
     ${ecrit ? `<div class="modele-gestes">
       <input type="text" class="modele-nom" value="${echapper(lu.nom)}">

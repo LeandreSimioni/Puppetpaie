@@ -673,7 +673,11 @@ impl Obligation {
                 let accident = self.cle == CleDObligation::DeclarationAccident;
                 let jour = (accident || depart.saisi).then(|| depart.jour.clone());
                 let heure = match accident {
-                    true => Some(depart.heure.clone().unwrap_or_else(|| heure_lisible(DEBUT_DU_JOUR))),
+                    // L'heure que la compagnie n'a pas dite se pre-remplit a minuit (`DEBUT_DU_JOUR`), a verifier.
+                    true => Some(match &depart.heure {
+                        Some(h) => h.clone(),
+                        None => heure_lisible(DEBUT_DU_JOUR),
+                    }),
                     false => depart.saisi.then(|| depart.heure.clone()).flatten(),
                 };
                 let heure_dite = (accident && depart.heure.is_none()).then_some(HEURE_A_VERIFIER);

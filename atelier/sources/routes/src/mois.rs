@@ -76,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         avance: false,
@@ -1889,7 +1889,9 @@ struct CleEcrite {
 #[derive(Debug, Serialize)]
 struct EcritsSeuls {
     ecrits: Vec<&'static str>,
-    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
+    /// Les modeles que sa case `modele_contrat` offre ; vide tant que la carte ne dit pas sa nature : les modeles sont
+    /// ceux d'une nature.
+    modeles: Option<Vec<crate::modeles_contrat::ModeleAuChoix>>,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2118,10 +2120,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: match e.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-                        Some(n) => crate::modeles_contrat::au_choix(ctx, n)?,
-                        None => Vec::new(),
-                    } },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: e.nature.as_deref().filter(|n| !n.trim().is_empty()).map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
                 }));
                 // Une carte a completer n'a pas de total.
                 r.blocs.push(None);

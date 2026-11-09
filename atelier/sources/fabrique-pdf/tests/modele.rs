@@ -452,10 +452,6 @@ fn refus_de_l_avenant() {
     d["documents"][0]["modele"]["modifications"] = json!([]);
     assert!(refus(&d).contains("rien n'a changé"), "{}", refus(&d));
 
-    let mut d = bon.clone();
-    d["documents"][0]["modele"]["modifications"][0]["apres"] = json!(["un seul"]);
-    assert!(refus(&d).contains("pas le même nombre de paragraphes"));
-
     let sans = ecrire_modele("avenant-sans.modele", &AVENANT.replace("MODIFICATION:", "# MODIFICATION:"));
     let e = refus(&description_avenant(&sans));
     assert_eq!(e, format!("{} n'a pas de bloc MODIFICATION:.", sans));

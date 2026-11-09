@@ -79,7 +79,7 @@ pub const ROUTES: &[Fiche] = &[
         "Lire le contrat ou l'avenant d'un modèle, par paragraphe, et ses manques.",
         &[NATURE, ID_OU_BASE, PARTIE],
         r#"{"nature":"cddu_spectacle","id":"m1","partie":"contrat"}"#,
-        "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie), engagements (ceux de l'aperçu, le plus récent d'abord)",
+        "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie ; null pour la base), engagements (ceux de l'aperçu, le plus récent d'abord)",
         &[OPERATION, MANQUE],
         Acte::Lit,
     ),
@@ -285,6 +285,14 @@ fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleD
     Ok(ModeleDuContrat { lu: lire(contrat)?, avenant: lire(avenant)?, nom, base })
 }
 
+/// Le numero d'un id de special (`m<numero>`, que la copie donne) ; un autre id ne vient que d'un fichier ecrit a la main.
+fn numero_d_id(id: &str) -> R<u32> {
+    match id.strip_prefix('m').map(str::parse::<u32>) {
+        Some(Ok(n)) => Ok(n),
+        _ => Err(erreur(Classe::MalFormee, format!("gabarits/contrats/modeles.json : l'id « {} » n'est pas de la forme m<numéro> que la copie donne : le corriger.", id))),
+    }
+}
+
 fn aucun(id: &str) -> Echec {
     refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", id))
 }
@@ -374,8 +382,15 @@ pub(crate) fn du_contrat_parti(ctx: &Contexte, empreinte: Option<&str>, p: &Paie
 /// siennes), ce qui suit le dernier (les signatures). Recolle, il redonne le texte.
 struct Decoupe {
     tete: Vec<String>,
-    articles: Vec<Vec<String>>,
+    articles: Vec<Paragraphe>,
     queue: Vec<String>,
+}
+
+/// Un paragraphe de la decoupe : son titre (ce que dit sa ligne `ARTICLE:`), lu une fois quand il se decoupe ou
+/// s'ecrit, et ses lignes, la ligne `ARTICLE:` en tete.
+struct Paragraphe {
+    titre: String,
+    lignes: Vec<String>,
 }
 
 impl Decoupe {
@@ -384,11 +399,11 @@ impl Decoupe {
         for l in texte.split('\n') {
             let cle = fabrique_pdf::modele::CLES.iter().find(|k| l.starts_with(**k)).copied();
             match cle {
-                Some("ARTICLE:") if d.queue.is_empty() => d.articles.push(vec![l.to_string()]),
+                Some(k @ "ARTICLE:") if d.queue.is_empty() => d.articles.push(Paragraphe { titre: l[k.len()..].trim().to_string(), lignes: vec![l.to_string()] }),
                 Some("ARTICLE:") => return Err(refus("Ce modèle a un paragraphe après ses signatures : il ne se découpe pas en paragraphes. Rien n'est écrit.")),
                 _ if d.articles.is_empty() => d.tete.push(l.to_string()),
                 Some(_) => d.queue.push(l.to_string()),
-                None if d.queue.is_empty() => d.articles.last_mut().into_iter().for_each(|a| a.push(l.to_string())),
+                None if d.queue.is_empty() => d.articles.last_mut().into_iter().for_each(|a| a.lignes.push(l.to_string())),
                 None => d.queue.push(l.to_string()),
             }
         }
@@ -396,7 +411,7 @@ impl Decoupe {
     }
 
     fn texte(&self) -> String {
-        self.tete.iter().chain(self.articles.iter().flatten()).chain(self.queue.iter()).cloned().collect::<Vec<_>>().join("\n")
+        self.tete.iter().chain(self.articles.iter().flat_map(|p| p.lignes.iter())).chain(self.queue.iter()).cloned().collect::<Vec<_>>().join("\n")
     }
 
     /// L'indice du paragraphe `numero` (a partir de 1).
@@ -406,7 +421,7 @@ impl Decoupe {
 
     /// Le titre du paragraphe d'indice `i`.
     fn titre(&self, i: usize) -> String {
-        self.articles[i].first().map(|l| l["ARTICLE:".len()..].trim().to_string()).unwrap_or_default()
+        self.articles[i].titre.clone()
     }
 }
 
@@ -427,7 +442,7 @@ fn une_ligne(t: &str) -> String {
 /// LES LIGNES D'UN PARAGRAPHE : `ARTICLE: titre`, puis chaque alinea (precede de `[si champ]` s'il en a une), une ligne
 /// vide apres chacun. Un alinea vide ne s'ecrit pas ; un alinea qui commencerait par ce que la grammaire lit autrement
 /// (une note, une condition, une cle) se refuse.
-fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Vec<String>> {
+fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
     let titre = une_ligne(titre);
     if titre.is_empty() {
         return Err(erreur(Classe::Manque, "Le paragraphe a besoin d'un titre. Rien n'est écrit."));
@@ -447,7 +462,7 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Vec<String>> {
         });
         lignes.push(String::new());
     }
-    Ok(lignes)
+    Ok(Paragraphe { titre, lignes })
 }
 
 /// UN GESTE SUR LES PARAGRAPHES D'UNE PARTIE D'UN SPECIAL : `faire` change sa decoupe et rend ce que la phrase dit du
@@ -688,7 +703,7 @@ struct ModeleRendu {
     manques: Vec<String>,
     en_francais: &'static str,
     champs: Vec<ChampDeModele>,
-    base_changee: Vec<String>,
+    base_changee: Option<Vec<String>>,
     engagements: Vec<EngagementAuChoix>,
 }
 
@@ -815,32 +830,30 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let m = lus(ctx)?;
     let (nom, s) = designe(&m, &nat, c.id.as_deref())?;
     let texte = texte_de(&nat, s, c.partie)?;
-    let articles = match fabrique_pdf::modele::lire_modele(&texte, &nom) {
-        Ok(lu) => lu
-            .articles
-            .iter()
-            .enumerate()
-            .map(|(n, (titre, alineas))| ArticleRendu {
-                numero: n + 1,
-                titre: titre.clone(),
-                alineas: alineas
-                    .iter()
-                    .map(|a| match fabrique_pdf::modele::condition(a) {
-                        Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
-                        None => Alinea { si: None, texte: a.clone() },
-                    })
-                    .collect(),
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    };
+    // Un texte sans paragraphe ne se lit pas : aucun geste n'en laisse (chacun verifie le modele), il ne vient que d'un
+    // fichier ecrit a la main, et se refuse.
+    let lu = fabrique_pdf::modele::lire_modele(&texte, &nom).map_err(|r| refus(format!("{} : le supprimer et copier la base à nouveau.", r.0)))?;
+    let articles = lu
+        .articles
+        .iter()
+        .enumerate()
+        .map(|(n, (titre, alineas))| ArticleRendu {
+            numero: n + 1,
+            titre: titre.clone(),
+            alineas: alineas
+                .iter()
+                .map(|a| match fabrique_pdf::modele::condition(a) {
+                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
+                    None => Alinea { si: None, texte: a.clone() },
+                })
+                .collect(),
+        })
+        .collect();
     let dits = manques(&nat, c.partie, &texte)?;
     let quoi = if c.partie == Partie::Avenant { format!("{}, son avenant", nom) } else { nom };
     let phrase = if dits.is_empty() { format!("{} : complet.", quoi) } else { format!("{} : {}", quoi, dits.join(" ")) };
-    let base_changee = match s {
-        Some(s) => ce_qui_a_change(&s.partie(c.partie).base, &texte_de_base(&nat, c.partie)?),
-        None => Vec::new(),
-    };
+    // La base n'est copiee de rien : rien ne se compare, `None`.
+    let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
     let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| erreur(Classe::Illisible, m))?;
     let engagements = engagements_de(ctx, &nat.cle)?;
     Ok(ModeleRendu {
@@ -849,7 +862,10 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
         id: c.id,
         partie: c.partie,
         // Le nom qu'un special porte (celui que l'on renomme) ; la base, comme la liste la nomme.
-        nom: s.map_or_else(|| nom_de_base(&nat), |s| s.nom.clone()),
+        nom: match s {
+            Some(s) => s.nom.clone(),
+            None => nom_de_base(&nat),
+        },
         base: s.is_none(),
         articles,
         manques: dits,
@@ -891,7 +907,12 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         Partie::Contrat => ("contrat", "le contrat"),
         Partie::Avenant => ("avenant", "un avenant au contrat"),
     };
-    let chemin = d.join(format!("modele-{}-{}-{}.pdf", nat.cle, c.id.as_deref().unwrap_or("base"), sorte));
+    // Le fichier porte l'id du special, ou dit la base.
+    let modele_du_fichier = match c.id.as_deref() {
+        Some(id) => id,
+        None => "base",
+    };
+    let chemin = d.join(format!("modele-{}-{}-{}.pdf", nat.cle, modele_du_fichier, sorte));
     let (debut, jour) = (p.engagement.debut.jj_mm_aaaa(), ctx.aujourdhui.jj_mm_aaaa());
     match c.partie {
         Partie::Contrat => documents::contrat::ecrire_contrat(ctx, std::slice::from_ref(&p), &[modele], &ent, &chemin, &[])?,
@@ -928,7 +949,7 @@ fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
     let partie = |p| texte_de_base(&nat, p).map(|t| Texte { base: t.clone(), texte: t });
     let (contrat, avenant) = (partie(Partie::Contrat)?, partie(Partie::Avenant)?);
     // Un id ne sert qu'une fois : ni un special present, ni un supprime.
-    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).filter_map(|id| id.strip_prefix('m')?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
+    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).try_fold(0, |n, id| numero_d_id(id).map(|k| n.max(k)))? + 1;
     m.speciaux.push(Special { id: format!("m{}", n), nom: nom.clone(), nature: nat.cle.clone(), contrat, avenant });
     ecrire(ctx, &m)?;
     modeles(ctx, &format!("Modèle « {} » copié de la base du {}. ", nom, nat.nom_du_contrat()))

@@ -369,7 +369,8 @@ fn texte_brut(texte: &str, vals: &modele::Valeurs) -> Resultat<String> {
 // ------------------------------------------------- ce que l'avenant modifie
 
 /// Un article du contrat qui a change depuis la version sur laquelle il est parti : son numero, son titre, et pour chaque
-/// paragraphe change l'ancien texte, le nouveau et son rang dans l'article.
+/// paragraphe change l'ancien texte, le nouveau et son rang dans l'article. Un alinea conditionnel qui n'etait pas ecrit
+/// n'a pas d'ancien texte, celui qui ne l'est plus pas de nouveau : `avant` et `apres` n'ont pas toujours autant de textes.
 pub struct Modification {
     pub numero: usize,
     pub article: String,
@@ -388,16 +389,17 @@ pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<V
         let n = if modele::s_imprime(corps, avant) { m.numero_imprime(i, avant) } else { m.numero_imprime(i, apres) };
         let (mut anciens, mut neufs, mut blocs): (Vec<String>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
         for (i, bloc) in corps.iter().enumerate() {
-            // Un alinea conditionnel ote s'ecrit vide (`modele::retenu`).
-            let ecrit = |v: &modele::Valeurs| -> Resultat<String> { modele::retenu(bloc, v).map(|t| texte_brut(t, v).map(|s| normaliser(&s))).transpose().map(Option::unwrap_or_default) };
+            // Un alinea conditionnel ote ne s'ecrit pas (`modele::retenu`) : l'avenant ne le cite pas, ni avant s'il
+            // n'y etait pas, ni apres s'il n'y est plus.
+            let ecrit = |v: &modele::Valeurs| -> Resultat<Option<String>> { modele::retenu(bloc, v).map(|t| texte_brut(t, v).map(|s| normaliser(&s))).transpose() };
             let (ancien, neuf) = (ecrit(avant)?, ecrit(apres)?);
             if ancien != neuf {
-                anciens.push(ancien);
-                neufs.push(neuf);
+                anciens.extend(ancien);
+                neufs.extend(neuf);
                 blocs.push(i);
             }
         }
-        if !anciens.is_empty() {
+        if !blocs.is_empty() {
             out.push(Modification { numero: n, article: texte_brut(titre, apres)?, avant: anciens, apres: neufs, blocs });
         }
     }
