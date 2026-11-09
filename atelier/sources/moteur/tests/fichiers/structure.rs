@@ -517,12 +517,12 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     let mut charge = exemple;
     charge["administrateur"] = json!(ADMIN);
     if route == Route::AdministrateurDetacher {
-        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, &json!({"administrateur": ADMIN}), &poste).unwrap();
+        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, serde_json::from_value(json!({"administrateur": ADMIN})).unwrap(), None, &poste).unwrap();
         charge["nouveau"] = json!("propre-essai-1");
         charge["confirmation"] = json!("propre-essai-1");
     }
-    match moteur::routes::coffre::administrateur(&b, route, &charge, &poste) {
-        Ok(v) => json!({"ok": true, "resultat": v}),
+    match moteur::routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
+        Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
         Err(e) => json!({"ok": false, "erreur": e.message}),
     }
 }

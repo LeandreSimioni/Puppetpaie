@@ -211,7 +211,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(identite::ROUTES) => identite::route(&porte, charge),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
-        _ if dans(coffre::ROUTES) => brute(coffre::route(o, &ctx, route, c)),
+        _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
         _ if dans(archives::ROUTES) => brute(archives::route(o, &ctx, route, c)),
