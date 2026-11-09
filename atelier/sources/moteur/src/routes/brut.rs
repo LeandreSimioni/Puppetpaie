@@ -8,7 +8,7 @@ use serde_json::{json, Map, Value};
 use crate::valeur::valeur_en_texte;
 use socle::echec::{erreur, Classe, Echec, R};
 
-use super::{Encart, Pastille};
+use super::Pastille;
 
 /// La charge d'une route pas encore branchee, lue en sa forme comme `Charge::lire` : une cle que la forme ne connait
 /// pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle fautive a part ; rien ne
@@ -26,11 +26,6 @@ pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
 /// Ce qu'une route pas encore branchee a rendu, pour la porte.
 pub(super) fn brute(rendu: R<Value>) -> R<super::Rendu> {
     rendu.map(super::Rendu::brut)
-}
-
-/// `Encart::de`, en JSON.
-pub(crate) fn encart(etat: &str, titre: impl Into<String>, phrase: impl Into<String>) -> Value {
-    json!(Encart::de(etat, titre, phrase))
 }
 
 /// `Pastille::de`, en JSON.
@@ -56,12 +51,6 @@ pub(crate) fn nombre(v: &Value) -> usize {
 /// Une valeur rendue, en mots dans une phrase : rien pour une valeur absente (jamais « None »).
 pub(crate) fn mot(v: &Value) -> String {
     if v.is_null() { String::new() } else { valeur_en_texte(v) }
-}
-
-/// Un jour rendu (`2026-11-02`), tel qu'une phrase le dit : « 02/11/2026 » ; ce qui n'en est pas un, tel quel.
-pub(crate) fn jour_en_clair(v: &Value) -> String {
-    let t = mot(v);
-    socle::date::Jour::lire(&t).map(|j| j.jj_mm_aaaa()).unwrap_or(t)
 }
 
 

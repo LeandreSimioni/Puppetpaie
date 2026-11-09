@@ -15,7 +15,7 @@
 //!   c'est la sienne), ou celle dont le libelle nomme ce que le contrat couvre (`poser_organismes`) ; sinon rien ne se
 //!   choisit, cela se dit, et « Pour demarrer » le demande.
 
-use serde_json::{json, Map, Value};
+use serde_json::Value;
 
 use crate::import::dsn_aem::LectureDsn;
 use declarations::dsn_lue::Adhesion;
@@ -89,8 +89,8 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     if lecture.adhesions.is_empty() {
         return;
     }
-    let Ok(ecran) = crate::compagnie::organismes::lire(ctx, &json!({})) else { return };
-    let lignes: Vec<Value> = ecran["contrats"].as_array().cloned().unwrap_or_default();
+    let Ok(ecran) = crate::compagnie::organismes::lire(ctx, None) else { return };
+    let lignes: Vec<Value> = ecran.lignes().iter().map(socle::ecriture::en_valeur).collect();
     let fixes: Vec<String> = lignes.iter().map(|l| texte(l, "libelle").to_uppercase()).filter(|l| !l.is_empty()).collect();
     let a_saisir: Vec<&Value> = lignes.iter().filter(|l| texte(l, "libelle").is_empty()).collect();
     let libelle = |a: &Adhesion| a.libelle.trim().to_string();
@@ -119,11 +119,11 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
             }
         }
     }
-    let mut saisies = Map::new();
+    let mut saisies = std::collections::BTreeMap::new();
     for (l, a, _) in &paires {
-        saisies.insert(texte(l, "cle"), json!({"libelle": libelle(a), "organisme": organisme(a)}));
+        saisies.insert(texte(l, "cle"), droit::organismes::Saisie { libelle: Some(libelle(a)), organisme: Some(organisme(a)) });
     }
-    if !saisies.is_empty() && crate::compagnie::organismes::enregistrer(ctx, &json!({"contrats": saisies})).is_ok() {
+    if !saisies.is_empty() && crate::compagnie::organismes::enregistrer(ctx, crate::compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)).is_ok() {
         for (l, a, par_libelle) in &paires {
             faits.push(format!(
                 "{} : contrat {} chez {}, lu dans la DSN reprise (S21.G00.15.001, S21.G00.15.002){}.",

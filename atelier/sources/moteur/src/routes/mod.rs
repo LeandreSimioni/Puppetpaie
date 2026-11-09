@@ -45,7 +45,7 @@ use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
 use brut::brute;
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{en_json, encart, jour_en_clair, lire_charge, mot, nom_a_l_ecran, nombre, pastille, phrase_en_tete};
+pub(crate) use brut::{en_json, lire_charge, mot, nom_a_l_ecran, nombre, pastille, phrase_en_tete};
 
 mod brut;
 pub mod enveloppe;
@@ -217,7 +217,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(fiches::ROUTES) => fiches::route(&porte, charge),
         _ if dans(identite::ROUTES) => identite::route(&porte, charge),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
-        _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
+        _ if dans(crate::compagnie::organismes::ROUTES) => crate::compagnie::organismes::route(&porte, charge),
         _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
