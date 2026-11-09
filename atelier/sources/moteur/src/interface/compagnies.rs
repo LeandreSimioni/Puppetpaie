@@ -286,7 +286,9 @@ fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 
 /// Le nom du dossier d'une compagnie.
 fn nom_dossier(p: &Path) -> Result<String, String> {
-    p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| format!("{} n'est pas le dossier d'une compagnie.", p.display()))
+    p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
+        socle::echec::avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
+    })
 }
 
 /// Les compagnies de l'installation `b` (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`, `fictives/`), dans

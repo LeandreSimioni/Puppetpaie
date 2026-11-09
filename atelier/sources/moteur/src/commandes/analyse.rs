@@ -84,7 +84,7 @@ impl Args {
     /// La valeur d'une option que sa `Spec` pourvoit d'un defaut (`Opt::avec_defaut`, `Opt::choix`, `Pos::parmi`) : elle
     /// est toujours la ; une commande qui la demande sans defaut se refuse en le disant.
     pub fn exige(&self, nom: &str) -> Result<&str, socle::echec::Echec> {
-        self.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Manque), message: format!("--{} n'a pas de valeur", nom) })
+        self.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Manque), message: format!("L'option « {} » n'a pas de valeur.", nom) })
     }
 }
 

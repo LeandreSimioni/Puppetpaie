@@ -484,11 +484,6 @@ pub fn trop_courte(quoi: &str) -> String {
     format!("liste trop courte : {}", quoi)
 }
 
-/// « une liste ne peut pas servir de clé » : une valeur cherchée dans une table, ou rangée parmi des clés.
-pub fn pas_une_cle(nom_type: &str) -> String {
-    format!("{} ne peut pas servir de clé", nature(nom_type))
-}
-
 /// Un nombre que l'on voudrait entier et qui ne tient pas : infini, ou hors de ce qu'un entier porte.
 pub fn entier_hors_limites(n: &str) -> String {
     format!("nombre entier hors limites : {}", n)
