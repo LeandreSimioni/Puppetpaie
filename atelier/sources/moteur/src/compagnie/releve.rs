@@ -43,10 +43,13 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
     Ok(releve)
 }
 
-/// Releve les retours DSN (ou, `canal = "dpae"` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou celui
-/// de la consultation net-entreprises.
-pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environnement: &str, client: Option<Client>, canal: &str) -> R<Releve> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
+/// Releve les retours DSN (ou, `canal = Some("dpae")` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou
+/// celui de la consultation net-entreprises. `canal` : celui de la DSN s'il n'est pas dit.
+pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environnement: &str, client: Option<Client>, canal: Option<&str>) -> R<Releve> {
+    let canal = match canal {
+        Some(c) => c,
+        None => envois::releve_retours::CANAL_DSN,
+    };    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,
@@ -57,7 +60,7 @@ pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environ
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: &str) -> R<Releve> {
+pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: Option<&str>) -> R<Releve> {
     let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();

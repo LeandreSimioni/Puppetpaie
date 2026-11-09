@@ -19,7 +19,7 @@
 //! et rend la sienne.
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use socle::echec::{erreur, Classe, Echec, R};
@@ -97,7 +97,7 @@ impl Charge {
     }
 
     /// La charge ecrite en JSON `v` (le corps d'une demande de la page) : un objet, sinon un refus (`MalFormee`).
-    pub fn de(v: Value) -> R<Charge> {
+    fn de(v: Value) -> R<Charge> {
         match v {
             Value::Object(_) => Ok(Charge(v)),
             _ => Err(erreur(Classe::MalFormee, "La demande est mal formée : sa charge est un objet {…}.")),
@@ -145,6 +145,32 @@ impl Charge {
         }
     }
 
+    /// LE TEXTE QUE LA CHARGE PORTE A `cle`, s'il y en a un : un dossier ou un fichier qu'une route lit (le banc d'essai le
+    /// recopie dans son scenario, `atelier::scenario`).
+    pub fn texte(&self, cle: &str) -> Option<&str> {
+        self.0.get(cle).and_then(Value::as_str)
+    }
+
+    /// La charge qui porte le texte `texte` a `cle` (le rejeu d'un scenario y nomme la piece qu'il a posee).
+    pub fn poser_texte(&mut self, cle: &str, texte: String) {
+        if let Value::Object(m) = &mut self.0 {
+            m.insert(cle.to_string(), Value::String(texte));
+        }
+    }
+
+    /// LA CHARGE SANS AUCUN MOT DE PASSE TAPE : la valeur de toute cle `motdepasse…` qui porte un texte, a toute
+    /// profondeur, vide. Un scenario du banc la garde ainsi.
+    pub fn sans_les_mots_de_passe(&self) -> Charge {
+        fn vider(v: &Value) -> Value {
+            match v {
+                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), if k.starts_with(MOT_DE_PASSE) && x.is_string() { Value::String(String::new()) } else { vider(x) })).collect()),
+                Value::Array(a) => Value::Array(a.iter().map(vider).collect()),
+                x => x.clone(),
+            }
+        }
+        Charge(vider(&self.0))
+    }
+
     /// LA CHARGE D'UN PROGRAMME (`moteur route` : un LLM, un script) SANS SES SECRETS : aucun secret ne s'y lit. Le mot
     /// de passe du logiciel de toute route, et ceux d'une route du coffre (`routes::coffre::SECRETS`), en sont retires ;
     /// la route les demande alors elle-meme a un humain.
@@ -158,11 +184,6 @@ impl Charge {
             }
         }
     }
-
-    /// LA CHARGE EN JSON, pour une route qui n'est pas encore branchee sur l'enveloppe (son module la lit lui-meme).
-    pub fn brute(&self) -> &Value {
-        &self.0
-    }
 }
 
 // ------------------------------------------------------------------------------------------------- la porte
@@ -172,7 +193,30 @@ impl Charge {
 pub struct Porte<'a> {
     pub route: Route,
     pub ctx: &'a droit::contexte::Contexte,
-    pub options: &'a std::collections::HashMap<String, String>,
+    pub options: &'a Options,
+}
+
+/// LES OPTIONS D'UNE COMMANDE, a cote de sa demande : la compagnie (`--racine`) et l'aujourd'hui de la route (`--date`).
+/// La fenetre pose toujours la compagnie ; `moteur route` les lit de sa ligne de commande (`service::options`).
+#[derive(Clone, Debug)]
+pub struct Options {
+    /// La compagnie nommee. Sans elle, `PUPPETPAIE_DONNEES` (`moteur route` lance a la main ou par un test), sinon le
+    /// dossier du code (`service::racine_de`) ; une route de l'installation se sert alors sur celle du programme.
+    pub racine: Option<std::path::PathBuf>,
+    /// Le jour de la route : celui du contexte, et celui de l'horloge qui date ce qu'elle ecrit. Sans lui, aujourd'hui.
+    pub date: Option<socle::date::Jour>,
+}
+
+impl Options {
+    /// Les options d'une route servie sans compagnie (l'accueil, un message au developpeur depuis l'accueil).
+    pub fn sans_compagnie() -> Options {
+        Options { racine: None, date: None }
+    }
+
+    /// Les options d'une route servie sur la compagnie `racine`, au jour de l'horloge.
+    pub fn de_la_compagnie(racine: &std::path::Path) -> Options {
+        Options { racine: Some(racine.to_path_buf()), date: None }
+    }
 }
 
 // ------------------------------------------------------------------------------------------------- ce qu'une route rend
@@ -200,11 +244,6 @@ impl Rendu {
         }
     }
 
-    /// Ce qu'une route qui n'est pas encore branchee a rendu, en JSON.
-    pub fn brut(v: Value) -> Rendu {
-        Rendu(v)
-    }
-
     /// A-t-il sa phrase, un texte non vide ?
     pub fn a_sa_phrase(&self) -> bool {
         matches!(self.0.get("phrase"), Some(Value::String(p)) if !p.trim().is_empty())
@@ -229,7 +268,7 @@ impl Rendu {
     }
 
     /// Le rendu en JSON, pris.
-    pub fn en_valeur(self) -> Value {
+    fn en_valeur(self) -> Value {
         self.0
     }
 }
@@ -281,46 +320,162 @@ pub fn en_json<T: Dite>(t: T) -> R<Rendu> {
 
 /// LE REFUS D'UNE ROUTE, tel que l'ecran et le LLM le lisent : sa classe (absente pour un refus ordinaire), sa phrase
 /// en mots, ce que la fiche de la route dit de corriger pour cette classe, et ce qu'il porte a part.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Refus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub classe: Option<Classe>,
     pub phrase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub corriger: Option<&'static str>,
-    #[serde(skip_serializing_if = "APart::est_vide")]
-    pub a_part: APart,
+    pub corriger: Option<String>,
+    /// Absent quand le refus ne porte rien a part.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a_part: Option<APart>,
 }
 
-/// CE QU'UN REFUS PORTE A PART : ce que la couche qui refuse a mis hors de la phrase, en sa forme (`socle::echec::APart`,
-/// ou celle de la couche : l'etat d'un mois, les anomalies d'une fiche), ecrite avec la phrase (`socle::echec::avec`). La
-/// porte ne le lit pas : elle le rend tel qu'il a ete ecrit, la fenetre l'ouvre, le LLM le lit.
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(transparent)]
-pub struct APart(Map<String, Value>);
+/// CE QU'UN REFUS PORTE A PART : ce que la couche qui refuse a mis hors de la phrase, ecrit avec elle
+/// (`socle::echec::avec`), en sa forme : celle du socle (`socle::echec::APart` : un chemin, un fichier, une cle, un
+/// detail), ou celle de la couche qui refuse. Cette forme-ci les reunit toutes, chaque case une fois : la porte la lit
+/// entiere, la rend, la fenetre l'ouvre, le LLM la lit. Une cle qu'aucune couche n'ecrit la refuse : c'est un defaut du
+/// logiciel (`Refus::de`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct APart {
+    /// Un chemin : un fichier ou un dossier de la compagnie ou du poste (le socle, `engagement::stock`, l'administrateur,
+    /// le modele d'un contrat).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chemin: Option<String>,
+    /// Un fichier livre, ou celui que le refus vise (le socle, la mise a jour, le plan comptable, les natures).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fichier: Option<String>,
+    /// La cle d'une donnee (le socle, le calcul d'un engagement).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cle: Option<String>,
+    /// Ce qui a ete lu, ou ce que le systeme a dit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+    /// Le nom d'une route qu'aucune fiche ne porte (`route_inconnue`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route: Option<String>,
+    /// Le rang d'un engagement dans son fichier (`engagement::stock`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rang: Option<usize>,
+    /// L'installation qu'un dossier n'est pas (`compagnie::administrateur`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    installation: Option<String>,
+    /// Le condensat d'une archive alteree, et celui qu'annonce la version publiee (`compagnie::maj`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    condensat: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attendu: Option<String>,
+    /// La zone d'un export comptable trop longue (`documents::etats_compta`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zone: Option<String>,
+    /// Le format des libelles courts a poser, et combien (`documents::etats_compta`) : la page y mene.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    libelles_courts: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nombre: Option<usize>,
+    /// Le marqueur d'un modele de contrat en cause, ce qu'il faut ecrire, ou apres quoi (`documents::contrat`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marqueur: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a_ecrire: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apres: Option<String>,
+    /// Les anomalies d'une fiche refusee, et leur nombre en mots (`routes::fiches`) : la page les montre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anomalies: Option<Vec<declarations::champs::Anomalie>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    erreurs_dit: Option<String>,
+    /// Ou en est ce qui refuse un depot (`compagnie::depot_acte`) : la DSN du mois, ou le test du fichier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    etat: Option<EtatAPart>,
+}
+
+/// L'ETAT QU'UN REFUS DE DEPOT PORTE A PART : celui de la DSN du mois (une seconde DSN normale), ou celui du test du
+/// fichier (un depot reel sans test conforme). Chacun se reconnait a ses cases.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum EtatAPart {
+    Dsn(crate::compagnie::etat_dsn::EtatDsn),
+    Test(Box<envois::etats::Repetition>),
+}
+
+/// Ce qu'un message de refus porte a part, case par case : la premiere ecrite garde la case (une phrase qu'on prefixe
+/// garde ce qu'elle porte).
+macro_rules! reunir {
+    ($a:ident, $b:ident, $($c:ident),*) => {
+        $( if $a.$c.is_none() { $a.$c = $b.$c; } )*
+    };
+}
 
 impl APart {
     /// Le refus ne porte-t-il rien a part ?
     pub fn est_vide(&self) -> bool {
-        self.0.is_empty()
+        socle::ecriture::json_en_ligne(self) == "{}"
     }
+
+    /// Ce que porte aussi `autre`, la ou rien n'est deja dit.
+    fn reunir(&mut self, autre: APart) {
+        reunir!(self, autre, chemin, fichier, cle, detail, route, rang, installation, condensat, attendu, zone, libelles_courts, nombre, marqueur, a_ecrire, apres, anomalies, erreurs_dit, etat);
+    }
+}
+
+/// LE MESSAGE D'UN REFUS SEPARE : sa phrase, et ce qu'il porte a part, lu en sa forme (`socle::echec::avec` ecrit l'un
+/// apres l'autre, un caractere `A_PART` entre eux). Ce qui ne se lit pas en sa forme se dit (le refus de la lecture).
+fn separer(message: &str) -> (String, Result<APart, String>) {
+    let mut morceaux = message.split(socle::echec::A_PART);
+    let mut phrase = String::new();
+    let mut a_part = Ok(APart::default());
+    if let Some(tete) = morceaux.next() {
+        phrase.push_str(tete);
+    }
+    for m in morceaux {
+        match socle::forme::objet_en_tete(m) {
+            Some(n) => {
+                let lu = socle::forme::lire_texte::<APart>(&m[..n], "Ce qu'un refus porte à part ne se lit pas.");
+                a_part = match (a_part, lu) {
+                    (Ok(mut a), Ok(b)) => {
+                        a.reunir(b);
+                        Ok(a)
+                    }
+                    (Err(e), _) | (Ok(_), Err(e)) => Err(e),
+                };
+                phrase.push_str(&m[n..]);
+            }
+            None => phrase.push_str(m),
+        }
+    }
+    (phrase, a_part)
 }
 
 impl Refus {
     /// Le refus `e` de la route `route` (aucune : la demande ne s'est pas lue) : sa phrase, separee de ce qu'elle porte a
     /// part (`socle::echec::avec`), et ce que la fiche de la route dit de corriger pour sa classe.
+    ///
+    /// Ce qu'il porte a part et qui ne se lit pas en sa forme (`APart`) est un defaut du logiciel : le refus le dit, sa
+    /// phrase gardee, la raison a part.
     pub fn de(route: Option<Route>, e: Echec) -> Refus {
-        let (phrase, a_part) = crate::valeur::separer(&e.message);
-        let corriger = match (route, e.classe) {
-            (Some(r), Some(c)) => catalogue::catalogue().iter().filter(|f| f.route == r).flat_map(|f| f.refus.iter()).find(|x| x.classe == c).map(|x| x.corriger),
+        let (phrase, a_part) = separer(&e.message);
+        let (classe, phrase, a_part) = match a_part {
+            Ok(a) => (e.classe, phrase, Some(a).filter(|a| !a.est_vide())),
+            Err(illisible) => (
+                Some(Classe::DefautDuLogiciel),
+                format!("Défaut du logiciel : ce que ce refus porte à part ne se lit pas. {}", phrase),
+                Some(APart { detail: Some(socle::echec::phrase_de(&illisible)), ..APart::default() }),
+            ),
+        };
+        let corriger = match (route, classe) {
+            (Some(r), Some(c)) => catalogue::catalogue().iter().filter(|f| f.route == r).flat_map(|f| f.refus.iter()).find(|x| x.classe == c).map(|x| x.corriger.to_string()),
             _ => None,
         };
-        Refus { classe: e.classe, phrase, corriger, a_part: APart(a_part) }
+        Refus { classe, phrase, corriger, a_part }
     }
 
     /// Un refus de classe `classe`, en une phrase, sans rien a part : celui de la fenetre, avant ou autour d'une route.
     pub fn nouveau(classe: Classe, phrase: impl Into<String>) -> Refus {
-        Refus { classe: Some(classe), phrase: phrase.into(), corriger: None, a_part: APart::default() }
+        Refus { classe: Some(classe), phrase: phrase.into(), corriger: None, a_part: None }
     }
 }
 
@@ -350,6 +505,29 @@ impl Serialize for Reponse {
     }
 }
 
+/// La reponse telle qu'elle se relit (une reponse gardee, `etat_garde`) : rendue, elle porte son resultat ; refusee, son
+/// refus ; jamais les deux.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReponseLue {
+    ok: bool,
+    ecrit: bool,
+    resultat: Option<Value>,
+    refus: Option<Refus>,
+}
+
+impl<'de> Deserialize<'de> for Reponse {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Reponse, D::Error> {
+        let r = ReponseLue::deserialize(d)?;
+        let issue = match (r.ok, r.resultat, r.refus) {
+            (true, Some(v @ Value::Object(_)), None) => Ok(v),
+            (false, None, Some(refus)) => Err(refus),
+            _ => return Err(serde::de::Error::custom("une réponse rendue porte son résultat (un objet), une réponse refusée son refus, et rien d'autre")),
+        };
+        Ok(Reponse { ecrit: r.ecrit, issue })
+    }
+}
+
 impl Reponse {
     /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus.
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
@@ -373,7 +551,7 @@ impl Reponse {
     }
 
     /// Ce que la route a rendu, s'il y a lieu.
-    pub fn resultat(&self) -> Option<&Value> {
+    fn resultat(&self) -> Option<&Value> {
         match &self.issue {
             Ok(v) => Some(v),
             Err(Refus { .. }) => None,
@@ -385,9 +563,30 @@ impl Reponse {
         self.issue.as_ref().err()
     }
 
-    /// Le rendu ou le refus, pris.
-    pub fn en_resultat(self) -> Result<Value, Refus> {
-        self.issue
+    /// LE RENDU LU EN SA FORME `T` (ce qu'une route rend, relu par le moteur qui l'a demandee : la fenetre, le banc), ou
+    /// le refus. Un rendu qui n'a pas la forme attendue est un defaut du logiciel.
+    pub fn lire<T: DeserializeOwned>(&self) -> Result<T, Refus> {
+        match &self.issue {
+            Ok(v) => socle::forme::lire(v, "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, erreur(Classe::DefautDuLogiciel, m))),
+            Err(r) => Err(r.clone()),
+        }
+    }
+
+    /// LES TEXTES DE LA LISTE QUE LE RENDU PORTE A `cle` (les pas que l'horloge d'une fictive a joues : `phrases` de
+    /// `horloge-rattraper`, `horloge` de `ouverture`) ; aucun pour un refus.
+    pub fn textes(&self, cle: &str) -> Vec<String> {
+        match &self.issue {
+            Ok(v) => v.get(cle).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from).collect(),
+            Err(Refus { .. }) => Vec::new(),
+        }
+    }
+
+    /// Le refus, s'il y a lieu, pris ; le rendu ne se lit pas ici (`lire`).
+    pub fn en_refus(self) -> Result<(), Refus> {
+        match self.issue {
+            Ok(_) => Ok(()),
+            Err(r) => Err(r),
+        }
     }
 
     /// La reponse en JSON : ce que `moteur route` imprime et ce que `/api/<route>` rend. Un rendu et un refus sont des
@@ -404,7 +603,7 @@ impl Reponse {
     pub fn en_texte(&self, route: &str) -> String {
         let r = match &self.issue {
             Err(r) => {
-                return match r.corriger {
+                return match &r.corriger {
                     Some(c) => format!("Refus : {}\nÀ corriger : {}\n", r.phrase, c),
                     None => format!("Refus : {}\n", r.phrase),
                 };

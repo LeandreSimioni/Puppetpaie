@@ -19,7 +19,7 @@ use socle::mois::Mois;
 /// Où en est la DSN d'un mois : « passee », « attente », « refusee » (le journal) ; « importee » (la DSN de l'ancien
 /// logiciel) ; « sans_trace » (un mois tenu avant dont rien ne garde la DSN, qui ne se réclame pas) ; « a_deposer » (un
 /// mois de ce logiciel dont la DSN n'est pas partie).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Etat {
     Passee,
@@ -33,7 +33,9 @@ pub(crate) enum Etat {
 /// L'état de la DSN d'un mois : `etat`, ce que l'écran en dit (`courte`, `phrase` ; aucun mot pour une DSN à déposer),
 /// le jour du dépôt (`quand`, au journal), et pour une DSN du journal les `anomalies` du bilan et si France Travail a
 /// renvoyé l'attestation employeur qu'il en édite (`aer_recue`).
-#[derive(Debug, Clone, Serialize)]
+/// Il se relit avec la reponse qui le porte (le refus d'une seconde DSN du mois, `routes::enveloppe::APart`).
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EtatDsn {
     pub(crate) etat: Etat,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,18 +101,12 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         return Ok(EtatDsn { etat, courte: Some(courte), phrase: Some(phrase), quand: Some(e.quand), anomalies: Some(e.anomalies), aer_recue: Some(e.aer_recue) });
     }
     if let Some(etablie) = crate::import::mois::dsn_importee_le(&ctx.racine, mois)? {
-        let jour = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
-            Some(j) => format!(" (établie le {})", j.jj_mm_aaaa()),
-            None => String::new(),
+        const SANS_BILAN: &str = "aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.";
+        let phrase = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
+            Some(j) => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée (établie le {}) — {}", j.jj_mm_aaaa(), SANS_BILAN),
+            None => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée — {}", SANS_BILAN),
         };
-        return Ok(EtatDsn::dit(
-            Etat::Importee,
-            "déclarée avant PuppetPaie",
-            &format!(
-                "DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée{} — aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.",
-                jour
-            ),
-        ));
+        return Ok(EtatDsn::dit(Etat::Importee, "déclarée avant PuppetPaie", &phrase));
     }
     if !crate::import::mois::importe(&ctx.racine, mois)? {
         return Ok(EtatDsn { etat: Etat::ADeposer, courte: None, phrase: None, quand: None, anomalies: None, aer_recue: None });

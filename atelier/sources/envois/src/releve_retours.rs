@@ -324,6 +324,9 @@ pub fn date_publication(r: &Annonce) -> Option<String> {
 
 // ------------------------------------------------------------------ l'archive des retours
 
+/// Le canal de la DSN, celui de net-entreprises : son archive est `retours/` meme.
+pub const CANAL_DSN: &str = "";
+
 /// `retours/` (la DSN) ou `retours/<canal>/`, cree.
 fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
     let mut p = racine.join(crate::retours::RETOURS);
@@ -699,7 +702,7 @@ pub fn relever_retours_dpae(
     debut: i64,
     fin: i64,
     tout: bool,
-    flux: &str,
+    flux: Option<&str>,
     client: Option<Client>,
     suites: &mut Suites,
 ) -> R<Releve> {
@@ -717,9 +720,9 @@ pub fn relever_retours_dpae(
         r.incidents.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
-    if flux.is_empty() {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), "dpae", suites);
-    }
+    let Some(flux) = flux else {
+        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
+    };
     let mut r = Releve::default();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
     match trouves {

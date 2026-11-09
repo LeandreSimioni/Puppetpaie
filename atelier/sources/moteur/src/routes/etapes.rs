@@ -10,7 +10,7 @@
 //! AUCUN CALCUL D'UN ENGAGEMENT. La saisie se charge sans calculer (`charger_saisie` : les engagements, le contrat qui
 //! deborde, les numeros attribues en memoire).
 //!
-//! LES FORMES. Chaque charge est une structure lue une fois a l'entree (`routes::lire_charge`) ; chaque reponse, une
+//! LES FORMES. Chaque charge est une structure lue une fois a l'entree (`Charge::lire`) ; chaque reponse, une
 //! structure : l'etat d'un engagement (`Ligne`, dont la page lit `LigneDePage`), le bilan du mois (`Bilan`, ses `Etape`
 //! et leurs `Groupe`), les carres d'un engagement (`Carre`), le geste d'un clic (`Action`). Ce que ce module lit d'un
 //! autre domaine se lit tel qu'il est : le journal des envois (`envois::etats` : les DPAE, les signatures, les avenants,
@@ -1597,7 +1597,7 @@ impl<'a> Moteur<'a> {
             let documents = etat_documents(documents_le, bulletin);
             let vue = Vue {
                 salarie: Some(cle.clone()),
-                nom: Some(super::nom_a_l_ecran(sal)),
+                nom: Some(super::nom_a_l_ecran(sal, &cle.to_string())),
                 spectacle,
                 nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
@@ -1633,7 +1633,7 @@ impl<'a> Moteur<'a> {
         let cle = e.salarie.as_ref().map(ToString::to_string);
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.
         let nom = cle.as_deref().map(|c| match self.ctx.salaries.get(c) {
-            Some(f) => super::nom_a_l_ecran(f),
+            Some(f) => super::nom_a_l_ecran(f, c),
             None => c.to_string(),
         });
         let spectacle = match e.spectacle.as_deref().filter(|s| !s.is_empty()) {
@@ -2447,7 +2447,7 @@ impl<'a> Moteur<'a> {
                     mois: le_mois,
                     salarie: cle.to_string(),
                     numero,
-                    nom: super::nom_a_l_ecran(&p.salarie),
+                    nom: super::nom_a_l_ecran(&p.salarie, &cle.to_string()),
                     spectacle: titre,
                     debut,
                     fin: p.engagement.fin.map(|f| f.iso()),
@@ -2822,7 +2822,7 @@ fn non_actifs(ctx: &Contexte, mois: &str) -> R<Vec<NonActif>> {
         let cle = b.saisie.carte.salarie.as_ref().map(ToString::to_string);
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.
         let nom = cle.as_deref().map(|c| match ctx.salaries.get(c) {
-            Some(f) => super::nom_a_l_ecran(f).trim().to_string(),
+            Some(f) => super::nom_a_l_ecran(f, c).trim().to_string(),
             None => c.to_string(),
         });
         let debut = Jour::lire(&engagement::debut_brut(b)).map_err(plain)?;

@@ -124,7 +124,7 @@ impl Veille {
     /// La route `ouverture`, servie pour la veille sur `charge` ; son refus est l'erreur du passage.
     fn passage(&self, charge: &ChargeOuverture) -> Result<(), Refus> {
         let c = Charge::de_forme(charge).map_err(|e| Refus::de(Some(Route::Ouverture), e))?;
-        route(&self.racine, Route::Ouverture, &c).en_resultat().map(|_| ())
+        route(&self.racine, Route::Ouverture, &c).en_refus()
     }
 
     /// Un passage : la releve d'abord (qui ecrit la trace, et envoie les incidents a l'editeur), puis la sauvegarde seule.

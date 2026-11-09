@@ -38,7 +38,6 @@ use std::sync::{Arc, Condvar, LockResult, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
@@ -47,7 +46,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
-use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu, Reponse};
+use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Porte, Rendu, Reponse};
 use crate::routes::etapes::{Bilan, ChargeMois};
 
 /// Le format du fichier de l'ouverture : un autre se refait avant de se montrer. 5 : le mois a ouvrir en sa forme
@@ -429,7 +428,7 @@ impl Serialize for ALaPage<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             // La reponse telle que la porte l'a ecrite, et non le texte qui la garde.
-            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Value>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
+            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
             ALaPage::Faite(r) => r.serialize(s),
         }
     }
@@ -585,7 +584,7 @@ pub struct ChargeEcranDuMois {
 
 /// Une route du moteur, faite dans ce processus, ecrite comme la page la recoit (l'enveloppe des routes,
 /// `routes::enveloppe::Reponse`).
-fn lecture(o: &HashMap<String, String>, route: Route, charge: &Charge) -> String {
+fn lecture(o: &Options, route: Route, charge: &Charge) -> String {
     socle::ecriture::json_en_ligne(&crate::routes::servir_la_route(o, route, charge))
 }
 
@@ -596,7 +595,7 @@ fn charge_du_mois(mois: Mois) -> R<Charge> {
 
 /// L'etat de `mois`, refait : ses deux etats (`etapes::les_deux_etats`) et ses lectures (`LECTURES`, puis l'apercu de la
 /// saisie enregistree).
-fn refaire_le_mois(o: &HashMap<String, String>, ctx: &Contexte, mois: Mois, empreinte: String) -> R<EtatDuMois> {
+fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -> R<EtatDuMois> {
     let charge = charge_du_mois(mois)?;
     let mut lectures: Vec<(Route, String)> = LECTURES.iter().map(|r| (*r, lecture(o, *r, &charge))).collect();
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
@@ -611,7 +610,7 @@ fn refaire_le_mois(o: &HashMap<String, String>, ctx: &Contexte, mois: Mois, empr
 
 /// L'etat de l'ouverture, refait : les lectures de la page qui s'ouvre (`LECTURES_OUVERTURE`), telles quelles, et le
 /// mois a ouvrir.
-fn refaire_l_ouverture(o: &HashMap<String, String>, ctx: &Contexte, empreinte: String) -> R<EtatDeLOuverture> {
+fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<EtatDeLOuverture> {
     let mut lectures = BTreeMap::new();
     for (route, charge) in LECTURES_OUVERTURE {
         let c: Charge = socle::forme::lire_texte(charge, "La charge d'une lecture de l'ouverture ne se lit pas.")?;
@@ -652,7 +651,7 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
 /// Refait l'etat de `cle` (un mois, ou l'ouverture, qui s'ecrit ; le tableau, s'il n'est plus juste). Ce qui se lit
 /// peut ecrire (une paie validee qui se recalcule d'elle-meme quand on la lit, `engagement::etats::du_mois`) :
 /// l'empreinte d'apres n'est alors plus celle d'avant, et un second passage, sans recalcul cette fois, la retrouve.
-fn refaire(o: &HashMap<String, String>, ctx: &Contexte, cle: Cle) -> R<Garde> {
+fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     for passage in 1..=2 {
         let avant = empreinte(&ctx.racine, cle, &ctx.aujourdhui);
         let garde = match cle {
@@ -695,11 +694,11 @@ fn ouverture_ecrite(racine: &Path) -> Option<EtatDeLOuverture> {
 
 /// L'etat de `cle` (le banc d'essai le rejoue : `atelier::scenario`) : celui de l'ouverture, ecrit, s'il est juste ;
 /// sinon refait.
-pub fn lire(o: &HashMap<String, String>, ctx: &Contexte, cle: &str) -> R<()> {
+pub fn lire(o: &Options, ctx: &Contexte, cle: &str) -> R<()> {
     garde_juste(o, ctx, Cle::lire(cle)?).map(drop)
 }
 
-fn garde_juste(o: &HashMap<String, String>, ctx: &Contexte, cle: Cle) -> R<Garde> {
+fn garde_juste(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     if cle == Cle::Ouverture {
         if let Some(e) = ouverture_ecrite(&ctx.racine).filter(|e| e.empreinte == empreinte(&ctx.racine, cle, &ctx.aujourdhui)) {
             return Ok(Garde::Ouverture(Arc::new(e)));
@@ -711,7 +710,7 @@ fn garde_juste(o: &HashMap<String, String>, ctx: &Contexte, cle: Cle) -> R<Garde
 /// `etat-par-engagement`, `etat-du-mois` et `mois` servis par l'etat du mois, branches sur l'enveloppe : les deux
 /// premiers lisent les etats du mois (`etapes::les_deux_etats`), le troisieme refait tout l'ecran (ses lectures se font
 /// par les routes, d'ou `o`).
-pub fn route(o: &HashMap<String, String>, porte: &Porte, charge: &Charge) -> R<Rendu> {
+pub fn route(o: &Options, porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::EtatParEngagement => {
             let ChargeMois { mois } = charge.lire()?;
@@ -848,12 +847,8 @@ impl Fil {
     }
 
     /// La file de la compagnie `racine`, sur ce fil. `date` : la date des calculs (les tests).
-    pub fn file(self: &Arc<Self>, racine: &Path, date: Option<&str>) -> Arc<FileDesEtats> {
-        let mut o = HashMap::new();
-        o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
-        if let Some(d) = date {
-            o.insert("date".to_string(), d.to_string());
-        }
+    pub fn file(self: &Arc<Self>, racine: &Path, date: Option<Jour>) -> Arc<FileDesEtats> {
+        let o = Options { racine: Some(racine.to_path_buf()), date };
         let f = Arc::new(FileDesEtats {
             o,
             racine: racine.to_path_buf(),
@@ -949,7 +944,7 @@ impl Fil {
 /// qu'aucun etat n'est garde). Un mois deja juste ne se recalcule pas : son passage dans la file ne coute que son
 /// empreinte.
 pub struct FileDesEtats {
-    o: HashMap<String, String>,
+    o: Options,
     racine: PathBuf,
     etat: Mutex<EtatDeLaFile>,
     signal: Condvar,
@@ -959,7 +954,7 @@ pub struct FileDesEtats {
 impl FileDesEtats {
     /// La file de la compagnie `racine`, sur un fil a elle seule. `date` : la date des calculs (`moteur route --date`, les
     /// tests). La fenetre, elle, met toutes ses compagnies sur le meme fil (`Fil::file`).
-    pub fn nouvelle(racine: &Path, date: Option<&str>) -> Arc<FileDesEtats> {
+    pub fn nouvelle(racine: &Path, date: Option<Jour>) -> Arc<FileDesEtats> {
         Fil::nouveau().file(racine, date)
     }
 

@@ -177,32 +177,6 @@ struct ChargeJour {
     jour: String,
 }
 
-/// Ce que le scenario retient du geste `jour` : le jour, et si la compagnie ouverte a passe sa veille.
-#[cfg(feature = "atelier")]
-#[derive(Serialize)]
-struct GesteJour {
-    jour: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    veille: Option<bool>,
-}
-
-/// Ce que le scenario retient du geste `simuler` : la compagnie devenue fictive aux envois simules.
-#[cfg(feature = "atelier")]
-#[derive(Serialize)]
-struct GesteSimuler {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    compagnie: Option<String>,
-}
-
-/// Ce que le scenario retient de son debut : le jour, le logiciel, le format du scenario.
-#[cfg(feature = "atelier")]
-#[derive(Serialize)]
-struct GesteDebut {
-    jour: String,
-    logiciel: String,
-    format: u64,
-}
-
 #[derive(Clone)]
 enum Phase {
     Accueil,
@@ -763,7 +737,8 @@ impl Fenetre {
                 if let Some(e) = enr {
                     // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
                     // seulement la (`scenario::rejouer`).
-                    e.geste("jour", || Ok(((), GesteJour { jour: jour.iso(), veille: ouverte.is_some().then_some(true) })))?;
+                    use crate::atelier::scenario::{Genre, Geste};
+                    e.geste(|| Ok(((), Geste { jour: Some(jour.iso()), veille: ouverte.is_some().then_some(true), ..Geste::du_banc(Genre::Jour) })))?;
                 }
                 self.ecrire(&format!("Banc d'essai : le calendrier avance au {}.\n", jour.iso()));
                 let veille = match phase {
@@ -778,12 +753,13 @@ impl Fenetre {
             }
             "simuler" => {
                 let racine = ouverte.ok_or("Aucune compagnie n'est ouverte.")?;
-                let faire = || {
-                    crate::atelier::scenario::rendre_simulee(&racine).map(|()| ((), GesteSimuler { compagnie: enr.map(|e| e.compagnie(&racine)) }))
-                };
+                use crate::atelier::scenario::{Genre, Geste};
                 match enr {
-                    Some(e) => e.geste("simuler", faire)?,
-                    None => faire().map(|_| ())?,
+                    Some(e) => e.geste(|| {
+                        crate::atelier::scenario::rendre_simulee(&racine)?;
+                        Ok(((), Geste { compagnie: Some(e.compagnie(&racine)?), ..Geste::du_banc(Genre::Simuler) }))
+                    })?,
+                    None => crate::atelier::scenario::rendre_simulee(&racine)?,
                 }
                 self.ecrire("Banc d'essai : la compagnie devient une fictive aux envois simules.\n");
                 Ok(Atelier::Fait { ok: true })
@@ -1111,8 +1087,7 @@ impl Fenetre {
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
         let lire = || -> Result<Vec<u8>, String> {
             let charge = Charge::de_forme(&crate::routes::bulletin::ChargeModele { modele: modele.cle().to_string() }).map_err(|e| e.phrase())?;
-            let v = api::route(&racine, Route::BulletinModeleApercu, &charge).en_resultat().map_err(|x| x.phrase)?;
-            let a: crate::routes::bulletin::ApercuModele = crate::routes::lire_charge(&v).map_err(|e| e.phrase())?;
+            let a: crate::routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| x.phrase)?;
             socle::base64::lire(&a.pdf).map_err(|e| format!("L'aperçu du bulletin ne se lit pas : {}.", e))
         };
         match lire() {
@@ -1304,7 +1279,10 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         Some(d) => Some(crate::atelier::scenario::Enregistreur::demarrer(d, &compagnies::base(), lectures)?),
         None => None,
     };
-    let dernier = enr.and_then(|e| e.dernier_instant());
+    let dernier = match enr {
+        Some(e) => e.dernier_instant()?,
+        None => None,
+    };
     let depart = match (jour, dernier) {
         (Some(j), Some(t)) if socle::temps::instant_de(j, 9) <= t => {
             return Err(socle::echec::avec(
@@ -1323,7 +1301,8 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         // LES ALEAS DU BANC sont ceux du rejeu (`temps::aleas`) : la compagnie du banc et son rejeu s'ecrivent pareil, et
         // `scenario::verifier` le controle. Le banc n'est jamais un poste.
         socle::temps::aleas_fixes();
-        e.geste("debut", || Ok(((), GesteDebut { jour: socle::temps::jour_de_paris().iso(), logiciel: version(), format: crate::atelier::scenario::FORMAT })))?;
+        use crate::atelier::scenario::{Genre, Geste};
+        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(crate::atelier::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
     }
     Ok(reste)
 }

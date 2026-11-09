@@ -72,11 +72,11 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         None => dire!("Retours {}, du {} au {}.", ou, jour_de(debut)?, jour_de(fin)?),
     }
     let tout = args.drapeau("tout");
-    // La releve de la DPAE prend le flux en texte, vide quand elle releve par plage.
-    let r = match (dpae, flux) {
-        (true, Some(f)) => crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, f)?,
-        (true, None) => crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, "")?,
-        (false, _) => crate::compagnie::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, "")?,
+    // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
+    let r = if dpae {
+        crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
+    } else {
+        crate::compagnie::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
     };
     for i in &r.incidents {
         dire!("  {}", i);

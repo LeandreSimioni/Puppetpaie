@@ -3,10 +3,10 @@
 //! leur sert pas, et tombe avec son dernier lecteur.
 
 use rust_decimal::prelude::*;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use socle::date::{repr_flottant, repr_texte, Jour};
-use socle::echec::{erreur, A_PART, R};
+use socle::echec::{erreur, R};
 use socle::fichiers::{attendu, repr};
 use socle::num::{dec_f64, dec_texte, illisible, Resultat};
 
@@ -56,29 +56,6 @@ pub fn en_texte(v: &Value) -> String {
         autre => forme_ecrite(autre),
     }
 }
-
-// ------------------------------------------------------------ un refus
-
-/// La phrase d'un refus, et ce qu'il porte a part (`socle::echec::avec`), reunis d'un bout a l'autre du message.
-pub fn separer(message: &str) -> (String, Map<String, Value>) {
-    let mut morceaux = message.split(A_PART);
-    let mut phrase = morceaux.next().unwrap_or_default().to_string();
-    let mut plus = Map::new();
-    for m in morceaux {
-        let mut lu = serde_json::Deserializer::from_str(m).into_iter::<Value>();
-        match lu.next() {
-            Some(Ok(Value::Object(o))) => {
-                for (k, v) in o {
-                    plus.entry(k).or_insert(v);
-                }
-                phrase.push_str(&m[lu.byte_offset()..]);
-            }
-            _ => phrase.push_str(m),
-        }
-    }
-    (phrase, plus)
-}
-
 
 // ------------------------------------------------------------ un nombre
 

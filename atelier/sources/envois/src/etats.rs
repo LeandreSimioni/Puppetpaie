@@ -636,15 +636,18 @@ pub fn pourquoi_rate(ligne: &Ligne) -> String {
 /// OU EN EST LE TEST D'UN FICHIER (`repetition`) : sa derniere ligne de test conforme (`conforme`), son compte rendu
 /// (`ok`, `ko`, `attendu`, ou rien sans test conforme), les essais rates du meme contenu et ceux d'un contenu d'avant sous
 /// le meme nom, la couleur et les mots de l'encart qui le dit.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// Elle se relit avec la reponse qui la porte (le refus d'un depot reel sans test, `moteur::routes::enveloppe::APart`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Repetition {
     pub empreinte: String,
     pub fichier: String,
     pub conforme: Option<Ligne>,
-    pub compte_rendu: Option<&'static str>,
+    pub compte_rendu: Option<String>,
     pub ratees: Vec<Ligne>,
     pub perimees: Vec<Ligne>,
-    pub couleur: &'static str,
+    pub couleur: String,
     pub motif: Option<String>,
     pub etat: EtatDuTest,
     pub titre: String,
@@ -653,7 +656,7 @@ pub struct Repetition {
 
 /// OU EN EST LE TEST, dit une fois : teste et conforme (le reel peut partir), en test (son compte rendu est attendu),
 /// refuse (ses anomalies : `motif`), ou a faire (jamais essaye, ou un test d'un contenu d'avant).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EtatDuTest {
     Testee,
@@ -740,7 +743,19 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
         ),
         (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
-    Repetition { empreinte: empreinte.to_string(), fichier: nom.to_string(), conforme: conforme.cloned(), compte_rendu, ratees, perimees, couleur, motif, etat, titre, phrase }
+    Repetition {
+        empreinte: empreinte.to_string(),
+        fichier: nom.to_string(),
+        conforme: conforme.cloned(),
+        compte_rendu: compte_rendu.map(String::from),
+        ratees,
+        perimees,
+        couleur: couleur.to_string(),
+        motif,
+        etat,
+        titre,
+        phrase,
+    }
 }
 
 /// La pastille de chaque personne des certificats de conformite que la ligne porte : ce que la page en montre.
@@ -1360,7 +1375,7 @@ mod tests {
             avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, "[]"),
         ];
         let rep = repetition(&l, Acte::Dsn, "eA", "DSN.dsn");
-        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand()), (Some("ok"), "2026-06-01T10:00:00"));
+        assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand()), (Some("ok"), "2026-06-01T10:00:00"));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
         let vide = repetition(&l, Acte::Dpae, "eA", "x");
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));

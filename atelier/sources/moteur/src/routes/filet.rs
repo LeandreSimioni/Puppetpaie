@@ -10,7 +10,6 @@
 //!
 //! Le canal de l'editeur est `editeur.rs` ; jamais d'autre serveur que celui de la configuration.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -202,12 +201,12 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// LE DOSSIER DE L'INSTALLATION QUI GARDE CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (depuis l'accueil, ou en ligne de
 /// commande sans `--racine`) : ses messages, leur depart et l'identite du poste, comme une compagnie les garde dans son
 /// dossier ; aucune compagnie n'y est lue, le message part sans ses renseignements.
-pub fn sans_compagnie(o: &HashMap<String, String>) -> std::path::PathBuf {
+pub fn sans_compagnie(o: &super::enveloppe::Options) -> std::path::PathBuf {
     super::accueil::installation(o).join(".accueil")
 }
 
 /// Une route de ce module, sans compagnie (`sans_compagnie`).
-pub fn route_sans_compagnie(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rendu> {
+pub fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, charge: &Charge) -> R<Rendu> {
     let racine = sans_compagnie(o);
     std::fs::create_dir_all(&racine).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&racine, &e)))?;
     route_de(&racine, nom, charge)

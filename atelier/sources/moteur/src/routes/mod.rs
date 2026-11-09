@@ -30,23 +30,17 @@
 //!    chaque classe qu'elle refuse ;
 //! 5. dans `servir`, son bras est `m::route(&porte, charge)`.
 //!
-//! Ce qui lit encore une charge en JSON hors des routes (`Charge::brute`, `lire_charge`) et rend le sien (`Rendu::brut`)
-//! passe par `brut`, qui s'efface avec le dernier qui s'en sert.
-//!
-//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`) est ici.
+//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`, le nom d'un salarie) est ici.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use socle::echec::{erreur, Classe, Echec, R};
 use crate::service::contexte;
 use catalogue::Route;
-use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
+use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{lire_charge, nom_a_l_ecran};
 
-mod brut;
 pub mod enveloppe;
 pub mod ouverture;
 pub mod depots;
@@ -74,6 +68,15 @@ pub mod mois;
 pub mod accueil;
 pub mod catalogue;
 pub mod affiche;
+
+/// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
+/// designe par sa cle, `cle`.
+pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+    match sal.nomme() {
+        Some(n) => n,
+        None => cle.to_string(),
+    }
+}
 
 /// La pile d'un fil qui sert des routes dans la fenetre : 8 Mo, celle du fil principal d'un `moteur route` sous Linux (un
 /// fil neuf n'en a que 2). Un calcul qui remonte les mois d'avant s'y empile ; un debordement de pile ne se rattrape pas
@@ -105,7 +108,7 @@ pub(crate) fn remettre_le_fil() {
 ///
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
-pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Charge) -> Reponse {
+pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
     let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servir_la_route(o, route, charge)));
     remettre_le_fil();
     match rendu {
@@ -123,7 +126,7 @@ pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Charg
 
 /// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets
 /// (`Charge::sans_les_secrets` : l'entree standard est celle d'un programme), puis servie.
-pub fn commande(o: &HashMap<String, String>, entree: &str) -> Reponse {
+pub fn commande(o: &Options, entree: &str) -> Reponse {
     match Demande::lire(entree) {
         Ok(mut d) => {
             d.charge.sans_les_secrets(d.route);
@@ -134,7 +137,7 @@ pub fn commande(o: &HashMap<String, String>, entree: &str) -> Reponse {
 }
 
 /// La route `route` servie sur `charge`, et ce que l'ecran et le LLM en lisent (`Reponse`).
-pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge: &Charge) -> Reponse {
+pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Reponse {
     // Le code livre ne bouge pas le temps de la route : ses signatures se lisent une fois (`fichiers::code_fige`).
     let _code = socle::fichiers::code_fige();
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
@@ -156,7 +159,7 @@ pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge:
 }
 
 /// LA ROUTE `route` SERVIE : ce qu'elle rend, ou son refus. L'aiguillage, rien d'autre.
-fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu> {
+fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // Le mot de passe du logiciel tape pour cette route ouvre aussi le coffre (`coffre::retenir_mot_de_passe_tape`) ;
     // dans la fenetre, le temps de cette route seulement (`dans_la_fenetre`).
     if let Some(m) = charge.mot_de_passe() {

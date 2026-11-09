@@ -5,7 +5,7 @@
 //!
 //! L'apercu ne fait que lire : il nomme les pieces dues a chacun, que l'envoi fabrique.
 //!
-//! Chaque charge et chaque reponse est une forme declaree ici, lue une fois (`routes::lire_charge`) ; l'horloge d'une
+//! Chaque charge et chaque reponse est une forme declaree ici, lue une fois (`Charge::lire`) ; l'horloge d'une
 //! compagnie fictive appelle les memes fonctions, sur les memes formes.
 
 use droit::fiche::Lue as _;
@@ -836,17 +836,14 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
 /// plus la, celui que sa paie porte (`de_la_paie`).
 fn nom_a_l_ecran(ctx: &Contexte, cle: &str, de_la_paie: &str) -> String {
     match ctx.salaries.get(cle) {
-        Some(s) => super::nom_a_l_ecran(s),
+        Some(s) => super::nom_a_l_ecran(s, cle),
         None => de_la_paie.to_string(),
     }
 }
 
 /// Le nom d'un salarie tel que sa paie le porte (`ChampsSalarie::nomme`) ; une fiche sans nom se designe par sa cle.
 fn nom_du_salarie(s: &droit::fiche::SalarieDuContrat) -> String {
-    match s.nomme() {
-        Some(n) => n,
-        None => s.id.to_string(),
-    }
+    super::nom_a_l_ecran(s, &s.id.to_string())
 }
 
 /// Les messages, le compte verifie -- rien n'est parti.

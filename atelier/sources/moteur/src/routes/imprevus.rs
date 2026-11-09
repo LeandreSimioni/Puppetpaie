@@ -1866,7 +1866,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let dossier = ctx.racine.join("sorties").join(&mois);
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
-        phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::routes::nom_a_l_ecran(&p.salarie)),
+        phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::routes::nom_a_l_ecran(&p.salarie, &cle.to_string())),
         certificat: certificat.to_string_lossy().into_owned(),
         recu: recu.to_string_lossy().into_owned(),
         dossier: dossier.to_string_lossy().into_owned(),
