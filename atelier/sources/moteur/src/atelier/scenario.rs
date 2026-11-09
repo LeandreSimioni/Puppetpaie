@@ -400,8 +400,7 @@ fn rejouer_les_gestes(
                     continue;
                 };
                 let cle = g.get("cle").and_then(Value::as_str).ok_or(format!("geste {} : `etat` sans cle", n))?;
-                let mut o = std::collections::HashMap::new();
-                o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
+                let o = crate::routes::enveloppe::Options::de_la_compagnie(racine);
                 let refait = crate::service::contexte(&o).map_err(|m| socle::echec::Echec { classe: None, message: m }).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
                 crate::routes::remettre_le_fil();
                 // Comme une route : l'etat refait reussit, ou refuse, comme il l'a fait au banc (`ok`, vrai par defaut).
@@ -437,8 +436,7 @@ fn rejouer_les_gestes(
                     continue;
                 }
                 let charge = poser_les_pieces(scenario, racine, travail, n, g)?;
-                let mut o = std::collections::HashMap::new();
-                o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
+                let o = crate::routes::enveloppe::Options::de_la_compagnie(racine);
                 let rep = match (route, crate::routes::enveloppe::Charge::de(charge)) {
                     (Some(route), Ok(charge)) => crate::routes::dans_la_fenetre(&o, route, &charge).en_json(),
                     (Some(route), Err(e)) => crate::routes::enveloppe::Reponse::de(route, Err(e)).en_json(),

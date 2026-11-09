@@ -40,7 +40,7 @@
 
 use socle::date::jj_mm_aaaa;
 use socle::echec::Classe;
-use std::collections::HashMap;
+use crate::routes::enveloppe::Options;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -806,14 +806,12 @@ pub fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     Ok(t)
 }
 
-fn o_de(o: &HashMap<String, String>, racine: &Path) -> HashMap<String, String> {
-    let mut c = o.clone();
-    c.insert("racine".into(), racine.to_string_lossy().into_owned());
-    c
+fn o_de(o: &Options, racine: &Path) -> Options {
+    Options { racine: Some(racine.to_path_buf()), date: o.date }
 }
 
 /// Le tableau d'une compagnie, refait (sa propre compagnie de routes, sa racine en argument) ; son refus en phrase.
-fn refaire_compagnie(o: &HashMap<String, String>, racine: &Path) -> Result<TableauCompagnie, String> {
+fn refaire_compagnie(o: &Options, racine: &Path) -> Result<TableauCompagnie, String> {
     let oc = o_de(o, racine);
     let ctx = crate::service::contexte(&oc)?;
     tableau_compagnie(&ctx).map_err(|e| e.message)
@@ -959,7 +957,7 @@ pub fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
 
 /// Le tableau refait, compagnie par compagnie. `relever` : avant, pour ce qui est parti en test et attend son compte rendu,
 /// aller le chercher (la route `bilan-repetition` de la compagnie, comme la page d'une compagnie le fait).
-pub fn tableau(o: &HashMap<String, String>, inst: &Path, relever: bool) -> R<TableauAdministrateur> {
+pub fn tableau(o: &Options, inst: &Path, relever: bool) -> R<TableauAdministrateur> {
     let mut par = Vec::new();
     for r in rattachees(inst)? {
         if relever {
@@ -1038,7 +1036,7 @@ impl Dite for SuivisDuGroupe {
 /// LE SUIVI DU DEPOT GROUPE, juste apres un depot reel : chaque declaration partie se suit dans sa compagnie, par la meme
 /// lecture que la page d'une compagnie (`routes::depots::suivre_depot`). Une compagnie que le registre ne nomme pas se
 /// refuse. Une LECTURE : rien ne part.
-pub fn suivre(o: &HashMap<String, String>, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGroupe> {
+pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGroupe> {
     let groupe = rattachees(inst)?;
     let mut suivies = Vec::new();
     for s in a_suivre {
@@ -1083,7 +1081,7 @@ impl Dite for DepotGroupe {
 /// de l'administrateur part, compagnie par compagnie, par la route `deposer` de chacune. `motdepasse` (reel) : celui que la
 /// fenetre a fait taper au moment de l'acte ; sans lui, le moteur le demande a un humain. Rend, declaration par
 /// declaration, ce qui est parti et ce qui a refuse, et le tableau refait.
-pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse: Option<String>) -> R<DepotGroupe> {
+pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>) -> R<DepotGroupe> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));

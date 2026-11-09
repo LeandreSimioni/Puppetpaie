@@ -63,8 +63,7 @@ thread_local! {
 }
 
 fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
-    let mut o = std::collections::HashMap::new();
-    o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
+    let o = crate::routes::enveloppe::Options::de_la_compagnie(racine);
     // LE BANC D'ESSAI (l'atelier seulement) : chaque route que la fenetre sert -- la page, la veille, le fil de fond --
     // passe par l'enregistreur, qui garde celles qu'il enregistre dans le scenario, avec leur charge et leur instant
     // (`scenario::Enregistreur::route`).
@@ -198,7 +197,7 @@ struct GesteAjouter {
 /// UNE ROUTE DE L'INSTALLATION (`routes::accueil` : l'accueil des compagnies), servie sans compagnie : l'installation est
 /// celle du programme.
 pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
-    let o = std::collections::HashMap::new();
+    let o = crate::routes::enveloppe::Options::sans_compagnie();
     // LE BANC D'ESSAI (l'atelier seulement) : une compagnie ajoutee entre dans le scenario comme le decor de depart que le
     // rejeu refait (`scenario::rejouer`, le geste `ajouter`).
     #[cfg(feature = "atelier")]
@@ -226,7 +225,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     // Le message ecrit a l'accueil part en fond, comme celui d'une compagnie (`signalements_en_fond`).
     if nom == Route::SignalementEnvoyer && rendu.est_rendue() {
         crate::routes::fil_de_routes(move || {
-            if let Some(x) = crate::routes::dans_la_fenetre(&std::collections::HashMap::new(), Route::SignalementsPartir, &Charge::vide()).refus() {
+            if let Some(x) = crate::routes::dans_la_fenetre(&crate::routes::enveloppe::Options::sans_compagnie(),Route::SignalementsPartir, &Charge::vide()).refus() {
                 crate::compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
             }
         });

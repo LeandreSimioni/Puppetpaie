@@ -172,7 +172,30 @@ impl Charge {
 pub struct Porte<'a> {
     pub route: Route,
     pub ctx: &'a droit::contexte::Contexte,
-    pub options: &'a std::collections::HashMap<String, String>,
+    pub options: &'a Options,
+}
+
+/// LES OPTIONS D'UNE COMMANDE, a cote de sa demande : la compagnie (`--racine`) et l'aujourd'hui de la route (`--date`).
+/// La fenetre pose toujours la compagnie ; `moteur route` les lit de sa ligne de commande (`service::options`).
+#[derive(Clone, Debug)]
+pub struct Options {
+    /// La compagnie nommee. Sans elle, `PUPPETPAIE_DONNEES` (`moteur route` lance a la main ou par un test), sinon le
+    /// dossier du code (`service::racine_de`) ; une route de l'installation se sert alors sur celle du programme.
+    pub racine: Option<std::path::PathBuf>,
+    /// Le jour de la route : celui du contexte, et celui de l'horloge qui date ce qu'elle ecrit. Sans lui, aujourd'hui.
+    pub date: Option<socle::date::Jour>,
+}
+
+impl Options {
+    /// Les options d'une route servie sans compagnie (l'accueil, un message au developpeur depuis l'accueil).
+    pub fn sans_compagnie() -> Options {
+        Options { racine: None, date: None }
+    }
+
+    /// Les options d'une route servie sur la compagnie `racine`, au jour de l'horloge.
+    pub fn de_la_compagnie(racine: &std::path::Path) -> Options {
+        Options { racine: Some(racine.to_path_buf()), date: None }
+    }
 }
 
 // ------------------------------------------------------------------------------------------------- ce qu'une route rend

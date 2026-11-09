@@ -12,7 +12,6 @@
 //! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de l'accueil :
 //! il n'a pas de route, son geste n'existe qu'a l'ecran.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -21,7 +20,7 @@ use crate::compagnie::administrateur;
 use crate::interface::{compagnies, suppression};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
-use crate::routes::enveloppe::{en_json, Charge, Dite, Rendu};
+use crate::routes::enveloppe::{en_json, Charge, Dite, Options, Rendu};
 use socle::echec::{erreur, Classe, Echec, R};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -160,9 +159,9 @@ pub const ROUTES: &[Fiche] = &[
 ];
 
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
-pub fn installation(o: &HashMap<String, String>) -> PathBuf {
-    match o.get("racine").filter(|r| !r.is_empty()) {
-        Some(r) => administrateur::installation_de(std::path::Path::new(r)),
+pub fn installation(o: &Options) -> PathBuf {
+    match &o.racine {
+        Some(r) => administrateur::installation_de(r),
         None => compagnies::base(),
     }
 }
@@ -321,15 +320,15 @@ impl Dite for Gardees {
 
 /// Une route de l'installation, branchee sur l'enveloppe. Le tableau de l'administrateur, son depot groupe et le dossier
 /// portable rendent ce que `compagnie::administrateur` et `compagnie::maj` ecrivent.
-pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rendu> {
+pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
-    if let Some(r) = o.get("racine").filter(|r| !r.is_empty()) {
-        if !std::path::Path::new(r).join(droit::contexte::ENTREPRISE).is_file() {
+    if let Some(r) = &o.racine {
+        if !r.join(droit::contexte::ENTREPRISE).is_file() {
             return Err(operation(socle::echec::avec(
                 "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
                 socle::echec::APart {
-                    chemin: Some(r.clone()),
+                    chemin: Some(r.to_string_lossy().into_owned()),
                     detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
                     ..socle::echec::APart::default()
                 },

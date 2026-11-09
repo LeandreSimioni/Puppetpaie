@@ -2,51 +2,56 @@
 //! en une ligne de JSON sur la sortie standard (`--texte` : ses phrases) ; un refus sort en code 1. Et ce dont les routes
 //! ont besoin pour lire la compagnie (`contexte`).
 
-use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::Classe;
+use socle::echec::{erreur, Classe, R};
 use socle::fichiers::dossier_du_code;
 use socle::num::Resultat;
 
 use crate::routes::catalogue::Route;
-use crate::routes::enveloppe::{Refus, Reponse};
+use crate::routes::enveloppe::{Options, Refus, Reponse};
 
-pub(crate) fn options(args: &[String]) -> Option<HashMap<String, String>> {
-    let mut o = HashMap::new();
+/// Les options de `moteur route` (`--racine R`, `--date D`), en leur forme. `None` : la commande est mal dite (usage) ;
+/// une date qui ne se lit pas refuse la route (`Illisible`), rien ne s'ecrit.
+pub(crate) fn options(args: &[String]) -> Option<R<Options>> {
+    let mut o = Options::sans_compagnie();
     let mut i = 0;
     while i < args.len() {
-        let cle = args[i].strip_prefix("--")?;
-        if !["racine", "date"].contains(&cle) {
-            return None;
+        let valeur = args.get(i + 1)?;
+        match args[i].as_str() {
+            "--racine" => o.racine = Some(PathBuf::from(valeur)).filter(|r| !r.as_os_str().is_empty()),
+            "--date" => match Jour::lire(valeur) {
+                Ok(d) => o.date = Some(d),
+                Err(m) => return Some(Err(erreur(Classe::Illisible, m))),
+            },
+            _ => return None,
         }
-        o.insert(cle.to_string(), args.get(i + 1)?.clone());
         i += 2;
     }
-    Some(o)
+    Some(Ok(o))
 }
 
-/// La compagnie d'une commande : `--racine` (`o["racine"]`, toujours pose par la fenetre et la file des etats), sinon,
-/// a la ligne de commande seulement, `PUPPETPAIE_DONNEES` (`moteur route` lance a la main ou par un test).
-pub(crate) fn racine_de(o: &HashMap<String, String>) -> PathBuf {
-    match (o.get("racine"), std::env::var("PUPPETPAIE_DONNEES")) {
-        (Some(r), _) if !r.is_empty() => PathBuf::from(r),
-        (_, Ok(e)) if !e.is_empty() => PathBuf::from(e),
-        _ => dossier_du_code(),
+/// La compagnie d'une commande : `--racine` (toujours pose par la fenetre et la file des etats), sinon, a la ligne de
+/// commande seulement, `PUPPETPAIE_DONNEES` (`moteur route` lance a la main ou par un test).
+pub(crate) fn racine_de(o: &Options) -> PathBuf {
+    match (&o.racine, std::env::var("PUPPETPAIE_DONNEES")) {
+        (Some(r), _) => r.clone(),
+        (None, Ok(e)) if !e.is_empty() => PathBuf::from(e),
+        (None, _) => dossier_du_code(),
     }
 }
 
 /// La route nomme-t-elle une compagnie (`--racine`, ou `PUPPETPAIE_DONNEES`) ?
-pub(crate) fn compagnie_nommee(o: &HashMap<String, String>) -> bool {
-    o.get("racine").is_some_and(|r| !r.is_empty()) || matches!(std::env::var("PUPPETPAIE_DONNEES"), Ok(e) if !e.is_empty())
+pub(crate) fn compagnie_nommee(o: &Options) -> bool {
+    o.racine.is_some() || matches!(std::env::var("PUPPETPAIE_DONNEES"), Ok(e) if !e.is_empty())
 }
 
-pub(crate) fn contexte(o: &HashMap<String, String>) -> Resultat<Contexte> {
-    let date = o.get("date").map(|d| Jour::lire(d)).transpose()?;
-    Contexte::nouveau(&racine_de(o), date)
+/// La compagnie de la route, au jour de la route.
+pub(crate) fn contexte(o: &Options) -> Resultat<Contexte> {
+    Contexte::nouveau(&racine_de(o), o.date)
 }
 
 /// `moteur route [--racine R] [--date D] [--texte]` : la demande sur l'entree standard. `None` : usage.
@@ -60,18 +65,31 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     }
     let texte_seul = args.iter().any(|a| a == "--texte");
     let args: Vec<String> = args.iter().filter(|a| *a != "--texte").cloned().collect();
-    let o = options(&args)?;
+    let lues = options(&args)?;
     // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree.
     crate::commandes::compagnie::fixer_le_code();
+    let mut entree = String::new();
+    let lue = std::io::stdin().read_to_string(&mut entree);
+    let o = match lues {
+        Ok(o) => o,
+        Err(e) => {
+            // Une date qui ne se lit pas : la route ne se sert pas, sa reponse est le refus qui le dit.
+            let refusee = Reponse::refusee(Refus::de(None, e));
+            if texte_seul {
+                dire_sans_ligne!("{}", refusee.en_texte(""));
+            } else {
+                dire!("{}", refusee.en_json());
+            }
+            return Some(1);
+        }
+    };
     // `--date D` est l'aujourd'hui de la route : le jour du contexte, et celui de l'horloge (`socle::temps`, le jour pose)
     // qui date ce qu'elle ecrit. Une seule horloge : chaque ligne du journal porte le jour de la route.
-    // Une date qui ne se lit pas ne pose rien : le contexte de la route la refuse (`contexte`), en le disant.
-    if let Some(Ok(d)) = o.get("date").map(|d| Jour::lire(d)) {
+    if let Some(d) = o.date {
         std::env::set_var("PUPPETPAIE_AUJOURDHUI", d.iso());
     }
     let _canaux = crate::compagnie::demande::installer(crate::compagnie::demande::canal_de_la_route(&racine_de(&o)));
-    let mut entree = String::new();
-    let reponse = match std::io::stdin().read_to_string(&mut entree) {
+    let reponse = match lue {
         Ok(_) => crate::routes::commande(&o, entree.trim_start_matches('\u{feff}')),
         Err(e) => Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e))),
     };
