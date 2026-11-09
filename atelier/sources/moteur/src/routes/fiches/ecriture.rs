@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use declarations::champs::{self, Anomalie, Gravite, Saisie, Valeur};
+use declarations::champs::{self, Anomalie, Apercu, Gravite, Saisie, Valeur};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheDatee, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Lue as _};
 use socle::date::Jour;
@@ -1140,7 +1140,7 @@ pub(crate) struct FicheVerifiee {
     phrase: String,
     phrases: Vec<String>,
     anomalies: Vec<Anomalie>,
-    declare: champs::Apercu,
+    declare: Apercu,
     suggestions: BTreeMap<&'static str, Suggestion>,
 }
 

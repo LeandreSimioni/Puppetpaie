@@ -18,7 +18,7 @@ use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::etapes::Moteur;
 use crate::compagnie::etat_dsn::Etat;
 use super::lire_texte;
-use declarations::champs;
+use declarations::champs::{self, Valeur};
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
 use droit::emplois::{self};
@@ -277,7 +277,7 @@ struct DonneesDeLaFiche<P> {
 #[derive(Debug, Clone, serde::Serialize)]
 struct LigneDHistoire {
     champ: &'static str,
-    valeur: Option<champs::Valeur>,
+    valeur: Option<Valeur>,
     jusqu_au: socle::date::Jour,
     jusqu_au_dit: String,
     note: Option<String>,
@@ -298,7 +298,7 @@ impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
 /// L'HISTOIRE D'UNE FICHE DATEE `brute` : les valeurs qu'une autre a remplacees, chacune dans la forme que sa ligne de
 /// `champs-base.json` lui donne. La page les montre.
 fn histoire_de<F: SorteDeFiche>(brute: Option<&F>) -> R<Vec<LigneDHistoire>> {
-    type Valeurs = Vec<(Option<socle::date::Jour>, R<Option<champs::Valeur>>, Option<String>)>;
+    type Valeurs = Vec<(Option<socle::date::Jour>, R<Option<Valeur>>, Option<String>)>;
     struct Toutes {
         nom: &'static str,
         listes: Vec<(&'static str, Valeurs)>,
@@ -314,7 +314,7 @@ fn histoire_de<F: SorteDeFiche>(brute: Option<&F>) -> R<Vec<LigneDHistoire>> {
     brute.voir_listes(&mut t);
     let mut lignes = Vec::new();
     for (champ, lues) in t.listes {
-        let mut valeurs: Vec<(Option<socle::date::Jour>, Option<champs::Valeur>, Option<String>)> = lues.into_iter().map(|(d, v, n)| v.map(|v| (d, v, n))).collect::<R<_>>()?;
+        let mut valeurs: Vec<(Option<socle::date::Jour>, Option<Valeur>, Option<String>)> = lues.into_iter().map(|(d, v, n)| v.map(|v| (d, v, n))).collect::<R<_>>()?;
         valeurs.sort_by_key(|p| p.0); // stable : a meme date, dans l'ordre ecrit
         for paire in valeurs.windows(2) {
             let Some(depuis) = paire[1].0 else { continue };
@@ -361,7 +361,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
         let detail = siennes.iter().map(|a| a.message.as_str()).collect::<Vec<_>>().join(" ");
         Ok((cases.join(", "), detail))
     };
-    let archivee = comble.case("actif") == Some(&champs::Valeur::OuiNon(false));
+    let archivee = comble.case("actif") == Some(&Valeur::OuiNon(false));
     let pastille = if archivee {
         PastilleDeFiche { pastille: super::Pastille::de("information", "archivé"), detail: None }
     } else if erreurs > 0 {

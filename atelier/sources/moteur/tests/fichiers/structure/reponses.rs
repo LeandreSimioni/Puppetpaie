@@ -109,6 +109,10 @@ pub fn jetons(t: &str) -> Vec<J> {
             }
             v.push(J::Autre);
         } else if x.is_alphabetic() || x == '_' {
+            // UN IDENTIFIANT BRUT (`r#type`) est l'identifiant lui-meme : `type`, la cle que serde ecrit.
+            if x == 'r' && c.get(i + 1) == Some(&'#') && c.get(i + 2).is_some_and(|d| d.is_alphabetic() || *d == '_') {
+                i += 2;
+            }
             let debut = i;
             while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
                 i += 1;
@@ -337,12 +341,14 @@ impl Espace {
 
     fn lire_items(&mut self, fichier: usize, v: &[J]) {
         let mut attrs: Vec<&[J]> = Vec::new();
-        // LE CORPS D'UN `choix! { … }` (`droit::fiche`) : la macro derive `Serialize` sur chaque enum qu'elle declare.
+        // LE CORPS D'UN `choix! { … }`, `cases! { … }`, `fiche! { … }` ou `texte_borne! { … }` (`droit::fiche`) : la macro
+        // derive `Serialize` sur chaque type qu'elle declare (la fiche plate de `fiche!` est celle de `cases!`, chaque case
+        // un `Option` ; un texte borne s'ecrit en texte).
         let mut fin_d_un_choix = 0;
         let mut i = 0;
         while i < v.len() {
             match (&v[i], v.get(i + 1)) {
-                (J::Mot(m), Some(J::P("!"))) if m == "choix" && est(v.get(i + 2), "{") => {
+                (J::Mot(m), Some(J::P("!"))) if matches!(m.as_str(), "choix" | "cases" | "fiche" | "texte_borne") && est(v.get(i + 2), "{") => {
                     fin_d_un_choix = apres_le_groupe(v, i + 2, false);
                     i += 3;
                     continue;
@@ -537,6 +543,16 @@ impl Espace {
     /// L'item `nom`, vu depuis `fichier` : celui du module que son chemin nomme, sinon celui du fichier, sinon celui que
     /// le fichier importe (`use`), sinon le seul de l'espace qui s'ecrive. `Err` dit pourquoi il ne se trouve pas.
     fn item(&self, fichier: usize, module: &[String], nom: &str) -> Result<Option<usize>, String> {
+        // Un chemin qui commence par un module importe (`use declarations::champs;` puis `champs::Valeur`) se lit depuis
+        // ce que l'import nomme.
+        let importe: Vec<String>;
+        let module = match module.first().and_then(|m| self.uses[fichier].get(m)) {
+            Some(chemin) => {
+                importe = chemin.iter().chain(&module[1..]).cloned().collect();
+                &importe[..]
+            }
+            None => module,
+        };
         let (module, nom) = match self.uses[fichier].get(nom) {
             Some(chemin) if module.is_empty() => (&chemin[..chemin.len() - 1], chemin.last().unwrap().as_str()),
             _ => (module, nom),
