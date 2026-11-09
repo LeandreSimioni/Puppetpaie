@@ -865,6 +865,62 @@ pub fn valeur_au<T: Clone>(liste: &[Datee<T>], jour: &Jour) -> Option<T> {
     entrees.into_iter().filter(|e| e.depuis.is_none_or(|j| j <= *jour)).last().and_then(|e| e.valeur.clone())
 }
 
+/// LES TEMPS D'UNE CASE DATEE A UN JOUR (`temps_au`) : la valeur en vigueur, la derniere d'avant, la prochaine a venir,
+/// et toutes, de la plus ancienne a la plus recente.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Temps<T> {
+    /// En vigueur ce jour ; `None` avant la premiere.
+    pub en_vigueur: Option<Datee<T>>,
+    pub avant: Option<Avant<T>>,
+    pub a_venir: Option<AVenir<T>>,
+    /// Toutes, chaque date une fois (a meme date, la derniere ecrite).
+    pub toutes: Vec<Datee<T>>,
+}
+
+/// La derniere valeur d'avant celle en vigueur, et son dernier jour (la veille de celle-ci).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Avant<T> {
+    pub valeur: Option<T>,
+    pub jusqu_au: Jour,
+    pub note: Option<String>,
+}
+
+/// La prochaine valeur, et son premier jour.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AVenir<T> {
+    pub valeur: Option<T>,
+    pub depuis: Jour,
+    pub note: Option<String>,
+}
+
+/// CE QU'UNE CASE DATEE DIT A `jour`, la seule fonction qui le dit : la valeur en vigueur (la meme que `valeur_au`), la
+/// derniere d'avant (jusqu'a la veille de celle en vigueur), la prochaine a venir (la plus proche ; les suivantes sont dans
+/// `toutes`), chacune avec sa note. A meme date, la derniere ecrite.
+pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour) -> Resultat<Temps<T>> {
+    let mut toutes: Vec<Datee<T>> = Vec::new();
+    for e in valeurs_datees(liste) {
+        if toutes.last().is_some_and(|d| d.depuis == e.depuis) {
+            toutes.pop();
+        }
+        toutes.push(e.clone());
+    }
+    let ici = toutes.iter().rposition(|e| e.depuis.is_none_or(|j| j <= *jour));
+    let en_vigueur = ici.map(|i| toutes[i].clone());
+    let avant = match (ici, en_vigueur.as_ref().and_then(|e| e.depuis)) {
+        (Some(i), Some(depuis)) if i > 0 => {
+            let e = &toutes[i - 1];
+            Some(Avant { valeur: e.valeur.clone(), jusqu_au: depuis.plus_jours(-1)?, note: e.note.clone() })
+        }
+        _ => None,
+    };
+    let suivante = match ici {
+        Some(i) => i + 1,
+        None => 0,
+    };
+    let a_venir = toutes.get(suivante).and_then(|e| e.depuis.map(|depuis| AVenir { valeur: e.valeur.clone(), depuis, note: e.note.clone() }));
+    Ok(Temps { en_vigueur, avant, a_venir, toutes })
+}
+
 /// LA CONFIGURATION DE LA COMPAGNIE EST DATEE, comme les baremes : chaque valeur d'une fiche (l'entreprise et sa
 /// convention, ses etablissements, un salarie, un spectacle, les organismes, les rubriques de la compagnie) s'ecrit en
 /// liste datee (`Datee`) et se lit a la date de la periode payee (`valeur_au`), jamais « telle qu'aujourd'hui » : une
