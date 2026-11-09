@@ -303,15 +303,3 @@ pub(crate) fn portees<F: droit::fiche::FicheDatee>(f: &F) -> Vec<(&'static str, 
 pub(crate) fn valeurs_portees<'a>(p: &'a [(&'static str, Vec<Portee>)], cle: &'a str) -> impl Iterator<Item = &'a Value> + 'a {
     p.iter().filter(move |(c, _)| *c == cle).flat_map(|(_, l)| l.iter().map(|x| &x.valeur))
 }
-
-// ------------------------------------------------------------ une charge, un fichier
-
-/// Le JSON d'un fichier : `None` quand le fichier est absent, illisible comme texte ou comme JSON ; un refus du disque se
-/// leve.
-pub(crate) fn lire_tolerant(p: &Path) -> R<Option<Value>> {
-    if !p.exists() {
-        return Ok(None);
-    }
-    let octets = std::fs::read(p).map_err(|e| erreur(socle::echec::Classe::Disque, socle::echec::du_disque(&p, &e)))?;
-    Ok(String::from_utf8(octets).ok().and_then(|t| serde_json::from_str(&t).ok()))
-}

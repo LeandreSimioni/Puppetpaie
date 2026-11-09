@@ -23,7 +23,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
         crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours })?;
     }
     if let Some(d) = &s.depot_refuse {
-        noter_incident_depot(ctx, d);
+        if let Err(e) = noter_incident_depot(ctx, d) {
+            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.message));
+        }
     }
     if !s.taux_pas.is_empty() {
         if let Err(e) = appliquer_taux_pas(ctx, &s.taux_pas) {
@@ -144,24 +146,25 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
 /// alors que la repetition etait conforme.
-fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) {
+fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {
     let apres_test = d.reel && d.repetition.as_ref().is_some_and(|r| r.test.is_some());
-    let _ = crate::compagnie::incidents::noter(
+    crate::compagnie::incidents::noter(
         &ctx.racine,
         &crate::compagnie::incidents::Note {
             nature: if d.quoi == "dsn" { crate::compagnie::incidents::DSN } else { crate::compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi),
             quoi: &d.classe,
             resume: &d.message,
-            detail: socle::ecriture::en_valeur(&DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() }),
+            detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
             ..Default::default()
         },
-    );
+    )?;
+    Ok(())
 }
 
 /// Ce que l'incident d'un depot refuse porte au developpeur : reel ou test, s'il suivait une repetition conforme, et
 /// cette repetition.
-#[derive(serde::Serialize)]
+#[derive(Default, serde::Serialize)]
 struct DetailDuDepotRefuse<'a> {
     reel: bool,
     apres_test_conforme: bool,

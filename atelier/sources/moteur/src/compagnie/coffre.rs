@@ -157,13 +157,24 @@ pub struct EtatService {
 
 /// POURQUOI UN SECRET SE LIT (`Coffre::lire`) : une consultation (relever, verifier, envoyer), ou un depot, qu'un
 /// humain a confirme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Usage {
-    #[serde(rename = "consultation")]
     Consultation,
-    #[serde(rename = "depot")]
     Depot,
+}
+
+impl Usage {
+    fn lu(usage: &str) -> R<Usage> {
+        match usage {
+            CONSULTATION => Ok(Usage::Consultation),
+            DEPOT => Ok(Usage::Depot),
+            _ => Err(refus(format!(
+                "usage doit valoir {} ou {}. Lire un secret sans dire pourquoi n'est pas permis.",
+                repr_chaine(CONSULTATION),
+                repr_chaine(DEPOT)
+            ))),
+        }
+    }
 }
 
 // ------------------------------------------------------------------ les refus
@@ -1057,41 +1068,19 @@ impl Coffre {
             .collect())
     }
 
-    /// `services`, en JSON : ce que lit encore `restauration::a_faire`, par ses cles.
-    pub fn etat(&self) -> R<Vec<serde_json::Value>> {
-        Ok(self.services()?.iter().map(socle::ecriture::en_valeur).collect())
-    }
-
     /// L'adresse posee avec le secret, s'il y en a une.
     pub fn compte_pose(&self, service: &str) -> R<Option<String>> {
         service_connu(service)?;
         Ok(self.fiches()?.remove(service).and_then(|f| f.compte))
     }
 
-    /// `compte_pose`, vide quand aucune n'est posee : ce que lisent encore `routes::ouverture` et `routes::documents`.
-    pub fn compte(&self, service: &str) -> R<String> {
-        Ok(self.compte_pose(service)?.unwrap_or_default())
-    }
-
     /// Le mot de passe du service, ou None. L'environnement l'emporte sur le
     /// coffre. `usage` dit pourquoi il se lit : `CONSULTATION` ou `DEPOT`. `ouverture` : le mot de passe du logiciel,
-    /// quand l'appelant l'a fait taper ; ce module ne le demande jamais. Le service et l'usage sont des textes, lus en
-    /// leur forme (`socle::forme`).
-    pub fn lire<S, U>(&self, service: &S, usage: &U, confirme: bool, ouverture: Option<&str>) -> R<Option<String>>
-    where
-        S: Serialize + ?Sized,
-        U: Serialize + ?Sized,
-    {
-        let service: String = socle::forme::lire(&socle::ecriture::en_valeur(service), "Le service d'un secret est un texte.").map_err(|m| refus(m))?;
-        let fiche = service_connu(&service)?;
+    /// quand l'appelant l'a fait taper ; ce module ne le demande jamais.
+    pub fn lire(&self, service: &str, usage: &str, confirme: bool, ouverture: Option<&str>) -> R<Option<String>> {
+        let fiche = service_connu(service)?;
         let nom = fiche.nom;
-        let usage: Usage = socle::forme::lire(&socle::ecriture::en_valeur(usage), "").map_err(|_| {
-            refus(format!(
-                "usage doit valoir {} ou {}. Lire un secret sans dire pourquoi n'est pas permis.",
-                repr_chaine(CONSULTATION),
-                repr_chaine(DEPOT)
-            ))
-        })?;
+        let usage = Usage::lu(usage)?;
         if usage == Usage::Depot && !confirme {
             return Err(refus(
                 "Un depot ne puise dans le coffre qu'apres confirmation d'un \

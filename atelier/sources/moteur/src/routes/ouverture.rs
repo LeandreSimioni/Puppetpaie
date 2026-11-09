@@ -689,7 +689,10 @@ pub fn boite_liee(ctx: &Contexte) -> R<bool> {
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => a,
-        _ => coffre.compte("courriel").map_err(vers)?,
+        _ => match coffre.compte_pose("courriel").map_err(vers)? {
+            Some(a) => a,
+            None => return Ok(false),
+        },
     };
     if adresse.trim().is_empty() {
         return Ok(false);
@@ -1686,11 +1689,6 @@ impl serde::Serialize for Aides {
 }
 
 
-/// La version d'un logiciel (`maj::courante`).
-pub(crate) fn courante(code: &Path) -> R<String> {
-    crate::compagnie::maj::courante(code).map_err(plain)
-}
-
 /// LA VERSION DU LOGICIEL (`maj-etat`) : l'installee, si l'editeur est pose, le depot d'ou l'on recoit, la version
 /// prete et ce qu'elle dit (`calcul`, `exigee`), la signature, la version d'avant, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1714,6 +1712,7 @@ pub(crate) fn version() -> R<Version> {
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| plain("Le logiciel n'est dans aucune installation."))?;
     let (depot, editeur) = crate::compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
     let prete = crate::compagnie::maj::prete(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
+    let courante = |code: &Path| crate::compagnie::maj::courante(code).map_err(plain);
     let courante_v = courante(&code)?;
     let avant = if code.join(".avant").join("donnees").is_dir() { Some(courante(&code.join(".avant"))?) } else { None };
     let dite = match &prete {

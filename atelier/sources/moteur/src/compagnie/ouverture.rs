@@ -831,13 +831,22 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let bac_a_sable = matches!(std::env::var("PUPPETPAIE_INCIDENTS"), Ok(v) if !v.is_empty());
     if opt.filet && opt.incidents_editeur && !bac_a_sable && (!copie || crate::interface::compagnies::est_fictive(&ctx.racine)) {
         dire_l_etape(ctx, "Serveur de l'éditeur : incidents, messages et réponses…");
-        let _ = crate::compagnie::incidents::envoyer(&ctx.racine);
+        // Ce qui echoue ici ne fait pas refuser l'ouverture : la veille suivante reessaie, et l'ouverture le dit.
+        if let Some(e) = crate::compagnie::incidents::envoyer(&ctx.racine).erreur {
+            r.incidents.push(format!("Incidents chez l'éditeur : {}", e));
+        }
         // LE NOMBRE DE PAIES DE L'ANNEE PASSEE, a partir du 16 janvier, une fois : `nombre_de_paies` decide
         // seul (ni fictive, ni copie de developpement, ni logiciel bride, ni envoi coupe) et retient ce qui est parti.
-        let _ = crate::compagnie::nombre_de_paies::envoyer_si_du(ctx);
+        if let Some(e) = crate::compagnie::nombre_de_paies::envoyer_si_du(ctx).erreur {
+            r.incidents.push(format!("Nombre de paies chez l'éditeur : {}", e));
+        }
         // Les messages « Un probleme, une idee ? » que l'envoi en fond n'a pas fait partir (serveur injoignable...).
-        let _ = crate::compagnie::problemes::partir(&ctx.racine);
-        let _ = crate::compagnie::problemes::relever_reponses(&ctx.racine);
+        if let Some(e) = crate::compagnie::problemes::partir(&ctx.racine).erreur {
+            r.incidents.push(format!("Messages à l'éditeur : {}", e));
+        }
+        if let Err(e) = crate::compagnie::problemes::relever_reponses(&ctx.racine) {
+            r.incidents.push(format!("Réponses de l'éditeur : {}", e.message));
+        }
     }
 
     if let Some(rappel) = apres_releve.as_mut() {

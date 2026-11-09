@@ -590,7 +590,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<u64>(), liste.iter().map(|g| g.en_attente).sum::<u64>());
     // LE NOMBRE DE PAIES DE L'ANNEE se voit dans la meme liste : une entree par annee partie, avec exactement ce qui a
     // quitte le poste. Ce n'est pas un incident : il ne compte ni dans `total`, ni dans `partis`.
-    let annees = crate::compagnie::nombre_de_paies::pour_l_ecran(racine);
+    let annees = crate::compagnie::nombre_de_paies::annees_parties(racine)?;
     for a in &annees {
         liste.push(Groupe {
             quoi: "paies",

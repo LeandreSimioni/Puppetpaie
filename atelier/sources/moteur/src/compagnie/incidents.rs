@@ -847,7 +847,7 @@ pub fn envoi(racine: &Path) -> R<bool> {
     Ok(lire_config(racine)?.envoi != Some(false))
 }
 
-/// `envoi`, pour qui ne peut rien refuser (`nombre_de_paies`, l'import) : une configuration qui ne se lit pas coupe
+/// `envoi`, pour l'import, qui ne peut rien refuser (`import::incident`) : une configuration qui ne se lit pas coupe
 /// l'envoi -- rien ne part tant que la compagnie ne peut pas dire qu'elle le veut --, et le fil le dit.
 pub fn envoi_actif(racine: &Path) -> bool {
     match envoi(racine) {
@@ -960,8 +960,6 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
 
 /// Le canal vers l'editeur, pret a envoyer.
 pub enum Canal {
-    /// Aucun serveur : n'arrive plus, il y a toujours un serveur (`configuration`) ; gardee pour `nombre_de_paies`.
-    Aucun,
     /// Le client, avec l'identite du poste.
     Pret(Client),
     /// L'identite n'a pas pu etre obtenue (reseau, 429).
@@ -1015,7 +1013,6 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
         return Ok(());
     }
     let client = match canal(racine)? {
-        Canal::Aucun => return Ok(()),
         Canal::Panne(e) => {
             bilan.erreur = Some(e.message);
             return Ok(());

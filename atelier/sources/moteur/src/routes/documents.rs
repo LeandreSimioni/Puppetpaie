@@ -696,7 +696,9 @@ fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
         Ok(a) => a,
         Err(std::env::VarError::NotPresent) => {
             let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-            coffre.compte("courriel").map_err(super::vers_route)?
+            coffre.compte_pose("courriel").map_err(super::vers_route)?.ok_or_else(|| {
+                erreur(Classe::Manque, "Le compte de la boîte courriel n'est pas posé : route coffre-poser, service courriel, compte <adresse>.")
+            })?
         }
         Err(e) => return Err(erreur(Classe::Illisible, socle::echec::avec("Le compte de la boîte courriel posé dans l'environnement ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))),
     };

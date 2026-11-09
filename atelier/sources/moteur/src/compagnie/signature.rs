@@ -191,12 +191,10 @@ fn nom_ou_cle(s: &ChampsSalarie, cle: &str) -> String {
 }
 
 /// Ce que le contrat dit, clause par clause (l'avenant qui le modifiera doit citer l'ancien
-/// texte a cote du nouveau). `{}` si le contrat ne s'ecrit pas.
-pub fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte::EntrepriseDuDocument) -> std::collections::BTreeMap<String, Option<String>> {
-    match documents::contrat::valeurs_de_paie(ctx, ent, p) {
-        Ok(v) => CLAUSES_MODIFIABLES.iter().map(|k| (k.nom().to_string(), v.get(k).cloned())).collect(),
-        Err(_) => Default::default(),
-    }
+/// texte a cote du nouveau). Un contrat qui ne s'ecrit pas se refuse.
+pub fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte::EntrepriseDuDocument) -> R<std::collections::BTreeMap<String, Option<String>>> {
+    let v = documents::contrat::valeurs_de_paie(ctx, ent, p)?;
+    Ok(CLAUSES_MODIFIABLES.iter().map(|k| (k.nom().to_string(), v.get(k).cloned())).collect())
 }
 
 /// Le message d'une demande de signature : le texte, sa version HTML avec le bouton « Je signe », le PDF en piece
@@ -335,7 +333,7 @@ fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path,
         effet: None,
         modifie: None,
         modifications: None,
-        clauses: Some(clauses_du_contrat(ctx, p, ent)),
+        clauses: Some(clauses_du_contrat(ctx, p, ent)?),
         code: None,
         adresse: None,
         relance: None,
@@ -916,7 +914,7 @@ fn avenant_ecrit(
         effet: Some(a.effet.clone()),
         modifie: Some(a.modifications.iter().map(|m| m.article.clone()).collect()),
         modifications: Some(a.modifications.clone()),
-        clauses: Some(clauses_du_contrat(ctx, p, &ent)),
+        clauses: Some(clauses_du_contrat(ctx, p, &ent)?),
         code: None,
         adresse: None,
         relance: None,

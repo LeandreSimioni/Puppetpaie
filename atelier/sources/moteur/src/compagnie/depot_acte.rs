@@ -75,7 +75,7 @@ pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
     let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::compagnie::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::routes::ouverture::courante(&code)?)? {
+    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::compagnie::maj::courante(&code).map_err(|m| erreur(Classe::Illisible, m))?)? {
         return Ok(String::new());
     }
     Ok(format!(

@@ -32,7 +32,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
-use serde_json::json;
 
 use crate::compagnie::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, ErreurGoogle};
@@ -377,19 +376,18 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         );
         lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
     } else {
-        match (coffre.ouverture_exigee(), coffre.etat(), coffre.ouvre_a_ce_poste()) {
+        match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.message)),
             (Ok(avec_mot_de_passe), Ok(etat), Ok(ici)) => {
                 let poses: Vec<String> = etat
                     .iter()
-                    .filter(|f| f["pose"] == json!(true))
-                    .map(|f| {
-                        let le = f["pose_le"].as_str().unwrap_or("");
-                        let nom = f["service"].as_str().unwrap_or("");
-                        if le.is_empty() { nom.to_string() } else { format!("{} (pose le {})", nom, le) }
+                    .filter(|f| f.pose)
+                    .map(|f| match &f.pose_le {
+                        Some(le) => format!("{} (pose le {})", f.service, le),
+                        None => f.service.to_string(),
                     })
                     .collect();
-                let manquants: Vec<&str> = etat.iter().filter(|f| f["pose"] != json!(true)).filter_map(|f| f["service"].as_str()).collect();
+                let manquants: Vec<&str> = etat.iter().filter(|f| !f.pose).map(|f| f.service).collect();
                 let porte = if poses.is_empty() { "aucun mot de passe d'organisme".to_string() } else { poses.join(", ") };
                 if ici {
                     lignes.push(format!("Le coffre est revenu et la cle de ce poste l'ouvre. Il porte : {}.", porte));

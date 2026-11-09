@@ -1572,7 +1572,19 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
         documents::contrat::ecrire_contrat(&ctx_j, &paies, &ent, vers, &remplacements).map_err(Echec::from)
     };
     socle::temps::pendant(instant, ecrire)?;
-    let pareils = contrats.iter().zip(&paies).all(|(c, p)| c.clauses.as_ref().is_none_or(|cl| crate::compagnie::signature::clauses_du_contrat(&ctx_j, p, &ent) == *cl));
+    let mut pareils = Ok(true);
+    for (c, p) in contrats.iter().zip(&paies) {
+        if let (Some(cl), Ok(true)) = (&c.clauses, &pareils) {
+            pareils = crate::compagnie::signature::clauses_du_contrat(&ctx_j, p, &ent).map(|refaites| refaites == *cl);
+        }
+    }
+    let pareils = match pareils {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = std::fs::remove_file(vers);
+            return Err(e);
+        }
+    };
     if !pareils {
         let _ = std::fs::remove_file(vers);
         return Err(erreur(Classe::Refuse, format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", nom)));

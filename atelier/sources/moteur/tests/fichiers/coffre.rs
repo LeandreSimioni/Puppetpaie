@@ -26,12 +26,8 @@ fn autre_poste(c: &Coffre) -> Coffre {
     Coffre { racine: c.racine.clone(), dossier_cle: dossier(), maintenant: c.maintenant.clone(), variables: BTreeMap::new() }
 }
 
-fn net() -> Value {
-    json!("net-entreprises")
-}
-
 fn lire(c: &Coffre, ouverture: Option<&str>) -> Result<Option<String>, String> {
-    c.lire(&net(), &json!(CONSULTATION), false, ouverture).map_err(|e| e.message)
+    c.lire("net-entreprises", CONSULTATION, false, ouverture).map_err(|e| e.message)
 }
 
 #[test]
@@ -40,7 +36,7 @@ fn un_secret_se_pose_et_se_relit_sans_etre_en_clair() {
     c.poser("urssaf", "UnSecretTresReconnaissable", None).unwrap();
     let octets = std::fs::read(c.chemin()).unwrap();
     assert!(!String::from_utf8_lossy(&octets).contains("UnSecretTresReconnaissable"));
-    let r = c.lire(&json!("urssaf"), &json!(CONSULTATION), false, None).unwrap();
+    let r = c.lire("urssaf", CONSULTATION, false, None).unwrap();
     assert_eq!(r.as_deref(), Some("UnSecretTresReconnaissable"));
     assert_eq!(lire(&c, None).unwrap(), None);
     assert!(c.pose("urssaf").unwrap() && !c.pose("courriel").unwrap());
@@ -50,7 +46,7 @@ fn un_secret_se_pose_et_se_relit_sans_etre_en_clair() {
 fn l_etat_ne_rend_jamais_la_valeur() {
     let c = coffre();
     c.poser("urssaf", "MotDePasseTresSecret42", None).unwrap();
-    let etat = Value::Array(c.etat().unwrap()).to_string();
+    let etat = serde_json::to_string(&c.services().unwrap()).unwrap();
     assert!(!etat.contains("MotDePasseTresSecret42"));
     assert!(etat.contains("\"pose_le\":\"2026-10-03 14:05\""));
 }
@@ -124,7 +120,7 @@ fn un_fichier_altere_ou_d_une_autre_version_est_refuse() {
         let e = lire(&c, None).unwrap_err();
         assert!(e.contains("n'est pas au format de cette version"), "{:?}", contenu);
         assert!(!c.ouverture_exigee().unwrap());
-        assert!(c.etat().unwrap().iter().all(|s| s["pose"] == false));
+        assert!(c.services().unwrap().iter().all(|s| !s.pose));
     }
 }
 

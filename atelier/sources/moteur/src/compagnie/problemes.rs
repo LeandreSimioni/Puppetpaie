@@ -553,7 +553,6 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         let corps: Corps<CaptureQuiPart> = socle::forme::lire_fichier(&fichier, "Le contenu d'un message au développeur ne se lit pas.")?;
         if client.is_none() {
             match incidents::canal(racine)? {
-                Canal::Aucun => break,
                 Canal::Panne(e) => {
                     panne = Some(e.message);
                     break;
@@ -663,7 +662,6 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         return Ok(0);
     }
     let client = match incidents::canal(racine)? {
-        Canal::Aucun => return Ok(0),
         Canal::Panne(e) if e.est_filet() => return Ok(0), // la veille suivante reessaie
         Canal::Panne(e) => return Err(e.en_echec()),
         Canal::Pret(c) => c,
