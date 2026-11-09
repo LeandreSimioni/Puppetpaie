@@ -4,13 +4,90 @@
 //! `usages-dsn-p27v01-base.json` pour P27V01), choisi d'apres
 //! `S10.G00.00.006` du fichier controle (`norme::du_fichier`).
 
-use socle::fichiers::dossier_du_code;
-use documents::valeur::json_en_cache;
 use crate::norme::Norme;
+use socle::echec::APart;
 use socle::num::Resultat;
-use serde_json::Value;
-use std::collections::HashSet;
+use serde::Deserialize;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+
+/// L'usage d'une rubrique pour une nature : obligatoire, conditionnelle, interdite, sans objet.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Usage {
+    O,
+    C,
+    I,
+    N,
+}
+
+impl Usage {
+    /// La lettre du tableau.
+    pub fn lettre(self) -> &'static str {
+        match self {
+            Usage::O => "O",
+            Usage::C => "C",
+            Usage::I => "I",
+            Usage::N => "N",
+        }
+    }
+}
+
+/// Un tableau des usages (`usages-dsn-base.json`, `usages-dsn-p27v01-base.json`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Table {
+    #[allow(dead_code)]
+    quoi: String,
+    #[allow(dead_code)]
+    note: String,
+    #[allow(dead_code)]
+    sha256_du_pdf: Option<String>,
+    #[allow(dead_code)]
+    sha256_du_classeur: Option<String>,
+    /// Le libelle de chaque nature de declaration.
+    pub natures: BTreeMap<String, String>,
+    #[allow(dead_code)]
+    valeurs: BTreeMap<String, String>,
+    /// Chaque rubrique du tableau.
+    pub usages: BTreeMap<String, Entree>,
+}
+
+/// Une rubrique du tableau : son libelle, son usage pour chaque nature.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Entree {
+    pub libelle: String,
+    #[serde(rename = "01")]
+    mensuelle: Usage,
+    #[serde(rename = "04")]
+    arret: Usage,
+    #[serde(rename = "05")]
+    reprise: Usage,
+    #[serde(rename = "07")]
+    fin_de_contrat: Usage,
+    #[serde(rename = "08")]
+    amorcage: Usage,
+    #[serde(rename = "09")]
+    substitution: Usage,
+    #[serde(rename = "10")]
+    dpae: Usage,
+}
+
+impl Entree {
+    /// L'usage pour la nature `nature` (S20.G00.05.001), `None` pour une nature que le tableau n'a pas.
+    pub fn pour(&self, nature: &str) -> Option<Usage> {
+        match nature {
+            "01" => Some(self.mensuelle),
+            "04" => Some(self.arret),
+            "05" => Some(self.reprise),
+            "07" => Some(self.fin_de_contrat),
+            "08" => Some(self.amorcage),
+            "09" => Some(self.substitution),
+            "10" => Some(self.dpae),
+            _ => None,
+        }
+    }
+}
 
 pub(crate) use socle::texte::{blanc as espace, lignes_du_texte as lignes, strip};
 
@@ -23,8 +100,8 @@ pub fn rubrique_valeur(ligne: &str) -> (&str, &str) {
 }
 
 /// Le tableau des usages de cette version de la norme.
-pub fn table_de(norme: &Norme) -> Resultat<Arc<Value>> {
-    json_en_cache(&dossier_du_code().join(norme.table_usages()?))
+pub fn table_de(norme: &Norme) -> Resultat<Arc<Table>> {
+    crate::norme::livree(&norme.table_usages()?)
 }
 
 /// `S\d\d\.G00\.\d\d\.\d\d\d`, en entier.
@@ -39,36 +116,42 @@ pub fn est_rubrique(r: &str) -> bool {
         && [1, 2, 8, 9, 11, 12, 13].iter().all(|&i| c[i].is_ascii_digit())
 }
 
-fn entree<'a>(t: &'a Value, rubrique: &str) -> Option<&'a Value> {
-    t["usages"].get(rubrique).filter(|v| documents::valeur::vrai(v))
-}
-
 /// La rubrique est-elle au tableau des usages de cette version, quelle que soit la nature ?
 pub fn rubrique_connue(norme: &Norme, rubrique: &str) -> Resultat<bool> {
-    Ok(table_de(norme)?["usages"].get(rubrique).is_some())
+    Ok(table_de(norme)?.usages.contains_key(rubrique))
 }
+
+/// L'usage de la rubrique pour cette nature dans le tableau de cette version ; `None` si le tableau n'a pas la
+/// rubrique, ou pas la nature.
+pub fn usage(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<Option<Usage>> {
+    Ok(table_de(norme)?.usages.get(rubrique).and_then(|e| e.pour(nature)))
+}
+
+/// Ce que `usage_en` rend pour une rubrique ou une nature que le tableau n'a pas.
+const INCONNUE: &str = "";
 
 /// 'O', 'C', 'I', 'N' -- ou "" si la rubrique est inconnue du tableau de cette version.
 pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<String> {
-    let t = table_de(norme)?;
-    Ok(entree(&t, rubrique)
-        .and_then(|e| e.get(nature))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string())
+    Ok(match usage(norme, rubrique, nature)? {
+        Some(u) => u.lettre().to_string(),
+        None => INCONNUE.to_string(),
+    })
 }
 
-/// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage).
-pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> Resultat<Vec<(String, String)>> {
+/// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage, `None` si le tableau ne la connait pas).
+pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> Resultat<Vec<(String, Option<Usage>)>> {
     let mut vues = HashSet::new();
     let mut out = Vec::new();
     for ligne in lignes(texte) {
-        let r = strip(ligne.split(',').next().unwrap_or(""));
+        let r = strip(match ligne.split_once(',') {
+            Some((r, _)) => r,
+            None => ligne,
+        });
         if !est_rubrique(r) || !vues.insert(r.to_string()) {
             continue;
         }
-        let u = usage_en(norme, r, nature)?;
-        if u != "O" && u != "C" {
+        let u = usage(norme, r, nature)?;
+        if !matches!(u, Some(Usage::O | Usage::C)) {
             out.push((r.to_string(), u));
         }
     }
@@ -81,23 +164,19 @@ pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> Resultat<()> {
     if mauvaises.is_empty() {
         return Ok(());
     }
-    let t = table_de(norme)?;
-    let libelle = t["natures"].get(nature).and_then(|v| v.as_str()).unwrap_or(nature);
+    let (t, table) = (table_de(norme)?, norme.table_usages()?);
+    let libelle = t.natures.get(nature).ok_or_else(|| socle::echec::livree(&table, &format!("natures.{}", nature)))?;
     let lignes: Vec<String> = mauvaises
         .iter()
         .map(|(r, u)| {
-            let quoi = match u.as_str() {
-                "I" => "interdite",
-                "N" => "sans objet",
-                "" => "inconnue du tableau",
-                autre => autre,
+            let quoi = match u {
+                Some(Usage::I) => "interdite",
+                Some(Usage::N) => "sans objet",
+                Some(autre) => autre.lettre(),
+                None => "inconnue du tableau",
             };
-            let lib = entree(&t, r)
-                .and_then(|e| e.get("libelle"))
-                .filter(|v| documents::valeur::vrai(v))
-                .and_then(|v| v.as_str());
-            match lib {
-                Some(l) => format!("    {} : {} ({})", r, quoi, l),
+            match t.usages.get(r) {
+                Some(e) => format!("    {} : {} ({})", r, quoi, e.libelle),
                 None => format!("    {} : {}", r, quoi),
             }
         })
@@ -109,18 +188,13 @@ pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> Resultat<()> {
             libelle,
             lignes.join("\n")
         ),
-        serde_json::json!({"fichier": norme.table_usages()?}),
+        APart { fichier: Some(table), ..APart::default() },
     ))
 }
 
 /// La nature declaree dans le fichier lui-meme (S20.G00.05.001).
-pub fn nature_du_fichier(texte: &str) -> String {
-    for ligne in lignes(texte) {
-        if let Some(reste) = ligne.strip_prefix("S20.G00.05.001,") {
-            return strip(reste).trim_matches('\'').to_string();
-        }
-    }
-    String::new()
+pub fn nature_du_fichier(texte: &str) -> Option<String> {
+    lignes(texte).into_iter().find_map(|ligne| ligne.strip_prefix("S20.G00.05.001,").map(|reste| strip(reste).trim_matches('\'').to_string()))
 }
 
 const CCH_14: &str = concat!(
@@ -179,8 +253,8 @@ pub fn verifier_fctu(texte: &str) -> Resultat<()> {
 /// fichier sans version, ou d'une version que le logiciel ne livre pas, refuse.
 pub fn verifier_fichier(texte: &str) -> Resultat<()> {
     let norme = crate::norme::du_fichier(texte)?;
-    let nature = nature_du_fichier(texte);
-    if table_de(&norme)?["natures"].get(&nature).is_some() {
+    let Some(nature) = nature_du_fichier(texte) else { return Ok(()) };
+    if table_de(&norme)?.natures.contains_key(&nature) {
         verifier(texte, &nature, &norme)?;
     }
     if nature == "07" {
@@ -208,7 +282,7 @@ mod tests {
     fn les_usages_2027_sont_ceux_du_cahier_2027() {
         let (p26, p27) = (Norme::connue("P26V01").unwrap(), Norme::connue("P27V01").unwrap());
         let (u26, u27) = (table_de(&p26).unwrap(), table_de(&p27).unwrap());
-        let (a, b) = (u26["usages"].as_object().unwrap(), u27["usages"].as_object().unwrap());
+        let (a, b) = (&u26.usages, &u27.usages);
         let retirees: Vec<&String> = a.keys().filter(|k| !b.contains_key(*k)).collect();
         let ajoutees: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
         assert_eq!(retirees, ["S21.G00.06.003", "S21.G00.11.002"]);

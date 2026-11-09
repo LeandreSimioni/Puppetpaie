@@ -466,9 +466,9 @@ echo '{"route":"etat-du-mois","charge":{"mois":"2026-10"}}' | moteur route --tex
 
 Dans ce texte, « route NOM {charge} » se lit `echo '{"route":"NOM","charge":{…}}' | moteur route`. Un acte réel
 (dépôt, envoi, signature) demande le mot de passe du logiciel à un humain, dans la fenêtre du moteur ou dans son
-terminal, sans écho : il n'entre jamais par l'entrée standard. Une erreur métier reste une réponse —
-`{"ok": false, "erreur": "…", "classe": "AnnuleRemplaceHorsDelai"}` — sur laquelle un appelant branche son
-comportement. Restent des commandes : `moteur coffre` (ce qui est posé, et la séance), `moteur restaurer` (un poste
+terminal, sans écho : il n'entre jamais par l'entrée standard. Un refus reste une réponse —
+`{"ok": false, "ecrit": …, "refus": {"classe": "AnnuleRemplaceHorsDelai", "phrase": "…", "corriger": "…"}}` — sur
+la classe de laquelle un appelant branche son comportement. Restent des commandes : `moteur coffre` (ce qui est posé, et la séance), `moteur restaurer` (un poste
 neuf), `moteur interface` ; `moteur --aide` les liste. Un secret (le mot de passe du logiciel, celui d'un organisme)
 ne se lit jamais dans la charge : la route le fait taper par le moteur.
 
@@ -1259,13 +1259,14 @@ fois l'embauche commencée.
 
 1. **Le taux AT/MP**, et lui seul, si vous êtes une compagnie : l'Assurance
    Maladie le notifie courant janvier (compte AT/MP sur net-entreprises), il
-   est propre à votre établissement, et il s'écrit une fois dans
-   `config/baremes/<année>.json` :
-
-   ```json
-   {"annee": 2027, "socle": 2027,
-    "taux_atmp": {"valeur": 1.50, "code_risque": "923AD"}}
-   ```
+   est propre à votre établissement, et il s'inscrit, avec la date à partir
+   de laquelle il vaut, dans Configuration › Entreprise, « Accidents du
+   travail (AT/MP) », « Inscrire le taux d'une notification » ; reçu avec les
+   retours de la DSN, il s'y inscrit de lui-même. Pour un risque « TC »
+   (92.3AD, le spectacle vivant), le taux collectif de l'arrêté de l'année
+   s'y inscrit à l'ouverture, dès que le logiciel a le barème de l'année. Le
+   taux d'un autre risque ne vaut que pour son année : sans le nouveau, la
+   paie le demande.
 
    Tout le reste — SMIC, plafond de Sécurité sociale, taux Urssaf,
    Agirc-Arrco, chômage, CSG, taux de la branche — est **livré avec le

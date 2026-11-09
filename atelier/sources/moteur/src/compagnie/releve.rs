@@ -2,8 +2,6 @@
 //! passe de consultation pris au coffre (regle 3 : la releve d'`envois` le recoit), puis les suites
 //! (`suites::faire` : les incidents des retours, le rangement des attestations France Travail).
 
-use serde_json::json;
-
 use droit::contexte::Contexte;
 use envois::branchement::Branchement;
 use envois::ordre_signalements::OrdreConnu;
@@ -15,7 +13,7 @@ use socle::echec::{Echec, R};
 /// quand rien n'est pose. Un coffre qui ne s'ouvre pas est un refus, pas une absence.
 pub fn mot_de_passe_de_consultation(ctx: &Contexte, service: &str) -> R<Option<String>> {
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    coffre.lire(&json!(service), &json!(crate::compagnie::coffre::CONSULTATION), false, None).map_err(crate::routes::vers_route)
+    coffre.lire(service, crate::compagnie::coffre::CONSULTATION, false, None).map_err(crate::routes::vers_route)
 }
 
 /// Le client net-entreprises de la consultation, dans le monde seulement : `None` quand aucun mot de passe n'est pose.
@@ -45,10 +43,13 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
     Ok(releve)
 }
 
-/// Releve les retours DSN (ou, `canal = "dpae"` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou celui
-/// de la consultation net-entreprises.
-pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environnement: &str, client: Option<Client>, canal: &str) -> R<Releve> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine);
+/// Releve les retours DSN (ou, `canal = Some("dpae")` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou
+/// celui de la consultation net-entreprises. `canal` : celui de la DSN s'il n'est pas dit.
+pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environnement: &str, client: Option<Client>, canal: Option<&str>) -> R<Releve> {
+    let canal = match canal {
+        Some(c) => c,
+        None => envois::releve_retours::CANAL_DSN,
+    };    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,
@@ -59,8 +60,8 @@ pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environ
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: &str) -> R<Releve> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine);
+pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: Option<&str>) -> R<Releve> {
+    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();
     let r = envois::releve_retours::relever_retours_dpae(ctx, b, debut, fin, tout, flux, client, &mut s);
@@ -83,7 +84,7 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui
 /// de la consultation net-entreprises.
 pub fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine);
+    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, "production")?,

@@ -32,7 +32,7 @@
 use droit::fiche::Lue as _;
 use std::io::Write;
 
-use serde_json::{json, Value};
+use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Description, Document, Marges, Page, TexteFixe, Trait};
 
 use declarations::dsn_lue::{ContratDeclare, DsnLue, IndividuDeclare, Mesures};
 use droit::contexte::Contexte;
@@ -55,9 +55,9 @@ const BLANC: &str = "#FFFFFF";
 
 // ------------------------------------------------------------------ ce que la DSN dit
 
-/// Une valeur de la DSN, vide si elle manque.
-fn t(v: &Option<String>) -> &str {
-    v.as_deref().unwrap_or("")
+/// Une rubrique que la DSN doit porter (`quoi` la dit en mots, `rubrique` va a part).
+fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> Resultat<&'a str> {
+    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique))
 }
 
 /// Le contrat releve-t-il de l'attestation Cinema Spectacle ? Ce que France Travail lit de la DSN : un CDD (40.007 = 02)
@@ -65,8 +65,8 @@ fn t(v: &Option<String>) -> &str {
 /// ESE-S21.G00.40.005 doit être dans la table ART et <> « 999SPT » », `atelier/reference/sources/
 /// net-entreprises-base-connaissances/net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 500-510).
 fn cinema_spectacle(c: &ContratDeclare) -> bool {
-    let emploi = t(&c.emploi.code_emploi_ft);
-    t(&c.nature_dsn) == NATURE_CDD && !emploi.is_empty() && !emploi.eq_ignore_ascii_case(EMPLOI_PERMANENT)
+    c.nature_dsn.as_deref() == Some(NATURE_CDD)
+        && c.emploi.code_emploi_ft.as_deref().is_some_and(|e| !e.is_empty() && !e.eq_ignore_ascii_case(EMPLOI_PERMANENT))
 }
 
 // ------------------------------------------------------------------ les periodes
@@ -74,23 +74,26 @@ fn cinema_spectacle(c: &ContratDeclare) -> bool {
 /// Une colonne du cadre 4 : une periode d'emploi d'un contrat, dans un mois ; `contrat` n'est porte que par la colonne
 /// de sa premiere periode (comme sur le formulaire).
 struct Periode {
-    contrat: Option<(String, String, String, String)>,
+    /// Le numero, le debut, la fin et le numero d'objet (s'il est dit) du contrat.
+    contrat: Option<(String, String, String, Option<String>)>,
     debut: Jour,
     fin: Jour,
     heures: Decimal,
     cachets: Decimal,
     jours: Decimal,
-    brut: Decimal,
-    paiement: String,
+    /// Le brut declare ; sans remuneration declaree ce mois-ci, la case reste a blanc.
+    brut: Option<Decimal>,
+    paiement: Option<String>,
 }
 
-/// La DSN reelle deposee pour `m` (le journal), lue ; `None` si le mois n'en a pas.
-fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> Option<DsnLue> {
-    let l = crate::etats::etat_dsn_du_mois(lignes, m, None, &ctx.entreprise.nic_principal())?;
-    let fichier = l.fichier.filter(|f| !f.is_empty())?;
+/// La DSN reelle deposee pour `m` (le journal), lue ; `None` si le mois n'en a pas. Un fichier depose qui ne se relit
+/// pas refuse.
+fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> Resultat<Option<DsnLue>> {
+    let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic.ecrite("nic")?) else { return Ok(None) };
+    let Some(fichier) = l.fichier.filter(|f| !f.is_empty()) else { return Ok(None) };
     let p = std::path::Path::new(&fichier);
     let chemin = if p.is_absolute() { p.to_path_buf() } else { ctx.racine.join("sorties").join(m.to_string()).join(&fichier) };
-    declarations::dsn_lue::lire_une_dsn(&chemin).ok().flatten()
+    declarations::dsn_lue::lire_une_dsn(&chemin).map_err(|e| e.message)
 }
 
 /// Le jour du premier versement de l'individu `nir` dans la DSN `d`.
@@ -100,57 +103,80 @@ fn paiement_de(d: &DsnLue, nir: &str) -> Option<Jour> {
 
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
 fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> Resultat<Vec<Periode>> {
-    let numero = t(&c.numero);
+    let numero = exigee(&c.numero, "le numéro d'un contrat", "S21.G00.40.009")?;
     let (Some(debut), Some(fin)) = (c.debut, c.fin) else {
         return Err(format!("contrat {} : dates illisibles dans la DSN", numero));
     };
     let mut out = Vec::new();
     // Les mois du contrat avant celui-ci.
     for m in debut.mois_civil().jusqu_a(le_mois.precedent()) {
-        let Some(lue) = dsn_deposee(ctx, lignes, m) else { continue };
+        let Some(lue) = dsn_deposee(ctx, lignes, m)? else { continue };
         if lue.contrats_de(&c.nir).any(|x| x.numero == c.numero) {
             let mesures = lue.mesures(&c.nir, numero, false);
-            out.push(periode(c, &mesures, debut, fin, m, paiement_de(&lue, &c.nir), out.is_empty()));
+            out.push(periode(c, numero, &mesures, debut, fin, m, paiement_de(&lue, &c.nir), out.is_empty()));
         }
     }
     // Un contrat que ce fichier ne porte que pour le rappel d'un mois deja declare (`dsn_lue::Remuneration::rappel`) n'a
     // pas de periode ce mois-ci.
     let mesures = d.mesures(&c.nir, numero, false);
     if mesures.remunere || out.is_empty() {
-        out.push(periode(c, &mesures, debut, fin, le_mois, paiement_de(d, &c.nir), out.is_empty()));
+        out.push(periode(c, numero, &mesures, debut, fin, le_mois, paiement_de(d, &c.nir), out.is_empty()));
     }
     Ok(out)
 }
 
-fn periode(c: &ContratDeclare, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
+#[allow(clippy::too_many_arguments)]
+fn periode(c: &ContratDeclare, numero: &str, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
     let (d, f) = (m.premier_jour(), m.dernier_jour());
     Periode {
-        contrat: premiere.then(|| (t(&c.numero).to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), t(&c.objet).to_string())),
+        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.clone())),
         debut: if debut > d { debut } else { d },
         fin: if fin < f { fin } else { f },
         heures: x.heures,
         cachets: x.cachets,
         jours: x.jours,
-        brut: x.brut.unwrap_or_default(),
-        paiement: paiement.map(|j| j.jj_mm_aaaa()).unwrap_or_default(),
+        brut: x.brut,
+        paiement: paiement.map(|j| j.jj_mm_aaaa()),
     }
 }
 
 // ------------------------------------------------------------------ le dessin
 
-fn texte(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str) -> Value {
-    json!({"type": "texte_fixe", "x": x, "y": y, "texte": t, "taille": taille, "gras": gras, "couleur": couleur})
+/// Un texte pose, aligne par rapport a `x`.
+fn texte_aligne(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str, alignement: Option<Alignement>) -> Bloc {
+    Bloc::TexteFixe(TexteFixe {
+        texte: t.to_string(),
+        x: x as f32,
+        y: y as f32,
+        taille: Some(taille as f32),
+        police: None,
+        gras: Some(gras),
+        couleur: Some(couleur.to_string()),
+        alignement,
+        largeur_max: None,
+    })
 }
 
-fn centre(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str) -> Value {
-    json!({"type": "texte_fixe", "x": x, "y": y, "texte": t, "taille": taille, "gras": gras, "couleur": couleur, "alignement": "centre"})
+fn texte(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str) -> Bloc {
+    texte_aligne(x, y, t, taille, gras, couleur, None)
 }
 
-fn trait_(x1: f64, y1: f64, x2: f64, y2: f64, ep: f64, couleur: &str) -> Value {
-    json!({"type": "trait", "x1": x1, "y1": y1, "x2": x2, "y2": y2, "epaisseur": ep, "couleur": couleur})
+fn centre(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str) -> Bloc {
+    texte_aligne(x, y, t, taille, gras, couleur, Some(Alignement::Centre))
 }
 
-fn case(b: &mut Vec<Value>, r: [f64; 4]) {
+fn trait_(x1: f64, y1: f64, x2: f64, y2: f64, ep: f64, couleur: &str) -> Bloc {
+    Bloc::Trait(Trait {
+        x1: x1 as f32,
+        y1: y1 as f32,
+        x2: x2 as f32,
+        y2: y2 as f32,
+        epaisseur: Some(ep as f32),
+        couleur: Some(couleur.to_string()),
+    })
+}
+
+fn case(b: &mut Vec<Bloc>, r: [f64; 4]) {
     let [x0, y0, x1, y1] = r;
     for (a, bb, c, d) in [(x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)] {
         b.push(trait_(a, bb, c, d, 0.4, GRIS));
@@ -158,43 +184,54 @@ fn case(b: &mut Vec<Value>, r: [f64; 4]) {
 }
 
 /// Un cadre numerote : le numero dans un carre noir, le titre en capitales, un filet.
-fn cadre(b: &mut Vec<Value>, y: f64, n: &str, titre: &str) {
+fn cadre(b: &mut Vec<Bloc>, y: f64, n: &str, titre: &str) {
     b.push(trait_(30.0, y - 4.0, 48.0, y - 4.0, 16.0, NOIR));
     b.push(centre(39.0, y, n, 10.0, true, BLANC));
     b.push(texte(56.0, y, titre, 10.0, true, NOIR));
     b.push(trait_(30.0, y + 6.0, 565.0, y + 6.0, 0.6, NOIR));
 }
 
-fn etiquette(b: &mut Vec<Value>, x: f64, y: f64, t: &str) {
+fn etiquette(b: &mut Vec<Bloc>, x: f64, y: f64, t: &str) {
     b.push(texte(x, y, t, 7.5, false, NOIR));
 }
 
 /// La mention de la compagnie fictive, en tete et en pied de chaque page.
-fn mention(b: &mut Vec<Value>, page: usize) {
+fn mention(b: &mut Vec<Bloc>, page: usize) {
     b.push(trait_(30.0, 48.0, 565.0, 48.0, 18.0, ROUGE));
     b.push(centre(297.6, 51.0, "COMPAGNIE FICTIVE — DOCUMENT DE DÉMONSTRATION : aucun organisme ne l'a émis, il n'a aucune valeur", 8.0, true, BLANC));
     b.push(trait_(30.0, 818.0, 565.0, 818.0, 0.5, ROUGE));
     b.push(texte(30.0, 829.0, "Compagnie fictive : imitation de l'attestation que France Travail édite d'après la DSN, pour la démonstration du logiciel.", 6.5, false, ROUGE));
-    b.push(texte(565.0, 829.0, &format!("{}/3", page), 7.0, false, NOIR));
-    if let Some(Value::Object(o)) = b.last_mut() {
-        o.insert("alignement".into(), json!("droite"));
-    }
+    b.push(texte_aligne(565.0, 829.0, &format!("{}/3", page), 7.0, false, NOIR, Some(Alignement::Droite)));
 }
 
 /// Les champs ajoutes au dessin.
 #[derive(Default)]
-struct Champs(Vec<Value>);
+struct Champs(Vec<ChampAjoute>);
 
 impl Champs {
     /// Imprime (lecture seule) ; une valeur vide n'ecrit pas de champ (le formulaire la laisse a blanc).
-    fn imprime(&mut self, page: usize, nom: &str, r: [f64; 4], v: &str, taille: f64, alignement: &str) {
+    fn imprime(&mut self, page: usize, nom: &str, r: [f64; 4], v: &str, taille: f64, alignement: Alignement) {
         if !v.trim().is_empty() {
-            self.0.push(json!({"nom": nom, "page": page, "rect": r, "valeur": v, "lecture_seule": true, "taille": taille, "alignement": alignement}));
+            self.0.push(ChampAjoute {
+                nom: nom.to_string(),
+                page,
+                rect: r,
+                valeur: Some(v.to_string()),
+                lecture_seule: Some(true),
+                taille: Some(taille),
+                alignement: Some(alignement),
+            });
+        }
+    }
+    /// Une case de la fiche, quand elle est dite.
+    fn imprime_dite(&mut self, page: usize, nom: &str, r: [f64; 4], v: Option<&str>, taille: f64, alignement: Alignement) {
+        if let Some(v) = v {
+            self.imprime(page, nom, r, v, taille, alignement);
         }
     }
     /// A remplir par l'employeur (le cadre 5).
     fn vide(&mut self, nom: &str, r: [f64; 4]) {
-        self.0.push(json!({"nom": nom, "page": 3, "rect": r, "taille": 9}));
+        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r, valeur: None, lecture_seule: None, taille: Some(9.0), alignement: None });
     }
 }
 
@@ -209,17 +246,14 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: &str, motif: &str, idcc: &str, edite_le: Jour, remplace: Option<&str>) -> Resultat<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: &str, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> Resultat<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(format!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
-    fn champ<T: AsRef<str>>(c: &Option<T>) -> String {
-        c.texte().to_string()
-    }
     let premier_contrat = d.contrats_de(&ind.nir).find(|c| cinema_spectacle(c));
-    let (nom, prenoms) = (t(&ind.nom), t(&ind.prenom));
+    let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
     let mut f = Champs::default();
-    let (mut p1, mut p2, mut p3): (Vec<Value>, Vec<Value>, Vec<Value>) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut p1, mut p2, mut p3): (Vec<Bloc>, Vec<Bloc>, Vec<Bloc>) = (Vec::new(), Vec::new(), Vec::new());
 
     // L'en-tete de chaque page : la provenance, le salarie, le logiciel.
     // UNE DSN QUI ANNULE ET REMPLACE (type 03 ou 05, S20.G00.05.002) : France Travail reedite, et l'en-tete le dit, avec
@@ -229,14 +263,14 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         None => format!("Attestation éditée pour la démonstration (compagnie fictive) le {} — imitation : France Travail n'a rien édité", edite_le.jj_mm_aaaa()),
     };
     let qui = format!("{}, {} {}", ind.nir, nom, prenoms);
-    f.imprime(1, "ENTETE_PROVENANCE", [7.0, 5.0, 588.0, 16.0], &provenance, 6.5, "centre");
-    f.imprime(1, "ENTETE_SALARIE", [88.0, 16.0, 571.0, 26.0], &qui, 6.5, "centre");
+    f.imprime(1, "ENTETE_PROVENANCE", [7.0, 5.0, 588.0, 16.0], &provenance, 6.5, Alignement::Centre);
+    f.imprime(1, "ENTETE_SALARIE", [88.0, 16.0, 571.0, 26.0], &qui, 6.5, Alignement::Centre);
     // Un nom de champ n'est porte qu'une fois : les pages 2 et 3 redisent l'en-tete en texte.
     for b in [&mut p2, &mut p3] {
         b.push(centre(297.6, 13.0, &provenance, 6.5, false, NOIR));
         b.push(centre(297.6, 23.5, &qui, 6.5, false, NOIR));
     }
-    f.imprime(1, "ENTETE_MENTION_LOGICIEL", [88.0, 26.0, 571.0, 37.0], "Logiciel utilisé PUPPETPAIE - reconstituée à partir des déclarations DSN de la compagnie fictive", 6.5, "centre");
+    f.imprime(1, "ENTETE_MENTION_LOGICIEL", [88.0, 26.0, 571.0, 37.0], "Logiciel utilisé PUPPETPAIE - reconstituée à partir des déclarations DSN de la compagnie fictive", 6.5, Alignement::Centre);
     for (b, n) in [(&mut p1, 1), (&mut p2, 2), (&mut p3, 3)] {
         mention(b, n);
     }
@@ -275,56 +309,57 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
 
     cadre(&mut p1, 315.0, "1", "EMPLOYEUR");
     etiquette(&mut p1, 30.0, 343.0, "N° SIRET");
-    f.imprime(1, "EMP_SIRET", [75.0, 334.0, 253.0, 346.0], &champ(&ent.siret), 8.5, "gauche");
+    f.imprime_dite(1, "EMP_SIRET", [75.0, 334.0, 253.0, 346.0], ent.siret.portee(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 300.0, 343.0, "Code APE/NAF");
-    f.imprime(1, "EMP_APE", [368.0, 333.0, 432.0, 345.0], &champ(&ent.naf), 8.5, "gauche");
+    f.imprime_dite(1, "EMP_APE", [368.0, 333.0, 432.0, 345.0], ent.naf.portee(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 470.0, 343.0, "N° IDCC");
-    f.imprime(1, "EMP_IDCC", [515.0, 333.0, 566.0, 345.0], &champ(&ent.idcc), 8.5, "gauche");
+    f.imprime_dite(1, "EMP_IDCC", [515.0, 333.0, 566.0, 345.0], idcc, 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 362.0, "Nom ou raison sociale");
-    f.imprime(1, "ENSEIGNE", [146.0, 352.0, 567.0, 365.0], &champ(&ent.raison_sociale), 8.5, "gauche");
+    f.imprime_dite(1, "ENSEIGNE", [146.0, 352.0, 567.0, 365.0], ent.raison_sociale.portee(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 380.0, "Adresse");
-    f.imprime(1, "ADR_EMP_CONCATENEE", [74.0, 370.0, 567.0, 383.0], &droit::fiche::avec_complement(champ(&ent.adresse.en_texte()), ent.complement_adresse.remplie()), 8.5, "gauche");
+    let adresse = ent.adresse.portee().map(|a| droit::fiche::avec_complement(a.to_string(), ent.complement_adresse.remplie()));
+    f.imprime_dite(1, "ADR_EMP_CONCATENEE", [74.0, 370.0, 567.0, 383.0], adresse.as_deref(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 397.0, "Code postal");
-    f.imprime(1, "ADR_EMP_CP", [90.0, 388.0, 155.0, 399.0], &champ(&ent.code_postal), 8.5, "gauche");
+    f.imprime_dite(1, "ADR_EMP_CP", [90.0, 388.0, 155.0, 399.0], ent.code_postal.portee(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 165.0, 397.0, "Commune");
-    f.imprime(1, "ADR_EMP_LOCALITE", [224.0, 387.0, 567.0, 399.0], &champ(&ent.commune), 8.5, "gauche");
+    f.imprime_dite(1, "ADR_EMP_LOCALITE", [224.0, 387.0, 567.0, 399.0], ent.commune.portee(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 425.0, "Êtes-vous titulaire d'une licence spectacle ou d'un n° de récépissé de déclaration d'entrepreneur");
     etiquette(&mut p1, 30.0, 435.0, "de spectacles vivants valant licence ?");
-    let licence = t(&premier_contrat.and_then(|c| c.licence.clone())).to_string();
-    etiquette(&mut p1, 200.0, 446.0, if licence.is_empty() { "Non" } else { "Oui, n°" });
-    f.imprime(1, "EMP_LICENCE_1", [236.0, 437.0, 494.0, 448.0], &licence, 8.5, "gauche");
+    let licence = premier_contrat.and_then(|c| c.licence.as_deref()).filter(|l| !l.is_empty());
+    etiquette(&mut p1, 200.0, 446.0, if licence.is_none() { "Non" } else { "Oui, n°" });
+    f.imprime_dite(1, "EMP_LICENCE_1", [236.0, 437.0, 494.0, 448.0], licence, 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 485.0, "Numéro d'affiliation à la caisse de congé spectacle :");
-    let caisse = t(&premier_contrat.and_then(|c| c.caisse_conges.clone())).to_string();
-    etiquette(&mut p1, 30.0, 503.0, if caisse.is_empty() { "Non" } else { "Oui, N°" });
-    f.imprime(1, "EMP_CAISSE_CP_ART_CODE", [78.0, 493.0, 331.0, 505.0], &caisse, 8.5, "gauche");
+    let caisse = premier_contrat.and_then(|c| c.caisse_conges.as_deref()).filter(|c| !c.is_empty());
+    etiquette(&mut p1, 30.0, 503.0, if caisse.is_none() { "Non" } else { "Oui, N°" });
+    f.imprime_dite(1, "EMP_CAISSE_CP_ART_CODE", [78.0, 493.0, 331.0, 505.0], caisse, 8.5, Alignement::Gauche);
 
     cadre(&mut p1, 548.0, "2", "SALARIÉ");
     etiquette(&mut p1, 30.0, 590.0, "Nom de famille (nom de naissance)");
-    f.imprime(1, "SALARIE_NOM_FAMILLE", [209.0, 580.0, 563.0, 594.0], nom, 9.0, "gauche");
+    f.imprime(1, "SALARIE_NOM_FAMILLE", [209.0, 580.0, 563.0, 594.0], nom, 9.0, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 605.0, "Nom d'usage (nom d'époux (se))");
     etiquette(&mut p1, 30.0, 624.0, "Prénom(s)");
-    f.imprime(1, "SALARIE_PRENOMS", [86.0, 614.0, 563.0, 627.0], prenoms, 9.0, "gauche");
+    f.imprime(1, "SALARIE_PRENOMS", [86.0, 614.0, 563.0, 627.0], prenoms, 9.0, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 639.0, "Adresse");
-    f.imprime(1, "SALARIE_ADRESSE", [73.0, 630.0, 563.0, 642.0], t(&ind.adresse), 8.5, "gauche");
+    f.imprime_dite(1, "SALARIE_ADRESSE", [73.0, 630.0, 563.0, 642.0], ind.adresse.as_deref(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 652.0, "Code postal");
-    f.imprime(1, "SALARIE_CP", [93.0, 643.0, 158.0, 655.0], t(&ind.code_postal), 8.5, "gauche");
+    f.imprime_dite(1, "SALARIE_CP", [93.0, 643.0, 158.0, 655.0], ind.code_postal.as_deref(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 170.0, 652.0, "Commune");
-    f.imprime(1, "SALARIE_ADR_LOCALITE", [237.0, 643.0, 563.0, 655.0], t(&ind.commune), 8.5, "gauche");
+    f.imprime_dite(1, "SALARIE_ADR_LOCALITE", [237.0, 643.0, 563.0, 655.0], ind.commune.as_deref(), 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 667.0, "NIR (n° de Sécurité sociale)");
-    f.imprime(1, "SALARIE_NIR", [165.0, 658.0, 331.0, 670.0], &ind.nir, 8.5, "gauche");
+    f.imprime(1, "SALARIE_NIR", [165.0, 658.0, 331.0, 670.0], &ind.nir, 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 681.0, "Date de naissance");
     // AAAA-MM-JJ (`IndividuDeclare::date_naissance`), le jour ou le mois a 00 s'il est inconnu.
     if let Some(n) = ind.date_naissance.as_deref().filter(|n| n.len() == 10) {
-        f.imprime(1, "SALARIE_DT_NAISSANCE_J", [123.0, 672.0, 149.0, 683.0], &n[8..], 8.5, "centre");
-        f.imprime(1, "SALARIE_DT_NAISSANCE_M", [155.0, 672.0, 181.0, 683.0], &n[5..7], 8.5, "centre");
-        f.imprime(1, "SALARIE_DT_NAISSANCE_A", [186.0, 672.0, 238.0, 683.0], &n[..4], 8.5, "centre");
+        f.imprime(1, "SALARIE_DT_NAISSANCE_J", [123.0, 672.0, 149.0, 683.0], &n[8..], 8.5, Alignement::Centre);
+        f.imprime(1, "SALARIE_DT_NAISSANCE_M", [155.0, 672.0, 181.0, 683.0], &n[5..7], 8.5, Alignement::Centre);
+        f.imprime(1, "SALARIE_DT_NAISSANCE_A", [186.0, 672.0, 238.0, 683.0], &n[..4], 8.5, Alignement::Centre);
     }
     etiquette(&mut p1, 280.0, 681.0, "Lieu de naissance");
-    f.imprime(1, "SALARIE_LIEU_NAISSANCE", [361.0, 672.0, 561.0, 684.0], t(&ind.lieu_naissance), 8.5, "gauche");
+    f.imprime_dite(1, "SALARIE_LIEU_NAISSANCE", [361.0, 672.0, 561.0, 684.0], ind.lieu_naissance.as_deref(), 8.5, Alignement::Gauche);
 
     cadre(&mut p1, 745.0, "3", "CONTRAT DE TRAVAIL");
     etiquette(&mut p1, 30.0, 773.0, "Emploi occupé");
-    f.imprime(1, "CON_LIB_EMPLOI", [109.0, 764.0, 562.0, 776.0], emploi, 8.5, "gauche");
+    f.imprime_dite(1, "CON_LIB_EMPLOI", [109.0, 764.0, 562.0, 776.0], emploi, 8.5, Alignement::Gauche);
     let motif_lu = if motif == "031" { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
     etiquette(&mut p1, 30.0, 792.0, &format!("Motif de la rupture : {}", motif_lu));
 
@@ -356,22 +391,23 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         let (x0, x1) = xs[i];
         let r = |y0: f64, y1: f64| [x0, y0, x1, y1];
         if let Some((numero, deb, fin, objet)) = &p.contrat {
-            f.imprime(2, &format!("CON_NUMERO_{}", n), r(82.0, 100.0), numero, 8.5, "centre");
-            f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r(105.0, 120.0), deb, 8.5, "centre");
-            f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125.0, 140.0), fin, 8.5, "centre");
-            f.imprime(2, &format!("CON_OBJET_{}", n), r(145.0, 172.0), objet, 8.0, "centre");
-            let idcc_contrat = t(&d.contrats_de(&ind.nir).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.clone())).to_string();
-            if !idcc_contrat.is_empty() && idcc_contrat != idcc {
-                f.imprime(2, &format!("CON_IDCC_{}", n), r(184.0, 206.0), &idcc_contrat, 8.5, "centre");
+            f.imprime(2, &format!("CON_NUMERO_{}", n), r(82.0, 100.0), numero, 8.5, Alignement::Centre);
+            f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r(105.0, 120.0), deb, 8.5, Alignement::Centre);
+            f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125.0, 140.0), fin, 8.5, Alignement::Centre);
+            f.imprime_dite(2, &format!("CON_OBJET_{}", n), r(145.0, 172.0), objet.as_deref(), 8.0, Alignement::Centre);
+            let idcc_contrat = d.contrats_de(&ind.nir).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
+            if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc) {
+                f.imprime(2, &format!("CON_IDCC_{}", n), r(184.0, 206.0), idcc_contrat, 8.5, Alignement::Centre);
             }
         }
-        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218.0, 233.0), &p.debut.jj_mm_aaaa(), 8.5, "centre");
-        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236.0, 252.0), &p.fin.jj_mm_aaaa(), 8.5, "centre");
-        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258.0, 273.0), &quantite(p.heures), 8.5, "centre");
-        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282.0, 298.0), &quantite(p.cachets), 8.5, "centre");
-        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306.0, 322.0), &quantite(p.jours), 8.5, "centre");
-        f.imprime(2, &format!("SAL_MONTANT_{}", n), r(339.0, 360.0), &format!("{:.2}", p.brut.round_dp(2)), 8.5, "centre");
-        f.imprime(2, &format!("SAL_DT_PAI_{}", n), r(379.0, 400.0), &p.paiement, 8.5, "centre");
+        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218.0, 233.0), &p.debut.jj_mm_aaaa(), 8.5, Alignement::Centre);
+        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236.0, 252.0), &p.fin.jj_mm_aaaa(), 8.5, Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258.0, 273.0), &quantite(p.heures), 8.5, Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282.0, 298.0), &quantite(p.cachets), 8.5, Alignement::Centre);
+        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306.0, 322.0), &quantite(p.jours), 8.5, Alignement::Centre);
+        let montant = p.brut.map(|b| format!("{:.2}", b.round_dp(2)));
+        f.imprime_dite(2, &format!("SAL_MONTANT_{}", n), r(339.0, 360.0), montant.as_deref(), 8.5, Alignement::Centre);
+        f.imprime_dite(2, &format!("SAL_DT_PAI_{}", n), r(379.0, 400.0), p.paiement.as_deref(), 8.5, Alignement::Centre);
     }
     for (titre, y, entetes) in [
         ("Primes et indemnités", 460.0, ["Numéro de contrat", "Intitulé de la prime", "Date de paiement", "Montant brut (non plafonné)"]),
@@ -453,22 +489,32 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     case(&mut p3, [401.0, 685.0, 562.0, 765.0]);
     f.vide("EMPLOYEUR_CACHET", [401.0, 685.0, 562.0, 765.0]);
 
-    let description = json!({
-        "format": fabrique_pdf::FORMAT,
-        "page": {"largeur": 595.28, "hauteur": 841.89, "marges": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}},
-        "titre": format!("Attestation employeur annexes 8 et 10 (compagnie fictive) — {} {}", nom, prenoms),
-        "documents": [{"blocs": p1}, {"blocs": p2}, {"blocs": p3}]
-    });
+    let nulle = Some(0.0);
+    let description = Description {
+        format: fabrique_pdf::FORMAT,
+        page: Some(Page {
+            largeur: Some(595.28),
+            hauteur: Some(841.89),
+            marges: Some(Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+        }),
+        police: None,
+        style: None,
+        logo: None,
+        titre: Some(format!("Attestation employeur annexes 8 et 10 (compagnie fictive) — {} {}", nom, prenoms)),
+        documents: vec![Document::Blocs(p1), Document::Blocs(p2), Document::Blocs(p3)],
+        entete_page: None,
+        pied_page: None,
+    };
     let dessin = documents::fabrique::fabriquer_octets(&description)?;
-    let champs = json!({"format": fabrique_pdf::FORMAT, "champs": f.0});
-    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs.to_string()).map_err(|r| r.0.replace('\n', " "))
+    let champs = AjoutDeChamps { format: fabrique_pdf::FORMAT, champs: f.0 };
+    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs).map_err(|r| r.0.replace('\n', " "))
 }
 
 /// Le nom d'un PDF dans l'archive, au motif de France Travail (`retours::nom_aer`) : le SIRET, la periode `MMAAAA`, le
 /// jour d'edition, le nom et les prenoms du salarie (que `retours::rattacher` rapproche de sa fiche).
-fn nom_dans_l_archive(siret: &str, mois: &str, edite_le: Jour, ind: &IndividuDeclare, rang: usize, id: usize) -> String {
-    let periode: String = format!("{}{}", mois.get(5..7).unwrap_or("00"), mois.get(..4).unwrap_or("0000"));
-    let qui: String = format!("{} {}", t(&ind.nom), t(&ind.prenom)).split_whitespace().collect::<Vec<_>>().join("_");
+fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom: &str, prenoms: &str, rang: usize, id: usize) -> String {
+    let periode: String = format!("{:02}{:04}", mois.numero(), mois.annee());
+    let qui: String = format!("{} {}", nom, prenoms).split_whitespace().collect::<Vec<_>>().join("_");
     let siret: String = siret.chars().filter(char::is_ascii_digit).collect();
     format!(
         "AER_{}__{}_{}_{:02}{:02}{:04}_{}_{}_{}.pdf",
@@ -490,31 +536,33 @@ fn nom_dans_l_archive(siret: &str, mois: &str, edite_le: Jour, ind: &IndividuDec
 pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> Resultat<Option<Vec<u8>>> {
     let d = declarations::dsn_lue::lire(dsn, "").map_err(|e| e.message)?;
     let le_mois = d.mois.ok_or("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)")?;
+    let mois = socle::mois::Mois::lire(mois)?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
-    let ordre = t(&d.ordre).to_string();
-    let remplace = matches!(t(&d.type_declaration), "03" | "05").then_some(ordre.as_str());
+    let remplace = match d.type_declaration.as_deref() {
+        Some("03" | "05") => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", "S20.G00.05.004")?),
+        _ => None,
+    };
     let lignes = crate::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let ent = &ctx.entreprise;
-    let siret = ent.siret.texte().to_string();
-    let idcc = ent.idcc.texte().to_string();
+    let siret = ent.siret.ecrite("siret")?;
+    let idcc = ent.idcc.portee();
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
         let mut finis: Vec<&ContratDeclare> = d.contrats_de(&ind.nir).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
-        if finis.is_empty() {
-            continue;
-        }
         finis.sort_by_key(|c| (c.debut, c.fin));
+        let Some(dernier) = finis.last() else { continue };
+        let motif = exigee(&dernier.motif_fin, "le motif de fin d'un contrat", "S21.G00.62.002")?;
         let mut toutes: Vec<Periode> = Vec::new();
         for c in &finis {
             toutes.extend(periodes(ctx, &lignes, &d, le_mois, c)?);
         }
-        let emploi = finis.iter().map(|c| t(&c.emploi.emploi)).find(|e| !e.is_empty()).unwrap_or_default().to_string();
-        let motif = finis.last().map(|c| t(&c.motif_fin)).unwrap_or_default().to_string();
+        let emploi = finis.iter().find_map(|c| c.emploi.emploi.as_deref().filter(|e| !e.is_empty()));
+        let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
         let refs: Vec<&Periode> = toutes.iter().collect();
         for (rang, lot) in refs.chunks(COLONNES).enumerate() {
-            let pdf = attestation(ent, &d, ind, lot, &emploi, &motif, &idcc, edite_le, remplace)?;
+            let pdf = attestation(ent, &d, ind, lot, emploi, motif, idcc, edite_le, remplace)?;
             let id = 900_001 + pdfs.len();
-            pdfs.push((nom_dans_l_archive(&siret, mois, edite_le, ind, rang + 1, id), pdf));
+            pdfs.push((nom_dans_l_archive(siret, mois, edite_le, nom, prenoms, rang + 1, id), pdf));
         }
     }
     if pdfs.is_empty() {

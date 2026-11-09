@@ -19,11 +19,11 @@ use std::path::{Component, Path, PathBuf};
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
 
 use socle::base64::ecrire as base64_ecrire;
+use socle::echec::Classe;
 use socle::json_ascii::dumps;
-use socle::json_ascii::repr_flottant;
 
 pub const FICHIER: &str = "coffre.bin";
 pub const FICHIER_CLE: &str = "cle-poste.bin";
@@ -79,41 +79,131 @@ pub const SERVICES: [Service; 3] = [
     },
 ];
 
+// ------------------------------------------------------------------ les formes
+
+/// LE COFFRE TEL QU'IL S'ECRIT (`coffre.bin`, format `VERSION`) : les parametres de la derivation du mot de passe du
+/// logiciel, les enveloppes de la cle maitresse, les fiches en clair (ce qui est pose, depuis quand) et les secrets
+/// scelles avec elles. Un coffre neuf n'a pas encore de secrets : il les recoit a sa premiere ecriture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Contenu {
+    version: i64,
+    kdf: Kdf,
+    enveloppes: Enveloppes,
+    fiches: BTreeMap<String, FichePosee>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secrets: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logiciel_pose_le: Option<String>,
+}
+
+/// LES PARAMETRES DE LA DERIVATION DU MOT DE PASSE DU LOGICIEL (scrypt) : ecrits dans le coffre, verifies avant de
+/// deriver (`deriver`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Kdf {
+    pub algo: String,
+    pub n: u64,
+    pub r: u64,
+    pub p: u64,
+    pub sel: String,
+}
+
+/// LES ENVELOPPES DE LA CLE MAITRESSE, en base64 : scellee par la cle du poste, et par le mot de passe du logiciel
+/// quand il est pose.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Enveloppes {
+    poste: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    motdepasse: Option<String>,
+}
+
+/// CE QUE LE COFFRE DIT EN CLAIR D'UN SECRET POSE : depuis quand, son libelle, et l'adresse de la boite pour un service
+/// qui se pose avec elle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FichePosee {
+    pose_le: String,
+    libelle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compte: Option<String>,
+}
+
+/// LA SEANCE GARDEE TELLE QU'ELLE SE SCELLE (`garder_ouverture`) : le mot de passe du logiciel, jusqu'a quand, et le
+/// coffre qu'il ouvre.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Gardee {
+    motdepasse: String,
+    fin: String,
+    coffre: String,
+}
+
+/// CE QUE LE COFFRE DIT D'UN SERVICE (`services`) : s'il est pose, depuis quand, par l'environnement, avec quel
+/// compte ; jamais sa valeur.
+#[derive(Debug, Clone, Serialize)]
+pub struct EtatService {
+    pub service: &'static str,
+    pub libelle: &'static str,
+    pub sert_a: &'static str,
+    pub pose: bool,
+    pub pose_le: Option<String>,
+    pub variable: &'static str,
+    pub dans_environnement: bool,
+    pub compte: Option<String>,
+    pub avec_compte: bool,
+}
+
+/// POURQUOI UN SECRET SE LIT (`Coffre::lire`) : une consultation (relever, verifier, envoyer), ou un depot, qu'un
+/// humain a confirme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Usage {
+    Consultation,
+    Depot,
+}
+
+impl Usage {
+    fn lu(usage: &str) -> R<Usage> {
+        match usage {
+            CONSULTATION => Ok(Usage::Consultation),
+            DEPOT => Ok(Usage::Depot),
+            _ => Err(refus(format!(
+                "usage doit valoir {} ou {}. Lire un secret sans dire pourquoi n'est pas permis.",
+                repr_chaine(CONSULTATION),
+                repr_chaine(DEPOT)
+            ))),
+        }
+    }
+}
+
 // ------------------------------------------------------------------ les refus
 
 /// Un refus : sa classe et sa phrase.
 #[derive(Debug, Clone)]
 pub struct Echec {
-    pub classe: &'static str,
+    pub classe: Classe,
     pub message: String,
-    /// `errno`, `strerror` et `filename` d'une `OSError`.
-    pub os: Option<(i32, String, String)>,
 }
 
 pub type R<T> = Result<T, Echec>;
 
-fn echec(classe: &'static str, message: impl Into<String>) -> Echec {
-    Echec { classe, message: message.into(), os: None }
+fn echec(classe: Classe, message: impl Into<String>) -> Echec {
+    Echec { classe, message: message.into() }
 }
 
-/// `ErreurCoffre` : le coffre refuse, la phrase est ecrite pour etre lue.
+/// `Coffre` : le coffre refuse, la phrase est ecrite pour etre lue.
 fn refus(message: impl Into<String>) -> Echec {
-    echec("ErreurCoffre", message)
+    echec(Classe::Coffre, message)
+}
+
+/// Le refus du coffre, son chemin a part.
+fn refus_a(message: impl Into<String>, p: &Path) -> Echec {
+    refus(socle::echec::avec(message, socle::echec::APart { chemin: Some(affiche(p)), ..socle::echec::APart::default() }))
 }
 
 fn oserr(e: &std::io::Error, p: &Path) -> Echec {
-    let texte = e.to_string();
-    let strerror = match texte.rfind(" (os error ") {
-        Some(i) => texte[..i].to_string(),
-        None => texte,
-    };
-    let errno = e.raw_os_error().unwrap_or(0);
-    let nom = affiche(p);
-    Echec {
-        classe: "OSError",
-        message: socle::fichiers::panne_fichier(e, p),
-        os: Some((errno, strerror, nom)),
-    }
+    echec(Classe::Disque, socle::fichiers::panne_fichier(e, p))
 }
 
 // ------------------------------------------------- les lectures de valeurs
@@ -137,8 +227,8 @@ fn normal(p: PathBuf) -> PathBuf {
 }
 
 /// Le chemin absolu, liens suivis aussi loin que le chemin existe.
-fn resoudre(p: &Path) -> PathBuf {
-    let absolu = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) };
+fn resoudre(p: &Path) -> R<PathBuf> {
+    let absolu = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().map_err(|e| oserr(&e, p))?.join(p) };
     let mut reste: Vec<std::ffi::OsString> = Vec::new();
     let mut tete = absolu;
     loop {
@@ -152,17 +242,17 @@ fn resoudre(p: &Path) -> PathBuf {
                 }
             }
             let t = sortie.to_string_lossy().to_string();
-            return match t.strip_prefix(r"\\?\") {
+            return Ok(match t.strip_prefix(r"\\?\") {
                 Some(s) if cfg!(windows) => PathBuf::from(s),
                 _ => sortie,
-            };
+            });
         }
         match (tete.file_name().map(|n| n.to_os_string()), tete.parent().map(Path::to_path_buf)) {
             (Some(n), Some(parent)) => {
                 reste.push(n);
                 tete = parent;
             }
-            _ => return tete,
+            _ => return Ok(tete),
         }
     }
 }
@@ -171,17 +261,6 @@ use socle::texte::blanc as espace;
 
 fn strip(s: &str) -> &str {
     s.trim_matches(espace)
-}
-
-fn vrai(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
-    }
 }
 
 use socle::fichiers::imprimable;
@@ -218,34 +297,11 @@ fn repr_chaine(s: &str) -> String {
     t
 }
 
-fn repr_valeur(v: &Value) -> String {
-    match v {
-        Value::Null => "null".into(),
-        Value::Bool(true) => "true".into(),
-        Value::Bool(false) => "false".into(),
-        Value::String(s) => repr_chaine(s),
-        Value::Number(n) => match n.as_f64().filter(|_| n.is_f64()) {
-            Some(f) => repr_flottant(f),
-            None => n.to_string(),
-        },
-        autre => autre.to_string(),
-    }
-}
-
 /// Le base64 lu avec indulgence : ce qui n'est pas de l'alphabet est
 /// ignore, le remplissage s'arrete la ou il est complet.
-pub fn d64(v: &Value) -> R<Vec<u8>> {
-    let t = match v {
-        Value::String(t) => t,
-        autre => {
-            return Err(echec(
-                "TypeError",
-                socle::fichiers::attendu("un texte en base64", documents::valeur::nom_type(autre)),
-            ))
-        }
-    };
+pub fn d64(t: &str) -> R<Vec<u8>> {
     if !t.is_ascii() {
-        return Err(echec("ValueError", "du base64 ne porte que des caracteres ASCII"));
+        return Err(echec(Classe::Illisible, "du base64 ne porte que des caracteres ASCII"));
     }
     let (mut sortie, mut quad, mut reste, mut bourrage) = (Vec::new(), 0u8, 0u8, 0u8);
     for c in t.bytes() {
@@ -286,90 +342,20 @@ pub fn d64(v: &Value) -> R<Vec<u8>> {
     match quad {
         0 => Ok(sortie),
         1 => Err(echec(
-            "ValueError",
+            Classe::Illisible,
             format!(
                 "base64 illisible : {} caracteres utiles, un de plus qu'un multiple de 4",
                 sortie.len() / 3 * 4 + 1
             ),
         )),
-        _ => Err(echec("ValueError", "base64 illisible : le remplissage est incomplet")),
+        _ => Err(echec(Classe::Illisible, "base64 illisible : le remplissage est incomplet")),
     }
 }
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-fn b64(o: &[u8]) -> Value {
-    Value::String(base64_ecrire(o))
-}
-
-/// Un entier, de ce que porte une valeur JSON.
-fn entier(v: &Value) -> R<i128> {
-    match v {
-        Value::Bool(b) => Ok(*b as i128),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(i as i128)
-            } else if let Some(u) = n.as_u64() {
-                Ok(u as i128)
-            } else {
-                let f = n.as_f64().unwrap_or(0.0);
-                if f.is_finite() {
-                    Ok(f.trunc() as i128)
-                } else {
-                    Err(echec("ValueError", "un nombre infini n'est pas un entier"))
-                }
-            }
-        }
-        Value::String(t) => {
-            let s = strip(t);
-            let (neg, corps) = match s.strip_prefix('-') {
-                Some(r) => (true, r),
-                None => (false, s.strip_prefix('+').unwrap_or(s)),
-            };
-            let valide = !corps.is_empty()
-                && corps.bytes().all(|b| b.is_ascii_digit() || b == b'_')
-                && !corps.starts_with('_')
-                && !corps.ends_with('_')
-                && !corps.contains("__");
-            let n: Option<i128> = if valide { corps.replace('_', "").parse().ok() } else { None };
-            match n {
-                Some(n) => Ok(if neg { -n } else { n }),
-                None => Err(echec("ValueError", format!("nombre entier illisible : {}", repr_chaine(t)))),
-            }
-        }
-        autre => Err(echec(
-            "TypeError",
-            socle::fichiers::attendu("un nombre entier", documents::valeur::nom_type(autre)),
-        )),
-    }
-}
-
-/// Un objet, ou rien : une valeur absente, nulle ou vide vaut un objet vide.
-fn objet(v: Option<&Value>) -> R<Map<String, Value>> {
-    match v {
-        None | Some(Value::Null) => Ok(Map::new()),
-        Some(Value::Object(o)) => Ok(o.clone()),
-        Some(x) if !vrai(x) => Ok(Map::new()),
-        Some(x) => Err(echec("AttributeError", socle::fichiers::attendu("un objet", documents::valeur::nom_type(x)))),
-    }
-}
-
-/// Les fiches du coffre, telles que le fichier les porte (un objet vide si elles manquent ou sont vides).
-fn fiches_brutes(c: &Map<String, Value>) -> Value {
-    match c.get("fiches") {
-        Some(v) if vrai(v) => v.clone(),
-        _ => Value::Object(Map::new()),
-    }
-}
-
-/// La fiche `nom` est-elle dans `fiches` (un objet, une liste ou un texte).
-fn dans(fiches: &Value, nom: &str) -> bool {
-    match fiches {
-        Value::Object(o) => o.contains_key(nom),
-        Value::String(t) => t.contains(nom),
-        Value::Array(a) => a.iter().any(|x| x.as_str() == Some(nom)),
-        _ => false,
-    }
+fn b64(o: &[u8]) -> String {
+    base64_ecrire(o)
 }
 
 fn existe(p: &Path) -> R<bool> {
@@ -427,14 +413,14 @@ fn permissions(_: &Path, _: u32) {}
 
 fn aleas(n: usize) -> R<Vec<u8>> {
     let mut o = vec![0u8; n];
-    getrandom::fill(&mut o).map_err(|e| echec("OSError", format!("pas d'alea du systeme : {}", e)))?;
+    getrandom::fill(&mut o).map_err(|e| echec(Classe::Disque, format!("pas d'alea du systeme : {}", e)))?;
     Ok(o)
 }
 
 // ---------------------------------------------------------------- le scellage
 
 fn boite(cle: &[u8]) -> R<Aes256Gcm> {
-    Aes256Gcm::new_from_slice(cle).map_err(|_| echec("ValueError", "une cle AES-GCM fait 32 octets"))
+    Aes256Gcm::new_from_slice(cle).map_err(|_| echec(Classe::Illisible, "une cle AES-GCM fait 32 octets"))
 }
 
 /// nonce (12 octets) suivi du scelle.
@@ -444,7 +430,7 @@ pub fn sceller(cle: &[u8], clair: &[u8], aad: &[u8]) -> R<Vec<u8>> {
     let mut sortie = nonce.clone();
     let scelle = b
         .encrypt(Nonce::from_slice(&nonce), Payload { msg: clair, aad })
-        .map_err(|_| echec("ValueError", "chiffrement impossible"))?;
+        .map_err(|_| echec(Classe::Illisible, "chiffrement impossible"))?;
     sortie.extend(scelle);
     Ok(sortie)
 }
@@ -462,50 +448,37 @@ pub fn desceller(cle: &[u8], scelle: &[u8], aad: &[u8]) -> R<Vec<u8>> {
     })
 }
 
-fn aad_fiches(fiches: &Value) -> Vec<u8> {
+/// Ce que les secrets scelles portent avec eux : les fiches, ecrites serrees et triees (le scelle refuse des fiches
+/// changees).
+fn aad_fiches(fiches: &BTreeMap<String, FichePosee>) -> Vec<u8> {
     dumps(fiches, None, true, true).into_bytes()
 }
 
 /// La cle scrypt de 32 octets. Les parametres sont ceux du fichier : ils sont
 /// verifies avant la derivation, memoire comprise (`SCRYPT_MAXMEM`).
-pub fn deriver(motdepasse: &str, kdf: Option<&Value>) -> R<Vec<u8>> {
+pub fn deriver(motdepasse: &str, kdf: &Kdf) -> R<Vec<u8>> {
     // Le fil de fond de la fenetre ne dechiffre rien : aucun mot de passe ne s'y derive.
     if socle::fil_de_fond::ici() {
         return Err(refus(socle::fil_de_fond::refus("le coffre")));
     }
-    let kdf = objet(kdf)?;
-    let algo = kdf.get("algo").filter(|v| vrai(v));
-    if algo.and_then(Value::as_str) != Some("scrypt") {
-        let dit = match algo {
-            Some(v) => repr_valeur(v),
-            None => "'rien'".into(),
-        };
-        return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", dit)));
+    if kdf.algo != "scrypt" {
+        return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", repr_chaine(&kdf.algo))));
     }
-    let cle = |nom: &str| kdf.get(nom).ok_or_else(|| echec("KeyError", socle::fichiers::absent(nom)));
-    let sel = d64(cle("sel")?)?;
-    let n = entier(cle("n")?)?;
-    let r = entier(cle("r")?)?;
-    let p = entier(cle("p")?)?;
-    scrypt_32(motdepasse.as_bytes(), &sel, n, r, p)
+    let sel = d64(&kdf.sel)?;
+    scrypt_32(motdepasse.as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p))
 }
 
 fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<u8>> {
-    let invalide = || echec("ValueError", "parametres scrypt incompatibles (n, r, p)");
-    let memoire_max = || echec("ValueError", "parametres scrypt : la memoire demandee depasse la borne");
-    for (nom, v) in [("n", n), ("r", r), ("p", p)] {
-        if v < 0 {
-            return Err(echec("TypeError", format!("le parametre scrypt {} est un entier positif", nom)));
-        }
-    }
+    let invalide = || echec(Classe::Illisible, "parametres scrypt incompatibles (n, r, p)");
+    let memoire_max = || echec(Classe::Illisible, "parametres scrypt : la memoire demandee depasse la borne");
     if n < 2 || n & (n - 1) != 0 {
-        return Err(echec("ValueError", "le parametre scrypt n est une puissance de 2"));
+        return Err(echec(Classe::Illisible, "le parametre scrypt n est une puissance de 2"));
     }
     if r == 0 || p == 0 {
         return Err(invalide());
     }
     if r > u32::MAX as i128 || p > u32::MAX as i128 {
-        return Err(echec("ValueError", "parametres scrypt : r ou p trop grand"));
+        return Err(echec(Classe::Illisible, "parametres scrypt : r ou p trop grand"));
     }
     if p > ((1i128 << 30) - 1) / r {
         return Err(memoire_max());
@@ -577,20 +550,41 @@ pub fn dossier_portable() -> Option<PathBuf> {
     base.join(MARQUEUR_PORTABLE).is_file().then_some(base)
 }
 
+/// L'identifiant du paquet de la fenetre (`identifier` de `fenetre/tauri.conf.json`) : il nomme son dossier sous macOS.
+pub(crate) const IDENTIFIANT_DU_PAQUET: &str = "fr.puppetpaie.fenetre";
+
 /// Ou vit la cle du poste : `PUPPETPAIE_CLE` la deplace ; sinon le dossier portable (`dossier_portable`), s'il y en a
-/// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
-pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Path>) -> PathBuf {
-    let maison = || -> PathBuf {
-        env("HOME")
-            .map(|h| if h.is_empty() { "/".to_string() } else { h })
-            .or_else(|| if cfg!(windows) { env("USERPROFILE") } else { None })
-            .map(PathBuf::from)
-            .or_else(|| {
-                #[allow(deprecated)]
-                std::env::home_dir()
-            })
-            .unwrap_or_else(|| PathBuf::from("/"))
+/// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows), `~/Library/Application Support/fr.puppetpaie.fenetre`
+/// (macOS) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
+/// Le dossier de la personne : `HOME` (vide, la racine), sinon `USERPROFILE` sous Windows, sinon ce que le systeme en dit,
+/// sinon la racine.
+pub(crate) fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
+    let dit = match env("HOME") {
+        Some(h) if h.is_empty() => Some("/".to_string()),
+        Some(h) => Some(h),
+        None if cfg!(windows) => env("USERPROFILE"),
+        None => None,
     };
+    #[allow(deprecated)]
+    match (dit, std::env::home_dir()) {
+        (Some(h), _) => PathBuf::from(h),
+        (None, Some(h)) => h,
+        (None, None) => PathBuf::from("/"),
+    }
+}
+
+/// La variable `nom` telle que le moteur la lit pour situer un dossier de la personne : `HOME` telle quelle (vide, elle
+/// dit la racine), les autres si elles disent quelque chose.
+pub(crate) fn env_du_poste(nom: &str) -> Option<String> {
+    if nom == "HOME" {
+        env_tel_quel(nom)
+    } else {
+        env_non_vide(nom)
+    }
+}
+
+pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Path>) -> PathBuf {
+    let maison = || maison_de(env);
     if let Some(force) = env("PUPPETPAIE_CLE") {
         let p = match force.strip_prefix('~') {
             Some(suite) if suite.is_empty() || suite.starts_with('/') || (cfg!(windows) && suite.starts_with('\\')) => {
@@ -603,16 +597,44 @@ pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Pa
     if let Some(dossier) = portable {
         return normal(dossier.to_path_buf());
     }
+    // LE DOSSIER DE CONFIGURATION DU SYSTEME, et quand la variable ne le dit pas, celui que le systeme lui donne par
+    // defaut (`atelier/reference/sources/dossiers-de-configuration/`) :
+    // - Windows, `APPDATA` : FOLDERID_RoamingAppData, « Default Path %APPDATA% (%USERPROFILE%\AppData\Roaming) »
+    //   (Microsoft, KNOWNFOLDERID) ;
+    // - macOS, `~/Library/Application Support/<identifiant du paquet>` : « Contains all app-specific data and support
+    //   files » ; « all of these items should be put in a subdirectory whose name matches the bundle identifier of the
+    //   app » (Apple, macOS Library Directory Details) ;
+    // - ailleurs, `XDG_CONFIG_HOME` : « If $XDG_CONFIG_HOME is either not set or empty, a default equal to $HOME/.config
+    //   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of
+    //   these variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
     if cfg!(windows) {
-        let base = env("APPDATA").map(PathBuf::from).unwrap_or_else(|| maison().join("AppData").join("Roaming"));
+        let base = match env("APPDATA") {
+            Some(b) if !b.is_empty() => PathBuf::from(b),
+            Some(_) | None => maison().join("AppData").join("Roaming"),
+        };
         return normal(base.join("PuppetPaie"));
     }
-    let base = env("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| maison().join(".config"));
+    if cfg!(target_os = "macos") {
+        return normal(maison().join("Library").join("Application Support").join(IDENTIFIANT_DU_PAQUET));
+    }
+    let base = match env("XDG_CONFIG_HOME") {
+        Some(b) if Path::new(&b).is_absolute() => PathBuf::from(b),
+        Some(_) | None => maison().join(".config"),
+    };
     normal(base.join("puppetpaie"))
 }
 
+/// La variable `nom` telle que l'environnement la porte, si elle est posee et se lit.
+fn env_tel_quel(nom: &str) -> Option<String> {
+    match std::env::var(nom) {
+        Ok(v) => Some(v),
+        Err(std::env::VarError::NotPresent | std::env::VarError::NotUnicode(_)) => None,
+    }
+}
+
+/// La variable `nom`, si elle dit quelque chose.
 fn env_non_vide(nom: &str) -> Option<String> {
-    std::env::var(nom).ok().filter(|v| !v.is_empty())
+    env_tel_quel(nom).filter(|v| !v.is_empty())
 }
 
 /// Le coffre d'une compagnie, vu depuis un poste.
@@ -630,7 +652,7 @@ impl Coffre {
     pub fn du_poste(racine: impl Into<PathBuf>, maintenant: &str) -> Coffre {
         Coffre {
             racine: racine.into(),
-            dossier_cle: dossier_cle_de(&|n| if n == "HOME" { std::env::var(n).ok() } else { env_non_vide(n) }, dossier_portable().as_deref()),
+            dossier_cle: Coffre::dossier_cle_du_poste(),
             maintenant: maintenant.to_string(),
             variables: SERVICES.iter().filter_map(|s| env_non_vide(s.variable).map(|v| (s.variable.to_string(), v))).collect(),
         }
@@ -644,7 +666,7 @@ impl Coffre {
 
     /// Le dossier de la cle de CE poste, tel que `du_poste` le trouve.
     pub fn dossier_cle_du_poste() -> PathBuf {
-        dossier_cle_de(&|n| if n == "HOME" { std::env::var(n).ok() } else { env_non_vide(n) }, dossier_portable().as_deref())
+        dossier_cle_de(&env_du_poste, dossier_portable().as_deref())
     }
 
     /// L'heure locale `AAAA-MM-JJTHH:MM` : celle qu'on a donnee, sinon l'horloge. Les lecteurs du moteur font leur
@@ -668,11 +690,11 @@ impl Coffre {
     /// la cle du poste sert a toutes les compagnies et a toutes les installations d'une machine ; avec une seule
     /// seance pour toutes, celle qu'on ouvrait pour l'une effacait celle de l'autre. Le nom porte l'empreinte du chemin du
     /// coffre : deux coffres ne se marchent jamais dessus ; la seance garde en plus ce chemin, et ne sert qu'a lui.
-    pub fn chemin_gardee(&self) -> PathBuf {
+    pub fn chemin_gardee(&self) -> R<PathBuf> {
         use sha2::{Digest, Sha256};
-        let h = Sha256::digest(affiche(&resoudre(&self.chemin())).as_bytes());
+        let h = Sha256::digest(affiche(&resoudre(&self.chemin())?).as_bytes());
         let court: String = h.iter().take(6).map(|o| format!("{:02x}", o)).collect();
-        self.dossier_cle.join(format!("{}-{}.bin", GARDEE.trim_end_matches(".bin"), court))
+        Ok(self.dossier_cle.join(format!("{}-{}.bin", GARDEE.trim_end_matches(".bin"), court)))
     }
 
     pub fn cle_posee(&self) -> R<bool> {
@@ -727,7 +749,7 @@ impl Coffre {
     }
 
     fn cle_ou_creer(&self) -> R<Vec<u8>> {
-        self.cle_poste(true)?.ok_or_else(|| echec("OSError", "la cle de ce poste n'a pas pu etre posee"))
+        self.cle_poste(true)?.ok_or_else(|| echec(Classe::Disque, "la cle de ce poste n'a pas pu etre posee"))
     }
 
     // -------------------------------------------- proteger / deproteger
@@ -752,17 +774,21 @@ impl Coffre {
     /// s'ouvre, la cle de ce poste ou le mot de passe du logiciel ailleurs. N'ecrit rien. Refuse sans coffre, ou sans mot
     /// de passe du logiciel : seule la cle de ce poste l'ouvrirait, et ce qui est scelle partirait avec le poste.
     pub fn proteger_par_le_coffre(&self, donnees: &[u8], description: &str) -> R<Vec<u8>> {
-        let contenu = self.lire_fichier()?;
-        if contenu.is_empty() || !objet(contenu.get("enveloppes"))?.get("motdepasse").is_some_and(vrai) {
-            return Err(refus(format!(
-                "Le coffre de cette compagnie ({}) n'a pas de mot de passe du logiciel : scelle par lui, « {} » ne \
-                 s'ouvrirait que sur ce poste et serait perdu avec lui. Rien n'a ete ecrit. Poser d'abord le mot de \
-                 passe du logiciel :\n\
-                 \x20 route mot-de-passe-changer",
-                affiche(&self.chemin()),
-                description
-            )));
-        }
+        let contenu = match self.lire_fichier()? {
+            Some(c) if c.enveloppes.motdepasse.is_some() => c,
+            Some(_) | None => {
+                return Err(refus_a(
+                    format!(
+                        "Le coffre de cette compagnie n'a pas de mot de passe du logiciel : scelle par lui, « {} » ne \
+                         s'ouvrirait que sur ce poste et serait perdu avec lui. Rien n'a ete ecrit. Poser d'abord le mot \
+                         de passe du logiciel :\n\
+                         \x20 route mot-de-passe-changer",
+                        description
+                    ),
+                    &self.chemin(),
+                ))
+            }
+        };
         let Some(maitresse) = self.ouvrir(&contenu, None)? else { return Err(self.refus_ferme()?) };
         sceller(&maitresse, donnees, format!("{}{}", AAD_MAITRESSE, description).as_bytes())
     }
@@ -770,16 +796,16 @@ impl Coffre {
     /// Ouvre ce que `proteger_par_le_coffre` a scelle : par la cle de ce poste, sinon par le mot de passe du logiciel tape
     /// pour la commande, sinon par la seance (`ouvrir`).
     pub fn deproteger_par_le_coffre(&self, scelle: &[u8], description: &str) -> R<Vec<u8>> {
-        let contenu = self.lire_fichier()?;
-        if contenu.is_empty() {
-            return Err(refus(format!(
-                "« {} » est scelle par le coffre de la compagnie, et il n'y a pas de coffre ici ({}) : rien d'autre ne \
-                 l'ouvre, et un coffre neuf ne l'ouvrira pas. Remettre le coffre qui l'a scelle (`config/coffre.bin` de \
-                 l'ancien poste).",
-                description,
-                affiche(&self.chemin())
-            )));
-        }
+        let Some(contenu) = self.lire_fichier()? else {
+            return Err(refus_a(
+                format!(
+                    "« {} » est scelle par le coffre de la compagnie, et il n'y a pas de coffre ici : rien d'autre ne \
+                     l'ouvre, et un coffre neuf ne l'ouvrira pas. Remettre le coffre de l'ancien poste, qui l'a scelle.",
+                    description
+                ),
+                &self.chemin(),
+            ));
+        };
         let Some(maitresse) = self.ouvrir(&contenu, None)? else { return Err(self.refus_ferme()?) };
         desceller(&maitresse, scelle, format!("{}{}", AAD_MAITRESSE, description).as_bytes())
     }
@@ -792,28 +818,32 @@ impl Coffre {
 
     // ------------------------------------------------------------ le fichier
 
-    /// Le coffre tel qu'il est sur le disque ; vide s'il n'y en a pas.
-    fn lire_fichier(&self) -> R<Map<String, Value>> {
+    /// Le coffre tel qu'il est sur le disque ; `None` s'il n'y en a pas. Un coffre d'une autre forme ou d'une autre
+    /// version se refuse : il ne se convertit pas.
+    fn lire_fichier(&self) -> R<Option<Contenu>> {
         let p = self.chemin();
         if !existe(&p)? {
-            return Ok(Map::new());
+            return Ok(None);
         }
         let brut = lire_octets(&p)?;
-        let contenu = std::str::from_utf8(&brut).ok().and_then(|t| serde_json::from_str::<Value>(t).ok());
-        if let Some(Value::Object(o)) = contenu {
-            let version = o.get("version").and_then(|v| match v {
-                Value::Bool(b) => Some(*b as i64 as f64),
-                Value::Number(n) => n.as_f64(),
-                _ => None,
-            });
-            if version == Some(VERSION as f64) {
-                return Ok(o);
-            }
+        let lu = match std::str::from_utf8(&brut) {
+            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| socle::echec::phrase_de(&m)),
+            Err(e) => Err(e.to_string()),
+        };
+        match lu {
+            Ok(c) if c.version == VERSION => Ok(Some(c)),
+            Ok(c) => Err(self.refus_de_format(format!("version {}", c.version))),
+            Err(detail) => Err(self.refus_de_format(detail)),
         }
-        Err(refus(format!(
-            "Le coffre ({}) n'est pas au format de cette version -- il est plus \
+    }
+
+    /// Le refus d'un coffre qui n'est pas au format de cette version : ce qu'il faut reposer ; le chemin et ce qui ne va
+    /// pas a part.
+    fn refus_de_format(&self, detail: String) -> Echec {
+        refus(socle::echec::avec(
+            "Le coffre n'est pas au format de cette version -- il est plus \
              ancien, ou abime. Il ne se convertit pas : le supprimer, avec \
-             `google-jeton.bin` et `maj-cle-privee.bin` qui sont fermes de la \
+             le jeton Google et la cle de signature qui sont fermes de la \
              meme facon, puis reposer ce qu'ils contenaient :\n\
              \x20 route mot-de-passe-changer\n\
              \x20 route coffre-poser, service net-entreprises\n\
@@ -821,29 +851,17 @@ impl Coffre {
              \x20 route coffre-poser, service courriel, compte <adresse>\n\
              Puis relier le Drive, et refaire une cle de signature si ce poste \
              publie les mises a jour.",
-            affiche(&p)
-        )))
+            socle::echec::APart { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..socle::echec::APart::default() },
+        ))
     }
 
     /// Un coffre neuf : (cle maitresse, le contenu a ecrire). L'enveloppe du
     /// poste est posee tout de suite ; celle du mot de passe vient avec lui.
-    fn creer(&self) -> R<(Vec<u8>, Map<String, Value>)> {
+    fn creer(&self) -> R<(Vec<u8>, Contenu)> {
         let maitresse = aleas(32)?;
-        let mut kdf = Map::new();
-        kdf.insert("algo".into(), "scrypt".into());
-        kdf.insert("n".into(), SCRYPT_N.into());
-        kdf.insert("r".into(), SCRYPT_R.into());
-        kdf.insert("p".into(), SCRYPT_P.into());
-        kdf.insert("sel".into(), b64(&aleas(16)?));
-        let mut enveloppes = Map::new();
-        enveloppes.insert("poste".into(), b64(&sceller(&self.cle_ou_creer()?, &maitresse, AAD_POSTE)?));
-        let mut c = Map::new();
-        c.insert("version".into(), VERSION.into());
-        c.insert("kdf".into(), Value::Object(kdf));
-        c.insert("enveloppes".into(), Value::Object(enveloppes));
-        c.insert("fiches".into(), Value::Object(Map::new()));
-        c.insert("secrets".into(), "".into());
-        Ok((maitresse, c))
+        let kdf = Kdf { algo: "scrypt".into(), n: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, sel: b64(&aleas(16)?) };
+        let enveloppes = Enveloppes { poste: b64(&sceller(&self.cle_ou_creer()?, &maitresse, AAD_POSTE)?), motdepasse: None };
+        Ok((maitresse, Contenu { version: VERSION, kdf, enveloppes, fiches: BTreeMap::new(), secrets: None, logiciel_pose_le: None }))
     }
 
     /// La cle maitresse, ou None si rien ne l'ouvre ici : la cle du poste
@@ -853,7 +871,7 @@ impl Coffre {
     /// LA SEANCE EN TROISIEME : si ni la cle du poste ni un mot de passe donne ou tape n'ouvrent, le mot de passe
     /// GARDE par `garder_ouverture` (12 h) est essaye. Il ouvre le coffre ; il n'AUTORISE aucun acte reel (cela, seule
     /// `demande::autoriser_acte` le fait).
-    fn ouvrir(&self, contenu: &Map<String, Value>, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
+    fn ouvrir(&self, contenu: &Contenu, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
         let tape = mot_de_passe_tape();
         let donne = motdepasse.filter(|m| !m.is_empty()).or(tape.as_deref());
         if let Some(m) = self.ouvrir_avec(contenu, donne)? {
@@ -869,36 +887,29 @@ impl Coffre {
         }
     }
 
-    fn ouvrir_avec(&self, contenu: &Map<String, Value>, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
-        if contenu.is_empty() {
-            return Ok(None);
-        }
-        let enveloppes = objet(contenu.get("enveloppes"))?;
-        let cle = self.cle_poste(false)?;
-        let enveloppe = |nom: &str| enveloppes.get(nom).filter(|v| vrai(v));
-        if let (Some(cle), Some(e)) = (&cle, enveloppe("poste")) {
-            match desceller(cle, &d64(e)?, AAD_POSTE) {
+    fn ouvrir_avec(&self, contenu: &Contenu, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
+        if let Some(cle) = self.cle_poste(false)? {
+            match desceller(&cle, &d64(&contenu.enveloppes.poste)?, AAD_POSTE) {
                 Ok(m) => return Ok(Some(m)),
-                Err(x) if x.classe == "ErreurCoffre" => {}
+                Err(x) if x.classe == Classe::Coffre => {}
                 Err(x) => return Err(x),
             }
         }
-        if let (Some(mdp), Some(e)) = (motdepasse.filter(|m| !m.is_empty()), enveloppe("motdepasse")) {
-            let r = deriver(mdp, contenu.get("kdf")).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
+        if let (Some(mdp), Some(e)) = (motdepasse.filter(|m| !m.is_empty()), &contenu.enveloppes.motdepasse) {
+            let r = deriver(mdp, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
             return match r {
                 Ok(m) => Ok(Some(m)),
-                Err(x) if x.classe == "ErreurCoffre" => Ok(None),
+                Err(x) if x.classe == Classe::Coffre => Ok(None),
                 Err(x) => Err(x),
             };
         }
         Ok(None)
     }
 
-    fn ouvrir_ou_lever(&self, motdepasse: Option<&str>) -> R<(Vec<u8>, Map<String, Value>)> {
-        let contenu = self.lire_fichier()?;
-        if contenu.is_empty() {
+    fn ouvrir_ou_lever(&self, motdepasse: Option<&str>) -> R<(Vec<u8>, Contenu)> {
+        let Some(contenu) = self.lire_fichier()? else {
             return self.creer();
-        }
+        };
         match self.ouvrir(&contenu, motdepasse)? {
             Some(m) => Ok((m, contenu)),
             None => Err(self.refus_ferme()?),
@@ -907,57 +918,48 @@ impl Coffre {
 
     /// Le refus d'un coffre que rien n'ouvre ici.
     fn refus_ferme(&self) -> R<Echec> {
-        Ok(refus(format!(
-            "Ce coffre ne s'ouvre pas ici : la cle de ce poste ({}) n'est pas \
-             celle qui l'a ferme{}. Le mot de passe du logiciel l'ouvre -- et \
-             reposera une cle pour ce poste :\n\
-             \x20 route mot-de-passe-changer",
-            affiche(&self.chemin_cle()),
-            if self.cle_posee()? { "" } else { ", et elle est absente" }
-        )))
+        let absente = if self.cle_posee()? { "" } else { ", et elle est absente" };
+        Ok(refus_a(
+            format!(
+                "Ce coffre ne s'ouvre pas ici : la cle de ce poste n'est pas \
+                 celle qui l'a ferme{}. Le mot de passe du logiciel l'ouvre -- et \
+                 reposera une cle pour ce poste :\n\
+                 \x20 route mot-de-passe-changer",
+                absente
+            ),
+            &self.chemin_cle(),
+        ))
     }
 
     /// La cle de CE poste ouvre-t-elle le coffre qui est la ? Vrai aussi sans
     /// coffre : il n'y a rien qui resiste.
     pub fn ouvre_a_ce_poste(&self) -> R<bool> {
-        let contenu = self.lire_fichier()?;
-        if contenu.is_empty() {
-            return Ok(true);
-        }
-        Ok(self.ouvrir_avec(&contenu, None)?.is_some())
-    }
-
-    fn secrets(&self, contenu: &Map<String, Value>, maitresse: &[u8]) -> R<Map<String, Value>> {
-        if !contenu.get("secrets").is_some_and(vrai) {
-            return Ok(Map::new());
-        }
-        let clair = desceller(maitresse, &d64(&contenu["secrets"])?, &aad_fiches(&fiches_brutes(contenu)))?;
-        let t = String::from_utf8(clair).map_err(|_| echec("ValueError", "secrets illisibles"))?;
-        match serde_json::from_str::<Value>(&t) {
-            Ok(Value::Object(o)) => Ok(o),
-            _ => Err(echec("ValueError", "secrets illisibles")),
+        match self.lire_fichier()? {
+            Some(contenu) => Ok(self.ouvrir_avec(&contenu, None)?.is_some()),
+            None => Ok(true),
         }
     }
 
-    fn poste_ouvre(&self, enveloppes: &Map<String, Value>, maitresse: &[u8]) -> R<bool> {
-        let cle = self.cle_poste(false)?;
-        let (Some(cle), Some(e)) = (cle, enveloppes.get("poste").filter(|v| vrai(v))) else { return Ok(false) };
-        match desceller(&cle, &d64(e)?, AAD_POSTE) {
+    /// Les secrets du coffre, descelles : aucun dans un coffre neuf.
+    fn secrets(&self, contenu: &Contenu, maitresse: &[u8]) -> R<BTreeMap<String, String>> {
+        let Some(scelles) = &contenu.secrets else { return Ok(BTreeMap::new()) };
+        let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
+        let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
+        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| echec(Classe::Illisible, m))
+    }
+
+    fn poste_ouvre(&self, enveloppes: &Enveloppes, maitresse: &[u8]) -> R<bool> {
+        let Some(cle) = self.cle_poste(false)? else { return Ok(false) };
+        match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
             Ok(m) => Ok(m == maitresse),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
 
     /// Reecrit le coffre : les fiches en clair, les secrets scelles avec elles.
-    fn enregistrer(
-        &self,
-        contenu: &Map<String, Value>,
-        maitresse: &[u8],
-        fiches: Map<String, Value>,
-        secrets: &Map<String, Value>,
-    ) -> R<PathBuf> {
-        let octets = self.octets_a_ecrire(contenu, maitresse, fiches, secrets)?;
+    fn enregistrer(&self, contenu: Contenu, maitresse: &[u8], secrets: &BTreeMap<String, String>) -> R<PathBuf> {
+        let octets = self.octets_a_ecrire(contenu, maitresse, secrets)?;
         self.ecrire_octets(&octets)
     }
 
@@ -971,33 +973,24 @@ impl Coffre {
     }
 
     /// Ce que `enregistrer` ecrirait, sans l'ecrire.
-    fn octets_a_ecrire(
-        &self,
-        contenu: &Map<String, Value>,
-        maitresse: &[u8],
-        fiches: Map<String, Value>,
-        secrets: &Map<String, Value>,
-    ) -> R<Vec<u8>> {
-        let mut c = contenu.clone();
-        c.insert("version".into(), VERSION.into());
-        let clair = dumps(&Value::Object(secrets.clone()), None, false, true);
-        c.insert("secrets".into(), b64(&sceller(maitresse, clair.as_bytes(), &aad_fiches(&Value::Object(fiches.clone())))?));
-        c.insert("fiches".into(), Value::Object(fiches));
-        // L'enveloppe du poste est refaite si elle manque ou ne vaut plus ici :
+    fn octets_a_ecrire(&self, contenu: Contenu, maitresse: &[u8], secrets: &BTreeMap<String, String>) -> R<Vec<u8>> {
+        let mut c = contenu;
+        c.version = VERSION;
+        let clair = dumps(secrets, None, false, true);
+        c.secrets = Some(b64(&sceller(maitresse, clair.as_bytes(), &aad_fiches(&c.fiches))?));
+        // L'enveloppe du poste est refaite si elle ne vaut plus ici :
         // une sauvegarde restauree, ouverte par le mot de passe, rend son
         // autonomie a la machine.
-        let mut enveloppes = objet(c.get("enveloppes"))?;
-        if !self.poste_ouvre(&enveloppes, maitresse)? {
-            enveloppes.insert("poste".into(), b64(&sceller(&self.cle_ou_creer()?, maitresse, AAD_POSTE)?));
+        if !self.poste_ouvre(&c.enveloppes, maitresse)? {
+            c.enveloppes.poste = b64(&sceller(&self.cle_ou_creer()?, maitresse, AAD_POSTE)?);
         }
-        c.insert("enveloppes".into(), Value::Object(enveloppes));
-        Ok(dumps(&Value::Object(c), Some(2), false, true).into_bytes())
+        Ok(dumps(&c, Some(2), false, true).into_bytes())
     }
 
     // ------------------------------------------------------------- l'usage
 
     pub fn poser(&self, service: &str, motdepasse: &str, compte: Option<&str>) -> R<PathBuf> {
-        let fiche = service_connu(&Value::String(service.into()))?;
+        let fiche = service_connu(service)?;
         if strip(motdepasse).is_empty() {
             return Err(refus("Mot de passe vide : rien n'a ete pose."));
         }
@@ -1012,118 +1005,105 @@ impl Coffre {
                 longueur, service
             )));
         }
-        let compte = strip(compte.unwrap_or("")).to_lowercase();
-        if fiche.avec_compte && (!compte.contains('@') || compte.contains(' ')) {
-            return Err(refus(format!(
-                "Ce service se pose avec l'adresse de la boite (compte@domaine) : \
-                 {}. Rien n'a ete pose.",
-                if compte.is_empty() { "elle manque".to_string() } else { format!("{} n'en est pas une", repr_chaine(&compte)) }
-            )));
+        // L'adresse de la boite, en minuscules ; une adresse qui ne dit rien n'en est pas une.
+        let compte = compte.map(|c| strip(c).to_lowercase()).filter(|c| !c.is_empty());
+        if fiche.avec_compte {
+            let manque = match &compte {
+                None => Some("elle manque".to_string()),
+                Some(c) if !c.contains('@') || c.contains(' ') => Some(format!("{} n'en est pas une", repr_chaine(c))),
+                Some(_) => None,
+            };
+            if let Some(manque) = manque {
+                return Err(refus(format!(
+                    "Ce service se pose avec l'adresse de la boite (compte@domaine) : \
+                     {}. Rien n'a ete pose.",
+                    manque
+                )));
+            }
         }
-        let (maitresse, contenu) = self.ouvrir_ou_lever(None)?;
+        let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
         let mut secrets = self.secrets(&contenu, &maitresse)?;
-        let mut fiches = objet(contenu.get("fiches"))?;
         secrets.insert(service.into(), motdepasse.into());
-        let mut f = Map::new();
-        f.insert("pose_le".into(), self.pose_le()?.into());
-        f.insert("libelle".into(), fiche.libelle.into());
-        if !compte.is_empty() {
-            f.insert("compte".into(), compte.into());
-        }
-        fiches.insert(service.into(), Value::Object(f));
-        self.enregistrer(&contenu, &maitresse, fiches, &secrets)
+        contenu.fiches.insert(service.into(), FichePosee { pose_le: self.pose_le()?, libelle: fiche.libelle.into(), compte });
+        self.enregistrer(contenu, &maitresse, &secrets)
     }
 
     /// `AAAA-MM-JJ HH:MM`.
     fn pose_le(&self) -> R<String> {
         if self.maintenant.len() != 16 {
-            return Err(echec("ValueError", "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
+            return Err(echec(Classe::Illisible, "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
         }
         Ok(self.maintenant.replacen('T', " ", 1))
     }
 
     pub fn oublier(&self, service: &str) -> R<bool> {
-        service_connu(&Value::String(service.into()))?;
-        let contenu = self.lire_fichier()?;
-        if !dans(&fiches_brutes(&contenu), service) {
+        service_connu(service)?;
+        let Some(contenu) = self.lire_fichier()? else { return Ok(false) };
+        if !contenu.fiches.contains_key(service) {
             return Ok(false);
         }
-        let (maitresse, contenu) = self.ouvrir_ou_lever(None)?;
+        let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
         let mut secrets = self.secrets(&contenu, &maitresse)?;
-        let mut fiches = objet(contenu.get("fiches"))?;
-        fiches.shift_remove(service);
-        secrets.shift_remove(service);
-        if fiches.is_empty() && !objet(contenu.get("enveloppes"))?.get("motdepasse").is_some_and(vrai) && !self.scelle_ailleurs() {
+        contenu.fiches.remove(service);
+        secrets.remove(service);
+        if contenu.fiches.is_empty() && contenu.enveloppes.motdepasse.is_none() && !self.scelle_ailleurs() {
             effacer(&self.chemin())?;
             return Ok(true);
         }
-        self.enregistrer(&contenu, &maitresse, fiches, &secrets)?;
+        self.enregistrer(contenu, &maitresse, &secrets)?;
         Ok(true)
     }
 
-    /// Les fiches EN CLAIR. N'ouvre rien, ne derive rien, ne refuse pas.
-    fn fiches(&self) -> R<Map<String, Value>> {
+    /// Les fiches EN CLAIR. N'ouvre rien, ne derive rien ; un coffre d'un autre format n'en a pas.
+    fn fiches(&self) -> R<BTreeMap<String, FichePosee>> {
         match self.lire_fichier() {
-            Ok(c) => objet(c.get("fiches")),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(Map::new()),
+            Ok(Some(c)) => Ok(c.fiches),
+            Ok(None) => Ok(BTreeMap::new()),
+            Err(x) if x.classe == Classe::Coffre => Ok(BTreeMap::new()),
             Err(x) => Err(x),
         }
     }
 
     pub fn pose(&self, service: &str) -> R<bool> {
-        match self.lire_fichier() {
-            Ok(c) => Ok(dans(&fiches_brutes(&c), service)),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
-            Err(x) => Err(x),
-        }
+        Ok(self.fiches()?.contains_key(service))
     }
 
-    /// Ce qui est pose, depuis quand : jamais une valeur.
-    pub fn etat(&self) -> R<Vec<Value>> {
+    /// Ce qui est pose, depuis quand, pour chaque service : jamais une valeur.
+    pub fn services(&self) -> R<Vec<EtatService>> {
         let fiches = self.fiches()?;
-        let mut liste = Vec::new();
-        for s in SERVICES.iter() {
-            let f = objet(fiches.get(s.nom))?;
-            let texte = |k: &str| f.get(k).filter(|v| vrai(v)).cloned().unwrap_or_else(|| "".into());
-            let mut m = Map::new();
-            m.insert("service".into(), s.nom.into());
-            m.insert("libelle".into(), s.libelle.into());
-            m.insert("sert_a".into(), s.sert_a.into());
-            m.insert("pose".into(), (!f.is_empty()).into());
-            m.insert("pose_le".into(), texte("pose_le"));
-            m.insert("variable".into(), s.variable.into());
-            m.insert("dans_environnement".into(), self.variables.contains_key(s.variable).into());
-            m.insert("compte".into(), texte("compte"));
-            m.insert("avec_compte".into(), s.avec_compte.into());
-            liste.push(Value::Object(m));
-        }
-        Ok(liste)
+        Ok(SERVICES
+            .iter()
+            .map(|s| {
+                let f = fiches.get(s.nom);
+                EtatService {
+                    service: s.nom,
+                    libelle: s.libelle,
+                    sert_a: s.sert_a,
+                    pose: f.is_some(),
+                    pose_le: f.map(|f| f.pose_le.clone()),
+                    variable: s.variable,
+                    dans_environnement: self.variables.contains_key(s.variable),
+                    compte: f.and_then(|f| f.compte.clone()),
+                    avec_compte: s.avec_compte,
+                }
+            })
+            .collect())
     }
 
-    /// L'adresse posee avec le secret, ou "".
-    pub fn compte(&self, service: &str) -> R<String> {
-        service_connu(&Value::String(service.into()))?;
-        let f = objet(self.fiches()?.get(service))?;
-        Ok(f.get("compte").and_then(Value::as_str).unwrap_or("").to_string())
+    /// L'adresse posee avec le secret, s'il y en a une.
+    pub fn compte_pose(&self, service: &str) -> R<Option<String>> {
+        service_connu(service)?;
+        Ok(self.fiches()?.remove(service).and_then(|f| f.compte))
     }
 
     /// Le mot de passe du service, ou None. L'environnement l'emporte sur le
-    /// coffre. `ouverture` : le mot de passe du logiciel, quand l'appelant l'a
-    /// fait taper ; ce module ne le demande jamais.
-    pub fn lire(&self, service: &Value, usage: &Value, confirme: bool, ouverture: Option<&str>) -> R<Option<String>> {
+    /// coffre. `usage` dit pourquoi il se lit : `CONSULTATION` ou `DEPOT`. `ouverture` : le mot de passe du logiciel,
+    /// quand l'appelant l'a fait taper ; ce module ne le demande jamais.
+    pub fn lire(&self, service: &str, usage: &str, confirme: bool, ouverture: Option<&str>) -> R<Option<String>> {
         let fiche = service_connu(service)?;
         let nom = fiche.nom;
-        let usage_ok = matches!(usage.as_str(), Some(CONSULTATION | DEPOT));
-        if !usage_ok {
-            return Err(refus(format!(
-                "usage doit valoir {} ou {} (recu {}). Lire un secret sans dire \
-                 pourquoi n'est pas permis.",
-                repr_chaine(CONSULTATION),
-                repr_chaine(DEPOT),
-                repr_valeur(usage)
-            )));
-        }
-        if usage.as_str() == Some(DEPOT) && !confirme {
+        let usage = Usage::lu(usage)?;
+        if usage == Usage::Depot && !confirme {
             return Err(refus(
                 "Un depot ne puise dans le coffre qu'apres confirmation d'un \
                  humain. `confirme` doit porter ce qui a ete confirme -- le mois \
@@ -1133,30 +1113,32 @@ impl Coffre {
         if let Some(v) = self.variables.get(fiche.variable) {
             return Ok(Some(v.clone()));
         }
-        let contenu = self.lire_fichier()?;
-        if !dans(&fiches_brutes(&contenu), nom) {
+        let Some(contenu) = self.lire_fichier()? else { return Ok(None) };
+        if !contenu.fiches.contains_key(nom) {
             return Ok(None);
         }
         let Some(maitresse) = self.ouvrir(&contenu, ouverture)? else {
-            return Err(refus(format!(
-                "Le secret {} est dans le coffre, mais rien ici ne l'ouvre : la \
-                 cle de ce poste ({}) n'est pas celle qui l'a ferme{}, et le mot \
-                 de passe du logiciel {}.\n\
-                 Le donner ouvre le coffre sans rien changer au poste ; le \
-                 reposer rend a cette machine son ouverture sans mot de passe :\n\
-                 \x20 route mot-de-passe-changer",
-                nom,
-                affiche(&self.chemin_cle()),
-                if self.cle_posee()? { "" } else { ", et elle est absente" },
-                if ouverture.is_some_and(|o| !o.is_empty()) || mot_de_passe_tape().is_some() { "ne l'ouvre pas non plus" } else { "n'a pas ete donne" }
-            )));
+            let absente = if self.cle_posee()? { "" } else { ", et elle est absente" };
+            let donne = if ouverture.is_some_and(|o| !o.is_empty()) || mot_de_passe_tape().is_some() { "ne l'ouvre pas non plus" } else { "n'a pas ete donne" };
+            return Err(refus_a(
+                format!(
+                    "Le secret {} est dans le coffre, mais rien ici ne l'ouvre : la \
+                     cle de ce poste n'est pas celle qui l'a ferme{}, et le mot \
+                     de passe du logiciel {}.\n\
+                     Le donner ouvre le coffre sans rien changer au poste ; le \
+                     reposer rend a cette machine son ouverture sans mot de passe :\n\
+                     \x20 route mot-de-passe-changer",
+                    nom, absente, donne
+                ),
+                &self.chemin_cle(),
+            ));
         };
-        let secrets = self.secrets(&contenu, &maitresse)?;
-        Ok(secrets.get(nom).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from))
+        let mut secrets = self.secrets(&contenu, &maitresse)?;
+        Ok(secrets.remove(nom).filter(|s| !s.is_empty()))
     }
 
     pub fn disponible(&self, service: &str) -> R<bool> {
-        let fiche = service_connu(&Value::String(service.into()))?;
+        let fiche = service_connu(service)?;
         Ok(self.variables.contains_key(fiche.variable) || self.pose(service)?)
     }
 
@@ -1181,46 +1163,36 @@ impl Coffre {
                 LONGUEUR_MINIMALE_LOGICIEL
             )));
         }
-        let (maitresse, contenu) = self.ouvrir_ou_lever(ancien)?;
-        let mut enveloppes = objet(contenu.get("enveloppes"))?;
-        let kdf = contenu.get("kdf").ok_or_else(|| echec("KeyError", socle::fichiers::absent("kdf")))?;
-        enveloppes.insert("motdepasse".into(), b64(&sceller(&deriver(motdepasse, Some(kdf))?, &maitresse, AAD_MOTDEPASSE)?));
-        let mut c = contenu;
-        c.insert("enveloppes".into(), Value::Object(enveloppes));
-        c.insert("logiciel_pose_le".into(), self.pose_le()?.into());
+        let (maitresse, mut c) = self.ouvrir_ou_lever(ancien)?;
+        c.enveloppes.motdepasse = Some(b64(&sceller(&deriver(motdepasse, &c.kdf)?, &maitresse, AAD_MOTDEPASSE)?));
+        c.logiciel_pose_le = Some(self.pose_le()?);
         let secrets = self.secrets(&c, &maitresse)?;
-        let fiches = objet(c.get("fiches"))?;
-        self.octets_a_ecrire(&c, &maitresse, fiches, &secrets)
+        self.octets_a_ecrire(c, &maitresse, &secrets)
     }
 
     /// Un mot de passe du logiciel a-t-il ete pose ?
     pub fn ouverture_exigee(&self) -> R<bool> {
         match self.lire_fichier() {
-            Ok(c) => Ok(objet(c.get("enveloppes"))?.get("motdepasse").is_some_and(vrai)),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Ok(c) => Ok(c.is_some_and(|c| c.enveloppes.motdepasse.is_some())),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
 
     /// Retire l'enveloppe du mot de passe du logiciel.
     pub fn oublier_ouverture(&self, ancien: Option<&str>) -> R<bool> {
-        let contenu = self.lire_fichier()?;
-        if !objet(contenu.get("enveloppes"))?.get("motdepasse").is_some_and(vrai) {
+        if !self.lire_fichier()?.is_some_and(|c| c.enveloppes.motdepasse.is_some()) {
             return Ok(false);
         }
-        let (maitresse, contenu) = self.ouvrir_ou_lever(ancien)?;
-        let mut enveloppes = objet(contenu.get("enveloppes"))?;
-        enveloppes.shift_remove("motdepasse");
-        let fiches = objet(contenu.get("fiches"))?;
-        if fiches.is_empty() && !self.scelle_ailleurs() {
+        let (maitresse, mut c) = self.ouvrir_ou_lever(ancien)?;
+        if c.fiches.is_empty() && !self.scelle_ailleurs() {
             effacer(&self.chemin())?;
             return Ok(true);
         }
-        let secrets = self.secrets(&contenu, &maitresse)?;
-        let mut c = contenu;
-        c.insert("enveloppes".into(), Value::Object(enveloppes));
-        c.shift_remove("logiciel_pose_le");
-        self.enregistrer(&c, &maitresse, fiches, &secrets)?;
+        let secrets = self.secrets(&c, &maitresse)?;
+        c.enveloppes.motdepasse = None;
+        c.logiciel_pose_le = None;
+        self.enregistrer(c, &maitresse, &secrets)?;
         Ok(true)
     }
 
@@ -1228,16 +1200,16 @@ impl Coffre {
     /// s'ouvrant : GCM ne connait pas le « presque ».
     pub fn verifier_ouverture(&self, motdepasse: &str) -> R<bool> {
         let contenu = match self.lire_fichier() {
-            Ok(c) => c,
-            Err(x) if x.classe == "ErreurCoffre" => return Ok(false),
+            Ok(Some(c)) => c,
+            Ok(None) => return Ok(false),
+            Err(x) if x.classe == Classe::Coffre => return Ok(false),
             Err(x) => return Err(x),
         };
-        let enveloppes = objet(contenu.get("enveloppes"))?;
-        let Some(e) = enveloppes.get("motdepasse").filter(|v| vrai(v)) else { return Ok(false) };
-        let r = deriver(motdepasse, contenu.get("kdf")).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
+        let Some(e) = &contenu.enveloppes.motdepasse else { return Ok(false) };
+        let r = deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
         match r {
             Ok(_) => Ok(true),
-            Err(x) if x.classe == "ErreurCoffre" => Ok(false),
+            Err(x) if x.classe == Classe::Coffre => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1250,31 +1222,29 @@ impl Coffre {
         if !self.verifier_ouverture(motdepasse)? {
             return Err(refus("Mot de passe du logiciel refuse : rien n'est garde."));
         }
-        let mut d = Map::new();
-        d.insert("motdepasse".into(), motdepasse.into());
-        d.insert("fin".into(), fin.into());
-        d.insert("coffre".into(), affiche(&resoudre(&self.chemin())).into());
-        let clair = dumps(&Value::Object(d), None, false, false);
-        let p = self.chemin_gardee();
+        let d = Gardee { motdepasse: motdepasse.into(), fin: fin.into(), coffre: affiche(&resoudre(&self.chemin())?) };
+        let clair = dumps(&d, None, false, false);
+        let p = self.chemin_gardee()?;
         dossier_de(&p)?;
         std::fs::write(&p, sceller(&self.cle_ou_creer()?, clair.as_bytes(), AAD_GARDEE)?).map_err(|e| oserr(&e, &p))?;
         Ok(fin.to_string())
     }
 
-    /// La gardee dechiffree, si elle se lit.
-    fn gardee(&self) -> R<Option<Map<String, Value>>> {
-        let p = self.chemin_gardee();
-        let cle = self.cle_poste(false)?;
-        let Some(cle) = cle.filter(|_| existe(&p).unwrap_or(false)) else { return Ok(None) };
-        let lu = lire_octets(&p).and_then(|o| desceller(&cle, &o, AAD_GARDEE)).map(|c| {
-            String::from_utf8(c).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        });
-        match lu {
-            Ok(Some(Value::Object(d))) => Ok(Some(d)),
-            Ok(_) => Err(echec("Illisible", "")),
-            Err(x) if x.classe == "ErreurCoffre" => Err(echec("Illisible", "")),
-            Err(x) => Err(x),
+    /// La gardee dechiffree, s'il y en a une ; `CoffreIllisible` si elle ne s'ouvre pas ou ne se lit pas.
+    fn gardee(&self) -> R<Option<Gardee>> {
+        let p = self.chemin_gardee()?;
+        let Some(cle) = self.cle_poste(false)? else { return Ok(None) };
+        if !existe(&p)? {
+            return Ok(None);
         }
+        let illisible = |detail: String| echec(Classe::CoffreIllisible, socle::echec::avec("La seance gardee ne se lit pas.", socle::echec::APart { detail: Some(detail), ..socle::echec::APart::default() }));
+        let clair = match lire_octets(&p).and_then(|o| desceller(&cle, &o, AAD_GARDEE)) {
+            Ok(c) => c,
+            Err(x) if x.classe == Classe::Coffre => return Err(illisible(x.message)),
+            Err(x) => return Err(x),
+        };
+        let texte = String::from_utf8(clair).map_err(|e| illisible(e.to_string()))?;
+        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.").map(Some).map_err(illisible)
     }
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et
@@ -1283,26 +1253,24 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == "Illisible" => {
+            Err(x) if x.classe == Classe::CoffreIllisible => {
                 self.oublier_ouverture_gardee()?;
                 return Ok(None);
             }
             Err(x) => return Err(x),
         };
-        let texte = |k: &str| d.get(k).and_then(Value::as_str).map(String::from);
-        if texte("fin").unwrap_or_default() < self.heure() {
+        if d.fin < self.heure() {
             self.oublier_ouverture_gardee()?;
             return Ok(None);
         }
-        if texte("coffre").as_deref() != Some(&affiche(&resoudre(&self.chemin()))) {
+        if d.coffre != affiche(&resoudre(&self.chemin())?) {
             return Ok(None);
         }
-        let mdp = texte("motdepasse").unwrap_or_default();
-        if !self.verifier_ouverture(&mdp)? {
+        if !self.verifier_ouverture(&d.motdepasse)? {
             self.oublier_ouverture_gardee()?;
             return Ok(None);
         }
-        Ok(Some(mdp))
+        Ok(Some(d.motdepasse))
     }
 
     /// L'heure de fin de la gardee en cours, sans rien verifier d'autre.
@@ -1310,14 +1278,14 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == "Illisible" => return Ok(None),
+            Err(x) if x.classe == Classe::CoffreIllisible => return Ok(None),
             Err(x) => return Err(x),
         };
-        Ok(d.get("fin").and_then(Value::as_str).filter(|f| *f >= self.heure().as_str()).map(String::from))
+        Ok(Some(d.fin).filter(|f| *f >= self.heure()))
     }
 
     pub fn oublier_ouverture_gardee(&self) -> R<bool> {
-        let p = self.chemin_gardee();
+        let p = self.chemin_gardee()?;
         if existe(&p)? {
             std::fs::remove_file(&p).map_err(|e| oserr(&e, &p))?;
             return Ok(true);
@@ -1326,11 +1294,12 @@ impl Coffre {
     }
 }
 
-pub(crate) fn service_connu(service: &Value) -> R<&'static Service> {
-    if let Some(s) = service.as_str().and_then(|n| SERVICES.iter().find(|s| s.nom == n)) {
+/// Le service du coffre nomme `service`, ou le refus d'un nom qu'aucun ne porte.
+pub(crate) fn service_connu(service: &str) -> R<&'static Service> {
+    if let Some(s) = SERVICES.iter().find(|s| s.nom == service) {
         return Ok(s);
     }
     let mut noms: Vec<&str> = SERVICES.iter().map(|s| s.nom).collect();
     noms.sort_unstable();
-    Err(refus(format!("Service inconnu : {}. Connus : {}.", repr_valeur(service), noms.join(", "))))
+    Err(refus(format!("Service inconnu : {}. Connus : {}.", repr_chaine(service), noms.join(", "))))
 }

@@ -18,11 +18,81 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::{json, Value};
+use socle::echec::Classe;
 
-use documents::valeur::vrai;
-use crate::google::{champ, en_texte, encoder, jeton_par_rafraichissement, phrase_de_panne, JETONS};
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Serialize};
+
+use crate::google::{encoder, jeton_par_rafraichissement, lue, phrase_de_panne, Application, JETONS};
 use crate::transport::{envoyer, Requete};
+
+/// UN FICHIER (OU UN DOSSIER) TEL QUE DRIVE LE REND, des seuls champs demandes (`fields`) : un element d'un listage, un
+/// dossier cree, un fichier depose.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FichierDrive {
+    id: Option<String>,
+    name: Option<String>,
+    #[serde(rename = "md5Checksum")]
+    md5: Option<String>,
+    /// La taille, que Drive ecrit en texte ; absente pour un fichier Google Docs.
+    size: Option<String>,
+    #[serde(rename = "mimeType")]
+    type_mime: Option<String>,
+    #[serde(rename = "webViewLink")]
+    lien: Option<String>,
+    #[serde(rename = "kind")]
+    _sorte: Option<IgnoredAny>,
+}
+
+impl FichierDrive {
+    /// Son identifiant, que Drive donne toujours a ce qu'il rend.
+    fn id(&self) -> Result<String, ErreurGoogle> {
+        self.id.clone().ok_or_else(|| ErreurGoogle::nouvelle(Classe::Manque, socle::fichiers::absent("id")))
+    }
+
+    /// Son nom, que le listage demande.
+    fn nom(&self) -> Result<String, ErreurGoogle> {
+        self.name.clone().ok_or_else(|| ErreurGoogle::nouvelle(Classe::Manque, socle::fichiers::absent("name")))
+    }
+}
+
+/// UN LISTAGE DE DRIVE (`files.list`) : ses fichiers (Drive ecrit la liste, vide s'il n'y en a pas), et la page suivante
+/// s'il y en a une.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Listage {
+    files: Vec<FichierDrive>,
+    #[serde(rename = "nextPageToken")]
+    page_suivante: Option<String>,
+    #[serde(rename = "incompleteSearch")]
+    _incomplet: Option<IgnoredAny>,
+    #[serde(rename = "kind")]
+    _sorte: Option<IgnoredAny>,
+}
+
+impl Listage {
+    /// La page suivante, quand Drive en annonce une.
+    fn suite(&self) -> Option<String> {
+        self.page_suivante.clone().filter(|p| !p.is_empty())
+    }
+}
+
+/// Ce qui part pour creer un dossier (`files.create`) : son nom, son type, son parent.
+#[derive(Serialize)]
+struct DossierACreer<'a> {
+    name: &'a str,
+    #[serde(rename = "mimeType")]
+    type_mime: &'a str,
+    parents: [&'a str; 1],
+}
+
+/// Les metadonnees d'un premier depot (`files.create`, `multipart`) : le nom et le parent.
+#[derive(Serialize)]
+struct FichierACreer<'a> {
+    name: &'a str,
+    parents: [&'a str; 1],
+}
 
 /// `google.DRIVE_FICHIERS`.
 pub const DRIVE_FICHIERS: &str = "https://www.googleapis.com/drive/v3/files";
@@ -60,35 +130,30 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
     }
 }
 
-/// Une erreur de l'API ou de la configuration, avec le nom de sa classe
-/// (`ErreurGoogle` pour ce qui est deja traduit en francais ; `CopieDeDeveloppement`,
-/// `FileNotFoundError`, `SortieAbsente`... pour le reste). La phrase est ecrite pour etre lue.
+/// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
+/// `CopieDeDeveloppement`, `FichierAbsent`, `SortieAbsente`... pour le reste ; aucune pour un refus ordinaire). La phrase
+/// est ecrite pour etre lue.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ErreurGoogle {
-    pub classe: &'static str,
+    pub classe: Option<Classe>,
     pub message: String,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
     pub statut: Option<u16>,
 }
 
 impl ErreurGoogle {
-    pub fn nouvelle(classe: &'static str, message: impl Into<String>) -> ErreurGoogle {
-        ErreurGoogle { classe, message: message.into(), statut: None }
+    pub fn nouvelle(classe: Classe, message: impl Into<String>) -> ErreurGoogle {
+        ErreurGoogle { classe: Some(classe), message: message.into(), statut: None }
     }
 
-    /// `google.ErreurGoogle`.
+    /// Un refus de Google, traduit.
     pub fn google(message: impl Into<String>) -> ErreurGoogle {
-        ErreurGoogle::nouvelle("ErreurGoogle", message)
+        ErreurGoogle::nouvelle(Classe::Google, message)
     }
 
-    /// Un fichier local qui manque, ou ne se lit pas (`FileNotFoundError`, `OSError`).
+    /// Un fichier local qui manque, ou ne se lit pas.
     pub fn fichier(e: &std::io::Error, chemin: &Path) -> ErreurGoogle {
-        let classe = match e.kind() {
-            std::io::ErrorKind::NotFound => "FileNotFoundError",
-            std::io::ErrorKind::PermissionDenied => "PermissionError",
-            _ => "OSError",
-        };
-        ErreurGoogle::nouvelle(classe, socle::fichiers::panne_fichier(e, chemin))
+        ErreurGoogle::nouvelle(Classe::du_disque(e), socle::fichiers::panne_fichier(e, chemin))
     }
 }
 
@@ -102,7 +167,7 @@ impl std::error::Error for ErreurGoogle {}
 
 impl From<socle::echec::Echec> for ErreurGoogle {
     fn from(e: socle::echec::Echec) -> Self {
-        ErreurGoogle::nouvelle(e.classe.unwrap_or("Exception"), e.message)
+        ErreurGoogle { classe: e.classe, message: e.message, statut: None }
     }
 }
 
@@ -112,7 +177,8 @@ pub struct Distant {
     pub id: String,
     /// `md5Checksum`, calcule par Google ; absent pour un fichier Google Docs.
     pub md5: Option<String>,
-    pub octets: u64,
+    /// Sa taille ; absente pour un fichier Google Docs.
+    pub octets: Option<u64>,
 }
 
 /// Ce que Drive rend d'un depot (`{id, name, webViewLink}`), plus `remplace`.
@@ -139,7 +205,7 @@ pub trait Drive {
     /// CREE. Le client ne cherche pas lui-meme (une recherche par nom seul confondrait un dossier et un fichier, et
     /// ne tiendrait pas compte de ce que `lister` vient de dire) : la decision est celle de `lister`, la meme que
     /// celle de la comparaison des empreintes.
-    /// Un fichier disparu entre-temps est une `FileNotFoundError`.
+    /// Un fichier disparu entre-temps est un `FichierAbsent`.
     fn televerser(&mut self, fichier: &Path, parent: &str, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle>;
     /// Les SOUS-DOSSIERS d'un dossier, `(nom, identifiant)`, dans l'ordre ou Drive les rend, homonymes compris (la
     /// restauration les refuse plutot que d'en choisir un). Ne cree rien : c'est ce qui distingue la recherche de la
@@ -159,33 +225,31 @@ pub struct Adresses {
     pub televersement: String,
 }
 
-impl Default for Adresses {
-    fn default() -> Self {
+impl Adresses {
+    /// Les adresses de Google.
+    pub fn de_google() -> Adresses {
         Adresses { jetons: JETONS.into(), fichiers: DRIVE_FICHIERS.into(), televersement: DRIVE_TELEVERSEMENT.into() }
     }
-}
 
-impl Adresses {
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
         Adresses { jetons: format!("{}/token", base), fichiers: format!("{}/drive/v3/files", base), televersement: format!("{}/upload/drive/v3/files", base) }
     }
 }
 
-/// CE QUE LE CLIENT RECOIT de l'appelant, qui l'a lu sur le poste (le coffre, la cle du poste) : les identifiants de
-/// l'application, le jeton de rafraichissement scelle (ou la phrase qui dit pourquoi il ne se lit pas), l'adresse du
-/// compte. Ce module n'ouvre jamais le coffre.
+/// CE QUE LE CLIENT RECOIT de l'appelant, qui l'a lu sur le poste (le coffre, la cle du poste) : l'application, le jeton
+/// de rafraichissement scelle (aucun : le compte n'est pas lie ; ou la phrase qui dit pourquoi il ne se lit pas),
+/// l'adresse du compte. Ce module n'ouvre jamais le coffre.
 pub struct Autorisation {
-    pub identifiants: (Value, Value),
-    /// Le jeton enregistre (`Null` s'il n'y en a pas), ou la phrase du refus de sa lecture.
-    pub jeton: Result<Value, String>,
+    pub application: Application,
+    pub rafraichissement: Result<Option<String>, String>,
     pub compte: Option<String>,
 }
 
 /// Le jeton d'acces ne vit qu'en memoire.
 pub struct Client {
-    identifiants: (Value, Value),
-    jeton: Result<Value, String>,
+    application: Application,
+    rafraichissement: Result<Option<String>, String>,
     compte: Option<String>,
     acces: Option<String>,
     adresses: Adresses,
@@ -195,8 +259,8 @@ impl Client {
     /// Le client du Drive, avec ce que l'appelant a lu (`Autorisation`). Aucun appel reseau.
     pub fn nouveau(autorisation: Autorisation, adresses: Adresses) -> Client {
         Client {
-            identifiants: autorisation.identifiants,
-            jeton: autorisation.jeton,
+            application: autorisation.application,
+            rafraichissement: autorisation.rafraichissement,
             compte: autorisation.compte,
             acces: None,
             adresses,
@@ -210,32 +274,24 @@ impl Client {
         if let Some(a) = self.acces.as_ref().filter(|a| !a.is_empty()) {
             return Ok(a.clone());
         }
-        let enregistre = self.jeton.clone().map_err(ErreurGoogle::google)?;
-        let rafraichissement = champ(&enregistre, "rafraichissement")?;
-        if !vrai(&rafraichissement) {
+        let Some(rafraichissement) = self.rafraichissement.clone().map_err(ErreurGoogle::google)?.filter(|r| !r.is_empty()) else {
             return Err(ErreurGoogle::google(
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
             ));
-        }
-        let (id, secret) = &self.identifiants;
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, id, secret, &rafraichissement, DELAI_APPEL.min(60))?.map_err(ErreurGoogle::google)?;
+        };
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(60))?.map_err(ErreurGoogle::google)?;
         self.acces = Some(acces.clone());
         Ok(acces)
     }
 
-    /// `Client.appel` : GET, ou POST si des donnees sont fournies, ou `methode`. Rend le JSON de la
-    /// reponse (`{}` si elle est vide).
+    /// `Client.appel` : GET, ou POST si des donnees sont fournies, ou `methode`. Rend la reponse lue en sa forme `T`.
     ///
     /// UN JETON D'ACCES NE VIT QU'UNE HEURE (3600 s) : garde pour la vie du client, une sauvegarde de plus
     /// d'une heure recevrait des 401 pour chaque fichier restant. Un 401 fait donc oublier le jeton, en demande
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
-    pub fn appel(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Value, ErreurGoogle> {
+    fn appel<T: serde::de::DeserializeOwned>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
-        if brut.is_empty() {
-            return Ok(json!({}));
-        }
-        let texte = String::from_utf8(brut).map_err(|e| ErreurGoogle::nouvelle("UnicodeDecodeError", e.to_string()))?;
-        serde_json::from_str(&texte).map_err(|e| ErreurGoogle::nouvelle("JSONDecodeError", e.to_string()))
+        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::nouvelle(Classe::Google, m))
     }
 
     /// `appel` sans lecture du JSON : les octets de la reponse, tels quels (le contenu d'un fichier, `telecharger`). Le
@@ -253,7 +309,7 @@ impl Client {
             };
             match r {
                 Err(e) if passagere(&e) && tentative < NOUVELLES_TENTATIVES => {
-                    std::thread::sleep(std::time::Duration::from_millis(attente(ATTENTE_DE_BASE_MS, tentative)));
+                    std::thread::sleep(std::time::Duration::from_millis(attente(ATTENTE_DE_BASE_MS, tentative)?));
                     tentative += 1;
                 }
                 autre => return autre,
@@ -306,14 +362,14 @@ impl Client {
             self.adresses.fichiers,
             encoder(&[("q", requete), ("fields", "files(id,name)".into()), ("pageSize", "10".into())])
         );
-        let trouves = self.appel(&url, None, None, None)?;
-        if let Some(id) = premier_de(&trouves, true)? {
-            return Ok(id);
+        let trouves: Listage = self.appel(&url, None, None, None)?;
+        if let Some(premier) = trouves.files.first() {
+            return premier.id();
         }
-        let corps = socle::json_ascii::dumps(&json!({"name": nom, "mimeType": DOSSIER_DRIVE, "parents": [parent]}), None, false, false);
+        let corps = socle::json_ascii::dumps(&DossierACreer { name: nom, type_mime: DOSSIER_DRIVE, parents: [parent] }, None, false, false);
         let url = self.adresses.fichiers.clone();
-        let cree = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), None)?;
-        texte_requis(&cree, "id")
+        let cree: FichierDrive = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), None)?;
+        cree.id()
     }
 }
 
@@ -325,91 +381,36 @@ fn echapper(nom: &str) -> String {
     nom.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-/// `x` doit etre un objet JSON (`AttributeError` sinon).
-fn en_dict(v: &Value) -> Result<&serde_json::Map<String, Value>, ErreurGoogle> {
-    match v {
-        Value::Object(o) => Ok(o),
-        autre => Err(ErreurGoogle::nouvelle("AttributeError", socle::fichiers::attendu("un objet", documents::valeur::nom_type(autre)))),
-    }
-}
-
-/// `x[cle]` : le texte d'une cle qui doit etre la (`KeyError` sinon ; `TypeError` si `x` n'est pas un objet).
-fn texte_requis(v: &Value, cle: &str) -> Result<String, ErreurGoogle> {
-    match v {
-        Value::Object(o) => match o.get(cle) {
-            Some(x) => Ok(en_texte(x)),
-            None => Err(ErreurGoogle::nouvelle("KeyError", socle::fichiers::absent(cle))),
-        },
-        autre => Err(ErreurGoogle::nouvelle("TypeError", socle::fichiers::attendu("un objet", documents::valeur::nom_type(autre)))),
-    }
-}
-
-/// Les elements du listage (`files`, une liste ; absent : aucun).
-fn elements_de(r: &Value) -> Result<Vec<&Value>, ErreurGoogle> {
-    let o = en_dict(r)?;
-    match o.get("files") {
-        None => Ok(Vec::new()),
-        Some(Value::Array(a)) => Ok(a.iter().collect()),
-        Some(autre) => Err(ErreurGoogle::nouvelle("TypeError", socle::fichiers::attendu("une liste", documents::valeur::nom_type(autre)))),
-    }
-}
-
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
-fn octets_de(t: &Value) -> Result<u64, ErreurGoogle> {
-    match t {
-        Value::Number(n) => Ok(n.as_u64().or_else(|| n.as_f64().map(|f| f.trunc().max(0.0) as u64)).unwrap_or(0)),
-        Value::String(x) => x
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| ErreurGoogle::nouvelle("ValueError", format!("nombre entier illisible : '{}'", x))),
-        autre => Err(ErreurGoogle::nouvelle(
-            "TypeError",
-            socle::fichiers::attendu("un nombre entier", documents::valeur::nom_type(autre)),
-        )),
-    }
+fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
+    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() })))
 }
 
-/// L'identifiant du premier fichier trouve, `None` s'il n'y en a pas ; `strict` : le premier doit porter un `id`. Les
-/// formes que Drive ne rend jamais sont refusees.
-fn premier_de(trouves: &Value, strict: bool) -> Result<Option<String>, ErreurGoogle> {
-    let o = en_dict(trouves)?;
-    let files = match o.get("files") {
-        Some(f) if vrai(f) => f,
-        _ => return Ok(None),
-    };
-    let premier: &Value = match files {
-        Value::Array(a) => &a[0],
-        autre => return Err(ErreurGoogle::nouvelle("TypeError", socle::fichiers::attendu("une liste", documents::valeur::nom_type(autre)))),
-    };
-    if strict {
-        return Ok(Some(texte_requis(premier, "id")?));
-    }
-    Ok(en_dict(premier)?.get("id").filter(|i| vrai(i)).map(en_texte))
+/// Des aleas du systeme ; un systeme qui n'en donne pas refuse.
+fn aleas(o: &mut [u8]) -> Result<(), ErreurGoogle> {
+    getrandom::fill(o).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, format!("Le systeme ne donne pas d'aleas : {}.", e)))
 }
 
 /// L'attente avant la nouvelle tentative `n` (0 pour la premiere) : `base * 2^n` plus un hasard d'au plus `base`
 /// (« wait 1 + random_number_milliseconds », puis 2, puis 4 : `google-drive-api-limites-et-quotas-20261020.txt`).
-fn attente(base: u64, n: u32) -> u64 {
+fn attente(base: u64, n: u32) -> Result<u64, ErreurGoogle> {
     let mut o = [0u8; 2];
-    let hasard = if getrandom::fill(&mut o).is_ok() { u64::from(u16::from_le_bytes(o)) * base / u64::from(u16::MAX) } else { base / 2 };
-    base.saturating_mul(1 << n.min(6)) + hasard
+    aleas(&mut o)?;
+    let hasard = u64::from(u16::from_le_bytes(o)) * base / u64::from(u16::MAX);
+    Ok(base.saturating_mul(1 << n.min(6)) + hasard)
 }
 
 /// Seize octets tirés au hasard, en hexadécimal.
-fn hasard_hex() -> String {
+fn hasard_hex() -> Result<String, ErreurGoogle> {
     let mut o = [0u8; 16];
-    if getrandom::fill(&mut o).is_err() {
-        // Pas d'alea du systeme : l'heure suffit a faire une frontiere improbable dans un corps.
-        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-        o.copy_from_slice(&t.to_le_bytes());
-    }
-    o.iter().map(|b| format!("{:02x}", b)).collect()
+    aleas(&mut o)?;
+    Ok(o.iter().map(|b| format!("{:02x}", b)).collect())
 }
 
 /// Le corps `multipart/related` d'un premier depot (`Client.televerser`) : les metadonnees JSON,
 /// puis le contenu. Rend (corps, frontiere).
 pub fn corps_multipart(nom: &str, parent: &str, type_mime: &str, contenu: &[u8], frontiere: &str) -> Vec<u8> {
-    let meta = socle::json_ascii::dumps(&json!({"name": nom, "parents": [parent]}), None, false, false);
+    let meta = socle::json_ascii::dumps(&FichierACreer { name: nom, parents: [parent] }, None, false, false);
     let mut corps = Vec::with_capacity(contenu.len() + 512);
     corps.extend_from_slice(b"--");
     corps.extend_from_slice(frontiere.as_bytes());
@@ -451,21 +452,15 @@ impl Drive for Client {
                 champs.push(("pageToken", p.clone()));
             }
             let url = format!("{}?{}", self.adresses.fichiers, encoder(&champs));
-            let r = self.appel(&url, None, None, None)?;
-            for f in elements_de(&r)? {
-                if en_dict(f)?.get("mimeType").and_then(Value::as_str) == Some(DOSSIER_DRIVE) {
+            let r: Listage = self.appel(&url, None, None, None)?;
+            for f in &r.files {
+                if f.type_mime.as_deref() == Some(DOSSIER_DRIVE) {
                     continue;
                 }
-                let nom = texte_requis(f, "name")?;
-                let id = texte_requis(f, "id")?;
-                let md5 = f.get("md5Checksum").filter(|m| !m.is_null()).map(en_texte);
-                let octets = match f.get("size") {
-                    Some(t) if vrai(t) => octets_de(t)?,
-                    _ => 0,
-                };
-                fichiers.insert(nom, Distant { id, md5, octets });
+                let octets = f.size.as_deref().filter(|t| !t.is_empty()).map(octets_de).transpose()?;
+                fichiers.insert(f.nom()?, Distant { id: f.id()?, md5: f.md5.clone(), octets });
             }
-            page = r.get("nextPageToken").filter(|p| vrai(p)).map(en_texte);
+            page = r.suite();
             if page.is_none() {
                 return Ok(fichiers);
             }
@@ -475,9 +470,16 @@ impl Drive for Client {
     fn televerser(&mut self, fichier: &Path, parent: &str, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle> {
         let nom: String = match nom.filter(|n| !n.is_empty()) {
             Some(n) => n.to_string(),
-            None => fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            None => fichier
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .ok_or_else(|| ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() })))?,
         };
-        let type_mime = crate::envoi::type_devine(&nom).unwrap_or("application/octet-stream");
+        // Un type que l'extension ne dit pas : des octets (RFC 2046, `application/octet-stream`).
+        let type_mime = match crate::envoi::type_devine(&nom) {
+            Some(t) => t,
+            None => "application/octet-stream",
+        };
 
         if let Some(distant) = connu {
             let url = format!(
@@ -487,13 +489,13 @@ impl Drive for Client {
                 encoder(&[("uploadType", "media".into()), ("fields", "id,name,webViewLink".into())])
             );
             let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
-            let r = self.appel(&url, Some(&contenu), Some(type_mime), Some("PATCH"))?;
-            let mut depose = depose_de(&r);
+            let r: FichierDrive = self.appel(&url, Some(&contenu), Some(type_mime), Some("PATCH"))?;
+            let mut depose = depose_de(r);
             depose.remplace = true;
             return Ok(depose);
         }
 
-        let frontiere = format!("----{}", hasard_hex());
+        let frontiere = format!("----{}", hasard_hex()?);
         let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
         let corps = corps_multipart(&nom, parent, type_mime, &contenu, &frontiere);
         let url = format!(
@@ -501,8 +503,8 @@ impl Drive for Client {
             self.adresses.televersement,
             encoder(&[("uploadType", "multipart".into()), ("fields", "id,name,webViewLink".into())])
         );
-        let r = self.appel(&url, Some(&corps), Some(&format!("multipart/related; boundary={}", frontiere)), None)?;
-        Ok(depose_de(&r))
+        let r: FichierDrive = self.appel(&url, Some(&corps), Some(&format!("multipart/related; boundary={}", frontiere)), None)?;
+        Ok(depose_de(r))
     }
 
     fn sous_dossiers(&mut self, parent: &str) -> Result<Vec<(String, String)>, ErreurGoogle> {
@@ -518,11 +520,11 @@ impl Drive for Client {
                 champs.push(("pageToken", p.clone()));
             }
             let url = format!("{}?{}", self.adresses.fichiers, encoder(&champs));
-            let r = self.appel(&url, None, None, None)?;
-            for f in elements_de(&r)? {
-                dossiers.push((texte_requis(f, "name")?, texte_requis(f, "id")?));
+            let r: Listage = self.appel(&url, None, None, None)?;
+            for f in &r.files {
+                dossiers.push((f.nom()?, f.id()?));
             }
-            page = r.get("nextPageToken").filter(|p| vrai(p)).map(en_texte);
+            page = r.suite();
             if page.is_none() {
                 return Ok(dossiers);
             }
@@ -537,7 +539,6 @@ impl Drive for Client {
     }
 }
 
-fn depose_de(r: &Value) -> Depose {
-    let texte = |c: &str| r.get(c).filter(|x| !x.is_null()).map(en_texte);
-    Depose { id: texte("id"), nom: texte("name"), lien: texte("webViewLink"), remplace: false }
+fn depose_de(r: FichierDrive) -> Depose {
+    Depose { id: r.id, nom: r.name, lien: r.lien, remplace: false }
 }

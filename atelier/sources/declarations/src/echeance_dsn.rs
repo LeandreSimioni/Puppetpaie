@@ -65,6 +65,8 @@ pub struct Echeance {
     pub jour: Jour,
     /// Les jours sautes, et pourquoi (« samedi », « dimanche », « Assomption, fête légale »).
     pub sautes: Vec<(Jour, String)>,
+    /// La veille de `jour` (`veille`).
+    veille: Jour,
 }
 
 /// Pourquoi `j` n'est pas un jour ouvre du point de depot, ou `None` s'il l'est.
@@ -84,7 +86,8 @@ pub fn reporter(nominale: Jour) -> Resultat<Echeance> {
         sautes.push((jour, pourquoi));
         jour = jour.plus_jours(1)?;
     }
-    Ok(Echeance { nominale, jour, sautes })
+    let veille = jour.plus_jours(-1)?;
+    Ok(Echeance { nominale, jour, sautes, veille })
 }
 
 /// Le nombre d'un morceau de nom de mois ; refus s'il ne se lit pas.
@@ -129,8 +132,8 @@ impl Echeance {
 
     /// Le dernier jour (jusqu'a minuit) ou un annule-et-remplace integral est admis : la veille de l'echeance (cahier
     /// technique § 1.4.2 ; inference 3 : la veille de l'echeance reportee).
-    pub fn veille(&self) -> Resultat<Jour> {
-        self.jour.plus_jours(-1)
+    pub fn veille(&self) -> Jour {
+        self.veille
     }
 
     /// LE PREMIER JOUR OU LA DSN DU MOIS PEUT PARTIR : un mois avant son echeance. Cahier technique DSN 2026.1, § 1.4.2
@@ -174,7 +177,7 @@ impl Echeance {
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
-            veille_annule_et_remplace: self.veille().ok().map(|j| j.iso()),
+            veille_annule_et_remplace: Some(self.veille.iso()),
             textes: TEXTES,
             inference: INFERENCE,
         }

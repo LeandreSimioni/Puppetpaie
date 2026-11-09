@@ -14,6 +14,7 @@
 //! l'horloge).
 
 use std::path::PathBuf;
+use socle::echec::Classe;
 
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
@@ -34,15 +35,17 @@ use envois::simulation_courriels::BoiteQuiRepond;
 /// au code dans les termes de `CORPS_REPONSE`) ; la vraie releve la lit, note la signature, contresigne le contrat et le
 /// renvoie au salarie.
 pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
-    let mut boite = BoiteQuiRepond::nouvelle(ctx);
+    let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let attendues = etats::signatures_attendues(|c| ctx.salaries.get(c).map(|f| &f.champs), &lignes, None);
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
-    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine);
+    let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in &attendues {
+        // Une demande remise en main propre n'a pas d'adresse : personne n'y repond par courriel.
+        let Some(adresse) = a.adresse.as_deref() else { continue };
         let code = a.code.clone();
-        let nom = a.nom.clone();
-        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a)) {
+        let nom = a.qui();
+        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a))? {
             Some(b) => b,
             None => (
                 "Re: contrat".to_string(),
@@ -52,8 +55,8 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
                 ),
             ),
         };
-        let brut = envois::simulation_courriels::reponse_jouee(&a.adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
-            .map_err(|m| erreur("ValueError", m))?;
+        let brut = envois::simulation_courriels::reponse_jouee(adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
+            .map_err(|m| erreur(Classe::Illisible, m))?;
         boite.repondre(&code, brut);
     }
     Ok(boite)
@@ -63,7 +66,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
 /// ne se joue dans une compagnie qui n'est pas une compagnie fictive (la garde de l'horloge) : la releve rendue est alors
 /// vide.
 pub fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> {
-    if HorlogeFictive::verifier(&ctx.racine).is_none() {
+    if HorlogeFictive::verifier(&ctx.racine)?.is_none() {
         return Ok(ReleveSignatures::nouvelle());
     }
     let mut boite = boite_des_signatures(ctx)?;
@@ -73,7 +76,7 @@ pub fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> {
 
 #[track_caller]
 fn os(m: String) -> Echec {
-    erreur("OSError", m)
+    erreur(Classe::Disque, m)
 }
 
 /// La boite ou chercher les reponses, quand l'appelant n'en donne pas, selon le branchement de la compagnie
@@ -81,18 +84,18 @@ fn os(m: String) -> Echec {
 /// renverrait le contrat contresigne au salarie : un envoi) ; le monde, la vraie boite. `Err` : l'incident qui dit
 /// pourquoi rien ne se releve.
 fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
-    match crate::compagnie::bridage::branchement(&ctx.racine) {
+    match crate::compagnie::bridage::branchement(&ctx.racine)? {
         envois::branchement::Branchement::Simulateur => return Ok(Ok(Box::new(boite_des_signatures(ctx)?))),
         envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}
     }
-    if !crate::compagnie::boite::disponible(&ctx.racine) {
+    if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
         return Ok(Err(
             "Aucune boite courriel : les signatures ne peuvent pas etre relevees. Poser le mot de passe d'application de la boite (Configuration > Mots de passe)."
                 .to_string(),
         ));
     }
-    let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur("ErreurCourriel", e.0))?;
+    let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
     Ok(Ok(Box::new(vrai_client)))
 }
 
@@ -128,8 +131,11 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
 
     for a in &attendues {
         let code = a.code.clone();
-        let a_mois = a.mois.map(|m| m.to_string()).unwrap_or_default();
-        let a_nom = a.nom.clone();
+        let a_nom = a.qui();
+        let Some(a_mois) = a.mois.map(|m| m.to_string()) else {
+            r.incidents.push(format!("{} : la demande de signature ne dit pas son mois, elle ne se relève pas.", a_nom));
+            continue;
+        };
         let a_salarie = a.salarie.to_string();
         let contrats = a.contrats.clone();
         let retenue = match chercher_reponse(client, a, &expediteur, &mut r.incidents) {
@@ -157,14 +163,22 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
             }
         }
         let quand_lisible = etats::quand_lisible(&quand);
-        let mention = documents::contrat::mention_signature(&a_nom, &quand_lisible, &de, &code);
+        // La mention porte le nom que la fiche dit : sans lui, rien ne se contresigne.
+        let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
         let mut signes: Vec<(String, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
             let envoye = ctx.racine.join("sorties").join(mois_f).join("envoi").join(nom_f);
-            let souche = envoye.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            let signe = envoye.with_file_name(format!("{}{}", souche, envois::releve_signatures::SUFFIXE_CONTRESIGNE));
+            // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
+            let souche = match envoye.file_stem() {
+                Some(s) => s.to_string_lossy().into_owned(),
+                None => nom_f.to_string(),
+            };
+            let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
-            let fait = crate::compagnie::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, &mention).map_err(|e| e.message);
+            let fait = match &mention {
+                Some(m) => crate::compagnie::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.message),
+                None => Err("la fiche du salarié ne dit pas son nom".to_string()),
+            };
             match fait {
                 Ok(()) => match signes.iter_mut().find(|(n, _)| n == nom_f) {
                     Some(deja) => deja.1 = signe,
@@ -179,8 +193,10 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
+        // Une demande qui ne dit pas son acte est celle du contrat lui-meme (la forme du journal des envois,
+        // `envois::etats`) : l'absence passe telle quelle.
         let acte = a.acte.clone();
-        let est_avenant = acte == "avenant";
+        let est_avenant = acte.as_deref() == Some("avenant");
         let mut notes = 0usize;
         for c in &contrats {
             let son_fichier = if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() };
@@ -191,7 +207,7 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
                 quand: quand.clone(),
                 message: ident.clone(),
                 preuve: nom_preuve.clone(),
-                fichier_signe: sien.unwrap_or_default(),
+                fichier_signe: sien,
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
                 acte: acte.clone(),
@@ -204,8 +220,8 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
                     let charge = crate::routes::contrats::ChargeRecu { mois, salarie: c.salarie.to_string(), debut: jour, numero: c.numero.as_ref().map(|n| n.to_string()), avenant: None, recu: true };
                     crate::routes::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
-                (None, _) => Err(erreur("ErreurOperation", "la demande de signature ne dit pas son mois")),
-                (_, Err(m)) => Err(erreur("ValueError", m)),
+                (None, _) => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),
+                (_, Err(m)) => Err(erreur(Classe::Illisible, m)),
             };
             match note {
                 Ok(_) => notes += 1,

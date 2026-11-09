@@ -25,8 +25,6 @@
 
 use std::path::Path;
 
-use serde_json::{json, Value};
-
 const FICHIER_GESTE: &str = ".edition.json";
 const FICHIER_INSTALLATION: &str = "EDITION.json";
 pub const BRIDE: &str = "bride";
@@ -42,12 +40,30 @@ fn bride_selon(mot: &str) -> Option<bool> {
     }
 }
 
-fn lire(p: &Path) -> Option<Value> {
-    serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
+/// CE QUE DIT UN FICHIER DU BRIDAGE (`.edition.json`, `logiciel/EDITION.json`) : le mot (`edition`), et ce qu'il est
+/// (`quoi`, que le geste ecrit pour qui l'ouvre).
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Edition {
+    edition: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quoi: Option<String>,
 }
 
-fn mot(v: &Option<Value>, cle: &str) -> Option<bool> {
-    v.as_ref().and_then(|d| d.get(cle)).and_then(Value::as_str).and_then(bride_selon)
+/// Ce que le fichier `p` dit du bridage : `Some(true)` bride, `Some(false)` debloque ; `None` s'il ne le dit pas (absent,
+/// illisible, un autre mot). Le bridage tient a ce qui est dit : rien de ce qui ne se lit pas ne debloque.
+fn dit(p: &Path) -> Option<bool> {
+    if !p.exists() {
+        return None;
+    }
+    match socle::forme::lire_fichier::<Edition>(p, "Le fichier du bridage ne se lit pas.") {
+        Ok(e) => bride_selon(&e.edition),
+        // Il ne debloque pas ; le developpeur le saura (le fil du moteur).
+        Err(illisible) => {
+            crate::compagnie::diagnostic::noter_moteur(&format!("bridage : {}", socle::echec::phrase_de(&illisible)));
+            None
+        }
+    }
 }
 
 /// Le PAQUET SOUDE : `logiciel/EDITION.json` dit `"edition": "bride"` (ou `"demo"`). Bride pour toujours ; ses envois
@@ -58,7 +74,7 @@ pub fn paquet_soude() -> bool {
 
 /// Le paquet soude de l'installation `inst` (le dossier qui porte `logiciel/`).
 pub fn paquet_soude_de(inst: &Path) -> bool {
-    mot(&lire(&inst.join("logiciel").join(FICHIER_INSTALLATION)), "edition") == Some(true)
+    dit(&inst.join("logiciel").join(FICHIER_INSTALLATION)) == Some(true)
 }
 
 /// Bride ou debloque, pour le logiciel qui tourne (`est_bride_de`).
@@ -72,14 +88,13 @@ pub fn est_bride_de(inst: &Path) -> bool {
     if paquet_soude_de(inst) {
         return true;
     }
-    mot(&lire(&inst.join(FICHIER_GESTE)), "edition").unwrap_or(true)
+    dit(&inst.join(FICHIER_GESTE)) != Some(false)
 }
 
 /// LE REFUS D'UN ENVOI DEPUIS UNE FICTIVE AJOUTEE, mot pour mot : le meme pour tout geste
-/// qui ferait partir quelque chose vers un organisme ou une personne. Sa classe : `CLASSE_REFUS_D_ENVOI` (la page la
-/// reconnait et montre la phrase dans sa boite, `js/tuyau.js`).
+/// qui ferait partir quelque chose vers un organisme ou une personne. Sa classe : `EnvoiBride` (la page la reconnait et
+/// montre la phrase dans sa boite, `js/tuyau.js`).
 pub const REFUS_D_ENVOI: &str = "L'envoi n'est pas possible depuis la version démo. Pour 2027, et afin d'offrir un service de qualité, le nombre d'utilisateurs est restreint. N'hésitez pas à contacter Léandre (puppetpaie@gmail.com) avec une courte présentation et votre motivation pour débloquer le logiciel et faire partie des premiers utilisateurs.";
-pub const CLASSE_REFUS_D_ENVOI: &str = "EnvoiBride";
 
 /// LE BRANCHEMENT DE LA COMPAGNIE `racine` (`envois::branchement`), choisi ici et nulle part ailleurs :
 /// - une FICTIVE AJOUTEE (`compagnies::est_ajoutee`) n'envoie rien : le message, `REFUS_D_ENVOI` ;
@@ -89,16 +104,16 @@ pub const CLASSE_REFUS_D_ENVOI: &str = "EnvoiBride";
 ///
 /// Chaque envoi vers un organisme ou une personne l'ouvre avant que rien ne s'ecrive (`Branchement::ouvrir`). Ce qui va
 /// a l'editeur (incidents, « Un probleme, une idee ? ») et la verification d'un mot de passe ne sont pas des envois.
-pub fn branchement(racine: &Path) -> envois::branchement::Branchement {
+pub fn branchement(racine: &Path) -> Result<envois::branchement::Branchement, String> {
     use crate::interface::compagnies::{est_ajoutee, est_fictive};
     use envois::branchement::{Branchement, Refus};
-    if est_ajoutee(racine) {
-        Branchement::Message(Refus { classe: CLASSE_REFUS_D_ENVOI, phrase: REFUS_D_ENVOI })
-    } else if paquet_soude() || est_fictive(racine) {
+    Ok(if est_ajoutee(racine)? {
+        Branchement::Message(Refus { classe: socle::echec::Classe::EnvoiBride, phrase: REFUS_D_ENVOI })
+    } else if paquet_soude() || est_fictive(racine)? {
         Branchement::Simulateur
     } else {
         Branchement::Monde
-    }
+    })
 }
 
 /// Le mot qui le dit (le journal des incidents, la description du poste) : `bride` ou `debloque`.
@@ -115,6 +130,12 @@ pub fn basculer() -> Result<(), String> {
     basculer_de(&crate::interface::compagnies::base())
 }
 
+/// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
+/// d'un scenario (`atelier::scenario`).
+pub fn brider(inst: &Path) -> Result<(), String> {
+    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
+}
+
 /// Le geste, sur l'installation `inst`.
 pub fn basculer_de(inst: &Path) -> Result<(), String> {
     if paquet_soude_de(inst) {
@@ -123,7 +144,10 @@ pub fn basculer_de(inst: &Path) -> Result<(), String> {
     let nouveau = if est_bride_de(inst) { DEBLOQUE } else { BRIDE };
     socle::ecriture::ecrire_json(
         &inst.join(FICHIER_GESTE),
-        &json!({"edition": nouveau, "quoi": "Le bridage de PuppetPaie sur ce poste : bride (l'accueil ne propose que les compagnies fictives) ou debloque. Change par le geste de l'accueil."}),
+        &Edition {
+            edition: nouveau.to_string(),
+            quoi: Some("Le bridage de PuppetPaie sur ce poste : bride (l'accueil ne propose que les compagnies fictives) ou debloque. Change par le geste de l'accueil.".to_string()),
+        },
         2,
     )
 }

@@ -18,20 +18,21 @@ use droit::fiche::Lue as _;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use fabrique_pdf::forme as pdf;
 use rust_xlsxwriter::{Format, FormatAlign, Workbook, Worksheet};
-use serde_json::{json, Map, Value};
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 
 use droit::contexte::Contexte;
-use crate::valeur::{forme_ecrite, valeur_en_texte};
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
 
 pub type R<T> = Result<T, Echec>;
 
-/// Une `ErreurOperation`.
+/// Un refus `Refuse`.
 pub fn refus(m: impl Into<String>) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
 /// `FORMATS_TABLEAU` : les six formats de la machinerie, dans l'ordre du format.
@@ -39,11 +40,11 @@ pub const FORMATS_TABLEAU: [&str; 6] = ["csv", "tsv", "xlsx", "pdf", "html", "js
 
 // ------------------------------------------------------------------ valeurs
 
-/// Une valeur de cellule : un `Decimal`, un nombre JSON (entier, flottant), un texte.
+/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un texte.
 #[derive(Clone, Debug)]
 pub enum Val {
     Dec(Decimal),
-    Num(Value),
+    Ent(i64),
     Txt(String),
 }
 
@@ -53,42 +54,53 @@ impl Val {
     }
 
     pub fn entier(n: i64) -> Val {
-        Val::Num(Value::from(n))
+        Val::Ent(n)
     }
 
     /// La valeur en texte.
     pub fn en_texte_ecrit(&self) -> String {
         match self {
             Val::Dec(d) => d.to_string(),
-            Val::Num(v) => forme_ecrite(v),
+            Val::Ent(n) => n.to_string(),
             Val::Txt(s) => s.clone(),
         }
     }
 
     /// `Decimal(str(v))`.
     pub fn decimal(&self) -> R<Decimal> {
-        let t = match self {
-            Val::Dec(d) => return Ok(*d),
-            Val::Num(v) => return crate::valeur::dec(v).map_err(|m| erreur("InvalidOperation", m)),
-            Val::Txt(s) => s,
-        };
-        socle::num::decimal_lu(t).ok_or_else(|| erreur("InvalidOperation", socle::num::illisible(t)))
-    }
-
-    /// `dict_tableau._v` / `sortie_json.brut` : un `Decimal` devient son texte.
-    pub fn json(&self) -> Value {
         match self {
-            Val::Dec(d) => Value::String(d.to_string()),
-            Val::Num(v) => v.clone(),
-            Val::Txt(s) => Value::String(s.clone()),
+            Val::Dec(d) => Ok(*d),
+            Val::Ent(n) => Ok(Decimal::from(*n)),
+            Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t))),
         }
     }
 }
 
-/// Une ligne : un dictionnaire ordonne (l'ordre d'insertion compte pour le JSON).
+impl Serialize for Val {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Val::Dec(d) => s.serialize_str(&d.to_string()),
+            Val::Ent(n) => s.serialize_i64(*n),
+            Val::Txt(t) => s.serialize_str(t),
+        }
+    }
+}
+
+/// Une ligne : un dictionnaire ordonne (l'ordre d'insertion compte pour le JSON). Une cle presente a `None` s'ecrit
+/// `null` ; une cle absente ne s'ecrit pas.
 #[derive(Clone, Debug, Default)]
 pub struct Ligne {
     pub champs: Vec<(String, Option<Val>)>,
+}
+
+impl Serialize for Ligne {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut m = s.serialize_map(Some(self.champs.len()))?;
+        for (k, v) in &self.champs {
+            m.serialize_entry(k, v)?;
+        }
+        m.end()
+    }
 }
 
 impl Ligne {
@@ -107,6 +119,11 @@ impl Ligne {
 
     pub fn t(&mut self, k: &str, s: impl Into<String>) -> &mut Ligne {
         self.poser(k, Some(Val::Txt(s.into())))
+    }
+
+    /// Un texte, ou rien quand il est vide.
+    pub fn ot(&mut self, k: &str, s: Option<impl Into<String>>) -> &mut Ligne {
+        self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
     pub fn d(&mut self, k: &str, v: Decimal) -> &mut Ligne {
@@ -135,9 +152,10 @@ impl Ligne {
         self.get(k).and_then(|v| v.as_ref())
     }
 
-    /// Le texte d'une cle (vide si absente ou `None`).
+    /// Le texte de la case `k`, tel qu'il s'ecrit : rien pour une case vide (absente ou `None`). C'est ce qui range et
+    /// groupe les lignes.
     pub fn texte(&self, k: &str) -> String {
-        self.val(k).map(Val::en_texte_ecrit).unwrap_or_default()
+        self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
     pub fn decimal(&self, k: &str) -> Option<Decimal> {
@@ -169,10 +187,17 @@ impl Genre {
     }
 }
 
-#[derive(Clone, Debug)]
+impl Serialize for Genre {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct Colonne {
     pub cle: String,
     pub libelle: String,
+    #[serde(rename = "type")]
     pub genre: Genre,
 }
 
@@ -206,7 +231,7 @@ pub fn col_x(cle: &str, libelle: &str) -> Colonne {
     Colonne { cle: cle.into(), libelle: libelle.into(), genre: Genre::Taux }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Section {
     pub libelle: String,
     pub lignes: Vec<Ligne>,
@@ -219,7 +244,8 @@ impl Section {
     }
 }
 
-#[derive(Clone, Debug)]
+/// UN TABLEAU, tel que la route le rend : son fichier ne s'ecrit que par son nom.
+#[derive(Clone, Debug, Serialize)]
 pub struct Tableau {
     pub etat: String,
     pub titre: String,
@@ -231,10 +257,19 @@ pub struct Tableau {
     pub sources: Vec<String>,
     pub mois: Vec<String>,
     pub format: String,
+    #[serde(serialize_with = "nom_du_fichier")]
     pub fichier: Option<PathBuf>,
     pub sous_totaux: bool,
     pub avec_total: bool,
     pub donnees_personnelles: bool,
+}
+
+/// Le nom seul d'un fichier ecrit (`null` s'il n'est pas ecrit).
+pub fn nom_du_fichier<S: Serializer>(f: &Option<PathBuf>, s: S) -> Result<S::Ok, S::Error> {
+    match f.as_ref().and_then(|p| p.file_name()) {
+        Some(n) => s.serialize_str(&n.to_string_lossy()),
+        None => s.serialize_none(),
+    }
 }
 
 impl Tableau {
@@ -262,8 +297,8 @@ impl Tableau {
 /// Les lignes en sections, une par clé, les clés triées,
 /// les lignes de chaque section triées par `tri` s'il y en a un (tri stable).
 pub fn sections_de<K: Ord + Clone>(
-    lignes: Vec<Ligne>, cle: impl Fn(&Ligne) -> K, libelle: impl Fn(&K) -> String, tri: Option<&dyn Fn(&Ligne) -> Vec<String>>,
-) -> Vec<Section> {
+    lignes: Vec<Ligne>, cle: impl Fn(&Ligne) -> K, libelle: impl Fn(&K) -> R<String>, tri: Option<&dyn Fn(&Ligne) -> Vec<String>>,
+) -> R<Vec<Section>> {
     let mut paquets: BTreeMap<K, Vec<Ligne>> = BTreeMap::new();
     for l in lignes {
         paquets.entry(cle(&l)).or_default().push(l);
@@ -274,9 +309,14 @@ pub fn sections_de<K: Ord + Clone>(
             if let Some(t) = tri {
                 v.sort_by_cached_key(|l| t(l));
             }
-            Section { libelle: libelle(&k), lignes: v, total: None }
+            Ok(Section { libelle: libelle(&k)?, lignes: v, total: None })
         })
         .collect()
+}
+
+/// Le libelle d'une section par mois (`AAAA-MM`, la case `mois` de ses lignes) : « Septembre 2026 ».
+pub fn section_du_mois(m: &String) -> R<String> {
+    libelle_mois(m)
 }
 
 // ------------------------------------------------------------------ totaux
@@ -287,10 +327,13 @@ fn somme(lignes: &[&Ligne], cle: &str) -> R<Option<Val>> {
     for l in lignes {
         let v = match l.get(cle) {
             Some(Some(Val::Txt(t))) if t.is_empty() => continue,
-            Some(Some(v)) => v,
+            Some(Some(v)) => v.decimal()?,
             _ => continue,
         };
-        total = Some(total.unwrap_or(Decimal::ZERO) + v.decimal()?);
+        total = Some(match total {
+            Some(t) => t + v,
+            None => v,
+        });
     }
     Ok(total.map(Val::Dec))
 }
@@ -336,14 +379,14 @@ pub const TOTAL_GENERAL: &str = "TOTAL GÉNÉRAL";
 
 // ------------------------------------------------------------ mise en forme
 
-/// Une cellule en texte francais, virgule decimale, rien pour `None`.
+/// Une cellule en texte francais, virgule decimale ; une case vide ne s'ecrit pas (rien).
 pub fn texte(v: Option<&Val>, c: &Colonne) -> String {
-    match v {
-        None => String::new(),
-        Some(Val::Dec(d)) if c.a_droite() => d.to_string().replace('.', ","),
-        Some(Val::Num(n)) if c.a_droite() => forme_ecrite(n).replace('.', ","),
-        Some(autre) => autre.en_texte_ecrit(),
-    }
+    v.map(|v| match v {
+        Val::Dec(d) if c.a_droite() => d.to_string().replace('.', ","),
+        autre => autre.en_texte_ecrit(),
+    })
+    .into_iter()
+    .collect()
 }
 
 /// (cellules, genre) dans l'ordre d'ecriture : lignes, sous-totaux, total.
@@ -376,21 +419,21 @@ fn cellule_lisible(l: &Ligne, c: &Colonne, genre: &str) -> String {
     }
 }
 
-/// Le nom de la compagnie, ou rien.
-pub fn nom_compagnie(ctx: &Contexte) -> String {
+/// Le nom de la compagnie, s'il est dit.
+pub fn nom_compagnie(ctx: &Contexte) -> Option<&str> {
     ctx.entreprise.nommee()
 }
 
-fn entete_texte(t: &Tableau, nom: &str) -> Vec<String> {
+fn entete_texte(t: &Tableau, nom: Option<&str>) -> Vec<String> {
     let mut out = vec![format!("{} — {}", t.titre, t.periode)];
-    if !nom.is_empty() {
+    if let Some(nom) = nom {
         out.insert(0, nom.to_string());
     }
     out
 }
 
-fn lire_nom(ctx: Option<&Contexte>) -> String {
-    ctx.map(nom_compagnie).unwrap_or_default()
+fn lire_nom(ctx: Option<&Contexte>) -> Option<&str> {
+    ctx.and_then(nom_compagnie)
 }
 
 // ---------------------------------------------------------------------- csv
@@ -399,7 +442,7 @@ fn lire_nom(ctx: Option<&Contexte>) -> String {
 pub fn csv_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let mut s = String::from("\u{feff}");
     let ligne = |s: &mut String, c: &[String]| s.push_str(&socle::csv::ligne(c, ';'));
-    for x in entete_texte(t, &lire_nom(ctx)) {
+    for x in entete_texte(t, lire_nom(ctx)) {
         ligne(&mut s, &[x]);
     }
     ligne(&mut s, &[]);
@@ -449,62 +492,40 @@ pub fn tsv_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
 
 // --------------------------------------------------------------------- json
 
-fn ligne_json(l: &Ligne) -> Value {
-    Value::Object(l.champs.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.as_ref().map_or(Value::Null, Val::json))).collect())
+/// CE QUE LE FICHIER JSON D'UN TABLEAU PORTE : le fichier n'y est pas encore nomme quand il s'ecrit (`null`).
+#[derive(Serialize)]
+struct FichierTableau<'a> {
+    etat: &'a str,
+    titre: &'a str,
+    periode: &'a str,
+    mois: &'a [String],
+    colonnes: &'a [Colonne],
+    sections: &'a [Section],
+    total: Option<&'a Ligne>,
+    avertissements: &'a [String],
+    sources: &'a [String],
+    donnees_personnelles: bool,
+    format: &'a str,
+    fichier: Option<&'a str>,
 }
 
-fn ligne_json_brute(l: &Ligne) -> Value {
-    // Le fichier JSON garde toutes les cles : aucune n'est en `_` a ce stade.
-    Value::Object(l.champs.iter().map(|(k, v)| (k.clone(), v.as_ref().map_or(Value::Null, Val::json))).collect())
-}
-
-/// Ce que le fichier JSON porte.
-pub fn dict_tableau(t: &Tableau, fichier_ecrit: bool) -> Value {
-    let sections: Vec<Value> = t
-        .sections
-        .iter()
-        .map(|s| json!({"libelle": s.libelle, "lignes": s.lignes.iter().map(ligne_json_brute).collect::<Vec<_>>(), "total": s.total.as_ref().map(ligne_json_brute)}))
-        .collect();
-    let fichier = if fichier_ecrit { t.fichier.as_ref().and_then(|p| p.file_name()).map(|n| json!(n.to_string_lossy())) } else { None };
-    json!({
-        "etat": t.etat, "titre": t.titre, "periode": t.periode, "mois": t.mois,
-        "colonnes": t.colonnes.iter().map(|c| json!({"cle": c.cle, "libelle": c.libelle, "type": c.genre.nom()})).collect::<Vec<_>>(),
-        "sections": sections,
-        "total": t.total.as_ref().map(ligne_json_brute),
-        "avertissements": t.avertissements,
-        "sources": t.sources,
-        "donnees_personnelles": t.donnees_personnelles,
-        "format": t.format,
-        "fichier": fichier,
-    })
-}
-
-/// Le tableau en JSON indente d'une espace. Le fichier n'est pas encore nomme quand il s'ecrit.
+/// Le tableau en JSON indente d'une espace.
 pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
-    Ok(socle::ecriture::json_indente(&dict_tableau(t, false), 1).into_bytes())
-}
-
-/// La reponse de la route.
-pub fn brut_tableau(t: &Tableau) -> Value {
-    let mut m = Map::new();
-    m.insert("etat".into(), json!(t.etat));
-    m.insert("titre".into(), json!(t.titre));
-    m.insert("periode".into(), json!(t.periode));
-    m.insert("colonnes".into(), json!(t.colonnes.iter().map(|c| json!({"cle": c.cle, "libelle": c.libelle, "type": c.genre.nom()})).collect::<Vec<_>>()));
-    m.insert(
-        "sections".into(),
-        Value::Array(t.sections.iter().map(|s| json!({"libelle": s.libelle, "lignes": s.lignes.iter().map(ligne_json).collect::<Vec<_>>(), "total": s.total.as_ref().map(ligne_json)})).collect()),
-    );
-    m.insert("total".into(), t.total.as_ref().map_or(Value::Null, ligne_json));
-    m.insert("avertissements".into(), json!(t.avertissements));
-    m.insert("sources".into(), json!(t.sources));
-    m.insert("mois".into(), json!(t.mois));
-    m.insert("format".into(), json!(t.format));
-    m.insert("fichier".into(), t.fichier.as_ref().and_then(|p| p.file_name()).map_or(Value::Null, |n| json!(n.to_string_lossy())));
-    m.insert("sous_totaux".into(), json!(t.sous_totaux));
-    m.insert("avec_total".into(), json!(t.avec_total));
-    m.insert("donnees_personnelles".into(), json!(t.donnees_personnelles));
-    Value::Object(m)
+    let f = FichierTableau {
+        etat: &t.etat,
+        titre: &t.titre,
+        periode: &t.periode,
+        mois: &t.mois,
+        colonnes: &t.colonnes,
+        sections: &t.sections,
+        total: t.total.as_ref(),
+        avertissements: &t.avertissements,
+        sources: &t.sources,
+        donnees_personnelles: t.donnees_personnelles,
+        format: &t.format,
+        fichier: None,
+    };
+    Ok(socle::ecriture::json_indente(&f, 1).into_bytes())
 }
 
 // --------------------------------------------------------------------- xlsx
@@ -516,35 +537,29 @@ enum Cel {
     Texte(String),
 }
 
-fn en_f64(d: &Decimal) -> f64 {
+/// Le nombre du classeur : un montant en flottant (le classeur n'a que ceux-la).
+pub fn en_f64(d: &Decimal) -> R<f64> {
     use rust_decimal::prelude::ToPrimitive;
-    d.to_f64().unwrap_or(0.0)
+    d.to_f64().ok_or_else(|| erreur(Classe::Illisible, format!("{} ne s'écrit pas en nombre du classeur", d)))
 }
 
-/// Le nombre d'une colonne de chiffres, le texte sinon.
-fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> Cel {
-    let Some(v) = v else { return Cel::Vide };
-    if matches!(v, Val::Txt(s) if s.is_empty()) {
-        return Cel::Vide;
-    }
-    if c.a_droite() {
-        return match v.decimal() {
-            Ok(d) => Cel::Nombre(en_f64(&d)),
-            Err(_) => Cel::Texte(v.en_texte_ecrit()),
-        };
-    }
-    match v {
-        Val::Dec(d) => Cel::Nombre(en_f64(d)),
-        Val::Num(n) => match n.as_f64() {
-            Some(x) => Cel::Nombre(x),
-            None => Cel::Texte(forme_ecrite(n)),
+/// Le nombre d'une colonne de chiffres (un texte qui se lit en nombre aussi), le texte sinon.
+fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
+    let Some(v) = v else { return Ok(Cel::Vide) };
+    Ok(match v {
+        Val::Txt(s) if s.is_empty() => Cel::Vide,
+        Val::Dec(d) => Cel::Nombre(en_f64(d)?),
+        Val::Ent(n) => Cel::Nombre(*n as f64),
+        Val::Txt(s) if c.a_droite() => match socle::num::decimal_lu(s) {
+            Some(d) => Cel::Nombre(en_f64(&d)?),
+            None => Cel::Texte(s.clone()),
         },
         Val::Txt(s) => Cel::Texte(s.clone()),
-    }
+    })
 }
 
 fn xl(e: rust_xlsxwriter::XlsxError) -> Echec {
-    erreur("OSError", format!("classeur : {}", e))
+    erreur(Classe::Disque, format!("classeur : {}", e))
 }
 
 /// Un format : gras ou non, une taille, un format de nombre.
@@ -588,7 +603,7 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let ws = wb.add_worksheet();
     ws.set_name(nom_de_feuille(t)?).map_err(xl)?;
     let mut ligne: u32 = 0;
-    for x in entete_texte(t, &lire_nom(ctx)) {
+    for x in entete_texte(t, lire_nom(ctx)) {
         ws.write_string_with_format(ligne, 0, &x, &format_de(true, Some(13.0), None)).map_err(xl)?;
         ligne += 1;
     }
@@ -614,7 +629,7 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
             _ => (false, None),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
-            let cel = cellule_classeur(d.val(&c.cle), c);
+            let cel = cellule_classeur(d.val(&c.cle), c)?;
             let fmt = format_de(gras, taille, if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None });
             ecrire_cellule(ws, ligne, i as u16, &cel, &fmt)?;
         }
@@ -666,7 +681,8 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let nom = lire_nom(ctx);
     let tete = format!(
         "{}<h1>{}</h1><p class='sub'>{}{}</p>",
-        if nom.is_empty() { String::new() } else { format!("<p class='rs'>{}</p>", echapper(&nom)) },
+        // Le nom de la compagnie, quand il est dit ; sinon la page n'en a pas la ligne.
+        nom.map(|nom| format!("<p class='rs'>{}</p>", echapper(nom))).into_iter().collect::<String>(),
         echapper(&t.titre),
         echapper(&t.periode),
         if t.donnees_personnelles { " &mdash; porte des données personnelles" } else { "" }
@@ -703,7 +719,7 @@ pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], ut
     let mut plus_long_mot = vec![0.0f64; n];
     let mut mot_entete = vec![0.0f64; n];
     for (i, (libelle, _)) in entetes.iter().enumerate() {
-        mot_entete[i] = libelle.split(socle::texte::blanc).filter(|m| !m.is_empty()).map(|m| m.chars().count()).max().unwrap_or(0) as f64;
+        mot_entete[i] = libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as f64;
     }
     let gonfle = |genre: &str| match genre {
         "total" => 1.1,
@@ -738,8 +754,35 @@ pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], ut
     b.iter().map(|x| x / total).collect()
 }
 
-fn filets(couleur: &str, epaisseur: f64) -> Value {
-    json!({"couleur": couleur, "epaisseur": epaisseur})
+fn filets(couleur: &str, epaisseur: f32) -> Option<pdf::Filet> {
+    Some(pdf::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(epaisseur) })
+}
+
+/// Un paragraphe d'un seul morceau ; ce qui n'est pas dit ne s'ecrit pas.
+fn paragraphe(texte: String, gras: bool, taille: f32, couleur: Option<&str>, majuscules: bool, avant: Option<f32>, apres: Option<f32>) -> pdf::Bloc {
+    pdf::Bloc::Paragraphe(pdf::Paragraphe {
+        morceaux: vec![pdf::Morceau { texte, gras: gras.then_some(true), italique: None, couleur: None }],
+        taille: Some(taille),
+        couleur: couleur.map(str::to_string),
+        alignement: None,
+        majuscules: majuscules.then_some(true),
+        espace_avant: avant,
+        espace_apres: apres,
+        retrait: None,
+    })
+}
+
+/// Une ligne de cellules en texte, sans rien d'autre.
+fn ligne_de(cellules: Vec<String>) -> pdf::Ligne {
+    pdf::Ligne {
+        cellules: cellules.into_iter().map(pdf::Cellule::Texte).collect(),
+        gras: None,
+        fond: None,
+        couleur: None,
+        taille: None,
+        filet_haut: None,
+        filet_bas: None,
+    }
 }
 
 /// La description (FORMAT.md) d'un etat -- A4 paysage, son titre, son tableau, ses
@@ -747,65 +790,103 @@ fn filets(couleur: &str, epaisseur: f64) -> Value {
 /// ou « general ».
 #[allow(clippy::too_many_arguments)]
 pub fn description_pdf(
-    titre: &str, periode: &str, nom: &str, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
+    titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
     sources: &[String],
-) -> Value {
+) -> pdf::Description {
     let fr = fractions(entetes, rangees, PAGE_LARGEUR - 68.0);
-    let colonnes: Vec<Value> =
-        fr.iter().zip(entetes).map(|(f, e)| if e.1 { json!({"largeur": f, "alignement": "droite"}) } else { json!({"largeur": f}) }).collect();
-    let lignes: Vec<Value> = rangees
+    let colonnes = fr
+        .iter()
+        .zip(entetes)
+        .map(|(f, e)| pdf::ColonneTableau { largeur: *f as f32, alignement: e.1.then_some(pdf::Alignement::Droite) })
+        .collect();
+    let lignes = rangees
         .iter()
         .map(|(cellules, genre)| {
-            let mut l = Map::new();
-            l.insert("cellules".into(), json!(cellules));
+            let mut l = ligne_de(cellules.clone());
             if *genre == "total" {
-                l.insert("gras".into(), json!(true));
-                l.insert("filet_haut".into(), filets("#999999", 0.5));
-                l.insert("filet_bas".into(), filets("#999999", 0.5));
+                l.gras = Some(true);
+                l.filet_haut = filets("#999999", 0.5);
+                l.filet_bas = filets("#999999", 0.5);
             } else if *genre == "general" {
-                l.insert("gras".into(), json!(true));
-                l.insert("taille".into(), json!(8));
-                l.insert("couleur".into(), json!(ROUGE));
-                l.insert("filet_haut".into(), filets("#999999", 0.5));
-                l.insert("filet_bas".into(), filets("#999999", 0.5));
+                l.gras = Some(true);
+                l.taille = Some(8.0);
+                l.couleur = Some(ROUGE.to_string());
+                l.filet_haut = filets("#999999", 0.5);
+                l.filet_bas = filets("#999999", 0.5);
             }
-            Value::Object(l)
+            l
         })
         .collect();
-    let mut blocs: Vec<Value> = Vec::new();
-    if !nom.is_empty() {
-        blocs.push(json!({"type": "paragraphe", "taille": 8.5, "espace_apres": 1, "morceaux": [{"texte": nom, "gras": true}]}));
+    let mut entete = ligne_de(entetes.iter().map(|e| e.0.clone()).collect());
+    entete.gras = Some(true);
+    entete.taille = Some(6.3);
+    entete.couleur = Some(ROUGE.to_string());
+    entete.filet_bas = filets(ROUGE, 0.7);
+    let mut blocs: Vec<pdf::Bloc> = Vec::new();
+    if let Some(nom) = nom {
+        blocs.push(paragraphe(nom.to_string(), true, 8.5, None, false, None, Some(1.0)));
     }
-    blocs.push(json!({"type": "paragraphe", "taille": 11, "couleur": ROUGE, "majuscules": true, "espace_apres": 1, "morceaux": [{"texte": titre, "gras": true}]}));
-    blocs.push(json!({"type": "paragraphe", "taille": 6.8, "couleur": "#555555", "espace_apres": 6, "morceaux": [{"texte": sous_titre}]}));
-    blocs.push(json!({
-        "type": "tableau", "colonnes": colonnes, "taille": 7, "couleur": ENCRE,
-        "marge_cellule": {"haut": 1.6, "droite": 3.0, "bas": 1.6, "gauche": 3.0},
-        "filet_lignes": {"couleur": "#EEEEEE", "epaisseur": 0.3},
-        "entete": [{"cellules": entetes.iter().map(|e| e.0.clone()).collect::<Vec<_>>(), "gras": true, "taille": 6.3,
-                    "couleur": ROUGE, "filet_bas": {"couleur": ROUGE, "epaisseur": 0.7}}],
-        "lignes": lignes}));
+    blocs.push(paragraphe(titre.to_string(), true, 11.0, Some(ROUGE), true, None, Some(1.0)));
+    blocs.push(paragraphe(sous_titre.to_string(), false, 6.8, Some("#555555"), false, None, Some(6.0)));
+    blocs.push(pdf::Bloc::Tableau(pdf::Tableau {
+        colonnes,
+        entete: Some(vec![entete]),
+        lignes: Some(lignes),
+        taille: Some(7.0),
+        couleur: Some(ENCRE.to_string()),
+        interligne: None,
+        marge_cellule: Some(pdf::MargeCellule { haut: Some(1.6), droite: Some(3.0), bas: Some(1.6), gauche: Some(3.0) }),
+        filet_lignes: filets("#EEEEEE", 0.3),
+        filets_cellules: None,
+        espace_avant: None,
+        espace_apres: None,
+    }));
     for a in notes {
-        blocs.push(json!({"type": "paragraphe", "taille": 6.3, "couleur": "#777777", "espace_avant": 6, "morceaux": [{"texte": format!("! {}", a)}]}));
+        blocs.push(paragraphe(format!("! {}", a), false, 6.3, Some("#777777"), false, Some(6.0), None));
     }
     for src in sources {
-        blocs.push(json!({"type": "paragraphe", "taille": 6, "couleur": "#999999", "espace_avant": 2, "morceaux": [{"texte": format!("Source : {}", src)}]}));
+        blocs.push(paragraphe(format!("Source : {}", src), false, 6.0, Some("#999999"), false, Some(2.0), None));
     }
-    json!({
-        "format": crate::bulletin::FORMAT,
-        "page": {"largeur": PAGE_LARGEUR, "hauteur": PAGE_HAUTEUR, "marges": {"haut": 40, "droite": 34, "bas": 40, "gauche": 34}},
-        "police": {"taille": 7, "interligne": 1.25, "couleur": ENCRE},
-        "titre": format!("{} — {}", titre, periode),
-        "entete_page": {"gauche": format!("{} — {} (suite)", titre, periode), "taille": 8.5, "gras": true, "couleur": ENCRE, "distance": 24, "premiere_page": false},
-        "pied_page": {"gauche": pied, "droite": "page {page} sur {pages}", "taille": 6.5, "couleur": "#777777", "distance": 20},
-        "documents": [{"blocs": blocs}]
-    })
+    pdf::Description {
+        format: crate::bulletin::FORMAT,
+        page: Some(pdf::Page {
+            largeur: Some(PAGE_LARGEUR as f32),
+            hauteur: Some(PAGE_HAUTEUR as f32),
+            marges: Some(pdf::Marges { haut: Some(40.0), droite: Some(34.0), bas: Some(40.0), gauche: Some(34.0) }),
+        }),
+        police: Some(pdf::Police { taille: Some(7.0), interligne: Some(1.25), couleur: Some(ENCRE.to_string()) }),
+        style: None,
+        logo: None,
+        titre: Some(format!("{} — {}", titre, periode)),
+        documents: vec![pdf::Document::Blocs(blocs)],
+        entete_page: Some(pdf::Repere {
+            gauche: Some(format!("{} — {} (suite)", titre, periode)),
+            centre: None,
+            droite: None,
+            taille: Some(8.5),
+            couleur: Some(ENCRE.to_string()),
+            gras: Some(true),
+            distance: Some(24.0),
+            premiere_page: Some(false),
+            image: None,
+        }),
+        pied_page: Some(pdf::Repere {
+            gauche: Some(pied.to_string()),
+            centre: None,
+            droite: Some("page {page} sur {pages}".to_string()),
+            taille: Some(6.5),
+            couleur: Some("#777777".to_string()),
+            gras: None,
+            distance: Some(20.0),
+            premiere_page: None,
+            image: None,
+        }),
+    }
 }
 
-/// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est une `ErreurOperation`.
-pub fn pdf_fabrique(description: &Value) -> R<Vec<u8>> {
-    let texte = serde_json::to_string(description).map_err(|e| refus(e.to_string()))?;
-    fabrique_pdf::fabriquer(&texte).map_err(|r| refus(format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", r.0.replace('\n', " "))))
+/// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est `Refuse`.
+pub fn pdf_fabrique(description: &pdf::Description) -> R<Vec<u8>> {
+    fabrique_pdf::fabriquer(description).map_err(|r| refus(format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", r.0.replace('\n', " "))))
 }
 
 /// `pdf_tableau` : A4 paysage, l'en-tete des colonnes a chaque page, un pied numerote.
@@ -813,7 +894,7 @@ pub fn pdf_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let sous = format!("{}{}", t.periode, if t.donnees_personnelles { " — porte des données personnelles" } else { "" });
     let rangs: Vec<(Vec<String>, &str)> = rangees(t).into_iter().map(|(d, genre)| (t.colonnes.iter().map(|c| cellule_lisible(d, c, genre)).collect(), genre)).collect();
     let entetes: Vec<(String, bool)> = t.colonnes.iter().map(|c| (c.libelle.clone(), c.a_droite())).collect();
-    let d = description_pdf(&t.titre, &t.periode, &lire_nom(ctx), &sous, &format!("{} — {}", t.titre, t.periode), &entetes, &rangs, &t.avertissements, &t.sources);
+    let d = description_pdf(&t.titre, &t.periode, lire_nom(ctx), &sous, &format!("{} — {}", t.titre, t.periode), &entetes, &rangs, &t.avertissements, &t.sources);
     pdf_fabrique(&d)
 }
 
@@ -843,11 +924,11 @@ pub fn format_possible(fmt: &str, formats: &[&str]) -> R<String> {
 
 /// Ecrit le tableau dans `dossier/nom.<ext>` (`tsv` s'ecrit `.txt`) et rend le chemin.
 pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<PathBuf> {
-    std::fs::create_dir_all(dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
     let ext = if t.format == "tsv" { "txt" } else { t.format.as_str() };
     let chemin = dossier.join(format!("{}.{}", nom, ext));
     let contenu = octets(t, Some(ctx))?;
-    std::fs::write(&chemin, contenu).map_err(|e| erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+    std::fs::write(&chemin, contenu).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
     t.fichier = Some(chemin.clone());
     Ok(chemin)
 }
@@ -856,7 +937,7 @@ pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<P
 
 /// « Septembre 2026 » d'un mois `AAAA-MM` (le nom en titre) ; un mois illisible se refuse.
 pub fn libelle_mois(m: &str) -> R<String> {
-    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| erreur("ValueError", e))
+    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| erreur(Classe::Illisible, e))
 }
 
 /// AAAA-MM-JJ -> JJ/MM/AAAA ; le reste tel quel.
@@ -872,31 +953,19 @@ pub fn jj(iso: &str) -> String {
 /// « NOM Prenom ».
 pub fn qui(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     if fiche.nom.is_none() {
-        return Err(erreur("KeyError", socle::fichiers::absent("nom")));
+        return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
     }
     Ok(qui_souple(fiche))
 }
 
-/// Le « qui » d'une fiche qui n'a peut-etre pas de nom.
+/// Le « qui » d'une fiche qui n'a peut-etre pas de nom : le nom et le prenom (`prenom_affichage`, sinon `prenom`) qu'elle
+/// dit.
 pub fn qui_souple(fiche: &droit::fiche::ChampsSalarie) -> String {
-    let prenom = match fiche.prenom_affichage.texte() {
-        "" => fiche.prenom.texte(),
-        p => p,
-    };
-    format!("{} {}", fiche.nom.texte(), prenom)
+    [fiche.nom.portee(), fiche.prenom_affichage.portee().or(fiche.prenom.portee())].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
-/// Un montant declare, ou `None` quand il ne l'a pas ete (une chaine vide n'est pas un zero).
-pub fn montant(v: Option<&Value>) -> R<Option<Decimal>> {
-    match v {
-        None | Some(Value::Null) => Ok(None),
-        Some(x) => {
-            let t = valeur_en_texte(x);
-            if t.trim_matches(socle::texte::blanc).is_empty() {
-                return Ok(None);
-            }
-            let d = socle::num::decimal_lu(&t).ok_or_else(|| erreur("InvalidOperation", socle::num::illisible(&t)))?;
-            Ok(Some(socle::num::eur2(d)))
-        }
-    }
+/// Un montant ecrit en texte, a deux decimales ; un texte qui n'est pas un nombre se refuse.
+pub fn montant(t: &str) -> R<Decimal> {
+    let d = socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t)))?;
+    Ok(socle::num::eur2(d))
 }

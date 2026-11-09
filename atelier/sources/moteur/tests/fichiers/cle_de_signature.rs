@@ -39,8 +39,8 @@ fn apporte(a: &Coffre, nom: &str) -> Coffre {
     poste(&racine, "poste-b")
 }
 
-fn publique(r: &serde_json::Value) -> String {
-    r["cle_publique"].as_str().unwrap().to_string()
+fn publique(r: &moteur::atelier::publier::ClePosee) -> String {
+    r.cle_publique.clone()
 }
 
 #[test]

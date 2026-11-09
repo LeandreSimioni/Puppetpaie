@@ -11,16 +11,15 @@
 //! d'adhesion (S21.G00.15.005) attribues ne bougent plus.
 
 use droit::fiche::Lue as _;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, Saisie};
 use socle::date::Jour;
-use documents::valeur::en_texte;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
-use documents::valeur::vrai;
 use socle::echec::Echec;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::routes::catalogue::Route;
@@ -54,7 +53,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"mois":"2026-11","contrats":{"prevoyance_permanents":{"libelle":"PREVOYANCE","organisme":"P0983"},"sante_permanents":{"libelle":"SANTE","organisme":"P0983"}}}"#,
         rend: "ce que organismes-contrats rend",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
+        refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -62,41 +61,114 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
+/// La charge de `organismes-contrats` : le mois regarde (le mois en cours sans lui).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeOrganismes {
+    mois: Option<String>,
+}
+
+/// La charge de `organismes-enregistrer` : ce que la compagnie saisit de chaque contrat (`{cle: {libelle, organisme}}`,
+/// rien sans lui), et le mois a partir duquel ils valent (le mois en cours sans lui).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeEnregistrer {
+    contrats: Option<BTreeMap<String, Saisie>>,
+    mois: Option<String>,
+}
+
+impl ChargeEnregistrer {
+    /// Les contrats `contrats`, a partir du mois en cours (l'import).
+    pub(crate) fn des_contrats(contrats: BTreeMap<String, Saisie>) -> ChargeEnregistrer {
+        ChargeEnregistrer { contrats: Some(contrats), mois: None }
+    }
+}
+
+impl Lus {
+    /// Les lignes des contrats.
+    pub(crate) fn lignes(&self) -> &[droit::organismes::Ligne] {
+        &self.lignes
+    }
+}
+
+/// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, la convention, s'il reste a saisir, le mois
+/// regarde, une ligne par contrat (et sa periode en clair), et ce que l'ecran en dit.
+#[derive(Debug, Serialize)]
+pub struct OrganismesDits {
+    phrase: String,
+    idcc: Option<String>,
+    a_saisir: bool,
+    mois: String,
+    contrats: Vec<ContratDit>,
+    encarts: Vec<crate::routes::Encart>,
+}
+
+/// Une ligne de contrat, et sa periode en clair (vide : elle vaut de tout temps).
+#[derive(Debug, Serialize)]
+pub struct ContratDit {
+    #[serde(flatten)]
+    ligne: droit::organismes::Ligne,
+    periode: String,
+}
+
+impl Dite for OrganismesDits {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
 /// Une route de ce module.
-pub fn route(ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    let v = match nom {
-        Route::OrganismesContrats => lire(ctx, charge)?,
-        _ => enregistrer(ctx, charge)?,
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let ctx = porte.ctx;
+    let (lu, enregistre) = match porte.route {
+        Route::OrganismesContrats => {
+            let c: ChargeOrganismes = charge.lire()?;
+            (lire(ctx, c.mois.as_deref())?, false)
+        }
+        Route::OrganismesEnregistrer => {
+            let c: ChargeEnregistrer = charge.lire()?;
+            (enregistrer(ctx, c)?, true)
+        }
+        autre => return Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     };
-    // Ce qui reste a dire a la compagnie (`a_saisir`), sinon combien de contrats la DSN declare.
-    let n = v["contrats"].as_array().map_or(0, Vec::len);
-    let p = if v["a_saisir"] == json!(true) {
+    en_json(dire(lu, enregistre)?)
+}
+
+/// Ce que l'ecran lit des contrats : sa phrase (ce qui reste a dire a la compagnie, sinon combien de contrats la DSN
+/// declare), d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; la periode de chaque contrat.
+fn dire(lu: Lus, enregistre: bool) -> R<OrganismesDits> {
+    let n = lu.lignes.len();
+    let p = if lu.a_saisir {
         format!("Contrats de la DSN : {} ; il en reste à saisir.", n)
     } else {
         format!("Contrats de la DSN : {} ; rien à saisir.", n)
     };
-    let p = if nom == Route::OrganismesContrats { p } else { format!("Enregistré. {}", p) };
-    let mut v = v;
-    // Ce que l'ecran en dit : d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; la periode de chaque
-    // contrat.
-    let mut encarts = vec![crate::routes::encart("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
-    if let Some(m) = v["mois"].as_str().filter(|m| !m.is_empty()) {
-        encarts.push(crate::routes::encart("information", "", format!("Les contrats en vigueur en {}.", socle::mois::Mois::en_clair(m))));
+    let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
+    let mut encarts = vec![crate::routes::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
+    encarts.push(crate::routes::Encart::de("information", "", format!("Les contrats en vigueur en {}.", socle::mois::Mois::en_clair(&lu.mois))));
+    if lu.a_saisir {
+        encarts.push(crate::routes::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
-    if v["a_saisir"] == json!(true) {
-        encarts.push(crate::routes::encart("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
+    let en_clair = |j: &Option<String>| -> R<Option<String>> {
+        match j.as_deref().filter(|j| !j.is_empty()) {
+            Some(j) => {
+                let tete = j.get(..10).ok_or_else(|| plain(format!("jour illisible : {}", socle::fichiers::repr(j))))?;
+                Ok(Some(Jour::lire(tete).map_err(plain)?.jj_mm_aaaa()))
+            }
+            None => Ok(None),
+        }
+    };
+    let mut contrats = Vec::new();
+    for ligne in lu.lignes {
+        let periode = match (en_clair(&ligne.depuis)?, en_clair(&ligne.jusqu_a)?) {
+            (Some(de), Some(a)) => format!("Du {} au {}.", de, a),
+            (Some(de), None) => format!("Depuis le {}.", de),
+            (None, Some(a)) => format!("Jusqu'au {}.", a),
+            (None, None) => String::new(),
+        };
+        contrats.push(ContratDit { ligne, periode });
     }
-    for c in v["contrats"].as_array_mut().into_iter().flatten() {
-        let (de, a) = (crate::routes::jour_en_clair(&json!(crate::routes::mot(&c["depuis"]).get(..10).unwrap_or(""))), crate::routes::jour_en_clair(&json!(crate::routes::mot(&c["jusqu_a"]).get(..10).unwrap_or(""))));
-        c["periode"] = json!(match (de.is_empty(), a.is_empty()) {
-            (false, false) => format!("Du {} au {}.", de, a),
-            (false, true) => format!("Depuis le {}.", de),
-            (true, false) => format!("Jusqu'au {}.", a),
-            _ => String::new(),
-        });
-    }
-    v["encarts"] = Value::Array(encarts);
-    Ok(crate::routes::phrase_en_tete(v, p))
+    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois, contrats, encarts })
 }
 
 #[track_caller]
@@ -106,19 +178,7 @@ fn plain(m: impl Into<String>) -> Echec {
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(Some("ErreurOperation"), m)
-}
-
-fn g<'a>(v: &'a Value, k: &str) -> &'a Value {
-    v.get(k).unwrap_or(&Value::Null)
-}
-
-fn txt(v: &Value) -> String {
-    if vrai(v) {
-        en_texte(v).trim().to_string()
-    } else {
-        String::new()
-    }
+    socle::echec::noter_et(Some(socle::echec::Classe::Refuse), m)
 }
 
 fn chemin(ctx: &Contexte) -> std::path::PathBuf {
@@ -130,46 +190,45 @@ fn chemin(ctx: &Contexte) -> std::path::PathBuf {
 /// affiliations d'un salarie paye au mois) ne se montre qu'a une compagnie qui en emploie (rien a remplir pour qui
 /// n'emploie pas de permanent) : le curseur est `Contexte::emploie_des_permanents`, le meme que partout.
 fn se_montre(ctx: &Contexte, spec: &Attendu) -> bool {
-    spec.role.as_deref().unwrap_or_default().trim().is_empty() || ctx.emploie_des_permanents()
+    spec.role.as_deref().is_none_or(|r| r.trim().is_empty()) || ctx.emploie_des_permanents()
 }
 
 /// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.
-fn periode(ctx: &Contexte, charge: &Value) -> R<(Jour, Jour)> {
-    let mois = match txt(g(charge, "mois")) {
-        m if m.is_empty() => ctx.aujourdhui.iso()[..7].to_string(),
-        m => m,
+fn periode(ctx: &Contexte, mois: Option<&str>) -> R<(Jour, Jour)> {
+    let mois = match mois.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(m) => socle::mois::Mois::lire(m).map_err(plain)?,
+        None => ctx.aujourdhui.mois_civil(),
     };
-    let premier = socle::mois::Mois::lire(&mois).map(socle::mois::Mois::premier_jour).map_err(plain)?;
-    let dernier = socle::mois::Mois::lire(&mois).map(socle::mois::Mois::dernier_jour).map_err(plain)?;
-    Ok((premier, dernier))
+    Ok((mois.premier_jour(), mois.dernier_jour()))
+}
+
+/// Ce que l'ecran des contrats lit (`lire`).
+pub struct Lus {
+    idcc: Option<String>,
+    a_saisir: bool,
+    mois: String,
+    lignes: Vec<droit::organismes::Ligne>,
 }
 
 /// `organismes-contrats` : une ligne par contrat attendu qui vaut pour la compagnie (`se_montre`) et pour la periode
 /// regardee (`Attendu::couvre`) ; `a_saisir` : une de ces lignes attend encore ce que la compagnie seule peut dire.
-pub fn lire(ctx: &Contexte, charge: &Value) -> R<Value> {
-    let periode = periode(ctx, charge)?;
+pub fn lire(ctx: &Contexte, mois: Option<&str>) -> R<Lus> {
+    let periode = periode(ctx, mois)?;
     let ctx = &ctx.au(&periode.1).map_err(plain)?;
     let (saisi, _) = saisis(ctx).map_err(plain)?;
     let lignes: Vec<droit::organismes::Ligne> =
         attendus(ctx).map_err(plain)?.iter().filter(|s| se_montre(ctx, s) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
     let a_saisir = lignes.iter().any(|l| l.libelle.is_none() || l.organisme.is_none());
-    Ok(json!({
-        "idcc": ctx.entreprise.idcc.texte().trim(),
-        "a_saisir": a_saisir,
-        "mois": periode.0.mois_civil().to_string(),
-        "contrats": lignes,
-    }))
+    Ok(Lus { idcc: ctx.entreprise.idcc.portee().map(|i| i.trim().to_string()), a_saisir, mois: periode.0.mois_civil().to_string(), lignes })
 }
 
-/// `organismes-enregistrer` : `{"contrats": {cle: {libelle, organisme}}, "mois": "AAAA-MM"}` ; compose les adhesions
-/// du mois (sous la configuration du mois) avec ce qui est saisi, refuse un contrat propose dont la reference manque,
-/// ecrit ce qui change a partir du premier jour du mois (`droit::fiche::dater` : la premiere composition vaut de tout
-/// temps), et rend la lecture. Ce qui precede le mois ne change pas.
-pub fn enregistrer(ctx: &Contexte, charge: &Value) -> R<Value> {
-    let saisies: BTreeMap<String, Saisie> = socle::forme::lire::<Option<BTreeMap<String, Saisie>>>(g(charge, "contrats"), "Les contrats saisis ne se lisent pas : chacun dit sa référence (libelle) et son organisme.")
-        .map_err(refus)?
-        .unwrap_or_default();
-    let periode = periode(ctx, charge)?;
+/// `organismes-enregistrer` : compose les adhesions du mois (sous la configuration du mois) avec ce qui est saisi, refuse
+/// un contrat propose dont la reference manque, ecrit ce qui change a partir du premier jour du mois
+/// (`droit::fiche::dater` : la premiere composition vaut de tout temps), et rend la lecture. Ce qui precede le mois ne
+/// change pas.
+pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
+    let saisies: BTreeMap<String, Saisie> = charge.contrats.into_iter().flatten().collect();
+    let periode = periode(ctx, charge.mois.as_deref())?;
     let du_mois = ctx.au(&periode.1).map_err(plain)?;
     let (saisi, prises) = saisis(&du_mois).map_err(plain)?;
     let compose = composer(&du_mois, &saisi, prises, &saisies, Some(&periode)).map_err(refus)?;
@@ -188,7 +247,7 @@ mois. Ne pas modifier a la main."
     );
     // Rien de saisi en vigueur s'ecrit aussi : la composition du mois devient la saisie de la periode.
     if en_vigueur.is_empty() || en_vigueur != adhesions {
-        droit::fiche::dater(date.adhesions_prevoyance.get_or_insert_with(Vec::new),Some(adhesions), Some(&periode.0), None);
+        droit::fiche::dater(&mut date.adhesions_prevoyance, Some(adhesions), Some(&periode.0), None);
     }
     let p = chemin(ctx);
     if let Some(parent) = p.parent() {
@@ -196,5 +255,5 @@ mois. Ne pas modifier a la main."
     }
     crate::routes::mois::sauver_avant(&p)?;
     ecrire_json(&p, &date, 2).map_err(plain)?;
-    lire(ctx, charge)
+    lire(ctx, charge.mois.as_deref())
 }

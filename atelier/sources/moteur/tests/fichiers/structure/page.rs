@@ -199,13 +199,16 @@ struct Fonction {
     corps: (usize, usize),
 }
 
-/// Ce que la page tient d'une reponse : ses formes possibles, la route, le chemin depuis la reponse.
+/// Ce que la page tient d'une reponse : ses formes possibles, la route, le chemin depuis la reponse ; `enveloppe` quand
+/// elle tient la reponse entiere de la porte (`window.appel` des pages du moteur : `ok`, `ecrit`, `refus`, et le rendu
+/// de la route sous `resultat` ; `routes::enveloppe::Reponse`).
 #[derive(Clone, Debug, PartialEq)]
 struct Val {
     formes: Vec<usize>,
     route: String,
     chemin: String,
     promesse: bool,
+    enveloppe: bool,
 }
 
 /// Une faute : le fichier, la ligne, la route, le chemin, la cle lue, ce que la forme porte.
@@ -498,7 +501,7 @@ impl<'f, 'e> Page<'f, 'e> {
                 self.verifies += 1;
             }
             let chemin = if val.chemin.is_empty() { cle.to_string() } else { format!("{}.{}", val.chemin, cle) };
-            return Some(Val { formes: trouve, route: val.route.clone(), chemin, promesse: false });
+            return Some(Val { formes: trouve, route: val.route.clone(), chemin, promesse: false, enveloppe: false });
         }
         if ouverte || PROPRIETES_DE_LISTE.contains(&cle) {
             return None;
@@ -524,7 +527,7 @@ impl<'f, 'e> Page<'f, 'e> {
                 _ => None,
             })
             .collect();
-        (!e.is_empty()).then(|| Val { formes: e, route: val.route.clone(), chemin: format!("{}[]", val.chemin), promesse: false })
+        (!e.is_empty()).then(|| Val { formes: e, route: val.route.clone(), chemin: format!("{}[]", val.chemin), promesse: false, enveloppe: false })
     }
 
     fn est_liste(&self, val: &Val) -> bool {
@@ -552,7 +555,9 @@ impl<'f, 'e> Page<'f, 'e> {
         let route = route.clone();
         self.appelees.insert(route.clone());
         let promesse = id(v, i.wrapping_sub(1)) != Some("await");
-        let val = self.routes.get(&route).map(|&f| Val { formes: vec![f], route, chemin: String::new(), promesse });
+        // `appel` dans une page du moteur est `window.appel` : la reponse entiere de la porte (`interface::CALE`).
+        let enveloppe = id(v, i) == Some("appel") && self.fichiers[n].contains("interface/pages/");
+        let val = self.routes.get(&route).map(|&f| Val { formes: vec![f], route, chemin: String::new(), promesse, enveloppe });
         Some((val, fin))
     }
 
@@ -604,6 +609,19 @@ impl<'f, 'e> Page<'f, 'e> {
                         None => return (fin + 1, None),
                     }
                     continue;
+                }
+                // LA REPONSE ENTIERE DE LA PORTE : `resultat` est le rendu de la route ; `ok`, `ecrit` et `refus` sont
+                // ceux de l'enveloppe, que toute route porte.
+                if val.enveloppe {
+                    match cle.as_str() {
+                        "resultat" => {
+                            val.enveloppe = false;
+                            i += 2;
+                            continue;
+                        }
+                        "ok" | "ecrit" | "refus" => return (i + 2, None),
+                        _ => {}
+                    }
                 }
                 match self.propriete(n, i + 1, &val, &cle) {
                     Some(s) => {

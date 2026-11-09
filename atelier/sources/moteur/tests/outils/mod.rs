@@ -280,7 +280,7 @@ pub fn bac_a_sable(c: &mut Command, racine: &Path, jour: &str) {
     }
 }
 
-/// `moteur route` dans un sous-processus : la réponse entière (`{"ok", "resultat"}` ou `{"ok": false, "erreur", "classe"}`).
+/// `moteur route` dans un sous-processus : la réponse entière (`{"ok", "ecrit", "resultat"}` ou `{"ok": false, "ecrit", "refus"}`).
 pub fn route(racine: &Path, nom: &str, charge: Value, jour: &str) -> Value {
     route_avec(racine, nom, charge, jour, &[])
 }
@@ -306,7 +306,7 @@ pub fn reussi(r: &Value) -> &Value {
 /// Un refus : (classe, phrase).
 pub fn refus(r: &Value) -> (String, String) {
     assert_eq!(r["ok"], json!(false), "un refus etait attendu : {}", r);
-    (r["classe"].as_str().unwrap_or_default().to_string(), r["erreur"].as_str().unwrap_or_default().to_string())
+    (r["refus"]["classe"].as_str().unwrap_or_default().to_string(), r["refus"]["phrase"].as_str().unwrap_or_default().to_string())
 }
 
 // ------------------------------------------------------------------ lire une DSN
@@ -413,6 +413,11 @@ pub fn aem(zones: &[(usize, &str)], nir: &str, debut: &str, fin: &str, objet: &s
 mod serveur;
 #[allow(unused_imports)]
 pub use serveur::*;
+
+/// Une réponse HTTP dont le corps est ce JSON.
+pub fn http_json(statut: u16, v: &Value) -> Vec<u8> {
+    http(statut, "application/json", v.to_string().as_bytes())
+}
 
 /// Un faux mandataire, que l'essai nomme comme seule porte du garde-fou reseau (`socle::garde_reseau::VARIABLE`) : il
 /// note la première ligne de chaque demande (`CONNECT hote:port HTTP/1.1`) et refuse ; rien ne sort de la machine.

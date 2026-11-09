@@ -7,7 +7,7 @@
 
 use droit::fiche::Lue as _;
 use rust_decimal::RoundingStrategy;
-use serde_json::{json, Map, Value};
+use fabrique_pdf::forme as pdf;
 
 use crate::bulletin::{identite_de, FORMAT};
 use droit::contexte::EntrepriseDuDocument;
@@ -15,9 +15,9 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::{repr_flottant, Jour};
 use engagement::Engagement;
 use socle::num::{dec_f64, Decimal};
-use socle::echec::Refus;
+use socle::echec::{Classe, Echec};
 
-type R<T> = Result<T, Refus>;
+type R<T> = Result<T, Echec>;
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
 
@@ -211,9 +211,9 @@ const NOIR: &str = "#000000";
 // ---------------------------------------------------------------- chiffres
 
 /// `arrondi_euro` : a l'euro le plus proche, moitie superieure.
-pub fn arrondi_euro(x: Decimal) -> i64 {
+pub fn arrondi_euro(x: Decimal) -> Result<i64, String> {
     use rust_decimal::prelude::ToPrimitive;
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().unwrap_or(0)
+    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| format!("montant hors de portée : {}", x))
 }
 
 
@@ -257,8 +257,12 @@ impl ContratCs {
         })
     }
 
-    fn numero_ou(&self, defaut: &str) -> String {
-        self.numero.as_deref().unwrap_or(defaut).to_string()
+    /// Le contrat, tel qu'un refus le nomme : « FA1.26.13 », ou « sans numero ».
+    fn nomme(&self) -> String {
+        match self.numero.as_deref() {
+            Some(n) => n.to_string(),
+            None => "sans numero".to_string(),
+        }
     }
 }
 
@@ -291,23 +295,23 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         let nb = if eng.cachets != 0 { eng.cachets } else { eng.jours };
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
-    if eng.heures.map_or(false, |h| h != 0.0) {
-        return Err(Refus {
-            classe: Some("ValueError"),
+    if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
+        return Err(Echec {
+            classe: Some(Classe::Illisible),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
-                eng.numero_ou("sans numero"),
-                repr_flottant(eng.heures.unwrap_or(0.0))
+                eng.nomme(),
+                repr_flottant(h)
             ),
         });
     }
     let n = eng.dates_travail.len() as i64;
     if eng.cachets != n || eng.jours != n {
-        return Err(Refus {
-            classe: Some("ValueError"),
+        return Err(Echec {
+            classe: Some(Classe::Illisible),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
-                eng.numero_ou("sans numero"),
+                eng.nomme(),
                 eng.cachets,
                 eng.jours,
                 n
@@ -370,11 +374,11 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Decimal::ZERO,
                 None => {
-                    return Err(Refus {
-                        classe: Some("ValueError"),
+                    return Err(Echec {
+                        classe: Some(Classe::Illisible),
                         message: format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
-                            e.numero_ou("sans numero"),
+                            e.nomme(),
                             nb,
                             debut.jj_mm_aaaa(),
                             fin.jj_mm_aaaa()
@@ -401,8 +405,8 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 Some(n) => n.to_string(),
                 None => texte_requis(&paie.salarie.nom, "nom")?,
             };
-            return Err(Refus {
-                classe: Some("ValueError"),
+            return Err(Echec {
+                classe: Some(Classe::Illisible),
                 message: format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
                     qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
@@ -433,8 +437,8 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
     Ok(out)
 }
 
-fn cle_absente(k: &str) -> Refus {
-    Refus { classe: Some("KeyError"), message: socle::fichiers::absent(k) }
+fn cle_absente(k: &str) -> Echec {
+    Echec { classe: Some(Classe::Manque), message: socle::fichiers::absent(k) }
 }
 
 // --------------------------------------------------------------------- rendu
@@ -467,19 +471,27 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     let adresse_defaut = texte_requis(&s.adresse, "adresse")?;
     let commune_defaut = texte_requis(&s.commune, "commune")?;
     // La forme lisible quand la fiche la porte, la forme declaree sinon.
-    let lisible = |c: &Option<String>, defaut: String| c.clone().unwrap_or(defaut);
+    let lisible = |c: &Option<String>, declaree: String| match c {
+        Some(l) => l.clone(),
+        None => declaree,
+    };
     let mut out: Vec<(&'static str, String)> = Vec::new();
     out.push(("dest_nom", format!("{} {}", texte_requis(&s.prenom, "prenom")?, texte_requis(&s.nom, "nom")?)));
     out.push(("dest_adresse", lisible(&s.adresse_affichage, adresse_defaut)));
     out.push(("dest_commune", format!("{} {}", texte_requis(&s.code_postal, "code_postal")?, lisible(&s.commune_affichage, commune_defaut))));
     out.push(("dest_pays", "France".to_string()));
     out.push(("siret", siret_espace(&texte_requis(&ent.siret, "siret")?)));
-    out.push(("compte", ent.congesspectacles_adherent.texte().to_string()));
+    out.push(("compte", texte_requis(&ent.congesspectacles_adherent, "congesspectacles_adherent")?));
     out.push(("num_ce", c.numero.to_string()));
-    out.push((
-        "nir",
-        format!("{} {}", s.nir.texte(), s.nir_cle.texte()).trim_matches(socle::texte::blanc).to_string(),
-    ));
+    if let Some(nir) = s.nir.portee() {
+        out.push((
+            "nir",
+            match s.nir_cle.portee() {
+                Some(cle) => format!("{} {}", nir, cle),
+                None => nir.to_string(),
+            },
+        ));
+    }
     out.push(("raison_sociale", texte_requis(&ent.raison_sociale, "raison_sociale")?));
     out.push(("nom_naissance", texte_requis(&s.nom, "nom")?));
     // Le nom d'usage : le nom declare, comme le modele du certificat de la caisse le repete quand il n'y en a pas d'autre.
@@ -490,12 +502,14 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     // DSN Audiens).
     out.push(("cadre", if droit::bareme::est_cadre(s) { "OUI" } else { "NON" }.to_string()));
     out.push(("prenom", texte_requis(&s.prenom, "prenom")?));
-    out.push(("pseudonyme", s.pseudonyme.texte().to_string()));
+    if let Some(p) = s.pseudonyme.portee() {
+        out.push(("pseudonyme", p.to_string()));
+    }
     out.push(("debut", cases_date(&c.debut)));
     out.push(("fin", cases_date(&c.fin)));
     out.push(("nb_cachets", c.nb_jours_ou_cachets.to_string()));
-    out.push(("base_conge", arrondi_euro(c.base).to_string()));
-    out.push(("salaire_brut", arrondi_euro(c.brut).to_string()));
+    out.push(("base_conge", arrondi_euro(c.base)?.to_string()));
+    out.push(("salaire_brut", arrondi_euro(c.brut)?.to_string()));
     let e = c.emission;
     out.push(("date", format!("{:02}/{:02}/{:02}", e.jour, e.mois, e.an % 100)));
     out.push(("signataire", texte_requis(&sig.nom, "nom")?));
@@ -510,33 +524,38 @@ fn largeur_max(champ: &str, x: f64) -> Option<f64> {
     LIMITES.iter().find(|(c, _)| *c == champ).map(|(_, limite)| limite - RESPIRATION - x)
 }
 
-fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Option<f64>) -> Value {
+fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Option<f64>) -> pdf::Bloc {
     let (nom, gras) = match police {
-        TIMES => ("times", false),
-        TIMES_GRAS => ("times", true),
-        _ => ("courier", false),
+        TIMES => (pdf::PoliceFixe::Times, false),
+        TIMES_GRAS => (pdf::PoliceFixe::Times, true),
+        _ => (pdf::PoliceFixe::Courier, false),
     };
-    let mut b = Map::new();
-    b.insert("type".into(), json!("texte_fixe"));
-    b.insert("x".into(), json!(x));
-    b.insert("y".into(), json!(y));
-    b.insert("texte".into(), json!(texte));
-    b.insert("police".into(), json!(nom));
-    b.insert("taille".into(), json!(corps));
-    b.insert("couleur".into(), json!(NOIR));
-    if let Some(l) = largeur {
-        b.insert("largeur_max".into(), json!(l));
-    }
-    if gras {
-        b.insert("gras".into(), json!(true));
-    }
-    Value::Object(b)
+    pdf::Bloc::TexteFixe(pdf::TexteFixe {
+        texte: texte.to_string(),
+        x: x as f32,
+        y: y as f32,
+        taille: Some(corps as f32),
+        police: Some(nom),
+        gras: gras.then_some(true),
+        couleur: Some(NOIR.to_string()),
+        alignement: None,
+        largeur_max: largeur.map(|l| l as f32),
+    })
 }
 
-fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R<Vec<Value>> {
-    let mut blocs: Vec<Value> = TRAITS
+fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R<Vec<pdf::Bloc>> {
+    let mut blocs: Vec<pdf::Bloc> = TRAITS
         .iter()
-        .map(|(x0, y0, x1, y1, ep)| json!({"type": "trait", "x1": x0, "y1": y0, "x2": x1, "y2": y1, "epaisseur": ep, "couleur": NOIR}))
+        .map(|(x0, y0, x1, y1, ep)| {
+            pdf::Bloc::Trait(pdf::Trait {
+                x1: *x0 as f32,
+                y1: *y0 as f32,
+                x2: *x1 as f32,
+                y2: *y1 as f32,
+                epaisseur: Some(*ep as f32),
+                couleur: Some(NOIR.to_string()),
+            })
+        })
         .collect();
     for (x, y, texte, police, corps) in FOND {
         blocs.push(texte_fixe(*x, *y, texte, police, *corps, None));
@@ -549,9 +568,15 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
     }
     if let Some(signature) = identite_de(&ent.gabarits, "signature") {
         let (x0, y0, x1, y1) = SIGNATURE_CADRE;
-        let svg = signature.extension().map_or(false, |e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
-        blocs.push(json!({"type": "image_fixe", "chemin": chemin_texte(&signature), "x": x0, "y": y0,
-                          "largeur": x1 - x0, "hauteur": y1 - y0, "centree": !svg}));
+        let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
+        blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
+            chemin: chemin_texte(&signature),
+            x: x0 as f32,
+            y: y0 as f32,
+            largeur: (x1 - x0) as f32,
+            hauteur: (y1 - y0) as f32,
+            centree: Some(!svg),
+        }));
     }
     Ok(blocs)
 }
@@ -562,24 +587,34 @@ pub fn chemin_texte(p: &std::path::Path) -> String {
 }
 
 /// `description` : un document par page, sans marge.
-pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) -> R<Value> {
+pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     let mut documents = Vec::new();
     for (c, p) in certs {
-        documents.push(json!({"blocs": blocs_certificat(c, p, ent)?}));
+        documents.push(pdf::Document::Blocs(blocs_certificat(c, p, ent)?));
     }
-    Ok(json!({
-        "format": FORMAT,
-        "page": {"largeur": 595.22, "hauteur": 842.0, "marges": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}},
-        "titre": "Certificats d'emploi Conges Spectacles",
-        "documents": documents
-    }))
+    let nulle = Some(0.0);
+    Ok(pdf::Description {
+        format: FORMAT,
+        page: Some(pdf::Page {
+            largeur: Some(595.22),
+            hauteur: Some(842.0),
+            marges: Some(pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+        }),
+        police: None,
+        style: None,
+        logo: None,
+        titre: Some("Certificats d'emploi Conges Spectacles".to_string()),
+        documents,
+        entete_page: None,
+        pied_page: None,
+    })
 }
 
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
-pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<Value> {
+pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(Refus {
-            classe: Some("ValueError"),
+        return Err(Echec {
+            classe: Some(Classe::Illisible),
             message: socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent"),
         });
     }
@@ -614,8 +649,8 @@ pub fn recapitulatif(paires: &[(&PaieCs, i64)], ent: &ChampsEntreprise) -> R<Str
                 c.debut.jj_mm_aaaa(),
                 c.fin.jj_mm_aaaa(),
                 c.nb_jours_ou_cachets,
-                arrondi_euro(c.brut),
-                arrondi_euro(c.base)
+                arrondi_euro(c.brut)?,
+                arrondi_euro(c.base)?
             ));
         }
     }

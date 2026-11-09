@@ -7,12 +7,12 @@
 //!
 //! Les envois ne savent pas pourquoi une compagnie est sur une branche : ils obeissent a celle qu'on leur passe.
 
-use socle::echec::{erreur, R};
+use socle::echec::{erreur, Classe, R};
 
 /// Le refus que rend la branche « message » : sa classe (que la page reconnait) et sa phrase, mot pour mot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Refus {
-    pub classe: &'static str,
+    pub classe: Classe,
     pub phrase: &'static str,
 }
 
@@ -58,7 +58,7 @@ pub const ANCIEN_PREFIXE_FLUX_FICTIF: &str = "DEMO-";
 /// Ce que le point de depot aurait repondu a un depot joue : un flux, et la mention.
 pub fn reponse_fictive(quoi: &str, reel: bool) -> R<String> {
     let mut o = [0u8; 6];
-    socle::temps::aleas(&mut o).map_err(|e| erreur("OSError", format!("pas d'alea du systeme : {}", e)))?;
+    socle::temps::aleas(&mut o).map_err(|e| erreur(Classe::Disque, format!("pas d'alea du systeme : {}", e)))?;
     let flux = format!("{}{}", PREFIXE_FLUX_FICTIF, o.iter().map(|b| format!("{:02X}", b)).collect::<String>());
     Ok(format!(
         "<idflux>{}</idflux>\nCompagnie fictive : {} {} jouee, rien n'a quitte le poste.",

@@ -5,7 +5,7 @@
 //! `moteur essai monter [DOSSIER] [--depuis FICTIVE]` copie une compagnie FICTIVE livree (ses salaries inventes, ses paies,
 //! son bareme, ses organismes) dans DOSSIER, hors de tout depot Git, et lui donne l'IDENTITE d'une vraie compagnie, lue dans
 //! UNE variable d'environnement, `PUPPETPAIE_COMPAGNIE` : un objet JSON sur une ligne, fragment de `config/entreprise.json`,
-//! avec EXACTEMENT les cles de `CLES`. Le reste de la seance nomme cette compagnie par
+//! avec EXACTEMENT les cles de sa forme (`Variable`). Le reste de la seance nomme cette compagnie par
 //! `PUPPETPAIE_DONNEES=DOSSIER` et se sert des routes ordinaires (`moteur route` : `deposer` en test, la DSN ou la DPAE du mois ;
 //! `ouverture` pour relever les retours).
 //!
@@ -41,7 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde::Deserialize;
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
 pub const VARIABLE: &str = "PUPPETPAIE_COMPAGNIE";
@@ -60,180 +60,246 @@ pub const FICTIVE_PAR_DEFAUT: &str = "fictive-fil-de-fer";
 /// Le nom du dossier quand la commande n'en donne pas : dans le dossier temporaire du systeme.
 pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
-/// Les cles de la variable, et celles de ses trois objets. Une cle qui manque ou qui est en trop est
-/// refusee : une faute de frappe ne passe pas en silence.
-pub const CLES: [&str; 11] =
-    ["siren", "nic", "raison_sociale", "adresse", "code_postal", "commune", "naf", "medecine_travail", "declarant", "declarant_dsn", "api_dpae"];
-const CLES_DECLARANT: [&str; 2] = ["nom", "prenom"];
-const CLES_DECLARANT_DSN: [&str; 5] = ["civilite", "nom_prenom", "tel", "email", "qualite"];
-const CLES_API_DPAE: [&str; 4] = ["nom", "prenom", "siret", "service"];
-/// Celles qui peuvent etre vides : le SIRET du compte DPAE (par defaut, celui de la compagnie, comme `Client::dpae`) et son
-/// code de service (facultatif dans l'adresse d'authentification, `releve_retours::adresses_dpae`).
-const PEUVENT_ETRE_VIDES: [&str; 2] = ["api_dpae.siret", "api_dpae.service"];
-
-/// Les rubriques de la DSN que chaque cle remplit (`dsn.rs` : l'en-tete S10.G00.01, le contact S10.G00.02 et S20.G00.07,
-/// l'entreprise S21.G00.06 et l'etablissement S21.G00.11).
-const RUBRIQUES: [(&str, &[&str]); 12] = [
-    ("siren", &["S10.G00.01.001", "S21.G00.06.001"]),
-    ("nic", &["S10.G00.01.002", "S21.G00.06.002", "S21.G00.11.001"]),
-    ("raison_sociale", &["S10.G00.01.003"]),
-    ("adresse", &["S10.G00.01.004", "S21.G00.06.004", "S21.G00.11.003"]),
-    ("code_postal", &["S10.G00.01.005", "S21.G00.06.005", "S21.G00.11.004"]),
-    ("commune", &["S10.G00.01.006", "S21.G00.06.006", "S21.G00.11.005"]),
-    ("naf", &["S21.G00.06.003", "S21.G00.11.002"]),
-    ("declarant_dsn.civilite", &["S10.G00.02.001"]),
-    ("declarant_dsn.nom_prenom", &["S10.G00.02.002", "S20.G00.07.001"]),
-    ("declarant_dsn.email", &["S10.G00.02.004", "S20.G00.07.003"]),
-    ("declarant_dsn.tel", &["S10.G00.02.005", "S20.G00.07.002"]),
-    ("declarant_dsn.qualite", &["S20.G00.07.004"]),
-];
-
 
 /// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
 const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::horloge::FICHIER_HORLOGE];
 
-/// Une compagnie d'essai : son marqueur le dit.
-pub fn est_essai(racine: &Path) -> bool {
-    std::fs::read_to_string(racine.join(MARQUEUR))
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| v.get("copie_de").and_then(Value::as_str).map(str::to_string))
-        .is_some_and(|c| c.starts_with(MARQUE_ESSAI))
+/// Une compagnie d'essai : son marqueur le dit (`interface::compagnies::copie_de`).
+pub fn est_essai(racine: &Path) -> Result<bool, String> {
+    Ok(crate::interface::compagnies::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
+}
+
+/// Ce qu'un refus porte a part : le chemin `p`.
+fn a_part(p: &Path) -> socle::echec::APart {
+    socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
 }
 
 // ------------------------------------------------------------------ l'identite
 
-/// L'identite lue dans la variable, validee. Ne s'affiche jamais (pas de `Debug`).
-pub struct Identite(Map<String, Value>);
+/// UN TEXTE DE LA VARIABLE, sans les blancs qui l'entourent. Ne s'affiche jamais (pas de `Debug`).
+struct Lu(String);
+
+impl<'de> Deserialize<'de> for Lu {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
+        String::deserialize(d).map(|t| Lu(t.trim().to_string()))
+    }
+}
+
+/// LA VARIABLE `PUPPETPAIE_COMPAGNIE`, telle qu'elle s'ecrit : exactement ces cles, chacune un texte. Une cle qui manque ou
+/// qui est en trop est refusee : une faute de frappe ne passe pas en silence.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Variable {
+    siren: Lu,
+    nic: Lu,
+    raison_sociale: Lu,
+    adresse: Lu,
+    code_postal: Lu,
+    commune: Lu,
+    naf: Lu,
+    medecine_travail: Lu,
+    declarant: VariableDeclarant,
+    declarant_dsn: VariableContact,
+    api_dpae: VariableCompteDpae,
+}
+
+/// Le declarant inscrit au service DSN de net-entreprises.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VariableDeclarant {
+    nom: Lu,
+    prenom: Lu,
+}
+
+/// La personne que les organismes contactent (S10.G00.02, S20.G00.07).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VariableContact {
+    civilite: Lu,
+    nom_prenom: Lu,
+    tel: Lu,
+    email: Lu,
+    qualite: Lu,
+}
+
+/// Le compte DPAE d'urssaf.fr. Son SIRET et son code de service peuvent etre vides : le SIRET n'est alors pas dit (celui de
+/// la compagnie sert, `Client::dpae`), le service non plus (facultatif dans l'adresse d'authentification,
+/// `releve_retours::adresses_dpae`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VariableCompteDpae {
+    nom: Lu,
+    prenom: Lu,
+    siret: Lu,
+    service: Lu,
+}
+
+/// L'identite lue dans la variable, validee : les cases de la fiche qu'elle pose. Ne s'affiche jamais (pas de `Debug`).
+pub struct Identite(droit::fiche::ChampsEntreprise);
 
 fn chiffres(t: &str, n: usize) -> bool {
     t.len() == n && t.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// Les cles d'un objet, contre celles attendues : ce qui manque, ce qui est en trop (les NOMS, prefixes de `chemin`).
-fn confronter(o: &Map<String, Value>, attendues: &[&str], chemin: &str, manques: &mut Vec<String>, inconnues: &mut Vec<String>) {
-    let nom = |k: &str| if chemin.is_empty() { k.to_string() } else { format!("{}.{}", chemin, k) };
-    manques.extend(attendues.iter().filter(|k| !o.contains_key(**k)).map(|k| nom(k)));
-    inconnues.extend(o.keys().filter(|k| !attendues.contains(&k.as_str())).map(|k| nom(k)));
+/// Le refus d'une valeur mal formee : la cle et ce qu'il faut, jamais la valeur.
+fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> String {
+    socle::echec::avec(
+        format!("L'identité de la compagnie d'essai ({}) porte une valeur mal formée. Rien n'est écrit.", VARIABLE),
+        socle::echec::APart { cle: Some(cle.to_string()), detail: Some(ce_qu_il_faut.to_string()), ..Default::default() },
+    )
 }
 
-impl Identite {
-    /// Lit et valide le texte de la variable. Le refus nomme la variable et la cle, JAMAIS une valeur : meme l'erreur de
-    /// syntaxe ne rend que sa ligne et sa colonne.
-    pub fn lire(texte: &str) -> Result<Identite, String> {
-        let v: Value = serde_json::from_str(texte).map_err(|e| {
-            format!("{} n'est pas un JSON lisible (ligne {}, colonne {}) : un objet sur une ligne est attendu. Rien n'est ecrit.", VARIABLE, e.line(), e.column())
-        })?;
-        let Value::Object(racine) = v else {
-            return Err(socle::echec::avec("L'identité de la compagnie d'essai n'est pas un objet. Rien n'est écrit.", json!({"variable": VARIABLE})));
-        };
-        let (mut manques, mut inconnues) = (Vec::new(), Vec::new());
-        confronter(&racine, &CLES, "", &mut manques, &mut inconnues);
-        for (cle, attendues) in [("declarant", &CLES_DECLARANT[..]), ("declarant_dsn", &CLES_DECLARANT_DSN[..]), ("api_dpae", &CLES_API_DPAE[..])] {
-            match racine.get(cle) {
-                Some(Value::Object(o)) => confronter(o, attendues, cle, &mut manques, &mut inconnues),
-                Some(_) => return Err(socle::echec::avec("L'identité de la compagnie d'essai porte une valeur qui doit être un objet. Rien n'est écrit.", json!({"variable": VARIABLE, "cle": cle, "detail": attendues.join(", ")}))),
-                None => {}
-            }
-        }
-        if !manques.is_empty() || !inconnues.is_empty() {
-            let mut p = Vec::new();
-            if !manques.is_empty() {
-                p.push(format!("manque : {}", manques.join(", ")));
-            }
-            if !inconnues.is_empty() {
-                p.push(format!("cle(s) inconnue(s) : {}", inconnues.join(", ")));
-            }
-            return Err(socle::echec::avec("L'identité de la compagnie d'essai porte des clés que le logiciel ne connaît pas. Rien n'est écrit.", json!({"variable": VARIABLE, "detail": p.join(" ; "), "aide": "moteur essai monter --aide"})));
-        }
-        let id = Identite(racine);
-        id.verifier()?;
-        Ok(id)
+/// La case typee de `t`, ou le refus de sa forme (`droit::fiche::texte_borne!` : les zones de la DPAE), qui ne cite pas la
+/// valeur : la phrase du type l'ouvre entre guillemets, elle en est retiree.
+fn case<T>(cle: &str, lire: fn(&str) -> Result<T, String>, t: &str) -> Result<T, String> {
+    lire(t).map_err(|f| mal_formee(cle, &f.replace(&format!("« {} »", t), "La valeur")))
+}
+
+/// Un texte qui peut etre vide : vide, il n'est pas dit.
+fn dit(t: &Lu) -> Option<String> {
+    (!t.0.is_empty()).then(|| t.0.clone())
+}
+
+impl Variable {
+    /// Chaque texte de la variable, par sa cle.
+    fn textes(&self) -> [(&'static str, &str); 19] {
+        [
+            ("siren", &self.siren.0),
+            ("nic", &self.nic.0),
+            ("raison_sociale", &self.raison_sociale.0),
+            ("adresse", &self.adresse.0),
+            ("code_postal", &self.code_postal.0),
+            ("commune", &self.commune.0),
+            ("naf", &self.naf.0),
+            ("medecine_travail", &self.medecine_travail.0),
+            ("declarant.nom", &self.declarant.nom.0),
+            ("declarant.prenom", &self.declarant.prenom.0),
+            ("declarant_dsn.civilite", &self.declarant_dsn.civilite.0),
+            ("declarant_dsn.nom_prenom", &self.declarant_dsn.nom_prenom.0),
+            ("declarant_dsn.tel", &self.declarant_dsn.tel.0),
+            ("declarant_dsn.email", &self.declarant_dsn.email.0),
+            ("declarant_dsn.qualite", &self.declarant_dsn.qualite.0),
+            ("api_dpae.nom", &self.api_dpae.nom.0),
+            ("api_dpae.prenom", &self.api_dpae.prenom.0),
+            ("api_dpae.siret", &self.api_dpae.siret.0),
+            ("api_dpae.service", &self.api_dpae.service.0),
+        ]
     }
 
-    /// Le texte d'une cle (`a.b` pour un objet), deja confrontee : un texte attendu.
-    fn texte(&self, chemin: &str) -> Result<String, String> {
-        let v = match chemin.split_once('.') {
-            Some((o, k)) => self.0.get(o).and_then(|o| o.get(k)),
-            None => self.0.get(chemin),
-        };
-        match v {
-            Some(Value::String(s)) => Ok(s.trim().to_string()),
-            _ => Err(socle::echec::avec("L'identité de la compagnie d'essai porte une valeur qui doit être un texte. Rien n'est écrit.", json!({"variable": VARIABLE, "cle": chemin}))),
-        }
+    /// Les rubriques de la DSN que chaque cle remplit (`dsn.rs` : l'en-tete S10.G00.01, le contact S10.G00.02 et
+    /// S20.G00.07, l'entreprise S21.G00.06 et l'etablissement S21.G00.11).
+    fn rubriques(&self) -> [(&'static str, &str, &'static [&'static str]); 12] {
+        [
+            ("siren", &self.siren.0, &["S10.G00.01.001", "S21.G00.06.001"]),
+            ("nic", &self.nic.0, &["S10.G00.01.002", "S21.G00.06.002", "S21.G00.11.001"]),
+            ("raison_sociale", &self.raison_sociale.0, &["S10.G00.01.003"]),
+            ("adresse", &self.adresse.0, &["S10.G00.01.004", "S21.G00.06.004", "S21.G00.11.003"]),
+            ("code_postal", &self.code_postal.0, &["S10.G00.01.005", "S21.G00.06.005", "S21.G00.11.004"]),
+            ("commune", &self.commune.0, &["S10.G00.01.006", "S21.G00.06.006", "S21.G00.11.005"]),
+            ("naf", &self.naf.0, &["S21.G00.06.003", "S21.G00.11.002"]),
+            ("declarant_dsn.civilite", &self.declarant_dsn.civilite.0, &["S10.G00.02.001"]),
+            ("declarant_dsn.nom_prenom", &self.declarant_dsn.nom_prenom.0, &["S10.G00.02.002", "S20.G00.07.001"]),
+            ("declarant_dsn.email", &self.declarant_dsn.email.0, &["S10.G00.02.004", "S20.G00.07.003"]),
+            ("declarant_dsn.tel", &self.declarant_dsn.tel.0, &["S10.G00.02.005", "S20.G00.07.002"]),
+            ("declarant_dsn.qualite", &self.declarant_dsn.qualite.0, &["S20.G00.07.004"]),
+        ]
     }
 
     /// Les formes que la norme et le moteur exigent, verifiees AVANT d'ecrire : un refus plus tard (a l'ecriture de la DSN,
     /// au depot) citerait la valeur fautive a l'ecran.
     fn verifier(&self) -> Result<(), String> {
-        let refus = |chemin: &str, ce_qu_il_faut: &str| Err(socle::echec::avec("L'identité de la compagnie d'essai porte une valeur mal formée. Rien n'est écrit.", json!({"variable": VARIABLE, "cle": chemin, "detail": ce_qu_il_faut})));
-        let mut vides = Vec::new();
-        for (o, cles) in [("", &CLES[..8]), ("declarant", &CLES_DECLARANT[..]), ("declarant_dsn", &CLES_DECLARANT_DSN[..]), ("api_dpae", &CLES_API_DPAE[..])] {
-            for k in cles {
-                let chemin = if o.is_empty() { k.to_string() } else { format!("{}.{}", o, k) };
-                if self.texte(&chemin)?.is_empty() && !PEUVENT_ETRE_VIDES.contains(&chemin.as_str()) {
-                    vides.push(chemin);
-                }
-            }
-        }
+        let vides: Vec<&str> = self.textes().into_iter().filter(|(cle, t)| t.is_empty() && !matches!(*cle, "api_dpae.siret" | "api_dpae.service")).map(|(cle, _)| cle).collect();
         if !vides.is_empty() {
-            return Err(format!("{} : vide(s) : {}. Rien n'est ecrit.", VARIABLE, vides.join(", ")));
+            return Err(socle::echec::avec(
+                format!("L'identité de la compagnie d'essai ({}) a des valeurs vides. Rien n'est écrit.", VARIABLE),
+                socle::echec::APart { cle: Some(vides.join(", ")), ..Default::default() },
+            ));
         }
-        let siren = self.texte("siren")?;
-        if !chiffres(&siren, 9) || !declarations::champs::luhn(&siren) {
-            return refus("siren", "9 chiffres attendus, cle de Luhn juste");
+        let (siren, nic, siret_dpae) = (&self.siren.0, &self.nic.0, &self.api_dpae.siret.0);
+        if !chiffres(siren, 9) || !declarations::champs::luhn(siren) {
+            return Err(mal_formee("siren", "9 chiffres attendus, clé de Luhn juste"));
         }
-        let nic = self.texte("nic")?;
-        if !chiffres(&nic, 5) || !declarations::champs::luhn(&format!("{}{}", siren, nic)) {
-            return refus("nic", "5 chiffres attendus, et le SIRET (siren + nic) a cle de Luhn juste");
+        if !chiffres(nic, 5) || !declarations::champs::luhn(&format!("{}{}", siren, nic)) {
+            return Err(mal_formee("nic", "5 chiffres attendus, et le SIRET (siren + nic) à clé de Luhn juste"));
         }
-        let siret_dpae = self.texte("api_dpae.siret")?;
-        if !siret_dpae.is_empty() && (!chiffres(&siret_dpae, 14) || !declarations::champs::luhn(&siret_dpae)) {
-            return refus("api_dpae.siret", "14 chiffres attendus, cle de Luhn juste (ou vide : le SIRET de la compagnie)");
+        if !siret_dpae.is_empty() && (!chiffres(siret_dpae, 14) || !declarations::champs::luhn(siret_dpae)) {
+            return Err(mal_formee("api_dpae.siret", "14 chiffres attendus, clé de Luhn juste (ou vide : le SIRET de la compagnie)"));
         }
-        if !chiffres(&self.texte("code_postal")?, 5) {
-            return refus("code_postal", "5 chiffres attendus");
-        }
-        if !matches!(self.texte("declarant_dsn.civilite")?.as_str(), "01" | "02") {
-            return refus("declarant_dsn.civilite", "01 (Monsieur) ou 02 (Madame), cahier technique DSN, S10.G00.02.001");
+        if !chiffres(&self.code_postal.0, 5) {
+            return Err(mal_formee("code_postal", "5 chiffres attendus"));
         }
         // Chaque rubrique de la DSN que la cle remplit, a son format (longueur, expression : `formats-dsn-*.json`, relevees
         // du cahier technique) : la DSN refuserait plus tard EN CITANT la valeur. La qualite, par exemple, est un CODE de
         // deux caracteres (S20.G00.07.004, « Type » du contact : 04 pour les cotisations de Securite sociale ; cahier
         // technique 2026.1, p. 139, `norme-dsn/texte/bloc-S20.G00.07.txt`), pas un intitule.
-        for (cle, rubriques) in RUBRIQUES {
-            let t = self.texte(cle)?;
+        for (cle, t, rubriques) in self.rubriques() {
             for r in rubriques {
-                let pourquoi = declarations::formats::mauvaise(r, &t)?;
+                let pourquoi = declarations::formats::mauvaise(r, t)?;
                 if !pourquoi.is_empty() {
-                    return refus(cle, &format!("ne tient pas dans {} de la DSN : {}", r, pourquoi));
+                    return Err(mal_formee(cle, &format!("ne tient pas dans {} de la DSN : {}", r, pourquoi)));
                 }
             }
         }
-        // Ce que le type de chaque case refuse (`droit::fiche::texte_borne!` : les zones de la DPAE).
-        use droit::fiche::{CodeMedecine, CodeNaf, CodePostal, CommuneEmployeur, LigneAdresse, RaisonSociale, Telephone};
-        let types: [(&str, fn(&str) -> Option<String>); 7] = [
-            ("raison_sociale", RaisonSociale::faute),
-            ("adresse", LigneAdresse::faute),
-            ("code_postal", CodePostal::faute),
-            ("commune", CommuneEmployeur::faute),
-            ("naf", CodeNaf::faute),
-            ("declarant_dsn.tel", Telephone::faute),
-            ("medecine_travail", CodeMedecine::faute),
-        ];
-        for (cle, faute) in types {
-            if let Some(f) = faute(&self.texte(cle)?) {
-                return refus(cle, &f);
-            }
-        }
         // La DUE MtoM refuse les accents (`depot::identifiants`, qui citerait la valeur : on refuse ici, avant).
-        for k in ["api_dpae.nom", "api_dpae.prenom"] {
-            let t = self.texte(k)?;
-            if t != socle::texte::ascii_nfkd(&t) {
-                return refus(k, "sans accent, tel que le compte DPAE est ouvert sur urssaf.fr (la DUE MtoM refuse les accents)");
+        for (k, t) in [("api_dpae.nom", &self.api_dpae.nom.0), ("api_dpae.prenom", &self.api_dpae.prenom.0)] {
+            if *t != socle::texte::ascii_nfkd(t) {
+                return Err(mal_formee(k, "sans accent, tel que le compte DPAE est ouvert sur urssaf.fr (la DUE MtoM refuse les accents)"));
             }
         }
         Ok(())
+    }
+
+    /// Les cases de la fiche que la variable pose, et ce qui en derive (le SIRET, le declarant net-entreprises, le compte
+    /// DPAE), chacune en son type.
+    fn champs(&self) -> Result<droit::fiche::ChampsEntreprise, String> {
+        use droit::fiche::{ApiDpae, ChampsEntreprise, Civilite, CodeMedecine, CodeNaf, CodePostal, CommuneEmployeur, Declarant, DeclarantDsn, LigneAdresse, RaisonSociale, Telephone};
+        let siret = format!("{}{}", self.siren.0, self.nic.0);
+        let civilite = match self.declarant_dsn.civilite.0.as_str() {
+            "01" => Civilite::Monsieur,
+            "02" => Civilite::Madame,
+            _ => return Err(mal_formee("declarant_dsn.civilite", "01 (Monsieur) ou 02 (Madame), cahier technique DSN, S10.G00.02.001")),
+        };
+        Ok(ChampsEntreprise {
+            siren: Some(self.siren.0.clone()),
+            nic: Some(self.nic.0.clone()),
+            siret: Some(siret.clone()),
+            nom_affichage: Some("Compagnie d'essai".to_string()),
+            raison_sociale: Some(case("raison_sociale", RaisonSociale::lire, &self.raison_sociale.0)?),
+            adresse: Some(case("adresse", LigneAdresse::lire, &self.adresse.0)?),
+            code_postal: Some(case("code_postal", CodePostal::lire, &self.code_postal.0)?),
+            commune: Some(case("commune", CommuneEmployeur::lire, &self.commune.0)?),
+            naf: Some(case("naf", CodeNaf::lire, &self.naf.0)?),
+            medecine_travail: Some(case("medecine_travail", CodeMedecine::lire, &self.medecine_travail.0)?),
+            // Le declarant inscrit au service DSN, tel qu'inscrit : `transport::declarant` le prend tel quel (sans couper
+            // `nom_prenom` au premier espace, faux pour un nom compose).
+            declarant: Some(Declarant { siret: Some(siret), nom: Some(self.declarant.nom.0.clone()), prenom: Some(self.declarant.prenom.0.clone()) }),
+            declarant_dsn: Some(DeclarantDsn {
+                civilite: Some(civilite),
+                nom_prenom_affichage: None,
+                nom_prenom: Some(self.declarant_dsn.nom_prenom.0.clone()),
+                tel: Some(case("declarant_dsn.tel", Telephone::lire, &self.declarant_dsn.tel.0)?),
+                email: Some(self.declarant_dsn.email.0.clone()),
+                qualite: Some(self.declarant_dsn.qualite.0.clone()),
+            }),
+            api_dpae: Some(ApiDpae {
+                nom: Some(self.api_dpae.nom.0.clone()),
+                prenom: Some(self.api_dpae.prenom.0.clone()),
+                siret: dit(&self.api_dpae.siret),
+                service: dit(&self.api_dpae.service),
+            }),
+            note: Some(format!("COMPAGNIE D'ESSAI (moteur essai monter) : l'identite vient de {} ; le reste, de la compagnie fictive copiee. Ne se commite jamais.", VARIABLE)),
+            ..ChampsEntreprise::default()
+        })
+    }
+}
+
+impl Identite {
+    /// Lit et valide le texte de la variable, par la lecture qui ne cite aucune valeur (`socle::forme::lire_texte_sans_valeur`) :
+    /// le refus nomme la variable et la cle, JAMAIS une valeur.
+    pub fn lire(texte: &str) -> Result<Identite, String> {
+        let v: Variable = socle::forme::lire_texte_sans_valeur(texte, &format!("L'identité de la compagnie d'essai ({}) ne se lit pas : un objet sur une ligne, avec exactement ses clés, est attendu. Rien n'est écrit.", VARIABLE))?;
+        v.verifier()?;
+        Ok(Identite(v.champs()?))
     }
 
     /// La fiche de la fictive, sous cette identite : les cles de la variable posees, ce qui en derive recompose (le SIRET, le
@@ -244,43 +310,12 @@ impl Identite {
         // Ce que la fiche de la fictive dit de SON identite, et qui ne survit pas sous celle de la variable : ce que la variable
         // remplace, et ce qui en derive (l'affichage, le complement d'adresse).
         for liste in [&mut brute.siret, &mut brute.nom_affichage, &mut brute.adresse_affichage, &mut brute.commune_affichage] {
-            liste.clear();
+            *liste = None;
         }
-        brute.complement_adresse.clear();
-        brute.etablissements.clear();
+        brute.complement_adresse = None;
+        brute.etablissements = None;
         brute.note = None;
-        let mut f = Map::new();
-        let (siren, nic) = (self.texte("siren")?, self.texte("nic")?);
-        let siret = format!("{}{}", siren, nic);
-        for k in &CLES[..8] {
-            f.insert(k.to_string(), json!(self.texte(k)?));
-        }
-        f.insert("siret".into(), json!(siret));
-        f.insert("nom_affichage".into(), json!("Compagnie d'essai"));
-        // Le declarant inscrit au service DSN, tel qu'inscrit : `transport::declarant` prend cette cle telle quelle (sans
-        // couper `nom_prenom` au premier espace, faux pour un nom compose).
-        f.insert("declarant".into(), json!({"siret": siret, "nom": self.texte("declarant.nom")?, "prenom": self.texte("declarant.prenom")?}));
-        let mut contact = Map::new();
-        for k in CLES_DECLARANT_DSN {
-            contact.insert(k.into(), json!(self.texte(&format!("declarant_dsn.{}", k))?));
-        }
-        f.insert("declarant_dsn".into(), Value::Object(contact));
-        let siret_dpae = self.texte("api_dpae.siret")?;
-        let mut dpae = Map::new();
-        dpae.insert("nom".into(), json!(self.texte("api_dpae.nom")?));
-        dpae.insert("prenom".into(), json!(self.texte("api_dpae.prenom")?));
-        dpae.insert("siret".into(), json!(if siret_dpae.is_empty() { siret.clone() } else { siret_dpae }));
-        let service = self.texte("api_dpae.service")?;
-        if !service.is_empty() {
-            dpae.insert("service".into(), json!(service));
-        }
-        f.insert("api_dpae".into(), Value::Object(dpae));
-        f.insert(
-            "note".into(),
-            json!(format!("COMPAGNIE D'ESSAI (moteur essai monter) : l'identite vient de {} ; le reste, de la compagnie fictive copiee. Ne se commite jamais.", VARIABLE)),
-        );
-        let plate: droit::fiche::ChampsEntreprise = droit::fiche::lire_saisie(&f, droit::contexte::ENTREPRISE)?;
-        brute.par_dessus(&<droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate));
+        brute.par_dessus(&<droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&self.0));
         Ok(brute)
     }
 }
@@ -297,27 +332,28 @@ pub struct Montage {
 }
 
 /// Le dossier d'installation : celui qui porte `logiciel/` (`logiciel/donnees` -> `logiciel` -> l'installation).
-fn installation() -> PathBuf {
-    socle::fichiers::dossier_du_code().parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default()
+fn installation() -> Result<PathBuf, String> {
+    let code = socle::fichiers::dossier_du_code();
+    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| socle::echec::avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
 }
 
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
 fn source(depuis: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(depuis);
-    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation().join(crate::interface::compagnies::DOSSIER_FICTIVES).join(depuis) };
+    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::interface::compagnies::DOSSIER_FICTIVES).join(depuis) };
     if !d.join(droit::contexte::ENTREPRISE).is_file() {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", json!({"chemin": d.to_string_lossy()})));
+        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
-    if !crate::interface::compagnies::est_fictive_livree(&d) {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", json!({"chemin": d.to_string_lossy()})));
+    if !crate::interface::compagnies::est_fictive_livree(&d)? {
+        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
     }
     Ok(d)
 }
 
 /// Le chemin absolu, sans `..`, meme s'il n'existe pas encore (on remonte au premier ancetre qui existe).
-fn absolu(p: &Path) -> PathBuf {
-    let p = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) };
+fn absolu(p: &Path) -> Result<PathBuf, String> {
+    let p = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().map_err(|e| socle::echec::du_disque(p, &e))?.join(p) };
     let mut reste = Vec::new();
     let mut a = p.as_path();
     loop {
@@ -326,29 +362,30 @@ fn absolu(p: &Path) -> PathBuf {
             for r in reste.iter().rev() {
                 c.push(r);
             }
-            return c;
+            return Ok(c);
         }
         match (a.file_name(), a.parent()) {
             (Some(n), Some(parent)) => {
                 reste.push(n.to_os_string());
                 a = parent;
             }
-            _ => return p,
+            _ => return Ok(p),
         }
     }
 }
 
 /// Le depot Git ou l'installation qui contient `dossier`, s'il y en a un : la copie porterait l'identite d'une vraie compagnie,
 /// elle ne va jamais la ou un `git add` la prendrait, ni a cote de ce que les gens recoivent.
-fn depot_englobant(dossier: &Path) -> Option<PathBuf> {
-    absolu(dossier).ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf)
+fn depot_englobant(dossier: &Path) -> Result<Option<PathBuf>, String> {
+    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
 }
 
 fn copier(src: &Path, dst: &Path, racine: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| socle::echec::du_disque(&dst, &e))?;
-    for e in std::fs::read_dir(src).map_err(|e| socle::echec::du_disque(&src, &e))?.flatten() {
+    for e in std::fs::read_dir(src).map_err(|e| socle::echec::du_disque(&src, &e))? {
+        let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
-        let rel = s.strip_prefix(racine).unwrap_or(&s).to_string_lossy().replace('\\', "/");
+        let rel = s.strip_prefix(racine).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
         if NON_COPIES.contains(&rel.as_str()) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
@@ -377,24 +414,29 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         format!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
     })?;
     let id = Identite::lire(texte)?;
-    if let Some(d) = depot_englobant(dossier) {
+    if let Some(d) = depot_englobant(dossier)? {
         return Err(socle::echec::avec(
             "Ce dossier est dans un dépôt Git ou une installation de PuppetPaie : la compagnie d'essai porte l'identité d'une vraie compagnie, elle se monte hors de tout dépôt (par exemple dans le dossier temporaire, le défaut). Rien n'est écrit.",
-            json!({"chemin": dossier.to_string_lossy(), "depot": d.to_string_lossy()}),
+            socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.to_string_lossy())), ..Default::default() },
         ));
     }
     let existe = dossier.exists();
-    let deja = existe && est_essai(dossier);
-    if existe && !deja && std::fs::read_dir(dossier).map(|mut d| d.next().is_some()).unwrap_or(true) {
-        return Err(socle::echec::avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", json!({"chemin": dossier.to_string_lossy()})));
+    let deja = existe && est_essai(dossier)?;
+    if existe && !deja {
+        let plein = std::fs::read_dir(dossier).map_err(|e| socle::echec::du_disque(dossier, &e))?.next().is_some();
+        if plein {
+            return Err(socle::echec::avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", a_part(dossier)));
+        }
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
-        let fiche = documents::valeur::lire_json(&dossier.join(MARQUEUR)).unwrap_or(Value::Null);
-        (None, fiche.get("depuis").and_then(Value::as_str).unwrap_or("?").to_string())
+        let depuis = crate::interface::compagnies::marqueur(dossier)?
+            .and_then(|m| m.depuis)
+            .ok_or_else(|| socle::echec::avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
+        (None, depuis)
     } else {
         let s = source(depuis)?;
-        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| socle::echec::avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
         (Some(s), nom)
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.
@@ -409,18 +451,19 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         copier(s, dossier, s)?;
         retirer_les_depots_de_dsn(dossier)?;
         let quand = socle::paris::iso_secondes(socle::temps::secondes());
-        let marqueur = json!({
-            "copie_de": format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
-            "depuis": nom,
-            "quand": quand,
-            "quoi": "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.",
-        });
+        let marqueur = crate::interface::compagnies::Marqueur {
+            copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
+            depuis: Some(nom.clone()),
+            ajoutee: None,
+            quand: Some(quand),
+            quoi: "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.".to_string(),
+        };
         socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
         std::fs::write(dossier.join(".gitignore"), "# Compagnie d'essai : l'identite d'une vraie compagnie. Rien ici ne se commite.\n*\n")
             .map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     }
     socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    Ok(Montage { dossier: absolu(dossier), depuis: nom, neuf: !deja })
+    Ok(Montage { dossier: absolu(dossier)?, depuis: nom, neuf: !deja })
 }
 
 // ------------------------------------------------------------------ la commande
@@ -484,8 +527,19 @@ pub fn commande(args: &[String]) -> i32 {
         }
     }
     crate::commandes::compagnie::fixer_le_code();
-    let dossier = dossier.unwrap_or_else(|| std::env::temp_dir().join(DOSSIER_PAR_DEFAUT));
-    let texte = std::env::var(VARIABLE).ok();
+    // Sans dossier dit : dans le dossier temporaire du systeme.
+    let dossier = match dossier {
+        Some(d) => d,
+        None => std::env::temp_dir().join(DOSSIER_PAR_DEFAUT),
+    };
+    let texte = match std::env::var(VARIABLE) {
+        Ok(t) => Some(t),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            eprintln!("{} n'est pas un texte lisible : un objet JSON sur une ligne est attendu. Rien n'est ecrit.", VARIABLE);
+            return 1;
+        }
+    };
     match monter(&dossier, &depuis, texte.as_deref()) {
         Ok(m) => {
             let d = m.dossier.display();

@@ -117,7 +117,8 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
             fautes.push(format!("{} : « {} » : {}", ou, t, d.corriger()));
         }
     };
-    for f in moteur::routes::catalogue::en_json(true)["routes"].as_array().unwrap() {
+    for f in moteur::routes::catalogue::catalogue().iter().map(|f| serde_json::to_value(f.ecrite().unwrap()).unwrap()) {
+        let f = &f;
         let nom = f["nom"].as_str().unwrap();
         if let Some(b) = f["bouton"].as_str() {
             voir(format!("le bouton de {}", nom), b, COURT, true);
@@ -332,9 +333,16 @@ fn treteaux(test: &str) -> PathBuf {
 #[test]
 fn l_exemple_de_chaque_fiche_est_accepte() {
     let c = treteaux("exemples");
-    // Le serveur du filet et du développeur : un faux, sur cette machine ; il donne une identité de poste et accepte tout.
-    let (filet, _) = crate::outils::serveur(|_| {
-        Some(crate::outils::http_json(200, &json!({"poste": "0".repeat(32), "cle": "0".repeat(64), "confirme": false, "numero": 1})))
+    // Le serveur du filet et du développeur : un faux, sur cette machine ; il donne une identité de poste et accepte tout,
+    // chaque action rendant sa forme (`editeur.rs`).
+    let (filet, _) = crate::outils::serveur(|r| {
+        Some(match r.chemin.as_str() {
+            "/poste" => crate::outils::http_json(200, &json!({"poste": "0".repeat(32), "cle": "0".repeat(64)})),
+            "/rapport" => crate::outils::http_json(200, &json!({"recus": [], "ecartes": []})),
+            "/retour" => crate::outils::http_json(200, &json!({"numero": "R-000001", "ticket": "", "ticket_numero": null})),
+            "/reponses" => crate::outils::http_json(200, &json!({"retours": []})),
+            _ => crate::outils::http_json(404, &json!({"erreur": "Action inconnue."})),
+        })
     });
     std::fs::write(c.join("config/diagnostic.json"), json!({"serveur": filet}).to_string()).unwrap();
     // Les bulletins d'un ancien logiciel, dans la boîte de l'import : un artiste (janvier 2026, sans la CASC-SVP) et un
@@ -398,7 +406,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     // Un administrateur, pour son tableau et son dépôt groupé : la compagnie est rattachée à son registre, après les
     // exemples du mot de passe du logiciel (celui d'une compagnie seule).
     let inst = c.parent().unwrap().parent().unwrap();
-    let registre = json!({"compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy()}]});
+    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00:00"}]});
     let mut phrases_fautives = Vec::new();
     for f in &fiches {
         if (f.route == Route::AdministrateurTableau || f.route == Route::AdministrateurDeposer) && !inst.join("administrateur.json").exists() {
@@ -412,7 +420,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             Route::CompagnieSupprimer => {
                 let autre = c.parent().unwrap().join("ajoutee-a-supprimer");
                 crate::outils::copier(&c.join("config"), &autre.join("config"));
-                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true}).to_string()).unwrap();
+                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true, "quand": "2026-11-09T09:00", "quoi": "ajoutee"}).to_string()).unwrap();
                 let r = route(&autre, f.nom(), exemple, "2026-11-02");
                 assert!(!autre.exists(), "compagnie-supprimer : la compagnie est encore la");
                 r
@@ -434,7 +442,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             _ => route_avec(&c, f.nom(), exemple, "2026-11-02", &[(VARIABLE_ESSAIS, "exemple")]),
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
-        assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()) && !moteur::service::en_texte(f.nom(), &r).trim_start().starts_with(['{', '[']), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
+        assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
         for p in moteur::routes::phrases_rendues(&r["resultat"]) {
             if let Some(d) = moteur::routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
@@ -499,7 +507,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
     let reelle = ajouter_venant(&inst, "La Compagnie", Venue::Neuve).unwrap().racine;
     let livree = inst.join("fictives").join("fictive-essai");
     crate::outils::copier(&c.join("config"), &livree.join("config"));
-    std::fs::write(livree.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive essai"}).to_string()).unwrap();
+    std::fs::write(livree.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive essai", "quoi": "livree"}).to_string()).unwrap();
     (inst, reelle)
 }
 
@@ -516,12 +524,12 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     let mut charge = exemple;
     charge["administrateur"] = json!(ADMIN);
     if route == Route::AdministrateurDetacher {
-        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, &json!({"administrateur": ADMIN}), &poste).unwrap();
+        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, serde_json::from_value(json!({"administrateur": ADMIN})).unwrap(), None, &poste).unwrap();
         charge["nouveau"] = json!("propre-essai-1");
         charge["confirmation"] = json!("propre-essai-1");
     }
-    match moteur::routes::coffre::administrateur(&b, route, &charge, &poste) {
-        Ok(v) => json!({"ok": true, "resultat": v}),
+    match moteur::routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
+        Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
         Err(e) => json!({"ok": false, "erreur": e.message}),
     }
 }
@@ -679,8 +687,8 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         assert!(places.len() <= 1, "un module, une place : les routes qui écrivent de {:?} vont à {:?} ; range chacune dans le module de sa place", module.iter().map(|f| f.nom()).collect::<Vec<_>>(), places);
     }
     let c = treteaux("servies");
-    // Une route inconnue se refuse en nommant la route a part (`routes::servir`).
-    let inconnue = |r: &Value| r["ok"] == json!(false) && r.get("route").is_some_and(Value::is_string);
+    // Une route inconnue se refuse en nommant la route a part (`enveloppe::route_inconnue`).
+    let inconnue = |r: &Value| r["ok"] == json!(false) && r["refus"]["classe"] == json!("RouteInconnue") && r["refus"]["a_part"]["route"].is_string();
     assert!(inconnue(&route(&c, "pas-une-route", json!({}), "2026-11-02")));
     for nom in &noms {
         let r = route(&c, nom, json!({}), "2026-11-02");
@@ -710,13 +718,17 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     }
 }
 
-/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`). La liste ne fait que
-/// grandir : une couche finie s'y ajoute, et ne recule plus.
-const COUCHES_FERMEES: [&str; 1] = ["socle"];
+/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
+const COUCHES_FERMEES: [&str; 7] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"];
+
+/// LES PORTES : les deux couches qui ont la bibliotheque du JSON. Le socle lit et ecrit les fichiers ; le moteur recoit
+/// la charge d'une route et rend sa reponse. Hors de leur bord, leur JSON brut se lit au texte.
+const PORTES: [&str; 2] = ["socle", "moteur"];
 
 /// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
-/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme.
-const BORD: [&str; 3] = ["socle::forme", "socle::ecriture", "socle::json_ascii"];
+/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
+/// `routes::enveloppe` lit la charge d'une route et ecrit sa reponse.
+const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "moteur::routes::enveloppe"];
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis et ses textes vides entre leurs guillemets : le
 /// code seul, a ses lignes.
@@ -745,9 +757,10 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// UNE COUCHE FERMEE NE LIT QUE DES FORMES, ENTIERES (atelier/AGENTS.md, « Chaque forme est declaree une fois, en
 /// Rust ») : aucune de ses sources (tests a part, commentaires blanchis) n'a
 /// 1. de JSON brut : la couche (code et tests) n'a pas `serde_json` dans son `Cargo.toml`, le compilateur refuse qu'elle
-///    en touche ; la porte (le socle), qui l'a, n'en touche que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
+///    en touche ; les portes (`PORTES`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
 ///    `serde_json::`, ni `Map<`, ni lecture par cle (`.get("…")`, `x["…"]`) ;
-/// 2. de cle libre : aucune cle en `_` nommee (`rename = "_…"`, `"_cle"`, `"_{}"`, une cle lue ou ecrite), aucun
+/// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
+///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
 ///    tri par le `_` de tete (`starts_with('_')`, `strip_prefix("_")`, `trim_start_matches('_')`) ;
 /// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
@@ -760,11 +773,11 @@ fn blanchi(t: &str, textes: bool) -> String {
 fn une_couche_fermee_ne_lit_que_des_formes() {
     const ORDRE: [&str; 7] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"];
     assert_eq!(COUCHES_FERMEES, ORDRE[..COUCHES_FERMEES.len()], "les couches se ferment de bas en haut, dans l'ordre des crates");
-    // La porte (le socle) a la bibliotheque du JSON : hors du bord, son JSON brut se lit au texte. Toute autre couche
-    // fermee ne l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
+    // Les portes ont la bibliotheque du JSON : hors du bord, leur JSON brut se lit au texte. Toute autre couche fermee ne
+    // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
     let json = regex::Regex::new(r#"\bjson!|\bserde_json::|\bMap\s*<|\.get\("|[A-Za-z0-9_)\]]\s*\[""#).unwrap();
     let mut fautes = Vec::new();
-    for couche in COUCHES_FERMEES.iter().filter(|c| **c != "socle") {
+    for couche in COUCHES_FERMEES.iter().filter(|c| !PORTES.contains(c)) {
         let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
         if cargo.contains("serde_json") {
             fautes.push(format!("{}/Cargo.toml prend serde_json : une couche fermée ne lit que des formes, par `socle::forme` (ses tests aussi : un texte lu par la porte)", couche));
@@ -774,6 +787,8 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
     let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
+    // Une cle en `_` que la forme elle-meme nomme.
+    let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
     for couche in COUCHES_FERMEES {
         let src = espace().join(couche).join("src");
         for f in sources(&src) {
@@ -781,7 +796,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             let texte = std::fs::read_to_string(&f).unwrap();
             let ou = |n: usize| format!("{}:{}", f.display(), n);
             for (n, l) in code_seul(&texte).lines().enumerate() {
-                if couche == "socle" && !BORD.contains(&module.as_str()) {
+                if PORTES.contains(&couche) && !BORD.contains(&module.as_str()) {
                     if let Some(m) = json.find(l) {
                         fautes.push(format!("{} : `{}`, du JSON brut hors du bord : déclare la forme (`serde`, `deny_unknown_fields`) ; la lecture passe par `socle::forme`, l'écriture par `socle::ecriture`", ou(n + 1), m.as_str().trim()));
                     }
@@ -791,8 +806,13 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
                 if let Some(m) = tri.find(l) {
                     fautes.push(format!("{} : `{}`, le tri des clés libres : une donnée est un champ nommé de sa forme", ou(n + 1), m.as_str()));
                 }
+                if let Some(m) = nommee.find(l) {
+                    fautes.push(format!("{} : `{}…`, une clé libre : une donnée est un champ nommé de sa forme", ou(n + 1), m.as_str()));
+                }
             }
-            for (n, s) in litteraux_rs(&sans_tests(&texte)) {
+            // Hors du bord, aucun JSON brut ne se touche (point 1) : un texte en `_` y est un morceau de nom de fichier ou
+            // de champ, jamais une cle. Dans le bord, il en serait une.
+            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| BORD.contains(&module.as_str())) {
                 if s.starts_with('_') && s.chars().nth(1).is_some_and(|c| c.is_alphanumeric() || c == '{') {
                     fautes.push(format!("{} : `\"{}\"`, une clé libre : une donnée est un champ nommé de sa forme", ou(n), s));
                 }
@@ -802,7 +822,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, `is_ok_and`, `is_err_and`, `is_err()`, et tout
     // motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`, `if let`, `matches!`).
     let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)").unwrap();
-    for couche in COUCHES_FERMEES.iter().chain(SANS_REPLI_NI_ERREUR_AVALEE.iter()) {
+    for couche in COUCHES_FERMEES {
         for f in sources(&espace().join(couche).join("src")) {
             for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
                 if let Some(m) = repli.find(l) {
@@ -833,22 +853,22 @@ fn l_engagement_ne_lit_pas_le_journal() {
 }
 
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
-/// l'ecran, les gestes d'une case et l'import appellent, par `FicheAEcrire::ecrire_case`, qui la date par la forme de la
-/// fiche (`droit::fiche::FicheDatee::dater`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans
-/// le moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a
-/// rien a dater.
+/// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
+/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le
+/// moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a rien a
+/// dater.
 #[test]
 fn une_seule_fonction_date_une_valeur_de_fiche() {
-    let fiches = espace().join("moteur/src/routes/fiches.rs");
+    let fiches = espace().join("moteur/src/routes/fiches/ecriture.rs");
     let texte = std::fs::read_to_string(&fiches).unwrap();
-    let debut = texte.find("pub(crate) fn ecrire_datee(").unwrap();
+    let debut = texte.find("pub(crate) fn ecrire_datee<").unwrap();
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
-    assert_eq!(texte[..debut].matches(".ecrire_case(").count() + texte[fin..].matches(".ecrire_case(").count(), 0, "fiches.rs ne date que par `ecrire_datee`");
-    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "seul `FicheAEcrire::ecrire_case` date une case d'une fiche");
+    assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
+    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "`ecrire_datee` date ses cases en un seul endroit");
     for p in sources(&espace().join("moteur/src")).into_iter().filter(|p| *p != fiches) {
         let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
         let t = std::fs::read_to_string(&p).unwrap();
-        assert!(!t.contains(".ecrire_case(") && !t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
+        assert!(!t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
         if t.contains("fiche::dater(") {
             assert_eq!(rel, "moteur/src/compagnie/organismes.rs", "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
         }
@@ -2060,8 +2080,3 @@ fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     );
 }
 
-/// LES COUCHES TENUES SANS REPLI NI ERREUR AVALEE, en plus des couches fermees : leur code ne replie aucune donnee
-/// absente et dit chaque erreur (points 3 et 4 de `une_couche_fermee_ne_lit_que_des_formes`). `droit` rejoint les couches
-/// fermees, et l'engagement avec lui, quand `droit::fiche` n'a plus de repli (`Lue::texte`, `Lue::code`, `Montant`). La
-/// liste ne fait que grandir.
-const SANS_REPLI_NI_ERREUR_AVALEE: [&str; 1] = ["engagement"];

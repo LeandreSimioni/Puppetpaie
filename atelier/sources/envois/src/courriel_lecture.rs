@@ -14,21 +14,28 @@ use mailparse::{MailHeaderMap, ParsedMail};
 
 use crate::simulation_courriels::{feuilles, nom_de_fichier, texte_de};
 
-/// L'adresse seule, en minuscules, ou rien.
-pub fn adresse_de(m: &ParsedMail) -> String {
-    let Some(h) = m.headers.get_first_header("From") else { return String::new() };
-    let Ok(liste) = mailparse::addrparse_header(h) else { return String::new() };
+/// L'adresse seule, en minuscules ; `None` quand le message ne dit pas d'ou il vient.
+pub fn adresse_de(m: &ParsedMail) -> Option<String> {
+    let h = m.headers.get_first_header("From")?;
+    let liste = match mailparse::addrparse_header(h) {
+        Ok(liste) => liste,
+        // Un `From` qui n'est pas une adresse : le message ne dit pas d'ou il vient.
+        Err(pas_une_adresse) => {
+            drop(pas_une_adresse);
+            return None;
+        }
+    };
     for a in liste.iter() {
         match a {
-            mailparse::MailAddr::Single(i) => return socle::texte::strip(&i.addr).to_lowercase(),
+            mailparse::MailAddr::Single(i) => return Some(socle::texte::strip(&i.addr).to_lowercase()),
             mailparse::MailAddr::Group(g) => {
                 if let Some(i) = g.addrs.first() {
-                    return socle::texte::strip(&i.addr).to_lowercase();
+                    return Some(socle::texte::strip(&i.addr).to_lowercase());
                 }
             }
         }
     }
-    String::new()
+    None
 }
 
 /// Un message se lit toujours : quand le bloc d'en-tetes se rompt (une ligne qui n'est ni `Nom: valeur`,
@@ -46,9 +53,11 @@ pub fn recouper_les_entetes(brut: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     let mut rompu = false;
     while ix < brut.len() {
         let suite = &brut[ix..];
-        let longueur = suite.iter().position(|c| *c == b'\n').map_or(suite.len(), |i| i + 1);
-        let ligne = suite[..longueur].strip_suffix(b"\n").unwrap_or(&suite[..longueur]);
-        let ligne = ligne.strip_suffix(b"\r").unwrap_or(ligne);
+        let longueur = match suite.iter().position(|c| *c == b'\n') {
+            Some(i) => i + 1,
+            None => suite.len(),
+        };
+        let ligne = sans_fin_de_ligne(&suite[..longueur]);
         if ligne.is_empty() {
             break;
         }
@@ -71,14 +80,26 @@ pub fn recouper_les_entetes(brut: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     std::borrow::Cow::Owned(refait)
 }
 
-/// L'identifiant du message (`Message-ID`), sans blancs aux bords ; vide s'il manque.
-pub fn identifiant_de(m: &ParsedMail) -> String {
+/// Une ligne sans sa fin (`\n`, `\r\n`).
+fn sans_fin_de_ligne(l: &[u8]) -> &[u8] {
+    let l = match l.strip_suffix(b"\n") {
+        Some(sans) => sans,
+        None => l,
+    };
+    match l.strip_suffix(b"\r") {
+        Some(sans) => sans,
+        None => l,
+    }
+}
+
+/// L'identifiant du message (`Message-ID`), sans blancs aux bords ; `None` s'il manque.
+pub fn identifiant_de(m: &ParsedMail) -> Option<String> {
     identifiant_des_entetes(&m.headers)
 }
 
-/// `identifiant_de`, sur des en-tetes lus seuls (`mailparse::parse_headers`).
-pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> String {
-    socle::texte::strip(&entetes.get_first_value("Message-ID").unwrap_or_default()).to_string()
+/// L'identifiant (`Message-ID`) d'en-tetes lus seuls (`mailparse::parse_headers`), s'ils le portent.
+pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<String> {
+    entetes.get_first_value("Message-ID").map(|v| socle::texte::strip(&v).to_string())
 }
 
 /// La date du message, en heure locale (Paris), ISO a la seconde -- le format du journal. Sans en-tete
@@ -92,8 +113,7 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> String {
 /// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
 pub fn date_de(m: &ParsedMail, maintenant: &str) -> String {
-    let brut = m.headers.get_first_value("Date").unwrap_or_default();
-    match date_lue(&brut) {
+    match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
         Some(local) => socle::paris::iso_de_naif(local),
         None => maintenant.to_string(),
     }
@@ -107,11 +127,18 @@ const MOIS: [&str; 24] = [
 
 /// Un entier signe en chiffres ASCII (ni autres ecritures de chiffres, ni `_`).
 fn entier(t: &str) -> Option<i64> {
-    let chiffres = t.strip_prefix(['+', '-']).unwrap_or(t);
+    let (signe, chiffres) = if let Some(c) = t.strip_prefix('-') {
+        (-1, c)
+    } else if let Some(c) = t.strip_prefix('+') {
+        (1, c)
+    } else {
+        (1, t)
+    };
     if chiffres.is_empty() || !chiffres.bytes().all(|b| b.is_ascii_digit()) || chiffres.len() > 15 {
         return None;
     }
-    t.parse().ok()
+    // Quinze chiffres au plus : la valeur tient dans un i64.
+    Some(signe * chiffres.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0')))
 }
 
 /// (an, mois, jour, heure, minute, seconde, decalage en secondes ou `None`).
@@ -230,7 +257,12 @@ fn parsedate_tz(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i
 /// L'en-tete `Date` lu, converti en heure locale naive en secondes, ou `None` quand il est illisible.
 fn date_lue(brut: &str) -> Option<i64> {
     let (an, mois, jour, h, mi, s, decalage) = parsedate_tz(brut)?;
-    let j = socle::date::Jour::nouveau(i32::try_from(an).ok()?, u32::try_from(mois).ok()?, u32::try_from(jour).ok()?)?;
+    let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
+        (Ok(a), Ok(m), Ok(j)) => (a, m, j),
+        // Un champ hors de ce qu'une date peut porter : l'en-tete est illisible.
+        _ => return None,
+    };
+    let j = socle::date::Jour::nouveau(an, mois, jour)?;
     if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
@@ -255,9 +287,10 @@ pub fn texte_propre(m: &ParsedMail) -> String {
     feuilles(m, &mut fs);
     let (mut texte, mut html) = (String::new(), String::new());
     for f in fs {
-        let (principal, sous) = f.ctype.mimetype.split_once('/').unwrap_or(("text", "plain"));
-        // Une feuille qui n'est pas du texte, ou qui porte un nom de fichier, est une pièce jointe.
-        if principal != "text" || nom_de_fichier(f).is_some_and(|n| !socle::texte::strip(&n).is_empty()) {
+        // Une feuille qui n'est pas du texte (ou dont le type ne se lit pas), ou qui porte un nom de fichier, est une
+        // pièce jointe.
+        let Some(("text", sous)) = f.ctype.mimetype.split_once('/') else { continue };
+        if nom_de_fichier(f).is_some_and(|n| !socle::texte::strip(&n).is_empty()) {
             continue;
         }
         let contenu = texte_de(f);
@@ -269,7 +302,10 @@ pub fn texte_propre(m: &ParsedMail) -> String {
     }
     if texte.is_empty() && !html.is_empty() {
         let coupe = ["<blockquote", "class=\"gmail_quote"].iter().filter_map(|b| html.find(b)).min();
-        let html = &html[..coupe.unwrap_or(html.len())];
+        let html = match coupe {
+            Some(c) => &html[..c],
+            None => &html[..],
+        };
         texte = html_desechapper(&sans_balises(html));
     }
     match debut_de_citation(&texte) {
@@ -347,7 +383,11 @@ fn forme_de_citation(ligne: &str, debut: &str, milieu: &str, deux_points: bool) 
 
 /// `-{3,}.*-{3,}$` : trois tirets au moins en tete, trois au moins en queue, sans se recouvrir (le `\r` final ne compte pas).
 fn ligne_de_tirets(ligne: &str) -> bool {
-    let c: Vec<char> = ligne.strip_suffix('\r').unwrap_or(ligne).chars().collect();
+    let ligne = match ligne.strip_suffix('\r') {
+        Some(sans) => sans,
+        None => ligne,
+    };
+    let c: Vec<char> = ligne.chars().collect();
     c.len() >= 6 && c[..3].iter().all(|x| *x == '-') && c[c.len() - 3..].iter().all(|x| *x == '-')
 }
 
@@ -390,22 +430,24 @@ fn entite_connue(nom: &str) -> Option<char> {
     entite_historique(nom).or_else(|| ENTITES_AVEC_POINT_VIRGULE.iter().find(|(n, _)| *n == nom).map(|(_, c)| *c))
 }
 
-/// `html._replace_charref` pour un nombre.
-fn caractere_numerique(n: u32) -> String {
+/// `html._replace_charref` pour un nombre : le caractere qu'il vaut, ou rien (un caractere de controle ou un
+/// non-caractere s'efface).
+fn caractere_numerique(n: u32) -> Option<char> {
     const CP1252: [char; 32] = [
         '\u{20ac}', '\u{81}', '\u{201a}', '\u{192}', '\u{201e}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{2c6}', '\u{2030}', '\u{160}',
         '\u{2039}', '\u{152}', '\u{8d}', '\u{17d}', '\u{8f}', '\u{90}', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{2022}',
         '\u{2013}', '\u{2014}', '\u{2dc}', '\u{2122}', '\u{161}', '\u{203a}', '\u{153}', '\u{9d}', '\u{17e}', '\u{178}',
     ];
     match n {
-        0 => "\u{fffd}".into(),
-        0x0d => "\r".into(),
-        0x80..=0x9f => CP1252[(n - 0x80) as usize].to_string(),
-        0xd800..=0xdfff => "\u{fffd}".into(),
-        n if n > 0x10ffff => "\u{fffd}".into(),
-        1..=8 | 0x0b | 0x0e..=0x1f | 0x7f | 0xfdd0..=0xfdef => String::new(),
-        n if n & 0xfffe == 0xfffe => String::new(),
-        n => char::from_u32(n).map(String::from).unwrap_or_default(),
+        0 => Some('\u{fffd}'),
+        0x0d => Some('\r'),
+        0x80..=0x9f => Some(CP1252[(n - 0x80) as usize]),
+        0xd800..=0xdfff => Some('\u{fffd}'),
+        n if n > 0x10ffff => Some('\u{fffd}'),
+        1..=8 | 0x0b | 0x0e..=0x1f | 0x7f | 0xfdd0..=0xfdef => None,
+        n if n & 0xfffe == 0xfffe => None,
+        // Ni substitut ni hors d'Unicode : un caractere.
+        n => char::from_u32(n),
     }
 }
 
@@ -427,8 +469,14 @@ fn html_desechapper(t: &str) -> String {
             let debut = if hexa { 2 } else { 1 };
             let chiffres: String = suite[debut..].iter().take_while(|x| if hexa { x.is_ascii_hexdigit() } else { x.is_ascii_digit() }).collect();
             if !chiffres.is_empty() {
-                let n = u32::from_str_radix(&chiffres, if hexa { 16 } else { 10 }).unwrap_or(u32::MAX);
-                sortie.push_str(&caractere_numerique(n));
+                let base = if hexa { 16 } else { 10 };
+                let n = chiffres.chars().try_fold(0u32, |n, x| n.checked_mul(base)?.checked_add(x.to_digit(base)?));
+                // Un nombre trop long pour un code est hors d'Unicode : le caractere de remplacement.
+                let caractere = match n {
+                    Some(n) => caractere_numerique(n),
+                    None => Some('\u{fffd}'),
+                };
+                sortie.extend(caractere);
                 let mut fin = debut + chiffres.chars().count();
                 if suite.get(fin) == Some(&';') {
                     fin += 1;

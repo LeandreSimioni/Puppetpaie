@@ -4,11 +4,9 @@
 //! contact DSN, la medecine du travail interne) ; ici se pose ce qui vit ailleurs :
 //!
 //! - LE CODE RISQUE ET LE TAUX AT/MP (S21.G00.40.040, .043 ; `norme-dsn/texte/bloc-S21.G00.40.txt` l. 1224-1315) dans la
-//!   surcouche du bareme de chaque annee (`routes::atmp::poser`). Une annee dont une DSN est reprise recoit le code et le
-//!   taux qu'elle declare, s'ils n'y sont pas deja dits par la compagnie. L'annee en cours, sans DSN, recoit le code de la
-//!   derniere DSN a la place de celui pose a la creation ou repris d'une annee d'avant, s'il est autre : le code reste celui que la CARSAT a notifie tant qu'elle n'en
-//!   notifie pas un autre (inference : la norme dit que l'employeur declare un code « qui lui a deja ete notifie ») ; son
-//!   taux est celui que l'arrete de l'annee fixe a ce risque (`droit::bareme::taux_de_l_arrete`), et sinon il se demande.
+//!   case de la fiche entreprise (`taux_atmp`, `routes::atmp`), une ligne au 1er janvier de chaque annee dont une DSN est
+//!   reprise, si aucune ne vaut deja a partir de ce jour ; puis, pour l'annee en cours, le taux collectif de l'arrete pour
+//!   un risque « TC » (`routes::atmp::inscrire_l_arrete`).
 //! - LES ORGANISMES ET LES CONTRATS DE LA DSN (`config/organismes.json`, `compagnie::organismes`) : chaque contrat
 //!   que l'ecran attend encore (`organismes-contrats`, ceux des permanents des que la compagnie en emploie : `poser_organismes_repris`) recoit la reference
 //!   (S21.G00.15.001) et l'organisme (S21.G00.15.002) d'une adhesion de la derniere DSN (`norme-dsn/texte/bloc-S21.G00.15.txt`).
@@ -16,71 +14,55 @@
 //!   l'adhesion de la DSN qu'aucun contrat fixe ne porte, s'il n'y en a qu'une et qu'un seul contrat l'attend (inference :
 //!   c'est la sienne), ou celle dont le libelle nomme ce que le contrat couvre (`poser_organismes`) ; sinon rien ne se
 //!   choisit, cela se dit, et « Pour demarrer » le demande.
-
-use serde_json::{json, Map, Value};
+//!
+//! Tout cela suit l'ecriture des fiches et des engagements : ce qui ne se pose pas se dit, en phrases, et l'import reste
+//! fait.
 
 use crate::import::dsn_aem::LectureDsn;
 use declarations::dsn_lue::Adhesion;
 use droit::contexte::Contexte;
-use documents::valeur::{valeur_en_texte, vrai};
+use droit::organismes::Ligne;
 
-fn texte(v: &Value, k: &str) -> String {
-    v.get(k).filter(|x| vrai(x)).map(valeur_en_texte).map(|s| s.trim().to_string()).unwrap_or_default()
+/// Le libelle d'un contrat attendu, s'il en dit un.
+fn libelle_de(l: &Ligne) -> Option<String> {
+    l.libelle.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
-/// Le taux AT/MP de l'annee tel que le bareme le lit (`Contexte::taux_atmp_de`) : (dit par la compagnie pour l'annee,
-/// code qui vaut sans qu'elle l'ait dit : pose a la creation, ou repris d'une annee d'avant).
-fn deja_pose(ctx: &Contexte, an: i32) -> (bool, Option<String>) {
-    match ctx.taux_atmp_de(an) {
-        Some(Ok(t)) => {
-            let code = t.code_risque.clone().filter(|c| !c.is_empty());
-            if t.pose_a_la_creation == Some(true) || t.reporte_de.is_some() {
-                (false, code)
-            } else {
-                (true, code)
-            }
-        }
-        _ => (false, None),
-    }
-}
-
-/// Le code risque et le taux AT/MP des DSN reprises (voir l'en-tete). Rend ce qui s'est pose, en phrases.
+/// Le code risque et le taux AT/MP des DSN reprises (voir l'en-tete), chacun dans la case de son annee, a partir de son
+/// 1er janvier (`routes::fiches::inscrire_taux_atmp`) ; une annee dont la case dit deja un taux n'en recoit pas. Rend
+/// ce qui s'est inscrit, ou pourquoi rien, en phrases.
 fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
-    let courante = ctx.aujourdhui.an;
     for (an, (mois, code, taux)) in &lecture.atmp {
-        if *an > courante || deja_pose(ctx, *an).0 {
+        let (Some(janvier), true) = (socle::date::Jour::nouveau(*an, 1, 1), *an <= ctx.aujourdhui.an) else { continue };
+        if ctx.entreprise_au(&janvier).taux_atmp.and_then(|t| t.depuis).is_some_and(|d| d >= janvier) {
             continue;
         }
-        let valeur = *taux;
-        let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", socle::mois::Mois::en_clair(mois));
-        if crate::routes::atmp::poser(ctx, i64::from(*an), code, valeur, &source).is_ok() {
-            let dit = valeur.map(|v| format!("taux {} %", v.normalize().to_string().replace('.', ","))).unwrap_or_else(|| "sans taux (pas encore de notification)".into());
-            faits.push(format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, socle::mois::Mois::en_clair(mois)));
-        }
+        let en_clair = socle::mois::Mois::en_clair(mois);
+        let t = droit::fiche::TauxAtmp {
+            code_risque: Some(code.clone()),
+            valeur: taux.map(|v| droit::fiche::Montant::Flottant(socle::num::flottant(v))),
+            depuis: Some(janvier),
+            provenance: Some(droit::fiche::ProvenanceAtmp::Import),
+            notification: None,
+        };
+        let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", en_clair);
+        let ecrit = match droit::bareme::taux_atmp_refuse(&t) {
+            Ok(None) => crate::routes::fiches::inscrire_taux_atmp(ctx, t, &source).map_err(|e| e.message),
+            Ok(Some(m)) | Err(m) => Err(m),
+        };
+        let dit = match taux {
+            Some(v) => format!("taux {} %", v.normalize().to_string().replace('.', ",")),
+            None => "sans taux (pas encore de notification)".to_string(),
+        };
+        faits.push(match ecrit {
+            Ok(_) => format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, en_clair),
+            Err(m) => format!("Accidents du travail {} : le code risque {} et le {} de la DSN de {} ne s'inscrivent pas. {}", an, code, dit, en_clair, m),
+        });
     }
-    if lecture.atmp.contains_key(&courante) {
-        return;
-    }
-    let Some((_, (mois, code, _))) = lecture.atmp.iter().next_back() else { return };
-    let (dit, de_lui_meme) = deja_pose(ctx, courante);
-    if dit || de_lui_meme.as_deref() == Some(code.as_str()) {
-        return;
-    }
-    let source = format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040) ; taux de l'arrêté de {}.", socle::mois::Mois::en_clair(mois), courante);
-    if crate::routes::atmp::poser(ctx, i64::from(courante), code, None, &source).is_ok() {
-        faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; le taux de {} est celui de l'arrêté.", code, socle::mois::Mois::en_clair(mois), courante));
-    } else {
-        // Le taux de l'annee n'est pas celui de l'arrete pour ce code (ou l'etablissement est en Alsace-Moselle) : le code
-        // se garde, sans taux, et « Pour demarrer » demande le taux notifie.
-        let mut m = Map::new();
-        m.insert("code_risque".into(), json!(code));
-        m.insert("note".into(), json!(format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040).", socle::mois::Mois::en_clair(mois))));
-        let p = ctx.racine.join(droit::contexte::BAREMES).join(format!("{}.json", courante));
-        let mut data = documents::valeur::lire_json(&p).unwrap_or_else(|_| json!({"annee": courante, "socle": courante}));
-        data["taux_atmp"] = Value::Object(m);
-        if socle::ecriture::ecrire_json(&p, &data, 2).is_ok() {
-            faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; son taux de {} est celui de la notification, à saisir.", code, socle::mois::Mois::en_clair(mois), courante));
-        }
+    // L'annee en cours : le taux collectif de l'arrete pour un risque « TC », comme a l'ouverture.
+    match crate::routes::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.an) {
+        Ok(dits) => faits.extend(dits),
+        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, e.message)),
     }
 }
 
@@ -109,47 +91,58 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     if lecture.adhesions.is_empty() {
         return;
     }
-    let Ok(ecran) = crate::compagnie::organismes::lire(ctx, &json!({})) else { return };
-    let lignes: Vec<Value> = ecran["contrats"].as_array().cloned().unwrap_or_default();
-    let fixes: Vec<String> = lignes.iter().map(|l| texte(l, "libelle").to_uppercase()).filter(|l| !l.is_empty()).collect();
-    let a_saisir: Vec<&Value> = lignes.iter().filter(|l| texte(l, "libelle").is_empty()).collect();
+    let (ecran, attendus) = match (crate::compagnie::organismes::lire(ctx, None), droit::organismes::attendus(ctx)) {
+        (Ok(e), Ok(a)) => (e, a),
+        (Err(e), _) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase())),
+        (_, Err(m)) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", m)),
+    };
+    let lignes = ecran.lignes();
+    let fixes: Vec<String> = lignes.iter().filter_map(libelle_de).map(|l| l.to_uppercase()).collect();
+    let a_saisir: Vec<&Ligne> = lignes.iter().filter(|l| libelle_de(l).is_none()).collect();
     let libelle = |a: &Adhesion| a.libelle.trim().to_string();
-    let organisme = |a: &Adhesion| a.organisme.as_deref().unwrap_or_default().trim().to_string();
     let libres: Vec<&Adhesion> =
         lecture.adhesions.iter().filter(|a| !libelle(a).is_empty() && !fixes.contains(&libelle(a).to_uppercase())).collect();
     if a_saisir.is_empty() || libres.is_empty() {
         return;
     }
-    let roles: Vec<(String, String)> = droit::organismes::attendus(ctx)
-        .unwrap_or_default()
-        .iter()
-        .map(|s| (s.cle.trim().to_string(), s.role.as_deref().unwrap_or_default().trim().to_string()))
-        .collect();
-    let role_de = |l: &Value| roles.iter().find(|(c, _)| *c == texte(l, "cle")).map(|(_, r)| r.clone()).unwrap_or_default();
-    let mut paires: Vec<(&Value, &Adhesion, bool)> = Vec::new();
+    // Le role du contrat attendu d'une ligne (`prevoyance`, `sante`), s'il en a un.
+    let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle.trim() == l.cle).and_then(|s| s.role.as_deref()).map(str::trim).map(str::to_string);
+    let mut paires: Vec<(&Ligne, &Adhesion, bool)> = Vec::new();
     if let ([l], [a]) = (a_saisir.as_slice(), libres.as_slice()) {
         paires.push((l, a, false));
     } else {
         for l in &a_saisir {
             let r = role_de(l);
-            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| role_nomme(&libelle(a)) == Some(r.as_str())).collect();
+            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| r.is_some() && role_nomme(&libelle(a)) == r.as_deref()).collect();
             let rivaux = a_saisir.iter().filter(|x| role_de(x) == r).count();
             if let ([a], 1) = (siens.as_slice(), rivaux) {
                 paires.push((l, a, true));
             }
         }
     }
-    let mut saisies = Map::new();
+    let organisme = |a: &Adhesion| a.organisme.as_deref().map(str::trim).map(str::to_string);
+    let mut saisies = std::collections::BTreeMap::new();
     for (l, a, _) in &paires {
-        saisies.insert(texte(l, "cle"), json!({"libelle": libelle(a), "organisme": organisme(a)}));
+        saisies.insert(l.cle.clone(), droit::organismes::Saisie { libelle: Some(libelle(a)), organisme: organisme(a) });
     }
-    if !saisies.is_empty() && crate::compagnie::organismes::enregistrer(ctx, &json!({"contrats": saisies})).is_ok() {
+    let enregistre = match saisies.is_empty() {
+        true => false,
+        false => match crate::compagnie::organismes::enregistrer(ctx, crate::compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
+            Ok(_) => true,
+            Err(e) => {
+                faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase()));
+                false
+            }
+        },
+    };
+    if enregistre {
         for (l, a, par_libelle) in &paires {
+            let chez: String = organisme(a).iter().map(|o| format!(" chez {}", o)).collect();
             faits.push(format!(
-                "{} : contrat {} chez {}, lu dans la DSN reprise (S21.G00.15.001, S21.G00.15.002){}.",
-                texte(l, "quoi"),
+                "{} : contrat {}{}, lu dans la DSN reprise (S21.G00.15.001, S21.G00.15.002){}.",
+                l.quoi,
                 libelle(a),
-                organisme(a),
+                chez,
                 if *par_libelle { ", rattaché par ce que son libellé nomme" } else { "" }
             ));
         }
@@ -191,34 +184,40 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase()),
     };
-    let Ok(changes) = crate::compagnie::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") else { return };
+    let changes = match crate::compagnie::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
+        Ok(c) => c,
+        Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase())),
+    };
     for r in &releves {
-        let cle = texte(r, "salarie");
+        let cle = r.salarie.clone();
         if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
             continue;
         }
-        let qui = ctx.salaries.get(cle.as_str()).and_then(|s| s.nomme());
-        faits.push(format!(
-            "Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).",
-            qui.filter(|q| !q.is_empty()).unwrap_or(cle),
-            texte(r, "taux").replace('.', ","),
-            // Le mois du versement qui l'applique (`mis_a_disposition`, AAAAMMJJ000000) : celui que la DSN declare.
-            texte(r, "mis_a_disposition").get(..8).and_then(socle::date::lire_aaaammjj).map(|j| j.mois_civil().libelle(socle::mois::Graphie::Accentuee)).unwrap_or_default()
-        ));
+        let qui = match ctx.salaries.get(cle.as_str()).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+            Some(q) => q,
+            None => cle,
+        };
+        let taux: String = r.taux.iter().map(|t| format!(" {} %", t.replace('.', ","))).collect();
+        // Le mois du versement qui l'applique (`mis_a_disposition`, AAAAMMJJ000000) : celui que la DSN declare.
+        let mois: String = r
+            .mis_a_disposition
+            .get(..8)
+            .and_then(socle::date::lire_aaaammjj)
+            .map(|j| format!(", appliqué dans la DSN de {}", j.mois_civil().libelle(socle::mois::Graphie::Accentuee)))
+            .into_iter()
+            .collect();
+        faits.push(format!("Prélèvement à la source de {} : taux{} transmis par la DGFiP{} (S21.G00.50.006 à .008).", qui, taux, mois));
     }
 }
 
 /// Les contrats des permanents que les DSN reprises portent, poses quand la compagnie se met a employer un permanent
 /// (la nature d'un contrat repris dite, `import::nature::dire`) : l'ecran ne les attendait pas encore a l'import.
-pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> Vec<String> {
-    let lecture = match crate::import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
-        Ok(l) => l,
-        Err(e) => return vec![e.phrase()],
-    };
+pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> socle::echec::R<Vec<String>> {
+    let lecture = crate::import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
     let mut faits = Vec::new();
     if lecture.fichiers > 0 {
         poser_organismes(ctx, &lecture, &mut faits);
     }
-    faits
+    Ok(faits)
 }
 

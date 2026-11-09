@@ -6,8 +6,8 @@
    =======================================================================
    L'OUVERTURE D'UN COUP : la page entière d'un seul geste, jamais petit à
    petit ni derrière une roue qui tourne sans dire pourquoi. UNE demande,
-   `ouverture`, que la fenêtre sert sans processus
-   (`etat_garde::FileDesEtats::ouverture`) : tout ce que la page lit en
+   `demarrage`, que la fenêtre sert sans processus
+   (`etat_garde::FileDesEtats::demarrage`) : tout ce que la page lit en
    s'ouvrant, juste — l'accueil, le mois à ouvrir et son écran,
    l'échéancier, les rappels, ce qui manque pour démarrer, les conseils, la
    veille, la mise à jour, les signalements. La page se peint d'un coup
@@ -62,13 +62,13 @@ async function demarrer() {
   CATALOGUE = Object.fromEntries((await appelerMoteur("routes", { avance: true })).routes.map((f) => [f.nom, f]));
   rangerLAvance();
   dessinerLesAvances();
-  let o = await appelerMoteur("ouverture");
+  let o = await appelerMoteur("demarrage", { patienter: 400 });
   while (!o.pret) {
     // LA SEULE ATTENTE : ce que la page lit se refait. Le moteur dit ce qu'il fait.
-    document.getElementById("chargement-phrase").textContent = o.phrase || "";
-    o = await appelerMoteur("ouverture", { patienter: 400 });
+    document.getElementById("chargement-phrase").textContent = o.phrase;
+    o = await appelerMoteur("demarrage", { patienter: 400 });
   }
-  AUJOURDHUI = o.aujourdhui || "";
+  AUJOURDHUI = o.aujourdhui;
   poserEtat(lectureDe(o, "etat"));
   if (window.poserAuteur) window.poserAuteur(ETAT.auteur);
   dessinerVeille(o.veille);

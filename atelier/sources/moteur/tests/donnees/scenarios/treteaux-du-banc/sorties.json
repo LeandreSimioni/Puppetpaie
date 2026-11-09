@@ -309,15 +309,6 @@
       "quand": "2026-11-02T09:00:47",
       "quoi": "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part."
     },
-    "config/baremes/2026.json": {
-      "annee": 2026,
-      "socle": 2026,
-      "taux_atmp": {
-        "valeur": 1.1,
-        "code_risque": "923AD",
-        "note": "Saisi dans PuppetPaie le 02/11/2026 (notification AT/MP)."
-      }
-    },
     "config/compteurs.json": {
       "2026": {
         "bulletin": 1,
@@ -340,11 +331,6 @@
           "valeur": "LES TRETEAUX DU BANC"
         }
       ],
-      "siret": [
-        {
-          "valeur": "32520440200011"
-        }
-      ],
       "siren": [
         {
           "valeur": "325204402"
@@ -355,19 +341,19 @@
           "valeur": "00011"
         }
       ],
+      "siret": [
+        {
+          "valeur": "32520440200011"
+        }
+      ],
       "naf": [
         {
           "valeur": "9001Z"
         }
       ],
-      "licence_spectacle": [
+      "adresse": [
         {
-          "valeur": "PLATESV-D-2024-000352"
-        }
-      ],
-      "premiere_embauche": [
-        {
-          "valeur": "2026-11-20"
+          "valeur": "12 QUAI DE LA FOSSE"
         }
       ],
       "adresse_affichage": [
@@ -378,6 +364,11 @@
       "code_postal": [
         {
           "valeur": "44000"
+        }
+      ],
+      "commune": [
+        {
+          "valeur": "NANTES"
         }
       ],
       "commune_affichage": [
@@ -395,19 +386,19 @@
           "valeur": true
         }
       ],
-      "emploie_des_permanents": [
-        {
-          "valeur": false
-        }
-      ],
-      "conseils": [
-        {
-          "valeur": false
-        }
-      ],
       "urssaf_compte": [
         {
           "valeur": "5200000000"
+        }
+      ],
+      "medecine_travail": [
+        {
+          "valeur": "MT952"
+        }
+      ],
+      "licence_spectacle": [
+        {
+          "valeur": "PLATESV-D-2024-000352"
         }
       ],
       "congesspectacles_adherent": [
@@ -420,9 +411,41 @@
           "valeur": "80000052008"
         }
       ],
+      "emploie_des_permanents": [
+        {
+          "valeur": false
+        }
+      ],
       "casc_svp_exemptee": [
         {
           "valeur": false
+        }
+      ],
+      "premiere_embauche": [
+        {
+          "valeur": "2026-11-20"
+        }
+      ],
+      "taxe_sur_les_salaires": [
+        {
+          "valeur": {
+            "tva": "assujettie",
+            "part_tva": 100
+          }
+        }
+      ],
+      "taux_atmp": [
+        {
+          "valeur": null
+        },
+        {
+          "depuis": "2026-01-01",
+          "valeur": {
+            "code_risque": "923AD",
+            "valeur": 1.1,
+            "depuis": "2026-01-01",
+            "provenance": "saisie"
+          }
         }
       ],
       "signataire": [
@@ -457,27 +480,9 @@
           }
         }
       ],
-      "adresse": [
+      "conseils": [
         {
-          "valeur": "12 QUAI DE LA FOSSE"
-        }
-      ],
-      "commune": [
-        {
-          "valeur": "NANTES"
-        }
-      ],
-      "medecine_travail": [
-        {
-          "valeur": "MT952"
-        }
-      ],
-      "taxe_sur_les_salaires": [
-        {
-          "valeur": {
-            "tva": "assujettie",
-            "part_tva": 100
-          }
+          "valeur": false
         }
       ]
     },
@@ -485,7 +490,7 @@
       "quoi": "L'horloge de la compagnie fictive : le dernier jour joue, ce qui n'est plus a regarder, et ce qu'elle a fait en dernier (le bandeau le dit).",
       "le": "2026-12-16",
       "mois_faits": {
-        "2026-11": "2812ca65b9445f0e"
+        "2026-11": "c69cc9116490fd28"
       },
       "annees_faites": [
         2026
@@ -1294,7 +1299,6 @@
             "preuve": "Signature_FULLER_SIG-PXJEKG.eml",
             "fichier_signe": "Contrat_FULLER_FU1.26.01_Novembre2026_signe.pdf",
             "mention": "Signé électroniquement le 20/11/2026 à 06:00\npar FULLER Loïe\nloie.fuller@exemple.invalid\ncode de signature SIG-PXJEKG",
-            "acte": "contrat",
             "qui": "interface",
             "reponse": "contrat signe par courriel (SIG-PXJEKG, loie.fuller@exemple.invalid)"
           }
@@ -1325,9 +1329,11 @@
               "adresse": "loie.fuller@exemple.invalid",
               "relance": false,
               "empreinte": "7e44d85d6a51e8cd",
-              "message": "<d852419153486c50@fictive.puppetpaie>"
+              "message": "<d852419153486c50@fictive.puppetpaie>",
+              "ailleurs": false
             }
           ],
+          "main_propre": false,
           "expediteur": "fictive@puppetpaie.invalid",
           "relance": false
         },
@@ -1410,6 +1416,7 @@
         "trace": "retours/depots/20261120-070000_depot-dpae_202611.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "repetition": null,
           "embauches": [
             {
@@ -1418,7 +1425,8 @@
               "debut": "2026-11-20",
               "fin": "2026-11-21"
             }
-          ]
+          ],
+          "certificat": false
         },
         "versions": [
           {
@@ -1462,6 +1470,7 @@
         "trace": "retours/depots/20261120-070000_depot-dsn_20261120.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "type": "01",
           "nature": "08",
           "ordre": "1",
@@ -1516,6 +1525,7 @@
         "trace": "retours/depots/20261120-070000_depot-dpae_202611-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "repetition": {
             "test": "2026-11-20T07:00:00",
             "flux": "FICTIF-97604AE3C15F",
@@ -1529,7 +1539,8 @@
               "debut": "2026-11-20",
               "fin": "2026-11-21"
             }
-          ]
+          ],
+          "certificat": false
         },
         "versions": [
           {
@@ -1579,6 +1590,7 @@
         "trace": "retours/depots/20261120-070000_depot-dsn_20261120-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "type": "01",
           "nature": "08",
           "ordre": "1",
@@ -1637,6 +1649,7 @@
         "trace": "retours/depots/20261215-100000_depot-dsn_202611.txt",
         "detail": {
           "preuve": "",
+          "reconstruit": false,
           "type": "01",
           "nature": "01",
           "ordre": "1",
@@ -1709,6 +1722,7 @@
         "trace": "retours/depots/20261215-100000_depot-dsn_202611-2.txt",
         "detail": {
           "preuve": "fictive",
+          "reconstruit": false,
           "type": "01",
           "nature": "01",
           "ordre": "1",
@@ -1775,7 +1789,6 @@
                       "2026-11-21"
                     ],
                     "cachets": 2,
-                    "heures": "",
                     "brut": "300,00",
                     "net": "232,30"
                   }
@@ -1786,6 +1799,7 @@
               "renvoi": false
             }
           ],
+          "main_propre": false,
           "expediteur": "fictive@puppetpaie.invalid",
           "durees_ms": {
             "preparation": 0,
@@ -2168,16 +2182,15 @@
                 "dossier? racine:": "oui",
                 "existe code:baremes/2026.json": "oui",
                 "existe code:rubriques-base.json": "oui",
-                "existe racine:config/baremes/2026.json": "oui",
+                "existe racine:config/baremes/2026.json": "non",
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
-                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "55397a1a43110518aad015d93f452f8b6653bd22ab7ee441bc33179c54fdca44",
-                "fichier code:baremes/2026.json": "fcac703b69bdc73cde511f0a6f04f29974379322e1c552ba7a223b2ed83e6154",
+                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "2be737a7221b57279b6aa6349117a76a80b3575470a238d32b75dc5d508d1766",
+                "fichier code:baremes/2026.json": "423c8ebda3cb02f03e1732b96900ad5285e2cd92725ebad1205aa16ec08b3258",
                 "fichier code:contrats-base.json": "7b4508c34503f5514efb514acd1cd355fc10379663fa03cd93c76b6d159d8718",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
                 "fichier code:minima-conventionnels.json": "e73f412ba4c1b942078c8def3b67467a89cec714a3be8af00baf75bb6dd65e46",
                 "fichier code:rubriques-base.json": "1bd3ad2f7026ecd8ebb8feb34792548e97b5d990bc36a8a6daef06f620e08e91",
-                "fichier racine:config/baremes/2026.json": "bbf67747eff4900816f07f662f4a7893d82b824aac0c7c68949aec8d09fd94f6",
                 "imprevus racine:imprevus FULLER": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
                 "moteur": "<moteur>",
                 "pas FULLER 2026-11-30 2026-11": "[\"8.30\",\"01\",\"442936195\"]",
@@ -2188,6 +2201,7 @@
                 "2026-09-19"
               ],
               "configuration": [
+                "2026-01-01",
                 "2026-11-20"
               ]
             },
@@ -2861,8 +2875,6 @@
     "config/avant/salaries.json.20261102-090030",
     "config/avant/salaries.json.20261120-070000",
     "config/avant/salaries.json.20261215-100000",
-    "config/avant/spectacles.json.20261102-090035",
-    "config/baremes/avant/2026.json.20261102-090007",
-    "config/baremes/avant/2026.json.20261102-090008"
+    "config/avant/spectacles.json.20261102-090035"
   ]
 }

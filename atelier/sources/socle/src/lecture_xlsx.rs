@@ -58,14 +58,6 @@ impl Cellule {
     }
 }
 
-/// Une case lue en texte : `None` pour une case vide.
-pub fn cellule_en_texte(c: &Option<Cellule>) -> String {
-    match c {
-        Some(c) => c.en_texte(),
-        None => "None".to_string(),
-    }
-}
-
 struct Classeur {
     archive: zip::ZipArchive<std::fs::File>,
     nom: String,

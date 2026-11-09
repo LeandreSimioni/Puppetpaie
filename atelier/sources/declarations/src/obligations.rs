@@ -5,13 +5,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use socle::fichiers::dossier_du_code;
-use documents::valeur::json_en_cache;
+use std::sync::{Arc, OnceLock};
+
+use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::num::Resultat;
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
 /// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du moteur, `jours_ouvres_apres`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BaseDesObligations {
     pub quoi: String,
@@ -20,7 +21,7 @@ pub struct BaseDesObligations {
 }
 
 /// Les obligations que le moteur sait compter, une par cle.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LesObligations {
     pub signalement_arret: DeBase,
@@ -40,30 +41,18 @@ pub struct DeBase {
     pub libelle: String,
     pub nait_de: String,
     pub qui: String,
-    #[serde(default)]
     pub ou: Option<Ou>,
     pub destinataire: String,
-    #[serde(default)]
     pub motifs: Vec<String>,
-    #[serde(default)]
     pub sauf_motifs: Option<SaufMotifs>,
-    #[serde(default)]
     pub delai: Option<Delai>,
-    #[serde(default)]
     pub delai_sans_subrogation: Option<Delai>,
-    #[serde(default)]
     pub delai_avec_subrogation: Option<Delai>,
-    #[serde(default)]
     pub connaissance_presumee: Option<String>,
-    #[serde(default)]
     pub exceptions: Vec<String>,
-    #[serde(default)]
     pub inferences: Vec<String>,
-    #[serde(default)]
     pub a_avoir: Vec<String>,
-    #[serde(default)]
     pub note: Option<String>,
-    #[serde(default)]
     pub suites: Option<Suites>,
     pub textes: Vec<TexteDepose>,
 }
@@ -84,8 +73,8 @@ pub enum Ou {
 pub struct Lieu {
     pub code: String,
     pub court: String,
-    libelle: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub libelle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     edi: Option<String>,
     texte: String,
 }
@@ -116,19 +105,16 @@ pub struct SaufMotifs {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Delai {
-    #[serde(default)]
     pub jours_ouvres: Option<i64>,
-    #[serde(default)]
     pub jours: Option<i64>,
-    #[serde(default)]
     pub heures: Option<i64>,
-    #[serde(default, rename = "sans_dimanches")]
+    #[serde(rename = "sans_dimanches")]
     _sans_dimanches: Option<bool>,
-    #[serde(default, rename = "sans_feries")]
+    #[serde(rename = "sans_feries")]
     _sans_feries: Option<bool>,
-    #[serde(default, rename = "avec_la_mensuelle")]
+    #[serde(rename = "avec_la_mensuelle")]
     _avec_la_mensuelle: Option<bool>,
-    #[serde(default, rename = "depart")]
+    #[serde(rename = "depart")]
     _depart: Option<String>,
     pub dit: String,
 }
@@ -137,9 +123,7 @@ pub struct Delai {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Suites {
-    #[serde(default)]
     pub reserves: Option<Reserves>,
-    #[serde(default)]
     pub feuille_accident: Option<FeuilleDAccident>,
 }
 
@@ -221,7 +205,10 @@ impl LesObligations {
 impl DeBase {
     /// Les motifs que la DSN ne couvre pas (`sauf_motifs.codes`), aucun sinon.
     pub fn sauf(&self) -> &[String] {
-        self.sauf_motifs.as_ref().map_or(&[], |s| &s.codes)
+        match &self.sauf_motifs {
+            Some(s) => &s.codes,
+            None => &[],
+        }
     }
 
     /// Le delai `quoi` (`delai`, `delai_sans_subrogation`, `delai_avec_subrogation`), que l'obligation doit porter.
@@ -248,8 +235,10 @@ pub fn livree(cle: &str) -> String {
     socle::echec::livree("obligations-base.json", cle)
 }
 
-/// `obligations-base.json`, lu par sa forme (le texte est lu une fois tant qu'il ne change pas).
+/// `obligations-base.json`, lu par sa forme (une fois tant que le fichier ne change pas).
 pub fn base() -> Resultat<BaseDesObligations> {
-    let v = json_en_cache(&dossier_du_code().join("obligations-base.json"))?;
-    socle::forme::lire(&v, "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.")
+    static CACHE: OnceLock<FormeGardee<BaseDesObligations>> = OnceLock::new();
+    let lue: Arc<BaseDesObligations> =
+        forme_en_cache(&CACHE, "obligations-base.json", "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+    Ok((*lue).clone())
 }

@@ -15,6 +15,8 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `audiens-fp-taux-repartition-retraite-2026.pdf` : transcription `audiens-fp-taux-repartition-retraite-2026.txt`
 - `casc-svp-fiche-codification-dsn-202606.pdf` : transcription `casc-svp-fiche-codification-dsn-202606.txt`
 - `casc-svp-modele-liste-nominative.xlsx` : transcription `casc-svp-modele-liste-nominative.csv`
+- `dossiers-de-configuration/freedesktop-basedir-spec-20210508.html` : transcription `dossiers-de-configuration/freedesktop-basedir-spec-20210508.txt`
+- `dossiers-de-configuration/microsoft-knownfolderid-20230830.html` : transcription `dossiers-de-configuration/microsoft-knownfolderid-20230830.txt`
 - `ghs-annexe10-artistes-categories-20211227.pdf` : transcription `ghs-annexe10-artistes-categories-20211227.txt`
 - `google-drive-api/google-drive-api-gerer-les-erreurs-20261020.html` : transcription `google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`
 - `google-drive-api/google-drive-api-limites-et-quotas-20261020.html` : transcription `google-drive-api/google-drive-api-limites-et-quotas-20261020.txt`

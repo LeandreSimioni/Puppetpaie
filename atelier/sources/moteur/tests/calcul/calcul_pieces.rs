@@ -10,10 +10,23 @@ use serde_json::{json, Value};
 
 const ORACLE: &str = "calcul-pieces.json";
 
+/// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
+fn decimal(v: &Value) -> Result<rust_decimal::Decimal, String> {
+    match v {
+        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
+            (Some(i), _, _) => Ok(i.into()),
+            (_, Some(u), _) => Ok(u.into()),
+            (_, _, Some(f)) => socle::num::dec_f64(f),
+            _ => Err(format!("nombre illisible : {}", n)),
+        },
+        autre => Err(format!("nombre attendu, lu {}", autre)),
+    }
+}
+
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
 fn canon_valeur(v: &Value) -> Result<Value, String> {
     Ok(match v {
-        Value::Number(_) => Value::String(socle::num::nombre(documents::valeur::dec(v)?)),
+        Value::Number(_) => Value::String(socle::num::nombre(decimal(v)?)),
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
         Value::Object(o) => Value::Object(
             o.iter()
@@ -103,7 +116,7 @@ fn le_seuil_de_smic() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(documents::valeur::dec).transpose();
+            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(decimal).transpose();
             vus.push(essai(section(bar).and_then(|rg| au_dela_du_seuil(rg.as_ref(), dec(b.as_str().unwrap()), dec(h), seuil?)).map(Value::Bool)));
         }
         groupe(g, vus);

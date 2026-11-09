@@ -33,8 +33,6 @@ async function dessinerExports() {
   }
   const opt = (v, t, sel) =>
     `<option value="${echapper(v)}"${sel ? " selected" : ""}>${echapper(t)}</option>`;
-  // Un format dont la brique manque se choisit quand même — le moteur écrit
-  // alors le CSV et le dit —, mais l'étiquette prévient avant le clic.
   // D'ABORD LA CATEGORIE, PUIS L'ETAT, PUIS SES QUESTIONS : rien n'est choisi d'office, et chaque choix deroule le
   // suivant. Une categorie d'un seul etat le choisit d'elle-meme.
   const fams = familles(p.etats);
@@ -165,14 +163,13 @@ async function dessinerDossier() {
 
 async function lancerDossier(route, apercu) {
   const coches = [...document.querySelectorAll(".d-sal:checked")].map((c) => c.value);
-  // Tous cochés : la liste vide, qui veut dire « chaque salarié » pour le moteur.
-  const qui = document.getElementById("d-tous").checked ? [] : coches;
   const quand = document.getElementById("d-quand").value;
   const periode = document.getElementById("d-periode").value;
   const charge = {
-    salaries: qui,
     categories: [...document.querySelectorAll(".d-cat:checked")].map((c) => c.value),
   };
+  // Tous cochés : aucune liste, ce qui veut dire « chaque salarié » pour le moteur.
+  if (!document.getElementById("d-tous").checked) charge.salaries = coches;
   // L'envoi refait le dossier de chacun : ni aperçu, ni dossier d'ensemble.
   if (route !== "dossier-envoyer") Object.assign(charge, { ensemble: document.getElementById("d-ensemble").checked, apercu });
   if (quand === "mois") charge.mois = periode;
@@ -222,7 +219,6 @@ function dessinerQuestions(opt) {
   const p = EXPORTS;
   const forme = p.etats.find((e) => e.etat === document.getElementById("x-etat").value);
   const q = new Set(forme.questions);
-  const manque = { xlsx: !p.xlsx, pdf: !p.pdf };
   document.getElementById("exports-resultat").innerHTML = "";
   document.getElementById("x-suite").innerHTML = `
     <div class="champs">
@@ -260,7 +256,7 @@ function dessinerQuestions(opt) {
         <label for="x-format">Format</label>
         <select id="x-format">
           ${p.formats.filter((f) => (forme.formats || []).includes(f.format)).map((f) => opt(f.format,
-            f.quoi + (manque[f.format] ? " — " + p.ecran.brique_absente : ""),
+            f.quoi,
             f.format === "csv")).join("")}
         </select>
       </div>` : ""}
@@ -347,7 +343,7 @@ async function ouvrirCourts(format, phrase) {
       <td>${echapper(l.zone)}</td><td>${echapper(l.long)}</td>
       <td><input type="text" class="x-court" data-i="${i}" size="${l.largeur + 2}" value="${echapper(l.court ?? l.propose)}"></td>
     </tr>`).join("");
-  ouvrirBoite(`<h3>Libellés courts — ${echapper(r.nom)}</h3>
+  ouvrirBoite(`<h3>Libellés courts — ${echapper(r.nom || "")}</h3>
     <div class="encart" id="x-courts-dit">${echapper(phrase || r.phrase)}</div>
     <table class="tableau"><tr><th>Zone</th><th>Libellé</th><th>Valeur courte</th></tr>${lignes}</table>
     <div class="actions">
@@ -417,7 +413,8 @@ function dessinerCalendrier(periodes) {
 }
 
 async function lancerExport(apercu) {
-  const val = (id) => { const e = document.getElementById(id); return e ? e.value : undefined; };
+  // Une case absente ou vide n'est pas dite : elle ne part pas.
+  const val = (id) => { const e = document.getElementById(id); return e && e.value !== "" ? e.value : undefined; };
   const quand = val("x-quand");
   const periode = val("x-periode");
   const coord = document.getElementById("x-coordonnees");
@@ -444,7 +441,7 @@ async function lancerExport(apercu) {
   try { r = await api("exporter", charge); }
   catch (e) {
     // Des libellés trop longs pour le format : le refus y renvoie.
-    const courts = e.detail && e.detail.libelles_courts;
+    const courts = e.detail && e.detail.a_part && e.detail.a_part.libelles_courts;
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}${courts
       ? ` <button class="lien" id="x-courts-refus">Les raccourcir</button>` : ""}</div>`;
     if (courts) document.getElementById("x-courts-refus").onclick = () => ouvrirCourts(courts);

@@ -104,7 +104,11 @@ fn version_de(texte: &str, prefixe: &str, ou: &str) -> Result<String, String> {
 /// Les lignes `plage ; valeur [; ...] # commentaire` d'un fichier de la base, commentaires retires.
 fn proprietes(texte: &str) -> impl Iterator<Item = Vec<&str>> {
     texte.lines().filter_map(|l| {
-        let l = l.split('#').next().unwrap_or("").trim();
+        let l = match l.split_once('#') {
+            Some((avant, _)) => avant,
+            None => l,
+        }
+        .trim();
         (!l.is_empty()).then(|| l.split(';').map(str::trim).collect())
     })
 }
@@ -134,7 +138,7 @@ impl Ucd {
             }
             if !f[5].is_empty() {
                 let (compat, reste) = match f[5].strip_prefix('<') {
-                    Some(r) => (true, r.split_once('>').map(|(_, r)| r).unwrap_or("")),
+                    Some(r) => (true, r.split_once('>').map(|(_, r)| r).ok_or_else(|| format!("{} : decomposition {:?} sans `>`", UNICODE_DONNEES, f[5]))?),
                     None => (false, f[5]),
                 };
                 let points = reste.split_whitespace().map(|p| hexa(p, UNICODE_DONNEES)).collect::<Result<Vec<_>, _>>()?;
@@ -192,7 +196,10 @@ impl Ucd {
         deplier(self, cp, &mut out);
         let mut i = 0;
         while i < out.len() {
-            let j = (i..out.len()).find(|&k| self.classe[out[k] as usize] == 0).unwrap_or(out.len());
+            let j = match (i..out.len()).find(|&k| self.classe[out[k] as usize] == 0) {
+                Some(k) => k,
+                None => out.len(),
+            };
             out[i..j].sort_by_key(|&c| self.classe[c as usize]);
             i = j + 1;
         }
@@ -220,7 +227,10 @@ fn ecrire_intervalles(s: &mut String, v: &[(u32, u32)]) {
 }
 
 fn en_tete(s: &mut String, fichiers: &[&str], version: Option<&str>) {
-    let _ = writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer.{}", version.map(|v| format!(" Unicode {}.", v)).unwrap_or_default());
+    let _ = match version {
+        Some(v) => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer. Unicode {}.", v),
+        None => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer."),
+    };
     for f in fichiers {
         let _ = writeln!(s, "//! Lu dans `atelier/reference/sources/{}`.", f);
     }
@@ -326,6 +336,9 @@ fn nfkd_ascii(u: &Ucd) -> String {
     s
 }
 
+/// Le point de code d'un octet que la page ne definit pas : U+FFFD, le caractere de remplacement.
+const NON_DEFINI: u32 = 0xFFFD;
+
 /// Une page de code de `Public/MAPPINGS` (`0xXX<tab>0xXXXX<tab>#NOM`) : les octets 0x80 a 0xFF, U+FFFD pour un octet
 /// que la page ne definit pas (`#UNDEFINED`) : un tel octet se remplace, il ne fait pas echouer la lecture.
 fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
@@ -336,14 +349,16 @@ fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
     for l in texte.lines().map(|l| l.trim_end_matches(['\r', '\u{1a}'])).filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
         let mut f = l.split('\t');
         let octet = f.next().and_then(|o| o.strip_prefix("0x")).map(|o| hexa(o, nom)).transpose()?.ok_or_else(|| format!("{} : {:?}", nom, l))?;
-        let point = f.next().map(str::trim).unwrap_or("");
         if octet < 0x80 {
             continue;
         }
-        t[octet as usize - 0x80] = match point.strip_prefix("0x") {
-            Some(p) => hexa(p, nom)?,
-            None if point.is_empty() => 0xFFFD,
-            None => return Err(format!("{} : {:?}", nom, l)),
+        t[octet as usize - 0x80] = match f.next().map(str::trim).filter(|p| !p.is_empty()) {
+            Some(point) => match point.strip_prefix("0x") {
+                Some(p) => hexa(p, nom)?,
+                None => return Err(format!("{} : {:?}", nom, l)),
+            },
+            // L'octet sans point de code : la page ne le definit pas.
+            None => NON_DEFINI,
         };
         vus += 1;
     }

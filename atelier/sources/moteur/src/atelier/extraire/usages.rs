@@ -31,12 +31,57 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
-use super::{date_du_releve, en_transcription, nom_de, propre, sha256, somme_compensee, Releve, Transcription};
+use super::{case, date_du_releve, en_transcription, nom_de, propre, remplie, sha256, somme_compensee, EnOrdre, Rang, Releve, Transcription};
+use crate::import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
 use socle::num::Resultat;
+
+const QUOI: &str = "Le tableau des usages du cahier technique NEODeS : pour chaque rubrique et chaque nature de declaration, si \
+                    elle est obligatoire (O), conditionnelle (C), interdite (I) ou sans objet (N). Ecrire une rubrique que la \
+                    nature n'admet pas est une anomalie BLOQUANTE (CST-04) et le fichier ne declare rien.";
+
+/// Le referentiel des usages, apres `quoi` et `note`.
+#[derive(Serialize)]
+struct Usages {
+    #[serde(flatten)]
+    empreinte: Empreinte,
+    natures: EnOrdre<String>,
+    valeurs: Valeurs,
+    usages: EnOrdre<Usage>,
+}
+
+/// L'empreinte du texte depose lu : le classeur, ou le cahier en PDF.
+#[derive(Serialize)]
+enum Empreinte {
+    #[serde(rename = "sha256_du_classeur")]
+    Classeur(String),
+    #[serde(rename = "sha256_du_pdf")]
+    Pdf(String),
+}
+
+/// Ce que dit chaque lettre du tableau.
+#[derive(Serialize)]
+struct Valeurs {
+    #[serde(rename = "O")]
+    o: &'static str,
+    #[serde(rename = "C")]
+    c: &'static str,
+    #[serde(rename = "I")]
+    i: &'static str,
+    #[serde(rename = "N")]
+    n: &'static str,
+}
+
+/// L'usage d'une rubrique : son libelle, puis sa lettre pour chaque nature, dans l'ordre de l'entete.
+#[derive(Serialize)]
+struct Usage {
+    libelle: String,
+    #[serde(flatten)]
+    par_nature: EnOrdre<String>,
+}
 
 /// La feuille du classeur des usages (fiche 3358).
 pub const FEUILLE_USAGES: &str = "1 - Tableau des usages";
@@ -55,58 +100,8 @@ fn rubrique() -> Regex {
     Regex::new(r"\AS\d\d\.G00\.\d\d\.\d\d\d\z").expect("motif")
 }
 
-fn nombre(v: &Value, quoi: &str) -> Resultat<f64> {
-    v.as_f64().ok_or_else(|| format!("inspection du PDF : {} n'est pas un nombre ({})", quoi, v))
-}
-
-/// Une page de l'inspection : sa taille, sa rotation, ses traits et ses mots.
-struct Page {
-    largeur: f64,
-    hauteur: f64,
-    rotation: i64,
-    traits: Vec<[f64; 4]>,
-    mots: Vec<(String, [f64; 4])>,
-}
-
-fn boite(v: &Value, quoi: &str) -> Resultat<[f64; 4]> {
-    let a = v
-        .as_array()
-        .filter(|a| a.len() == 4)
-        .ok_or_else(|| format!("inspection du PDF : {} n'est pas un rectangle ({})", quoi, v))?;
-    Ok([nombre(&a[0], quoi)?, nombre(&a[1], quoi)?, nombre(&a[2], quoi)?, nombre(&a[3], quoi)?])
-}
-
-fn page_de(p: &Value) -> Resultat<Page> {
-    let rotation =
-        p["rotation"].as_i64().ok_or_else(|| format!("inspection du PDF : rotation illisible ({})", p["rotation"]))?;
-    let traits = p["traits"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[])
-        .iter()
-        .map(|t| boite(t, "un trait"))
-        .collect::<Resultat<_>>()?;
-    let mots = p["mots"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[])
-        .iter()
-        .map(|m| {
-            let texte = m["texte"].as_str().ok_or_else(|| format!("inspection du PDF : un mot sans texte ({})", m))?;
-            Ok((texte.to_string(), boite(&m["rect"], "un mot")?))
-        })
-        .collect::<Resultat<_>>()?;
-    Ok(Page {
-        largeur: nombre(&p["largeur"], "la largeur")?,
-        hauteur: nombre(&p["hauteur"], "la hauteur")?,
-        rotation,
-        traits,
-        mots,
-    })
-}
-
 /// Le rectangle d'une page tournee de /Rotate, dans le repere de la page telle qu'on la lit (origine en haut a gauche).
-fn a_l_endroit(page: &Page, b: [f64; 4]) -> [f64; 4] {
+fn a_l_endroit(page: &PageRelevee, b: [f64; 4]) -> [f64; 4] {
     let (largeur, hauteur) = (page.largeur, page.hauteur);
     let [x0, y0, x1, y1] = b;
     match page.rotation.rem_euclid(360) {
@@ -119,7 +114,7 @@ fn a_l_endroit(page: &Page, b: [f64; 4]) -> [f64; 4] {
 
 /// [(centre, longueur)] -> [(centre moyen, longueur cumulee)] : les filets de meme position sont mis bout a bout.
 fn regrouper(mut filets: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
-    filets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    filets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
     let mut groupes: Vec<Vec<(f64, f64)>> = Vec::new();
     for (centre, longueur) in filets {
         match groupes.last_mut() {
@@ -139,7 +134,7 @@ fn regrouper(mut filets: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
 
 /// (frontieres de colonnes, frontieres de lignes) du tableau de la page, a l'endroit ; deux listes vides si la page n'a pas
 /// de filets.
-fn cases(page: &Page) -> (Vec<f64>, Vec<f64>) {
+fn cases(page: &PageRelevee) -> (Vec<f64>, Vec<f64>) {
     let (mut verticaux, mut horizontaux) = (Vec::new(), Vec::new());
     for t in &page.traits {
         let [x0, y0, x1, y1] = a_l_endroit(page, *t);
@@ -165,25 +160,31 @@ fn place(valeur: f64, bornes: &[f64]) -> Option<usize> {
     (0..bornes.len().saturating_sub(1)).find(|&i| bornes[i] <= valeur && valeur < bornes[i + 1])
 }
 
-/// Les lignes du tableau de la page : une liste de cellules (texte, blancs ramenes a un), de haut en bas ; rien s'il n'y a
-/// pas de tableau.
-fn lignes_du_tableau(page: &Page) -> Vec<Vec<String>> {
+/// Les lignes du tableau de la page : une liste de cellules (texte, blancs ramenes a un ; `None` pour une case sans mot),
+/// de haut en bas ; rien s'il n'y a pas de tableau.
+fn lignes_du_tableau(page: &PageRelevee) -> Vec<Rang> {
     let (colonnes, lignes) = cases(page);
     if colonnes.len() < 9 || lignes.len() < 2 {
         return Vec::new();
     }
     let mut cellules: HashMap<(usize, usize), Vec<&str>> = HashMap::new();
-    for (texte, rect) in &page.mots {
-        let [x0, y0, x1, y1] = a_l_endroit(page, *rect);
+    for mot in &page.mots {
+        let [x0, y0, x1, y1] = a_l_endroit(page, mot.rect);
         if let (Some(i), Some(j)) = (place((y0 + y1) / 2.0, &lignes), place((x0 + x1) / 2.0, &colonnes)) {
-            cellules.entry((i, j)).or_default().push(texte);
+            cellules.entry((i, j)).or_default().push(&mot.texte);
         }
     }
-    (0..lignes.len() - 1)
-        .map(|i| {
-            (0..colonnes.len() - 1).map(|j| cellules.get(&(i, j)).map(|m| m.join(" ")).unwrap_or_default()).collect()
-        })
-        .collect()
+    (0..lignes.len() - 1).map(|i| (0..colonnes.len() - 1).map(|j| cellules.get(&(i, j)).map(|m| m.join(" "))).collect()).collect()
+}
+
+/// L'entete du tableau : sa colonne E est « 01 - DSN... ».
+fn est_l_entete(r: &[Option<String>]) -> bool {
+    case(r, 4).is_some_and(|t| t.starts_with("01 - DSN"))
+}
+
+/// Une ligne de rubrique : sa colonne C est un identifiant de rubrique.
+fn est_une_rubrique(r: &[Option<String>], motif: &Regex) -> bool {
+    case(r, 2).is_some_and(|t| motif.is_match(t))
 }
 
 /// Les 400 premiers caracteres d'une page (`texte[:400]`).
@@ -195,8 +196,7 @@ fn debut(texte: &str) -> &str {
 }
 
 /// (entete, lignes de rubriques, pages ou une rubrique a ete lue) du tableau des usages du cahier en PDF.
-fn releve_pdf(textes: &[String], inspection: &Value) -> Resultat<(Vec<String>, Vec<Vec<String>>, Vec<usize>)> {
-    let pages = inspection["pages"].as_array().ok_or("inspection du PDF sans pages")?;
+fn releve_pdf(textes: &[String], pages: &[PageRelevee]) -> Resultat<(Rang, Vec<Rang>, Vec<usize>)> {
     let motif = rubrique();
     let (mut entete, mut lignes, mut lues) = (None, Vec::new(), Vec::new());
     for (numero, (texte, page)) in (1..).zip(textes.iter().zip(pages)) {
@@ -204,10 +204,10 @@ fn releve_pdf(textes: &[String], inspection: &Value) -> Resultat<(Vec<String>, V
         if !d.contains("Tableau") && !d.contains("01 - DSN mensuelle") {
             continue;
         }
-        for r in lignes_du_tableau(&page_de(page)?) {
-            if r[4].starts_with("01 - DSN") {
+        for r in lignes_du_tableau(page) {
+            if est_l_entete(&r) {
                 entete = Some(r);
-            } else if motif.is_match(&r[2]) {
+            } else if est_une_rubrique(&r, &motif) {
                 lignes.push(r);
                 if !lues.contains(&numero) {
                     lues.push(numero);
@@ -220,16 +220,14 @@ fn releve_pdf(textes: &[String], inspection: &Value) -> Resultat<(Vec<String>, V
 
 /// (entete, lignes de rubriques) lues dans le classeur des usages : l'entete est la ligne dont la colonne E est
 /// « 01 - DSN... », une ligne de rubrique celle dont la colonne C est un identifiant de rubrique.
-fn releve_xlsx(source: &Path) -> Resultat<(Vec<String>, Vec<Vec<String>>)> {
+fn releve_xlsx(source: &Path) -> Resultat<(Rang, Vec<Rang>)> {
     let motif = rubrique();
     let (mut entete, mut lignes) = (None, Vec::new());
     for r in lecture_xlsx::lignes(source, FEUILLE_USAGES)? {
-        let n = r.len();
-        let mut r: Vec<String> = r.iter().map(propre).collect();
-        r.extend(std::iter::repeat_n(String::new(), 11usize.saturating_sub(n)));
-        if r[4].starts_with("01 - DSN") {
+        let r: Rang = r.iter().map(propre).collect();
+        if est_l_entete(&r) {
             entete = Some(r);
-        } else if motif.is_match(&r[2]) {
+        } else if est_une_rubrique(&r, &motif) {
             lignes.push(r);
         }
     }
@@ -238,36 +236,42 @@ fn releve_xlsx(source: &Path) -> Resultat<(Vec<String>, Vec<Vec<String>>)> {
 }
 
 /// Le tableau des usages du cahier en PDF, lu : (entete, lignes de rubriques, pages ou une rubrique a ete lue).
-fn lire_le_cahier(source: &Path) -> Resultat<(Vec<String>, Vec<Vec<String>>, Vec<usize>)> {
+fn lire_le_cahier(source: &Path) -> Resultat<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
     let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(|r| r.0)?;
-    let (inspection, _) = fabrique_pdf::inspection::inspecter(&chemin).map_err(|r| r.0)?;
-    let inspection: Value = serde_json::from_str(&inspection).map_err(|e| format!("{} : inspection illisible ({})", chemin, e))?;
-    let (entete, lignes, pages) = releve_pdf(&textes, &inspection)?;
-    if pages.is_empty() {
-        return Err(format!("{} : aucune ligne de rubrique dans le tableau des usages", chemin));
+    let releve = crate::import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, r.phrase()))?;
+    let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
+    match (pages.iter().min(), pages.iter().max()) {
+        (Some(premiere), Some(derniere)) => Ok((entete, lignes, (*premiere, *derniere))),
+        _ => Err(format!("{} : aucune ligne de rubrique dans le tableau des usages", chemin)),
     }
-    Ok((entete, lignes, pages))
 }
 
 /// LA TRANSCRIPTION DU TABLEAU DES USAGES du cahier en PDF (`super::Transcription`) : une ligne par ligne du tableau, ses
-/// cellules separees par une tabulation, l'entete d'abord ; l'en-tete dit les pages ou une rubrique a ete lue.
+/// cellules separees par une tabulation (une case vide n'y ecrit rien), l'entete d'abord ; l'en-tete dit les pages ou
+/// une rubrique a ete lue.
 pub fn transcrire(pdf: &Path) -> Resultat<String> {
     version_du_cahier(pdf)?;
-    let (entete, lignes, pages) = lire_le_cahier(pdf)?;
-    let (premiere, derniere) = (pages.iter().min().copied().unwrap_or(0), pages.iter().max().copied().unwrap_or(0));
+    let (entete, lignes, (premiere, derniere)) = lire_le_cahier(pdf)?;
     let mut corps = String::new();
     for r in std::iter::once(&entete).chain(&lignes) {
-        corps.push_str(&r.join("\t"));
+        for (j, c) in r.iter().enumerate() {
+            if j > 0 {
+                corps.push('\t');
+            }
+            if let Some(c) = c {
+                corps.push_str(c);
+            }
+        }
         corps.push('\n');
     }
     let t = Transcription::de(pdf, vec![("pages".into(), format!("{}-{}", premiere, derniere))], corps)?;
     Ok(t.texte(&format!("Le tableau des usages de {}, cellule par cellule (`moteur extraire transcrire`)", nom_de(pdf))))
 }
 
-/// (entete, lignes de rubriques, pages) relus dans une transcription.
-fn lire_la_transcription(t: &Transcription) -> Resultat<(Vec<String>, Vec<Vec<String>>, (String, String))> {
-    let mut rangs = t.corps.lines().map(|l| l.split('\t').map(str::to_string).collect::<Vec<_>>());
+/// (entete, lignes de rubriques, pages) relus dans une transcription : une case sans texte est vide.
+fn lire_la_transcription(t: &Transcription) -> Resultat<(Rang, Vec<Rang>, (String, String))> {
+    let mut rangs = t.corps.lines().map(|l| l.split('\t').map(|c| Some(c.to_string()).filter(|c| !c.is_empty())).collect::<Rang>());
     let entete = rangs.next().ok_or("transcription vide")?;
     let pages = t.champ("pages").and_then(|p| p.split_once('-')).ok_or("la transcription ne dit pas ses pages")?;
     Ok((entete, rangs.collect(), (pages.0.to_string(), pages.1.to_string())))
@@ -329,15 +333,14 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
         (entete, lignes, provenance_du_cahier(&t.pdf, &premiere, &derniere)?, t.sha256)
     } else {
         version_du_cahier(source)?;
-        let (entete, lignes, pages) = lire_le_cahier(source)?;
-        let (premiere, derniere) = (pages.iter().min().copied().unwrap_or(0), pages.iter().max().copied().unwrap_or(0));
+        let (entete, lignes, (premiere, derniere)) = lire_le_cahier(source)?;
         let provenance = provenance_du_cahier(&nom_de(source), &premiere.to_string(), &derniere.to_string())?;
         (entete, lignes, provenance, sha256(source)?)
     };
     let nature = Regex::new(r"\A(\d\d) - (.*)").expect("motif");
     let mut natures: Vec<(String, usize, String)> = Vec::new();
     for (j, titre) in entete.iter().enumerate().skip(4) {
-        if let Some(m) = nature.captures(titre) {
+        if let Some(m) = titre.as_deref().and_then(|t| nature.captures(t)) {
             let (n, libelle) = (m[1].to_string(), m[2].to_string());
             match natures.iter_mut().find(|x| x.0 == n) {
                 Some(x) => *x = (n, j, libelle),
@@ -345,50 +348,29 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
             }
         }
     }
-    let mut usages = Map::new();
+    let mut usages: EnOrdre<Usage> = EnOrdre::new();
     for r in &lignes {
-        let mut u = Map::new();
-        u.insert("libelle".into(), Value::String(r[3].clone()));
+        let rubrique = remplie(r, 2, "une ligne de rubrique")?;
+        let libelle = remplie(r, 3, rubrique)?;
+        let mut par_nature = EnOrdre::new();
         for (n, colonne, _) in &natures {
-            let valeur = r
-                .get(*colonne)
-                .ok_or_else(|| format!("{} : la ligne n'a pas de colonne {} (nature {})", r[2], colonne, n))?;
-            u.insert(n.clone(), Value::String(valeur.clone()));
+            par_nature.poser(n.clone(), remplie(r, *colonne, &format!("{} (nature {})", rubrique, n))?.to_string());
         }
-        usages.insert(r[2].clone(), Value::Object(u));
+        usages.poser(rubrique.to_string(), Usage { libelle: libelle.to_string(), par_nature });
     }
-    let libelles: Map<String, Value> = natures.iter().map(|(n, _, l)| (n.clone(), Value::String(l.clone()))).collect();
+    let libelles = EnOrdre(natures.iter().map(|(n, _, l)| (n.clone(), l.clone())).collect());
     let (n_usages, n_natures) = (usages.len(), natures.len());
-    let mut donnees = Map::new();
-    donnees.insert(
-        "quoi".into(),
-        json!("Le tableau des usages du cahier technique NEODeS : pour chaque rubrique et chaque nature de declaration, si \
-               elle est obligatoire (O), conditionnelle (C), interdite (I) ou sans objet (N). Ecrire une rubrique que la \
-               nature n'admet pas est une anomalie BLOQUANTE (CST-04) et le fichier ne declare rien."),
+    let note = format!(
+        "{} Le releve est confronte a ce que le moteur produit : toute declaration qu'il ecrit (DSN, signalement, FCTU) \
+           passe `declarations::usages::verifier_fichier`, qui refuse une rubrique que sa nature n'admet pas, et \
+           `declarations/tests/declarations/usages_formats_ntt.rs` fige le tableau des usages par nature.",
+        provenance
     );
-    donnees.insert(
-        "note".into(),
-        Value::String(format!(
-            "{} Le releve est confronte a ce que le moteur produit : toute declaration qu'il ecrit (DSN, signalement, FCTU) \
-               passe `declarations::usages::verifier_fichier`, qui refuse une rubrique que sa nature n'admet pas, et \
-               `declarations/tests/declarations/usages_formats_ntt.rs` fige le tableau des usages par nature.",
-            provenance
-        )),
-    );
-    donnees.insert(
-        (if classeur { "sha256_du_classeur" } else { "sha256_du_pdf" }).into(),
-        Value::String(empreinte),
-    );
-    donnees.insert("natures".into(), Value::Object(libelles));
-    donnees.insert(
-        "valeurs".into(),
-        json!({"O": "obligatoire", "C": "conditionnelle", "I": "interdite", "N": "sans objet / non prevue"}),
-    );
-    donnees.insert("usages".into(), Value::Object(usages));
-    Ok(Releve {
-        donnees: Value::Object(donnees),
-        indent: 1,
-        saut_final: false,
-        bilan: vec![format!("{} rubriques, {} natures", n_usages, n_natures)],
-    })
+    let corps = Usages {
+        empreinte: if classeur { Empreinte::Classeur(empreinte) } else { Empreinte::Pdf(empreinte) },
+        natures: libelles,
+        valeurs: Valeurs { o: "obligatoire", c: "conditionnelle", i: "interdite", n: "sans objet / non prevue" },
+        usages,
+    };
+    Ok(Releve::nouveau(QUOI, note, corps, 1, false, vec![format!("{} rubriques, {} natures", n_usages, n_natures)]))
 }

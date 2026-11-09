@@ -56,7 +56,7 @@ fn banc() -> (&'static Banc, MutexGuard<'static, ()>) {
         }
         // Debloquee par le geste : bridee, l'accueil n'ajouterait pas la compagnie reelle d'un test.
         outils::debloquer(&base);
-        let fenetre = Fenetre::nouvelle(0, utilisateur.clone(), 1);
+        let fenetre = Fenetre::nouvelle(0, utilisateur.clone(), 1).unwrap();
         Banc { logiciel, fenetre }
     });
     (b, verrou)
@@ -243,7 +243,7 @@ fn tuile_ajoutee(html: &str) -> String {
 #[test]
 fn retour_et_echap_ramenent_des_pages_du_mot_de_passe_au_choix_de_la_compagnie() {
     let (_b, _v) = banc();
-    let f = Fenetre::nouvelle(0, _b.logiciel.parent().unwrap().join("utilisateur"), 1);
+    let f = Fenetre::nouvelle(0, _b.logiciel.parent().unwrap().join("utilisateur"), 1).unwrap();
     let adresse = f.adresse("127.0.0.1", 1);
     let jeton = adresse.split("jeton=").nth(1).unwrap().to_string();
     let est_l_accueil = |html: &str| html.contains("data-id=\"cie:") && !html.contains("id=\"mdp\"");
@@ -251,7 +251,7 @@ fn retour_et_echap_ramenent_des_pages_du_mot_de_passe_au_choix_de_la_compagnie()
     chaque_geste_appele_est_dans_la_cale(&racine_servie(&f, &jeton), "l'accueil");
 
     // Une compagnie reelle neuve, par sa route : la fenetre l'ouvre sur le choix du mot de passe.
-    let v = route_de_la_page(&f, &jeton, "compagnie-ajouter", serde_json::json!({"nom": "Compagnie du Retour"}));
+    let v = route_de_la_page(&f, &jeton, "compagnie-ajouter", serde_json::json!({"nom": "Compagnie du Retour", "venue": "neuve"}));
     assert_eq!(v["ok"], serde_json::json!(true), "{}", v);
     assert_eq!(poste(&f, &jeton, "choisir", serde_json::json!([v["resultat"]["id"]]))["ok"], serde_json::json!(true));
     let choix = racine_servie(&f, &jeton);

@@ -21,7 +21,6 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::OnceLock;
 
 use regex::Regex;
-use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::compagnie::incidents;
@@ -63,37 +62,22 @@ fn plie(mot: &str) -> String {
     sans_accent(mot).to_uppercase()
 }
 
-/// Le vocabulaire : chaque mot des valeurs de la table de lecture livree (hors des cles `_`), et `MOTS_DES_PIECES`.
-fn vocabulaire() -> &'static HashSet<String> {
+/// Le vocabulaire : chaque mot des textes de la table de lecture livree (`bulletin_lu::textes_de_la_table`), et
+/// `MOTS_DES_PIECES`. Une table qui ne se lit pas se refuse : rien ne se masque sans elle.
+fn vocabulaire() -> Result<&'static HashSet<String>, String> {
     static V: OnceLock<HashSet<String>> = OnceLock::new();
-    V.get_or_init(|| {
-        let mut v: HashSet<String> = MOTS_DES_PIECES.iter().map(|m| m.to_string()).collect();
-        fn parcourir(x: &Value, v: &mut HashSet<String>) {
-            match x {
-                Value::String(s) => {
-                    for m in jeton().find_iter(s) {
-                        if m.as_str().chars().all(char::is_alphabetic) {
-                            v.insert(plie(m.as_str()));
-                        }
-                    }
-                }
-                Value::Array(a) => a.iter().for_each(|y| parcourir(y, v)),
-                Value::Object(o) => o.iter().filter(|(k, _)| !k.starts_with('_')).for_each(|(_, y)| parcourir(y, v)),
-                _ => {}
+    if let Some(v) = V.get() {
+        return Ok(v);
+    }
+    let mut v: HashSet<String> = MOTS_DES_PIECES.iter().map(|m| m.to_string()).collect();
+    for s in crate::import::bulletin_lu::textes_de_la_table()? {
+        for m in jeton().find_iter(&s) {
+            if m.as_str().chars().all(char::is_alphabetic) {
+                v.insert(plie(m.as_str()));
             }
         }
-        let chemin = socle::fichiers::dossier_du_code().join(crate::import::bulletin_lu::FICHIER_TABLE);
-        if let Ok(t) = documents::valeur::json_en_cache(&chemin) {
-            parcourir(&t, &mut v);
-        }
-        v
-    })
-}
-
-/// LE MASQUE : un mot du vocabulaire et un code de rubrique DSN restent ; toute autre lettre devient `X`, tout chiffre
-/// `9` ; les espaces, la ponctuation et les retours a la ligne restent a leur place.
-pub fn masquer(texte: &str) -> String {
-    masquer_avec(texte, vocabulaire())
+    }
+    Ok(V.get_or_init(|| v))
 }
 
 fn masquer_avec(texte: &str, vocabulaire: &HashSet<String>) -> String {
@@ -115,11 +99,12 @@ fn masquer_avec(texte: &str, vocabulaire: &HashSet<String>) -> String {
 }
 
 /// La famille d'un document : la suite des mots du vocabulaire de sa premiere page, et le logiciel reconnu.
-fn famille(premiere_page: &str, logiciel: &str) -> String {
-    let voc = vocabulaire();
-    let mots: Vec<String> = jeton().find_iter(premiere_page).map(|m| plie(m.as_str())).filter(|m| voc.contains(m)).collect();
+fn famille(premiere_page: Option<&str>, logiciel: Option<&str>, voc: &HashSet<String>) -> String {
+    let mots: Vec<String> = premiere_page.into_iter().flat_map(|p| jeton().find_iter(p)).map(|m| plie(m.as_str())).filter(|m| voc.contains(m)).collect();
     let mut h = Sha256::new();
-    h.update(logiciel.as_bytes());
+    if let Some(l) = logiciel {
+        h.update(l.as_bytes());
+    }
     h.update(b"\n");
     h.update(mots.join(" ").as_bytes());
     h.finalize().iter().take(6).map(|b| format!("{:02x}", b)).collect()
@@ -131,14 +116,15 @@ fn tete(s: &str, n: usize) -> String {
 }
 
 /// A chaque import : chaque document accepte et pas lu, un par famille, note masque au journal des incidents, puis
-/// l'envoi ordinaire (`incidents::envoyer`, qui ne part que si l'envoi a l'editeur est actif sur ce poste). Ne leve
-/// jamais : un incident qui ne s'ecrit pas ne change rien a l'import. Rend le nombre d'incidents notes.
-pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> usize {
+/// l'envoi ordinaire (`incidents::envoyer`, qui ne part que si l'envoi a l'editeur est actif sur ce poste). Un incident
+/// qui ne s'ecrit pas ne change rien a l'import ; une table de lecture qui ne se lit plus (l'import vient de la lire), si.
+/// Rend le nombre d'incidents notes.
+pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec::R<usize> {
+    let voc = vocabulaire()?;
     let cr = &lu.ap.reponse.tri.fichiers;
-    let deja: BTreeSet<String> = incidents::lire(&ctx.racine, None, false)
-        .unwrap_or_default()
+    let deja: BTreeSet<String> = incidents::lire(&ctx.racine, None, false)?
         .iter()
-        .filter_map(|l| l.get("empreinte").and_then(Value::as_str).map(str::to_string))
+        .map(|l| l.empreinte.clone())
         .collect();
     let mut vues: HashSet<String> = HashSet::new();
     let mut notes = 0;
@@ -146,29 +132,25 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> usize {
         if f.sorte != Sorte::PdfTexte || !c.sort.non_repris() {
             continue;
         }
-        let Ok((pages, _)) = fabrique_pdf::lecture::texte(&f.disque.to_string_lossy()) else { continue };
-        let logiciel = c.pages.iter().find_map(|p| p.infos.logiciel.clone()).unwrap_or_default();
-        let genre = format!("document non lu : famille {}", famille(pages.first().map_or("", String::as_str), &logiciel));
+        // Un texte que la fabrique ne releve pas part tel : la raison, masquee comme le reste.
+        let pages = match fabrique_pdf::lecture::texte(&f.disque.to_string_lossy()) {
+            Ok((pages, _)) => pages,
+            Err(r) => vec![format!("le texte du document ne se relève pas : {}", r.0)],
+        };
+        let logiciel = c.pages.iter().find_map(|p| p.infos.logiciel.clone());
+        let genre = format!("document non lu : famille {}", famille(pages.first().map(String::as_str), logiciel.as_deref(), voc));
         let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
         if deja.contains(&empreinte) || !vues.insert(empreinte) {
             continue;
         }
-        let forme: Vec<Value> = c
+        let forme: Vec<FormeDePage> = c
             .pages
             .iter()
-            .map(|p| {
-                let l = f.pages.get(p.page.saturating_sub(1));
-                json!({
-                    "page": p.page,
-                    "sort": p.sort,
-                    "raison": masquer(&p.raison),
-                    "mots": l.map(|x| x.mots), "polices": l.map(|x| x.polices), "images": l.map(|x| x.images), "traits": l.map(|x| x.traits),
-                })
-            })
+            .map(|p| FormeDePage { page: p.page, sort: p.sort, raison: masquer_avec(&p.raison, voc), releve: f.pages.get(p.page.saturating_sub(1)) })
             .collect();
-        let detail = json!({"sort": c.sort, "logiciel": logiciel, "pages": pages.len(), "forme": forme,
-            "raison": masquer(&c.raison)});
-        let texte: Vec<String> = pages.iter().enumerate().map(|(k, p)| format!("--- page {} ---\n{}", k + 1, masquer(p.trim_end()))).collect();
+        let detail = Detail { sort: c.sort, logiciel: logiciel.as_deref(), pages: pages.len(), forme, raison: masquer_avec(&c.raison, voc) };
+        let detail = socle::ecriture::en_valeur(&detail);
+        let texte: Vec<String> = pages.iter().enumerate().map(|(k, p)| format!("--- page {} ---\n{}", k + 1, masquer_avec(p.trim_end(), voc))).collect();
         let trace = tete(&texte.join("\n"), TRACE_MAX);
         let resume = format!("Import : un document accepté n'a pas été lu (« {} »). Sa forme, masquée.", c.sort.en_mots().1);
         let note = incidents::Note {
@@ -181,14 +163,38 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> usize {
             sans_contexte: true,
             ..Default::default()
         };
-        if incidents::noter(&ctx.racine, &note).is_some() {
-            notes += 1;
+        match incidents::noter(&ctx.racine, &note) {
+            Ok(Some(_)) => notes += 1,
+            Ok(None) => {}
+            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
         }
     }
     if notes > 0 && incidents::envoi_actif(&ctx.racine) {
         incidents::envoyer(&ctx.racine);
     }
-    notes
+    Ok(notes)
+}
+
+/// Ce que l'incident dit d'un document non lu : son sort, le logiciel reconnu, ses pages, sa forme page par page et la
+/// raison, masquees.
+#[derive(serde::Serialize)]
+struct Detail<'a> {
+    sort: crate::import::reponse::Sort,
+    logiciel: Option<&'a str>,
+    pages: usize,
+    forme: Vec<FormeDePage<'a>>,
+    raison: String,
+}
+
+/// Une page : son sort, sa raison masquee, et ce que la fabrique en a releve (ses mots, ses polices, ses images, ses
+/// traits ; rien pour une page qu'elle n'a pas relevee).
+#[derive(serde::Serialize)]
+struct FormeDePage<'a> {
+    page: usize,
+    sort: crate::import::reponse::Sort,
+    raison: String,
+    #[serde(flatten)]
+    releve: Option<&'a crate::import::tri::PageLue>,
 }
 
 #[cfg(test)]

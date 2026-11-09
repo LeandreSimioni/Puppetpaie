@@ -5,37 +5,30 @@
 
 use envois::retours::{
     aer_spectacle, anomalies_codees_d_octets, bilan_d_octets, fusionner_bilans, releves_vers_salaries,
-    taux_pas_d_octets,
+    taux_pas_d_octets, ReleveTauxPas,
 };
-use serde_json::{json, Value};
+
+fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
+    ReleveTauxPas { nir: nir.to_string(), taux: Some("0.00".to_string()), type_taux: Some("01".to_string()), identifiant: identifiant.to_string() }
+}
 
 const CRM_REEL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"450189378\" type=\"CRM nominatif\" profil=\"DSN\" version=\"v02r01\"><envoi><envoi_identification><idflux>WSUrBZ50Y4RWJdDpsRsh.3r</idflux></envoi_identification></envoi><declaration><declaration_bilan><etat>OK</etat><salarie><NIR>1990101999999</NIR><matricule>2</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie><salarie><NIR>2990101999999</NIR><matricule>1</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie></declaration_bilan></declaration></ns2:rapport>";
 
 #[test]
 fn le_format_reel_du_crm_94() {
     let r = taux_pas_d_octets(CRM_REEL.as_bytes()).unwrap();
-    assert_eq!(
-        r["releves"],
-        json!([
-            {"nir": "1990101999999", "taux": "0.00", "type": "01", "identifiant": "450189378"},
-            {"nir": "2990101999999", "taux": "0.00", "type": "01", "identifiant": "450189378"},
-        ])
-    );
+    assert_eq!(r.releves, vec![releve("1990101999999", "450189378"), releve("2990101999999", "450189378")]);
 }
 
 #[test]
 fn les_releves_se_rattachent_par_le_nir() {
-    let releves = [
-        json!({"nir": "2990101999999", "taux": "0.00", "type": "01", "identifiant": "1"}),
-        json!({"nir": "1234567890123", "taux": "0.00", "type": "01", "identifiant": "1"}),
-        json!({"nir": null, "taux": null, "type": null, "identifiant": null}),
-    ];
-    let nirs = [json!(["ALPHA", "2990101999999"]), json!(["BETA", "1990101999999"])];
+    let releves = [releve("2990101999999", "1"), releve("1234567890123", "1")];
+    let nirs = [("ALPHA".to_string(), "2990101999999".to_string()), ("BETA".to_string(), "1990101999999".to_string())];
     let r = releves_vers_salaries(&releves, &nirs);
-    assert_eq!(r["rattaches"].as_array().unwrap().len(), 1);
-    assert_eq!(r["rattaches"][0]["salarie"], "ALPHA");
+    assert_eq!(r.rattaches.len(), 1);
+    assert_eq!(r.rattaches[0].salarie, "ALPHA");
     // Un NIR qu'on ne connait pas n'est jamais rattache au hasard.
-    assert_eq!(r["orphelins"].as_array().unwrap().len(), 2);
+    assert_eq!(r.orphelins, vec![releve("1234567890123", "1")]);
 }
 
 // ------------------------------------------------------- bilans de depot
@@ -78,36 +71,35 @@ fn ban() -> String {
 
 #[test]
 fn un_certificat_de_conformite() {
-    let b = bilan_d_octets(cco().as_bytes());
-    assert_eq!(b["type_rapport"], "CCO");
-    assert_eq!(b["essai_reel"], "01");
-    assert_eq!(b["etat_declaration"], "OK");
-    assert_eq!(b["conformite"], "OK");
-    assert_eq!(b["certificat"], "CERTIFIE");
-    assert_eq!(b["mois"], "2026-08");
-    assert_eq!((b["salaries"].as_str(), b["contrats"].as_str()), (Some("3"), Some("4")));
+    let b = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
+    assert_eq!(b.type_rapport, "CCO");
+    assert_eq!(b.essai_reel.as_deref(), Some("01"));
+    assert_eq!(b.etat_declaration.as_deref(), Some("OK"));
+    assert_eq!(b.conformite.as_deref(), Some("OK"));
+    assert_eq!(b.certificat.as_deref(), Some("CERTIFIE"));
+    assert_eq!(b.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
+    assert_eq!((b.salaries.as_deref(), b.contrats.as_deref()), (Some("3"), Some("4")));
 }
 
 #[test]
 fn le_bilan_de_declaration_l_emporte_sur_l_accuse() {
-    let a = bilan_d_octets(aee().as_bytes());
-    let c = bilan_d_octets(cco().as_bytes());
+    let a = bilan_d_octets(aee().as_bytes()).unwrap().unwrap();
+    let c = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
     // Un accuse ne dit ni le mois ni le verdict de la declaration.
-    assert_eq!((a["etat_declaration"].as_str(), a["mois"].as_str()), (Some(""), Some("")));
+    assert_eq!((a.etat_declaration.as_deref(), a.mois), (None, None));
     for ordre in [[a.clone(), c.clone()], [c.clone(), a.clone()]] {
-        let f = fusionner_bilans(&ordre);
-        assert_eq!(f["type_rapport"], "CCO");
-        assert_eq!(f["etat_declaration"], "OK");
-        assert_eq!(f["mois"], "2026-08");
+        let f = fusionner_bilans(&ordre).unwrap();
+        assert_eq!(f.type_rapport, "CCO");
+        assert_eq!(f.etat_declaration.as_deref(), Some("OK"));
+        assert_eq!(f.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
     }
 }
 
 #[test]
 fn les_anomalies_en_codes_ne_gardent_ni_le_nom_ni_la_valeur() {
     let a = anomalies_codees_d_octets(ban().as_bytes()).unwrap();
-    assert_eq!(a[0]["code"], "CST-04");
-    assert_eq!(a[0]["rubrique"], "S21.G00.20.001");
-    let tout = Value::Array(a).to_string();
+    assert_eq!((a[0].code.as_str(), a[0].rubrique.as_str()), ("CST-04", "S21.G00.20.001"));
+    let tout = format!("{:?}", a);
     assert!(!tout.contains("FAVART") && !tout.contains("\"X\""), "{}", tout);
 }
 
@@ -179,7 +171,7 @@ fn les_attestations_d_une_archive_de_nature_46() {
     ]);
     let att = aer_spectacle(&a).unwrap();
     assert_eq!(att.len(), 2);
-    assert_eq!((att[0].periode.as_str(), att[0].qui.as_str()), ("2026-09", "DUPONT ALICE"));
+    assert_eq!((att[0].periode.as_deref(), att[0].qui.as_str()), (Some("2026-09"), "DUPONT ALICE"));
     assert_eq!(att[0].donnees, b"%PDF-un");
-    assert_eq!((att[1].periode.as_str(), att[1].qui.as_str()), ("2026-09", "MARTIN PAUL JEAN"));
+    assert_eq!((att[1].periode.as_deref(), att[1].qui.as_str()), (Some("2026-09"), "MARTIN PAUL JEAN"));
 }

@@ -15,14 +15,13 @@
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
-use documents::valeur::valeur_en_texte;
 use socle::echec::R;
 use socle::echec::erreur;
-use documents::valeur::vrai;
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
+use crate::retours::{Annonce, Depot};
 use socle::paris::{iso_de_naif, maintenant_naif};
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
@@ -37,53 +36,44 @@ fn horodatage_archive(local: i64) -> String {
 
 // -------------------------------------------------------------------- les pannes
 
-/// Une panne du transport : `ErreurApi` (son message et son `code`, 0 quand aucun statut), ou une autre
-/// exception que la releve ne rattrape pas.
+/// Une panne du transport : `Organisme` (son message et son `code`, le statut HTTP quand il y en a un), ou une autre
+/// panne que la releve ne rattrape pas.
 #[derive(Debug, Clone)]
 pub struct Panne {
-    pub classe: String,
+    pub classe: Classe,
     pub message: String,
-    pub code: i64,
+    pub code: Option<i64>,
 }
 
 impl Panne {
+    /// Une panne sans statut HTTP.
+    fn de(classe: Classe, message: String) -> Panne {
+        Panne { classe, message, code: None }
+    }
+
+    /// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
+    fn de_lecture(e: Echec) -> Panne {
+        let classe = match e.classe {
+            Some(c) => c,
+            None => Classe::Illisible,
+        };
+        Panne::de(classe, e.message)
+    }
+
     pub fn est_api(&self) -> bool {
-        self.classe == "ErreurApi" || self.classe == "DepotRefuse"
+        matches!(self.classe, Classe::Organisme | Classe::DepotRefuse)
     }
 
     /// La panne comme un refus de route : sa classe et sa phrase.
     pub fn en_echec(self) -> Echec {
-        Echec { classe: Some(classe_connue(&self.classe)), message: self.message }
+        Echec { classe: Some(self.classe), message: self.message }
     }
 }
 
-/// La classe d'une panne, rendue en `&'static str` pour `Echec` ; une classe inconnue devient `OSError`.
-fn classe_connue(c: &str) -> &'static str {
-    match c {
-        "ErreurApi" => "ErreurApi",
-        "DepotRefuse" => "DepotRefuse",
-        "ValueError" => "ValueError",
-        "FileNotFoundError" => "FileNotFoundError",
-        "PermissionError" => "PermissionError",
-        "TimeoutError" => "TimeoutError",
-        "URLError" => "URLError",
-        "RemoteDisconnected" => "RemoteDisconnected",
-        "IncompleteRead" => "IncompleteRead",
-        "HTTPException" => "HTTPException",
-        "UnicodeDecodeError" => "UnicodeDecodeError",
-        "JSONDecodeError" => "JSONDecodeError",
-        "AttributeError" => "AttributeError",
-        "TypeError" => "TypeError",
-        _ => "OSError",
-    }
-}
-
-/// La panne que le transport rend (`classe`, `erreur`, `code`).
-fn panne_de(v: Value) -> Panne {
-    Panne {
-        classe: v.get("classe").and_then(Value::as_str).unwrap_or("OSError").to_string(),
-        message: v.get("erreur").and_then(Value::as_str).unwrap_or("").to_string(),
-        code: v.get("code").and_then(Value::as_i64).unwrap_or(0),
+/// La panne que le transport rend : sa classe, sa phrase, son statut HTTP.
+impl From<crate::transport::EchecApi> for Panne {
+    fn from(e: crate::transport::EchecApi) -> Panne {
+        Panne { classe: e.classe, message: e.erreur, code: e.code }
     }
 }
 
@@ -130,7 +120,7 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
             "https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(Panne { classe: "ValueError".into(), message: format!("environnement inconnu : '{}'", autre), code: 0 }),
+        autre => return Err(Panne::de(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
     Ok(Adresses {
         authentification: auth.into(),
@@ -141,8 +131,8 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
     })
 }
 
-fn adresses_dpae(compte: &droit::fiche::ApiDpae) -> Adresses {
-    let service = compte.service.dite().filter(|s| !s.is_empty()).cloned();
+fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
+    let service = compte.and_then(|c| c.service.dite()).filter(|s| !s.is_empty()).cloned();
     // L'atelier seulement : un faux Urssaf local (`redirection`).
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DPAE) {
@@ -191,13 +181,14 @@ impl Client {
 
     /// `ClientDpae(ctx, majuscules, motdepasse)` : le compte Urssaf, qui n'est pas celui de la DSN.
     pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<String>) -> Client {
-        let compte = ctx.entreprise.api_dpae.dite().cloned().unwrap_or_default();
-        let siret = if compte.siret.texte().is_empty() { &ctx.entreprise.siret } else { &compte.siret }.texte().to_string();
+        // Sans compte DPAE dit, le declarant est l'entreprise, sans nom ni prenom, et le service n'est pas dit.
+        let compte = ctx.entreprise.api_dpae.dite();
+        let siret = compte.and_then(|c| c.siret.en_texte()).or_else(|| ctx.entreprise.siret.en_texte());
         Client {
-            adresses: adresses_dpae(&compte),
+            adresses: adresses_dpae(compte),
             jeton: None,
             expire_le: None,
-            declarant: crate::transport::Identite { siret, nom: compte.nom.texte().to_string(), prenom: compte.prenom.texte().to_string() },
+            declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
             motdepasse,
             variable: VARIABLE_MOTDEPASSE_DPAE,
             majuscules,
@@ -220,76 +211,75 @@ impl Client {
     /// `Client.authentifier` : ouvre une session. Le mot de passe ne survit pas a cet appel.
     pub fn authentifier(&mut self) -> Result<(), Panne> {
         let mdp = self.secret().map(|m| if self.majuscules { m.to_uppercase() } else { m });
-        let rep = crate::transport::authentifier(&crate::transport::Authentification {
+        let session = crate::transport::authentifier(&crate::transport::Authentification {
             url: &self.adresses.authentification,
             declarant: &self.declarant,
             motdepasse: mdp.as_deref(),
             variable: self.variable,
             service: self.adresses.service.as_deref(),
             jeton: self.jeton.as_deref(),
-        })
-        .map_err(panne_de)?;
-        self.jeton = rep.get("jeton").and_then(Value::as_str).map(str::to_string);
-        self.expire_le = rep.get("expire_le").and_then(Value::as_str).map(str::to_string);
+        })?;
+        self.jeton = Some(session.jeton);
+        self.expire_le = session.expire_le;
         Ok(())
     }
 
     pub fn assurer_session(&mut self) -> Result<(), Panne> {
-        // `if not self.jeton` : un jeton vide n'ouvre pas de session.
-        if self.jeton.as_deref().map_or(true, str::is_empty) {
+        // Un jeton vide n'ouvre pas de session.
+        if !self.jeton.as_deref().is_some_and(|j| !j.is_empty()) {
             self.authentifier()?;
         }
         Ok(())
     }
 
     fn appel(&self, url: &str) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
-        crate::transport::appeler(url, self.jeton.as_deref()).map_err(panne_de)
+        Ok(crate::transport::appeler(url, self.jeton.as_deref())?)
     }
 
     /// La consultation d'une plage (heures locales naives).
     fn consulter(&mut self, base: &str, debut: i64, fin: Option<i64>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
         let fin = fin.map(iso_de_naif);
-        crate::transport::consulter(base, self.jeton.as_deref(), &iso_de_naif(debut), fin.as_deref()).map_err(panne_de)
+        Ok(crate::transport::consulter(base, self.jeton.as_deref(), &iso_de_naif(debut), fin.as_deref())?)
     }
 
-    pub fn lister_retours(&mut self, debut: i64, fin: i64) -> Result<Vec<Value>, Panne> {
+    pub fn lister_retours(&mut self, debut: i64, fin: i64) -> Result<Vec<Annonce>, Panne> {
         let base = self.adresses.retours.clone();
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(|e| Panne { classe: e.classe.unwrap_or("ValueError").into(), message: e.message, code: 0 })
+        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
     }
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
-    pub fn lister_depots(&mut self, debut: i64, fin: i64) -> Result<Vec<Value>, Panne> {
+    pub fn lister_depots(&mut self, debut: i64, fin: i64) -> Result<Vec<Depot>, Panne> {
         let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_depots_d_octets(&brut).map_err(|e| Panne { classe: e.classe.unwrap_or("ValueError").into(), message: e.message, code: 0 })
+        crate::retours::liste_depots_d_octets(&brut).map_err(Panne::de_lecture)
     }
 
-    pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Value>, Panne> {
+    pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
         let (brut, _) = self.appel(&format!("{}{}", self.adresses.retours_flux, idflux))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(|e| Panne { classe: e.classe.unwrap_or("ValueError").into(), message: e.message, code: 0 })
+        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
     }
 
-    /// Recupere un retour : (contenu brut, type de contenu).
-    pub fn telecharger(&mut self, url: &str) -> Result<(Vec<u8>, String), Panne> {
+    /// Recupere un retour : (contenu brut, type de contenu, s'il est dit).
+    pub fn telecharger(&mut self, url: &str) -> Result<(Vec<u8>, Option<String>), Panne> {
         self.assurer_session()?;
         let (brut, entetes) = self.appel(url)?;
-        let ctype = crate::transport::entete(&entetes, "Content-Type").unwrap_or("").to_string();
+        let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
         Ok((brut, ctype))
     }
 
     /// L'envoi du guide (text/plain, gzip, jeton DSNLogin) des octets deja prepares. `forme` : `dsn` (`DepotRefuse`)
-    /// ou `dpae` (`ErreurApi`).
-    pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, String), Panne> {
+    /// ou `dpae` (`Organisme`). Rend la reponse et son type de contenu, s'il est dit.
+    pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
-        let jeton = self.jeton.clone().unwrap_or_default();
-        let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT).map_err(panne_de)?;
+        let jeton = self.jeton.clone().ok_or_else(|| Panne::de(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
+        let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
         let texte = String::from_utf8_lossy(&brut).trim_matches(socle::texte::blanc).to_string();
-        let ctype = crate::transport::entete(&entetes, "Content-Type").unwrap_or("").to_string();
+        let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
         Ok((texte, ctype))
     }
 }
@@ -298,15 +288,15 @@ impl Client {
 fn gzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
     use std::io::Write;
     let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(donnees).map_err(|x| Panne { classe: "OSError".into(), message: x.to_string(), code: 0 })?;
-    e.finish().map_err(|x| Panne { classe: "OSError".into(), message: x.to_string(), code: 0 })
+    e.write_all(donnees).map_err(|x| Panne::de(Classe::Disque, x.to_string()))?;
+    e.finish().map_err(|x| Panne::de(Classe::Disque, x.to_string()))
 }
 
 // ------------------------------------------------------------------ la releve
 
 /// Un retour telecharge et archive.
 pub struct RetourArchive {
-    pub retour: Value,
+    pub retour: Annonce,
     pub chemin: PathBuf,
     pub contenu: Vec<u8>,
 }
@@ -314,54 +304,117 @@ pub struct RetourArchive {
 /// `ReleveRetours`.
 #[derive(Default)]
 pub struct Releve {
-    pub trouves: Vec<Value>,
-    pub nouveaux: Vec<Value>,
+    pub trouves: Vec<Annonce>,
+    pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
-    pub session_jusqu_a: String,
+    /// L'expiration de la session ouverte, quand la plate-forme la dit.
+    pub session_jusqu_a: Option<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: i64,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
     pub a_faire: Vec<String>,
 }
 
-fn cle_de_retour(r: &Value) -> [Value; 3] {
-    ["flux", "nature", "publication"].map(|c| r.get(c).cloned().unwrap_or(Value::Null))
+/// La date de publication d'un retour (`AAAAMMJJ…`), en JJ/MM/AAAA ; aucune quand il ne la dit pas.
+pub fn date_publication(r: &Annonce) -> Option<String> {
+    let c: Vec<char> = r.publication.as_deref()?.chars().collect();
+    (c.len() >= 8).then(|| format!("{}{}/{}{}/{}", c[6], c[7], c[4], c[5], c[..4].iter().collect::<String>()))
 }
 
-/// La date de publication d'un retour (`AAAAMMJJ…`), en JJ/MM/AAAA ; « ? » quand il ne la dit pas.
-pub fn date_publication(r: &Value) -> String {
-    let p = r.get("publication").filter(|v| !v.is_null()).map(valeur_en_texte).unwrap_or_default();
-    let c: Vec<char> = p.chars().collect();
-    if c.len() >= 8 {
-        format!("{}{}/{}{}/{}", c[6], c[7], c[4], c[5], c[..4].iter().collect::<String>())
-    } else {
-        "?".into()
+// ------------------------------------------------------------------ l'archive des retours
+
+/// Le canal de la DSN, celui de net-entreprises : son archive est `retours/` meme.
+pub const CANAL_DSN: &str = "";
+
+/// `retours/` (la DSN) ou `retours/<canal>/`, cree.
+fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
+    let mut p = racine.join(crate::retours::RETOURS);
+    if !canal.is_empty() {
+        p = p.join(canal);
     }
+    std::fs::create_dir_all(&p).map_err(|e| crate::etats::erreur_io(&e, &p))?;
+    Ok(p)
 }
 
-/// La piece telle quelle, nommee `AAAAMMJJ-hhmmss_natureN_flux.ext`.
-fn archiver(ctx: &Contexte, retour: &Value, contenu: &[u8], ctype: &str, canal: &str) -> Result<PathBuf, Panne> {
-    crate::transport::archiver(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(maintenant_naif())).map_err(panne_de)
+/// La piece telle quelle, nommee `AAAAMMJJ-hhmmss_natureN_flux.ext` ; l'heure est celle de la publication, ou
+/// `maintenant` (`AAAAMMJJ-hhmmss`) quand le retour n'en porte pas ; `sansflux` quand il ne dit pas son flux.
+/// L'extension suit le type de contenu, sinon le contenu (`<` en tete : du XML). Une piece deja archivee sous ce nom
+/// n'est pas reecrite.
+pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, maintenant: &str) -> R<PathBuf> {
+    let dit = |m: &str| ctype.is_some_and(|c| c.contains(m));
+    let ext = if dit("pdf") {
+        ".pdf"
+    } else {
+        let tete = &contenu[..contenu.len().min(200)];
+        let utile = tete.iter().position(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)).map(|i| &tete[i..]);
+        if dit("xml") || utile.is_some_and(|u| u.starts_with(b"<")) {
+            ".xml"
+        } else {
+            ".txt"
+        }
+    };
+    let publication: Vec<char> = retour.publication.iter().flat_map(|p| p.chars()).take(14).collect();
+    let horo = if publication.len() == 14 {
+        format!("{}-{}", publication[..8].iter().collect::<String>(), publication[8..].iter().collect::<String>())
+    } else {
+        maintenant.to_string()
+    };
+    let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
+        Some(f) => f,
+        None => "sansflux",
+    };
+    let nom = format!("{}_nature{}_{}{}", horo, retour.nature, flux, ext);
+    let dest = dossier_archive(racine, canal)?.join(nom);
+    if !dest.exists() {
+        std::fs::write(&dest, contenu).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
+    }
+    Ok(dest)
 }
 
-/// Ce qui a ete vu, au journal du canal.
-fn noter_vus(ctx: &Contexte, entrees: &[Value], canal: &str) -> Result<(), Panne> {
-    crate::transport::noter_vus(&ctx.racine, canal, entrees).map_err(panne_de)
+/// La piece d'un retour, archivee a l'heure de la releve.
+fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: &str) -> R<PathBuf> {
+    archiver_retour(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(maintenant_naif()))
 }
 
-fn deja_vus(ctx: &Contexte, canal: &str) -> Result<Vec<[Value; 3]>, Panne> {
-    crate::transport::deja_vus(&ctx.racine, canal).map_err(panne_de)
+/// Le journal des retours vus sur le canal.
+fn journal_des_vus(ctx: &Contexte, canal: &str) -> R<PathBuf> {
+    Ok(dossier_archive(&ctx.racine, canal)?.join("journal.json"))
 }
 
-fn egal_cle(a: &[Value; 3], b: &[Value; 3]) -> bool {
-    a.iter().zip(b).all(|(x, y)| documents::valeur::valeurs_egales(x, y))
+/// Les retours deja vus, tels que le journal du canal les garde (absent : aucun).
+fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
+    if !p.exists() {
+        return Ok(Vec::new());
+    }
+    socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.").map_err(Echec::from)
 }
 
-/// La liste est-elle deja vue ? Les trois champs, comme `(flux, nature, publication) in connus`.
-fn est_connu(connus: &[[Value; 3]], r: &Value) -> bool {
-    let k = cle_de_retour(r);
-    connus.iter().any(|c| egal_cle(c, &k))
+/// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
+fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
+    let p = journal_des_vus(ctx, canal)?;
+    let mut deja = lire_vus(&p)?;
+    let connus: Vec<CleDeRetour> = deja.iter().map(crate::etats::cle_du_contenu).collect();
+    for e in entrees {
+        if !connus.contains(&crate::etats::cle_du_contenu(e)) {
+            deja.push(e.clone());
+        }
+    }
+    socle::ecriture::ecrire_json(&p, &deja, 2).map_err(Echec::from)
+}
+
+/// La cle d'un retour : son flux, sa nature, sa publication.
+type CleDeRetour = crate::etats::CleDuContenu;
+
+/// Les cles des retours deja vus sur le canal.
+fn deja_vus(ctx: &Contexte, canal: &str) -> R<Vec<CleDeRetour>> {
+    Ok(lire_vus(&journal_des_vus(ctx, canal)?)?.iter().map(crate::etats::cle_du_contenu).collect())
+}
+
+/// Le retour est-il deja vu ? Ses trois champs, comme `(flux, nature, publication) in connus`.
+fn est_connu(connus: &[CleDeRetour], r: &Annonce) -> bool {
+    let k = crate::etats::cle_du_contenu(r);
+    connus.contains(&k)
 }
 
 fn en_echec(p: Panne) -> Echec {
@@ -383,7 +436,7 @@ fn tranches(debut: i64, fin: i64) -> Vec<(i64, i64)> {
 /// depots completes. Ne touche a aucune autre ligne : un vrai depot (flux sans le prefixe) garde ses vrais retours. Les
 /// attestations France Travail jouees s'archivent dans `retours/` comme les vraies, et vont dans les suites, a ranger.
 pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
-    let mut a_archiver: Vec<(Value, Vec<u8>)> = Vec::new();
+    let mut a_archiver: Vec<(Annonce, Vec<u8>)> = Vec::new();
     // Ce que les organismes rendent de plus (refus, taux du PAS, effectif) : archive puis range par le meme chemin
     // qu'un retour reel (`rattacher_retours_avec_contenus`), qui en lit le verdict.
     let mut pieces: Vec<crate::organismes_simules::Piece> = Vec::new();
@@ -433,9 +486,19 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                 // L'AER : seulement quand elle est due, et avec sa piece, comme France Travail la publie.
                 if let Some(archive) = aer_jouee(ctx, l)? {
                     let r46 = base("46", None, "Attestation employeur rematerialisee (compagnie fictive)");
-                    let mut a = serde_json::to_value(&r46).map_err(|e| Echec::from(e.to_string()))?;
-                    a["flux"] = json!(flux);
-                    a_archiver.push((a, archive));
+                    let annonce = Annonce {
+                        publication: r46.publication.clone(),
+                        production: None,
+                        ops: None,
+                        delegataire: None,
+                        nature: r46.nature.clone(),
+                        statut: r46.statut.clone(),
+                        id: None,
+                        url: None,
+                        libelle: Some(r46.libelle.clone()),
+                        flux: Some(flux.clone()),
+                    };
+                    a_archiver.push((annonce, archive));
                     retours.push(r46);
                 }
             }
@@ -448,25 +511,27 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             faits += 1;
         }
     }
-    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur("OSError", m))?;
+    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur(Classe::Disque, m))?;
     crate::organismes_simules::garder(&ctx.racine, &avant, &memoire)?;
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
     for (retour, archive) in &a_archiver {
-        suites.aer.push(archiver(ctx, retour, archive, "application/zip", "").map_err(en_echec)?);
+        suites.aer.push(archiver(ctx, retour, archive, Some("application/zip"), "")?);
     }
     if !pieces.is_empty() {
-        let mut contenus: Vec<((String, String, String), Vec<u8>)> = Vec::new();
+        let mut contenus: Vec<(crate::etats::CleDuContenu, Vec<u8>)> = Vec::new();
+        let mut decrits: Vec<Annonce> = Vec::new();
         for x in &pieces {
-            let chemin = archiver(ctx, &x.retour, &x.contenu, "application/xml", "").map_err(en_echec)?;
-            if x.retour.get("nature").and_then(Value::as_str) == Some(crate::retours::NATURE_TAUX_PAS) {
-                suites.taux_pas.push((x.retour.clone(), chemin));
-            } else if x.retour.get("nature").and_then(Value::as_str) == Some(crate::retours::NATURE_TAUX_ATMP) {
-                suites.taux_atmp.push((x.retour.clone(), chemin));
+            let retour = &x.retour;
+            let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
+            if retour.nature == crate::retours::NATURE_TAUX_PAS {
+                suites.taux_pas.push((retour.clone(), chemin));
+            } else if retour.nature == crate::retours::NATURE_TAUX_ATMP {
+                suites.taux_atmp.push((retour.clone(), chemin));
             }
-            contenus.push((crate::etats::cle_du_contenu(&x.retour), x.contenu.clone()));
+            contenus.push((crate::etats::cle_du_contenu(&retour), x.contenu.clone()));
+            decrits.push(retour.clone());
         }
-        let decrits: Vec<Value> = pieces.into_iter().map(|x| x.retour).collect();
         suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &decrits, &contenus))?;
         // L'EFFECTIF S'ECRIT SEUL, comme a la releve reelle.
         reconstruire_effectifs(&ctx.racine)?;
@@ -481,13 +546,17 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if !l.reel() {
         return Ok(None);
     }
-    let nature = l.nature_dsn();
-    if !nature.is_empty() && nature != "01" {
+    if l.nature_dsn().is_some_and(|n| !n.is_empty() && n != "01") {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois().map(|m| m.to_string()), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
     let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(&mois).join(&fichier) };
-    let Ok(octets) = std::fs::read(&chemin) else { return Ok(None) };
+    // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
+    let octets = match std::fs::read(&chemin) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))),
+    };
     crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui).map_err(Echec::from)
 }
 
@@ -523,14 +592,14 @@ pub fn relever_retours(
         return Ok(releve);
     };
     match client.authentifier() {
-        Ok(()) => releve.session_jusqu_a = client.expire_le.clone().unwrap_or_default(),
+        Ok(()) => releve.session_jusqu_a = client.expire_le.clone(),
         Err(p) if p.est_api() => {
             releve.incidents.push(format!("Authentification refusee : {}", p.message));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
     }
-    let connus = deja_vus(ctx, canal).map_err(en_echec)?;
+    let connus = deja_vus(ctx, canal)?;
     // UN 404 SUR UNE TRANCHE VEUT DIRE << RIEN SUR CETTE TRANCHE >> ; tout autre code arrete : un 401 ne
     // s'ameliorera pas au jour suivant.
     for (t0, t1) in tranches(debut, fin) {
@@ -544,7 +613,7 @@ pub fn relever_retours(
                 }
             }
             Err(p) if p.est_api() => {
-                if p.code == 404 {
+                if p.code == Some(404) {
                     continue;
                 }
                 releve.incidents.push(format!("Consultation interrompue : {}", p.message));
@@ -558,32 +627,31 @@ pub fn relever_retours(
     }
 
     // UN RETOUR RATE N'EST PAS UN RETOUR VU : un echec reste NEUF, et se retente au releve suivant.
-    let mut rates: Vec<Value> = Vec::new();
-    let a_telecharger: Vec<Value> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
+    let mut rates: Vec<Annonce> = Vec::new();
+    let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
     for r in a_telecharger {
-        let Some(url) = r.get("url").filter(|u| vrai(u)).map(valeur_en_texte) else { continue };
+        let Some(url) = r.url.clone().filter(|u| !u.is_empty()) else { continue };
         match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &r, &contenu, &ctype, canal).map_err(en_echec)?;
+                let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.get("nature").map(valeur_en_texte).as_deref() == Some(crate::retours::NATURE_TAUX_ATMP) {
+                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_ATMP {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.get("nature").map(valeur_en_texte).as_deref() == Some("11") {
-                    let flux = r.get("flux").filter(|f| vrai(f)).map(valeur_en_texte).unwrap_or_default();
-                    for d in crate::retours::declarations_du_bilan(&contenu) {
-                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, &flux));
+                if canal.is_empty() && r.nature == "11" {
+                    for d in crate::retours::declarations_du_bilan(&contenu)? {
+                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_deref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.get("nature").map(valeur_en_texte).as_deref() == Some(crate::retours::NATURE_TAUX_PAS) {
+                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_PAS {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
             Err(p) if p.est_api() => {
-                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.get("nature").map(valeur_en_texte).unwrap_or_else(|| "None".into()), p.message));
+                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature, p.message));
                 rates.push(r);
             }
             Err(p) => return Err(en_echec(p)),
@@ -596,8 +664,8 @@ pub fn relever_retours(
     }
 
     if !releve.trouves.is_empty() {
-        let vus: Vec<Value> = releve.trouves.iter().filter(|r| !rates.contains(r)).cloned().collect();
-        noter_vus(ctx, &vus, canal).map_err(en_echec)?;
+        let vus: Vec<Annonce> = releve.trouves.iter().filter(|r| !rates.contains(r)).cloned().collect();
+        noter_vus(ctx, &vus, canal)?;
         // Un depot n'est fini que quand sa reponse est la : chaque retour se range en face du depot qui l'a
         // provoque -- par le flux, et par rien d'autre.
         let contenus: Vec<_> = releve.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
@@ -617,7 +685,7 @@ pub fn relever_retours(
             releve
                 .archives
                 .iter()
-                .filter(|a| a.retour.get("nature").map(valeur_en_texte).as_deref() == Some(crate::retours::NATURE_AER_SPECTACLE))
+                .filter(|a| a.retour.nature == crate::retours::NATURE_AER_SPECTACLE)
                 .map(|a| a.chemin.clone()),
         );
     }
@@ -634,7 +702,7 @@ pub fn relever_retours_dpae(
     debut: i64,
     fin: i64,
     tout: bool,
-    flux: &str,
+    flux: Option<&str>,
     client: Option<Client>,
     suites: &mut Suites,
 ) -> R<Releve> {
@@ -652,9 +720,9 @@ pub fn relever_retours_dpae(
         r.incidents.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
-    if flux.is_empty() {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), "dpae", suites);
-    }
+    let Some(flux) = flux else {
+        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
+    };
     let mut r = Releve::default();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
     match trouves {
@@ -666,18 +734,18 @@ pub fn relever_retours_dpae(
         Err(p) => return Err(en_echec(p)),
     }
     for x in r.trouves.clone() {
-        let Some(url) = x.get("url").filter(|u| vrai(u)).map(valeur_en_texte) else { continue };
+        let Some(url) = x.url.clone().filter(|u| !u.is_empty()) else { continue };
         match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &x, &contenu, &ctype, "dpae").map_err(en_echec)?;
+                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.get("nature").map(valeur_en_texte).unwrap_or_else(|| "None".into()), p.message)),
+            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature, p.message)),
             Err(p) => return Err(en_echec(p)),
         }
     }
     if !r.trouves.is_empty() {
-        noter_vus(ctx, &r.trouves, "dpae").map_err(en_echec)?;
+        noter_vus(ctx, &r.trouves, "dpae")?;
         // Le chemin par flux accroche aussi ce qu'il trouve au journal.
         let contenus: Vec<_> = r.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         r.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &r.trouves, &contenus))?;
@@ -696,53 +764,91 @@ pub fn derniere_journee() -> (i64, i64) {
 /// `effectif.lire_crm118` : les effectifs d'un retour de nature 118 (code, valeur, periode, calcul), les parametres
 /// (`RO.B008`) que lit le lecteur des comptes rendus NEOReS (`retours::lire_neores`, d'apres le cahier technique NEOReS
 /// 2026.1.2, `atelier/reference/sources/neores/`) ; un XML qui ne se lit pas ne dit rien.
-fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<(String, f64, String, String, String)>>> {
-    let Some(crm) = crate::retours::lire_neores(contenu) else { return Ok(None) };
+fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
+    let Some(crm) = crate::retours::lire_neores(contenu)? else { return Ok(None) };
     let mut out = Vec::new();
-    for p in crm["parametres"].as_array().into_iter().flatten() {
-        let t = |k: &str| p[k].as_str().unwrap_or("").to_string();
-        let (code, valeur) = (t("type"), t("valeur"));
-        if code.is_empty() || valeur.is_empty() {
-            continue;
-        }
-        let v: f64 = valeur.parse().map_err(|_| erreur("ValueError", format!("nombre illisible : '{}'", valeur)))?;
-        out.push((code, v, t("effet"), t("fin"), t("calcule_le")));
+    for p in crm.parametres {
+        let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
+        let v: f64 = valeur.parse().map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
 }
 
+/// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
+struct Mesure118 {
+    code: String,
+    valeur: f64,
+    debut: Option<String>,
+    fin: Option<String>,
+    calcule_le: Option<String>,
+}
+
 /// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
 const A01: &str = "A01";
-/// La marque d'un effectif que la compagnie a dit : un 118 de la meme annee le remplace.
-const DIT_LE: &str = "dit_le";
+
+/// Ce que `config/effectifs.json` dit de lui-meme.
+const QUOI_EFFECTIFS: &str = "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.";
+
+/// LE FICHIER DES EFFECTIFS (`config/effectifs.json`) : par annee civile et par code, l'effectif.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FichierEffectifs {
+    quoi: String,
+    annees: Annees,
+}
+
+/// Les effectifs par annee, puis par code.
+type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<String, EffectifEcrit>>;
+
+/// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
+/// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EffectifEcrit {
+    valeur: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    calcule_le: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dit_le: Option<String>,
+}
 
 fn chemin_des_effectifs(racine: &Path) -> PathBuf {
     racine.join(droit::contexte::EFFECTIFS)
 }
 
-fn effectifs_lus(racine: &Path) -> Value {
-    std::fs::read_to_string(chemin_des_effectifs(racine)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}))
+/// `config/effectifs.json` lu ; aucun s'il n'existe pas.
+fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
+    let p = chemin_des_effectifs(racine);
+    if !p.exists() {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
-fn ecrire_effectifs(racine: &Path, existant: &Value, annees: std::collections::BTreeMap<String, Map<String, Value>>) -> R<()> {
-    let donnees = json!({
-        "quoi": "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.",
-        "annees": Value::Object(annees.into_iter().map(|(an, codes)| (an, Value::Object(codes))).collect()),
-    });
-    if *existant != donnees {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur("OSError", m))?;
+fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
+    let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
+    if existant != Some(&donnees) {
+        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur(Classe::Disque, m))?;
     }
     Ok(())
 }
 
+/// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
+pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
+    let an = an.to_string();
+    Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
+}
+
 /// Les effectifs que la compagnie a dits (`dit_le`), par annee.
-fn dits(existant: &Value) -> std::collections::BTreeMap<String, Map<String, Value>> {
-    existant["annees"]
-        .as_object()
+fn dits(existant: Option<&FichierEffectifs>) -> Vec<(String, EffectifEcrit)> {
+    existant
         .into_iter()
-        .flatten()
-        .filter_map(|(an, c)| c.get(A01).filter(|a| a.get(DIT_LE).is_some()).map(|a| (an.clone(), Map::from_iter([(A01.to_string(), a.clone())]))))
+        .flat_map(|f| f.annees.iter())
+        .filter_map(|(an, c)| c.get(A01).filter(|a| a.dit_le.is_some()).map(|a| (an.clone(), a.clone())))
         .collect()
 }
 
@@ -751,43 +857,46 @@ fn dits(existant: &Value) -> std::collections::BTreeMap<String, Map<String, Valu
 /// Ne touche pas au fichier s'il n'y a aucun 118.
 pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let dossier = racine.join(crate::retours::RETOURS);
-    let mut noms: Vec<String> = match std::fs::read_dir(&dossier) {
-        Ok(l) => l
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.contains("_nature118_") && n.ends_with(".xml"))
-            .collect(),
-        Err(_) => Vec::new(),
+    // Sans dossier des retours, aucun 118 n'est arrive.
+    let lecture = match std::fs::read_dir(&dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
     };
+    let mut noms: Vec<String> = Vec::new();
+    for e in lecture {
+        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
+            noms.push(nom);
+        }
+    }
     noms.sort();
-    let mut annees: std::collections::BTreeMap<String, Map<String, Value>> = std::collections::BTreeMap::new();
+    let mut annees = Annees::new();
     for nom in &noms {
         let p = dossier.join(nom);
-        let octets = std::fs::read(&p).map_err(|e| erreur("OSError", socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
-        for (code, valeur, debut, fin, calcule_le) in mesures {
-            let ref_an = if debut.is_empty() { &fin } else { &debut };
+        for m in mesures {
+            let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };
             let an: String = ref_an.chars().take(4).collect();
             if an.is_empty() || !an.chars().all(|c| c.is_ascii_digit()) {
                 continue;
             }
             let codes = annees.entry(an).or_default();
-            if let Some(deja) = codes.get(&code) {
-                if deja.get("calcule_le").and_then(Value::as_str).unwrap_or("") > calcule_le.as_str() {
-                    continue;
-                }
+            if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
+                continue;
             }
-            codes.insert(code, json!({"valeur": valeur, "calcule_le": calcule_le, "source": format!("retours/{}", nom)}));
+            codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(format!("retours/{}", nom)), dit_le: None });
         }
     }
     if annees.is_empty() {
         return Ok(());
     }
-    let existant = effectifs_lus(racine);
-    for (an, dit) in dits(&existant) {
-        annees.entry(an).or_default().entry(A01.to_string()).or_insert_with(|| dit[A01].clone());
+    let existant = effectifs_lus(racine)?;
+    for (an, dit) in dits(existant.as_ref()) {
+        annees.entry(an).or_default().entry(A01.to_string()).or_insert(dit);
     }
-    ecrire_effectifs(racine, &existant, annees)
+    ecrire_effectifs(racine, existant.as_ref(), annees)
 }
 
 /// L'EFFECTIF QUE LA COMPAGNIE DIT POUR L'ANNEE `an` (l'effectif annuel moyen de l'annee civile, L. 130-1, I, CSS ;
@@ -795,18 +904,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
 pub fn poser_effectif(racine: &Path, an: i32, valeur: f64, le: &str) -> R<bool> {
-    let existant = effectifs_lus(racine);
-    let mut annees: std::collections::BTreeMap<String, Map<String, Value>> =
-        existant["annees"].as_object().into_iter().flatten().filter_map(|(a, c)| Some((a.clone(), c.as_object()?.clone()))).collect();
+    let existant = effectifs_lus(racine)?;
+    let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
     let codes = annees.entry(an.to_string()).or_default();
-    if codes.get(A01).is_some_and(|a| a.get(DIT_LE).is_none()) {
+    if codes.get(A01).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }
-    codes.insert(A01.to_string(), json!({"valeur": valeur, DIT_LE: le}));
-    if let Some(dossier) = chemin_des_effectifs(racine).parent() {
-        std::fs::create_dir_all(dossier).map_err(|e| erreur("OSError", socle::echec::du_disque(&dossier, &e)))?;
-    }
-    ecrire_effectifs(racine, &existant, annees)?;
+    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le.to_string()) });
+    ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
 }
 

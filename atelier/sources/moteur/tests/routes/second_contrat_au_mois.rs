@@ -37,6 +37,6 @@ fn une_carte_neuve_ne_refait_pas_le_cdi_qui_court() {
         json!({"mois": "2026-02", "carte": {"ecrite": neuve}, "changements": [{"case": "debut", "valeur": "2026-01-05"}]}),
         "2026-02-02",
     ));
-    assert_eq!(classe, "ErreurOperation", "{}", phrase);
+    assert_eq!(classe, "Refuse", "{}", phrase);
     assert!(ecrits() == avant, "le refus a ecrit : {}", phrase);
 }

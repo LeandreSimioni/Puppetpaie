@@ -1,7 +1,7 @@
 //! Le moteur de PuppetPaie au-dessus des envois (`envois`), des documents et des declarations : la ligne de commande
 //! `moteur`, les routes de l'interface, la compagnie (`compagnie`), l'import (`import`) et l'atelier (`atelier`).
 //!
-//! Les fichiers de donnees se lisent en `serde_json::Value` : une cle inconnue survit, rien a migrer.
+//! Le JSON ne se touche qu'a la porte (`routes::enveloppe`) : sous elle, chaque donnee se lit et s'ecrit en sa forme.
 
 pub mod apercu_dsn;
 #[macro_use]

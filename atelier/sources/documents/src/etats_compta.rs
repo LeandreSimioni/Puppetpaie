@@ -12,19 +12,18 @@ use droit::fiche::Lue as _;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map, Value};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
-use crate::valeur::valeur_en_texte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
-use crate::valeur::vrai;
+use crate::plan_comptable::{Logiciel, Plan};
 use socle::texte::euros;
 use socle::num::{add, div, eur, eur2, mul, sub, zero2, Decimal};
 use crate::tableaux_export::{
-    col_m, col_n, col_t, col_x, ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, Ligne, Section, Tableau, Val,
+    col_m, col_n, col_t, col_x, ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -47,16 +46,9 @@ const SOURCE_QUADRA: &str = "Quadra : Cegid, « Fichier d'entrée ASCII dans Qua
 
 const ESSAI: &str = " Faire un premier import d'essai sur un dossier de test avant de s'y fier.";
 
-/// `LOGICIELS[logiciel]` : (nom, format, pourquoi), lus dans `exports_tables.json`.
-fn logiciel_connu(logiciel: &str) -> Option<(String, String, String)> {
-    let t = crate::plan_comptable::tables();
-    t["logiciels"].as_array()?.iter().find(|l| l["logiciel"].as_str() == Some(logiciel)).map(|l| {
-        (
-            l["nom"].as_str().unwrap_or("").to_string(),
-            l["format"].as_str().unwrap_or("").to_string(),
-            l["pourquoi"].as_str().unwrap_or("").to_string(),
-        )
-    })
+/// `LOGICIELS[logiciel]`, lu dans `exports_tables.json`.
+fn logiciel_connu(logiciel: &str) -> Option<&'static Logiciel> {
+    crate::plan_comptable::tables().logiciels.iter().find(|l| l.logiciel == logiciel)
 }
 
 /// Les logiciels connus, dans l'ordre de `LOGICIELS`.
@@ -106,12 +98,23 @@ fn tenir(logiciel: &str, quoi: &str, v: &str, n: usize) -> R<String> {
     let c = t.chars().count();
     if c > n {
         let (porte, conseil) = ce_que_porte(quoi);
+        /// Ce que le refus porte a part : la zone, et le fichier ou la raccourcir.
+        #[derive(Serialize)]
+        struct Zone<'a> {
+            zone: &'a str,
+            fichier: &'a str,
+        }
         return Err(refus(socle::echec::avec(
             format!("{} : « {} » a {} caractères, {} en prend {} au plus dans ce logiciel. {}.", logiciel, t, c, porte, n, conseil),
-            serde_json::json!({"zone": quoi, "fichier": crate::plan_comptable::PLAN_COMPTABLE}),
+            Zone { zone: quoi, fichier: crate::plan_comptable::PLAN_COMPTABLE },
         )));
     }
     Ok(t)
+}
+
+/// Une zone que rien ne remplit s'ecrit vide.
+fn ou_vide(v: Option<String>) -> String {
+    v.into_iter().collect()
 }
 
 /// Une zone a largeur fixe (`tenir`), cadree a gauche (`g`) ou a droite (`d`).
@@ -122,14 +125,6 @@ fn zone(logiciel: &str, quoi: &str, v: &str, n: usize, cote: char) -> R<String> 
 /// `"%.2f" % v` d'un montant a deux decimales.
 fn deux(v: Decimal) -> String {
     eur2(v).to_string()
-}
-
-/// Une valeur JSON en texte, vide si elle manque ou est vide.
-fn texte_ou_vide(v: Option<&Value>) -> String {
-    match v {
-        Some(x) if vrai(x) => valeur_en_texte(x),
-        _ => String::new(),
-    }
 }
 
 /// Non vide, que des chiffres.
@@ -189,85 +184,61 @@ fn cp1252(lignes: &[String]) -> Vec<u8> {
 // ------------------------------------------------------------------ les ecritures
 
 /// Le libelle d'un compte, lu dans le plan : tiers, brut, net, PAS, retenues, puis les charges
-/// (le premier libelle de ligne qui le porte).
-fn libelle_compte(plan: &Map<String, Value>, compte: &str) -> R<String> {
-    if let Some(Value::Object(tiers)) = plan.get("tiers").filter(|t| vrai(t)) {
-        if let Some(v) = tiers.get(compte) {
-            return Ok(valeur_en_texte(v));
-        }
+/// (le premier libelle de ligne qui le porte) ; aucun pour un compte que le plan ne nomme pas.
+fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
+    if let Some(n) = plan.tiers.get(compte) {
+        return Some(n.clone());
     }
-    for k in ["brut", "net", "pas"] {
-        let vide = Value::Object(Map::new());
-        let x = plan.get(k).unwrap_or(&vide);
-        let c = x.get("compte").map(valeur_en_texte).unwrap_or_else(|| "None".to_string());
+    for (c, libelle) in [(&plan.brut.compte, &plan.brut.libelle), (&plan.net.compte, &plan.net.libelle), (&plan.pas.compte, &plan.pas.libelle)] {
         if c == compte {
-            let l = x.get("libelle").ok_or_else(|| erreur("KeyError", socle::fichiers::absent("libelle")))?;
-            return Ok(valeur_en_texte(l));
+            return Some(libelle.clone());
         }
     }
-    if let Some(Value::Object(retenues)) = plan.get("retenues") {
-        for regle in retenues.values() {
-            if regle.get("compte").map(valeur_en_texte).as_deref() == Some(compte) {
-                return Ok(texte_brut(regle.get("libelle")));
-            }
-        }
+    if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == compte) {
+        return regle.libelle.clone();
     }
-    if let Some(Value::Object(lignes)) = plan.get("lignes") {
-        for regle in lignes.values() {
-            let charge = regle.get("charge").map(valeur_en_texte).unwrap_or_else(|| "None".to_string());
-            if charge == compte {
-                let nom = match compte {
-                    "645100" => Some("Cotisations Urssaf"),
-                    "645300" => Some("Cotisations retraite et prévoyance"),
-                    "645400" => Some("Cotisations assurance chômage"),
-                    "645500" => Some("Cotisations Congés Spectacles"),
-                    "645800" => Some("Autres charges sociales"),
-                    _ => None,
-                };
-                return Ok(match nom {
-                    Some(n) => n.to_string(),
-                    None => texte_brut(regle.get("libelle")),
-                });
-            }
-        }
-    }
-    Ok(String::new())
-}
-
-/// Le texte d'une valeur, vide si elle manque.
-fn texte_brut(v: Option<&Value>) -> String {
-    v.map(valeur_en_texte).unwrap_or_default()
+    let (_, regle) = plan.lignes.iter().find(|(_, r)| r.charge == compte)?;
+    Some(match compte {
+        "645100" => "Cotisations Urssaf".to_string(),
+        "645300" => "Cotisations retraite et prévoyance".to_string(),
+        "645400" => "Cotisations assurance chômage".to_string(),
+        "645500" => "Cotisations Congés Spectacles".to_string(),
+        "645800" => "Autres charges sociales".to_string(),
+        _ => return regle.libelle.clone(),
+    })
 }
 
 /// Le sous-compte individuel du salarie quand le plan en tient un, le compte general sinon.
 fn compte_de(e: &Ecriture) -> String {
-    if e.auxiliaire.is_empty() {
-        e.compte.clone()
-    } else {
-        e.auxiliaire.clone()
+    match &e.auxiliaire {
+        Some(a) => a.clone(),
+        None => e.compte.clone(),
     }
 }
 
-/// Le libelle d'une ecriture : celui de son compte, complete de ce qui la distingue.
-fn libelle_de(plan: &Map<String, Value>, e: &Ecriture) -> R<String> {
+/// Le libelle d'une ecriture : celui de son compte, complete de ce qui la distingue (le salarie de son sous-compte).
+fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
     let lib = libelle_compte(plan, &e.compte)?;
-    Ok(if e.auxiliaire.is_empty() { lib } else { format!("{} — {}", lib, e.auxiliaire_libelle) })
+    Some(match &e.auxiliaire_libelle {
+        Some(qui) => format!("{} — {}", lib, qui),
+        None => lib,
+    })
 }
 
 /// Une ligne d'ecriture pour un tableau.
-fn ligne_de(e: &Ecriture, plan: &Map<String, Value>) -> R<Ligne> {
+fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
     l.t("journal", e.journal.clone()).t("date", jj(&e.date)).t("piece", e.piece.clone()).t("compte", compte_de(e));
-    l.t("libelle_compte", libelle_de(plan, e)?).t("libelle", e.libelle.clone());
+    l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
     l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
     l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
-    l.t("analytique", e.analytique.clone()).t("mois", e.mois.clone());
-    Ok(l)
+    l.ot("analytique", e.analytique.clone()).t("mois", e.mois.clone());
+    l
 }
 
 /// Les ecritures de la periode, numerotees -- une ecriture (une piece) par mois, ses lignes dans
 /// l'ordre de `ecritures_du_mois`.
-fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Map<String, Value>, &'static str)> {
+fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, &'static str)> {
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     let mois = p.mois.clone();
@@ -289,10 +260,12 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
 /// `Envoi` : le plan, le contexte, les codes de section quand l'analytique est demandee, les libelles courts valides du
 /// format, et ce qui depasse sa zone (`libelle`, `intitule`), releve au fil de l'ecriture.
 struct Envoi<'a> {
-    plan: &'a Map<String, Value>,
+    plan: &'a Plan,
     ctx: &'a Contexte,
     sections: Option<BTreeMap<String, String>>,
-    courts: Courts,
+    /// Le format, quand ses zones sont bornees, et les libelles courts que la compagnie y a valides.
+    borne: Option<FormatBorne>,
+    courts: Option<Courts>,
     depasses: RefCell<BTreeMap<(Quoi, String), Depasse>>,
 }
 
@@ -305,7 +278,7 @@ impl Envoi<'_> {
         if long.chars().count() <= largeur {
             return Some(long);
         }
-        let court = self.courts.de(quoi, cle).map(|c| blancs(c)).filter(|c| !c.is_empty() && c.chars().count() <= largeur);
+        let court = self.courts.as_ref().and_then(|c| c.de(quoi, cle)).map(|c| blancs(c)).filter(|c| !c.is_empty() && c.chars().count() <= largeur);
         self.depasses
             .borrow_mut()
             .entry((quoi, cle.to_string()))
@@ -315,18 +288,18 @@ impl Envoi<'_> {
 
     /// Le libelle d'une ligne dans une zone de `n` caracteres : ce qui la distingue (`libelle_court`), puis son mois,
     /// toujours. Ce qui le distingue se remplace par sa valeur courte validee quand il ne tient pas.
+    /// Ce qui ne tient pas laisse la zone vide : l'export se refuse a la fin (`refus_des_depasses`), ce fichier ne
+    /// s'ecrit pas.
     fn libelle(&self, e: &Ecriture, nature: bool, n: usize) -> String {
         let (tete, mois) = libelle_court(e, nature);
         let place = n.saturating_sub(mois.chars().count() + 1);
-        match self.tenir_ou_court(Quoi::Libelle, &blancs(&tete), &tete, place) {
-            Some(t) => format!("{} {}", t, mois),
-            None => String::new(),
-        }
+        ou_vide(self.tenir_ou_court(Quoi::Libelle, &blancs(&tete), &tete, place).map(|t| format!("{} {}", t, mois)))
     }
 
-    /// L'intitule du compte `compte` dans une zone de `n` caracteres, ou sa valeur courte validee.
+    /// L'intitule du compte `compte` dans une zone de `n` caracteres, ou sa valeur courte validee ; ce qui ne tient pas
+    /// laisse la zone vide, l'export se refuse a la fin (`refus_des_depasses`).
     fn intitule(&self, compte: &str, lib: &str, n: usize) -> String {
-        self.tenir_ou_court(Quoi::Compte, compte, lib, n).unwrap_or_default()
+        ou_vide(self.tenir_ou_court(Quoi::Compte, compte, lib, n))
     }
 
     /// Ce qui ne tient pas et n'a pas de valeur courte validee : l'export se refuse, en disant combien et ou les
@@ -336,21 +309,30 @@ impl Envoi<'_> {
         if n == 0 {
             return Ok(());
         }
-        let nom = FormatBorne::de(format).map(FormatBorne::nom).unwrap_or(format);
+        // Seul un format aux zones bornees note ce qui depasse.
+        let nom = match self.borne {
+            Some(f) => f.nom(),
+            None => format,
+        };
+        /// Ce que le refus porte a part : le format des libelles courts a poser, et combien.
+        #[derive(Serialize)]
+        struct APoser<'a> {
+            libelles_courts: &'a str,
+            nombre: usize,
+        }
         Err(refus(socle::echec::avec(
             format!("{} trop long{} pour {} : les raccourcir (Exports, « Libellés courts »).", if n > 1 { format!("{} libellés", n) } else { "1 libellé".to_string() }, if n > 1 { "s" } else { "" }, nom),
-            serde_json::json!({"libelles_courts": format, "nombre": n}),
+            APoser { libelles_courts: format, nombre: n },
         )))
     }
 
     /// `Envoi.section` : le code de section d'une ligne -- seules les lignes de salaires bruts en ont une.
-    fn section(&self, e: &Ecriture) -> String {
-        let Some(sections) = &self.sections else { return String::new() };
-        let brut = self.plan.get("brut").and_then(|b| b.get("compte")).map(valeur_en_texte).unwrap_or_default();
-        if e.compte != brut {
-            return String::new();
+    fn section(&self, e: &Ecriture) -> Option<String> {
+        let sections = self.sections.as_ref()?;
+        if e.compte != self.plan.brut.compte {
+            return None;
         }
-        sections.get(&e.analytique).cloned().unwrap_or_default()
+        sections.get(e.analytique.as_ref()?).cloned()
     }
 }
 
@@ -364,35 +346,35 @@ fn code_du_titre(titre: &str) -> String {
 /// numero le plus recent.
 fn codes_des_fiches(spectacles: Vec<&droit::fiche::ChampsSpectacle>) -> BTreeMap<String, String> {
     let mut rangees = spectacles;
-    rangees.sort_by_cached_key(|v| (!v.archivee(), v.numero_objet.texte().to_string()));
+    rangees.sort_by_cached_key(|v| (!v.archivee(), v.numero_objet.en_texte()));
     let mut out = BTreeMap::new();
     for v in rangees {
-        let code = v.code_analytique.texte().trim().to_string();
-        if let Some(titre) = v.titre.remplie().filter(|_| !code.is_empty()) {
-            out.insert(titre.to_string(), code);
+        if let (Some(titre), Some(code)) = (v.titre.remplie(), v.code_analytique.portee()) {
+            out.insert(titre.to_string(), code.trim().to_string());
         }
     }
     out
 }
 
 /// `codes_sections` : le code de chaque spectacle -- celui de sa fiche, sinon celui du plan, sinon tire du titre.
-fn codes_sections(plan: &Map<String, Value>, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, String>) -> R<BTreeMap<String, String>> {
-    let brut = plan.get("brut").and_then(|b| b.get("compte")).map(valeur_en_texte).ok_or_else(|| erreur("KeyError", socle::fichiers::absent("brut")))?;
+fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, String>) -> R<BTreeMap<String, String>> {
+    let brut = &plan.brut.compte;
+    // Les codes choisis : ceux du plan, puis ceux des fiches ; un code vide n'en choisit pas.
     let mut propres: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(Value::Object(s)) = plan.get("sections") {
-        for (k, v) in s {
-            propres.insert(k.clone(), texte_ou_vide(Some(v)));
-        }
+    if let Some(s) = &plan.sections {
+        propres.extend(s.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
-    for (k, v) in fiches {
-        propres.insert(k.clone(), v.clone());
-    }
+    propres.extend(fiches.iter().map(|(k, v)| (k.clone(), v.clone())));
+    propres.retain(|_, v| !v.is_empty());
     let mut out = BTreeMap::new();
     let mut qui: BTreeMap<String, String> = BTreeMap::new();
-    let titres: BTreeSet<&String> = ecritures.iter().filter(|e| !e.analytique.is_empty() && e.compte == brut).map(|e| &e.analytique).collect();
+    let titres: BTreeSet<&String> = ecritures.iter().filter(|e| e.compte == *brut).filter_map(|e| e.analytique.as_ref()).filter(|a| !a.is_empty()).collect();
     for titre in titres {
-        let choisi = propres.get(titre).cloned().unwrap_or_default();
-        let code = if choisi.is_empty() { code_du_titre(titre) } else { choisi.clone() };
+        let choisi = propres.get(titre);
+        let code = match choisi {
+            Some(c) => c.clone(),
+            None => code_du_titre(titre),
+        };
         if code.is_empty() || code.chars().count() > largeur {
             return Err(refus(format!(
                 "Analytique : le code « {} » du spectacle « {} » ne tient pas dans la zone de ce logiciel ({} caractères au plus). Le raccourcir dans Configuration › Spectacles, case « Code analytique ».",
@@ -400,7 +382,7 @@ fn codes_sections(plan: &Map<String, Value>, ecritures: &[Ecriture], largeur: us
             )));
         }
         if let Some(autre) = qui.get(&code) {
-            let meme_choix = !choisi.is_empty() && propres.get(autre).cloned().unwrap_or_default() == code;
+            let meme_choix = choisi.is_some() && propres.get(autre) == Some(&code);
             if !meme_choix {
                 return Err(refus(format!(
                     "Analytique : « {} » et « {} » donnent le même code « {} ». En donner un à chacun dans Configuration › Spectacles, case « Code analytique ».",
@@ -415,17 +397,23 @@ fn codes_sections(plan: &Map<String, Value>, ecritures: &[Ecriture], largeur: us
 }
 
 /// `comptes_utilises` : (compte, libelle) de chaque compte que les ecritures mouvementent, dans l'ordre des numeros.
-fn comptes_utilises(ecritures: &[Ecriture], plan: &Map<String, Value>) -> R<Vec<(String, String)>> {
+fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(String, String)> {
     let mut vus: BTreeMap<String, String> = BTreeMap::new();
     for e in ecritures {
         let c = compte_de(e);
         if !vus.contains_key(&c) {
-            let lib = libelle_de(plan, e)?;
-            let lib = if lib.is_empty() { e.libelle.split(" -- ").next().unwrap_or("").to_string() } else { lib };
+            // Un compte que le plan ne nomme pas prend le libelle de sa ligne, sans le mois.
+            let lib = match libelle_de(plan, e).filter(|l| !l.is_empty()) {
+                Some(l) => l,
+                None => match e.libelle.split_once(" -- ") {
+                    Some((tete, _)) => tete.to_string(),
+                    None => e.libelle.clone(),
+                },
+            };
             vus.insert(c, lib);
         }
     }
-    Ok(vus.into_iter().collect())
+    vus.into_iter().collect()
 }
 
 // ------------------------------------------------------------------ FEC
@@ -444,22 +432,23 @@ fn fec_propre(s: &str) -> String {
 fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let plan = env.plan;
     let mut lignes = vec![ZONES_FEC.join("\t")];
-    let journal_lib = match plan.get("journal_libelle").filter(|v| vrai(v)) {
-        Some(v) => valeur_en_texte(v),
-        None => "Opérations diverses — paie".to_string(),
-    };
+    let journal_lib = plan.journal_libelle.clone();
     for e in ecritures {
         let date = e.date.replace('-', "");
-        let lib = if e.analytique.is_empty() { e.libelle.clone() } else { format!("{} — {}", e.libelle, e.analytique) };
+        let lib = match e.analytique.as_ref().filter(|a| !a.is_empty()) {
+            Some(a) => format!("{} — {}", e.libelle, a),
+            None => e.libelle.clone(),
+        };
+        // Un champ « à blanc si non utilisé » (BOI-CF-IOR-60-40-20, § 70) reste vide.
         let champs = [
             e.journal.clone(),
             journal_lib.clone(),
             format!("{}{:05}", tranche(&e.date, 0, 4), e.numero),
             date.clone(),
             e.compte.clone(),
-            libelle_compte(plan, &e.compte)?,
-            e.auxiliaire.clone(),
-            e.auxiliaire_libelle.clone(),
+            ou_vide(libelle_compte(plan, &e.compte)),
+            ou_vide(e.auxiliaire.clone()),
+            ou_vide(e.auxiliaire_libelle.clone()),
             e.piece.clone(),
             date,
             lib,
@@ -487,11 +476,12 @@ fn libelle_court(e: &Ecriture, nature: bool) -> (String, String) {
         Some(i) => &e.libelle[..i],
         None => e.libelle.as_str(),
     };
-    let mut quoi = sans_mois.split(" -- ").collect::<Vec<_>>().join(" ");
-    if nature && !e.analytique.is_empty() {
-        quoi = format!("{} — {}", quoi, e.analytique);
-    }
-    let tete = if !e.analytique.is_empty() && !nature { e.analytique.clone() } else { quoi };
+    let quoi = sans_mois.split(" -- ").collect::<Vec<_>>().join(" ");
+    let tete = match e.analytique.as_ref().filter(|a| !a.is_empty()) {
+        Some(a) if nature => format!("{} — {}", quoi, a),
+        Some(a) => a.clone(),
+        None => quoi,
+    };
     (blancs(&tete), mm)
 }
 
@@ -534,20 +524,14 @@ fn virgule(v: Decimal) -> String {
     }
 }
 
-/// `LIMITES[format]` : (nom, largeur du compte, largeur du journal) ; une largeur que la notice ne dit pas n'y est pas.
-fn limites(format: &str) -> Option<(String, Option<usize>, usize)> {
-    let l = crate::plan_comptable::tables()["limites"].get(format)?;
-    Some((l["nom"].as_str()?.to_string(), l["compte"].as_u64().map(|n| n as usize), l["journal"].as_u64()? as usize))
-}
-
 /// Le compte et le journal tiennent dans leurs zones, ou on refuse.
 fn borne(format: &str, compte: &str, journal: &str) -> R<()> {
-    let (nom, lc, lj) = limites(format).ok_or_else(|| erreur("KeyError", format!("format inconnu : {}", socle::fichiers::repr(format))))?;
-    if lc.is_some_and(|lc| compte.chars().count() > lc) {
-        return Err(refus(format!("{} : le compte « {} » dépasse sa zone ({} caractères). Choisir dans le plan comptable de la compagnie un compte qui tient.", nom, compte, lc.unwrap_or_default())));
+    let l = crate::plan_comptable::tables().limites.get(format).ok_or_else(|| erreur(Classe::Manque, format!("format inconnu : {}", socle::fichiers::repr(format))))?;
+    if let Some(lc) = l.compte.filter(|lc| compte.chars().count() > *lc) {
+        return Err(refus(format!("{} : le compte « {} » dépasse sa zone ({} caractères). Choisir dans le plan comptable de la compagnie un compte qui tient.", l.nom, compte, lc)));
     }
-    if journal.chars().count() > lj {
-        return Err(refus(format!("{} : le journal « {} » dépasse sa zone ({} caractères). Raccourcir le code journal dans le plan comptable de la compagnie.", nom, journal, lj)));
+    if journal.chars().count() > l.journal {
+        return Err(refus(format!("{} : le journal « {} » dépasse sa zone ({} caractères). Raccourcir le code journal dans le plan comptable de la compagnie.", l.nom, journal, l.journal)));
     }
     Ok(())
 }
@@ -577,8 +561,8 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ("montant", deux(montant).replace('.', ",")),
             ("sens", s.to_string()),
             ("pointage", String::new()),
-            ("analytique", env.section(e)),
-            ("libelle_compte", env.intitule(&compte_de(e), &libelle_de(env.plan, e)?, 34)),
+            ("analytique", ou_vide(env.section(e))),
+            ("libelle_compte", env.intitule(&compte_de(e), &ou_vide(libelle_de(env.plan, e)), 34)),
             ("euro", "O".to_string()),
         ]
         .into_iter()
@@ -613,7 +597,12 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         borne("oxygene", &compte_de(e), &e.journal)?;
         let section = env.section(e);
         let mut z: BTreeMap<&str, String> = zones.iter().map(|k| (k.as_str(), String::new())).collect();
-        let poste = if section.is_empty() { String::new() } else { tenir("Oxygène", "CODAGE", &texte_ou_vide(env.plan.get("poste_analytique")), 9)? };
+        // Le poste analytique d'une ligne ventilee : celui que la compagnie dit ; sinon la zone reste vide.
+        let poste = match (&section, &env.plan.poste_analytique) {
+            (Some(_), Some(p)) => tenir("Oxygène", "CODAGE", p, 9)?,
+            _ => String::new(),
+        };
+        let section = ou_vide(section);
         for (k, v) in [
             ("NUMJL", e.journal.clone()),
             ("NUMCP", compte_de(e)),
@@ -654,9 +643,12 @@ const LARGEURS_PNM: [(&str, usize, char); 13] = [
 
 /// `sage_pnm` : le format 105 caracteres. Avec l'analytique, la ligne generale est suivie d'une ligne de type A.
 fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
-    let nom = nom_compagnie(env.ctx);
-    let nom = if nom.is_empty() { "Paie".to_string() } else { nom };
-    let mut out = vec![env.tenir_ou_court(Quoi::Compagnie, &nom, &nom, 30).unwrap_or_default()];
+    let nom = match nom_compagnie(env.ctx) {
+        Some(n) => n.to_string(),
+        None => "Paie".to_string(),
+    };
+    // Un nom qui ne tient pas laisse la ligne vide : l'export se refuse a la fin (`refus_des_depasses`).
+    let mut out = vec![ou_vide(env.tenir_ou_court(Quoi::Compagnie, &nom, &nom, 30))];
     for e in ecritures {
         borne("sage", &compte_de(e), &e.journal)?;
         let (s, montant) = sens(e);
@@ -679,8 +671,7 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         .collect();
         let ligne = |c: &BTreeMap<&str, String>| LARGEURS_PNM.iter().map(|(k, n, cote)| zone("Sage", k, &c[k], *n, *cote)).collect::<R<String>>();
         out.push(ligne(&champs)?);
-        let section = env.section(e);
-        if !section.is_empty() {
+        if let Some(section) = env.section(e) {
             champs.insert("type_compte", "A".to_string());
             champs.insert("auxiliaire", section);
             out.push(ligne(&champs)?);
@@ -724,15 +715,15 @@ fn caler_zeros(compte: &str, n: usize) -> String {
     s
 }
 
-/// Les zones a la suite, cadrees a gauche.
+/// Les zones a la suite, cadrees a gauche ; une zone que rien ne remplit s'ecrit en blancs.
 fn quadra_ligne(champs: &BTreeMap<&str, String>, positions: &[(&str, usize)]) -> R<String> {
-    positions.iter().map(|(k, n)| zone("Quadra", k, champs.get(k).map(String::as_str).unwrap_or(""), *n, 'g')).collect()
+    positions.iter().map(|(k, n)| zone("Quadra", k, &ou_vide(champs.get(k).cloned()), *n, 'g')).collect()
 }
 
 /// `quadra` : les comptes d'abord (type C), puis les ecritures (enregistrements M).
 fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let mut sortie = Vec::new();
-    for (c, lib) in comptes_utilises(ecritures, env.plan)? {
+    for (c, lib) in comptes_utilises(ecritures, env.plan) {
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "C".to_string());
         ch.insert("compte", compte_quadra(&c)?);
@@ -754,7 +745,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         ch.insert("date", jjmmaa(&e.date));
         ch.insert("sens", s.to_string());
         ch.insert("montant", format!("+{:012}", centimes));
-        ch.insert("affaire", env.section(e));
+        ch.insert("affaire", ou_vide(env.section(e)));
         ch.insert("devise", "EUR".to_string());
         ch.insert("journal3", e.journal.clone());
         ch.insert("libelle30", env.libelle(e, false, 30));
@@ -799,8 +790,7 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ]
             .join(","),
         );
-        let section = env.section(e);
-        if !section.is_empty() {
+        if let Some(section) = env.section(e) {
             out.push(format!(">{},100.00,{}", ebp_zone(&section), deux(montant)));
         }
     }
@@ -849,9 +839,12 @@ fn pennylane(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         }
         let mut champs = vec![jj(&e.date), e.journal.clone(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
         if analytique {
-            let code = env.section(e);
-            let (famille, categorie) = if code.is_empty() { (String::new(), String::new()) } else { ("Spectacles".to_string(), e.analytique.clone()) };
-            champs.extend([famille, categorie, code]);
+            // Une ligne ventilee porte sa famille, sa categorie (le spectacle) et son code ; les autres laissent les trois
+            // colonnes vides.
+            match env.section(e) {
+                Some(code) => champs.extend(["Spectacles".to_string(), ou_vide(e.analytique.clone()), code]),
+                None => champs.extend([String::new(), String::new(), String::new()]),
+            }
         }
         out.push(champs.iter().map(|c| csv_propre(c)).collect::<Vec<_>>().join(";"));
     }
@@ -982,13 +975,12 @@ impl ChoixCompta {
         if !chemin.exists() {
             return Ok(ChoixCompta::default());
         }
-        socle::forme::lire(&crate::valeur::lire_json_echec(&chemin)?, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| erreur("ValueError", m))
+        socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))
     }
 
     /// Le choix ecrit dans `config/compta.json`.
     pub fn ecrire(&self, racine: &std::path::Path) -> R<()> {
-        let v = serde_json::to_value(self).map_err(|e| erreur("ValueError", e.to_string()))?;
-        socle::ecriture::ecrire_json(&racine.join(COMPTA), &v, 2).map_err(|m| erreur("OSError", m))
+        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| erreur(Classe::Disque, m))
     }
 
     /// Le logiciel retenu, s'il en est un.
@@ -1015,11 +1007,11 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         None => retenu.analytique,
     };
     if let Some(l) = &logiciel {
-        let Some((nom, fmt, pourquoi)) = logiciel_connu(l) else {
+        let Some(connu) = logiciel_connu(l) else {
             return Err(refus(format!("Logiciel inconnu : « {} ». Les logiciels connus sont {}.", l, logiciels_dits().join(", "))));
         };
-        avert.push(format!("{} : format « {} » — {}.", nom, fmt, pourquoi));
-        format = fmt;
+        avert.push(format!("{} : format « {} » — {}.", connu.nom, connu.format, connu.pourquoi));
+        format = connu.format.clone();
     }
     if format.is_empty() {
         format = "csv".to_string();
@@ -1032,7 +1024,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for m in mois {
         let mut lignes = Vec::new();
         for e in ecr.iter().filter(|e| &e.mois == m) {
-            lignes.push(ligne_de(e, &plan)?);
+            lignes.push(ligne_de(e, &plan));
         }
         t.sections.push(Section::nouvelle(libelle_mois(m)?, lignes));
     }
@@ -1054,11 +1046,9 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     }
     t.format = format_possible(&format, &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
-    let total = t.total.clone().unwrap_or_default();
-    let zero = zero2();
-    let (debit, credit) = (total.decimal("debit").unwrap_or(zero), total.decimal("credit").unwrap_or(zero));
-    let debit = if debit.is_zero() { zero } else { debit };
-    let credit = if credit.is_zero() { zero } else { credit };
+    // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
+    let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(zero2(), add);
+    let (debit, credit) = (somme("debit"), somme("credit"));
     if debit != credit {
         return Err(refus(format!("Le journal n'est pas équilibré (débit {}, crédit {}).", debit, credit)));
     }
@@ -1084,7 +1074,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if d.ecrire {
         let dossier = p.dossier(ctx);
         if let Some(ec) = &ecr_format {
-            let io = |c: &std::path::Path, e: std::io::Error| erreur("OSError", socle::echec::du_disque(&c, &e));
+            let io = |c: &std::path::Path, e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&c, &e));
             let env = envoi(ctx, &plan, sections, &format)?;
             // Les deux fichiers se fabriquent avant d'ecrire : une zone qui ne tient pas refuse l'export entier.
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
@@ -1108,12 +1098,13 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 }
 
 /// Ce qu'un ecrivain recoit pour `format` : le plan, les sections, et les libelles courts valides de ce format.
-fn envoi<'a>(ctx: &'a Contexte, plan: &'a Map<String, Value>, sections: Option<BTreeMap<String, String>>, format: &str) -> R<Envoi<'a>> {
-    let courts = match FormatBorne::de(format) {
-        Some(f) => crate::libelles_courts::lire(&ctx.racine)?.formats.remove(&f).unwrap_or_default(),
-        None => Courts::default(),
+fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String, String>>, format: &str) -> R<Envoi<'a>> {
+    let borne = FormatBorne::de(format);
+    let courts = match borne {
+        Some(f) => crate::libelles_courts::lire(&ctx.racine)?.formats.remove(&f),
+        None => None,
     };
-    Ok(Envoi { plan, ctx, sections, courts, depasses: RefCell::new(BTreeMap::new()) })
+    Ok(Envoi { plan, ctx, sections, borne, courts, depasses: RefCell::new(BTreeMap::new()) })
 }
 
 /// Le fichier des ecritures, et celui des comptes quand le format en a un : (modele de son nom, octets, conseil).
@@ -1123,7 +1114,7 @@ type Fabrique = (Vec<u8>, Option<(&'static str, Vec<u8>, &'static str)>);
 fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
     let ecritures = (ec.ecrire)(ecr, env)?;
     let comptes = match ec.comptes {
-        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan)?, env)?, conseil)),
+        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan), env)?, conseil)),
         None => None,
     };
     Ok((ecritures, comptes))
@@ -1155,15 +1146,15 @@ pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::D
 /// Le format des ecritures du logiciel retenu par la compagnie (`config/compta.json`), s'il en est un.
 pub fn format_retenu(ctx: &Contexte) -> R<Option<String>> {
     let retenu = ChoixCompta::lu(&ctx.racine)?;
-    Ok(retenu.retenu().and_then(|l| logiciel_connu(&l)).map(|(_, f, _)| f))
+    Ok(retenu.retenu().and_then(|l| logiciel_connu(&l)).map(|l| l.format.clone()))
 }
 
 // ------------------------------------------------------------------ le grand livre
 
 /// Le solde d'une ligne, dit « débiteur », « créditeur » ou « nul ».
 fn solde(d: &Ligne) -> String {
-    let zero = zero2();
-    let v = sub(d.decimal("debit").unwrap_or(zero), d.decimal("credit").unwrap_or(zero));
+    // Ce que le compte porte au debit, moins ce qu'il porte au credit (une colonne vide n'y porte rien).
+    let v = [d.decimal("debit"), d.decimal("credit").map(|c| -c)].into_iter().flatten().fold(zero2(), add);
     let t = if v > Decimal::ZERO {
         format!("débiteur {}", v)
     } else if v < Decimal::ZERO {
@@ -1180,15 +1171,16 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut avert = Vec::new();
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
     let mut par: BTreeMap<String, Vec<Ligne>> = BTreeMap::new();
-    let mut libelles: BTreeMap<String, String> = BTreeMap::new();
+    let mut libelles: BTreeMap<String, Option<String>> = BTreeMap::new();
     for e in &ecr {
-        par.entry(compte_de(e)).or_default().push(ligne_de(e, &plan)?);
-        libelles.insert(compte_de(e), libelle_de(&plan, e)?);
+        par.entry(compte_de(e)).or_default().push(ligne_de(e, &plan));
+        libelles.insert(compte_de(e), libelle_de(&plan, e));
     }
     let mut t = Tableau::nouveau("grand-livre-paie", "Grand livre des comptes de paie", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle(format!("{} {}", c, libelles[&c]), l)).collect();
+    // Une section par compte : son numero, et son libelle quand le plan le nomme.
+    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.clone()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
     t.colonnes = vec![
         col_t("compte", "Compte"),
         col_t("date", "Date"),
@@ -1222,11 +1214,11 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
     let zero = zero2();
     // compte -> (libelle, debit, credit)
-    let mut par: BTreeMap<String, (String, Decimal, Decimal)> = BTreeMap::new();
+    let mut par: BTreeMap<String, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
     for e in &ecr {
         let c = compte_de(e);
         if !par.contains_key(&c) {
-            par.insert(c.clone(), (libelle_de(&plan, e)?, zero, zero));
+            par.insert(c.clone(), (libelle_de(&plan, e), zero, zero));
         }
         let x = par.get_mut(&c).expect("insere");
         x.1 = add(x.1, e.debit);
@@ -1236,7 +1228,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = sub(*debit, *credit);
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.clone()).t("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
+        l.t("compte", c.clone()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
         l.od("solde_debiteur", if v > Decimal::ZERO { Some(v) } else { None });
         l.od("solde_crediteur", if v < Decimal::ZERO { Some(-v) } else { None });
         lignes.push(l);
@@ -1267,7 +1259,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: &str) -> R<(Option<Decimal>, i64)> {
-    let annee: i64 = tranche(jusqu_a, 0, 4).parse().map_err(|_| erreur("ValueError", "mois illisible"))?;
+    let annee: i64 = tranche(jusqu_a, 0, 4).parse().map_err(|_| erreur(Classe::Illisible, "mois illisible"))?;
     let depart = format!("{:04}-{}", annee - 1, tranche(jusqu_a, 5, 7));
     let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
     for l in lignes {
@@ -1300,14 +1292,15 @@ fn provision_d_une_annee_importee(
     d: &Demande,
     p: &Periode,
     m: &str,
-    a_provisionner: &mut Vec<(String, String, String, engagement::conges::Provision)>,
+    a_provisionner: &mut Vec<(String, Option<String>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
-    let ko = |x: String| erreur("ErreurOperation", x);
-    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
-    let lendemain = fin.plus_jours(1).map_err(|x| erreur("ValueError", x))?;
+    let ko = |x: String| erreur(Classe::Refuse, x);
+    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
+    let lendemain = fin.plus_jours(1).map_err(|x| erreur(Classe::Illisible, x))?;
     let importes: Vec<String> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| k.clone()).collect();
-    let premier_importe = importes.first().cloned().unwrap_or_default();
+    // `m` est un mois repris : il y en a au moins un.
+    let premier_importe = importes.first().cloned().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
@@ -1339,8 +1332,8 @@ fn provision_d_une_annee_importee(
         if a_provisionner.iter().any(|(c, ..)| *c == cle) {
             continue;
         }
-        let date = ctx.salaries.get(cle.as_str()).and_then(|f| f.conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso()).unwrap_or_default();
-        let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &cle).map_err(ko)?.filter(|_| date == lendemain.iso()) else {
+        let date = ctx.salaries.get(cle.as_str()).and_then(|f| f.conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
+        let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &cle).map_err(ko)?.filter(|_| date == Some(lendemain.iso())) else {
             avert.push(format!(
                 "{} : sa fiche ne dit pas ses congés payés au {} (« Congés payés à la reprise », recopiés de son dernier bulletin repris) : son compteur ne se lit pas, il n'est pas dans la provision.",
                 ctx.nomme(&cle),
@@ -1369,7 +1362,7 @@ fn provision_d_une_annee_importee(
         }
         let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
         let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(ko)?;
-        a_provisionner.push((cle, pa.engagement.numero.as_deref().unwrap_or_default().to_string(), nat.libelle.clone(), provision));
+        a_provisionner.push((cle, pa.engagement.numero.as_deref().map(str::to_string), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
 }
@@ -1386,12 +1379,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let zero = zero2();
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
-    let mut a_provisionner: Vec<(String, String, String, engagement::conges::Provision)> = Vec::new();
+    let mut a_provisionner: Vec<(String, Option<String>, String, engagement::conges::Provision)> = Vec::new();
     let saisis = p.saisis();
     let mut sans_compteur = 0;
     let m = match saisis.last().cloned() {
         Some(m) => {
-            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
+            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
             // Ce qui a ete paye ce mois-la : les paies ecrites de ses engagements valides, la saisie au meme rang.
             let (saisie, paies) = charger_mois(ctx, &m, &d.departs)?;
             for (e, pa) in saisie.engagements.iter().zip(paies.iter()) {
@@ -1406,7 +1399,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 }
                 let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut));
                 let Some(cpt) = engagement::conges::provision_conges_de(pa, &m, brut_du_mois, e.salaire_mensuel.as_ref()).map_err(socle::echec::Echec::from)? else { continue };
-                a_provisionner.push((cle, e.numero.clone().unwrap_or_default(), nat.libelle.clone(), cpt));
+                a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }
             m
         }
@@ -1419,10 +1412,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             m
         }
     };
-    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur("ValueError", x))?;
+    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| erreur(Classe::Illisible, x))?;
     let toutes = Periode::nouvelle(ctx, None, None, true, true)?;
     let livre = lignes_livre(ctx, &toutes, &mut Vec::new(), &d.departs)?;
     let mut lignes: Vec<Ligne> = Vec::new();
+    // Ce que l'ecriture de la provision porte : les indemnites, et les charges que le taux reel permet de calculer.
+    let (mut indemnites, mut charges_dites) = (zero, zero);
     for (cle, contrat, nature, cpt) in a_provisionner {
         for a in &cpt.avertissements {
             // Un avis du compteur nomme deja son salarie.
@@ -1442,15 +1437,18 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle));
         }
         let charges = taux.map(|t| eur(div(mul(retenu, t), Decimal::ONE_HUNDRED)));
-        let fiche = ctx.salaries.get(cle.as_str());
-        let nom = match fiche.map_or("", |f| f.nom.texte()) {
-            "" => cle.clone(),
-            n => n.to_string(),
-        };
-        let prenom = fiche.map_or("", |f| f.prenom.texte()).to_string();
+        indemnites = add(indemnites, retenu);
+        if let Some(c) = charges {
+            charges_dites = add(charges_dites, c);
+        }
+        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(&cle)))?;
+        let nom = fiche.nom.exigee("nom").map_err(|m| erreur(Classe::Manque, m))?;
         let mut l = Ligne::nouvelle();
-        l.t("salarie", format!("{} {}", nom, prenom));
-        l.t("contrat", contrat).t("nature", nature);
+        l.t("salarie", match fiche.prenom.portee() {
+            Some(prenom) => format!("{} {}", nom, prenom),
+            None => nom.to_string(),
+        });
+        l.ot("contrat", contrat).t("nature", nature);
         l.d("report", arrondir_jours(cpt.report_restant)).d("acquis", arrondir_jours(cpt.acquis)).d("pris", arrondir_jours(cpt.pris)).d("solde", arrondir_jours(cpt.solde));
         l.d("dixieme", dixieme).d("maintien", maintien).d("indemnite", retenu).t("regle", regle);
         l.od("taux_patronal", taux).n("bulletins", n).od("charges", charges);
@@ -1465,29 +1463,21 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         ));
     }
     let (plan, _origine) = crate::plan_comptable::plan(ctx)?;
-    let pc = plan.get("provision_conges").filter(|v| vrai(v)).cloned().unwrap_or(Value::Object(Map::new()));
-    let indemnites = lignes.iter().fold(zero, |a, l| add(a, l.decimal("indemnite").unwrap_or(zero)));
-    let charges = lignes.iter().fold(zero, |a, l| add(a, l.decimal("charges").filter(|c| !c.is_zero()).unwrap_or(zero)));
-    if !pc.as_object().is_none_or(|o| o.is_empty()) {
-        let cle = |a: &str, b: &str| -> R<String> {
-            let x = pc.get(a).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(a)))?;
-            Ok(valeur_en_texte(x.get(b).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(b)))?))
-        };
-        avert.push(format!(
-            "Écriture au {} (journal OD) : {} {} au débit, {} {} au crédit, {} ; {} {} au débit, {} {} au crédit, {}. À extourner le premier jour de l'exercice suivant — la dette se paie au fil des congés pris, ou au solde de tout compte.",
-            jj(&fin.iso()),
-            cle("conges", "compte")?,
-            cle("conges", "libelle")?,
-            cle("dette", "compte")?,
-            cle("dette", "libelle")?,
-            euros(indemnites),
-            cle("charges", "compte")?,
-            cle("charges", "libelle")?,
-            cle("dette_charges", "compte")?,
-            cle("dette_charges", "libelle")?,
-            euros(charges)
-        ));
-    }
+    let pc = &plan.provision_conges;
+    avert.push(format!(
+        "Écriture au {} (journal OD) : {} {} au débit, {} {} au crédit, {} ; {} {} au débit, {} {} au crédit, {}. À extourner le premier jour de l'exercice suivant — la dette se paie au fil des congés pris, ou au solde de tout compte.",
+        jj(&fin.iso()),
+        pc.conges.compte,
+        pc.conges.libelle,
+        pc.dette.compte,
+        pc.dette.libelle,
+        euros(indemnites),
+        pc.charges.compte,
+        pc.charges.libelle,
+        pc.dette_charges.compte,
+        pc.dette_charges.libelle,
+        euros(charges_dites)
+    ));
     let mut t = Tableau::nouveau("provision-conges", format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
     t.mois = vec![m.clone()];
     t.avertissements = avert;
@@ -1538,9 +1528,10 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.
-    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| erreur("ValueError", x))?;
+    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| erreur(Classe::Illisible, x))?;
+    let bar = ctx.bareme(&jour).map_err(socle::echec::Echec::from)?;
     // Les plafonds de la franchise, que la conclusion nomme : ceux du bareme de l'annee.
-    let plafonds = crate::taxe_sur_les_salaires::plafonds_franchise(ctx.bareme(&jour).ok().as_deref());
+    let plafonds = crate::taxe_sur_les_salaires::plafonds_franchise(Some(&*bar));
     let regime = crate::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise, plafonds);
     let p = Periode::nouvelle(ctx, None, Some(annee), false, true)?;
     let mut avert: Vec<String> = Vec::new();
@@ -1554,7 +1545,6 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if regime.decision == Ok(None) {
         avert.push(format!("{} Rien à calculer.", regime.consequence));
     }
-    let bar = ctx.bareme(&jour).map_err(socle::echec::Echec::from)?;
     let ts = match bar.taxe_sur_les_salaires.clone() {
         Some(t) => t,
         None => {
@@ -1570,9 +1560,9 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<String>)> = BTreeMap::new();
     for m in p.mois.clone() {
-        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| erreur("ErreurOperation", x)) {
+        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| erreur(Classe::Refuse, x)) {
             Ok(paies) => paies,
-            Err(e) if matches!(e.classe, Some("ErreurOperation") | Some("ValueError") | Some("KeyError") | Some("FileNotFoundError")) => {
+            Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.message));
                 continue;
             }
@@ -1618,8 +1608,11 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         brute = add(brute, taxe);
         lignes.push(l);
     }
-    let pct_a = part.unwrap_or(Decimal::ZERO);
-    let due = if part.is_some() { quant(div(mul(brute, pct_a), cent), 0) } else { zero };
+    // Sans part taxee dite (non assujettie, ou le regime ne se lit pas : l'avertissement le dit), rien n'est du.
+    let (pct_a, due) = match part {
+        Some(pct) => (pct, quant(div(mul(brute, pct), cent), 0)),
+        None => (Decimal::ZERO, zero),
+    };
     let franchise = ts.franchise;
     let limite = ts.decote_jusqu_a;
     let mut etapes = vec![format!("taxe brute {} × {} % taxés (CGI art. 231, 1) = {}", euros(brute), socle::texte::virgule(pct_a), euros(due))];
@@ -1683,9 +1676,4 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         ecrire_fini(ctx, &mut t, Some(&p), "taxe-sur-les-salaires")?;
     }
     Ok(t)
-}
-
-#[allow(dead_code)]
-fn _inutilises() {
-    let _ = Val::txt("");
 }

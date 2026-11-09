@@ -59,7 +59,7 @@
     const r = await window.pywebview.api.verifier(mdp.value);
     mdp.value = "";
     if (r.ok) { ok.textContent = "D\u00e9marrage\u2026"; return; }
-    err.textContent = r.erreur; ok.disabled = false; mdp.focus();
+    err.textContent = r.refus.phrase; ok.disabled = false; mdp.focus();
   });
   // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe ouvre aussi les autres, pour toute la fenetre.
   const adm = JSON.parse(document.getElementById("administrateur").textContent || "{}");
@@ -72,7 +72,7 @@
   // fenetre sur `/`, ou le serveur sert l'accueil. Un refus s'affiche, rien ne se tait.
   async function retour() {
     const r = await window.pywebview.api.accueil();
-    if (!r.ok) err.textContent = r.erreur;
+    if (!r.ok) err.textContent = r.refus.phrase;
   }
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !e.isComposing && !e.repeat) { e.preventDefault(); retour(); }

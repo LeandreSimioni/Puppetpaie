@@ -1,20 +1,19 @@
-//! Le transport vers net-entreprises et l'Urssaf : le client HTTP, l'authentification, les consultations, l'archivage
-//! des retours et leur journal, et l'envoi du corps d'un depot (DSN, DPAE).
+//! Le transport vers net-entreprises et l'Urssaf : le client HTTP, l'authentification, les consultations, et l'envoi du
+//! corps d'un depot (DSN, DPAE).
 //!
 //! CE MODULE NE CHERCHE JAMAIS UN SECRET : le mot de passe arrive de l'appelant, sert le temps de l'authentification
 //! et n'est ecrit nulle part ; il n'ouvre pas le coffre et n'en parle pas. Le jeton, lui, vaut une session : c'est
 //! l'appelant qui le garde en memoire et le repasse.
 //!
-//! Les pannes : `ErreurApi` (message et `code`) ; un delai de lecture, une reponse coupee, une connexion rompue, un gzip
-//! illisible portent chacun leur `classe`, que l'appelant releve.
+//! Les pannes : `Organisme` (message et `code`) ; un delai de lecture (`DelaiDepasse`), une reponse coupee, une connexion
+//! rompue, un gzip illisible (`Reseau`) portent leur `classe`, que l'appelant releve.
 
 use droit::fiche::Lue as _;
+use socle::echec::Classe;
 use std::io::Read;
-use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
 use ureq::http;
 
 pub const USER_AGENT: &str = "Client-DSN (PuppetPaie/1.0; PuppetPaie)";
@@ -40,8 +39,19 @@ const DELAI_APPEL: u64 = 60;
 pub const DELAI_DEPOT: u64 = 120;
 const MAX_REDIRECTIONS: usize = 10;
 
-pub fn message_du_statut(code: u16) -> &'static str {
-    MESSAGES.iter().find(|(c, _)| *c == code).map(|(_, m)| *m).unwrap_or("")
+/// Ce que le guide dit d'un statut HTTP, s'il en dit quelque chose.
+pub fn message_du_statut(code: u16) -> Option<&'static str> {
+    MESSAGES.iter().find(|(c, _)| *c == code).map(|(_, m)| *m)
+}
+
+/// `HTTP <code> <ou>`, puis ce que le guide dit du statut et le debut du corps de la reponse, chacun sur sa ligne.
+fn phrase_du_statut(code: u16, ou: &str, corps: Option<String>) -> String {
+    let mut m = format!("HTTP {} {}", code, ou);
+    for ligne in message_du_statut(code).map(String::from).into_iter().chain(corps.filter(|c| !socle::texte::strip(c).is_empty())) {
+        m.push_str("\n  ");
+        m.push_str(&ligne);
+    }
+    m
 }
 
 // ----------------------------------------------------------------- les pannes
@@ -51,40 +61,39 @@ pub fn message_du_statut(code: u16) -> &'static str {
 pub enum Panne {
     /// Un statut HTTP hors 2xx ; le corps, lu en entier (ou la panne de sa lecture).
     Statut { code: u16, corps: Result<Vec<u8>, Box<Panne>> },
-    /// La connexion n'a pas abouti (`URLError`) : la raison.
+    /// La connexion n'a pas abouti : la raison.
     Reseau(String),
-    /// Une panne après l'envoi, sous le nom de sa classe.
-    Brute { classe: &'static str, message: String, plus: Map<String, Value> },
+    /// Une panne après l'envoi, sous sa classe.
+    Brute { classe: Classe, message: String },
 }
 
 impl Panne {
-    fn brute(classe: &'static str, message: impl Into<String>) -> Panne {
-        Panne::Brute { classe, message: message.into(), plus: Map::new() }
+    fn brute(classe: Classe, message: impl Into<String>) -> Panne {
+        Panne::Brute { classe, message: message.into() }
     }
 }
 
-/// Une panne mise en reponse JSON : `ok: false`, `erreur`, `classe`, `code`.
-fn echec(classe: &str, message: String, code: Option<i64>) -> Value {
-    let mut m = Map::new();
-    m.insert("ok".into(), Value::Bool(false));
-    m.insert("erreur".into(), Value::String(message));
-    m.insert("classe".into(), Value::String(classe.into()));
-    if let Some(c) = code {
-        m.insert("code".into(), json!(c));
-    }
-    Value::Object(m)
+/// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`Organisme`, `DepotRefuse`, ou celle d'une panne
+/// brute), sa phrase, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EchecApi {
+    pub erreur: String,
+    pub classe: Classe,
+    pub code: Option<i64>,
 }
 
-fn echec_brut(p: Panne) -> Value {
+impl EchecApi {
+    fn nouveau(classe: Classe, erreur: String, code: Option<i64>) -> EchecApi {
+        EchecApi { erreur, classe, code }
+    }
+}
+
+fn echec_brut(p: Panne) -> EchecApi {
     match p {
-        Panne::Brute { classe, message, plus } => {
-            let mut v = echec(classe, message, None);
-            v.as_object_mut().unwrap().extend(plus);
-            v
-        }
+        Panne::Brute { classe, message } => EchecApi::nouveau(classe, message, None),
         // Les appelants traduisent les deux autres avant d'arriver ici.
-        Panne::Reseau(r) => echec("URLError", r, None),
-        Panne::Statut { code, .. } => echec("HTTPError", format!("HTTP {}", code), Some(code as i64)),
+        Panne::Reseau(r) => EchecApi::nouveau(Classe::Reseau, r, None),
+        Panne::Statut { code, .. } => EchecApi::nouveau(Classe::Reseau, format!("HTTP {}", code), Some(code as i64)),
     }
 }
 
@@ -109,7 +118,23 @@ fn utf8_remplace(o: &[u8]) -> String {
 
 /// Jamais un identifiant dans un message.
 pub fn sans_secret(url: &str) -> &str {
-    url.split('?').next().unwrap_or("")
+    avant(url, &['?'])
+}
+
+/// Ce qui precede le premier des `signes` ; aucun : tout le texte.
+fn avant<'a>(t: &'a str, signes: &[char]) -> &'a str {
+    match t.find(signes) {
+        Some(i) => &t[..i],
+        None => t,
+    }
+}
+
+/// Un texte lu en nombre entier ; `None` s'il n'en est pas un.
+fn entier(t: &str) -> Option<u64> {
+    if t.is_empty() || !t.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    t.bytes().try_fold(0u64, |n, c| n.checked_mul(10)?.checked_add(u64::from(c - b'0')))
 }
 
 /// Les trois caracteres que le HTML reserve (`&`, `<`, `>`) echappes.
@@ -139,7 +164,7 @@ fn horodatage(iso: &str) -> Result<String, String> {
 
 /// Decompresse un corps gzip ; les refus (tronque, en-tete invalide, somme de controle) sont dits en francais.
 pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
-    let eof = || Panne::brute("EOFError", "réponse gzip tronquée");
+    let eof = || Panne::brute(Classe::Reseau, "réponse gzip tronquée");
     let mut sortie = Vec::new();
     let mut reste = donnees;
     loop {
@@ -148,7 +173,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         }
         if reste.len() < 2 || reste[0] != 0x1f || reste[1] != 0x8b {
             let debut: Vec<String> = reste.iter().take(2).map(|o| format!("{:02x}", o)).collect();
-            return Err(Panne::brute("BadGzipFile", format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
+            return Err(Panne::brute(Classe::Reseau, format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
         }
         let mut pos = 2;
         let lire = |pos: &mut usize, n: usize| -> Result<(), Panne> {
@@ -164,7 +189,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let (methode, drapeaux) = (reste[2], reste[3]);
         pos += 8;
         if methode != 8 {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : méthode de compression inconnue"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : méthode de compression inconnue"));
         }
         if drapeaux & 4 != 0 {
             if reste.len() < pos + 2 {
@@ -200,7 +225,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
             membre.reserve(32 * 1024);
             let st = d
                 .decompress_vec(&en_entree[avant_in..], &mut membre, flate2::FlushDecompress::None)
-                .map_err(|e| Panne::brute("error", format!("réponse gzip illisible : {}", e)))?;
+                .map_err(|e| Panne::brute(Classe::Reseau,format!("réponse gzip illisible : {}", e)))?;
             if st == flate2::Status::StreamEnd {
                 break;
             }
@@ -218,10 +243,10 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let mut h = flate2::Crc::new();
         h.update(&membre);
         if crc != h.sum() {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : somme de contrôle fausse"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : somme de contrôle fausse"));
         }
         if longueur != (membre.len() as u64 & 0xffff_ffff) as u32 {
-            return Err(Panne::brute("BadGzipFile", "réponse gzip : longueur fausse"));
+            return Err(Panne::brute(Classe::Reseau, "réponse gzip : longueur fausse"));
         }
         sortie.extend_from_slice(&membre);
         let mut suite = &apres[8..];
@@ -241,10 +266,8 @@ fn nom_canonique(n: &str) -> String {
     n.split('-')
         .map(|m| {
             let mut c = m.chars();
-            match c.next() {
-                Some(p) => p.to_ascii_uppercase().to_string() + c.as_str(),
-                None => String::new(),
-            }
+            let premiere: String = c.next().map(|p| p.to_ascii_uppercase()).into_iter().collect();
+            premiere + c.as_str()
         })
         .collect::<Vec<_>>()
         .join("-")
@@ -254,7 +277,11 @@ fn errno_texte(e: &std::io::Error) -> String {
     match e.raw_os_error() {
         Some(n) => {
             let t = e.to_string();
-            let t = t.strip_suffix(&format!(" (os error {})", n)).unwrap_or(&t).to_string();
+            let suffixe = format!(" (os error {})", n);
+            let t = match t.strip_suffix(&suffixe) {
+                Some(sans) => sans,
+                None => &t,
+            };
             format!("[Errno {}] {}", n, t)
         }
         None => e.to_string(),
@@ -269,28 +296,27 @@ fn delai_expire(https: bool) -> &'static str {
     }
 }
 
-/// Une panne de `ureq` en refus du moteur : `URLError` avant la reponse,
-/// exception brute apres l'envoi.
+/// Une panne de `ureq` en refus du moteur : `Panne::Reseau` avant la reponse, une panne brute apres l'envoi.
 fn panne_de(e: ureq::Error, https: bool) -> Panne {
     use std::io::ErrorKind as K;
     use ureq::{Error, Timeout};
     match e {
         Error::Timeout(Timeout::Connect) | Error::Timeout(Timeout::Resolve) => Panne::Reseau("timed out".into()),
-        Error::Timeout(_) => Panne::brute("TimeoutError", delai_expire(https)),
+        Error::Timeout(_) => Panne::brute(Classe::DelaiDepasse, delai_expire(https)),
         Error::HostNotFound => Panne::Reseau("[Errno -2] Name or service not known".into()),
         Error::Io(io) => match io.kind() {
-            K::UnexpectedEof => Panne::brute("RemoteDisconnected", "Remote end closed connection without response"),
+            K::UnexpectedEof => Panne::brute(Classe::Reseau, "Remote end closed connection without response"),
             // Observe sur le service reel : la connexion est rompue pendant
-            // l'etablissement (mandataire, TLS) : la connexion n'a pas abouti
-            // (`URLError`). ureq ne dit pas a quel moment.
+            // l'etablissement (mandataire, TLS) : la connexion n'a pas abouti.
+            // ureq ne dit pas a quel moment.
             K::ConnectionReset | K::ConnectionAborted => Panne::Reseau(errno_texte(&io)),
             K::TimedOut if io.raw_os_error().is_none() => Panne::Reseau("timed out".into()),
             _ => Panne::Reseau(errno_texte(&io)),
         },
-        Error::Protocol(p) => Panne::brute("HTTPException", p.to_string()),
+        Error::Protocol(p) => Panne::brute(Classe::Reseau, p.to_string()),
         Error::Rustls(r) => Panne::Reseau(format!("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: {}", r)),
         Error::Tls(t) => Panne::Reseau(format!("[SSL] {}", t)),
-        Error::BadUri(u) => Panne::brute("ValueError", format!("unknown url type: {:?}", u)),
+        Error::BadUri(u) => Panne::brute(Classe::Illisible, format!("unknown url type: {:?}", u)),
         autre => Panne::Reseau(autre.to_string()),
     }
 }
@@ -299,21 +325,32 @@ fn panne_de(e: ureq::Error, https: bool) -> Panne {
 /// une adresse https, `http_proxy` pour une adresse http, et `no_proxy`
 /// (noms, suffixes de domaine, `*`) qui l'ecarte. La machine elle-meme (les faux
 /// serveurs de l'atelier et des essais) ne passe jamais par un mandataire.
-fn mandataire(url: &str) -> Option<ureq::Proxy> {
-    let (schema, reste) = url.split_once("://")?;
-    let var = |n: &str| std::env::var(n.to_lowercase()).ok().or_else(|| std::env::var(n.to_uppercase()).ok()).filter(|v| !v.is_empty());
-    let valeur = var(&format!("{}_proxy", schema.to_lowercase()))?;
-    let autorite = reste.split(['/', '?', '#']).next().unwrap_or("");
-    let hote = autorite.rsplit_once('@').map(|(_, h)| h).unwrap_or(autorite);
-    let nom = if hote.starts_with('[') { hote.split(']').next().unwrap_or(hote).trim_start_matches('[') } else { hote.split(':').next().unwrap_or(hote) };
+fn mandataire(url: &str) -> Result<Option<ureq::Proxy>, Panne> {
+    let Some((schema, reste)) = url.split_once("://") else { return Ok(None) };
+    // La variable en minuscules, sinon en capitales ; posee mais vide, ou hors d'Unicode, elle ne dit rien.
+    let lue = |n: &str| match std::env::var(n) {
+        Ok(v) => Some(v),
+        Err(std::env::VarError::NotPresent | std::env::VarError::NotUnicode(..)) => None,
+    };
+    let var = |n: &str| lue(&n.to_lowercase()).or_else(|| lue(&n.to_uppercase())).filter(|v| !v.is_empty());
+    let Some(valeur) = var(&format!("{}_proxy", schema.to_lowercase())) else { return Ok(None) };
+    let autorite = avant(reste, &['/', '?', '#']);
+    let hote = match autorite.rsplit_once('@') {
+        Some((_, h)) => h,
+        None => autorite,
+    };
+    let nom = match hote.strip_prefix('[') {
+        Some(entre_crochets) => avant(entre_crochets, &[']']),
+        None => avant(hote, &[':']),
+    };
     if matches!(nom.to_lowercase().as_str(), "127.0.0.1" | "localhost" | "::1") {
-        return None;
+        return Ok(None);
     }
     if let Some(np) = var("no_proxy") {
         for e in np.split(',') {
             let e = socle::texte::strip(e).trim_start_matches('.').to_lowercase();
             if e == "*" {
-                return None;
+                return Ok(None);
             }
             if e.is_empty() {
                 continue;
@@ -321,11 +358,11 @@ fn mandataire(url: &str) -> Option<ureq::Proxy> {
             let (h, a) = (nom.to_lowercase(), hote.to_lowercase());
             let correspond = |x: &str| x == e || x.ends_with(&format!(".{}", e));
             if correspond(&h) || correspond(&a) {
-                return None;
+                return Ok(None);
             }
         }
     }
-    ureq::Proxy::new(&valeur).ok()
+    ureq::Proxy::new(&valeur).map(Some).map_err(|e| Panne::Reseau(format!("mandataire illisible ({}_proxy) : {}", schema.to_lowercase(), e)))
 }
 
 /// L'agent d'une demande. En essai, le garde-fou reseau (`garde_reseau`) le regle : rien ne sort de la machine.
@@ -333,7 +370,7 @@ fn agent(delai: u64, url: &str) -> Result<ureq::Agent, Panne> {
     let tls = url.starts_with("https:");
     let d = Some(Duration::from_secs(delai));
     let mut c = ureq::Agent::config_builder()
-        .proxy(mandataire(url))
+        .proxy(mandataire(url)?)
         .http_status_as_error(false)
         .max_redirects(0)
         .max_redirects_will_error(false)
@@ -365,7 +402,9 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
                     return;
                 }
                 Ok(n) => {
-                    if tx.send(Ok(tampon[..n].to_vec())).is_err() {
+                    // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
+                    if let Err(parti) = tx.send(Ok(tampon[..n].to_vec())) {
+                        drop(parti);
                         return;
                     }
                 }
@@ -383,27 +422,23 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
             Ok(Ok(m)) => tout.extend_from_slice(&m),
             Ok(Err(e)) => {
                 if matches!(e.kind(), std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted) {
-                    return Err(Panne::brute("ConnectionResetError", errno_texte(&e)));
+                    return Err(Panne::brute(Classe::Reseau, errno_texte(&e)));
                 }
                 return Err(coupee(tout.len(), attendu));
             }
-            Err(_) => return Err(Panne::brute("TimeoutError", delai_expire(https))),
+            // Le silence a dure le delai (ou le fil de lecture s'est arrete sans rien dire).
+            Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => return Err(Panne::brute(Classe::DelaiDepasse, delai_expire(https))),
         }
     }
 }
 
 /// N octets lus, M attendus de plus.
 fn coupee(lus: usize, attendu: Option<u64>) -> Panne {
-    let mut plus = Map::new();
-    plus.insert("lus".into(), json!(lus));
     let message = match attendu {
-        Some(a) if a as usize > lus => {
-            plus.insert("manque".into(), json!(a as usize - lus));
-            format!("IncompleteRead({} bytes read, {} more expected)", lus, a as usize - lus)
-        }
+        Some(a) if a as usize > lus => format!("IncompleteRead({} bytes read, {} more expected)", lus, a as usize - lus),
         _ => format!("IncompleteRead({} bytes read)", lus),
     };
-    Panne::Brute { classe: "IncompleteRead", message, plus }
+    Panne::brute(Classe::Reseau, message)
 }
 
 /// L'adresse d'un `Location` de redirection, lue depuis l'adresse demandée.
@@ -428,7 +463,7 @@ fn joindre(base: &str, loc: &str) -> String {
     if loc.starts_with('/') {
         return format!("{}://{}{}", schema, autorite, loc);
     }
-    let chemin = chemin.split(['?', '#']).next().unwrap_or("");
+    let chemin = avant(chemin, &['?', '#']);
     let dossier = match chemin.rfind('/') {
         Some(i) => &chemin[..=i],
         None => "/",
@@ -480,11 +515,16 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
     let mut url = r.url.to_string();
     let mut donnees = r.donnees;
     let mut methode = r.methode;
-    let mut post = r.post || methode.is_some() || donnees.map(|d| !d.is_empty()).unwrap_or(false);
+    let mut post = r.post || methode.is_some() || donnees.is_some_and(|d| !d.is_empty());
     let mut avec_entetes_du_corps = true;
     let mut sauts = 0;
     let (parts, corps) = loop {
-        let mut b = http::Request::builder().method(methode.unwrap_or(if post { "POST" } else { "GET" })).uri(&url);
+        let verbe = match methode {
+            Some(m) => m,
+            None if post => "POST",
+            None => "GET",
+        };
+        let mut b = http::Request::builder().method(verbe).uri(&url);
         if !r.sans_gzip {
             b = b.header("Accept-Encoding", "gzip");
         }
@@ -510,16 +550,24 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         }
         let ag = agent(r.delai, &url)?;
         let rep = if post {
-            let corps = donnees.unwrap_or(&[]).to_vec();
-            ag.run(b.body(corps).map_err(|e| Panne::brute("ValueError", e.to_string()))?)
+            // Un POST sans donnees part avec un corps vide.
+            let corps: Vec<u8> = donnees.into_iter().flatten().copied().collect();
+            ag.run(b.body(corps).map_err(|e| Panne::brute(Classe::Illisible, e.to_string()))?)
         } else {
-            ag.run(b.body(()).map_err(|e| Panne::brute("ValueError", e.to_string()))?)
+            ag.run(b.body(()).map_err(|e| Panne::brute(Classe::Illisible, e.to_string()))?)
         }
         .map_err(|e| panne_de(e, https))?;
         let (parts, corps) = rep.into_parts();
         let code = parts.status.as_u16();
         let suite = matches!(code, 301 | 302 | 303 | 307 | 308) && (!post || code <= 303) && sauts < MAX_REDIRECTIONS;
-        let loc = parts.headers.get("location").and_then(|v| v.to_str().ok()).map(str::to_string);
+        // Une adresse de redirection hors de l'ASCII ne se suit pas.
+        let loc = parts.headers.get(http::header::LOCATION).and_then(|v| match v.to_str() {
+            Ok(l) => Some(l.to_string()),
+            Err(hors_ascii) => {
+                drop(hors_ascii);
+                None
+            }
+        });
         match (suite, loc) {
             (true, Some(l)) => {
                 url = joindre(&url, &l);
@@ -537,7 +585,8 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
     };
     let code = parts.status.as_u16();
     let entetes = en_tetes_de(&parts);
-    let attendu = entete(&entetes, "Content-Length").and_then(|v| v.trim().parse::<u64>().ok());
+    // Une longueur annoncee qui ne se lit pas n'annonce rien.
+    let attendu = entete(&entetes, "Content-Length").and_then(|v| entier(v.trim()));
     let brut = lire_corps(corps, r.delai, attendu, https);
     if !(200..300).contains(&code) {
         return Err(Panne::Statut { code, corps: brut.map_err(Box::new) });
@@ -550,44 +599,48 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
 }
 
 fn meme_hote(a: &str, b: &str) -> bool {
-    let hote = |u: &str| u.split_once("://").map(|(_, r)| r.split(['/', '?', '#']).next().unwrap_or("").to_string());
+    let hote = |u: &str| u.split_once("://").map(|(_, r)| avant(r, &['/', '?', '#']).to_string());
     hote(a) == hote(b)
 }
 
 // ------------------------------------------------- l'API des organismes
 
-type Resultat = Result<Value, Value>;
+/// Le debut lisible du corps d'une reponse d'erreur ; un corps qui ne s'est pas lu ne dit rien de plus que le statut.
+fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> Option<String> {
+    match corps {
+        Ok(c) => Some(debut(&utf8_remplace(&c), n)),
+        Err(illisible) => {
+            drop(illisible);
+            None
+        }
+    }
+}
 
-/// Une panne d'appel en `ErreurApi`.
-fn en_erreur_api(url: &str, p: Panne) -> Value {
+/// Une panne d'appel en `Organisme`.
+fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
     match p {
         Panne::Statut { code, corps } => {
-            let corps = corps.map(|c| debut(&utf8_remplace(&c), 400)).unwrap_or_default();
-            let mut m = format!("HTTP {} sur {}\n  {}", code, sans_secret(url), message_du_statut(code));
-            if !socle::texte::strip(&corps).is_empty() {
-                m.push_str("\n  ");
-                m.push_str(&corps);
-            }
-            echec("ErreurApi", m, Some(code as i64))
+            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url)), debut_du_corps(corps, 400)), Some(code as i64))
         }
-        Panne::Reseau(r) => echec("ErreurApi", format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
+        Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
         brute => echec_brut(brute),
     }
 }
 
-/// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `ErreurApi`.
-pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Value> {
+/// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
+pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { url, jeton, delai: DELAI_APPEL, ..Default::default() };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des instants ISO).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, Value> {
+pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
-    url.push_str(&horodatage(debut).map_err(|e| echec("ValueError", e, None))?);
+    let illisible = |e: String| EchecApi::nouveau(Classe::Illisible, e, None);
+    url.push_str(&horodatage(debut).map_err(illisible)?);
     if let Some(fin) = fin {
         url.push('/');
-        url.push_str(&horodatage(fin).map_err(|e| echec("ValueError", e, None))?);
+        url.push_str(&horodatage(fin).map_err(illisible)?);
     }
     appeler(&url, jeton).map(|(corps, _)| corps)
 }
@@ -596,15 +649,15 @@ pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>
 /// les dit pas).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Identite {
-    pub siret: String,
-    pub nom: String,
-    pub prenom: String,
+    pub siret: Option<String>,
+    pub nom: Option<String>,
+    pub prenom: Option<String>,
 }
 
 impl Identite {
     /// Ce qui lui manque pour s'authentifier, dit en mots.
     pub fn manquants(&self) -> Vec<&'static str> {
-        [(&self.siret, "le SIRET"), (&self.nom, "le nom"), (&self.prenom, "le prénom")].into_iter().filter(|(c, _)| c.trim().is_empty()).map(|(_, m)| m).collect()
+        [(&self.siret, "le SIRET"), (&self.nom, "le nom"), (&self.prenom, "le prénom")].into_iter().filter(|(c, _)| c.is_none()).map(|(_, m)| m).collect()
     }
 }
 
@@ -612,14 +665,15 @@ impl Identite {
 /// (`declarant`), sinon le SIRET et le contact DSN coupe au premier espace (le nom, puis le prenom).
 pub fn declarant(ent: &droit::fiche::ChampsEntreprise) -> Identite {
     if let Some(d) = ent.declarant.dite().filter(|d| !d.est_vide()) {
-        return Identite { siret: d.siret.texte().to_string(), nom: d.nom.texte().to_string(), prenom: d.prenom.texte().to_string() };
+        return Identite { siret: d.siret.en_texte(), nom: d.nom.en_texte(), prenom: d.prenom.en_texte() };
     }
-    let brut = ent.declarant_dsn.dite().map_or("", |d| d.nom_prenom.texte());
-    let morceaux = mots(socle::texte::strip(brut));
-    let mut i = Identite { siret: ent.siret.texte().to_string(), ..Identite::default() };
-    if morceaux.len() >= 2 {
-        i.nom = morceaux[0].to_string();
-        i.prenom = morceaux[1..].join(" ");
+    let mut i = Identite { siret: ent.siret.en_texte(), nom: None, prenom: None };
+    if let Some(brut) = ent.declarant_dsn.dite().and_then(|d| d.nom_prenom.portee()) {
+        let morceaux = mots(socle::texte::strip(brut));
+        if morceaux.len() >= 2 {
+            i.nom = Some(morceaux[0].to_string());
+            i.prenom = Some(morceaux[1..].join(" "));
+        }
     }
     i
 }
@@ -636,15 +690,22 @@ pub struct Authentification<'a> {
     pub jeton: Option<&'a str>,
 }
 
-/// L'authentification du guide de l'API DSN : `{"ok", "jeton", "expire_le"}`. Sans mot de passe ou sans declarant
-/// complet, rien ne part. Le mot de passe ne survit pas a cet appel et n'entre dans aucun message.
-pub fn authentifier(a: &Authentification) -> Resultat {
+/// UNE SESSION OUVERTE : son jeton, et l'heure ou il expire si le service la dit (l'en-tete `Expires`).
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub jeton: String,
+    pub expire_le: Option<String>,
+}
+
+/// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
+/// part. Le mot de passe ne survit pas a cet appel et n'entre dans aucun message.
+pub fn authentifier(a: &Authentification) -> Result<Session, EchecApi> {
     let variable = a.variable;
     let mdp = match a.motdepasse {
         Some(m) if !m.is_empty() => m,
         _ => {
-            return Err(echec(
-                "ErreurApi",
+            return Err(EchecApi::nouveau(
+                Classe::Organisme,
                 format!(
                     "Mot de passe absent.\n\
 Trois facons de le fournir, dans cet ordre de priorite :\n\n\
@@ -661,25 +722,25 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
         }
     };
     let decl = a.declarant;
-    let manquants = decl.manquants();
-    if !manquants.is_empty() {
-        return Err(echec(
-            "ErreurApi",
+    let (Some(siret), Some(nom), Some(prenom)) = (&decl.siret, &decl.nom, &decl.prenom) else {
+        return Err(EchecApi::nouveau(
+            Classe::Organisme,
             format!(
                 "Le compte qui se connecte est incomplet, il manque {} : ceux du compte ouvert pour ce service, sans accent. Rien n'est parti.",
-                manquants.join(", ")
+                decl.manquants().join(", ")
             ),
             Some(0),
         ));
-    }
+    };
     let service = a.service.filter(|s| !s.is_empty());
     let corps = format!(
         "<identifiants><siret>{}</siret><nom>{}</nom><prenom>{}</prenom><motdepasse>{}</motdepasse>{}</identifiants>",
-        decl.siret,
-        decl.nom,
-        decl.prenom,
+        siret,
+        nom,
+        prenom,
         echapper(mdp),
-        service.map(|s| format!("<service>{}</service>", s)).unwrap_or_default()
+        // Le service ne s'ecrit que s'il est dit.
+        service.iter().map(|s| format!("<service>{}</service>", s)).collect::<String>()
     );
     let url = a.url;
     let r = Requete {
@@ -694,13 +755,13 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     };
     let (brut, entetes) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
-    Ok(json!({"ok": true, "jeton": socle::texte::strip(&jeton), "expire_le": entete(&entetes, "Expires")}))
+    Ok(Session { jeton: socle::texte::strip(&jeton).to_string(), expire_le: entete(&entetes, "Expires").map(String::from) })
 }
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
-/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`ErreurApi`).
-pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), Value> {
+/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
+pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         url,
         jeton: Some(jeton),
@@ -712,140 +773,20 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
         ..Default::default()
     };
     envoyer(&r).map_err(|p| match (forme, p) {
-        ("dsn", Panne::Statut { code, corps }) => match corps {
-            // Le corps de la reponse passe par `sans_secret`.
-            Ok(c) => echec(
-                "DepotRefuse",
-                format!("Le point de depot a repondu {}.\n{}", code, sans_secret(&debut(&utf8_remplace(&c), 800))),
-                None,
-            ),
-            Err(p) => echec_brut(*p),
-        },
-        ("dsn", Panne::Reseau(r)) => echec("DepotRefuse", format!("Pas de reponse du point de depot : {}", r), None),
-        (_, Panne::Statut { code, corps }) => {
-            let c = corps.map(|c| debut(&utf8_remplace(&c), 400)).unwrap_or_default();
-            let mut m = format!("HTTP {} au depot sur {}\n  {}", code, sans_secret(url), message_du_statut(code));
-            if !socle::texte::strip(&c).is_empty() {
-                m.push_str("\n  ");
-                m.push_str(&c);
+            ("dsn", Panne::Statut { code, corps }) => match corps {
+                // Le corps de la reponse passe par `sans_secret`.
+                Ok(c) => EchecApi::nouveau(
+                    Classe::DepotRefuse,
+                    format!("Le point de depot a repondu {}.\n{}", code, sans_secret(&debut(&utf8_remplace(&c), 800))),
+                    None,
+                ),
+                Err(p) => echec_brut(*p),
+            },
+            ("dsn", Panne::Reseau(r)) => EchecApi::nouveau(Classe::DepotRefuse, format!("Pas de reponse du point de depot : {}", r), None),
+            (_, Panne::Statut { code, corps }) => {
+                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), debut_du_corps(corps, 400)), None)
             }
-            echec("ErreurApi", m, None)
-        }
-        (_, Panne::Reseau(r)) => echec("ErreurApi", format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
-        (_, brute) => echec_brut(brute),
-    })
-}
-
-// -------------------------------------------------------------- l'archivage
-
-fn erreur_io(e: std::io::Error, chemin: &Path) -> Value {
-    let classe = match e.kind() {
-        std::io::ErrorKind::NotFound => "FileNotFoundError",
-        std::io::ErrorKind::PermissionDenied => "PermissionError",
-        _ => "OSError",
-    };
-    echec(classe, format!("{} : {}", errno_texte(&e), chemin.display()), None)
-}
-
-/// `retours/` (la DSN) ou `retours/<canal>/`, cree.
-pub fn dossier_archive(racine: &Path, canal: &str) -> Result<PathBuf, Value> {
-    let mut p = racine.join(crate::retours::RETOURS);
-    if !canal.is_empty() {
-        p = p.join(canal);
-    }
-    std::fs::create_dir_all(&p).map_err(|e| erreur_io(e, &p))?;
-    Ok(p)
-}
-
-/// La piece telle quelle, nommee `AAAAMMJJ-hhmmss_natureN_flux.ext` ; l'heure est celle de la publication, ou
-/// `maintenant` (`AAAAMMJJ-hhmmss`) quand le retour n'en porte pas. Une piece deja archivee sous ce nom n'est pas
-/// reecrite.
-pub fn archiver(racine: &Path, canal: &str, retour: &Value, contenu: &[u8], ctype: &str, maintenant: &str) -> Result<PathBuf, Value> {
-    let ext = if ctype.contains("pdf") {
-        ".pdf"
-    } else {
-        let tete = &contenu[..contenu.len().min(200)];
-        let debut_utile = tete.iter().position(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)).unwrap_or(tete.len());
-        if ctype.contains("xml") || tete[debut_utile..].starts_with(b"<") {
-            ".xml"
-        } else {
-            ".txt"
-        }
-    };
-    let chaine = |cle: &str| -> Result<String, Value> {
-        match retour.get(cle) {
-            None | Some(Value::Null) => Ok(String::new()),
-            Some(Value::String(s)) => Ok(s.clone()),
-            Some(_) => Err(echec("TypeError", format!("`{}` : une chaine est attendue", cle), None)),
-        }
-    };
-    let publication = debut(&chaine("publication")?, 14);
-    let horo = if publication.chars().count() == 14 {
-        let c: Vec<char> = publication.chars().collect();
-        format!("{}-{}", c[..8].iter().collect::<String>(), c[8..].iter().collect::<String>())
-    } else {
-        maintenant.to_string()
-    };
-    let nature = match retour.get("nature") {
-        None => "??".to_string(),
-        Some(v) => documents::valeur::valeur_en_texte(v),
-    };
-    let flux = chaine("flux")?;
-    let flux = if flux.is_empty() { "sansflux".to_string() } else { flux };
-    let nom = format!("{}_nature{}_{}{}", horo, nature, flux, ext);
-    let dest = dossier_archive(racine, canal)?.join(nom);
-    if !dest.exists() {
-        std::fs::write(&dest, contenu).map_err(|e| erreur_io(e, &dest))?;
-    }
-    Ok(dest)
-}
-
-fn journal(racine: &Path, canal: &str) -> Result<PathBuf, Value> {
-    Ok(dossier_archive(racine, canal)?.join("journal.json"))
-}
-
-/// Les retours deja vus, tels que le journal du canal les garde (absent : aucun).
-fn lire_journal(p: &Path) -> Result<Vec<Value>, Value> {
-    if !p.exists() {
-        return Ok(Vec::new());
-    }
-    let t = std::fs::read(p).map_err(|e| erreur_io(e, p))?;
-    let t = String::from_utf8(t).map_err(|e| echec("UnicodeDecodeError", e.to_string(), None))?;
-    match serde_json::from_str::<Value>(&t).map_err(|e| echec("JSONDecodeError", e.to_string(), None))? {
-        Value::Array(a) => Ok(a),
-        _ => Err(echec("TypeError", format!("{} n'est pas une liste de retours", p.display()), None)),
-    }
-}
-
-/// Ce qui distingue un retour : son flux, sa nature, sa publication.
-fn cle_de_retour(e: &Value) -> Result<[Value; 3], Value> {
-    if !e.is_object() {
-        return Err(echec("TypeError", "une ligne du journal n'est pas un objet".into(), None));
-    }
-    Ok(["flux", "nature", "publication"].map(|c| e.get(c).cloned().unwrap_or(Value::Null)))
-}
-
-fn meme_cle(a: &[Value; 3], b: &[Value; 3]) -> bool {
-    a.iter().zip(b).all(|(x, y)| documents::valeur::valeurs_egales(x, y))
-}
-
-/// Ajoute au journal du canal les retours qu'il n'a pas encore vus ; LF, deux espaces, l'accent tel quel.
-pub fn noter_vus(racine: &Path, canal: &str, entrees: &[Value]) -> Result<(), Value> {
-    let p = journal(racine, canal)?;
-    let mut deja = lire_journal(&p)?;
-    let connus: Vec<[Value; 3]> = deja.iter().map(cle_de_retour).collect::<Result<_, _>>()?;
-    for e in entrees {
-        let cle = cle_de_retour(e)?;
-        if !connus.iter().any(|c| meme_cle(c, &cle)) {
-            deja.push(e.clone());
-        }
-    }
-    let mut t = serde_json::to_string_pretty(&deja).map_err(|e| echec("TypeError", e.to_string(), None))?;
-    t.push('\n');
-    std::fs::write(&p, t).map_err(|e| erreur_io(e, &p))
-}
-
-/// Les cles (flux, nature, publication) des retours deja vus sur le canal.
-pub fn deja_vus(racine: &Path, canal: &str) -> Result<Vec<[Value; 3]>, Value> {
-    lire_journal(&journal(racine, canal)?)?.iter().map(cle_de_retour).collect()
+            (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
+            (_, brute) => echec_brut(brute),
+        })
 }

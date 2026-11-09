@@ -7,11 +7,9 @@
 //! Dans le binaire de l'atelier, un organisme qui n'est pas redirige vers un faux serveur local n'est pas appele, hors
 //! compagnie fictive (`commandes::actes::refuser_si_pas_redirige`).
 
-use serde_json::Value;
 
 use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::rendu::{champ, texte};
 use crate::commandes::Cadre;
 use socle::date::Jour;
 use socle::echec::Echec;
@@ -30,7 +28,7 @@ pub static SPEC: Spec = Spec {
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    faire(cadre, args).unwrap_or_else(|e| super::refus(&e))
+    super::code(faire(cadre, args))
 }
 
 const JOUR: i64 = 86_400;
@@ -40,13 +38,16 @@ fn secondes(j: &Jour) -> i64 {
     (j.ordinal() - 719_163) * JOUR
 }
 
-fn jour_de(t: i64) -> String {
-    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).unwrap_or_default()
+fn jour_de(t: i64) -> Result<String, Echec> {
+    match Jour::depuis_jours_unix(t.div_euclid(JOUR)) {
+        Some(j) => Ok(j.jj_mm_aaaa()),
+        None => Err(Echec { classe: Some(socle::echec::Classe::Illisible), message: format!("{} secondes ne tombent pas dans le calendrier.", t) }),
+    }
 }
 
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(i64, i64), Echec> {
-    let lire = |t: &str| Jour::lire(t).map_err(|m| Echec { classe: Some("ValueError"), message: m });
+    let lire = |t: &str| Jour::lire(t).map_err(|m| Echec { classe: Some(socle::echec::Classe::Illisible), message: m });
     let fin = match args.texte("jusqu-a") {
         Some(j) => secondes(&lire(j)?) + JOUR - 1,
         None => socle::paris::maintenant_naif(),
@@ -63,30 +64,35 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let dpae = args.drapeau("dpae");
     refuser_si_pas_redirige(cadre, if dpae { Organisme::Dpae } else { Organisme::Dsn }, "la releve des retours")?;
     cadre.ouvrir_le_coffre();
-    let flux = args.texte("flux").unwrap_or("");
-    let environnement = args.texte("environnement").unwrap_or("production");
-    dire!("Retours {}{}, du {} au {}{}.", if dpae { "DPAE" } else { "DSN" }, if dpae { String::new() } else { format!(" ({})", environnement) }, jour_de(debut), jour_de(fin), if flux.is_empty() { String::new() } else { format!(", flux {}", flux) });
+    let flux = args.texte("flux").filter(|f| !f.is_empty());
+    let environnement = super::avec_defaut(args, "environnement")?;
+    let ou = if dpae { "DPAE".to_string() } else { format!("DSN ({})", environnement) };
+    match flux {
+        Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, jour_de(debut)?, jour_de(fin)?, f),
+        None => dire!("Retours {}, du {} au {}.", ou, jour_de(debut)?, jour_de(fin)?),
+    }
+    let tout = args.drapeau("tout");
+    // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
     let r = if dpae {
-        crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, args.drapeau("tout"), flux)?
+        crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
     } else {
-        crate::compagnie::releve::relever_retours(&cadre.ctx, debut, fin, args.drapeau("tout"), environnement, None, "")?
+        crate::compagnie::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
     };
     for i in &r.incidents {
         dire!("  {}", i);
     }
-    let mut trouves: Vec<&Value> = r.trouves.iter().filter(|x| flux.is_empty() || champ(x, "flux") == flux).collect();
-    trouves.sort_by_key(|x| champ(x, "publication"));
+    let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_deref() == flux).collect();
+    trouves.sort_by_key(|x| x.publication.clone());
     dire!("{} retour(s), dont {} nouveau(x).\n", trouves.len(), r.nouveaux.len());
     for x in trouves {
-        let nature = x.get("nature").map(texte).unwrap_or_default();
         dire!(
             "  {} {}  nature {:<4} {:<8} {}  flux {}",
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
-            envois::releve_retours::date_publication(x),
-            nature,
-            champ(x, "statut"),
-            envois::retours::libelle_nature(&nature),
-            champ(x, "flux")
+            super::dit(envois::releve_retours::date_publication(x).as_deref()),
+            x.nature,
+            super::dit(x.statut.as_deref()),
+            envois::retours::libelle_nature(&x.nature),
+            super::dit(x.flux.as_deref())
         );
     }
     for quoi in &r.a_faire {

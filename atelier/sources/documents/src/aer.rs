@@ -44,11 +44,13 @@
 use droit::fiche::Lue as _;
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
+
+use fabrique_pdf::forme::{ImagePosee, Remplissage};
+use fabrique_pdf::formulaire::ChampLu;
 
 use engagement::cachet;
 use socle::date::Jour;
-use crate::valeur::vrai;
 use socle::num::{Decimal, Resultat};
 
 /// Les champs du cadre 5, et rien d'autre.
@@ -163,7 +165,7 @@ pub struct Cadre5 {
     pub courriel: String,
 }
 
-/// Une case que le cadre 5 exige : absente, elle se refuse (`KeyError`).
+/// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
 fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
     c.ecrite(cle).map(str::to_string)
 }
@@ -211,18 +213,29 @@ impl Cadre5 {
     }
 }
 
-/// Une quantite du formulaire -> nombre. '' et None valent zero. Un nombre a virgule se lit tel qu'il est ecrit
-/// (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des milliers (espace) s'ote ; tout autre
-/// texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
-pub fn quantite(v: Option<&str>) -> Resultat<Decimal> {
-    let t: String = v.unwrap_or("").chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
+/// Une quantite du formulaire -> nombre ; une case vide (ou absente) ne dit aucune quantite (`None`). Un nombre a
+/// virgule se lit tel qu'il est ecrit (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des
+/// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
+pub fn quantite(v: Option<&str>) -> Resultat<Option<Decimal>> {
+    let Some(v) = v else { return Ok(None) };
+    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
     if t.is_empty() {
-        return Ok(Decimal::ZERO);
+        return Ok(None);
     }
     if !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
         return Err(format!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_lu(&t).map(|d| d.normalize()).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+}
+
+/// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
+/// l'engagement ne dit pas) concorde avec zero, et avec elle seule.
+fn concordent(a: Option<Decimal>, b: Option<Decimal>) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => x == y,
+        (Some(x), None) | (None, Some(x)) => x.is_zero(),
+        (None, None) => true,
+    }
 }
 
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
@@ -246,30 +259,29 @@ pub fn jour(t: &str) -> Resultat<Option<Jour>> {
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
-/// precedente quand celle-ci ne l'imprime pas : la suite du meme contrat), les quantites.
+/// precedente quand celle-ci ne l'imprime pas : la suite du meme contrat), les quantites (`None` : la case est vide).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ligne {
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
     pub numero: String,
-    pub cachets: Decimal,
-    pub heures: Decimal,
+    pub cachets: Option<Decimal>,
+    pub heures: Option<Decimal>,
 }
 
-fn valeur(champs: &Value, nom: &str) -> Option<String> {
-    champs.get(nom).and_then(|c| c.get("valeur")).and_then(Value::as_str).map(str::to_string)
+fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
+    champ(champs, nom).and_then(|c| c.valeur.texte()).map(str::to_string)
 }
 
 /// Les colonnes imprimees, dans l'ordre. Une colonne sans dates de periode n'en est pas une ; une colonne sans numero
 /// prend celui de la colonne precedente (la suite du meme contrat). Deux colonnes de meme cle (numero, periode) : la
 /// derniere l'emporte, a la place de la premiere.
-pub fn lire_quantites(champs: &Value) -> Resultat<Vec<Ligne>> {
+pub fn lire_quantites(champs: &[ChampLu]) -> Resultat<Vec<Ligne>> {
     let mut out: Vec<Ligne> = Vec::new();
     let mut numero_courant = String::new();
     for rang in 1..=5 {
         let nom = |p: &str| format!("{}{:02}", p, rang);
-        let numero = valeur(champs, &nom(NUM_CONTRAT)).unwrap_or_default().trim().to_string();
-        if !numero.is_empty() {
+        if let Some(numero) = valeur(champs, &nom(NUM_CONTRAT)).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
             numero_courant = numero;
         }
         let (deb, fin) = (valeur(champs, &nom(DEBUT)), valeur(champs, &nom(FIN)));
@@ -299,7 +311,8 @@ pub struct PaieAer {
     pub debut: Jour,
     pub fin: Jour,
     pub cachets: Decimal,
-    pub heures: Decimal,
+    /// `None` : l'engagement au cachet ne dit pas d'heures.
+    pub heures: Option<Decimal>,
 }
 
 impl PaieAer {
@@ -312,26 +325,34 @@ impl PaieAer {
     pub fn du_mois(p: &engagement::calcul::Paie) -> Resultat<PaieAer> {
         let e = &p.engagement;
         let (d, f) = (e.debut_mois()?, e.fin_mois()?);
-        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", e.numero.as_deref().unwrap_or_default().to_string()))?;
-        let heures = if e.nat()?.mensuelle() { p.heures_travaillees } else { socle::num::dec_f64(e.heures.unwrap_or(0.0))? };
+        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
+        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", numero))?;
+        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };
         Ok(PaieAer {
-            numero: e.numero.as_deref().unwrap_or_default().to_string(),
+            numero: numero.to_string(),
             debut: if e.debut > d { e.debut } else { d },
             fin: if fin < f { fin } else { f },
             cachets: Decimal::from(e.cachets),
-            heures: heures.normalize(),
+            heures: heures.map(|h| h.normalize()),
         })
     }
 }
 
 fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
-    let j = |x: Option<Jour>| x.map(|j| j.iso()).unwrap_or_else(|| "?".to_string());
+    // Une date que l'attestation n'imprime pas lisiblement se dit par « ? ».
+    let j = |x: Option<Jour>| match x {
+        Some(j) => j.iso(),
+        None => "?".to_string(),
+    };
     format!("{} au {}", j(debut), j(fin))
 }
 
-/// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 ».
-fn nombre(d: Decimal) -> String {
-    d.normalize().to_string().replace('.', ",")
+/// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 » ; « aucun » quand rien ne la dit.
+fn nombre(d: Option<Decimal>) -> String {
+    match d {
+        Some(d) => d.normalize().to_string().replace('.', ","),
+        None => "aucun".to_string(),
+    }
 }
 
 fn nom_du_contrat(numero: &str) -> &str {
@@ -363,8 +384,8 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
             ));
             continue;
         };
-        for (quoi, vu, n) in [("cachets", ligne.cachets, p.cachets), ("heures", ligne.heures, p.heures)] {
-            if vu != n {
+        for (quoi, vu, n) in [("cachets", ligne.cachets, Some(p.cachets)), ("heures", ligne.heures, p.heures)] {
+            if !concordent(vu, n) {
                 ecarts.push(format!(
                     "{} ({}) : {} {} sur l'attestation, {} dans la paie",
                     nom_du_contrat(&ligne.numero),
@@ -382,7 +403,7 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
                 "{} ({}) : une periode de la paie ({} cachets, {} heures) que l'attestation ne porte pas",
                 nom_du_contrat(&p.numero),
                 periode(Some(p.debut), Some(p.fin)),
-                nombre(p.cachets),
+                nombre(Some(p.cachets)),
                 nombre(p.heures)
             ));
         }
@@ -391,7 +412,7 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
 }
 
 /// Les champs du formulaire, lus par la fabrique.
-pub fn champs(donnees: &[u8]) -> R<Value> {
+pub fn champs(donnees: &[u8]) -> R<Vec<ChampLu>> {
     fabrique(fabrique_pdf::formulaire::champs(donnees))
 }
 
@@ -419,13 +440,15 @@ pub fn cadre_signature(rect: [f64; 4]) -> [f64; 4] {
     [x0 + 4.0, y0 + 4.0, x0 + 4.0 + largeur, y0 + 4.0 + hauteur]
 }
 
-fn rect_de(case: &Value) -> Option<(&Value, [f64; 4])> {
-    let r = case.get("rect").filter(|v| vrai(v))?;
-    let v: Vec<f64> = r.as_array()?.iter().filter_map(Value::as_f64).collect();
-    if v.len() != 4 {
-        return None;
-    }
-    Some((r, [v[0], v[1], v[2], v[3]]))
+/// Le champ `nom` du formulaire, s'il en a un.
+fn champ<'a>(champs: &'a [ChampLu], nom: &str) -> Option<&'a ChampLu> {
+    champs.iter().find(|c| c.nom == nom)
+}
+
+/// La page et le rectangle du champ `nom`, s'il est sur une page.
+fn case(champs: &[ChampLu], nom: &str) -> Option<(usize, [f64; 4])> {
+    let c = champ(champs, nom)?;
+    Some((c.page?, c.rect?))
 }
 
 /// Ce que `authentifier` recoit, en dehors du PDF lui-meme.
@@ -463,46 +486,42 @@ pub fn authentifier(donnees: &[u8], a: &Authentification) -> R<Vec<u8>> {
     // Travail le sont tous --, et l'apparence de chaque champ est regeneree,
     // pour qu'il se lise pareil dans tous les lecteurs.
     let champs = champs(donnees)?;
-    let mut valeurs = Map::new();
+    let mut valeurs = BTreeMap::new();
     for (nom, v) in cadre.valeurs() {
-        if champs.get(nom).is_some() {
-            valeurs.insert(nom.to_string(), Value::String(v));
+        if champ(&champs, nom).is_some() {
+            valeurs.insert(nom.to_string(), v);
         }
     }
-    let mut images: Vec<Value> = Vec::new();
-    if let Some((rect, r)) = champs.get(CHAMP_SIGNATURE).and_then(rect_de) {
+    let mut images: Vec<ImagePosee> = Vec::new();
+    if let Some((page, r)) = case(&champs, CHAMP_SIGNATURE) {
         if let Some(sig) = a.signature.filter(|s| Path::new(s).exists()) {
             // La signature est posee PAR-DESSUS la page, en travers de la case,
             // comme une signature manuscrite. Le champ lui-meme reste vide : on
             // ne tape pas son nom a la place. PNG, JPEG ou SVG.
-            let _ = rect;
-            let page = champs[CHAMP_SIGNATURE].get("page").cloned().unwrap_or(Value::Null);
-            images.push(image_fichier(&page, &json!(cadre_signature(r)), sig));
+            images.push(image_fichier(page, cadre_signature(r), sig));
         }
     }
-    if let Some((rect, _)) = champs.get(CHAMP_CACHET).and_then(rect_de) {
+    if let Some((page, rect)) = case(&champs, CHAMP_CACHET) {
         // LE SIEN S'IL EN A UN, LE NOTRE SINON. Le dessin est le defaut et non
         // une obligation : tout ce qu'un cachet porte est deja dans
         // `entreprise.json`, donc une compagnie qui installe le logiciel n'a
         // RIEN a fournir (regle 0). Mais celle qui a deja son tampon le pose
         // dans Configuration, et c'est lui qui part ; qu'elle le retire, et le
         // dessin reprend la main.
-        let page = champs[CHAMP_CACHET].get("page").cloned().unwrap_or(Value::Null);
-        if let Some(tampon) = image(&page, rect, a.ent, a.cachet_fichier) {
+        if let Some(tampon) = image(page, rect, a.ent, a.cachet_fichier) {
             images.push(tampon);
         }
     }
-    remplir(donnees, &valeurs, &images)
+    remplir(donnees, valeurs, images)
 }
 
 /// Les champs texte `valeurs` ecrits (apparence regeneree)
 /// et les `images` posees, par la fabrique du meme processus. Elle refuse
 /// l'ensemble pour un champ inconnu, en lecture seule ou trop long, une image
 /// illisible, une page qui n'existe pas. Pas de repli.
-pub fn remplir(donnees: &[u8], valeurs: &Map<String, Value>, images: &[Value]) -> R<Vec<u8>> {
-    let description = json!({"format": fabrique_pdf::FORMAT, "champs": valeurs, "images": images});
-    let texte = serde_json::to_string(&description).map_err(|e| Echec::Autre(e.to_string()))?;
-    fabrique(fabrique_pdf::formulaire::remplir(donnees, &texte))
+pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<ImagePosee>) -> R<Vec<u8>> {
+    let remplissage = Remplissage { format: fabrique_pdf::FORMAT, champs: Some(valeurs), images: Some(images) };
+    fabrique(fabrique_pdf::formulaire::remplir(donnees, &remplissage))
 }
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
@@ -515,7 +534,7 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
         if !due(p)? {
             continue;
         }
-        let numero = e.numero.as_deref().unwrap_or_default().to_string();
+        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
         let mut m = e.debut.iso()[..7].to_string();
         while m.as_str() < periode {
             for q in paies_du_mois(&m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
@@ -538,8 +557,8 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
 /// reste VECTORIEL, net quelle que soit la taille de la case, la ou un PNG
 /// agrandi bave. Un fichier illisible n'est pas pose en silence : la fabrique
 /// refuse, et l'attestation ne sort pas sans qu'on sache pourquoi.
-fn image_fichier(page: &Value, rect: &Value, fichier: &str) -> Value {
-    json!({"page": page, "rect": rect, "marge": cachet::MARGE, "fichier": fichier})
+fn image_fichier(page: usize, rect: [f64; 4], fichier: &str) -> ImagePosee {
+    ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: Some(fichier.to_string()), svg: None }
 }
 
 /// Le cachet a poser dans `rect` de la page `page` : celui de la compagnie
@@ -551,12 +570,12 @@ fn image_fichier(page: &Value, rect: &Value, fichier: &str) -> Value {
 /// fiche, et il suit la fiche quand elle change. Un fichier pose l'emporte
 /// simplement parce qu'une compagnie qui prend la peine d'apporter son tampon
 /// veut le sien.
-fn image(page: &Value, rect: &Value, ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<Value> {
+fn image(page: usize, rect: [f64; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
     if let Some(f) = fichier {
         if Path::new(f).exists() {
             return Some(image_fichier(page, rect, f));
         }
     }
     let dessin = cachet::svg(ent)?;
-    Some(json!({"page": page, "rect": rect, "marge": cachet::MARGE, "svg": dessin}))
+    Some(ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: None, svg: Some(dessin) })
 }

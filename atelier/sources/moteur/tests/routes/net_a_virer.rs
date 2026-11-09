@@ -35,6 +35,7 @@ fn le_net_a_virer_est_le_net_apres_impot() {
     assert_eq!(dec(fuller["net_paye"].as_str().unwrap()), paye, "{}", fuller);
     let ligne = a["par_salarie"].as_array().unwrap().iter().find(|g| g["salarie"]["cle"] == "FULLER").unwrap();
     assert_eq!(dec(ligne["net_paye"].as_str().unwrap()), paye, "{}", ligne);
-    let total: rust_decimal::Decimal = paies.iter().map(|p| dec(p["net_paye"].as_str().unwrap())).sum();
-    assert_eq!(dec(a["total_net"].as_str().unwrap()), total);
+    // Le net du mois est connu quand celui de chaque paie l'est (une paie pas encore validee n'a pas son prelevement).
+    let total: Option<rust_decimal::Decimal> = paies.iter().map(|p| p["net_paye"].as_str().map(dec)).sum();
+    assert_eq!(a["total_net"].as_str().map(dec), total);
 }

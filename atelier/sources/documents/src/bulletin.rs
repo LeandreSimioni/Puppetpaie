@@ -1,7 +1,5 @@
-//! La description du bulletin de paie (FORMAT.md de
-//! `fabrique-pdf`) : des blocs JSON que la fabrique met en page. Ce module
-//! s'arrete a la `Value` de la description ; l'ecriture du PDF est
-//! `fabrique::ecrire`.
+//! La description du bulletin de paie (`fabrique_pdf::forme`) : des blocs que la fabrique met en page. Ce module
+//! s'arrete a la description ; l'ecriture du PDF est `fabrique::ecrire`.
 
 use engagement::calcul::Paie;
 use engagement::conges::CompteurConges;
@@ -10,13 +8,12 @@ use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie};
 use droit::cumul::{tableau_cumul, Colonne};
 use engagement::cumul::Passe;
 use socle::date::Jour;
-use crate::valeur::{d, dec, en_texte, vrai};
 use socle::mois::Mois;
 use socle::texte::euros;
 use socle::num::{dec_f64, div, sub, Decimal, Resultat};
 use droit::pas::Versement;
 use rust_decimal::RoundingStrategy;
-use serde_json::{json, Map, Value};
+use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Morceau};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -33,17 +30,17 @@ const NBSP: &str = "\u{a0}";
 const BLANC: &str = "#FFFFFF";
 
 /// Emplacement du logo sur la page, en points PDF (A4 = 595 x 842).
-pub const LOGO_LARGEUR: i64 = 74;
-pub const LOGO_MARGE_DROITE: i64 = 34;
-pub const LOGO_MARGE_HAUT: i64 = 28;
+pub const LOGO_LARGEUR: f32 = 74.0;
+pub const LOGO_MARGE_DROITE: f32 = 34.0;
+pub const LOGO_MARGE_HAUT: f32 = 28.0;
 
 /// Le pied de chaque page du bulletin : « Édité avec » et le mot Puppetpaie dessiné (`donnees/puppetpaie-mot.svg`),
 /// en gris clair, en bas a droite. Le mot a 657,2 sur 195,4 de cadre, sa ligne de base a 84,1 du bas : a 33 points de
 /// large, il descend de 4,2 points sous celle du texte.
 const PIED_TEXTE: &str = "Édité avec";
 const PIED_GRIS: &str = "#C5C9CE";
-const PIED_MOT_LARGEUR: f64 = 33.0;
-const PIED_MOT_DESCENTE: f64 = 4.2;
+const PIED_MOT_LARGEUR: f32 = 33.0;
+const PIED_MOT_DESCENTE: f32 = 4.2;
 
 /// Dans l'ordre de preference : le vectoriel d'abord.
 pub const IDENTITE_EXTENSIONS: [&str; 3] = [".svg", ".png", ".jpg"];
@@ -61,8 +58,10 @@ fn fixe(x: Decimal, dp: u32) -> (bool, String) {
 
 /// 1234.5 -> « 1 234,50 ».
 pub fn fmt_eur(x: Decimal) -> String {
+    // Deux decimales, toujours ecrites (`fixe`) : les trois derniers caracteres sont le point et les centimes.
     let (neg, s) = fixe(x, 2);
-    let (entier, frac) = s.split_once('.').unwrap_or((&s, ""));
+    let (entier, point_frac) = s.split_at(s.len() - 3);
+    let frac = &point_frac[1..];
     let mut groupes = String::new();
     for (i, c) in entier.chars().enumerate() {
         if i > 0 && (entier.len() - i) % 3 == 0 {
@@ -84,11 +83,6 @@ pub fn fmt_heures(x: Decimal) -> String {
     x.normalize().to_string().replace('.', ",")
 }
 
-/// Une date ISO en JJ/MM/AAAA.
-pub fn jj_mm_aaaa(v: &Value) -> Resultat<String> {
-    Ok(d(v)?.jj_mm_aaaa())
-}
-
 /// « 2,5 », et « 2 » quand c'est rond (`quantize` au pair, comme le contexte).
 pub fn jours(x: Decimal) -> String {
     let q = x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven).normalize();
@@ -105,129 +99,157 @@ fn jours_option(x: Option<f64>) -> Resultat<String> {
 
 // ------------------------------------------------------------ les briques
 
-fn num(x: f64) -> Value {
-    json!(x)
-}
-
-fn requis<'a>(o: &'a Value, cle: &str) -> Resultat<&'a Value> {
-    o.get(cle).ok_or_else(|| socle::fichiers::absent(cle))
-}
-
-/// La valeur de `cle`, en texte ; refus si elle manque.
-fn texte(o: &Value, cle: &str) -> Resultat<String> {
-    Ok(en_texte(requis(o, cle)?))
-}
-
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
 fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> Resultat<String> {
     sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle))
 }
 
 
-/// Un morceau de texte d'un paragraphe ou d'une cellule.
-fn m(texte: impl Into<String>, gras: bool, couleur: Option<&str>) -> Value {
-    let mut o = Map::new();
-    o.insert("texte".into(), Value::String(texte.into()));
-    if gras {
-        o.insert("gras".into(), Value::Bool(true));
-    }
-    if let Some(c) = couleur {
-        o.insert("couleur".into(), c.into());
-    }
-    Value::Object(o)
+/// Un morceau de texte d'un paragraphe ou d'une cellule ; maigre et sans couleur, il ne le dit pas.
+fn m(texte: impl Into<String>, gras: bool, couleur: Option<&str>) -> Morceau {
+    Morceau { texte: texte.into(), gras: gras.then_some(true), italique: None, couleur: couleur.map(str::to_string) }
 }
 
-fn mt(texte: impl Into<String>) -> Value {
+fn mt(texte: impl Into<String>) -> Morceau {
     m(texte, false, None)
 }
 
-/// Un paragraphe du bulletin : ses morceaux, sa taille, sa couleur, l'espace avant et apres.
-fn para(morceaux: Vec<Value>, taille: f64, couleur: Option<&str>, avant: f64, apres: f64) -> Value {
-    let mut o = Map::new();
-    o.insert("type".into(), "paragraphe".into());
-    o.insert("morceaux".into(), Value::Array(morceaux));
-    if taille != 0.0 {
-        o.insert("taille".into(), num(taille));
-    }
-    if let Some(c) = couleur {
-        o.insert("couleur".into(), c.into());
-    }
-    if avant != 0.0 {
-        o.insert("espace_avant".into(), num(avant));
-    }
-    if apres != 0.0 {
-        o.insert("espace_apres".into(), num(apres));
-    }
-    Value::Object(o)
+/// Une mesure du bulletin ; nulle, elle ne se dit pas.
+fn dite(x: f64) -> Option<f32> {
+    (x != 0.0).then_some(x as f32)
+}
+
+/// Un paragraphe du bulletin : ses morceaux, sa taille, sa couleur, l'espace avant et apres ; ce qui est nul ne se dit
+/// pas.
+fn para(morceaux: Vec<Morceau>, taille: f64, couleur: Option<&str>, avant: f64, apres: f64) -> Bloc {
+    Bloc::Paragraphe(f::Paragraphe {
+        morceaux,
+        taille: dite(taille),
+        couleur: couleur.map(str::to_string),
+        alignement: None,
+        majuscules: None,
+        espace_avant: dite(avant),
+        espace_apres: dite(apres),
+        retrait: None,
+    })
+}
+
+/// Une cellule de morceaux, de la couleur dite.
+fn cm(morceaux: Vec<Morceau>, couleur: Option<&str>) -> Cellule {
+    Cellule::Decrite(f::CelluleDecrite {
+        texte: None,
+        morceaux: Some(morceaux),
+        gras: None,
+        couleur: couleur.map(str::to_string),
+        alignement: None,
+        etendue: None,
+    })
 }
 
 /// Une cellule du bulletin : son texte, sur combien de colonnes, en gras ou non, sa couleur.
-fn cell(texte: impl Into<String>, etendue: i64, gras: bool, couleur: Option<&str>) -> Value {
-    let mut o = Map::new();
-    o.insert("texte".into(), Value::String(texte.into()));
-    if etendue != 1 {
-        o.insert("etendue".into(), json!(etendue));
-    }
-    if gras {
-        o.insert("gras".into(), Value::Bool(true));
-    }
-    if let Some(c) = couleur {
-        o.insert("couleur".into(), c.into());
-    }
-    Value::Object(o)
+fn cell(texte: impl Into<String>, etendue: i64, gras: bool, couleur: Option<&str>) -> Cellule {
+    Cellule::Decrite(f::CelluleDecrite {
+        texte: Some(texte.into()),
+        morceaux: None,
+        gras: gras.then_some(true),
+        couleur: couleur.map(str::to_string),
+        alignement: None,
+        etendue: (etendue != 1).then_some(etendue as usize),
+    })
 }
 
-fn cel(texte: impl Into<String>, etendue: i64) -> Value {
+fn cel(texte: impl Into<String>, etendue: i64) -> Cellule {
     cell(texte, etendue, false, None)
 }
 
-fn s(texte: impl Into<String>) -> Value {
-    Value::String(texte.into())
+fn s(texte: impl Into<String>) -> Cellule {
+    Cellule::Texte(texte.into())
+}
+
+/// Une cellule vide : rien ne s'y ecrit.
+fn vide() -> Cellule {
+    Cellule::Decrite(f::CelluleDecrite { texte: None, morceaux: None, gras: None, couleur: None, alignement: None, etendue: None })
+}
+
+/// Une cellule qui dit son texte, ou vide.
+fn so(texte: Option<String>) -> Cellule {
+    match texte {
+        Some(t) => s(t),
+        None => vide(),
+    }
+}
+
+/// Ce qu'une ligne dit en plus de ses cellules.
+enum Opt {
+    Gras,
+    Fond(&'static str),
+    Couleur(&'static str),
+    Taille(f64),
+    FiletHaut(&'static str, f64),
 }
 
 /// Les options absentes ne s'ecrivent pas.
-fn ligne(cellules: Vec<Value>, options: Vec<(&str, Value)>) -> Value {
-    let mut o = Map::new();
-    o.insert("cellules".into(), Value::Array(cellules));
-    for (k, v) in options {
-        o.insert(k.into(), v);
+fn ligne(cellules: Vec<Cellule>, options: Vec<Opt>) -> Ligne {
+    let mut l = Ligne { cellules, gras: None, fond: None, couleur: None, taille: None, filet_haut: None, filet_bas: None };
+    for o in options {
+        match o {
+            Opt::Gras => l.gras = Some(true),
+            Opt::Fond(c) => l.fond = Some(c.to_string()),
+            Opt::Couleur(c) => l.couleur = Some(c.to_string()),
+            Opt::Taille(t) => l.taille = Some(t as f32),
+            Opt::FiletHaut(c, e) => l.filet_haut = Some(filet(c, e)),
+        }
     }
-    Value::Object(o)
+    l
 }
 
-fn gras() -> (&'static str, Value) {
-    ("gras", Value::Bool(true))
+fn gras() -> Opt {
+    Opt::Gras
 }
 
-fn filet_haut(couleur: &str, epaisseur: f64) -> (&'static str, Value) {
-    ("filet_haut", json!({"couleur": couleur, "epaisseur": epaisseur}))
+fn filet_haut(couleur: &'static str, epaisseur: f64) -> Opt {
+    Opt::FiletHaut(couleur, epaisseur)
+}
+
+fn filet(couleur: &str, epaisseur: f64) -> f::Filet {
+    f::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(epaisseur as f32) }
 }
 
 /// Les cellules des tableaux : 7 pt, 1,4 pt au-dessus et au-dessous, 3 pt de chaque cote.
-fn marge_cellule() -> Value {
-    json!({"haut": 1.4, "droite": 3, "bas": 1.4, "gauche": 3})
+fn marge_cellule() -> f::MargeCellule {
+    f::MargeCellule { haut: Some(1.4), droite: Some(3.0), bas: Some(1.4), gauche: Some(3.0) }
 }
 
 /// Premiere colonne a gauche, les autres a droite, un filet fin sous chaque ligne.
-fn tableau(largeurs: &[f64], entete: Vec<Value>, lignes: Vec<Value>, filet: &str) -> Value {
-    let colonnes: Vec<Value> = largeurs
+fn tableau(largeurs: &[f64], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: &str) -> Bloc {
+    let colonnes = largeurs
         .iter()
         .enumerate()
-        .map(|(i, l)| json!({"largeur": l, "alignement": if i == 0 { "gauche" } else { "droite" }}))
+        .map(|(i, l)| f::ColonneTableau {
+            largeur: *l as f32,
+            alignement: Some(if i == 0 { f::Alignement::Gauche } else { f::Alignement::Droite }),
+        })
         .collect();
-    json!({
-        "type": "tableau", "taille": 7, "interligne": 1.27,
-        "colonnes": colonnes, "marge_cellule": marge_cellule(),
-        "filet_lignes": {"couleur": filet, "epaisseur": 0.3},
-        "entete": entete, "lignes": lignes
+    Bloc::Tableau(f::Tableau {
+        colonnes,
+        entete: Some(entete),
+        lignes: Some(lignes),
+        taille: Some(7.0),
+        couleur: None,
+        interligne: Some(1.27),
+        marge_cellule: Some(marge_cellule()),
+        filet_lignes: Some(filet(teinte, 0.3)),
+        filets_cellules: None,
+        espace_avant: None,
+        espace_apres: None,
     })
 }
 
 /// Une ligne « net », blanc sur rouge, 9,5 pt, en gras.
-fn ligne_net(libelle: &str, montant: Decimal, colonnes: i64) -> Value {
+fn ligne_net(libelle: &str, montant: Decimal, colonnes: i64) -> Ligne {
     ligne(
         vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))],
-        vec![gras(), ("fond", ROUGE.into()), ("couleur", BLANC.into()), ("taille", num(9.5))],
+        vec![gras(), Opt::Fond(ROUGE), Opt::Couleur(BLANC), Opt::Taille(9.5)],
     )
 }
 
@@ -259,13 +281,17 @@ pub fn smic_de_la_reduction(p: &Paie) -> Resultat<String> {
 /// (`droit::clauses::profil` : la fiche, sinon le metier, jamais devinee) dite par le libelle de la convention, puis le
 /// classement que la fiche porte dans la grille (`classement_conventionnel`) ; `None` quand ni l'une ni l'autre ne se
 /// lisent.
-fn classification(idcc: &str, sal: &ChampsSalarie) -> Resultat<Option<String>> {
+fn classification(idcc: Option<&str>, sal: &ChampsSalarie) -> Resultat<Option<String>> {
     let profil = droit::clauses::profil(idcc, sal, &Default::default())?;
+    // La categorie dite par la convention ; celle que la convention ne nomme pas s'imprime telle que la fiche la dit.
     let categorie = match profil.categorie {
-        Some(c) => Some(droit::clauses::categorie_imprimee(idcc, &c)?.unwrap_or_else(|| c.replace('_', " "))),
+        Some(c) => Some(match droit::clauses::categorie_imprimee(idcc, &c)? {
+            Some(dite) => dite,
+            None => c.replace('_', " "),
+        }),
         None => None,
     };
-    let classement = Some(sal.classement_conventionnel.texte().to_string()).filter(|t| !t.trim().is_empty());
+    let classement = sal.classement_conventionnel.portee().filter(|t| !t.trim().is_empty()).map(str::to_string);
     Ok(match (categorie, classement) {
         (Some(c), Some(k)) => Some(format!("{}, {}", c, k)),
         (Some(c), None) => Some(c),
@@ -278,11 +304,11 @@ fn classification(idcc: &str, sal: &ChampsSalarie) -> Resultat<Option<String>> {
 /// capitales, puis son prenom (`prenom_affichage`, sinon `prenom`). La DSN et la DPAE declarent le nom sans accents ;
 /// le bulletin est lu par le salarie, sous son nom.
 fn nom_imprime(sal: &ChampsSalarie) -> Resultat<String> {
-    let lu = |cases: [&str; 2]| -> Option<String> {
-        cases.into_iter().find(|t| !t.trim().is_empty()).map(str::to_string)
+    let lu = |cases: [Option<&str>; 2]| -> Option<String> {
+        cases.into_iter().flatten().find(|t| !t.trim().is_empty()).map(str::to_string)
     };
-    let nom = lu([sal.nom_affichage.texte(), sal.nom.texte()]).ok_or_else(|| socle::fichiers::absent("nom"))?;
-    let prenom = lu([sal.prenom_affichage.texte(), sal.prenom.texte()]).ok_or_else(|| socle::fichiers::absent("prenom"))?;
+    let nom = lu([sal.nom_affichage.portee(), sal.nom.portee()]).ok_or_else(|| socle::fichiers::absent("nom"))?;
+    let prenom = lu([sal.prenom_affichage.portee(), sal.prenom.portee()]).ok_or_else(|| socle::fichiers::absent("prenom"))?;
     Ok(format!("{} {}", nom.to_uppercase(), prenom))
 }
 
@@ -290,7 +316,7 @@ fn nom_imprime(sal: &ChampsSalarie) -> Resultat<String> {
 /// (`emploi_affichage`), sinon celui de la fiche, sinon le libelle que la DSN declare (`emploi`, S21.G00.40.006).
 fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> Resultat<String> {
     let lisible = e.emploi_affichage.clone().filter(|t| !t.trim().is_empty())
-        .or_else(|| Some(sal.emploi_affichage.texte().to_string()).filter(|t| !t.trim().is_empty()));
+        .or_else(|| sal.emploi_affichage.portee().filter(|t| !t.trim().is_empty()).map(str::to_string));
     match lisible {
         Some(t) => Ok(t),
         None => exige(&sal.emploi, "emploi"),
@@ -298,10 +324,10 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> Resultat<S
 }
 
 pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> Resultat<(String, String)> {
-    let idcc = engagement::minima::idcc_du_contrat(ent.idcc.texte(), sp, sal)?;
-    if idcc.is_empty() {
+    let Some(idcc_compagnie) = ent.idcc.portee() else {
         return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
-    }
+    };
+    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
     let libelle = if idcc == "1734" {
         "Artistes-interprètes engagés pour des émissions de télévision".to_string()
     } else {
@@ -310,106 +336,117 @@ pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::S
     Ok((idcc, libelle))
 }
 
-/// Un bulletin qui remplace en entier celui qui est parti (`{"remplace": true, "rectifie", "mois_origine"}`) : la paie du
-/// mois refaite avant que sa DSN ne soit close, imprimee comme un bulletin du mois, sous un nouveau numero. Sans
-/// `remplace`, c'est la regularisation d'un mois clos, versee avec une paie suivante (`rectificatif_lignes`).
-pub fn remplace_en_entier(r: &Value) -> bool {
-    r.get("remplace").is_some_and(vrai)
+/// LE BULLETIN RECTIFICATIF d'une paie partie puis refaite : il dit le bulletin qu'il rectifie (`rectifie`, son numero)
+/// et le mois de la paie (`mois_origine`, en clair). Tant que la DSN du mois se refait, il REMPLACE en entier celui qui
+/// est parti : la paie du mois refaite, imprimee comme un bulletin du mois, sous un nouveau numero. Quand elle ne se
+/// refait plus, il porte l'ECART avec le bulletin parti, verse avec une paie suivante (`Ecart`).
+#[derive(Debug, Clone)]
+pub struct Rectificatif {
+    pub rectifie: String,
+    pub mois_origine: String,
+    /// `None` : il remplace en entier le bulletin parti.
+    pub ecart: Option<Ecart>,
+}
+
+/// L'ECART AVEC LE BULLETIN PARTI d'un mois clos : les nets avant et apres, leurs differences, le mois (en clair) de la
+/// paie qui le verse, le prelevement a la source de la difference, et ce qui reste a verser (ou a retenir).
+#[derive(Debug, Clone)]
+pub struct Ecart {
+    pub net_avant: Decimal,
+    pub net_apres: Decimal,
+    pub difference_net: Decimal,
+    pub difference_net_imposable: Decimal,
+    pub mois_versement: String,
+    /// `None` : un trop-verse sans taux d'origine, dont le prelevement ne se calcule pas.
+    pub prelevement: Option<PrelevementDeLEcart>,
+    pub a_verser: Decimal,
+}
+
+/// Le prelevement a la source de la difference : au taux du mois de l'indu (`indu`), ou a celui du versement.
+#[derive(Debug, Clone)]
+pub struct PrelevementDeLEcart {
+    pub indu: bool,
+    pub taux: droit::fiche::Montant,
+    pub montant: Decimal,
 }
 
 /// Le bas d'un bulletin RECTIFICATIF.
-fn rectificatif_lignes(r: &Value, colonnes: i64) -> Resultat<Vec<Value>> {
+fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> Resultat<Vec<Ligne>> {
     let lignes = [
-        ("Net à payer avant impôt du bulletin rectifié", "net_avant"),
-        ("Net à payer avant impôt rectifié", "net_apres"),
-        ("Différence de net à payer", "difference_net"),
-        ("Différence de net imposable", "difference_net_imposable"),
+        ("Net à payer avant impôt du bulletin rectifié", r.net_avant),
+        ("Net à payer avant impôt rectifié", r.net_apres),
+        ("Différence de net à payer", r.difference_net),
+        ("Différence de net imposable", r.difference_net_imposable),
     ];
-    let mut lignes_dec = Vec::new();
-    for (libelle, cle) in lignes {
-        lignes_dec.push((libelle, dec(requis(r, cle)?)?));
-    }
     let mut out = vec![ligne(
-        vec![cel(format!("RÉGULARISATION VERSÉE AVEC LA PAIE {}", socle::texte::de(&texte(r, "mois_versement")?).to_uppercase()), colonnes)],
+        vec![cel(format!("RÉGULARISATION VERSÉE AVEC LA PAIE {}", socle::texte::de(&r.mois_versement).to_uppercase()), colonnes)],
         vec![gras(), filet_haut(ROUGE, 0.6)],
     )];
-    for (libelle, montant) in lignes_dec {
+    for (libelle, montant) in lignes {
         out.push(ligne(vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))], vec![]));
     }
-    let prelevement = match r.get("prelevement") {
-        None | Some(Value::Null) => {
-            out.push(ligne(vec![cel("Impôt prélevé à la source sur la différence", colonnes - 1), s("non calculé")], vec![]));
-            return Ok(out);
-        }
-        Some(p) => dec(p)?,
+    let Some(p) = &r.prelevement else {
+        out.push(ligne(vec![cel("Impôt prélevé à la source sur la différence", colonnes - 1), s("non calculé")], vec![]));
+        return Ok(out);
     };
-    let libelle = if vrai(requis(r, "indu")?) {
+    let libelle = if p.indu {
         "Régularisation du prélèvement à la source (taux du mois de l'indu)"
     } else {
         "Impôt sur le revenu prélevé à la source sur la différence"
     };
     out.push(ligne(
-        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(dec(requis(r, "taux")?)?)), colonnes - 1), s(fmt_eur(prelevement))],
+        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.dec()?)), colonnes - 1), s(fmt_eur(p.montant))],
         vec![],
     ));
-    let a_verser = dec(requis(r, "a_verser")?)?;
-    out.push(ligne_net(if a_verser >= Decimal::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, a_verser.abs(), colonnes));
+    out.push(ligne_net(if r.a_verser >= Decimal::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs(), colonnes));
     Ok(out)
 }
 
 /// L'impot a la source, et le net paye. La ligne du prelevement suit le modele de l'arrete du
 /// 25/02/2016 (art. 1, I : « IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE », colonnes Base, Taux, Salarié) : son assiette
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
-/// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas.
-fn lignes_pas_tableau(p: &Paie, pas: Option<&Versement>, colonnes: i64) -> Resultat<Vec<Value>> {
-    let taux = match pas.and_then(|v| v.taux.as_ref()) {
-        Some(t) if t.non_nul() => t.dec()?,
-        _ => dec(&json!("0.00"))?,
-    };
-    let montant = pas.map_or(Decimal::new(0, 2), |v| v.prelevement);
-    let assiette = pas.map_or(String::new(), |v| fmt_eur(v.montant_soumis));
+/// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas. Un versement sans taux (une
+/// paie importee dont la piece ne le disait pas) laisse sa case vide.
+fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> Resultat<Vec<Ligne>> {
+    let taux = pas.taux.as_ref().map(|t| t.dec().map(fmt_taux)).transpose()?;
     Ok(vec![
         ligne(
-            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(assiette), s(fmt_taux(taux)), s(fmt_eur(montant))],
+            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis)), so(taux), s(fmt_eur(pas.prelevement))],
             vec![],
         ),
-        ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer, montant), colonnes),
+        ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer, pas.prelevement), colonnes),
     ])
 }
 
 /// Une colonne de libelles, une par fenetre.
-fn tableau_des_cumuls(colonnes: &[Colonne]) -> Value {
+fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
     let n = colonnes.len() as f64;
     let mut cellules = vec![cell("CUMULS", 1, true, Some(ARDOISE))];
     for c in colonnes {
-        cellules.push(json!({"morceaux": [m(c.titre.clone(), true, None), mt("\n"), mt(c.sous_titre.clone())]}));
+        cellules.push(cm(vec![m(c.titre.clone(), true, None), mt("\n"), mt(c.sous_titre.clone())], None));
     }
     let entete = vec![ligne(
         cellules,
-        vec![("couleur", ROUGE.into()), ("taille", num(6.8)), ("fond", FOND_FAMILLE.into()), filet_haut(ROUGE, 0.8)],
+        vec![Opt::Couleur(ROUGE), Opt::Taille(6.8), Opt::Fond(FOND_FAMILLE), filet_haut(ROUGE, 0.8)],
     )];
     let enseigne = colonnes.iter().any(|c| c.enseignement != 0);
-    // (libelle, valeur de chaque colonne, suffixe)
-    type Rang = (&'static str, fn(&Colonne) -> String, &'static str);
+    // (libelle, valeur de chaque colonne, suffixe) ; une valeur que la colonne n'a pas laisse sa case vide.
+    type Rang = (&'static str, fn(&Colonne) -> Option<String>, &'static str);
     let mut rangs: Vec<Rang> = vec![
-        ("Cachets", |c| c.cachets.to_string(), ""),
-        ("Heures déclarées", |c| c.heures.to_string(), " h"),
-        ("Total heures (cachets × 12 + heures)", |c| c.heures_equivalentes.to_string(), " h"),
+        ("Cachets", |c| Some(c.cachets.to_string()), ""),
+        ("Heures déclarées", |c| Some(c.heures.to_string()), " h"),
+        ("Total heures (cachets × 12 + heures)", |c| Some(c.heures_equivalentes.to_string()), " h"),
     ];
     if enseigne {
-        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| c.enseignement.to_string(), " h"));
-        rangs.push((
-            "Heures retenues pour les 507 h",
-            |c| c.heures_ouverture.map_or("None".to_string(), |h| h.to_string()),
-            " h",
-        ));
+        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(c.enseignement.to_string()), " h"));
+        rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(|h| h.to_string()), " h"));
     }
-    rangs.push(("Salaire brut", |c| euros(c.brut), ""));
+    rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
     let lignes = rangs
         .iter()
         .map(|(libelle, valeur, suffixe)| {
             let mut cel = vec![s(*libelle)];
-            cel.extend(colonnes.iter().map(|c| s(format!("{}{}", valeur(c), suffixe))));
+            cel.extend(colonnes.iter().map(|c| so(valeur(c).map(|v| format!("{}{}", v, suffixe)))));
             ligne(cel, vec![])
         })
         .collect();
@@ -419,22 +456,26 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Value {
 }
 
 /// Le compteur de conges payes d'un permanent.
-fn tableau_conges(cpt: &CompteurConges) -> Value {
+fn tableau_conges(cpt: &CompteurConges) -> Bloc {
     let mut lignes = vec![("Acquis sur la période", cpt.acquis), ("Pris", cpt.pris)];
     if !cpt.reports.is_zero() {
         lignes.insert(1, ("Report de la période précédente", cpt.reports));
     }
     let entete = vec![ligne(
         vec![
-            json!({"morceaux": [
-                m("CONGÉS PAYÉS", true, None), mt("\n"),
-                mt(format!("période du {} au {}", cpt.periode_debut.jj_mm_aaaa(), cpt.periode_fin.jj_mm_aaaa()))],
-                "couleur": ARDOISE}),
+            cm(
+                vec![
+                    m("CONGÉS PAYÉS", true, None),
+                    mt("\n"),
+                    mt(format!("période du {} au {}", cpt.periode_debut.jj_mm_aaaa(), cpt.periode_fin.jj_mm_aaaa())),
+                ],
+                Some(ARDOISE),
+            ),
             cell("Jours ouvrables", 1, true, None),
         ],
-        vec![("couleur", ROUGE.into()), ("taille", num(6.8)), ("fond", FOND_FAMILLE.into()), filet_haut(ROUGE, 0.8)],
+        vec![Opt::Couleur(ROUGE), Opt::Taille(6.8), Opt::Fond(FOND_FAMILLE), filet_haut(ROUGE, 0.8)],
     )];
-    let mut corps: Vec<Value> =
+    let mut corps: Vec<Ligne> =
         lignes.iter().map(|(l, v)| ligne(vec![s(*l), s(format!("{} j", jours(*v)))], vec![])).collect();
     corps.push(ligne(vec![s("Solde"), s(format!("{} j", jours(cpt.solde())))], vec![gras()]));
     tableau(&[0.40, 0.60], entete, corps, "#eeeeee")
@@ -477,9 +518,6 @@ pub enum Modele {
     Simplifie,
     Complet,
 }
-
-/// La case qui porte le choix, dans la fiche entreprise comme dans la fiche salarie.
-pub const CASE_MODELE: &str = "modele_bulletin";
 
 impl Modele {
     pub const TOUS: [Modele; 2] = [Modele::Simplifie, Modele::Complet];
@@ -531,19 +569,27 @@ impl Modele {
     }
 }
 
-/// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie ; sinon le
-/// simplifie.
+/// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie. Sans choix,
+/// le bulletin est celui de l'arrete du 25/02/2016, art. 1, I, le simplifie, sans l'annexe que seul le complet ajoute.
 pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> Resultat<Modele> {
-    match modele_du_salarie(sal)? {
-        Some(m) => Ok(m),
-        None => Ok(Modele::du_choix(ent.modele_bulletin.dite()).unwrap_or(Modele::Simplifie)),
+    Ok(match modele_du_salarie(sal)? {
+        Some(m) => m,
+        None => modele_de_la_compagnie(ent),
+    })
+}
+
+/// Le modele de la compagnie : celui qu'elle a choisi ; sans choix, le simplifie de l'arrete du 25/02/2016, art. 1, I.
+pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> Modele {
+    match Modele::du_choix(ent.modele_bulletin.dite()) {
+        Some(m) => m,
+        None => Modele::Simplifie,
     }
 }
 
 /// Le style d'un titre de rubrique du modele (« COTISATIONS ET CONTRIBUTIONS SOCIALES OBLIGATOIRES », « IMPÔT SUR LE
 /// REVENU »...) : en gras, rouge, sur fond rose.
-fn style_section() -> Vec<(&'static str, Value)> {
-    vec![gras(), ("couleur", ROUGE.into()), ("taille", num(6.8)), ("fond", FOND_FAMILLE.into())]
+fn style_section() -> Vec<Opt> {
+    vec![gras(), Opt::Couleur(ROUGE), Opt::Taille(6.8), Opt::Fond(FOND_FAMILLE)]
 }
 
 /// Ou une ligne de cotisation se range dans le modele : son rang (l'ordre du modele), le titre du groupe qui la porte
@@ -683,45 +729,41 @@ fn libelle_du_modele(l: &engagement::calcul::LigneCotisation) -> String {
     }
 }
 
-fn montant_ou_rien(x: Decimal) -> String {
+/// Un montant, que sa case ne dit pas quand il est nul.
+fn montant_ou_rien(x: Decimal) -> Cellule {
     if x.is_zero() {
-        String::new()
+        vide()
     } else {
-        fmt_eur(x)
+        s(fmt_eur(x))
     }
 }
 
+/// Un taux, s'il y en a un.
+fn taux_dit(t: Option<f64>) -> Resultat<Cellule> {
+    Ok(so(t.map(|t| dec_f64(t).map(fmt_taux)).transpose()?))
+}
+
 /// La base d'une ligne, et son taux salarial et son taux employeur ; rien la ou le bareme masque base et taux.
-fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> Resultat<(String, String, String)> {
+fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> Resultat<(Cellule, Cellule, Cellule)> {
     if l.masquer_base_et_taux {
-        return Ok((String::new(), String::new(), String::new()));
+        return Ok((vide(), vide(), vide()));
     }
-    let taux = |t: Option<f64>| -> Resultat<String> {
-        match t {
-            Some(t) => Ok(fmt_taux(dec_f64(t)?)),
-            None => Ok(String::new()),
-        }
-    };
-    Ok((fmt_eur(l.base), taux(l.taux_sal)?, taux(l.taux_pat)?))
+    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal)?, taux_dit(l.taux_pat)?))
 }
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
-fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> Resultat<Value> {
-    let ts = match l.taux_sal {
-        Some(t) => fmt_taux(dec_f64(t)?),
-        None => String::new(),
-    };
-    let base = if l.masquer_base_et_taux { String::new() } else { fmt_eur(l.base) };
-    Ok(ligne(vec![s(libelle), s(base), s(ts), s(montant_ou_rien(l.montant_sal)), s(montant_ou_rien(l.montant_pat))], vec![]))
+fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> Resultat<Ligne> {
+    let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base)) };
+    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal)?, montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
 
-fn titre_groupe(titre: &str, colonnes: i64) -> Value {
+fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
     ligne(vec![cel(titre, colonnes)], vec![gras()])
 }
 
 /// Les lignes d'un groupe de rangs egaux, dans l'ordre du moteur.
-fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> Resultat<Vec<Value>> {
+fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> Resultat<Vec<Ligne>> {
     let mut out = Vec::new();
     match r {
         Rang::Sante | Rang::Retraite => {
@@ -744,7 +786,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
         }
         Rang::Autres => {
             let total = lignes.iter().fold(Decimal::new(0, 2), |a, l| a + l.montant_pat);
-            out.push(ligne(vec![s(AUTRES), s(""), s(""), s(""), s(fmt_eur(total))], vec![]));
+            out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
             if let Some(famille) = famille {
@@ -782,7 +824,7 @@ fn somme_des_rangs(
 /// - « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES » : la prevoyance.
 /// Aucun montant ne change : chaque ligne de la paie s'imprime une fois, et les trois sommes refont les totaux de la
 /// paie (sinon refus).
-fn tableau_modele(p: &Paie) -> Resultat<Vec<Value>> {
+fn tableau_modele(p: &Paie) -> Resultat<Vec<Ligne>> {
     let rangees = rangees(p);
     let (oblig_sal, oblig_pat) = somme_des_rangs(&rangees, &obligatoire);
     let (fac_sal, fac_pat) = somme_des_rangs(&rangees, &|r| matches!(r, Rang::Facultative(_)));
@@ -803,7 +845,7 @@ fn tableau_modele(p: &Paie) -> Resultat<Vec<Value>> {
         vec![gras(), filet_haut(ROUGE, 0.6)],
     ));
     if rangees.iter().any(|(r, _)| *r == Rang::Allegement) {
-        out.push(ligne(vec![cel(EXONERATIONS, 3), s(montant_ou_rien(all_sal)), s(fmt_eur(all_pat))], vec![gras()]));
+        out.push(ligne(vec![cel(EXONERATIONS, 3), montant_ou_rien(all_sal), s(fmt_eur(all_pat))], vec![gras()]));
     }
     if rangees.iter().any(|(r, _)| matches!(r, Rang::Facultative(_))) {
         out.push(ligne(vec![cel(FACULTATIVES, COLONNES)], style_section()));
@@ -818,17 +860,19 @@ fn tableau_modele(p: &Paie) -> Resultat<Vec<Value>> {
 /// cotisation -- chaque ligne du bareme sous la ligne (ou le groupe) du bulletin qui la porte, avec sa base, le taux et
 /// le montant de la part salariale et de la part employeur --, puis les trois totaux du bulletin, aux memes montants.
 /// Elle ne dit rien que la paie ne dise : chaque ligne de la paie s'y imprime une fois.
-fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Value>> {
+fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Bloc>> {
     let sal = &p.salarie;
+    // Un bulletin sans numero (un apercu) ne le dit pas.
+    let bulletin = if let Some(n) = numero { format!("au bulletin n° {}", n) } else { "au bulletin".to_string() };
     let mut blocs = vec![
         para(vec![m("Détail des cotisations et contributions", true, None)], 11.0, Some(ROUGE), 0.0, 1.0),
         para(
             vec![mt(format!(
-                "Document annexe au bulletin n° {} — {} — du {} au {}.\nIl détaille, sous chaque ligne du bulletin \
+                "Document annexe {} — {} — du {} au {}.\nIl détaille, sous chaque ligne du bulletin \
                  qui les regroupe, les cotisations et contributions de la paie : leur base, le taux et le montant de la \
                  part salariale et de la part employeur. Il ne remplace aucune ligne du bulletin ; les totaux sont les \
                  siens.",
-                numero.unwrap_or_default(),
+                bulletin,
                 nom_imprime(sal)?,
                 p.engagement.debut_periode()?.jj_mm_aaaa(),
                 p.engagement.fin_periode()?.jj_mm_aaaa(),
@@ -839,7 +883,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Value>> {
             6.0,
         ),
     ];
-    let th = vec![("couleur", Value::from(BLANC)), gras(), ("taille", num(6.6)), ("fond", Value::from(ROUGE))];
+    let th = vec![Opt::Couleur(BLANC), gras(), Opt::Taille(6.6), Opt::Fond(ROUGE)];
     let entete = vec![ligne(
         vec![
             cell("LIBELLÉ", 1, true, None),
@@ -852,7 +896,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Value>> {
         th,
     )];
     let rangees = rangees(p);
-    let detail = |r: &Rang, lignes: &[&engagement::calcul::LigneCotisation], corps: &mut Vec<Value>| -> Resultat<()> {
+    let detail = |r: &Rang, lignes: &[&engagement::calcul::LigneCotisation], corps: &mut Vec<Ligne>| -> Resultat<()> {
         // Les exonerations n'ont pas de titre : la ligne du bulletin qui les porte est leur total, qui les suit.
         if *r != Rang::Allegement {
             if let Some(titre) = r.titre() {
@@ -864,11 +908,11 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Value>> {
             corps.push(ligne(
                 vec![
                     s(format!("{}{}{}", NBSP, NBSP, l.libelle)),
-                    s(base),
-                    s(ts),
-                    s(montant_ou_rien(l.montant_sal)),
-                    s(tp),
-                    s(montant_ou_rien(l.montant_pat)),
+                    base,
+                    ts,
+                    montant_ou_rien(l.montant_sal),
+                    tp,
+                    montant_ou_rien(l.montant_pat),
                 ],
                 vec![],
             ));
@@ -877,7 +921,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Value>> {
     };
     let total = |libelle: &str, (sal, pat): (Decimal, Decimal)| {
         ligne(
-            vec![cel(libelle, 3), s(montant_ou_rien(sal)), s(""), s(fmt_eur(pat))],
+            vec![cel(libelle, 3), montant_ou_rien(sal), vide(), s(fmt_eur(pat))],
             vec![gras(), filet_haut(ROUGE, 0.6)],
         )
     };
@@ -909,10 +953,10 @@ pub struct Jeu<'a> {
     /// reserve : il se donne a cote de la paie, qui ne se copie pas sous un autre numero.
     pub numero: Option<&'a str>,
     pub colonnes: Option<&'a [Colonne]>,
-    pub plafond: Option<Decimal>,
+    pub plafond: Decimal,
     pub conges: Option<&'a CompteurConges>,
-    pub pas: Option<&'a Versement>,
-    pub rectificatif: Option<&'a Value>,
+    pub pas: &'a Versement,
+    pub rectificatif: Option<&'a Rectificatif>,
     /// Les indices, dans `paie.remuneration`, des lignes hors assiette qui ne sont pas un revenu (remboursements de
     /// frais, acompte : `HorsAssiette::Frais` et `Mouvement`) : elles s'impriment sous « REMBOURSEMENTS ET DEDUCTIONS
     /// DIVERSES », entre le montant net social et le net a payer avant impot (arrete du 25/02/2016, art. 1, I ; BOSS,
@@ -921,23 +965,29 @@ pub struct Jeu<'a> {
 }
 
 /// Les blocs d'UN bulletin.
-fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
+fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Bloc>> {
     let p = j.paie;
     let (sal, e, sp) = (&p.salarie, &p.engagement, &p.spectacle);
     let conv = convention_du_contrat(ent, sp.as_ref(), sal, &e.fin_mois()?)?;
     let n = COLONNES;
     let nat = e.nat()?;
     let permanent = nat.mensuelle();
-    let numero = e.numero.as_deref().unwrap_or("-").to_string();
     let tiret = format!("{}—{}", NBSP, NBSP);
     let barre = format!(" {}|{} ", NBSP, NBSP);
 
+    // L'adresse et la commune lisibles de la compagnie, sinon celles de sa fiche, qu'elle doit dire.
     let nom_affichage = ent.nom_affichage.ecrite("nom_affichage")?;
-    let adresse_defaut = ent.adresse.ecrite("adresse")?;
-    let adresse = ent.adresse_affichage.portee().unwrap_or(adresse_defaut);
+    let adresse_civile = ent.adresse.ecrite("adresse")?;
+    let adresse = match ent.adresse_affichage.portee() {
+        Some(a) => a,
+        None => adresse_civile,
+    };
     let code_postal = ent.code_postal.ecrite("code_postal")?;
-    let commune_defaut = ent.commune.ecrite("commune")?;
-    let commune = ent.commune_affichage.portee().unwrap_or(commune_defaut);
+    let commune_civile = ent.commune.ecrite("commune")?;
+    let commune = match ent.commune_affichage.portee() {
+        Some(c) => c,
+        None => commune_civile,
+    };
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?;
     // « Le nom et l'adresse de l'employeur ainsi que, le cas echeant, la designation de l'etablissement dont depend le
     // salarie » et l'activite « de l'etablissement d'emploi » (code du travail, R. 3243-1, 1° et 2°,
@@ -945,16 +995,21 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
     // l'etablissement du contrat, celui sous lequel la DSN le declare (`droit::bareme::entreprise_du_salarie`).
     let vue = droit::bareme::entreprise_du_salarie(ent, sal)?;
     let (siret, naf) = (vue.siret.ecrite("siret")?, vue.naf.ecrite("naf")?);
-    let etablissement = ent.etablissement(vue.nic.texte()).map(|l| {
-        let ou = |usage: &Option<String>, civil: &Option<String>| usage.remplie().or(civil.portee()).unwrap_or_default().to_string();
-        let adresse = droit::fiche::avec_complement(ou(&l.adresse_affichage, &l.adresse.en_texte()), l.complement_adresse_affichage.remplie().or(l.complement_adresse.remplie()));
-        let lieu = [adresse, l.code_postal.texte().to_string(), ou(&l.commune_affichage, &l.commune.en_texte())]
+    let etablissement = vue.nic.portee().and_then(|n| ent.etablissement(n)).map(|l| {
+        // La forme lisible, sinon la forme civile ; ce que l'etablissement ne dit pas ne s'imprime pas.
+        let ou = |usage: &Option<String>, civil: &Option<String>| usage.remplie().or(civil.portee()).map(str::to_string);
+        let complement = l.complement_adresse_affichage.remplie().or(l.complement_adresse.remplie());
+        let adresse = ou(&l.adresse_affichage, &l.adresse.en_texte()).map(|a| droit::fiche::avec_complement(a, complement));
+        let lieu = [adresse, l.code_postal.en_texte(), ou(&l.commune_affichage, &l.commune.en_texte())]
             .into_iter()
+            .flatten()
             .filter(|s| !s.trim().is_empty())
             .collect::<Vec<_>>()
             .join(" ");
-        let nom = l.libelle.texte();
-        if nom.trim().is_empty() { lieu } else { format!("{}, {}", nom, lieu) }
+        match l.libelle.portee().filter(|n| !n.trim().is_empty()) {
+            Some(nom) => format!("{}, {}", nom, lieu),
+            None => lieu,
+        }
     });
     let (siret_siege, naf_siege) = (ent.siret.ecrite("siret")?, ent.naf.ecrite("naf")?);
     let mut blocs = vec![
@@ -971,9 +1026,11 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         ),
     ];
     let titre_rectif = if j.rectificatif.is_some() { " — RECTIFICATIF" } else { "" };
+    // Un bulletin sans numero (un apercu) ne le dit pas.
+    let titre = if let Some(n) = j.numero { format!("Bulletin de paie n° {}{}", n, titre_rectif) } else { format!("Bulletin de paie{}", titre_rectif) };
     blocs.push(para(
         vec![m(
-            format!("Bulletin de paie n° {}{}", j.numero.unwrap_or_default(), titre_rectif),
+            titre,
             true,
             None,
         )],
@@ -983,21 +1040,12 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         1.0,
     ));
     if let Some(r) = j.rectificatif {
-        let rectifie = match r.get("rectifie") {
-            Some(v) if vrai(v) => format!("n° {}", en_texte(v)),
-            _ => format!("du contrat {}", numero),
-        };
-        let comment = if remplace_en_entier(r) {
-            ", qu'il remplace".to_string()
-        } else {
-            format!(" : il en porte l'écart, versé avec la paie {}", socle::texte::de(&texte(r, "mois_versement")?))
-        };
-        let suite = match r.get("motif").filter(|v| vrai(v)) {
-            Some(motif) => format!("{}. Motif : {}.", comment, en_texte(motif)),
-            None => format!("{}.", comment),
+        let suite = match &r.ecart {
+            None => ", qu'il remplace.".to_string(),
+            Some(ecart) => format!(" : il en porte l'écart, versé avec la paie {}.", socle::texte::de(&ecart.mois_versement)),
         };
         blocs.push(para(
-            vec![m(format!("Rectifie le bulletin {} de {}", rectifie, texte(r, "mois_origine")?), true, None), mt(suite)],
+            vec![m(format!("Rectifie le bulletin n° {} de {}", r.rectifie, r.mois_origine), true, None), mt(suite)],
             7.0,
             Some(GRIS),
             0.0,
@@ -1022,7 +1070,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
             format!("Numéro d'objet : {} {} Spectacle : {}", du_spectacle(sp.as_ref(), |s| &s.numero_objet, "numero_objet")?, tiret, du_spectacle(sp.as_ref(), |s| &s.titre, "titre")?);
         ligne_caisse = vec![
             k("N° Congés Spectacles :"),
-            mt(format!(" {}\n", match sal.num_conges_spectacles.texte() { "" => "-", n => n })),
+            mt(format!(" {}\n", match sal.num_conges_spectacles.remplie() { Some(n) => n, None => "-" })),
         ];
         let dates: Vec<String> = e.dates_travail.iter().map(Jour::jj_mm_aaaa).collect();
         travail = vec![m("Dates travaillées :", true, None), mt(format!(" {}", dates.join(", ")))];
@@ -1030,9 +1078,9 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
     blocs.push(para(vec![mt(sous_titre)], 7.0, Some(GRIS), 0.0, 5.0));
 
     // Le cadre d'identite : un tableau d'une ligne, deux cellules a filet.
-    let nir_affiche = match sal.nir.texte() {
-        n if !n.is_empty() => format!("{}{}", n, exige(&sal.nir_cle, "nir_cle")?),
-        _ => "en cours d'immatriculation".to_string(),
+    let nir_affiche = match sal.nir.remplie() {
+        Some(n) => format!("{}{}", n, exige(&sal.nir_cle, "nir_cle")?),
+        None => "en cours d'immatriculation".to_string(),
     };
     let mut salarie = vec![
         m(nom_imprime(sal)?, true, None),
@@ -1044,7 +1092,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         k("Emploi :"),
         mt(format!(" {}\n", emploi_imprime(e, sal)?)),
     ];
-    if let Some(c) = classification(&conv.0, sal)? {
+    if let Some(c) = classification(Some(&conv.0), sal)? {
         salarie.push(k("Classification :"));
         salarie.push(mt(format!(" {}\n", c)));
     }
@@ -1076,32 +1124,37 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         k("Urssaf :"),
         mt(format!(
             " {}\n",
-            ent.urssaf_compte.texte()
+            ent.urssaf_compte.ecrite("urssaf_compte")?
         )),
         k("Conv. collective :"),
         mt(format!(" IDCC {} - {}\n", conv.0, conv.1)),
         k("Licence spec. :"),
         mt(format!(" {}", licence)),
     ]);
-    blocs.push(json!({
-        "type": "tableau", "taille": 7, "interligne": 1.27,
-        "colonnes": [{"largeur": 0.5}, {"largeur": 0.5}],
-        "marge_cellule": marge_cellule(),
-        "filets_cellules": {"couleur": "#dddddd", "epaisseur": 0.5},
-        "lignes": [{"cellules": [{"morceaux": salarie}, {"morceaux": employeur}]}]
+    let moitie = || f::ColonneTableau { largeur: 0.5, alignement: None };
+    blocs.push(Bloc::Tableau(f::Tableau {
+        colonnes: vec![moitie(), moitie()],
+        entete: None,
+        lignes: Some(vec![ligne(vec![cm(salarie, None), cm(employeur, None)], vec![])]),
+        taille: Some(7.0),
+        couleur: None,
+        interligne: Some(1.27),
+        marge_cellule: Some(marge_cellule()),
+        filet_lignes: None,
+        filets_cellules: Some(filet("#dddddd", 0.5)),
+        espace_avant: None,
+        espace_apres: None,
     }));
 
     let contrat_long = if permanent {
-        let fin = match e.fin {
-            Some(f) => format!(", jusqu'au {}", f.jj_mm_aaaa()),
-            None => String::new(),
-        };
-        format!(" ({} depuis le {}{})", nat.libelle, e.debut.jj_mm_aaaa(), fin)
+        let mut long = format!(" ({} depuis le {}", nat.libelle, e.debut.jj_mm_aaaa());
+        if let Some(f) = e.fin {
+            long.push_str(&format!(", jusqu'au {}", f.jj_mm_aaaa()));
+        }
+        long.push(')');
+        long
     } else if e.a_cheval()? {
-        let fin = match e.fin {
-            Some(f) => f,
-            None => Jour::lire("None")?,
-        };
+        let fin = e.fin.ok_or_else(|| format!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
         format!(" (contrat du {} au {})", e.debut.jj_mm_aaaa(), fin.jj_mm_aaaa())
     } else {
         String::new()
@@ -1123,7 +1176,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
     // 01/01/2026 ; atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml),
     // ses colonnes (Base, Taux, Salarié, Employeur), ses libelles, son ordre et ses regroupements : voir `tableau_modele`.
     let th = || {
-        vec![("couleur", Value::from(BLANC)), gras(), ("taille", num(6.6)), ("fond", Value::from(ROUGE))]
+        vec![Opt::Couleur(BLANC), gras(), Opt::Taille(6.6), Opt::Fond(ROUGE)]
     };
     let entete =
         vec![ligne(vec![cell("LIBELLÉ", 1, true, None), s("Base"), s("Taux"), s("Salarié"), s("Employeur")], th())];
@@ -1138,7 +1191,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         };
         corps.push(ligne(
             vec![s(format!("{} — MONTANT BRUT", titre)), s(fmt_eur(p.brut))],
-            vec![gras(), ("fond", FOND_BRUT.into())],
+            vec![gras(), Opt::Fond(FOND_BRUT)],
         ));
     } else {
         for l in &rem {
@@ -1147,7 +1200,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
                 vec![],
             ));
         }
-        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut))], vec![gras(), ("fond", FOND_BRUT.into())]));
+        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut))], vec![gras(), Opt::Fond(FOND_BRUT)]));
     }
     corps.extend(tableau_modele(p)?);
     // Le bas du tableau : « MONTANT NET SOCIAL », puis « REMBOURSEMENTS ET DÉDUCTIONS DIVERSES », puis
@@ -1167,8 +1220,8 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
     corps.push(ligne(vec![s("IMPÔT SUR LE REVENU"), s("Base"), s("Taux"), s("Salarié")], style_section()));
     corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable))], vec![]));
-    match j.rectificatif.filter(|r| !remplace_en_entier(r)) {
-        Some(r) => corps.extend(rectificatif_lignes(r, n)?),
+    match j.rectificatif.and_then(|r| r.ecart.as_ref()) {
+        Some(ecart) => corps.extend(rectificatif_lignes(ecart, n)?),
         None => corps.extend(lignes_pas_tableau(p, j.pas, n)?),
     }
     // « TOTAL VERSÉ PAR L'EMPLOYEUR » (art. 1, I ; C. trav. R. 3243-1, 14° : le brut et les cotisations patronales,
@@ -1187,20 +1240,20 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Value>> {
         j.colonnes.filter(|c| !c.is_empty()).map(tableau_des_cumuls)
     };
     blocs.extend(cumul);
-    let plafond = j.plafond.map_or("—".to_string(), euros);
     let date_paiement = e.date_du_versement()?;
+    // Un contrat sans numero (un apercu avant la validation) ne le dit pas.
+    let contrat = if let Some(n) = e.numero.as_deref() { format!("Contrat n° {} — {}", n, nat.libelle) } else { format!("Contrat — {}", nat.libelle) };
     blocs.push(para(
         vec![mt(format!(
             "Plafond Urssaf de la période : {}{}SMIC retenu pour la réduction générale : {}{}Règlement le {} \
-             par virement.\nContrat n° {} — {}, convention collective IDCC {}. Conservez ce bulletin sans limitation \
+             par virement.\n{}, convention collective IDCC {}. Conservez ce bulletin sans limitation \
              de durée.",
-            plafond,
+            euros(j.plafond),
             barre,
             smic_de_la_reduction(p)?,
             barre,
             date_paiement.jj_mm_aaaa(),
-            numero,
-            nat.libelle,
+            contrat,
             conv.0
         ))],
         6.2,
@@ -1227,37 +1280,50 @@ pub fn identite_de(gabarits: &Path, nom: &str) -> Option<PathBuf> {
 
 /// `description` : un document par jeu, chacun sur sa page ; au modele complet (la case du salarie, sinon celle de la
 /// compagnie : `modele_du_bulletin`), l'annexe suit le bulletin, document a part (une page neuve).
-pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) -> Resultat<Value> {
-    let mut d = Map::new();
-    d.insert("format".into(), json!(FORMAT));
-    d.insert(
-        "page".into(),
-        json!({"largeur": 595.28, "hauteur": 841.89, "marges": {"haut": 42, "droite": 42, "bas": 42, "gauche": 42}}),
-    );
-    d.insert("police".into(), json!({"taille": 7.4, "interligne": 1.2, "couleur": ARDOISE}));
-    d.insert(
-        "pied_page".into(),
-        json!({"droite": PIED_TEXTE, "taille": 6, "couleur": PIED_GRIS, "distance": 24,
-               "image": {"chemin": chemin_texte(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),
-                         "largeur": PIED_MOT_LARGEUR, "descente": PIED_MOT_DESCENTE}}),
-    );
-    if let Some(logo) = identite_de(&ent.gabarits, "logo") {
-        d.insert(
-            "logo".into(),
-            json!({"chemin": chemin_texte(&logo), "largeur": LOGO_LARGEUR,
-                   "marge_haut": LOGO_MARGE_HAUT, "marge_droite": LOGO_MARGE_DROITE}),
-        );
-    }
+pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) -> Resultat<Description> {
     let mut documents = Vec::new();
     for j in jeux {
         let modele = modele_du_bulletin(ent, &j.paie.salarie)?;
-        documents.push(json!({"blocs": blocs_un(j, ent)?}));
+        documents.push(Document::Blocs(blocs_un(j, ent)?));
         if modele == Modele::Complet {
-            documents.push(json!({"blocs": blocs_annexe(j.paie, j.numero)?}));
+            documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero)?));
         }
     }
-    d.insert("documents".into(), Value::Array(documents));
-    Ok(Value::Object(d))
+    let marge = Some(42.0);
+    Ok(Description {
+        format: FORMAT,
+        page: Some(f::Page {
+            largeur: Some(595.28),
+            hauteur: Some(841.89),
+            marges: Some(f::Marges { haut: marge, droite: marge, bas: marge, gauche: marge }),
+        }),
+        police: Some(f::Police { taille: Some(7.4), interligne: Some(1.2), couleur: Some(ARDOISE.to_string()) }),
+        style: None,
+        logo: identite_de(&ent.gabarits, "logo").map(|logo| f::Logo {
+            chemin: chemin_texte(&logo),
+            largeur: LOGO_LARGEUR,
+            marge_haut: Some(LOGO_MARGE_HAUT),
+            marge_droite: Some(LOGO_MARGE_DROITE),
+        }),
+        titre: None,
+        documents,
+        entete_page: None,
+        pied_page: Some(f::Repere {
+            gauche: None,
+            centre: None,
+            droite: Some(PIED_TEXTE.to_string()),
+            taille: Some(6.0),
+            couleur: Some(PIED_GRIS.to_string()),
+            gras: None,
+            distance: Some(24.0),
+            premiere_page: None,
+            image: Some(f::ImageRepere {
+                chemin: chemin_texte(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),
+                largeur: PIED_MOT_LARGEUR,
+                descente: Some(PIED_MOT_DESCENTE),
+            }),
+        }),
+    })
 }
 
 /// Les lignes de remuneration d'une paie qui s'impriment sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES » : hors assiette
@@ -1289,10 +1355,10 @@ pub fn jeux_et_description(
     mois: &str,
     paies_du_mois: Option<&[Paie]>,
     borne_au_mois: bool,
-    rectificatifs: &HashMap<usize, Value>,
+    rectificatifs: &HashMap<usize, Rectificatif>,
     departs: &engagement::departs::Departs,
     passe: &Passe,
-) -> Resultat<Value> {
+) -> Resultat<Description> {
     if numeros.len() != paies.len() {
         return Err(format!("{} numeros de bulletin pour {} paies.", numeros.len(), paies.len()));
     }
@@ -1301,7 +1367,10 @@ pub fn jeux_et_description(
     if !mois.is_empty() {
         // Tout ce que la compagnie a declare jusqu'a ce mois, ce mois-ci compris : les paies
         // qu'on imprime remplacent le fichier de leur mois.
-        let courantes = paies_du_mois.filter(|p| !p.is_empty()).unwrap_or(paies);
+        let courantes = match paies_du_mois {
+            Some(toutes) if !toutes.is_empty() => toutes,
+            _ => paies,
+        };
         let mut engagements = passe.engagements(Some(courantes))?;
         if borne_au_mois {
             let fin = Mois::lire(mois)?.dernier_jour();
@@ -1322,13 +1391,15 @@ pub fn jeux_et_description(
             continue;
         }
         let cle = p.salarie.id.to_string();
+        // Une paie qui n'est pas un mois sans paie porte son prelevement (`prelevement::des_paies`).
+        let pas = pas_par_paie[i].as_ref().ok_or_else(|| format!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
         jeux.push(Jeu {
             paie: p,
             numero: numeros[i].as_deref(),
             colonnes: colonnes_par_salarie.get(&cle).map(Vec::as_slice),
-            plafond: Some(p.plafond_urssaf(ctx)?),
+            plafond: p.plafond_urssaf(ctx)?,
             conges: p.conges.as_ref(),
-            pas: pas_par_paie[i].as_ref(),
+            pas,
             rectificatif: rectificatifs.get(&i),
             remboursements: remboursements(ctx, p)?,
         });

@@ -12,27 +12,31 @@
 //!   certificat`) ; les mois du certificat qu'aucun d'eux n'atteste restent attestes par lui ;
 //! - le bulletin est la piece de paie : quand il dit d'autres compteurs que le contrat d'une AEM aux memes dates, son
 //!   contrat remplace celui de l'AEM, et l'ecart se dit avec les deux valeurs.
+//!
+//! Un compteur qu'une piece ne dit pas reste vide : il n'est pas zero, et deux contrats ne comptent pareil que s'ils
+//! disent la meme chose.
 
 use std::collections::{BTreeSet, HashMap};
 
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, ContratLu};
-use socle::echec::{Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::num::Decimal;
 
 /// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
 #[derive(Clone, Debug)]
 pub(crate) struct Atteste {
     pub(crate) nir: String,
-    pub(crate) debut: String,
-    pub(crate) fin: String,
+    pub(crate) debut: Option<String>,
+    /// Sa fin ; aucune pour un contrat qui court toujours.
+    pub(crate) fin: Option<String>,
     /// « AEM », « bulletin », « certificat » (la piece de cet import), ou « historique ».
     pub(crate) source: &'static str,
     /// Ce qui l'atteste.
     pub(crate) par: Attestation,
-    pub(crate) heures: i128,
-    pub(crate) cachets: i128,
-    pub(crate) jours: i128,
+    pub(crate) heures: Option<i64>,
+    pub(crate) cachets: Option<i64>,
+    pub(crate) jours: Option<i64>,
     pub(crate) brut: Option<Decimal>,
     /// Sa ligne, telle qu'elle s'ecrit.
     ligne: ContratLu,
@@ -54,53 +58,77 @@ impl Atteste {
         self.par == Attestation::Certificat
     }
 
+    /// Ce qu'il compte : ses heures, ses cachets, ses jours, son brut.
+    pub(crate) fn compte(&self) -> (Option<i64>, Option<i64>, Option<i64>, Option<Decimal>) {
+        (self.heures, self.cachets, self.jours, self.brut)
+    }
+
     /// Ce qu'il compte, en mots, pour dire un ecart avec ses deux valeurs.
     pub(crate) fn en_mots(&self) -> String {
         en_mots(self.heures, self.cachets, self.jours, self.brut)
     }
+
+    /// Commence-t-il au plus tot le `debut` et finit-il au plus tard la `fin` d'une piece ?
+    pub(crate) fn tient_dans(&self, debut: &str, fin: &str) -> bool {
+        self.debut.as_deref().is_some_and(|d| d >= debut) && self.fin.as_deref().is_some_and(|f| f <= fin)
+    }
+}
+
+/// Un compteur en mots : ce qu'il dit, ou qu'il ne dit rien.
+fn compteur(x: Option<i64>, mot: &str) -> String {
+    match x {
+        Some(n) => format!("{} {}(s)", n, mot),
+        None => format!("{}s non dit(e)s", mot),
+    }
 }
 
 /// Des compteurs et un brut, en mots.
-pub(crate) fn en_mots(heures: i128, cachets: i128, jours: i128, brut: Option<Decimal>) -> String {
-    let brut = brut.map_or_else(|| "brut illisible".to_string(), |b| format!("{} de brut", socle::texte::euros(b)));
-    format!("{} heure(s), {} cachet(s), {} jour(s), {}", heures, cachets, jours, brut)
+pub(crate) fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, brut: Option<Decimal>) -> String {
+    let brut = match brut {
+        Some(b) => format!("{} de brut", socle::texte::euros(b)),
+        None => "brut illisible".to_string(),
+    };
+    format!("{}, {}, {}, {}", compteur(heures, "heure"), compteur(cachets, "cachet"), compteur(jours, "jour"), brut)
 }
 
 /// Une date ISO en `JJ/MM/AAAA`, telle quelle si elle ne se lit pas.
 fn jj(iso: &str) -> String {
-    socle::date::Jour::lire(iso).map(|j| j.jj_mm_aaaa()).unwrap_or_else(|_| iso.to_string())
+    match socle::date::Jour::du_texte(iso) {
+        Some(j) => j.jj_mm_aaaa(),
+        None => iso.to_string(),
+    }
 }
 
 /// Ce qu'un contrat atteste dit, pour le registre.
 fn lu(nir: &str, ligne: &ContratLu, source: &'static str) -> Atteste {
     let c = &ligne.contrat;
-    let n = |x: Option<i64>| i128::from(x.unwrap_or(0));
+    let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
     Atteste {
         nir: nir.to_string(),
-        debut: ligne.debut.clone().unwrap_or_default(),
-        fin: ligne.fin.clone().unwrap_or_default(),
+        debut: plein(&ligne.debut),
+        fin: plein(&ligne.fin),
         source,
         par: c.atteste_par,
-        heures: n(c.heures),
-        cachets: n(c.cachets),
-        jours: n(c.jours),
+        heures: c.heures,
+        cachets: c.cachets,
+        jours: c.jours,
         brut: c.brut,
         ligne: ligne.clone(),
         historique: (source == "historique").then(|| ligne.clone()),
     }
 }
 
-/// Les dates `[d1, f1]` et `[d, f]` (ISO) se chevauchent ; une fin vide court toujours.
-pub(crate) fn chevauche(d1: &str, f1: &str, d: &str, f: &str) -> bool {
-    !d1.is_empty() && d1 <= f && (f1.is_empty() || d <= f1)
+/// Les dates `[d1, f1]` et `[d, f]` (ISO) se chevauchent ; une fin absente court toujours ; un contrat sans debut ne
+/// chevauche rien.
+pub(crate) fn chevauche(d1: Option<&str>, f1: Option<&str>, d: &str, f: &str) -> bool {
+    d1.is_some_and(|d1| d1 <= f) && f1.is_none_or(|f1| d <= f1)
 }
 
-/// Les mois `AAAA-MM` de `debut` a `fin` (ISO) ; vide si une date ne se lit pas.
-fn mois_de(debut: &str, fin: &str) -> Vec<String> {
-    match (socle::date::Jour::lire(debut), socle::date::Jour::lire(fin)) {
-        (Ok(d), Ok(f)) => socle::mois::Mois::entre(&d, &f).iter().map(socle::mois::Mois::to_string).collect(),
-        _ => Vec::new(),
-    }
+/// Les mois `AAAA-MM` de `debut` a `fin` (ISO). Une date qui manque ou ne se lit pas se refuse.
+fn mois_de(debut: Option<&str>, fin: Option<&str>) -> Result<Vec<String>, String> {
+    let jour = |x: Option<&str>| x.and_then(socle::date::Jour::du_texte).ok_or_else(|| "un contrat ne dit pas ses dates : ses mois ne se comptent pas".to_string());
+    let (d, f) = (jour(debut)?, jour(fin)?);
+    Ok(socle::mois::Mois::entre(&d, &f).iter().map(socle::mois::Mois::to_string).collect())
 }
 
 /// UN CERTIFICAT, MOINS LES MOIS QUE D'AUTRES PIECES ATTESTENT. Le certificat dit un contrat entier (ses dates, son
@@ -108,11 +136,17 @@ fn mois_de(debut: &str, fin: &str) -> Vec<String> {
 /// sont retires ; ce qui reste est ce que le certificat atteste seul : les dates des mois restants, et ses compteurs
 /// et son brut moins ceux des pieces qui le coupent (une soustraction de valeurs lues, pas un partage). `Ok(None)` :
 /// il ne reste rien. Ce qui ne se soustrait pas se refuse (regle 1) : des mois restants de part et d'autre d'un mois
-/// coupe (les compteurs ne se partagent pas entre eux), des pieces qui comptent dans une autre unite que lui, un reste
-/// nul ou negatif. La base conge du certificat ne dit que le contrat entier : le reste ne la porte pas.
+/// coupe (les compteurs ne se partagent pas entre eux), des pieces qui comptent dans une autre unite que lui ou ne
+/// disent pas leur compte, un reste nul ou negatif. La base conge du certificat ne dit que le contrat entier : le reste
+/// ne la porte pas.
 fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Result<Option<ContratLu>, String> {
-    let siens = mois_de(&c.debut, &c.fin);
-    let coupes: BTreeSet<String> = par.iter().filter(|p| chevauche(&p.debut, &p.fin, &c.debut, &c.fin)).flat_map(|p| mois_de(&p.debut, &p.fin)).collect();
+    let siens = mois_de(c.debut.as_deref(), c.fin.as_deref())?;
+    let (Some(debut_c), Some(fin_c)) = (c.debut.as_deref(), c.fin.as_deref()) else { return Ok(None) };
+    let coupants: Vec<&&Atteste> = par.iter().filter(|p| chevauche(p.debut.as_deref(), p.fin.as_deref(), debut_c, fin_c)).collect();
+    let mut coupes: BTreeSet<String> = BTreeSet::new();
+    for p in &coupants {
+        coupes.extend(mois_de(p.debut.as_deref(), p.fin.as_deref())?);
+    }
     let restent: Vec<usize> = (0..siens.len()).filter(|i| !coupes.contains(&siens[*i])).collect();
     let (Some(&premier), Some(&dernier)) = (restent.first(), restent.last()) else { return Ok(None) };
     let libelle = |m: &str| socle::mois::Mois::en_clair(m);
@@ -123,30 +157,36 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Result<Option<ContratLu
             mois_restants
         ));
     }
-    let coupants: Vec<&&Atteste> = par.iter().filter(|p| chevauche(&p.debut, &p.fin, &c.debut, &c.fin)).collect();
-    let (cachets, jours): (i128, i128) = (coupants.iter().map(|p| p.cachets).sum(), coupants.iter().map(|p| p.jours).sum());
+    let somme = |f: fn(&Atteste) -> Option<i64>| -> Option<i64> { coupants.iter().map(|p| f(p)).sum() };
+    let (heures, cachets, jours) = (somme(|p| p.heures), somme(|p| p.cachets), somme(|p| p.jours));
     let brut: Option<Decimal> = coupants.iter().map(|p| p.brut).sum();
-    // Le certificat compte dans une seule unite (des cachets ou des jours) : le reste se compte dans la sienne.
-    let (reste_cachets, reste_jours) = (if c.cachets > 0 { c.cachets - cachets } else { 0 }, if c.jours > 0 { c.jours - jours } else { 0 });
-    let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b);
-    let unite_lue = (c.cachets == 0 || cachets > 0) && (c.jours == 0 || jours > 0);
-    let positif = reste_cachets >= 0 && reste_jours >= 0 && reste_cachets + reste_jours > 0 && reste_brut.is_some_and(|b| b > Decimal::ZERO);
-    if !unite_lue || !positif {
+    // Le certificat compte dans une seule unite (des cachets ou des jours) : le reste se compte dans la sienne ; l'autre
+    // reste ce que le certificat en dit.
+    let reste = |le_sien: Option<i64>, ailleurs: Option<i64>| match le_sien {
+        Some(n) if n > 0 => ailleurs.map(|a| n - a),
+        autre => autre,
+    };
+    let (reste_cachets, reste_jours) = (reste(c.cachets, cachets), reste(c.jours, jours));
+    let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Decimal::ZERO);
+    let unite_lue = c.cachets.is_none_or(|n| n == 0 || cachets.is_some_and(|x| x > 0)) && c.jours.is_none_or(|n| n == 0 || jours.is_some_and(|x| x > 0));
+    let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= 0 && b >= 0 && a + b > 0);
+    let (true, true, Some(reste_brut)) = (unite_lue, positifs, reste_brut) else {
         return Err(format!(
             "le reste du certificat ({}) ne se compte pas : le certificat dit {}, ce qui l'atteste ailleurs {} ; déposez les bulletins de ces mois",
             mois_restants,
             c.en_mots(),
-            en_mots(coupants.iter().map(|p| p.heures).sum(), cachets, jours, brut)
+            en_mots(heures, cachets, jours, brut)
         ));
-    }
-    let debut = socle::mois::Mois::lire(&siens[premier]).map(socle::mois::Mois::premier_jour).map(|j| j.iso()).unwrap_or_default().max(c.debut.clone());
-    let fin = socle::mois::Mois::lire(&siens[dernier]).map(socle::mois::Mois::dernier_jour).map(|j| j.iso()).unwrap_or_default().min(c.fin.clone());
+    };
+    let mois = |m: &str| socle::mois::Mois::lire(m);
+    let debut = mois(&siens[premier])?.premier_jour().iso().max(debut_c.to_string());
+    let fin = mois(&siens[dernier])?.dernier_jour().iso().min(fin_c.to_string());
     let mut ligne = c.ligne.clone();
-    let mut b = reste_brut.unwrap_or_default().round_dp(2);
+    let mut b = reste_brut.round_dp(2);
     b.rescale(2);
     (ligne.debut, ligne.fin) = (Some(debut), Some(fin));
-    ligne.contrat.cachets = Some(reste_cachets as i64);
-    ligne.contrat.jours = Some(reste_jours as i64);
+    ligne.contrat.cachets = reste_cachets;
+    ligne.contrat.jours = reste_jours;
     ligne.contrat.brut = Some(b);
     ligne.contrat.base_conge = None;
     Ok(Some(ligne))
@@ -183,11 +223,17 @@ impl Registre {
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine).map_err(Echec::from)? {
             let Some(c) = i.contrat_lu().map_err(Echec::from)? else { continue };
-            let (cle, debut, fin) = (c.salarie.clone(), c.debut.clone().unwrap_or_default(), c.fin.clone().unwrap_or_default());
+            let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
+            let (cle, debut, fin) = (c.salarie.clone(), plein(&c.debut), plein(&c.fin));
             let permanent = i.permanent();
             let manque: Vec<&str> =
-                [(cle.is_empty(), "salarié"), (debut.is_empty(), "début"), (fin.is_empty() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
-            let quel = format!("le contrat de l'historique {}{} du {} au {}", if cle.is_empty() { "" } else { "de " }, cle, if debut.is_empty() { "?".into() } else { jj(&debut) }, if fin.is_empty() { "?".into() } else { jj(&fin) });
+                [(cle.is_empty(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
+            let date = |x: &Option<String>| match x {
+                Some(d) => jj(d),
+                None => "?".to_string(),
+            };
+            let de: String = Some(&cle).filter(|c| !c.is_empty()).map(|c| format!("de {}", c)).into_iter().collect();
+            let quel = format!("le contrat de l'historique {} du {} au {}", de, date(&debut), date(&fin));
             if !manque.is_empty() {
                 muets.push(format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque.join(", ni de ")));
                 continue;
@@ -201,13 +247,18 @@ impl Registre {
                 continue;
             }
             for (mois, p) in i.paies() {
-                let Ok(m) = socle::mois::Mois::lire(mois) else { continue };
+                let m = socle::mois::Mois::lire(mois).map_err(|e| erreur(Classe::Illisible, e))?;
                 let (premier, dernier) = (m.premier_jour().iso(), m.dernier_jour().iso());
                 let mut a = lu(nir, &c, "historique");
-                a.debut = premier.max(debut.clone());
-                a.fin = if fin.is_empty() { dernier } else { dernier.min(fin.clone()) };
-                let n = |x: Option<i64>| i128::from(x.unwrap_or(0));
-                (a.heures, a.cachets, a.jours, a.brut) = (n(p.heures), n(p.cachets), n(p.jours), p.brut);
+                a.debut = Some(match &debut {
+                    Some(d) => premier.max(d.clone()),
+                    None => premier,
+                });
+                a.fin = Some(match &fin {
+                    Some(f) => dernier.min(f.clone()),
+                    None => dernier,
+                });
+                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
                 tous.push(a);
             }
         }
@@ -218,7 +269,11 @@ impl Registre {
     /// atteste. Un certificat ne compte que pour un certificat : un bulletin ou une AEM le remplace (`ajouter`). Vide :
     /// le contrat ne l'est pas.
     pub(crate) fn pareils(&self, nir: &str, debut: &str, fin: &str, piece: &str) -> Vec<Atteste> {
-        self.tous.iter().filter(|a| a.nir == nir && chevauche(&a.debut, &a.fin, debut, fin) && (piece == "certificat" || !a.de_certificat())).cloned().collect()
+        self.tous
+            .iter()
+            .filter(|a| a.nir == nir && chevauche(a.debut.as_deref(), a.fin.as_deref(), debut, fin) && (piece == "certificat" || !a.de_certificat()))
+            .cloned()
+            .collect()
     }
 
     /// Ce qu'un certificat atteste seul, une fois retires les mois que les contrats `pareils` (ni des certificats, ni
@@ -233,11 +288,11 @@ impl Registre {
     pub(crate) fn ajouter(&mut self, nir: &str, ligne: ContratLu, source: &'static str, bloc: &'static str) -> Remplaces {
         let a = lu(nir, &ligne, source);
         let mut phrases = Vec::new();
-        if !a.de_certificat() {
+        if let (false, Some(debut), Some(fin)) = (a.de_certificat(), a.debut.clone(), a.fin.clone()) {
             let remplaces: Vec<usize> = (0..self.tous.len())
                 .filter(|i| {
                     let x = &self.tous[*i];
-                    x.nir == nir && chevauche(&x.debut, &x.fin, &a.debut, &a.fin) && (x.de_certificat() || (source == "bulletin" && x.par == Attestation::Aem))
+                    x.nir == nir && chevauche(x.debut.as_deref(), x.fin.as_deref(), &debut, &fin) && (x.de_certificat() || (source == "bulletin" && x.par == Attestation::Aem))
                 })
                 .collect();
             for i in remplaces.into_iter().rev() {
@@ -250,11 +305,12 @@ impl Registre {
                         }
                         Ok(Some(l)) => {
                             let r = lu(nir, &l, x.source);
+                            let date = |d: &Option<String>| d.iter().map(|d| jj(d)).collect::<String>();
                             phrases.push(format!(
                                 "il remplace le contrat repris d'un certificat Congés Spectacles ({}) pour les mois que cette pièce atteste ; le reste du certificat, du {} au {}, reste attesté par lui : {} (ce que dit le certificat moins ce que dit cette pièce ; le brut du certificat est arrondi à l'euro)",
                                 x.d_ou(),
-                                jj(&r.debut),
-                                jj(&r.fin),
+                                date(&r.debut),
+                                date(&r.fin),
                                 r.en_mots()
                             ));
                             Some(l)

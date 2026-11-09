@@ -1,13 +1,10 @@
-//! Les aides des tests des envois : un dossier par test, les oracles (communs aux crates), le faux serveur HTTP.
+//! Les aides des tests des envois : un dossier par test, le faux serveur HTTP.
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 
-#[path = "../../../socle/tests/outils/oracles.rs"]
-mod oracles;
 mod serveur;
-pub use oracles::*;
 pub use serveur::*;
 
 /// Un dossier vide pour un test, sous le dossier temporaire de Cargo.

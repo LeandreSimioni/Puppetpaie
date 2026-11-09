@@ -4,9 +4,10 @@
 //! routes ; le catalogue est leur documentation, tiree du code : celles d'une compagnie et celles de l'installation
 //! (`accueil`). Les routes de l'atelier (l'horloge du banc, la route d'essai qui tombe) n'y sont pas.
 
-use serde_json::{json, Value};
-
 use engagement::carte::{CarteValide, Exige, NatureDecrite};
+use socle::echec::{Classe, R};
+
+use super::enveloppe::{en_json, Charge, Dite, Rendu};
 
 pub use crate::routes::affiche::Affiche;
 
@@ -51,6 +52,7 @@ routes! {
         ModifierEngagement = "modifier-engagement",
         RetirerEngagement = "retirer-engagement",
         Mois = "mois",
+        Demarrage = "demarrage",
         EtatParEngagement = "etat-par-engagement",
         EtatDuMois = "etat-du-mois",
         Saisie = "saisie",
@@ -190,6 +192,7 @@ routes! {
         CompagniesGarder = "compagnies-garder",
         AdministrateurTableau = "administrateur-tableau",
         AdministrateurDeposer = "administrateur-deposer",
+        AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
         Routes = "routes",
     }
@@ -225,12 +228,6 @@ impl<'de> serde::Deserialize<'de> for Route {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Route, D::Error> {
         let nom = String::deserialize(d)?;
         Route::lire(&nom).ok_or_else(|| serde::de::Error::custom(ROUTE_INCONNUE))
-    }
-}
-
-impl From<Route> for Value {
-    fn from(r: Route) -> Value {
-        Value::String(r.nom().to_string())
     }
 }
 
@@ -376,15 +373,19 @@ pub struct Champ {
     pub avance: bool,
 }
 
+/// Un champ de la charge, tel que le catalogue l'ecrit.
+#[derive(serde::Serialize)]
+pub struct ChampEcrit {
+    nom: &'static str,
+    libelle: &'static str,
+    forme: &'static str,
+    sens: &'static str,
+    avance: bool,
+}
+
 impl Champ {
-    pub fn en_json(&self) -> Value {
-        json!({
-            "nom": self.nom,
-            "libelle": self.libelle.texte(),
-            "forme": self.forme.mot(),
-            "sens": self.sens,
-            "avance": self.avance,
-        })
+    pub fn ecrit(&self) -> ChampEcrit {
+        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme.mot(), sens: self.sens, avance: self.avance }
     }
 }
 
@@ -445,8 +446,42 @@ fn natures_de_la_carte(charge: &[Champ]) -> Vec<NatureDecrite> {
 /// Un refus : sa classe, et ce qu'il faut corriger.
 #[derive(Clone, Copy, Debug)]
 pub struct Refus {
-    pub classe: &'static str,
+    pub classe: Classe,
     pub corriger: &'static str,
+}
+
+/// Un refus de la fiche, tel que le catalogue l'ecrit.
+#[derive(serde::Serialize)]
+pub struct RefusEcrit {
+    classe: Classe,
+    corriger: &'static str,
+}
+
+/// LA FICHE D'UNE ROUTE TELLE QUE LE CATALOGUE L'ECRIT (`moteur routes --json`, la route `routes`) : ce que le LLM et
+/// `js/avance.js` en lisent.
+#[derive(serde::Serialize)]
+pub struct FicheEcrite {
+    nom: &'static str,
+    geste: &'static str,
+    charge: Vec<ChampEcrit>,
+    cases: Vec<ChampEcrit>,
+    cases_de_la_fin: Vec<ChampEcrit>,
+    natures: Vec<NatureDecrite>,
+    exemple: Charge,
+    rend: &'static str,
+    refus: Vec<RefusEcrit>,
+    acte: &'static str,
+    avance: bool,
+    phrase: usize,
+    ecran: Option<&'static str>,
+    affichage: &'static str,
+    bouton: Option<&'static str>,
+}
+
+/// Le catalogue entier, tel que `moteur routes --json` l'imprime.
+#[derive(serde::Serialize)]
+struct CatalogueEcrit {
+    routes: Vec<FicheEcrite>,
 }
 
 /// LA FICHE D'UNE ROUTE.
@@ -471,10 +506,10 @@ pub struct Fiche {
 /// Ce que bien des fiches partagent : le mois de l'ecran, et les refus de la forme de la charge.
 pub const MOIS: Champ = Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois de l'écran, AAAA-MM", avance: false };
 pub const SALARIE: Champ = Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié (ou son nom)", avance: false };
-pub const MANQUE: Refus = Refus { classe: "KeyError", corriger: "le champ de la charge, ou la fiche, que la phrase nomme" };
-pub const ILLISIBLE: Refus = Refus { classe: "ValueError", corriger: "la date ou la valeur que la phrase dit illisible" };
-pub const FORME: Refus = Refus { classe: "TypeError", corriger: "le champ de la charge que la phrase nomme" };
-pub const OPERATION: Refus = Refus { classe: "ErreurOperation", corriger: "ce que la phrase dit ; rien n'est écrit" };
+pub const MANQUE: Refus = Refus { classe: Classe::Manque, corriger: "le champ de la charge, ou la fiche, que la phrase nomme" };
+pub const ILLISIBLE: Refus = Refus { classe: Classe::Illisible, corriger: "la date ou la valeur que la phrase dit illisible" };
+pub const FORME: Refus = Refus { classe: Classe::MalFormee, corriger: "le champ de la charge que la phrase nomme" };
+pub const OPERATION: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit ; rien n'est écrit" };
 
 impl Fiche {
     /// Le nom de la route.
@@ -482,23 +517,33 @@ impl Fiche {
         self.route.nom()
     }
 
-    pub fn en_json(&self) -> Value {
-        json!({
-            "nom": self.nom(),
-            "geste": self.geste,
-            "charge": self.charge.iter().map(|c| c.en_json()).collect::<Vec<_>>(),
-            "cases": cases(self.charge).iter().map(|c| c.en_json()).collect::<Vec<_>>(),
-            "cases_de_la_fin": cases_de_la_fin(self.charge).iter().map(|c| c.en_json()).collect::<Vec<_>>(),
-            "natures": natures_de_la_carte(self.charge),
-            "exemple": serde_json::from_str::<Value>(self.exemple).unwrap_or(Value::Null),
-            "rend": self.rend,
-            "refus": self.refus.iter().map(|r| json!({"classe": r.classe, "corriger": r.corriger})).collect::<Vec<_>>(),
-            "acte": match self.acte { Acte::Lit => "lit", Acte::Ecrit => "ecrit", Acte::Engage => "engage" },
-            "avance": self.avance,
-            "phrase": self.phrase,
-            "ecran": self.ecran.place().map(Place::nom),
-            "affichage": self.ecran.mot(),
-            "bouton": match self.ecran { Ecran::Auto(_, b) => Value::from(b.texte()), _ => Value::Null },
+    /// La fiche telle que le catalogue l'ecrit. Un exemple qui n'est pas une charge est un defaut du logiciel.
+    pub fn ecrite(&self) -> R<FicheEcrite> {
+        let exemple = socle::forme::lire_texte(self.exemple, "Défaut du logiciel : l'exemple d'une route n'est pas une charge.")
+            .map_err(|m| socle::echec::erreur(Classe::DefautDuLogiciel, m))?;
+        Ok(FicheEcrite {
+            nom: self.nom(),
+            geste: self.geste,
+            charge: self.charge.iter().map(Champ::ecrit).collect(),
+            cases: cases(self.charge).iter().map(Champ::ecrit).collect(),
+            cases_de_la_fin: cases_de_la_fin(self.charge).iter().map(Champ::ecrit).collect(),
+            natures: natures_de_la_carte(self.charge),
+            exemple,
+            rend: self.rend,
+            refus: self.refus.iter().map(|r| RefusEcrit { classe: r.classe, corriger: r.corriger }).collect(),
+            acte: match self.acte {
+                Acte::Lit => "lit",
+                Acte::Ecrit => "ecrit",
+                Acte::Engage => "engage",
+            },
+            avance: self.avance,
+            phrase: self.phrase,
+            ecran: self.ecran.place().map(Place::nom),
+            affichage: self.ecran.mot(),
+            bouton: match self.ecran {
+                Ecran::Auto(_, b) => Some(b.texte()),
+                Ecran::Dessine(_) | Ecran::Lecture => None,
+            },
         })
     }
 
@@ -563,9 +608,36 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     ecran: Ecran::Lecture,
 }];
 
-/// Les fiches du catalogue en JSON : le chemin simple, ou toutes avec `avance`.
-pub fn en_json(avance: bool) -> Value {
-    json!({"routes": catalogue().iter().filter(|f| avance || !f.avance).map(Fiche::en_json).collect::<Vec<_>>()})
+/// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeDuCatalogue {
+    avance: Option<bool>,
+}
+
+/// Ce que rend `routes` : la phrase, une ligne par route (« nom : geste »), et la fiche de chacune.
+#[derive(serde::Serialize)]
+struct LeCatalogue {
+    phrase: String,
+    phrases: Vec<String>,
+    routes: Vec<FicheEcrite>,
+}
+
+impl Dite for LeCatalogue {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// `routes` : le catalogue, ce que `moteur routes --json` imprime. Il ne porte sur aucune compagnie.
+pub fn route(charge: &Charge) -> R<Rendu> {
+    en_json(le_catalogue(charge.lire()?)?)
+}
+
+fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
+    let fiches: Vec<Fiche> = catalogue().into_iter().filter(|f| c.avance == Some(true) || !f.avance).collect();
+    let phrases: Vec<String> = fiches.iter().map(|f| format!("{} : {}", f.nom(), f.geste)).collect();
+    Ok(LeCatalogue { phrase: format!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
@@ -624,19 +696,33 @@ pub fn commande(args: &[String]) -> i32 {
             return 2;
         };
         if json {
-            dire!("{}", f.en_json());
+            match f.ecrite() {
+                Ok(e) => dire!("{}", socle::ecriture::json_en_ligne(&e)),
+                Err(e) => {
+                    eprintln!("{}", e.phrase());
+                    return 1;
+                }
+            }
         } else {
             dire_sans_ligne!("{}", f.en_texte());
         }
         return 0;
     }
     if json {
-        dire!("{}", en_json(true));
-        return 0;
+        return match catalogue().iter().map(Fiche::ecrite).collect::<R<Vec<_>>>() {
+            Ok(routes) => {
+                dire!("{}", socle::ecriture::json_en_ligne(&CatalogueEcrit { routes }));
+                0
+            }
+            Err(e) => {
+                eprintln!("{}", e.phrase());
+                1
+            }
+        };
     }
     let montrees: Vec<&Fiche> = tout.iter().filter(|f| avance || !f.avance).collect();
     dire!("Les routes (echo '{{\"route\":NOM,\"charge\":{{…}}}}' | moteur route ; la fiche : moteur routes NOM ; toutes : --avance)\n");
-    let large = montrees.iter().map(|f| f.nom().len()).max().unwrap_or(0);
+    let large = montrees.iter().map(|f| f.nom().len()).fold(0, usize::max);
     for f in &montrees {
         dire!("  {:<large$}  {:<5}  {}  [{}]", f.nom(), match f.acte { Acte::Lit => "lit", Acte::Ecrit => "écrit", Acte::Engage => "engage" }, f.geste, f.ecran.texte());
     }

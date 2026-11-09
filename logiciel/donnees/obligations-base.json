@@ -4,6 +4,9 @@
   "obligations": {
     "signalement_arret": {
       "libelle": "Signalement d'arrêt de travail",
+      "motifs": [],
+      "inferences": [],
+      "a_avoir": [],
       "nait_de": "un arrêt de travail saisi, sauf ceux que la DSN ne couvre pas (`sauf_motifs`)",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le fichier « signalement d'arrêt » (nature 04) que le logiciel écrit, déposé comme une DSN.",
@@ -37,6 +40,9 @@
     },
     "signalement_arret_rectificatif": {
       "libelle": "Signalement d'arrêt rectificatif (annule et remplace)",
+      "motifs": [],
+      "exceptions": [],
+      "a_avoir": [],
       "nait_de": "un arrêt subrogé prolongé dont la fin de subrogation a été repoussée APRÈS le dépôt du signalement d'arrêt, qui la portait plus courte. Une prolongation seule n'en fait naître aucun : la DSN mensuelle porte la nouvelle fin prévisionnelle (S21.G00.60.003).",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le signalement d'arrêt (nature 04) que le logiciel écrit, de type « annule et remplace », qui vise l'identifiant du signalement déjà parti (sur son certificat de conformité) et porte la nouvelle date de fin de subrogation (S21.G00.60.006).",
@@ -56,6 +62,9 @@
     },
     "signalement_reprise": {
       "libelle": "Signalement de reprise anticipée",
+      "motifs": [],
+      "inferences": [],
+      "a_avoir": [],
       "nait_de": "une reprise saisie AVANT la fin prévisionnelle de l'arrêt (une reprise à la date prévue n'en appelle aucun : la DSN mensuelle la porte), sauf pour un arrêt que la DSN ne couvre pas (`sauf_motifs`)",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le fichier « signalement de reprise » (nature 05) que le logiciel écrit.",
@@ -86,6 +95,9 @@
     },
     "signalement_fin_contrat": {
       "libelle": "Signalement de fin de contrat",
+      "motifs": [],
+      "inferences": [],
+      "a_avoir": [],
       "nait_de": "un contrat dont la fin se signale (CDI, CDD ordinaire, CDD d'usage rompu avant son terme : `Nature::signalement_fctu`) et qui finit dans le mois",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le fichier « signalement de fin de contrat de travail unique » (nature 07) que le logiciel écrit.",
@@ -106,6 +118,7 @@
     },
     "declaration_accident": {
       "libelle": "Déclaration d'accident du travail ou de trajet",
+      "exceptions": [],
       "nait_de": "un arrêt dont le motif est un accident du travail ou de trajet (`motifs`) : hors DSN, en plus du signalement d'arrêt",
       "motifs": ["04", "06"],
       "qui": "employeur",
@@ -160,6 +173,8 @@
     },
     "declaration_maladie_professionnelle": {
       "libelle": "Déclaration de maladie professionnelle (par le salarié)",
+      "exceptions": [],
+      "a_avoir": [],
       "nait_de": "un arrêt pour maladie professionnelle (`motifs`) : la déclaration n'est pas celle de l'employeur",
       "motifs": ["05"],
       "qui": "salarie",

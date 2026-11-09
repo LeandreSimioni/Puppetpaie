@@ -276,9 +276,10 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
         std::fs::write(&journal, texte).unwrap();
     };
     let annoncer = |a: Value| {
+        let a: envois::organismes_simules::Annonce = socle::forme::lire(&a, "l'annonce").unwrap();
         // Annoncee avant le depot : le 1er novembre.
         let le = socle::paris::naif_de_iso("2026-11-01T12:00:00").unwrap() as f64;
-        socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, moteur::compagnie::bridage::branchement(&racine), &a)).unwrap();
+        socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, moteur::compagnie::bridage::branchement(&racine).unwrap(), &a)).unwrap();
     };
     let relever = || {
         socle::temps::pendant(fin, || {
@@ -308,7 +309,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     assert_eq!(bilan["verdict"], json!("KO"), "{}", ligne);
     assert!(bilan["anomalies"].to_string().contains("Code URSSAF invalide"), "{}", bilan);
     assert!(!ligne["retours"].as_array().unwrap().iter().any(|x| x["nature"] == json!("94")), "une DSN refusee n'a pas de taux : {}", ligne);
-    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, &ctx.entreprise.nic_principal()).unwrap();
+    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal().unwrap()).unwrap();
     assert!(etat.refusee, "{:?}", etat);
 
     // UN FICHIER REFUSE NE REPART PAS TOUT SEUL : a l'ouverture suivante, l'horloge refait la DSN a son echeance, octet
@@ -327,7 +328,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     std::fs::write(racine.join("config/entreprise.json"), serde_json::to_string_pretty(&entreprise).unwrap()).unwrap();
     ouvrir("2026-12-21");
     assert_eq!(de_novembre(), avant + 2, "le fichier corrige part, en test puis en reel");
-    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, &ctx.entreprise.nic_principal()).unwrap();
+    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal().unwrap()).unwrap();
     assert!(!etat.refusee, "{:?}", etat);
     ouvrir("2026-12-22");
     assert_eq!(de_novembre(), avant + 2, "une DSN acceptee ne repart pas");
@@ -452,9 +453,9 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
 fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&str]) -> (std::path::PathBuf, &'static str) {
     let d = outils::dossier_de_test("rejeu", nom);
     let racine = outils::rejeu::livrer(&outils::rejeu::reference(nom), &d, "2026-11-02");
-    assert!(moteur::interface::compagnies::est_fictive_livree(&racine), "la fictive posee n'est pas une fictive livree");
+    assert!(moteur::interface::compagnies::est_fictive_livree(&racine).unwrap(), "la fictive posee n'est pas une fictive livree");
     assert!(!racine.join("journal/incidents.json").exists(), "les incidents du rejeu ne se livrent pas");
-    let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour)).clone();
+    let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour))["phrases"].clone();
     assert_eq!(horloge("2026-11-02"), json!([]), "l'horloge a trouve a faire derriere l'administratrice");
     let cartes = outils::lire(&racine, "engagements/2026-12.json");
     let cartes = cartes["engagements"].as_array().unwrap();
@@ -471,7 +472,7 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
         assert!(etats.contains(&"fait") && etats.iter().all(|x| *x == "fait" || *x == "rien"), "{} : {}", mois, e["phrase"]);
     }
     let exercices = outils::lire(&racine, "config/exercices.json");
-    assert_eq!(exercices["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
+    assert_eq!(exercices["clos"]["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
 
     // LE RELEVE, compare a l'oracle : chaque paie (brut, net, cout, et son PAS : taux, type, prelevement), chaque DSN
     // (chaque individu : contrat, taux et type de PAS, montant preleve ; chaque versement), chaque depot.
@@ -568,7 +569,7 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
     let (racine, jour) = la_fictive_tient_son_annee_et_se_livre("fictive-fil-de-fer", 2, &["01", "02", "03", "04", "05", "06", "09", "12"]);
     // LES MOIS IMPORTES SE LISENT (le bug du joueur L9 : le FCAP-SVP de 2025 refusait « aucune paie validée ») : la
     // tranche A de 2025 est celle des paies importees de septembre a decembre, et l'annee se dit partielle.
-    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": "2025"}), jour)).clone();
+    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": "2025", "format": "csv"}), jour)).clone();
     let ligne = &fcap["sections"][0]["lignes"][0];
     assert_eq!(ligne["mois"], json!(4), "{}", fcap);
     assert!(ligne["regle"].as_str().is_some_and(|r| r.contains("partielle")), "{}", fcap);
@@ -576,7 +577,7 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
     // salarié ») : sa DSN importee (decembre) ou non (septembre), le refus dit quoi faire et n'ecrit rien.
     for (mois, dit) in [("2025-09", "« Importer »"), ("2025-12", "Elle ne se refait pas ici.")] {
         let r = outils::route(&racine, "depot-apercu", json!({"quoi": "dsn", "mois": mois}), jour);
-        assert!(r["classe"] == json!("DsnDeLAncienLogiciel") && r["erreur"].as_str().is_some_and(|e| e.contains(dit)), "{} : {}", mois, r);
+        assert!(r["refus"]["classe"] == json!("DsnDeLAncienLogiciel") && r["refus"]["phrase"].as_str().is_some_and(|e| e.contains(dit)), "{} : {}", mois, r);
         assert!(!racine.join("sorties").join(mois).exists(), "{} : la DSN refusee s'est ecrite", mois);
     }
 }
@@ -591,7 +592,7 @@ fn la_fictive_de_l_hotel_de_bourgogne_tient_son_annee_et_se_livre() {
     // LES MOIS IMPORTES NE DEMANDENT PAS L'EFFECTIF D'AVANT EUX (le bug : l'export comptable de toutes les annees
     // refusait « effectif de la compagnie non connu », des 2025) : 2025, paye par l'ancien logiciel, lit ses taux sur ses pieces,
     // et le FNAS de la CCNEAC n'a pas a dire l'effectif de 2024 (`bareme::EntrepriseLue::taux_lus`).
-    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": "2025", "apercu": true}), jour);
+    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": "2025", "format": "csv", "apercu": true}), jour);
     assert_eq!(balance["ok"], json!(true), "{}", balance);
     // LES MEMES PIECES REIMPORTEES N'ANNONCENT RIEN (le bug : chaque reimport annoncait 24 contrats, les mois des deux CDI
     // sans terme, et 3 paies de decembre « completees ») : le contrat d'un permanent s'atteste mois par mois, et la paie

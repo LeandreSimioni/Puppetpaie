@@ -29,7 +29,10 @@ pub fn ouvrir(chemin: &Path) -> Result<String, String> {
 /// Ce que dit un fichier qu'aucun programme du poste n'a ouvert : s'il est ecrit, ou il est ; sinon, qu'il manque.
 fn pas_ouvert(chemin: &Path, e: &std::io::Error) -> Result<String, String> {
     if !chemin.exists() {
-        return Err(socle::echec::avec("Ce fichier n'existe pas : rien à ouvrir.", serde_json::json!({"chemin": chemin.to_string_lossy(), "detail": e.to_string()})));
+        return Err(socle::echec::avec(
+            "Ce fichier n'existe pas : rien à ouvrir.",
+            socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+        ));
     }
     let quoi = if chemin.is_dir() {
         "Le dossier"
@@ -63,8 +66,9 @@ pub fn ouvrir_adresse(url: &str) -> Result<(), String> {
 /// sous-domaines, sans identifiant ni port. Toute autre adresse est refusee : la page ne fait pas ouvrir n'importe quoi
 /// au poste.
 pub fn ouvrir_site(url: &str) -> Result<(), String> {
-    let hote = url.strip_prefix("https://").map(|r| r.split(['/', '?', '#']).next().unwrap_or("")).unwrap_or("");
-    let permis = !hote.contains(['@', ':', '\\']) && super::auteur::SITES.iter().any(|s| hote == *s || hote.ends_with(&format!(".{}", s)));
+    // L'hote : ce qui suit `https://`, jusqu'au chemin, a la requete ou au fragment.
+    let hote = url.strip_prefix("https://").and_then(|r| r.split(['/', '?', '#']).next());
+    let permis = hote.is_some_and(|h| !h.contains(['@', ':', '\\']) && super::auteur::SITES.iter().any(|s| h == *s || h.ends_with(&format!(".{}", s))));
     if !permis {
         return Err(format!("La fenêtre n'ouvre que les sites de l'éditeur ({}).", super::auteur::SITES.join(", ")));
     }
@@ -126,7 +130,7 @@ pub fn choisir_dossier(titre: &str) -> Result<Option<String>, String> {
 pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> Result<String, String> {
     let p = Path::new(chemin.trim());
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {
-        return Err(socle::echec::avec("Ce chemin ne mène à rien à ouvrir.", serde_json::json!({"chemin": chemin})));
+        return Err(socle::echec::avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::APart { chemin: Some(chemin.to_string()), ..Default::default() }));
     }
     let f = if p.is_absolute() { p.to_path_buf() } else { racine.join(p) };
     let dans = f.starts_with(racine);
@@ -134,7 +138,7 @@ pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> Result<S
         std::fs::create_dir_all(&f).map_err(|e| socle::echec::du_disque(&f, &e))?;
     }
     if !dans && !f.is_dir() {
-        return Err(socle::echec::avec("Ce n'est pas un dossier : rien à ouvrir.", serde_json::json!({"chemin": f.to_string_lossy()})));
+        return Err(socle::echec::avec("Ce n'est pas un dossier : rien à ouvrir.", socle::echec::APart { chemin: Some(f.to_string_lossy().into_owned()), ..Default::default() }));
     }
     ouvrir(&f)
 }

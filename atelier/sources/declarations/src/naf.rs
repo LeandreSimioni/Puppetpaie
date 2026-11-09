@@ -21,21 +21,75 @@
 //!   controle pas : avant la mise en production il se depose en NAF rev. 2, apres en NAF 2025, et le jour de la mise en
 //!   production n'est pas publie (D1).
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, OnceLock};
+
+use serde::Deserialize;
+
 use droit::fiche::Lue as _;
-use socle::fichiers::dossier_du_code;
-use documents::valeur::json_en_cache;
+use socle::fichiers::{forme_en_cache, FormeGardee};
 use crate::norme::Norme;
 use socle::num::Resultat;
-use serde_json::Value;
-use std::sync::Arc;
 
 const BASE: &str = "naf-base.json";
 
 /// La regle de `norme-dsn-base.json` qui demande la NAF 2025.
 pub const REGLE: &str = "code_naf_en_naf_2025";
 
-fn base() -> Resultat<Arc<Value>> {
-    json_en_cache(&dossier_du_code().join(BASE))
+/// `naf-base.json` : les sous-classes de la NAF 2025, et celles de la NAF rev. 2 avec les codes 2025 vers lesquels leur
+/// contenu passe ; chacune sous son code sans point (`9001Z`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Base {
+    #[serde(rename = "quoi")]
+    _quoi: String,
+    #[serde(rename = "note")]
+    _note: String,
+    /// L'empreinte de chaque fichier de l'INSEE releve.
+    #[serde(rename = "sha256")]
+    _sha256: BTreeMap<String, String>,
+    #[serde(rename = "en_vigueur_naf_2025")]
+    _en_vigueur_naf_2025: String,
+    naf_2025: BTreeMap<String, Naf2025>,
+    naf_rev2: BTreeMap<String, NafRev2>,
+}
+
+/// Une sous-classe de la NAF 2025 : son code ecrit par l'INSEE (`90.20Y`) et son intitule.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Naf2025 {
+    #[serde(rename = "code")]
+    _code: String,
+    #[serde(rename = "intitule")]
+    _intitule: String,
+}
+
+/// Une sous-classe de la NAF rev. 2 : son code ecrit par l'INSEE, son intitule, sa correspondance (`Unique`,
+/// `Multiple`) et les sous-classes 2025 vers lesquelles son contenu passe.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NafRev2 {
+    code: String,
+    intitule: String,
+    #[serde(rename = "type")]
+    _type: String,
+    vers: Vec<Vers>,
+}
+
+/// Une sous-classe 2025 vers laquelle passe (une part de) une sous-classe rev. 2.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Vers {
+    #[serde(rename = "code")]
+    _code: String,
+    code_insee: String,
+    intitule: String,
+    contenu: String,
+}
+
+fn base() -> Resultat<Arc<Base>> {
+    static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
+    forme_en_cache(&CACHE, BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }
 
 /// Le code tel que la fiche le porte : sans espace, en majuscules.
@@ -45,12 +99,12 @@ fn net(code: &str) -> String {
 
 /// Le code est-il une sous-classe de la NAF 2025 ?
 pub fn en_naf_2025(code: &str) -> Resultat<bool> {
-    Ok(base()?["naf_2025"].get(net(code)).is_some())
+    Ok(base()?.naf_2025.contains_key(&net(code)))
 }
 
 /// Le code est-il une sous-classe de la NAF rev. 2 ?
 pub fn en_naf_rev2(code: &str) -> Resultat<bool> {
-    Ok(base()?["naf_rev2"].get(net(code)).is_some())
+    Ok(base()?.naf_rev2.contains_key(&net(code)))
 }
 
 /// Ce qu'on reproche a un code APE saisi, ou `None`.
@@ -75,22 +129,11 @@ point, tels que l'avis de situation Sirene les donne (9001Z en NAF rev. 2 ; 9020
 /// La phrase d'un code NAF rev. 2 dans un fichier qui veut la NAF 2025 : vers quels codes il passe, et quoi faire.
 fn refus_rev2(ou: &str, code: &str, version: &str) -> Resultat<String> {
     let b = base()?;
-    let e = &b["naf_rev2"][code];
-    let vers: Vec<String> = e["vers"]
-        .as_array()
-        .map(|v| {
-            v.iter()
-                .map(|x| {
-                    format!(
-                        "{} ({} : {})",
-                        x["code_insee"].as_str().unwrap_or(""),
-                        x["intitule"].as_str().unwrap_or(""),
-                        x["contenu"].as_str().unwrap_or("").trim_start_matches("- ")
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let Some(e) = b.naf_rev2.get(code) else {
+        return Err(format!("Code APE (NAF) {} : « {} » n'est pas dans la NAF rev. 2 livrée : le signaler au développeur.", ou, code));
+    };
+    let vers: Vec<String> =
+        e.vers.iter().map(|x| format!("{} ({} : {})", x.code_insee, x.intitule, x.contenu.trim_start_matches("- "))).collect();
     let devient = match vers.len() {
         0 => "n'a pas de correspondance dans la table de l'INSEE".to_string(),
         1 => format!("devient {}", vers[0]),
@@ -104,9 +147,9 @@ quand « la nomenclature NAF 2025 s'applique quelle que soit la version de norme
 pas. Saisir le code notifie dans Configuration › Entreprise, « Code APE (NAF) », sans le point. Rien n'est ecrit.",
         ou,
         code,
-        e["intitule"].as_str().unwrap_or(""),
+        e.intitule,
         version,
-        e["code"].as_str().unwrap_or(code),
+        e.code,
         devient
     ))
 }
@@ -137,7 +180,7 @@ en norme {} demande (net-entreprises, 08/10/2026). Saisir dans Configuration ›
 l'INSEE a notifie, sans le point. Rien n'est ecrit.",
                 ou, code, norme.version
             ),
-            serde_json::json!({"fichier": BASE}),
+            socle::echec::APart { fichier: Some(BASE.into()), ..Default::default() },
         ));
     }
     Ok(())

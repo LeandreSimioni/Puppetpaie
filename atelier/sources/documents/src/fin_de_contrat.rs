@@ -7,14 +7,14 @@
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use fabrique_pdf::forme::{Document, Style};
 
 use crate::bulletin::{fmt_eur, identite_de};
-use crate::marqueurs::{dans_la_description, Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;
-use socle::echec::{erreur, R};
+use socle::echec::{erreur, Classe, R};
 use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
@@ -28,10 +28,12 @@ pub const AVIS: [&str; 3] = [
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
 pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf; 2]> {
     let e = &p.engagement;
-    let numero = e.numero.as_deref().unwrap_or("?").to_string();
+    let Some(numero) = e.numero.as_deref() else {
+        return Err(erreur(Classe::Illisible, "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
+    };
     let Some(fin) = e.fin else {
         return Err(erreur(
-            "ValueError",
+            Classe::Illisible,
             format!("Certificat de travail : le contrat {} n'a pas de date de fin. Il se délivre à l'expiration du contrat (L1234-19).", numero),
         ));
     };
@@ -40,7 +42,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let poste = ctx.gabarits();
     let certificat = sortie.join(format!("CertificatTravail_{}_{}.pdf", cle, fin.aaaammjj()));
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
-    let valeurs_cert = marqueurs_communs(&date, p, &ent)?;
+    let valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
@@ -52,14 +54,14 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     Ok([certificat, recu])
 }
 
-/// Les mentions communes du certificat de travail et du reçu.
-fn marqueurs_communs(date: &Jour, p: &Paie, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
+/// Les mentions communes du certificat de travail et du reçu, du contrat `numero` qui finit le `fin`.
+fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-        c.ecrite(k).map(str::to_string).map_err(|m| erreur("KeyError", m))
+        c.ecrite(k).map(str::to_string).map_err(|m| erreur(Classe::Manque, m))
     }
-    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur("KeyError", m))?;
+    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur(Classe::Manque, m))?;
     let aujourdhui = date.jj_mm_aaaa();
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -72,18 +74,18 @@ fn marqueurs_communs(date: &Jour, p: &Paie, ent: &droit::fiche::ChampsEntreprise
     poser(Marqueur::EmployeurSiret, ecrite(&ent.siret, "siret")?);
     poser(Marqueur::EmployeurNaf, ecrite(&ent.naf, "naf")?);
     poser(Marqueur::EmployeurSignataire, format!("{} {}", ecrite(&sig.prenom, "prenom")?, ecrite(&sig.nom, "nom")?));
-    poser(Marqueur::EmployeurSignataireFonction, sig.fonction.texte().to_string());
+    poser(Marqueur::EmployeurSignataireFonction, ecrite(&sig.fonction, "fonction")?);
     poser(Marqueur::SalarieNomComplet, format!("{} {}", ecrite(&s.prenom, "prenom")?, ecrite(&s.nom, "nom")?));
-    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur("KeyError", m))?.jj_mm_aaaa());
-    poser(Marqueur::SalarieLieuNaissance, s.lieu_naissance.texte().to_string());
+    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur(Classe::Manque, m))?.jj_mm_aaaa());
+    poser(Marqueur::SalarieLieuNaissance, ecrite(&s.lieu_naissance, "lieu_naissance")?);
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
     poser(Marqueur::SalarieCommune, ecrite(&s.commune, "commune")?);
-    poser(Marqueur::ContratNumero, e.numero.as_deref().unwrap_or_default().to_string());
+    poser(Marqueur::ContratNumero, numero.to_string());
     poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
-    poser(Marqueur::ContratFin, e.fin.map(|f| f.jj_mm_aaaa()).unwrap_or_default());
-    poser(Marqueur::ContratEmploi, s.emploi.texte().to_string());
-    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur("ValueError", m))?.libelle.clone());
+    poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
+    poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
+    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur(Classe::Illisible, m))?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());
     poser(Marqueur::RecuDate, aujourdhui);
     Ok(m)
@@ -108,16 +110,11 @@ fn inventaire(p: &Paie) -> String {
 /// l'employeur.
 fn ecrire_papier(modele: &Path, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
     let lu = ModeleLu::du_fichier(modele)?;
-    let mut d = crate::contrat::enveloppe("attestation", ent);
-    let mut un = Map::new();
-    un.insert("texte".into(), json!(lu.texte));
-    un.insert("valeurs".into(), dans_la_description(&valeurs));
+    let mut un = crate::contrat::document_modele(&lu, &valeurs);
     if signe {
-        if let Some(s) = identite_de(&ent.gabarits, "signature") {
-            un.insert("signature_employeur".into(), json!(crate::conges_spectacles::chemin_texte(&s)));
-        }
+        un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }
-    d.insert("documents".into(), json!([{ "modele": Value::Object(un) }]));
-    crate::fabrique::ecrire(&Value::Object(d), chemin).map_err(|m| erreur("FabriqueRefus", m.replace('\n', " ").trim().to_string()))?;
+    let d = crate::contrat::enveloppe(Style::Attestation, ent, vec![Document::Modele(un)]);
+    crate::fabrique::ecrire(&d, chemin).map_err(|m| erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string()))?;
     Ok(())
 }

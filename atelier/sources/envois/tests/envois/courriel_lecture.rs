@@ -9,43 +9,134 @@
 //! Heure de Paris, quel que soit le fuseau du poste ; un en-tete `Date` illisible rend l'heure de la releve (`MAINTENANT`).
 //! Aucun reseau.
 
-use crate::outils::oracle;
-use envois::courriel_lecture::{adresse_de, date_de, identifiant_de, texte_propre};
 use documents::fiche_questionnaire as fq;
+use envois::courriel_lecture::{adresse_de, date_de, identifiant_de, texte_propre};
+use serde::{Deserialize, Serialize, Serializer};
 use socle::base64::lire as base64_lire;
-use serde_json::{json, Map, Value};
+
+/// L'oracle : le questionnaire et ses textes, les messages lus, les dates et les pays.
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[serde(deny_unknown_fields)]
+struct Oracle {
+    questionnaire: String,
+    sujet: String,
+    corps: String,
+    html: String,
+    alphabet: String,
+    questions: Vec<(String, String, String)>,
+    messages: Vec<MessageLu>,
+    dates: Vec<DateLue>,
+    pays: Vec<PaysLu>,
+}
+
+/// Un message recu (`eml`, en base64) et ce que sa lecture en rend. `defaut_tirets` : une donnee du cas, que le test ne
+/// recalcule pas.
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[serde(deny_unknown_fields)]
+struct MessageLu {
+    nom: String,
+    eml: String,
+    texte: String,
+    adresse: Option<String>,
+    message_id: Option<String>,
+    date: String,
+    defaut_tirets: bool,
+    reponses: Reponses,
+    fiche: fq::FicheLue,
+    illisible: Vec<String>,
+}
+
+/// Les reponses lues, dans l'ordre du questionnaire.
+#[derive(PartialEq, Debug)]
+struct Reponses(Vec<(String, String)>);
+
+impl<'de> Deserialize<'de> for Reponses {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        socle::forme::en_ordre(d).map(Reponses)
+    }
+}
+
+impl Serialize for Reponses {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut m = s.serialize_map(Some(self.0.len()))?;
+        for (k, v) in &self.0 {
+            m.serialize_entry(k, v)?;
+        }
+        m.end()
+    }
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[serde(deny_unknown_fields)]
+struct DateLue {
+    texte: String,
+    attendu: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[serde(deny_unknown_fields)]
+struct PaysLu {
+    texte: String,
+    attendu: Option<(String, Option<String>)>,
+}
+
+fn chemin() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/donnees/courriel_lecture/cas.json")
+}
+
+fn reecrire() -> bool {
+    std::env::var("PUPPETPAIE_REECRIRE_ORACLES").is_ok_and(|v| v == "1")
+}
 
 #[test]
 fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
-    let mut c: Value = serde_json::from_slice(&std::fs::read(crate::outils::chemin_oracle("courriel_lecture/cas.json")).unwrap()).unwrap();
-    assert!(c["messages"].as_array().unwrap().len() > 200, "le fichier de cas est complet");
-    for cas in c["messages"].as_array_mut().unwrap() {
-        let brut = base64_lire(cas["eml"].as_str().unwrap()).unwrap();
-        let m = mailparse::parse_mail(&brut).unwrap_or_else(|e| panic!("{} : {}", cas["nom"], e));
-        let propre = texte_propre(&m);
-        let lues = fq::lire_reponses(&propre);
-        let reponses: Map<String, Value> = fq::QUESTIONS.iter().filter_map(|(k, _, _)| lues.get(k).map(|v| (k.to_string(), json!(v)))).collect();
-        assert_eq!(reponses.len(), lues.len(), "{} : une reponse hors du questionnaire", cas["nom"]);
-        let (fiche, illisible) = fq::fiche_depuis_reponses(&lues);
-        cas["texte"] = json!(propre);
-        cas["adresse"] = json!(adresse_de(&m));
-        cas["message_id"] = json!(identifiant_de(&m));
-        cas["date"] = json!(date_de(&m, "MAINTENANT"));
-        cas["reponses"] = Value::Object(reponses);
-        cas["fiche"] = Value::Object(fiche);
-        cas["illisible"] = json!(illisible);
+    let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)));
+    assert!(attendu.messages.len() > 200, "le fichier de cas est complet");
+    let messages: Vec<MessageLu> = attendu
+        .messages
+        .iter()
+        .map(|cas| {
+            let brut = base64_lire(&cas.eml).unwrap();
+            let m = mailparse::parse_mail(&brut).unwrap_or_else(|e| panic!("{} : {}", cas.nom, e));
+            let propre = texte_propre(&m);
+            let lues = fq::lire_reponses(&propre);
+            let reponses: Vec<(String, String)> = fq::QUESTIONS.iter().filter_map(|(k, _, _)| lues.get(k).map(|v| (k.to_string(), v.clone()))).collect();
+            assert_eq!(reponses.len(), lues.len(), "{} : une reponse hors du questionnaire", cas.nom);
+            let (fiche, illisible) = fq::fiche_depuis_reponses(&lues).unwrap();
+            MessageLu {
+                nom: cas.nom.clone(),
+                eml: cas.eml.clone(),
+                texte: propre,
+                adresse: adresse_de(&m),
+                message_id: identifiant_de(&m),
+                date: date_de(&m, "MAINTENANT"),
+                defaut_tirets: cas.defaut_tirets,
+                reponses: Reponses(reponses),
+                fiche,
+                illisible,
+            }
+        })
+        .collect();
+    let obtenu = Oracle {
+        questionnaire: fq::questionnaire("FIC-ABCDEF", &fq::posees(&|_| true), &|_| String::new()),
+        sujet: fq::SUJET.to_string(),
+        corps: fq::CORPS.to_string(),
+        html: fq::HTML.to_string(),
+        alphabet: fq::ALPHABET_CODE.to_string(),
+        questions: fq::QUESTIONS.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect(),
+        messages,
+        dates: attendu.dates.iter().map(|d| DateLue { texte: d.texte.clone(), attendu: fq::date_lue(&d.texte) }).collect(),
+        pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c, u.map(str::to_string))) }).collect(),
+    };
+    if reecrire() {
+        socle::ecriture::ecrire_json(&chemin(), &obtenu, 0).unwrap();
+        return;
     }
-    for d in c["dates"].as_array_mut().unwrap() {
-        d["attendu"] = json!(fq::date_lue(d["texte"].as_str().unwrap()));
+    for (a, o) in attendu.messages.iter().zip(&obtenu.messages) {
+        assert_eq!(a, o, "{} : la lecture differe de l'oracle", a.nom);
     }
-    for p in c["pays"].as_array_mut().unwrap() {
-        p["attendu"] = json!(fq::pays_lu(p["texte"].as_str().unwrap()));
-    }
-    c["questionnaire"] = json!(fq::questionnaire("FIC-ABCDEF", &fq::posees(&|_| true), &|_| String::new()));
-    c["sujet"] = json!(fq::SUJET);
-    c["corps"] = json!(fq::CORPS);
-    c["html"] = json!(fq::HTML);
-    c["alphabet"] = json!(fq::ALPHABET_CODE);
-    c["questions"] = json!(fq::QUESTIONS);
-    oracle("courriel_lecture/cas.json", "", &c);
+    assert_eq!(attendu.dates, obtenu.dates, "dates");
+    assert_eq!(attendu.pays, obtenu.pays, "pays");
+    assert_eq!(attendu, obtenu);
 }

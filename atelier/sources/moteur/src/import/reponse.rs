@@ -3,11 +3,12 @@
 //! et les AEM en PDF lus, chaque fiche que l'import cree, complete ou laisse (`FicheImportee`), et leurs phrases
 //! (`Importation::dire`, une fois tout ecrit).
 //!
-//! Restent des formes ouvertes : ce que porte une fiche (`donnees`, la case de la fiche d'un ecart : les cases de
-//! `champs-base.json`, lues par `declarations::champs::ParCase`) et ses anomalies (`declarations::champs::verifier_fiche`).
+//! Ce que porte une fiche, et la case d'un ecart, sont des saisies de leur fiche (`declarations::champs::Saisie`,
+//! `Valeur`) ; ses anomalies, celles de sa verification (`declarations::champs::Anomalie`).
 
 use serde::Serialize;
-use serde_json::{Map, Value};
+
+use declarations::champs::{Anomalie, Saisie, Valeur};
 
 use crate::routes::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -214,23 +215,28 @@ impl Origine {
             (Some(f), None) => format!(" ({})", f),
             _ => String::new(),
         };
-        let de_mois = |m: &Option<String>| m.as_deref().filter(|m| !m.is_empty()).map(|m| format!(" {}", socle::texte::de(&Mois::en_clair(m)))).unwrap_or_default();
+        let de_mois: String = self.mois.iter().filter(|m| !m.is_empty()).map(|m| format!(" {}", socle::texte::de(&Mois::en_clair(m)))).collect();
         match self.source {
-            Source::Aem => format!("l'AEM{}{}", de_mois(&self.mois), fichier),
-            Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois(&self.mois), fichier),
+            Source::Aem => format!("l'AEM{}{}", de_mois, fichier),
+            Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois, fichier),
             Source::Bulletin => format!("le bulletin{}", fichier),
-            Source::Dsn => format!("la DSN {}", socle::texte::de(&Mois::en_clair(self.mois.as_deref().unwrap_or("")))),
+            Source::Dsn => format!("la DSN{}", de_mois),
         }
     }
 }
 
-/// Une valeur, en mots dans une phrase : une liste de structures, une structure (`cle valeur`), un texte.
-fn en_mots(v: &Value) -> String {
-    let mot = crate::routes::mot;
+/// UNE CASE, EN MOTS DANS UNE PHRASE : un texte ou un nombre tel qu'il s'ecrit, oui ou non, des mots a la suite, une
+/// structure (`cle valeur`), ses lignes (chacune ses valeurs).
+pub(crate) fn en_mots(v: &Valeur) -> String {
+    let valeurs = |s: &Saisie| s.cases().iter().map(|(_, x)| en_mots(x)).collect::<Vec<_>>().join(" ");
     match v {
-        Value::Array(l) => l.iter().map(|x| if let Value::Object(o) = x { o.values().map(mot).collect::<Vec<_>>().join(" ") } else { mot(x) }).collect::<Vec<_>>().join(", "),
-        Value::Object(o) => o.iter().map(|(k, x)| format!("{} {}", k, mot(x))).collect::<Vec<_>>().join(", "),
-        autre => mot(autre),
+        Valeur::Texte(t) => t.clone(),
+        Valeur::Nombre(n) => n.to_string(),
+        Valeur::OuiNon(true) => "oui".to_string(),
+        Valeur::OuiNon(false) => "non".to_string(),
+        Valeur::Mots(l) => l.join(", "),
+        Valeur::Bloc(b) => b.cases().iter().map(|(k, x)| format!("{} {}", k, en_mots(x))).collect::<Vec<_>>().join(", "),
+        Valeur::Lignes(l) => l.iter().map(valeurs).collect::<Vec<_>>().join(", "),
     }
 }
 
@@ -250,7 +256,7 @@ pub enum EtatFiche {
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
     pub champ: String,
-    pub valeur: Value,
+    pub valeur: Valeur,
     #[serde(flatten)]
     pub origine: Origine,
     pub dit: String,
@@ -260,7 +266,7 @@ pub struct Completee {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum DitPar {
-    Dsn { dsn: Value, mois: String },
+    Dsn { dsn: Valeur, mois: String },
     Bulletin { bulletin: String, fichier: String, page: usize },
     Certificat { certificat: String, fichier: String, page: usize },
     Aem { aem: String, fichier: String, page: usize },
@@ -271,26 +277,21 @@ pub enum DitPar {
 pub struct Ecart {
     pub champ: String,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
-    pub fiche: Value,
+    pub fiche: Valeur,
     #[serde(flatten)]
     pub par: DitPar,
     pub dit: String,
 }
 
 impl Ecart {
-    pub fn new(champ: &str, fiche: Value, par: DitPar) -> Ecart {
-        let mot = crate::routes::mot;
-        let (fiche, par) = match par {
-            DitPar::Dsn { dsn, mois } => (brut(&fiche), DitPar::Dsn { dsn: brut(&dsn), mois }),
-            autre => (brut(&fiche), autre),
-        };
+    pub fn new(champ: &str, fiche: Valeur, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
             DitPar::Bulletin { bulletin, fichier, page } => (format!("le bulletin ({}, page {}) disait", fichier, page), bulletin.clone()),
-            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&Mois::en_clair(mois))), mot(dsn)),
+            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&Mois::en_clair(mois))), en_mots(dsn)),
         };
-        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, mot(&fiche));
+        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
         Ecart { champ: champ.to_string(), fiche, par, dit }
     }
 }
@@ -304,9 +305,9 @@ pub struct FicheImportee {
     pub libelle: String,
     pub etat: EtatFiche,
     pub ecarts: Vec<Ecart>,
-    pub anomalies: Vec<Value>,
-    /// Ce que porte une fiche a creer (sans ses cles `_…`).
-    pub donnees: Map<String, Value>,
+    pub anomalies: Vec<Anomalie>,
+    /// Ce que porte une fiche a creer.
+    pub donnees: Saisie,
     pub completer: Vec<Completee>,
     /// La piece d'ou vient une fiche a creer, quand ce n'est ni une DSN ni un bulletin.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,17 +318,8 @@ pub struct FicheImportee {
     pub pastille: Pastille,
 }
 
-/// `brut(valeur)` : un dictionnaire perd ses cles qui commencent par `_`.
-pub(crate) fn brut(v: &Value) -> Value {
-    match v {
-        Value::Object(o) => Value::Object(o.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, x)| (k.clone(), brut(x))).collect()),
-        Value::Array(a) => Value::Array(a.iter().map(brut).collect()),
-        autre => autre.clone(),
-    }
-}
-
 impl FicheImportee {
-    pub fn new(nom: &'static str, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Value>, donnees: &Map<String, Value>) -> FicheImportee {
+    pub fn new(nom: &'static str, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
         let mut f = FicheImportee {
             nom,
             cle: cle.map(String::from),
@@ -335,7 +327,7 @@ impl FicheImportee {
             etat,
             ecarts: Vec::new(),
             anomalies: Vec::new(),
-            donnees: Map::new(),
+            donnees: Saisie::default(),
             completer: Vec::new(),
             lu_dans: None,
             lu_dans_dit: None,
@@ -346,34 +338,36 @@ impl FicheImportee {
         f
     }
 
-    /// Ce que porte la fiche a creer, et ses anomalies, sans les cles `_…`.
-    pub fn poser(&mut self, donnees: &Map<String, Value>, anomalies: Vec<Value>) {
-        self.donnees = donnees.iter().filter(|(k, _)| !k.starts_with('_') && !droit::fiche::est_une_note(k)).map(|(k, v)| (k.clone(), brut(v))).collect();
-        self.anomalies = anomalies.iter().map(brut).collect();
+    /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
+    pub fn poser(&mut self, donnees: &Saisie, anomalies: Vec<Anomalie>) {
+        let mut cases = Saisie::default();
+        crate::import::proposee::fondre(&mut cases, donnees);
+        self.donnees = cases;
+        self.anomalies = anomalies;
     }
 
     /// Les ecarts d'une piece de plus : une case deja notee garde le sien (la DSN passe avant le bulletin).
     pub fn ajouter_ecarts(&mut self, ecarts: Vec<Ecart>) {
         for e in ecarts {
-            if !e.champ.starts_with('_') && !self.ecarts.iter().any(|x| x.champ == e.champ) {
+            if !self.ecarts.iter().any(|x| x.champ == e.champ) {
                 self.ecarts.push(e);
             }
         }
     }
 
-    /// Note ce qui serait complete et d'ou ca vient. Un champ deja note garde sa premiere origine
+    /// Note ce qui serait complete et d'ou ca vient. Une case deja notee garde sa premiere origine
     /// (`completer::ajouter`).
-    pub fn noter(&mut self, champs: &Map<String, Value>, origine: &Origine) {
-        for (k, v) in champs {
+    pub fn noter(&mut self, champs: &Saisie, origine: &Origine) {
+        for (k, v) in champs.cases() {
             if !self.completer.iter().any(|c| &c.champ == k) {
-                self.completer.push(Completee { champ: k.clone(), valeur: brut(v), origine: origine.clone(), dit: String::new() });
+                self.completer.push(Completee { champ: k.clone(), valeur: v.clone(), origine: origine.clone(), dit: String::new() });
             }
         }
     }
 
     /// Le numero d'objet d'un spectacle a creer, en capitales.
     pub fn numero_objet(&self) -> Option<String> {
-        self.donnees.get("numero_objet").map(documents::valeur::valeur_en_texte).map(|n| n.to_uppercase())
+        self.donnees.mot("numero_objet").map(|n| n.to_uppercase())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.
@@ -639,8 +633,8 @@ pub struct Importation {
     /// Les contrats attestes par les AEM deposees.
     pub contrats: usize,
     pub contrats_nouveaux: usize,
-    pub contrats_du: String,
-    pub contrats_au: String,
+    pub contrats_du: Option<String>,
+    pub contrats_au: Option<String>,
     pub contrats_sans_fiche: usize,
     pub avertissements: Vec<String>,
     pub rien_a_faire: bool,
@@ -673,6 +667,12 @@ pub struct Importation {
     pub couleur: Option<&'static str>,
 }
 
+impl crate::routes::enveloppe::Dite for Importation {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
 /// « 3 bulletins » : `n` et le mot, au pluriel quand il le faut ; rien pour zero.
 pub(crate) fn n_mots(n: usize, mot: &str) -> String {
     match n {
@@ -684,7 +684,10 @@ pub(crate) fn n_mots(n: usize, mot: &str) -> String {
 
 /// Un jour (`2026-11-02`) tel qu'une phrase le dit : « 02/11/2026 » ; ce qui n'en est pas un, tel quel.
 fn jour(t: &str) -> String {
-    socle::date::Jour::lire(t).map(|j| j.jj_mm_aaaa()).unwrap_or_else(|_| t.to_string())
+    match socle::date::Jour::du_texte(t) {
+        Some(j) => j.jj_mm_aaaa(),
+        None => t.to_string(),
+    }
 }
 
 impl Importation {
@@ -702,12 +705,15 @@ impl Importation {
         let creer = |k: usize| if ecrit { if k > 1 { " créées" } else { " créée" } } else { " à créer" };
         // Les declarations.
         let periode = if self.premier_mois.is_empty() { String::new() } else { format!(" ({} → {})", Mois::en_clair(&self.premier_mois), Mois::en_clair(&self.dernier_mois)) };
+        let contrats_du_au = match (&self.contrats_du, &self.contrats_au) {
+            (Some(du), Some(au)) => format!(" du {} au {}", jour(du), jour(au)),
+            _ => String::new(),
+        };
         let contrats = if self.contrats > 0 {
             format!(
-                "{} contrat(s) attesté(s) du {} au {} : {} {} à l'historique, {} déjà connu(s){}",
+                "{} contrat(s) attesté(s){} : {} {} à l'historique, {} déjà connu(s){}",
                 self.contrats,
-                jour(&self.contrats_du),
-                jour(&self.contrats_au),
+                contrats_du_au,
                 self.contrats_nouveaux,
                 if ecrit { "ajouté(s)" } else { "à ajouter" },
                 self.contrats.saturating_sub(self.contrats_nouveaux + self.contrats_sans_fiche),
@@ -810,12 +816,14 @@ impl Importation {
     pub fn dire_l_apercu(&mut self) {
         self.dire();
         let b = &self.bulletins;
-        let quand = |x: &Option<String>| crate::routes::quand(x.as_deref().unwrap_or(""));
+        let periode = match (&b.du, &b.au) {
+            (Some(du), Some(au)) => format!(" (du {} au {})", crate::routes::quand(du), crate::routes::quand(au)),
+            _ => String::new(),
+        };
         self.phrase = format!(
-            "Dans le dossier lu : {} bulletins lus (du {} au {}), {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
+            "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
             b.lus,
-            quand(&b.du),
-            quand(&b.au),
+            periode,
             b.repris,
             b.fiches_a_creer,
             self.dsn,

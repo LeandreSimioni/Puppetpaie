@@ -7,31 +7,11 @@
 use droit::fiche::Lue as _;
 use std::collections::BTreeSet;
 
-use serde_json::Value;
-
 use droit::contexte::Contexte;
-use crate::valeur::valeur_en_texte;
-use socle::echec::erreur;
-use crate::etats_paie::{
-    dossier_exports, ecrire_fini, fiche_texte, finir, titre_spectacle, Demande, Lecture, Periode,
-};
-use crate::valeur::vrai;
+use socle::echec::{erreur, Classe};
+use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use socle::num::{eur2, Decimal};
-use crate::tableaux_export::{col_m, col_t, jj, libelle_mois, qui, qui_souple, refus, sections_de, Ligne, Section, Tableau, Val, R};
-
-/// `fiche.get(a) or fiche.get(b) or ...`, la valeur telle que le fichier la porte (un nombre reste un nombre).
-fn premiere(fiche: &Value, cles: &[&str]) -> Option<Val> {
-    for c in cles {
-        if let Some(v) = fiche.get(*c).filter(|v| vrai(v)) {
-            return Some(match v {
-                Value::String(s) => Val::Txt(s.clone()),
-                Value::Number(_) => Val::Num(v.clone()),
-                autre => Val::Txt(valeur_en_texte(autre)),
-            });
-        }
-    }
-    None
-}
+use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ============================================================ 13. les contrats
 
@@ -39,16 +19,17 @@ fn premiere(fiche: &Value, cles: &[&str]) -> Option<Val> {
 struct ContratMois {
     mois: String,
     cle: String,
-    fiche: Value,
-    nationalite: socle::codification_ue::Nationalite,
+    fiche: droit::fiche::ChampsSalarie,
     salarie: String,
-    contrat: String,
+    /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
+    contrat: Option<String>,
     nature: String,
-    emploi: String,
-    spectacle: String,
-    objet: String,
+    emploi: Option<String>,
+    spectacle: Option<String>,
+    objet: Option<String>,
     debut: String,
-    fin: String,
+    /// La fin du contrat, sinon son dernier jour travaille.
+    fin: Option<String>,
     brut: Option<Decimal>,
 }
 
@@ -59,26 +40,21 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
     for m in p.mois.clone() {
         for paie in lecture.paies(&m)?.iter() {
             let e = &paie.engagement;
-            let dates: Vec<String> = e.dates_travail.iter().map(|j| j.iso()).collect();
-            let emploi = match e.emploi.clone().filter(|x| !x.is_empty()) {
-                Some(x) => x,
-                None => paie.salarie.emploi.texte().to_string(),
-            };
+            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie.emploi.en_texte());
             out.push(ContratMois {
                 mois: m.clone(),
                 cle: paie.salarie.id.to_string(),
-                fiche: socle::ecriture::en_valeur(&paie.salarie.champs),
-                nationalite: paie.salarie.champs.nationalite(),
+                fiche: paie.salarie.champs.clone(),
                 salarie: qui(&paie.salarie)?,
-                contrat: e.numero.as_deref().unwrap_or_default().to_string(),
-                nature: e.nat().map_err(|x| erreur("ErreurOperation", x))?.libelle.clone(),
+                contrat: e.numero.as_deref().map(str::to_string),
+                nature: e.nat().map_err(|x| erreur(Classe::Refuse, x))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
-                objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned().unwrap_or_default(),
+                objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
                 debut: e.debut.iso(),
                 fin: match e.fin {
-                    Some(f) => f.iso(),
-                    None => dates.last().cloned().unwrap_or_default(),
+                    Some(f) => Some(f.iso()),
+                    None => e.dates_travail.last().map(|j| j.iso()),
                 },
                 brut: Some(eur2(paie.brut)),
             });
@@ -96,18 +72,18 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in &contrats {
         let mut l = Ligne::nouvelle();
-        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).t("contrat", c.contrat.clone()).t("nature", c.nature.clone());
-        l.t("emploi", c.emploi.clone()).t("spectacle", c.spectacle.clone()).t("objet", c.objet.clone()).t("debut", jj(&c.debut)).t("fin", jj(&c.fin));
+        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.nature.clone());
+        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", jj(&c.debut)).ot("fin", c.fin.as_deref().map(jj));
         l.od("brut", c.brut);
         lignes.push(l);
     }
-    if contrats.iter().any(|c| c.contrat.is_empty()) {
+    if contrats.iter().any(|c| c.contrat.is_none()) {
         avert.push("Contrat sans numéro : son mois n'a pas été produit, aucun numéro n'est figé. Rien n'est inventé.".to_string());
     }
     let mut t = Tableau::nouveau("contrats", "Liste des contrats", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), |k| libelle_mois(k).unwrap_or_else(|_| k.clone()), Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]));
+    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
     t.colonnes = vec![
         col_t("mois", "Mois de paie"),
         col_t("contrat", "Contrat"),
@@ -128,23 +104,22 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ================================================ 14. le registre du personnel
 
 /// `NATIONALITES`.
-fn nationalite(code: &str) -> &'static str {
-    match code {
+fn nationalite(code: &str) -> Option<&'static str> {
+    Some(match code {
         "01" => "française",
         "02" => "Union européenne",
         "03" => "EEE hors Union européenne",
         "04" => "hors Union européenne et EEE",
-        _ => "",
-    }
+        _ => return None,
+    })
 }
 
 /// Le premier chiffre du NIR (1 homme, 2 femme) ; un NIR provisoire ne le dit pas.
-fn sexe(nir: Option<&Value>) -> &'static str {
-    let t = nir.filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default();
-    match t.chars().next() {
-        Some('1') => "M",
-        Some('2') => "F",
-        _ => "",
+fn sexe(nir: Option<&str>) -> Option<&'static str> {
+    match nir?.chars().next() {
+        Some('1') => Some("M"),
+        Some('2') => Some("F"),
+        _ => None,
     }
 }
 
@@ -153,8 +128,10 @@ fn sexe(nir: Option<&Value>) -> &'static str {
 pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut vus: BTreeSet<(String, String, String, String)> = BTreeSet::new();
-    let mut lignes: Vec<Ligne> = Vec::new();
+    let mut vus: BTreeSet<(String, Option<String>, String, Option<String>)> = BTreeSet::new();
+    let mut a_preciser: BTreeSet<String> = BTreeSet::new();
+    // (entree AAAA-MM-JJ, nom, contrat) : l'ordre des embauches.
+    let mut rangees: Vec<((String, Option<String>, Option<String>), Ligne)> = Vec::new();
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     for c in contrats_de(&p, &mut lecture)? {
         // Un contrat qui deborde du mois apparait une fois par mois de paie : c'est UNE embauche.
@@ -162,42 +139,53 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             continue;
         }
         let f = &c.fiche;
-        let texte = |cles: &[&str], defaut: &str| -> String { cles.iter().find_map(|k| f.get(*k).filter(|v| vrai(v)).map(valeur_en_texte)).unwrap_or_else(|| defaut.to_string()) };
+        let nom = f.nom_affichage.remplie().or(f.nom.remplie()).map(str::to_string);
         let mut l = Ligne::nouvelle();
-        l.t("nom", texte(&["nom_affichage", "nom"], &c.salarie)).t("prenom", texte(&["prenom_affichage", "prenom"], ""));
+        l.ot("nom", nom.clone()).ot("prenom", f.prenom_affichage.remplie().or(f.prenom.remplie()));
         // La codification relue comme la DSN la declare (`codification_ue`) : un ancien 03 sans pays ne se lit pas « EEE ».
-        let code_ue = if texte(&["code_nationalite_dsn", "pays_nationalite", "pays_nationalite_hors_liste"], "").is_empty() {
-            Ok(String::new())
+        let dite = f.code_nationalite_dsn.est_dite() || f.pays_nationalite.remplie().is_some() || f.pays_nationalite_hors_liste.remplie().is_some();
+        let categorie = if dite {
+            match socle::codification_ue::codification_ue(&f.nationalite()) {
+                Ok(code) => nationalite(&code),
+                Err(pourquoi) => {
+                    a_preciser.insert(format!("{} : {}", c.salarie, pourquoi));
+                    Some("à préciser dans la fiche")
+                }
+            }
         } else {
-            socle::codification_ue::codification_ue(&c.nationalite)
+            None
         };
         // LE PAYS, quand la fiche le porte : le registre dit la nationalite (C. trav.,
-        // art. D1221-23, 1°), la categorie DSN la suit entre parentheses ; sans pays, la categorie seule.
-        let pays = match texte(&["pays_nationalite"], "") {
-            c if c.is_empty() => texte(&["pays_nationalite_hors_liste"], ""),
-            c => socle::pays::du_code(&c).ok().flatten().map_or(c, |p| p.nom),
+        // art. D1221-23, 1°), la categorie DSN la suit entre parentheses ; sans pays, la categorie seule. Un pays hors de
+        // la liste du logiciel se dit par son code.
+        let pays = match f.pays_nationalite.remplie() {
+            Some(code) => match socle::pays::du_code(code).map_err(|m| erreur(Classe::Illisible, m))? {
+                Some(p) => Some(p.nom),
+                None => Some(code.to_string()),
+            },
+            None => f.pays_nationalite_hors_liste.remplie().map(str::to_string),
         };
-        let categorie = code_ue.map_or_else(|_| "à préciser dans la fiche".to_string(), |c| nationalite(&c).to_string());
-        l.t(
+        l.ot(
             "nationalite",
-            match (pays.is_empty(), categorie.is_empty()) {
-                (true, _) => categorie,
-                (false, true) => pays,
-                (false, false) => format!("{} ({})", pays, categorie),
+            match (pays, categorie) {
+                (Some(pays), Some(cat)) => Some(format!("{} ({})", pays, cat)),
+                (Some(pays), None) => Some(pays),
+                (None, cat) => cat.map(str::to_string),
             },
         );
-        l.t("naissance", jj(&texte(&["date_naissance"], ""))).t("sexe", sexe(f.get("nir")));
-        l.t("emploi", c.emploi.clone()).t("qualification", texte(&["statut"], "")).t("contrat_type", c.nature.clone()).t("contrat", c.contrat.clone());
-        l.t("entree", c.debut.clone()).t("sortie", c.fin.clone());
+        l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.portee()));
+        l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.nature.clone()).ot("contrat", c.contrat.clone());
+        l.t("entree", jj(&c.debut)).ot("sortie", c.fin.as_deref().map(jj));
+        rangees.push(((c.debut.clone(), nom, c.contrat.clone()), l));
+    }
+    rangees.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut lignes: Vec<Ligne> = Vec::new();
+    for (i, (_, mut l)) in rangees.into_iter().enumerate() {
+        l.n("ordre", (i + 1) as i64);
         lignes.push(l);
     }
-    lignes.sort_by_cached_key(|l| (l.texte("entree"), l.texte("nom"), l.texte("contrat")));
-    for (i, l) in lignes.iter_mut().enumerate() {
-        l.n("ordre", (i + 1) as i64);
-        let (e, s) = (jj(&l.texte("entree")), jj(&l.texte("sortie")));
-        l.t("entree", e).t("sortie", s);
-    }
     avert.push("La nationalité est le pays de nationalité de la fiche, suivi de la catégorie déclarée en DSN (française, Union européenne, EEE hors Union, reste du monde) ; une fiche sans pays n'en montre que la catégorie. Pour un salarié étranger hors UE, le registre doit aussi porter le type et le numéro du titre de travail (art. D1221-24) — à compléter à la main.".to_string());
+    avert.extend(a_preciser);
     avert.push("Registre unique du personnel : il porte des données personnelles et se conserve cinq ans après le départ de chaque salarié. Il se présente à l'inspection du travail sur demande.".to_string());
     let mut t = Tableau::nouveau("registre-du-personnel", "Registre unique du personnel", p.libelle.clone());
     t.mois = p.mois.clone();
@@ -227,36 +215,28 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ============================================= 15. le fichier du personnel
 
 /// Chaque fiche de salarie, coordonnees comprises -- ce que le comptable
-/// demande a l'ouverture du dossier. Pas de periode : ce sont les fiches d'aujourd'hui.
+/// demande a l'ouverture du dossier. Pas de periode : ce sont les fiches d'aujourd'hui. Une case que la fiche ne dit
+/// pas reste vide.
 pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
-    // Les colonnes nomment les cases de la fiche : elle se lit ici en JSON.
-    let mut fiches: Vec<(String, Value)> = ctx.salaries.iter().map(|(k, f)| (k.to_string(), socle::ecriture::en_valeur(&f.champs))).collect();
+    let mut fiches: Vec<(String, &droit::fiche::FicheSalarie)> = ctx.salaries.iter().map(|(k, f)| (k.to_string(), f)).collect();
     fiches.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
-    for (cle, f) in &fiches {
-        if !f.is_object() {
-            continue;
-        }
+    for (_, f) in &fiches {
         let mut l = Ligne::nouvelle();
-        let ou_cle = |cles: &[&str]| premiere(f, cles).unwrap_or_else(|| Val::Txt(String::new()));
-        l.poser("code", Some(premiere(f, &["code_salarie"]).unwrap_or_else(|| Val::Txt(cle.clone()))));
-        l.poser("nom", Some(premiere(f, &["nom_affichage", "nom"]).unwrap_or_else(|| Val::Txt(cle.clone()))));
-        l.poser("prenom", Some(ou_cle(&["prenom_affichage", "prenom"])));
-        let nir = f.get("nir").filter(|v| vrai(v));
-        l.t("nir", match nir {
-            Some(n) => format!("{} {}", valeur_en_texte(n), f.get("nir_cle").filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default()),
-            None => String::new(),
-        });
-        l.t("naissance", jj(&fiche_texte(f, "date_naissance")));
-        l.poser("lieu", Some(ou_cle(&["lieu_naissance_affichage", "lieu_naissance"])));
-        l.poser("adresse", Some(ou_cle(&["adresse_affichage", "adresse"])));
-        l.poser("cp", Some(ou_cle(&["code_postal"])));
-        l.poser("commune", Some(ou_cle(&["commune_affichage", "commune"])));
-        l.poser("email", Some(ou_cle(&["email"])));
-        l.poser("emploi", Some(ou_cle(&["emploi_affichage", "emploi"])));
-        l.poser("statut", Some(ou_cle(&["statut"])));
-        l.poser("cs", Some(ou_cle(&["num_conges_spectacles"])));
-        l.t("actif", if f.get("actif").map_or(true, vrai) { "oui" } else { "archivé" });
+        l.ot("code", f.code_salarie.remplie());
+        l.ot("nom", f.nom_affichage.remplie().or(f.nom.remplie()));
+        l.ot("prenom", f.prenom_affichage.remplie().or(f.prenom.remplie()));
+        l.ot("nir", f.nir.remplie().map(|n| [Some(n), f.nir_cle.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ")));
+        l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso())));
+        l.ot("lieu", f.lieu_naissance_affichage.remplie().or(f.lieu_naissance.remplie()));
+        l.ot("adresse", f.adresse_affichage.remplie().or(f.adresse.remplie()));
+        l.ot("cp", f.code_postal.remplie());
+        l.ot("commune", f.commune_affichage.remplie().or(f.commune.remplie()));
+        l.ot("email", f.email.remplie());
+        l.ot("emploi", f.emploi_affichage.remplie().or(f.emploi.remplie()));
+        l.ot("statut", f.statut.dite().map(|s| s.to_string()));
+        l.ot("cs", f.num_conges_spectacles.remplie());
+        l.t("actif", if f.archivee() { "archivé" } else { "oui" });
         lignes.push(l);
     }
     if lignes.is_empty() {
@@ -306,8 +286,7 @@ fn acte_lisible(quoi: &str) -> Option<&'static str> {
 
 /// Une reponse lisible, entiere ; un rapport XML se lit au journal, pas dans une case.
 fn reponse(r: &str) -> String {
-    let t = r.to_string();
-    let t = t.split(socle::texte::blanc).filter(|m| !m.is_empty()).collect::<Vec<_>>().join(" ");
+    let t = r.split(socle::texte::blanc).filter(|m| !m.is_empty()).collect::<Vec<_>>().join(" ");
     if t.starts_with('<') {
         return "rapport de l'organisme (XML, conservé au journal)".to_string();
     }
@@ -327,7 +306,8 @@ pub struct ActeDuJournal {
     pub mois: Option<String>,
     pub mode: String,
     pub accepte: bool,
-    pub fichier: String,
+    /// Le fichier parti, s'il y en a un.
+    pub fichier: Option<String>,
     pub destinataire: String,
     pub reponse: String,
     pub origine: String,
@@ -338,16 +318,25 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut lignes = Vec::new();
     for l in journal {
         // Un acte porte le mois qu'il declare ; un acte annuel se range au mois ou il a eu lieu.
-        let m: String = l.mois.clone().unwrap_or_else(|| l.quand.chars().take(7).collect());
+        let m: String = match &l.mois {
+            Some(m) => m.clone(),
+            None => l.quand.chars().take(7).collect(),
+        };
         if m.chars().count() != 7 || !p.contient(&m) {
             continue;
         }
         let mut x = Ligne::nouvelle();
         x.t("quand", l.quand.replace('T', " ").chars().take(16).collect::<String>());
         let main_propre = l.quoi == "contrat-signature" && l.main_propre;
-        x.t("acte", if main_propre { "Contrat imprimé, à remettre en main propre".to_string() } else { acte_lisible(&l.quoi).map(str::to_string).unwrap_or_else(|| l.quoi.clone()) });
+        // Un acte que la table ne nomme pas se dit par sa sorte, telle que le journal l'ecrit.
+        let acte = match (main_propre, acte_lisible(&l.quoi)) {
+            (true, _) => "Contrat imprimé, à remettre en main propre".to_string(),
+            (false, Some(a)) => a.to_string(),
+            (false, None) => l.quoi.clone(),
+        };
+        x.t("acte", acte);
         x.t("mois", m).t("mode", l.mode.clone()).t("issue", if l.accepte { "accepté" } else { "refusé ou échoué" });
-        x.t("fichier", l.fichier.clone()).t("destinataire", l.destinataire.clone()).t("reponse", reponse(&l.reponse)).t("origine", l.origine.clone());
+        x.ot("fichier", l.fichier.clone()).t("destinataire", l.destinataire.clone()).t("reponse", reponse(&l.reponse)).t("origine", l.origine.clone());
         lignes.push(x);
     }
     if lignes.is_empty() {
@@ -356,7 +345,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut t = Tableau::nouveau("journal-des-declarations", "Journal des déclarations et envois", p.libelle.clone());
     t.mois = lignes.iter().map(|l| l.texte("mois")).collect::<BTreeSet<_>>().into_iter().collect();
     t.avec_total = false;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), |k| libelle_mois(k).unwrap_or_else(|_| k.clone()), Some(&|l| vec![l.texte("quand")]));
+    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
     t.colonnes = vec![
         col_t("quand", "Date"),
         col_t("acte", "Acte"),
@@ -371,11 +360,4 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     t.sources = vec!["journal des actes de PuppetPaie : une ligne écrite après chaque acte, jamais avant".to_string()];
     finir(ctx, &mut t, Some(&p), "journal-des-declarations", &d.format, d.ecrire)?;
     Ok(t)
-}
-
-#[allow(dead_code)]
-fn _inutilises() {
-    let _ = dossier_exports;
-    let _ = ecrire_fini;
-    let _ = qui_souple;
 }

@@ -4,7 +4,7 @@
 //! `moteur route` en sert une (`--texte` : ses phrases).
 //!
 //! Une commande = un module, qui declare ses options (`analyse::Spec`) et rend un code de sortie ; sa sortie est un
-//! texte, ou l'enveloppe `--json` (`rendu::enveloppe`).
+//! texte, ou l'enveloppe `--json` (`rendu::rendre`).
 //!
 //! LE MOT DE PASSE. Chaque commande installe au demarrage la demande reelle (`demande::installer`). Une
 //! consultation qui trouve le coffre ferme -- ni la cle du poste, ni un mot de passe tape, ni une seance -- le demande
@@ -44,8 +44,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use serde_json::json;
-
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
@@ -62,14 +60,21 @@ pub struct Cadre {
     pub commande: &'static str,
 }
 
+/// Ce que porte l'incident d'une commande qui tombe : son nom.
+#[derive(serde::Serialize)]
+struct DeLaCommande {
+    commande: &'static str,
+}
+
 impl Cadre {
     /// Un plantage : une ligne dans le journal des incidents (sa classe et sa nature), puis la phrase seule a l'ecran
     /// (sortie d'erreur), code 1.
     pub fn plantage(&self, e: Echec) -> i32 {
-        let classe = e.classe.unwrap_or("RuntimeError");
-        let nature = crate::compagnie::incidents::nature_de(classe);
+        let nature = crate::compagnie::incidents::nature_de(e.classe);
         let ou = if nature == crate::compagnie::incidents::REFUS { self.commande } else { "" };
-        let _ = crate::compagnie::incidents::depuis_exception(&self.racine, classe, &e.message, Some(nature), ou, json!({"commande": self.commande}), None);
+        if let Err(f) = crate::compagnie::incidents::depuis_exception(&self.racine, e.classe, &e.message, Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
+            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", socle::echec::phrase_de(&f.message));
+        }
         eprintln!("{}", e.message);
         1
     }
@@ -83,8 +88,11 @@ impl Cadre {
         match c.ouvre_a_ce_poste() {
             Ok(true) => return,
             Ok(false) => {}
-            // Un coffre illisible : la lecture du secret le dira.
-            Err(_) => return,
+            // Un coffre illisible : la phrase le dit, et la lecture du secret refusera.
+            Err(e) => {
+                eprintln!("{}", socle::echec::phrase_de(&e.message));
+                return;
+            }
         }
         if matches!(c.ouverture_gardee(), Ok(Some(_))) {
             // La seance gardee ouvre le coffre (`Coffre::ouvrir`) : rien a retenir.

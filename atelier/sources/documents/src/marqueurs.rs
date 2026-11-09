@@ -9,9 +9,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::{Map, Value};
 
-use socle::echec::Refus;
+use socle::echec::{Classe, Echec};
 
 macro_rules! marqueurs {
     ($($v:ident = $nom:literal),* $(,)?) => {
@@ -140,11 +139,6 @@ pub fn pour_la_fabrique(v: &Valeurs) -> fabrique_pdf::modele::Valeurs {
     v.iter().map(|(k, x)| (k.nom().to_string(), x.clone())).collect()
 }
 
-/// Les valeurs telles que la description d'un document les ecrit, dans l'ordre des marqueurs.
-pub fn dans_la_description(v: &Valeurs) -> Value {
-    Value::Object(v.iter().map(|(k, x)| (k.nom().to_string(), Value::String(x.clone()))).collect::<Map<String, Value>>())
-}
-
 /// UN MORCEAU D'UN MODELE : du texte, ou un marqueur.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Morceau {
@@ -198,14 +192,18 @@ impl ModeleLu {
     }
 
     /// Le fichier `chemin`, lu (UTF-8) puis `lire`.
-    pub fn du_fichier(chemin: &Path) -> Result<ModeleLu, Refus> {
+    pub fn du_fichier(chemin: &Path) -> Result<ModeleLu, Echec> {
         let octets = std::fs::read(chemin).map_err(|e| {
-            let classe = if e.kind() == std::io::ErrorKind::NotFound { "FileNotFoundError" } else { "OSError" };
-            Refus { classe: Some(classe), message: socle::fichiers::panne_fichier(&e, chemin) }
+            let classe = if e.kind() == std::io::ErrorKind::NotFound { Classe::FichierAbsent } else { Classe::Disque };
+            Echec { classe: Some(classe), message: socle::fichiers::panne_fichier(&e, chemin) }
         })?;
-        let texte = String::from_utf8(octets).map_err(|e| Refus { classe: Some("UnicodeDecodeError"), message: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()) })?;
-        let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        ModeleLu::lire(&texte, &nom).map_err(|m| Refus { classe: Some("ModeleIncomplet"), message: m })
+        let texte = String::from_utf8(octets).map_err(|e| Echec { classe: Some(Classe::Illisible), message: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()) })?;
+        // Le refus nomme le fichier ; un chemin sans nom de fichier se nomme entier.
+        let nom = match chemin.file_name() {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => chemin.to_string_lossy().into_owned(),
+        };
+        ModeleLu::lire(&texte, &nom).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })
     }
 
     /// Le modele cite-t-il `m` ?

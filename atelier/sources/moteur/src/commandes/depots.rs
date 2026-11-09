@@ -7,8 +7,8 @@
 //! ATTENTION : elle va au RESEAU (net-entreprises). Lecture seule.
 
 use super::analyse::{Args, Opt, Spec};
+use socle::echec::Classe;
 use socle::date::Jour;
-use super::rendu::texte;
 use super::Cadre;
 use envois::releve_retours::{Client, Panne};
 use socle::echec::Echec;
@@ -38,16 +38,16 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("Mot de passe absent. Le poser une fois : `route coffre-poser, service net-entreprises`.");
         return Ok(2);
     };
-    let environnement = args.texte("environnement").unwrap_or("production");
+    let environnement = args.exige("environnement")?;
     let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| ko(p.message))?;
     derouler(cadre, args, client)
 }
 
 /// Le compte rendu, avec un client donne (un test le pointe sur un faux serveur local).
 pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, Echec> {
-    let environnement = args.texte("environnement").unwrap_or("production");
+    let environnement = args.exige("environnement")?;
     let (debut, fin) = fenetre(args)?;
-    dire!("Depots {}, du {} au {}.\n", environnement, jour_de(debut), jour_de(fin));
+    dire!("Depots {}, du {} au {}.\n", environnement, jour_de(debut)?, jour_de(fin)?);
     let _ = cadre;
     let mut depots = Vec::new();
     let resultat: Result<(), Panne> = (|| {
@@ -74,10 +74,8 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
     }
     for (i, dep) in depots.iter().enumerate() {
         dire!("  depot {}", i + 1);
-        if let Some(o) = dep.as_object() {
-            for (k, v) in o {
-                dire!("     {:<24} {}", k, texte(v));
-            }
+        for (k, v) in [("idflux", &dep.idflux), ("date", &dep.date), ("statut", &dep.statut)] {
+            dire!("     {:<24} {}", k, v);
         }
         dire!();
     }
@@ -87,13 +85,13 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
 
 /// Le reseau injoignable ou coupe, ou le coffre qui ne s'ouvre pas : une phrase et un code, pas un plantage.
 fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
-    if matches!(e.classe, Some("URLError" | "TimeoutError" | "RemoteDisconnected" | "IncompleteRead" | "HTTPException")) {
+    if matches!(e.classe, Some(Classe::Reseau | Classe::DelaiDepasse)) {
         dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", e.message);
         return 1;
     }
     // Le coffre ferme et la seance refusee : « rien ici ne l'ouvre » est une phrase pour l'utilisateur, pas un defaut du logiciel.
     // Code 2, comme « le mot de passe n'est nulle part ».
-    if e.classe == Some("ErreurCoffre") {
+    if e.classe == Some(Classe::Coffre) {
         dire!("{}", e.message);
         return 2;
     }
@@ -113,18 +111,18 @@ fn secondes(j: &Jour) -> i64 {
 /// La plage de recherche, en heures locales naives. Par defaut, les 30 derniers jours.
 fn fenetre(args: &Args) -> Result<(i64, i64), Echec> {
     let fin = match args.texte("jusqu-a") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some("ValueError"), message: m })?) + 23 * 3600 + 59 * 60 + 59,
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), message: m })?) + 23 * 3600 + 59 * 60 + 59,
         None => socle::paris::maintenant_naif(),
     };
     let debut = match args.texte("depuis") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some("ValueError"), message: m })?),
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), message: m })?),
         None => fin - 30 * JOUR,
     };
     Ok((debut, fin))
 }
 
 /// Le jour d'une heure locale naive, en `JJ/MM/AAAA`.
-fn jour_de(t: i64) -> String {
-    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).unwrap_or_default()
+fn jour_de(t: i64) -> Result<String, Echec> {
+    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).ok_or_else(|| Echec { classe: Some(Classe::Illisible), message: format!("{} n'est pas une heure du calendrier", t) })
 }
 

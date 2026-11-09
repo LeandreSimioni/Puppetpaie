@@ -213,7 +213,8 @@ il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `
    que là où la compagnie emploie des permanents ; le numéro d'objet spectacle est **interdit** hors des natures 02 et 10.
 7. **Deux contrôles avant tout dépôt** : les usages et les formats. Un contrôle faux refuserait du licite : c'est lui
    qu'on retire, jamais la déclaration.
-8. **Un barème a trois étages** (le socle livré, la convention, la compagnie : taux AT/MP, effectif des retours 118),
+8. **Un barème a trois étages** (le socle livré, la convention, la compagnie : son taux AT/MP, lu dans sa configuration,
+   l'effectif des retours 118),
    empilés à un seul endroit (`droit::contexte`) ; une convention sans couche refuse.
 9. **Trois destinations, et les données de la compagnie dans aucun dépôt.** `logiciel/`, `fictives/`, `atelier/` : le
    public. `journal/`, `reference-privee/`, les tickets : le privé. `prive/` : aucun dépôt (le poste, la clé USB, le

@@ -208,7 +208,7 @@ fn comparer_une(
         return Err(format!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
     }
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
-    if ctx.entreprise.idcc.texte().is_empty() {
+    if !ctx.entreprise.idcc.est_dite() {
         c.a_refaire = true;
         return Err("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche".into());
     }
@@ -231,7 +231,7 @@ fn comparer_une(
     // notifie. L'AT/MP n'est alors pas compare : il est l'entree.
     let an: i32 = annee.parse().map_err(|_| format!("mois illisible : {}", mois))?;
     let mut atmp_imprime: Option<(Option<Decimal>, Option<Decimal>, Option<Decimal>)> = None;
-    if !racine.join(droit::contexte::BAREMES).join(format!("{}.json", annee)).exists() {
+    if !ctx.taux_atmp_dit(an)? {
         let ligne = cotisations.iter().find(|l| l.cotisation.as_deref() == Some("atmp"));
         atmp_imprime = ligne
             .map(|l| (l.taux_employeur, l.montant_employeur, l.base))

@@ -37,21 +37,21 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     let b = ajouter_venant(&i, "Compagnie B", Venue::Neuve).unwrap().racine;
     p.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
     administrateur::rattacher(&i, &b, ADMIN, None, &p).unwrap();
-    assert!(administrateur::est_rattachee(&i, &b));
-    let q = suppression::question(&b).unwrap();
+    assert!(administrateur::est_rattachee(&i, &b).unwrap());
+    let q = socle::ecriture::en_valeur(&suppression::question(&b).unwrap());
     assert_eq!((q["genre"].clone(), q["mot_de_passe"].clone()), (json!("reelle"), json!(true)), "{}", q);
     assert!(q["conservation"].as_str().unwrap().contains("L3243-4"));
     // La sauvegarde ne se propose que si un Drive est lie (son jeton est la).
     assert_eq!(q["sauvegarde"]["liee"], json!(false));
     std::fs::write(b.join("config/google-jeton.bin"), b"jeton-invente").unwrap();
-    assert_eq!(suppression::question(&b).unwrap()["sauvegarde"]["liee"], json!(true));
+    assert_eq!(socle::ecriture::en_valeur(&suppression::question(&b).unwrap())["sauvegarde"]["liee"], json!(true));
 
     let appele = Cell::new(false);
     // Sans mot de passe : personne pour le taper ici, refuse ; un mauvais, refuse. Rien n'est efface.
     for m in [None, Some(""), Some("pas-le-bon-1")] {
         assert!(supprimer(&i, &b, m, &p, &|_| appele.set(true)).is_err(), "{:?}", m);
         assert!(!appele.get() && b.join("config/entreprise.json").is_file(), "{:?} : rien n'est efface", m);
-        assert!(administrateur::est_rattachee(&i, &b));
+        assert!(administrateur::est_rattachee(&i, &b).unwrap());
     }
     // Une compagnie reelle sans mot de passe du logiciel pose : rien ne prouve qui la supprime.
     let c = ajouter_venant(&i, "Compagnie C", Venue::Neuve).unwrap().racine;
@@ -59,11 +59,11 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
 
     assert_eq!(supprimer(&i, &b, Some(ADMIN), &p, &|_| appele.set(true)).unwrap(), "Compagnie B");
     assert!(appele.get() && !b.exists());
-    assert!(liste_de(&i).iter().all(|x| x.racine != b), "la tuile a disparu");
-    assert_eq!(administrateur::rattachees(&i), vec![a.clone()], "le registre l'oublie");
+    assert!(liste_de(&i).unwrap().iter().all(|x| x.racine != b), "la tuile a disparu");
+    assert_eq!(administrateur::rattachees(&i).unwrap(), vec![a.clone()], "le registre l'oublie");
     // Une compagnie neuve sous le meme dossier n'en herite rien.
     let neuve = ajouter_venant(&i, "Compagnie B", Venue::Neuve).unwrap().racine;
     assert_eq!(neuve, b);
-    assert!(!administrateur::est_rattachee(&i, &neuve));
+    assert!(!administrateur::est_rattachee(&i, &neuve).unwrap());
 }
 

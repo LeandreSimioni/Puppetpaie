@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use serde_json::{Map, Value};
 
 use socle::date::Jour;
 use socle::echec::Echec;
@@ -120,17 +119,18 @@ impl EmploiDeclare {
     /// Une valeur que la NATURE du contrat fixe (`contrats-base.json`, `codes` : « 999SPT » en 40.005 pour tout permanent,
     /// CCH-18 du bloc 40) ne dit rien du salarie : elle ne passe pas dans sa fiche. `999SPT` n'est pas un metier, et une
     /// DSN de PuppetPaie reimportee le donnerait comme `code_emploi_ft` d'un permanent.
-    pub fn du_salarie(&self) -> EmploiDeclare {
+    pub fn du_salarie(&self) -> socle::num::Resultat<EmploiDeclare> {
+        let natures = droit::natures::natures()?;
         let garder = |rubrique: &str, v: &Option<String>| {
-            v.clone().filter(|v| !droit::natures::natures().map_or(false, |n| n.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_str()))))
+            v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_str())))
         };
-        EmploiDeclare {
+        Ok(EmploiDeclare {
             statut_conventionnel: garder("S21.G00.40.002", &self.statut_conventionnel),
             statut_categoriel_rc: garder("S21.G00.40.003", &self.statut_categoriel_rc),
             pcs_ese: garder("S21.G00.40.004", &self.pcs_ese),
             code_emploi_ft: garder("S21.G00.40.005", &self.code_emploi_ft),
             emploi: garder("S21.G00.40.006", &self.emploi),
-        }
+        })
     }
 }
 
@@ -422,21 +422,23 @@ impl DsnLue {
         self.nature_envoi.as_deref() == Some(NATURE_REEL)
     }
 
-    /// La nature de la declaration ; une DSN qui ne la dit pas est une mensuelle.
-    pub fn nature_ou_mensuelle(&self) -> &str {
-        self.nature.as_deref().unwrap_or(MENSUELLE)
+    /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
+    /// qui ne la dit pas refuse, en le disant.
+    pub fn nature(&self) -> Result<&str, String> {
+        self.nature.as_deref().ok_or_else(|| "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas.".to_string())
     }
 
     pub fn est_signalement(&self) -> bool {
-        crate::norme::SIGNALEMENTS.contains(&self.nature_ou_mensuelle())
+        self.nature.as_deref().is_some_and(|n| crate::norme::SIGNALEMENTS.contains(&n))
     }
 
-    pub fn nature_lisible(&self) -> String {
-        let n = self.nature_ou_mensuelle();
-        match NATURES.iter().find(|(c, _)| *c == n) {
+    /// La nature en clair ; `None` si la DSN ne la porte pas.
+    pub fn nature_lisible(&self) -> Option<String> {
+        let n = self.nature.as_deref()?;
+        Some(match NATURES.iter().find(|(c, _)| *c == n) {
             Some((_, l)) => l.to_string(),
             None => format!("nature {}", n),
-        }
+        })
     }
 
     /// L'etablissement declare (le premier S21.G00.11.001).
@@ -455,11 +457,6 @@ impl DsnLue {
             .or_else(|| self.depot.filter(|_| self.nature.as_deref() == Some(crate::amorcage::NATURE)))
     }
 
-    /// Le jour de l'evenement (`evenement`), `AAAA-MM-JJ`, ou `?`.
-    pub fn evenement_lisible(&self) -> String {
-        self.evenement().map_or_else(|| "?".to_string(), |j| j.iso())
-    }
-
     /// LE MOIS QUE LE FICHIER DECLARE (S20.G00.05.005) ; un signalement se date par son evenement, et se range dans le
     /// mois de ce jour.
     pub fn mois_declare(&self) -> Result<Mois, String> {
@@ -470,12 +467,13 @@ impl DsnLue {
         }
     }
 
-    /// Ce qu'on fait recopier pour prouver qu'on a regarde : le jour de l'evenement d'un signalement, le mois sinon.
-    pub fn confirmation_attendue(&self) -> String {
+    /// Ce qu'on fait recopier pour prouver qu'on a regarde : le jour de l'evenement d'un signalement (`AAAA-MM-JJ`), le
+    /// mois sinon. Un fichier qui ne dit ni l'un ni l'autre refuse : il n'y a rien a recopier.
+    pub fn confirmation_attendue(&self) -> Result<String, String> {
         if self.est_signalement() {
-            self.evenement_lisible()
+            self.evenement().map(|j| j.iso()).ok_or_else(|| "Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer.".to_string())
         } else {
-            self.mois_declare().map_or_else(|_| "?".to_string(), |m| m.to_string())
+            self.mois_declare().map(|m| m.to_string())
         }
     }
 
@@ -512,13 +510,13 @@ impl DsnLue {
             if let Some(montant) = r.montant {
                 m.remunere = true;
                 match r.genre.as_deref() {
-                    Some("001") => m.brut = Some(m.brut.unwrap_or_default() + montant),
+                    Some("001") => m.brut = Some(m.brut.iter().sum::<Decimal>() + montant),
                     Some("010") => m.salaire_habituel = Some(montant),
                     _ => {}
                 }
             }
-            for a in r.activites.iter().filter(|a| a.genre.as_deref() == Some("01")) {
-                let mesure = a.mesure.unwrap_or_default();
+            // Une activite sans mesure (53.002) ne compte rien.
+            for (a, mesure) in r.activites.iter().filter(|a| a.genre.as_deref() == Some("01")).filter_map(|a| a.mesure.map(|m| (a, m))) {
                 match a.unite.as_deref() {
                     Some("10" | "35") => m.heures += mesure,
                     Some("12") => m.jours += mesure,
@@ -556,7 +554,11 @@ impl DsnLue {
             }
             for v in self.versements_de(&p.nir) {
                 let sans_numero = seul.is_some_and(|s| std::ptr::eq(s, v));
-                for b in v.bases.iter().filter(|b| b.contrat.as_deref().map_or(sans_numero, |c| c == p.numero)) {
+                let a_lui = |b: &&BaseLue| match b.contrat.as_deref() {
+                    Some(c) => c == p.numero,
+                    None => sans_numero,
+                };
+                for b in v.bases.iter().filter(a_lui) {
                     *p.bases.entry(b.code.clone()).or_default() += b.montant;
                 }
             }
@@ -580,8 +582,13 @@ impl DsnLue {
 }
 
 impl EntrepriseDeclaree {
+    /// La DSN ne dit rien de ce que la fiche Entreprise porte (la licence, que la fiche date a part, n'y compte pas).
     pub fn est_vide(&self) -> bool {
-        self.fiche().is_empty()
+        [&self.siren, &self.naf, &self.nic, &self.adresse, &self.code_postal, &self.commune, &self.idcc, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
+            .iter()
+            .all(|c| c.is_none())
+            && self.banque.is_none()
+            && self.declarant_dsn.is_none()
     }
 
     /// Ce qu'une DSN plus recente declare remplace ce que disait la precedente.
@@ -605,19 +612,6 @@ impl EntrepriseDeclaree {
         prendre(&mut self.declarant_dsn, &r.declarant_dsn);
         prendre(&mut self.medecine_travail, &r.medecine_travail);
     }
-
-    /// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
-    pub fn fiche(&self) -> Map<String, Value> {
-        en_fiche(self)
-    }
-}
-
-/// Une forme ecrite en fiche : des textes, qui s'ecrivent toujours.
-pub fn en_fiche<T: Serialize>(t: &T) -> Map<String, Value> {
-    match serde_json::to_value(t) {
-        Ok(Value::Object(m)) => m,
-        _ => Map::new(),
-    }
 }
 
 // ------------------------------------------------------------------ quel fichier est une DSN
@@ -633,33 +627,39 @@ pub fn est_une_dsn(tete: &[u8]) -> bool {
 }
 
 /// LES DSN D'UN DOSSIER ET DE SES SOUS-DOSSIERS (sans suivre un lien vers un dossier), par leur contenu
-/// (`est_une_dsn`), dans l'ordre des noms.
-pub fn fichiers(dossier: &Path) -> Vec<PathBuf> {
+/// (`est_une_dsn`), dans l'ordre des noms. Un dossier qui n'existe pas n'en a aucune ; un disque qui refuse se dit.
+pub fn fichiers(dossier: &Path) -> Result<Vec<PathBuf>, Echec> {
     let mut out = Vec::new();
-    parcourir(dossier, &mut out);
-    out
+    parcourir(dossier, &mut out)?;
+    Ok(out)
 }
 
-fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entrees) = std::fs::read_dir(dossier) else { return };
-    let mut entrees: Vec<std::fs::DirEntry> = entrees.flatten().collect();
+fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> Result<(), Echec> {
+    let panne = |e: std::io::Error, p: &Path| Echec::from(socle::fichiers::panne_fichier(&e, p));
+    let entrees = match std::fs::read_dir(dossier) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(panne(e, dossier)),
+    };
+    let mut entrees: Vec<std::fs::DirEntry> = entrees.collect::<Result<_, _>>().map_err(|e| panne(e, dossier))?;
     entrees.sort_by_key(|e| e.file_name());
     for e in entrees {
         let chemin = e.path();
-        match e.file_type() {
-            Ok(t) if t.is_dir() => parcourir(&chemin, out),
-            Ok(_) if chemin.is_file() && tete(&chemin).is_some_and(|t| est_une_dsn(&t)) => out.push(chemin),
-            _ => {}
+        if e.file_type().map_err(|x| panne(x, &chemin))?.is_dir() {
+            parcourir(&chemin, out)?;
+        } else if chemin.is_file() && est_une_dsn(&tete(&chemin).map_err(|x| panne(x, &chemin))?) {
+            out.push(chemin);
         }
     }
+    Ok(())
 }
 
 /// Les premiers octets d'un fichier, assez pour reconnaitre l'en-tete d'une DSN derriere des marques d'ordre d'octets.
-fn tete(chemin: &Path) -> Option<Vec<u8>> {
+fn tete(chemin: &Path) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let mut t = Vec::with_capacity(64);
-    std::fs::File::open(chemin).ok()?.take(64).read_to_end(&mut t).ok()?;
-    Some(t)
+    std::fs::File::open(chemin)?.take(64).read_to_end(&mut t)?;
+    Ok(t)
 }
 
 // ------------------------------------------------------------------ la lecture
@@ -686,12 +686,12 @@ fn jjmmaaaa(v: &str) -> String {
 }
 
 /// Une date de la DSN, JJMMAAAA, qui est un jour.
-fn jour_dsn(v: &str) -> Option<Jour> {
+pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
     if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    let n = |a: usize, b: usize| v[a..b].parse::<u32>().ok();
-    Jour::nouveau(n(4, 8)? as i32, n(2, 4)?, n(0, 2)?)
+    let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
+    Jour::nouveau(n(4, 8) as i32, n(2, 4), n(0, 2))
 }
 
 /// Ce qu'une DSN porte et qui ne se lit pas : une valeur qui n'est pas ce que sa rubrique dit, ou une ligne qui n'est
@@ -726,14 +726,14 @@ impl Fautes {
     }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
-        let de = mois.map(|m| format!(" de {}", m.libelle(socle::mois::Graphie::Accentuee))).unwrap_or_default();
+        let de: String = mois.iter().map(|m| format!(" de {}", m.libelle(socle::mois::Graphie::Accentuee))).collect();
         let ce = match self.0? {
             Faute::Valeur { rubrique, valeur, quoi } => format!("porte, en {}, « {} », qui n'est pas {}", rubrique, valeur, quoi),
             Faute::Rubrique { ligne, version: Some(v) } => format!("porte la rubrique {}, que la norme DSN {} ne connaît pas", ligne, v),
             Faute::Rubrique { ligne, version: None } => format!("porte la ligne « {} », qui n'est pas une rubrique de la norme DSN", ligne),
         };
         Some(socle::echec::erreur(
-            "ErreurOperation",
+            socle::echec::Classe::Refuse,
             format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce),
         ))
     }
@@ -746,10 +746,19 @@ fn premier(a: &mut Option<String>, v: &Option<String>) {
     }
 }
 
-/// La DSN du fichier `chemin` (`lire`) ; `Ok(None)` si le fichier ne se lit pas ou n'est pas une DSN (`est_une_dsn`).
+/// La DSN du fichier `chemin` (`lire`) ; `Ok(None)` s'il n'est pas une DSN (`est_une_dsn`). Un disque qui refuse se dit.
 pub fn lire_une_dsn(chemin: &Path) -> Result<Option<DsnLue>, Echec> {
-    let Some(octets) = std::fs::read(chemin).ok().filter(|o| est_une_dsn(o)) else { return Ok(None) };
-    lire(&octets, &chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).map(Some)
+    let octets = std::fs::read(chemin).map_err(|e| Echec::from(socle::fichiers::panne_fichier(&e, chemin)))?;
+    if !est_une_dsn(&octets) {
+        return Ok(None);
+    }
+    let nom = chemin.file_name().ok_or_else(|| {
+        Echec::from(socle::echec::avec(
+            "Ce chemin n'est pas un fichier : le signaler au développeur.",
+            socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
+        ))
+    })?;
+    lire(&octets, &nom.to_string_lossy()).map(Some)
 }
 
 /// UNE DSN, LUE (`fichier` : son nom), un signalement sans mois principal compris. Une valeur qui n'est pas ce que sa
@@ -762,10 +771,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
     // L'indicateur d'ordre des octets d'UTF-8, lu en latin-1, n'est pas une rubrique.
     let lignes = lignes_du_texte(contenu.trim_start_matches("\u{ef}\u{bb}\u{bf}"));
     let valeur = |v: &str| v.trim_matches(blanc).trim_matches('\'').to_string();
-    let norme = lignes
-        .iter()
-        .find_map(|l| l.split_once(',').filter(|(k, _)| *k == "S10.G00.00.006").map(|(_, v)| valeur(v)))
-        .and_then(|v| crate::norme::Norme::connue(&v).ok());
+    let norme = match lignes.iter().find_map(|l| l.split_once(',').filter(|(k, _)| *k == crate::norme::RUBRIQUE).map(|(_, v)| valeur(v))) {
+        Some(v) => crate::norme::Norme::livree(&v).map_err(Echec::from)?,
+        None => None,
+    };
     let mut fautes = Fautes::default();
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
     let (mut type_declaration, mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>, Option<String>) = (None, None, None, None);
@@ -810,7 +819,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
         let plein = Some(v.clone()).filter(|x| !x.is_empty());
         // UN INDIVIDU SANS NIR (S21.G00.30.001 absent, « En l'absence de NIR ou de NIA », `bloc-S21.G00.30.txt`
         // l. 338-354) commence a son nom (.002).
-        if k == "S21.G00.30.002" && individus.last().map_or(true, |i| i.nom.is_some()) {
+        if k == "S21.G00.30.002" && individus.last().is_none_or(|i| i.nom.is_some()) {
             individus.push(IndividuDeclare::default());
         }
         let individu = individus.len().checked_sub(1);
@@ -844,7 +853,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             "S10.G00.02.002" => nom_emetteur = plein,
             "S20.G00.05.002" => type_declaration = plein,
             "S20.G00.05.004" => ordre = plein,
-            "S20.G00.05.005" => mois = fautes.valeur(k, &v, "un mois (01MMAAAA)", Mois::de_la_dsn(&v).ok()),
+            "S20.G00.05.005" => {
+                // 01MMAAAA : le premier jour du mois.
+                let premier_jour = jour_dsn(&v).filter(|j| j.jour == 1);
+                mois = fautes.valeur(k, &v, "un mois (01MMAAAA)", premier_jour.map(|j| Mois::du_jour(&j)));
+            }
             "S20.G00.05.007" => depot = fautes.jour(k, &v),
             "S20.G00.07.001" => contacts.push(Contact { nom_prenom: v, ..Contact::default() }),
             "S20.G00.07.002" | "S20.G00.07.003" | "S20.G00.07.004" => {
@@ -1027,7 +1040,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 let m = if k == "S21.G00.78.004" { fautes.montant(k, &v) } else { None };
                 let Some(b) = versement.filter(|_| base).and_then(|x| x.bases.last_mut()) else { continue };
                 match k {
-                    "S21.G00.78.004" => b.montant += m.unwrap_or_default(),
+                    "S21.G00.78.004" => b.montant += m.iter().sum::<Decimal>(),
                     _ => b.contrat = plein,
                 }
             }

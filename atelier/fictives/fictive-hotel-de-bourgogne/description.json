@@ -106,6 +106,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-14",
    "fin": "2025-01-17",
    "dates": [
@@ -118,6 +119,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -280,6 +282,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-14",
    "fin": "2025-01-17",
    "dates": [
@@ -292,6 +295,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -454,6 +458,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-14",
    "fin": "2025-01-17",
    "dates": [
@@ -466,6 +471,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -628,6 +634,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-24",
    "fin": "2025-01-26",
    "dates": [
@@ -640,6 +647,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -802,6 +810,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-24",
    "fin": "2025-01-26",
    "dates": [
@@ -814,6 +823,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -976,6 +986,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-01-24",
    "fin": "2025-01-26",
    "dates": [
@@ -988,6 +999,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -1150,6 +1162,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-01-24",
    "fin": "2025-01-26",
    "dates": [
@@ -1162,6 +1175,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -1333,6 +1347,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-01-24",
    "fin": "2025-01-26",
    "dates": [
@@ -1345,6 +1360,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -1519,6 +1535,12 @@
    "regime": "permanent",
    "debut": "2025-01-01",
    "fin": "2025-01-31",
+   "dates": [
+    [
+     "2025-01-01",
+     "2025-01-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -1729,6 +1751,12 @@
    "regime": "permanent",
    "debut": "2025-01-01",
    "fin": "2025-01-31",
+   "dates": [
+    [
+     "2025-01-01",
+     "2025-01-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -1912,6 +1940,12 @@
    "regime": "permanent",
    "debut": "2025-01-01",
    "fin": "2025-01-31",
+   "dates": [
+    [
+     "2025-01-01",
+     "2025-01-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -2092,6 +2126,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-02-07",
    "fin": "2025-02-09",
    "dates": [
@@ -2104,6 +2139,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -2266,6 +2302,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-02-07",
    "fin": "2025-02-09",
    "dates": [
@@ -2278,6 +2315,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -2440,6 +2478,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-02-07",
    "fin": "2025-02-09",
    "dates": [
@@ -2452,6 +2491,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -2614,6 +2654,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-02-07",
    "fin": "2025-02-09",
    "dates": [
@@ -2626,6 +2667,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -2797,6 +2839,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-02-21",
    "fin": "2025-02-22",
    "dates": [
@@ -2809,6 +2852,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -2971,6 +3015,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-02-21",
    "fin": "2025-02-22",
    "dates": [
@@ -2983,6 +3028,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -3145,6 +3191,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-02-21",
    "fin": "2025-02-22",
    "dates": [
@@ -3157,6 +3204,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -3331,6 +3379,12 @@
    "regime": "permanent",
    "debut": "2025-02-01",
    "fin": "2025-02-28",
+   "dates": [
+    [
+     "2025-02-01",
+     "2025-02-28"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -3541,6 +3595,12 @@
    "regime": "permanent",
    "debut": "2025-02-01",
    "fin": "2025-02-28",
+   "dates": [
+    [
+     "2025-02-01",
+     "2025-02-28"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -3724,6 +3784,12 @@
    "regime": "permanent",
    "debut": "2025-02-01",
    "fin": "2025-02-28",
+   "dates": [
+    [
+     "2025-02-01",
+     "2025-02-28"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -3904,6 +3970,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-03-14",
    "fin": "2025-03-22",
    "dates": [
@@ -3920,6 +3987,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -4082,6 +4150,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-03-14",
    "fin": "2025-03-22",
    "dates": [
@@ -4098,6 +4167,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -4260,6 +4330,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-03-14",
    "fin": "2025-03-22",
    "dates": [
@@ -4276,6 +4347,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -4438,6 +4510,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-03-14",
    "fin": "2025-03-22",
    "dates": [
@@ -4454,6 +4527,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -4625,6 +4699,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-03-14",
    "fin": "2025-03-22",
    "dates": [
@@ -4641,6 +4716,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -4815,6 +4891,12 @@
    "regime": "permanent",
    "debut": "2025-03-01",
    "fin": "2025-03-31",
+   "dates": [
+    [
+     "2025-03-01",
+     "2025-03-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -5025,6 +5107,12 @@
    "regime": "permanent",
    "debut": "2025-03-01",
    "fin": "2025-03-31",
+   "dates": [
+    [
+     "2025-03-01",
+     "2025-03-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -5208,6 +5296,12 @@
    "regime": "permanent",
    "debut": "2025-03-01",
    "fin": "2025-03-31",
+   "dates": [
+    [
+     "2025-03-01",
+     "2025-03-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -5388,6 +5482,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-04-04",
    "fin": "2025-04-06",
    "dates": [
@@ -5400,6 +5495,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -5562,6 +5658,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-04-04",
    "fin": "2025-04-06",
    "dates": [
@@ -5574,6 +5671,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -5736,6 +5834,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-04-04",
    "fin": "2025-04-06",
    "dates": [
@@ -5748,6 +5847,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -5910,6 +6010,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-04-04",
    "fin": "2025-04-06",
    "dates": [
@@ -5922,6 +6023,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -6093,6 +6195,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-04-22",
    "fin": "2025-04-24",
    "dates": [
@@ -6105,6 +6208,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -6267,6 +6371,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-04-22",
    "fin": "2025-04-24",
    "dates": [
@@ -6279,6 +6384,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -6444,6 +6550,12 @@
    "regime": "permanent",
    "debut": "2025-04-01",
    "fin": "2025-04-30",
+   "dates": [
+    [
+     "2025-04-01",
+     "2025-04-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -6654,6 +6766,12 @@
    "regime": "permanent",
    "debut": "2025-04-01",
    "fin": "2025-04-30",
+   "dates": [
+    [
+     "2025-04-01",
+     "2025-04-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -6837,6 +6955,12 @@
    "regime": "permanent",
    "debut": "2025-04-01",
    "fin": "2025-04-30",
+   "dates": [
+    [
+     "2025-04-01",
+     "2025-04-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -7017,6 +7141,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-05-16",
    "fin": "2025-05-18",
    "dates": [
@@ -7029,6 +7154,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -7191,6 +7317,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-05-16",
    "fin": "2025-05-18",
    "dates": [
@@ -7203,6 +7330,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -7365,6 +7493,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-05-16",
    "fin": "2025-05-18",
    "dates": [
@@ -7377,6 +7506,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -7539,6 +7669,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-05-16",
    "fin": "2025-05-18",
    "dates": [
@@ -7551,6 +7682,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -7722,6 +7854,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-05-16",
    "fin": "2025-05-18",
    "dates": [
@@ -7734,6 +7867,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -7908,6 +8042,12 @@
    "regime": "permanent",
    "debut": "2025-05-01",
    "fin": "2025-05-31",
+   "dates": [
+    [
+     "2025-05-01",
+     "2025-05-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -8118,6 +8258,12 @@
    "regime": "permanent",
    "debut": "2025-05-01",
    "fin": "2025-05-31",
+   "dates": [
+    [
+     "2025-05-01",
+     "2025-05-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -8301,6 +8447,12 @@
    "regime": "permanent",
    "debut": "2025-05-01",
    "fin": "2025-05-31",
+   "dates": [
+    [
+     "2025-05-01",
+     "2025-05-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -8481,6 +8633,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-05-30",
    "fin": "2025-05-31",
    "dates": [
@@ -8493,6 +8646,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -8655,6 +8809,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-05-30",
    "fin": "2025-05-31",
    "dates": [
@@ -8667,6 +8822,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -8829,6 +8985,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-05-30",
    "fin": "2025-05-31",
    "dates": [
@@ -8841,6 +8998,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -9012,6 +9170,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-06-06",
    "fin": "2025-06-15",
    "dates": [
@@ -9028,6 +9187,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -9197,6 +9357,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-06-06",
    "fin": "2025-06-15",
    "dates": [
@@ -9213,6 +9374,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -9382,6 +9544,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-06-06",
    "fin": "2025-06-15",
    "dates": [
@@ -9398,6 +9561,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -9567,6 +9731,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-06-06",
    "fin": "2025-06-15",
    "dates": [
@@ -9583,6 +9748,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -9761,6 +9927,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-06-06",
    "fin": "2025-06-15",
    "dates": [
@@ -9777,6 +9944,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -9958,6 +10126,12 @@
    "regime": "permanent",
    "debut": "2025-06-01",
    "fin": "2025-06-30",
+   "dates": [
+    [
+     "2025-06-01",
+     "2025-06-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -10168,6 +10342,12 @@
    "regime": "permanent",
    "debut": "2025-06-01",
    "fin": "2025-06-30",
+   "dates": [
+    [
+     "2025-06-01",
+     "2025-06-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -10351,6 +10531,12 @@
    "regime": "permanent",
    "debut": "2025-06-01",
    "fin": "2025-06-30",
+   "dates": [
+    [
+     "2025-06-01",
+     "2025-06-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -10531,6 +10717,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-07-04",
    "fin": "2025-07-06",
    "dates": [
@@ -10543,6 +10730,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -10705,6 +10893,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-07-04",
    "fin": "2025-07-06",
    "dates": [
@@ -10717,6 +10906,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -10879,6 +11069,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-07-04",
    "fin": "2025-07-06",
    "dates": [
@@ -10891,6 +11082,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -11053,6 +11245,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-07-04",
    "fin": "2025-07-06",
    "dates": [
@@ -11065,6 +11258,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -11236,6 +11430,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-07-11",
    "fin": "2025-07-12",
    "dates": [
@@ -11248,6 +11443,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -11410,6 +11606,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-07-11",
    "fin": "2025-07-12",
    "dates": [
@@ -11422,6 +11619,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -11584,6 +11782,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-07-11",
    "fin": "2025-07-12",
    "dates": [
@@ -11596,6 +11795,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -11770,6 +11970,12 @@
    "regime": "permanent",
    "debut": "2025-07-01",
    "fin": "2025-07-31",
+   "dates": [
+    [
+     "2025-07-01",
+     "2025-07-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -11980,6 +12186,12 @@
    "regime": "permanent",
    "debut": "2025-07-01",
    "fin": "2025-07-31",
+   "dates": [
+    [
+     "2025-07-01",
+     "2025-07-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -12163,6 +12375,12 @@
    "regime": "permanent",
    "debut": "2025-07-01",
    "fin": "2025-07-31",
+   "dates": [
+    [
+     "2025-07-01",
+     "2025-07-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -12346,6 +12564,12 @@
    "regime": "permanent",
    "debut": "2025-08-01",
    "fin": "2025-08-31",
+   "dates": [
+    [
+     "2025-08-01",
+     "2025-08-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -12556,6 +12780,12 @@
    "regime": "permanent",
    "debut": "2025-08-01",
    "fin": "2025-08-31",
+   "dates": [
+    [
+     "2025-08-01",
+     "2025-08-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -12739,6 +12969,12 @@
    "regime": "permanent",
    "debut": "2025-08-01",
    "fin": "2025-08-31",
+   "dates": [
+    [
+     "2025-08-01",
+     "2025-08-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -12919,6 +13155,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-08",
    "fin": "2025-09-12",
    "dates": [
@@ -12931,6 +13168,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -13093,6 +13331,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-08",
    "fin": "2025-09-12",
    "dates": [
@@ -13105,6 +13344,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -13267,6 +13507,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-08",
    "fin": "2025-09-12",
    "dates": [
@@ -13279,6 +13520,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Service de répétition 4 heures",
@@ -13441,6 +13683,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-19",
    "fin": "2025-09-21",
    "dates": [
@@ -13453,6 +13696,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -13615,6 +13859,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-19",
    "fin": "2025-09-21",
    "dates": [
@@ -13627,6 +13872,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -13789,6 +14035,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-19",
    "fin": "2025-09-21",
    "dates": [
@@ -13801,6 +14048,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -13963,6 +14211,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-09-19",
    "fin": "2025-09-21",
    "dates": [
@@ -13975,6 +14224,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -14146,6 +14396,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-09-19",
    "fin": "2025-09-21",
    "dates": [
@@ -14158,6 +14409,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -14332,6 +14584,12 @@
    "regime": "permanent",
    "debut": "2025-09-01",
    "fin": "2025-09-30",
+   "dates": [
+    [
+     "2025-09-01",
+     "2025-09-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -14542,6 +14800,12 @@
    "regime": "permanent",
    "debut": "2025-09-01",
    "fin": "2025-09-30",
+   "dates": [
+    [
+     "2025-09-01",
+     "2025-09-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -14725,6 +14989,12 @@
    "regime": "permanent",
    "debut": "2025-09-01",
    "fin": "2025-09-30",
+   "dates": [
+    [
+     "2025-09-01",
+     "2025-09-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -14905,6 +15175,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-10",
    "fin": "2025-10-12",
    "dates": [
@@ -14917,6 +15188,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -15079,6 +15351,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-10",
    "fin": "2025-10-12",
    "dates": [
@@ -15091,6 +15364,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -15253,6 +15527,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-10",
    "fin": "2025-10-12",
    "dates": [
@@ -15265,6 +15540,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -15427,6 +15703,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-10-10",
    "fin": "2025-10-12",
    "dates": [
@@ -15439,6 +15716,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -15610,6 +15888,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-24",
    "fin": "2025-10-25",
    "dates": [
@@ -15622,6 +15901,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -15784,6 +16064,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-24",
    "fin": "2025-10-25",
    "dates": [
@@ -15796,6 +16077,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -15958,6 +16240,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-10-24",
    "fin": "2025-10-25",
    "dates": [
@@ -15970,6 +16253,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -16144,6 +16428,12 @@
    "regime": "permanent",
    "debut": "2025-10-01",
    "fin": "2025-10-31",
+   "dates": [
+    [
+     "2025-10-01",
+     "2025-10-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -16354,6 +16644,12 @@
    "regime": "permanent",
    "debut": "2025-10-01",
    "fin": "2025-10-31",
+   "dates": [
+    [
+     "2025-10-01",
+     "2025-10-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -16537,6 +16833,12 @@
    "regime": "permanent",
    "debut": "2025-10-01",
    "fin": "2025-10-31",
+   "dates": [
+    [
+     "2025-10-01",
+     "2025-10-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -16717,6 +17019,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-15",
    "dates": [
@@ -16733,6 +17036,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -16895,6 +17199,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-15",
    "dates": [
@@ -16911,6 +17216,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -17073,6 +17379,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-15",
    "dates": [
@@ -17089,6 +17396,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -17251,6 +17559,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-15",
    "dates": [
@@ -17267,6 +17576,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -17438,6 +17748,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-15",
    "dates": [
@@ -17454,6 +17765,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -17628,6 +17940,12 @@
    "regime": "permanent",
    "debut": "2025-11-01",
    "fin": "2025-11-30",
+   "dates": [
+    [
+     "2025-11-01",
+     "2025-11-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -17838,6 +18156,12 @@
    "regime": "permanent",
    "debut": "2025-11-01",
    "fin": "2025-11-30",
+   "dates": [
+    [
+     "2025-11-01",
+     "2025-11-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -18021,6 +18345,12 @@
    "regime": "permanent",
    "debut": "2025-11-01",
    "fin": "2025-11-30",
+   "dates": [
+    [
+     "2025-11-01",
+     "2025-11-30"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -18201,6 +18531,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-07",
    "dates": [
@@ -18213,6 +18544,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -18375,6 +18707,7 @@
    "salarie": "5",
    "emploi": "COMEDIENNE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-07",
    "dates": [
@@ -18387,6 +18720,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -18549,6 +18883,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-07",
    "dates": [
@@ -18561,6 +18896,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -18723,6 +19059,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-07",
    "dates": [
@@ -18735,6 +19072,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -18906,6 +19244,7 @@
    "salarie": "8",
    "emploi": "TECHNICIENNE DE PLATEAU",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-07",
    "dates": [
@@ -18918,6 +19257,7 @@
     "numero": "256Z00921042",
     "titre": "Le Barbier de Séville"
    },
+   "analytique": "Le Barbier de Séville",
    "lignes": [
     {
      "libelle": "Heures",
@@ -19089,6 +19429,7 @@
    "salarie": "4",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
    "dates": [
@@ -19101,6 +19442,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -19263,6 +19605,7 @@
    "salarie": "6",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
    "dates": [
@@ -19275,6 +19618,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -19437,6 +19781,7 @@
    "salarie": "7",
    "emploi": "TECHNICIEN LUMIERE",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
    "dates": [
@@ -19449,6 +19794,7 @@
     "numero": "256Z00921041",
     "titre": "Les Fausses Confidences"
    },
+   "analytique": "Les Fausses Confidences",
    "lignes": [
     {
      "libelle": "Heures",
@@ -19623,6 +19969,12 @@
    "regime": "permanent",
    "debut": "2025-12-01",
    "fin": "2025-12-31",
+   "dates": [
+    [
+     "2025-12-01",
+     "2025-12-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -19833,6 +20185,12 @@
    "regime": "permanent",
    "debut": "2025-12-01",
    "fin": "2025-12-31",
+   "dates": [
+    [
+     "2025-12-01",
+     "2025-12-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",
@@ -20016,6 +20374,12 @@
    "regime": "permanent",
    "debut": "2025-12-01",
    "fin": "2025-12-31",
+   "dates": [
+    [
+     "2025-12-01",
+     "2025-12-31"
+    ]
+   ],
    "lignes": [
     {
      "libelle": "Heures",

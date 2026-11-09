@@ -145,8 +145,8 @@ fn l_apercu_annonce_ce_que_l_ecriture_trouvera() {
     let partiraient: Vec<String> = moteur::compagnie::incidents::lire(&racine, None, false)
         .unwrap()
         .iter()
-        .filter(|l| l["ou"] == json!(moteur::import::ecarts::OU))
-        .map(|l| moteur::compagnie::incidents::pour_l_editeur(&racine, l).unwrap().to_string())
+        .filter(|l| l.ou == moteur::import::ecarts::OU)
+        .map(|l| socle::ecriture::json_en_ligne(&moteur::compagnie::incidents::pour_l_editeur(&racine, l)))
         .collect();
     assert!(!partiraient.is_empty(), "l'import n'a rien rapporte de ses ecarts");
     let mut interdits: Vec<String> = Vec::new();
@@ -298,7 +298,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!(engagements_ecrits(&racine), avant);
 
     // Decembre se paie ici : le contrat s'y reprend avec son numero et ses dates.
-    for f in ["entreprise.json", "organismes.json", "baremes/2026.json"] {
+    for f in ["entreprise.json", "organismes.json"] {
         let cible = racine.join("config").join(f);
         std::fs::create_dir_all(cible.parent().unwrap()).unwrap();
         std::fs::copy(banc.join("config").join(f), cible).unwrap();

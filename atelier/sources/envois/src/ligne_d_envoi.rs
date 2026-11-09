@@ -3,16 +3,16 @@
 //! note ce qui est quand meme parti.
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
 use crate::journal::{self, EnRoute, Envoi, Ligne, Mode, Version};
 
 
-/// L'erreur d'un envoi : celle du client (`ErreurCourriel`), ou, quand des messages etaient deja partis, la
-/// `RuntimeError` qui le dit.
+/// L'erreur d'un envoi : celle du client (`Courriel`), ou, quand des messages etaient deja partis, celle qui le dit
+/// (`CourrielAvecAvertissement`).
 pub fn echec_d_envoi(message: String) -> Echec {
-    erreur(if message.contains("\nATTENTION, ") { "RuntimeError" } else { "ErreurCourriel" }, message)
+    erreur(if message.contains("\nATTENTION, ") { Classe::CourrielAvecAvertissement } else { Classe::Courriel }, message)
 }
 
 /// L'envoi par courriel que `qui` fait du mois `mois`, en mode `reel` (une compagnie fictive aussi) : `versions`, celle de
@@ -26,7 +26,7 @@ pub fn par_courriel<D, Rt>(mois: Option<Mois>, qui: &str, accepte: bool, destina
 
 /// La ligne d'un envoi par courriel, a la fin de `journal/depots.jsonl`.
 pub fn noter(ctx: &Contexte, ligne: Ligne) -> R<Ligne> {
-    journal::noter(&ctx.racine, ligne, None, &socle::paris::maintenant()).map_err(|m| erreur("OSError", m))
+    journal::noter(&ctx.racine, ligne, None, &socle::paris::maintenant()).map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// La ligne d'un envoi qui a echoue en route. Le destinataire est celui des messages REELLEMENT partis (`partis`, vide si

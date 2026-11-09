@@ -158,7 +158,7 @@
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-12"}}
 {"heure":"2027-01-12T10:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00931107","objet-256Z00931108"]}}
-{"route":"exporter","charge":{"etat":"fcap-svp","annee":"2026"}}
+{"route":"exporter","charge":{"etat":"fcap-svp","annee":"2026","format":"csv"}}
 {"route":"echeance-faite","charge":{"cle":"fcap-svp:2027"}}
 {"heure":"2027-01-29T10:00","route":"cloture","charge":{"annee":"2026"}}
 {"geste":"jour","jour":"2027-01-30"}

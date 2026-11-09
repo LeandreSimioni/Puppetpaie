@@ -4,16 +4,14 @@ use droit::fiche::Lue as _;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
-
-use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, OPERATION};
+use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, OPERATION};
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::refus;
 use droit::contexte::Contexte;
-use documents::bulletin::{jeux_et_description, Modele, CASE_MODELE};
+use documents::bulletin::{jeux_et_description, Modele};
 use socle::fichiers::dossier_du_code;
-use socle::echec::{Echec, R};
-use documents::valeur::lire_json;
+use socle::echec::R;
 
 const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
 
@@ -28,7 +26,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[],
         exemple: r#"{}"#,
         rend: "modele, les modèles connus, autrement (les salariés à un autre modèle)",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -40,7 +38,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MODELE],
         exemple: r#"{"modele":"complet"}"#,
         rend: "modele, pdf (en base64)",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: false,
         phrase: 0,
@@ -52,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[MODELE],
         exemple: r#"{"modele":"simplifié"}"#,
         rend: "ce que bulletin-modeles rend",
-        refus: &[OPERATION],
+        refus: &[OPERATION, FORME],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 0,
@@ -60,24 +58,39 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
         Route::BulletinModeles => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(modeles(ctx)?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(modeles(porte.ctx)?)
         }
-        Route::BulletinModeleApercu => {
-            let modele = modele_demande(&super::lire_charge(charge)?)?;
-            let pdf = apercu_pdf(modele).map_err(refus)?;
-            super::en_json(ApercuModele {
-                phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
-                modele: modele.cle().to_string(),
-                pdf: socle::base64::ecrire(&pdf),
-            })
-        }
-        Route::BulletinModeleChoisir => super::en_json(choisir(ctx, &super::lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::BulletinModeleApercu => en_json(apercu(charge.lire()?)?),
+        Route::BulletinModeleChoisir => en_json(choisir(porte.ctx, &charge.lire()?)?),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
+    }
+}
+
+/// `bulletin-modele-apercu` : le bulletin d'exemple dans le modele demande, en PDF.
+fn apercu(c: ChargeModele) -> R<ApercuModele> {
+    let modele = modele_demande(&c)?;
+    let pdf = apercu_pdf(modele).map_err(refus)?;
+    Ok(ApercuModele {
+        phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
+        modele: modele.cle().to_string(),
+        pdf: socle::base64::ecrire(&pdf),
+    })
+}
+
+impl Dite for ApercuModele {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for ModelesDuBulletin {
+    fn phrase(&self) -> &str {
+        &self.phrase
     }
 }
 
@@ -166,13 +179,16 @@ struct ModelesDuBulletin {
 
 fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
     let choisi = Modele::du_choix(ctx.entreprise.modele_bulletin.dite());
-    let modele = choisi.unwrap_or(Modele::Simplifie);
+    let modele = documents::bulletin::modele_de_la_compagnie(&ctx.entreprise);
     let mut autrement = Vec::new();
     for (cle, sal) in &ctx.salaries {
         if let Some(m) = documents::bulletin::modele_du_salarie(sal).map_err(refus)? {
             if m != modele {
-                let nom = format!("{} {}", sal.prenom_affichage.texte(), sal.nom_affichage.texte()).trim().to_string();
-                let nom = if nom.is_empty() { cle.to_string() } else { nom };
+                let nom = match (sal.prenom_affichage.portee(), sal.nom_affichage.portee()) {
+                    (Some(prenom), Some(nom)) => format!("{} {}", prenom, nom),
+                    (Some(un), None) | (None, Some(un)) => un.to_string(),
+                    (None, None) => cle.to_string(),
+                };
                 autrement.push(SalarieAutrement { cle: cle.to_string(), nom, modele: m.cle() });
             }
         }
@@ -221,9 +237,9 @@ struct SaisieDeLApercu {
 }
 
 /// La description du bulletin de la paie fictive sous `modele` : le moteur du jour, la compagnie fictive, rien d'ecrit.
-pub fn apercu_description(modele: Modele) -> Result<Value, String> {
+pub fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Description, String> {
     let racine = dossier_apercu();
-    let lue: SaisieDeLApercu = socle::forme::lire(&lire_json(&racine.join("saisie.json"))?, "La paie de l'aperçu ne se lit pas.")?;
+    let lue: SaisieDeLApercu = socle::forme::lire_fichier(&racine.join("saisie.json"), "La paie de l'aperçu ne se lit pas.")?;
     let saisie = engagement::saisie::VueDuMois { mois: lue.mois, taux_cachet: None, engagements: lue.engagements };
     let mois = saisie.mois.to_string();
     let ctx = Contexte::nouveau(&racine, Some(saisie.mois.dernier_jour()))?;
@@ -250,7 +266,11 @@ pub fn apercu_pdf(modele: Modele) -> Result<Vec<u8>, String> {
 fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
     let modele = modele_demande(charge)?;
     // Le modele vaut pour les documents faits a partir d'aujourd'hui ; ceux d'avant gardent le leur.
-    crate::routes::fiches::poser_entreprise(ctx, CASE_MODELE, json!(modele.cle()), Some(ctx.aujourdhui))?;
+    let choix = match modele {
+        Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
+        Modele::Complet => droit::fiche::ModeleBulletin::Complet,
+    };
+    crate::routes::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::modele_bulletin(Some(choix)), Some(ctx.aujourdhui))?;
     let neuf = Contexte::nouveau(&ctx.racine, None).map_err(refus)?;
     let mut v = modeles(&neuf)?;
     v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);

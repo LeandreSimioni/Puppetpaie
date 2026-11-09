@@ -12,17 +12,16 @@
 //! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de l'accueil :
 //! il n'a pas de route, son geste n'existe qu'a l'ecran.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 use crate::compagnie::administrateur;
 use crate::interface::{compagnies, suppression};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
-use socle::echec::{erreur, Echec, R};
-use documents::valeur::{valeur_en_texte, vrai};
+use crate::routes::enveloppe::{en_json, Charge, Dite, Options, Rendu};
+use socle::echec::{erreur, Classe, Echec, R};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Accueil);
@@ -64,7 +63,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[COMPAGNIE, Champ { nom: "couleur", libelle: Affiche::new("Couleur"), forme: Forme::Texte, sens: "#RRGGBB", avance: false }],
         exemple: r##"{"compagnie":"cie:la-compagnie","couleur":"#2E5A7D"}"##,
         rend: "couleur, phrase",
-        refus: &[MANQUE, Refus { classe: "ErreurOperation", corriger: "une couleur #RRGGBB, une compagnie réelle ; rien n'est écrit" }],
+        refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une couleur #RRGGBB, une compagnie réelle ; rien n'est écrit" }],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 80,
@@ -76,7 +75,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[COMPAGNIE],
         exemple: r#"{"compagnie":"fictive:fictive-essai"}"#,
         rend: "phrase",
-        refus: &[MANQUE, Refus { classe: "ErreurOperation", corriger: "une compagnie fictive livrée ; rien n'est effacé" }],
+        refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une compagnie fictive livrée ; rien n'est effacé" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 120,
@@ -89,9 +88,9 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "garder", libelle: Affiche::new("À garder"), forme: Forme::Liste, sens: "les identifiants des compagnies à garder (elles deviennent réelles)", avance: false },
             Champ { nom: "ne_pas_garder", libelle: Affiche::new("À supprimer"), forme: Forme::Liste, sens: "les identifiants des compagnies à supprimer", avance: false },
         ],
-        exemple: r#"{"garder":["fictive:ajoutee-demo"]}"#,
+        exemple: r#"{"garder":["fictive:ajoutee-demo"],"ne_pas_garder":[]}"#,
         rend: "gardees, supprimees, erreurs, phrase",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "une compagnie créée en démo, d'un logiciel débloqué ; rien n'a changé" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "une compagnie créée en démo, d'un logiciel débloqué ; rien n'a changé" }],
         acte: Acte::Ecrit,
         avance: false,
         phrase: 200,
@@ -119,10 +118,28 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "reel", libelle: Affiche::new("En réel"), forme: Forme::OuiNon, sens: "vrai : en réel (les fichiers testés conformes) ; en test sinon", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
         ],
-        exemple: r#"{}"#,
-        rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus), tableau ; rien de prêt : phrase",
-        refus: &[Refus { classe: "PreuveInsuffisante", corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
+        exemple: r#"{"reel":false}"#,
+        rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus, et suivre pour un dépôt réel), tableau ; rien de prêt : phrase",
+        refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
         acte: Acte::Engage,
+        avance: true,
+        phrase: 0,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::AdministrateurSuivre,
+        geste: "Après un dépôt groupé réel, relever les retours de chaque déclaration partie.",
+        charge: &[Champ {
+            nom: "suivis",
+            libelle: Affiche::new("Déclarations à suivre"),
+            forme: Forme::Objet,
+            sens: "la liste des « suivre » des résultats partis en réel, tels qu'administrateur-deposer les rend",
+            avance: false,
+        }],
+        exemple: r#"{"suivis":[]}"#,
+        rend: "fini (toutes tranchées), suivies (par déclaration : la compagnie, passée ou refusée, la phrase et sa couleur), phrase",
+        refus: &[OPERATION],
+        acte: Acte::Lit,
         avance: true,
         phrase: 0,
         ecran: ECRAN,
@@ -133,7 +150,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[Champ { nom: "portable", libelle: Affiche::new("Rendre ce dossier portable"), forme: Forme::OuiNon, sens: "vrai : faire aussi de ce dossier un dossier portable, pour une clé USB (PORTABLE.json)", avance: false }],
         exemple: r#"{"portable":true}"#,
         rend: "ajoutes, absents (les systèmes que la version n'a pas), version, portable, phrase",
-        refus: &[Refus { classe: "ErreurOperation", corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
         acte: Acte::Ecrit,
         avance: true,
         phrase: 140,
@@ -142,116 +159,266 @@ pub const ROUTES: &[Fiche] = &[
 ];
 
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
-pub fn installation(o: &HashMap<String, String>) -> PathBuf {
-    match o.get("racine").filter(|r| !r.is_empty()) {
-        Some(r) => administrateur::installation_de(std::path::Path::new(r)),
+pub fn installation(o: &Options) -> PathBuf {
+    match &o.racine {
+        Some(r) => administrateur::installation_de(r),
         None => compagnies::base(),
     }
 }
 
-fn texte<'a>(charge: &'a Value, cle: &str) -> R<&'a str> {
-    charge.get(cle).and_then(Value::as_str).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))
-}
-
-fn ids(charge: &Value, cle: &str) -> Vec<String> {
-    charge.get(cle).and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(String::from).collect()).unwrap_or_default()
-}
-
 fn operation(m: String) -> Echec {
-    erreur("ErreurOperation", m)
+    erreur(Classe::Refuse, m)
 }
 
-/// Une route de l'installation.
-pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Value) -> R<Value> {
+/// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ChargeAjouter {
+    pub(crate) nom: String,
+    pub(crate) venue: compagnies::Venue,
+}
+
+/// La charge de `compagnie-couleur`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeCouleur {
+    compagnie: String,
+    couleur: String,
+}
+
+/// La charge qui nomme une compagnie de l'accueil.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeCompagnie {
+    compagnie: String,
+}
+
+/// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeGarder {
+    garder: Vec<String>,
+    ne_pas_garder: Vec<String>,
+}
+
+/// La charge de `administrateur-tableau` : le tableau garde, ou refait (apres un releve, s'il est demande).
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ChargeTableau {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) garde: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) relever: Option<bool>,
+}
+
+/// La charge de `administrateur-deposer` : en reel, ou en test (le mot de passe est a l'enveloppe).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeDeposer {
+    reel: bool,
+}
+
+/// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
+/// (`suivre` de chaque resultat parti en reel).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeSuivre {
+    suivis: Vec<administrateur::ASuivre>,
+}
+
+/// La charge de `portable-completer`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargePortable {
+    portable: Option<bool>,
+}
+
+/// Une compagnie de l'accueil, telle qu'une tuile la montre.
+#[derive(Debug, Serialize)]
+pub(crate) struct Tuile {
+    pub(crate) id: String,
+    pub(crate) nom: String,
+    pub(crate) lieu: String,
+    chemin: String,
+    pub(crate) reelle: bool,
+    pub(crate) remise_a_zero: bool,
+    pub(crate) couleur: String,
+    pub(crate) logo: Option<String>,
+}
+
+/// Ce que rend `compagnies`, et ce que l'accueil de la fenetre dessine (`interface::page_accueil`).
+#[derive(Debug, Serialize)]
+pub(crate) struct Liste {
+    phrase: String,
+    pub(crate) compagnies: Vec<Tuile>,
+    pub(crate) bride: bool,
+    pub(crate) a_garder: Vec<suppression::Gardee>,
+    phrases: Vec<String>,
+    pub(crate) auteur: crate::interface::auteur::Auteur,
+}
+
+/// Ce que rend `compagnie-ajouter` : la compagnie, et le chemin que la fenetre ouvre.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Ajoutee {
+    phrase: String,
+    id: String,
+    nom: String,
+    pub(crate) chemin: String,
+}
+
+/// Ce que rend `compagnie-couleur`.
+#[derive(Debug, Serialize)]
+struct Couleur {
+    phrase: String,
+    couleur: String,
+}
+
+/// Ce que rend une route qui n'a que sa phrase.
+#[derive(Debug, Serialize)]
+struct Dit {
+    phrase: String,
+}
+
+/// Ce que rend `compagnies-garder`.
+#[derive(Debug, Serialize)]
+struct Gardees {
+    phrase: String,
+    #[serde(flatten)]
+    reponse: suppression::Reponse,
+}
+
+impl Dite for Liste {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Ajoutee {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Couleur {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Dit {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Gardees {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// Une route de l'installation, branchee sur l'enveloppe. Le tableau de l'administrateur, son depot groupe et le dossier
+/// portable rendent ce que `compagnie::administrateur` et `compagnie::maj` ecrivent.
+pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
-    if let Some(r) = o.get("racine").filter(|r| !r.is_empty()) {
-        if !std::path::Path::new(r).join(droit::contexte::ENTREPRISE).is_file() {
-            return Err(operation(format!(
-                "{} n'est pas le dossier d'une compagnie : --racine nomme une compagnie (le chemin que rend la route compagnies). Les routes de l'installation se servent sans --racine. Rien n'est écrit.",
-                r
+    if let Some(r) = &o.racine {
+        if !r.join(droit::contexte::ENTREPRISE).is_file() {
+            return Err(operation(socle::echec::avec(
+                "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
+                socle::echec::APart {
+                    chemin: Some(r.to_string_lossy().into_owned()),
+                    detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
+                    ..socle::echec::APart::default()
+                },
             )));
         }
     }
     let inst = installation(o);
     match nom {
-        Route::Compagnies => Ok(liste(&inst)),
+        Route::Compagnies => {
+            let super::SansCharge {} = charge.lire()?;
+            let compagnies: Liste = liste(&inst).map_err(operation)?;
+            en_json(compagnies)
+        }
         Route::CompagnieAjouter => {
-            let venue = compagnies::Venue::lire(charge.get("venue").and_then(Value::as_str).unwrap_or(""));
-            let c = compagnies::ajouter_venant(&inst, texte(charge, "nom")?, venue).map_err(operation)?;
+            let a: ChargeAjouter = charge.lire()?;
+            let c = compagnies::ajouter_venant(&inst, &a.nom, a.venue).map_err(operation)?;
             let phrase = if c.reelle {
                 format!("{} est ajoutée.", c.nom)
             } else {
                 format!("{} est ajoutée, en compagnie fictive : rien n'en part.", c.nom)
             };
-            let chemin = c.racine.display().to_string();
-            Ok(json!({"id": c.id, "nom": c.nom, "chemin": chemin, "phrase": phrase}))
+            en_json(Ajoutee { phrase, id: c.id, nom: c.nom, chemin: c.racine.to_string_lossy().into_owned() })
         }
         Route::CompagnieCouleur => {
-            let couleur = compagnies::poser_couleur(&inst, texte(charge, "compagnie")?, texte(charge, "couleur")?).map_err(operation)?;
-            Ok(json!({"couleur": couleur, "phrase": format!("Couleur posée : {}.", couleur)}))
+            let c: ChargeCouleur = charge.lire()?;
+            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(operation)?;
+            en_json(Couleur { phrase: format!("Couleur posée : {}.", couleur), couleur })
         }
         Route::CompagnieRemettreAZero => {
-            let (n, deja) = compagnies::remettre_a_zero(&inst, texte(charge, "compagnie")?).map_err(operation)?;
-            Ok(json!({"phrase": format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" })}))
+            let c: ChargeCompagnie = charge.lire()?;
+            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(operation)?;
+            en_json(Dit { phrase: format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
         Route::CompagniesGarder => {
+            let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
-            let mut v = suppression::repondre(&inst, &ids(charge, "garder"), &ids(charge, "ne_pas_garder"), &poste, &|_| {}).map_err(operation)?;
-            let n = |k: &str| v[k].as_array().map(Vec::len).unwrap_or(0);
-            let mut phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).", n("gardees"), n("supprimees"));
-            for e in v["erreurs"].as_array().into_iter().flatten() {
+            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(operation)?;
+            let mut phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).", reponse.gardees.len(), reponse.supprimees.len());
+            for e in &reponse.erreurs {
                 phrase.push(' ');
-                phrase.push_str(&valeur_en_texte(e));
+                phrase.push_str(e);
             }
-            v["phrase"] = json!(phrase);
-            Ok(v)
+            en_json(Gardees { phrase, reponse })
         }
-        Route::AdministrateurTableau if charge.get("garde").is_some_and(vrai) => Ok(dire_le_tableau(administrateur::tableau_garde(&inst))),
-        Route::AdministrateurTableau => Ok(dire_le_tableau(administrateur::tableau(o, &inst, charge.get("relever").is_some_and(vrai)))),
+        Route::AdministrateurTableau => {
+            let c: ChargeTableau = charge.lire()?;
+            let tableau: administrateur::TableauAdministrateur = match c.garde {
+                Some(true) => administrateur::tableau_garde(&inst)?,
+                Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true))?,
+            };
+            en_json(tableau)
+        }
         Route::PortableCompleter => {
+            let c: ChargePortable = charge.lire()?;
             let cles = crate::compagnie::maj::cles_de_l_editeur();
-            crate::compagnie::maj::completer_le_portable(&inst, charge.get("portable").is_some_and(vrai), &cles).map_err(operation)
+            let complete: crate::compagnie::maj::PortableComplete = crate::compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
+            en_json(complete)
         }
         Route::AdministrateurDeposer => {
-            let reel = charge.get("reel").is_some_and(vrai);
-            let mdp = charge.get("motdepasse").filter(|m| vrai(m)).map(valeur_en_texte);
-            administrateur::deposer(o, &inst, reel, mdp)
+            let c: ChargeDeposer = charge.lire()?;
+            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?;
+            en_json(depot)
         }
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::AdministrateurSuivre => {
+            let c: ChargeSuivre = charge.lire()?;
+            let suivis: administrateur::SuivisDuGroupe = administrateur::suivre(o, &inst, c.suivis)?;
+            en_json(suivis)
+        }
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
 /// Les compagnies de l'installation, dans l'ordre des tuiles de l'accueil, et ce que l'accueil en dit.
-fn liste(inst: &std::path::Path) -> Value {
-    let cies: Vec<Value> = compagnies::liste_de(inst)
-        .iter()
-        .map(|c| {
-            json!({
-                "id": c.id, "nom": c.nom, "lieu": c.lieu, "chemin": c.racine.display().to_string(), "reelle": c.reelle,
-                "remise_a_zero": !c.reelle && compagnies::est_fictive_livree(&c.racine), "couleur": c.couleur,
-                "logo": compagnies::logo(&c.racine).map(|p| p.display().to_string()),
-            })
-        })
-        .collect();
-    let a_garder: Vec<Value> = suppression::a_garder(inst).iter().map(|c| json!({"id": c.id, "nom": c.nom})).collect();
-    let reelles = cies.iter().filter(|c| c["reelle"] == json!(true)).count();
+pub(crate) fn liste(inst: &std::path::Path) -> Result<Liste, String> {
+    let mut cies: Vec<Tuile> = Vec::new();
+    for c in compagnies::liste_de(inst)? {
+        cies.push(Tuile {
+            chemin: c.racine.to_string_lossy().into_owned(),
+            remise_a_zero: !c.reelle && compagnies::est_fictive_livree(&c.racine)?,
+            logo: compagnies::logo(&c.racine).map(|p| p.to_string_lossy().into_owned()),
+            id: c.id,
+            nom: c.nom,
+            lieu: c.lieu,
+            reelle: c.reelle,
+            couleur: c.couleur,
+        });
+    }
+    let a_garder: Vec<suppression::Gardee> = suppression::a_garder(inst)?.into_iter().map(|c| suppression::Gardee { id: c.id, nom: c.nom }).collect();
+    let reelles = cies.iter().filter(|c| c.reelle).count();
     let phrase = format!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
-    let t = |c: &Value, k: &str| valeur_en_texte(&c[k]);
-    let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", t(c, "nom"), if c["reelle"] == json!(true) { "" } else { ", fictive" })).collect();
-    json!({"compagnies": cies, "bride": crate::compagnie::bridage::est_bride_de(inst), "a_garder": a_garder, "phrase": phrase, "phrases": phrases, "auteur": crate::interface::auteur::auteur()})
-}
-
-/// Le tableau de l'administrateur en phrases : combien de declarations, puis chacune (sa compagnie, ce qu'elle est, quand).
-fn dire_le_tableau(mut v: Value) -> Value {
-    let t = |x: &Value, k: &str| super::mot(&x[k]);
-    let lignes: Vec<Value> = v["declarations"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|d| json!(format!("{} : {}, {}{}", t(d, "compagnie"), t(d, "titre"), if d["en_retard"] == json!(true) { "en retard, c'était " } else { "au plus tard " }, t(d, "quand"))))
-        .collect();
-    let p = format!("Déclarations à faire : {} ; compagnies : {}.", lignes.len(), super::nombre(&v["compagnies"]));
-    v["phrases"] = Value::Array(lignes);
-    super::phrase_en_tete(v, p)
+    let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
+    Ok(Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::interface::auteur::auteur() })
 }

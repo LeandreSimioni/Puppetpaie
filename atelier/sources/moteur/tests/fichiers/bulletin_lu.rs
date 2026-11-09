@@ -71,7 +71,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert_eq!(l.iter().map(|x| x.page).collect::<Vec<_>>(), [1, 2, 3]);
     let b = lu(&l[0]);
     assert_eq!(b.avertissements, Vec::<String>::new());
-    let v = b.to_json();
+    let v = socle::ecriture::en_valeur(b);
     let mut sans_cotisations = v.clone();
     sans_cotisations.as_object_mut().unwrap().remove("cotisations");
     assert_eq!(
@@ -143,7 +143,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert!(v["cotisations"].as_array().unwrap().iter().all(|c| c["hors_total"] == json!(false)));
 
     // La masterclass : l'enseignement du catalogue.
-    let m = lu(&l[1]).to_json();
+    let m = socle::ecriture::en_valeur(lu(&l[1]));
     assert_eq!(m["lignes"][1], json!({"quantite": "3", "libelle": "Masterclass / Action Culturelle", "taux": "85.00", "montant": "255.00", "soumis": true, "rubrique": "enseignement", "heures": null}));
     assert_eq!(m["brut"], json!("660.00"));
     assert_eq!(m["net_imposable"], json!("560.00"));
@@ -151,7 +151,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert_eq!(lu(&l[1]).avertissements, Vec::<String>::new());
 
     // Les heures d'un non cadre : ni numero d'objet ni spectacle, le cumul des heures.
-    let h = lu(&l[2]).to_json();
+    let h = socle::ecriture::en_valeur(lu(&l[2]));
     assert_eq!(s(&h, "salarie.statut"), json!("non cadre"));
     assert_eq!(s(&h, "salarie.emploi"), json!("CHARGE DE PRODUCTION"));
     assert_eq!(h["numero_objet"], Value::Null);
@@ -172,7 +172,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
     assert_eq!(l.len(), 1);
     let b = lu(&l[0]);
     assert_eq!(b.avertissements, Vec::<String>::new());
-    let v = b.to_json();
+    let v = socle::ecriture::en_valeur(b);
     let mut sans_cotisations = v.clone();
     sans_cotisations.as_object_mut().unwrap().remove("cotisations");
     assert_eq!(
@@ -274,7 +274,7 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     // dit qu'elle a ete lue ainsi.
     let sans_net = d.join("sans-net.pdf");
     let mut page = page_a(&a_repetitions());
-    page.retain(|x| !x["texte"].as_str().unwrap_or("").ends_with('€'));
+    page.retain(|x| !matches!(x, fabrique_pdf::forme::Bloc::TexteFixe(t) if t.texte.ends_with('€')));
     pdf(vec![page], &sans_net);
     let l = lire(&sans_net).unwrap();
     let b = lu(&l[0]);
@@ -306,7 +306,7 @@ fn bulletin_lu_la_colonne_du_mois_ne_se_met_pas_dans_chaque_contrat() {
     sans_cachet.lignes.clear();
     sans_cachet.numero = Some("autre".into());
     assert!(cachets.cumuls.iter().any(|(n, c)| n == "cachets" && c.periode.is_some_and(|x| x.normalize().to_string() == "3")));
-    let de = |b: &BulletinLu, frere: &BulletinLu| compteurs(b, &[frere], &racine()).unwrap().to_json();
+    let de = |b: &BulletinLu, frere: &BulletinLu| socle::ecriture::en_valeur(&compteurs(b, &[frere], &racine()).unwrap());
     assert_eq!(de(&sans_cachet, &cachets)["cachets"], json!("0"));
     assert_eq!(de(&cachets, &sans_cachet)["cachets"], json!("3"));
     assert!(!de(&sans_cachet, &cachets)["avertissements"].to_string().contains("cachets :"));

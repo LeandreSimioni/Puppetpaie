@@ -5,26 +5,55 @@
 //! Elle lit ce que les etats lisent, et rien d'autre : les paies ecrites des engagements valides et celles des
 //! engagements importes. Le recapitulatif annuel et le cout de l'annee portent les paies importees avec ce que les
 //! pieces de l'ancien logiciel en disaient ; les heures et les cachets ne portent que les paies calculees ici, comme
-//! l'etat. Un etat qui n'a rien sur la periode (`ErreurOperation`) est LAISSE DE COTE ; tout autre refus remonte.
+//! l'etat. Un etat qui n'a rien sur la periode (`Refuse`) est LAISSE DE COTE ; tout autre refus remonte.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
 use crate::etats_paie::{self, Demande, Periode};
 use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, TOTAL_GENERAL};
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Echec};
+use socle::echec::{erreur, Classe, Echec};
 use socle::num::Decimal;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some("ErreurOperation") | Some("SaisieIncomplete"))
+    matches!(e.classe, None | Some(Classe::Refuse) | Some(Classe::SaisieIncomplete))
 }
 
 fn copie(e: &Echec) -> Echec {
     Echec { classe: e.classe, message: e.message.clone() }
+}
+
+/// CE QUE LES SPECTACLES ET LES SALARIES ONT COUTE dans l'annee `annee`, jusqu'au mois `jusqu_a` : chacun sous sa cle,
+/// dans l'ordre ou les paies le rencontrent.
+#[derive(Debug, Serialize)]
+pub struct CoutsDeLAnnee {
+    pub annee: String,
+    pub jusqu_a: String,
+    #[serde(serialize_with = "en_objet")]
+    pub spectacles: Vec<(String, Cout)>,
+    #[serde(serialize_with = "en_objet")]
+    pub salaries: Vec<(String, Cout)>,
+}
+
+/// Le cout d'un spectacle ou d'un salarie : ses bulletins, ses sommes (en texte), ce qui n'est que prevu, et si une paie
+/// importee taisait son cout employeur.
+#[derive(Debug, Serialize)]
+pub struct Cout {
+    pub bulletins: i64,
+    pub brut: String,
+    pub charges: String,
+    pub cout: String,
+    pub prevu: String,
+    pub incomplet: bool,
+}
+
+/// Des paires (cle, cout) ecrites en objet, dans leur ordre.
+fn en_objet<S: serde::Serializer>(v: &[(String, Cout)], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_map(v.iter().map(|(k, c)| (k, c)))
 }
 
 /// Les deux etats de la periode, lus une fois chacun pour tous les salaries du dossier.
@@ -43,20 +72,18 @@ impl<'a> Recapitulatifs<'a> {
     /// Ce qu'un spectacle, ou un salarie, a coute dans l'annee demandee, jusqu'au mois de `ctx.aujourdhui` ; ce qui
     /// est seulement saisi pour plus tard se dit a part (`prevu`). Une paie importee dont les pieces ne disaient pas le
     /// cout employeur rend le cumul `incomplet`. Sans annee, ou sans mois cette annee-la : rien.
-    pub fn couts_de_l_annee(&mut self) -> R<Value> {
-        let annee = self.demande.annee.clone().unwrap_or_default();
+    pub fn couts_de_l_annee(&mut self) -> R<CoutsDeLAnnee> {
+        let Some(annee) = self.demande.annee.clone() else {
+            return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
+        };
         let courant: String = self.ctx.aujourdhui.iso().chars().take(7).collect();
-        let mut out = Map::new();
-        out.insert("annee".into(), json!(annee));
-        out.insert("jusqu_a".into(), json!(courant));
-        out.insert("spectacles".into(), json!({}));
-        out.insert("salaries".into(), json!({}));
+        let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant.clone(), spectacles: Vec::new(), salaries: Vec::new() };
         if annee.is_empty() {
-            return Ok(Value::Object(out));
+            return Ok(out);
         }
         let p = Periode::nouvelle(self.ctx, None, Some(&annee), false, false)?;
         if p.mois.is_empty() {
-            return Ok(Value::Object(out));
+            return Ok(out);
         }
         struct Cumul {
             bulletins: i64,
@@ -83,38 +110,32 @@ impl<'a> Recapitulatifs<'a> {
                         cotes[i].len() - 1
                     }
                 };
+                // Une somme que la piece importee ne disait pas ne s'ajoute pas ; un cout qui manque rend le cumul
+                // `incomplet`.
                 let d = &mut cotes[i][pos].1;
                 if l.mois > courant {
-                    d.prevu += l.cout_employeur.unwrap_or(zero);
+                    d.prevu += l.cout_employeur.into_iter().sum::<Decimal>();
                     continue;
                 }
                 d.bulletins += 1;
-                d.brut += l.brut.unwrap_or(zero);
-                d.charges += l.cotisations_patronales.unwrap_or(zero);
+                d.brut += l.brut.into_iter().sum::<Decimal>();
+                d.charges += l.cotisations_patronales.into_iter().sum::<Decimal>();
                 if l.cout_employeur.is_none() {
                     d.incomplet = true;
                 }
-                d.cout += l.cout_employeur.unwrap_or(zero);
+                d.cout += l.cout_employeur.into_iter().sum::<Decimal>();
             }
         }
-        for (i, nom) in ["spectacles", "salaries"].into_iter().enumerate() {
-            let mut m = Map::new();
-            for (cle, d) in std::mem::take(&mut cotes[i]) {
-                m.insert(
-                    cle,
-                    json!({
-                        "bulletins": d.bulletins,
-                        "brut": d.brut.to_string(),
-                        "charges": d.charges.to_string(),
-                        "cout": d.cout.to_string(),
-                        "prevu": d.prevu.to_string(),
-                        "incomplet": d.incomplet,
-                    }),
-                );
-            }
-            out.insert(nom.into(), Value::Object(m));
-        }
-        Ok(Value::Object(out))
+        let [spectacles, salaries] = cotes.map(|v| {
+            v.into_iter()
+                .map(|(cle, d)| {
+                    (cle, Cout { bulletins: d.bulletins, brut: d.brut.to_string(), charges: d.charges.to_string(), cout: d.cout.to_string(), prevu: d.prevu.to_string(), incomplet: d.incomplet })
+                })
+                .collect()
+        });
+        out.spectacles = spectacles;
+        out.salaries = salaries;
+        Ok(out)
     }
 
     /// L'etat `i` de la periode : 0, les heures et les cachets ; 1, le recapitulatif annuel.
@@ -137,7 +158,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur("KeyError", socle::fichiers::absent(cle)))?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {

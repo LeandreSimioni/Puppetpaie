@@ -25,14 +25,14 @@
 //! installation, meme si elle a emporte le `.fenetre.json` de l'original -- elle prend alors le creneau suivant, et le
 //! retient pour elle.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 /// Le fichier, a la racine de l'installation, qui retient son creneau.
 pub const FICHIER: &str = ".fenetre.json";
@@ -94,28 +94,42 @@ pub enum Instance {
     Devant,
 }
 
-/// Le dossier d'une installation, tel que le verrou le compare : canonique, sans le prefixe `\\?\` de Windows.
-pub fn dossier_de(inst: &Path) -> String {
-    let c = std::fs::canonicalize(inst).unwrap_or_else(|_| inst.to_path_buf());
-    let t = c.to_string_lossy().into_owned();
-    t.strip_prefix(r"\\?\").map(String::from).unwrap_or(t)
+/// `.fenetre.json` : le creneau que l'installation a retenu.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Retenu {
+    creneau: u16,
+    quoi: String,
 }
 
-/// Le creneau retenu par l'installation, s'il se lit et tient dans la plage.
-pub fn creneau_retenu(inst: &Path, plage: Plage) -> Option<u16> {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(inst.join(FICHIER)).ok()?).ok()?;
-    let k = u16::try_from(v.get("creneau")?.as_u64()?).ok()?;
-    (k < plage.creneaux).then_some(k)
+/// Le dossier d'une installation, tel que le verrou le compare : canonique, sans le prefixe `\\?\` de Windows.
+pub fn dossier_de(inst: &Path) -> Result<String, String> {
+    let c = std::fs::canonicalize(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
+    let t = c.to_string_lossy();
+    Ok(match t.strip_prefix(r"\\?\") {
+        Some(sans) => sans.to_string(),
+        None => t.into_owned(),
+    })
+}
+
+/// Le creneau retenu par l'installation ; `None` sans `.fenetre.json`, ou si le creneau retenu n'est pas dans la plage.
+pub fn creneau_retenu(inst: &Path, plage: Plage) -> Result<Option<u16>, String> {
+    let p = inst.join(FICHIER);
+    if !p.is_file() {
+        return Ok(None);
+    }
+    let r: Retenu = socle::forme::lire_fichier(&p, "Le creneau de la fenetre (.fenetre.json) ne se lit pas : l'effacer, la fenetre en retiendra un.")?;
+    Ok((r.creneau < plage.creneaux).then_some(r.creneau))
 }
 
 /// Retient `creneau` pour l'installation. Une installation ou l'on n'ecrit pas (un support en lecture seule) garde son
-/// creneau tire de son emplacement : rien ne casse, le port est seulement moins stable.
-fn retenir(inst: &Path, creneau: u16) {
-    let v = json!({
-        "creneau": creneau,
-        "_commentaire": "Le creneau de la fenetre de cette installation (moteur/src/interface/instance.rs) : son port de page reste le meme d'un lancement a l'autre, et le navigateur y retrouve ce qu'il a retenu.",
-    });
-    let _ = socle::ecriture::ecrire_json(&inst.join(FICHIER), &v, 2);
+/// creneau tire de son emplacement : rien ne casse, le port est seulement moins stable -- l'echec n'empeche pas la fenetre.
+fn retenir(inst: &Path, creneau: u16) -> Result<(), String> {
+    let r = Retenu {
+        creneau,
+        quoi: "Le creneau de la fenetre de cette installation (moteur/src/interface/instance.rs) : son port de page reste le meme d'un lancement a l'autre, et le navigateur y retrouve ce qu'il a retenu.".to_string(),
+    };
+    socle::ecriture::ecrire_json(&inst.join(FICHIER), &r, 2)
 }
 
 /// Le creneau que vise une installation qui n'en a pas retenu : une empreinte de son dossier.
@@ -126,35 +140,70 @@ fn creneau_tire(dossier: &str, plage: Plage) -> u16 {
 }
 
 /// Le premier creneau a essayer : le retenu, sinon le tire.
-pub fn creneau_vise(inst: &Path, plage: Plage) -> u16 {
-    creneau_retenu(inst, plage).unwrap_or_else(|| creneau_tire(&dossier_de(inst), plage))
+pub fn creneau_vise(inst: &Path, plage: Plage) -> Result<u16, String> {
+    Ok(match creneau_retenu(inst, plage)? {
+        Some(k) => k,
+        None => creneau_tire(&dossier_de(inst)?, plage),
+    })
 }
 
-/// Qui tient le verrou au port `port` : `Some(dossier)` si c'est une fenetre de PuppetPaie (son installation), `None`
-/// sinon (personne, ou un autre programme). `devant` : lui demander de revenir devant (elle ne le fait que si c'est la
-/// sienne, `ici`).
-fn demander(port: u16, ici: &str, devant: bool) -> Option<String> {
-    let mut c = TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), DELAI).ok()?;
-    let _ = c.set_read_timeout(Some(DELAI));
+/// Qui tient le verrou d'un creneau.
+enum Occupant {
+    /// Personne ne repond a sa porte (rien n'y ecoute, ou rien ne prend la demande a temps).
+    Personne,
+    /// Un autre programme : il ne lit pas la demande, ou ne repond pas en PuppetPaie.
+    AutreProgramme,
+    /// Une fenetre de PuppetPaie : le dossier de son installation.
+    Installation(String),
+}
+
+/// Qui tient le verrou au port `port`. `devant` : lui demander de revenir devant (elle ne le fait que si c'est la
+/// sienne, `ici`). Une erreur du systeme qui n'est aucun de ces etats remonte.
+fn demander(port: u16, ici: &str, devant: bool) -> Result<Occupant, String> {
+    let refus = |e: std::io::Error| format!("Le creneau du port {} ne se demande pas : {}", port, e);
+    let mut c = match TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), DELAI) {
+        Ok(c) => c,
+        Err(e) if matches!(e.kind(), ErrorKind::ConnectionRefused | ErrorKind::TimedOut | ErrorKind::ConnectionReset) => return Ok(Occupant::Personne),
+        Err(e) => return Err(refus(e)),
+    };
+    c.set_read_timeout(Some(DELAI)).map_err(refus)?;
     let verbe = if devant { DEMANDE_DEVANT } else { DEMANDE_QUI };
-    c.write_all(format!("{} {}\n", verbe, ici).as_bytes()).ok()?;
+    match c.write_all(format!("{} {}\n", verbe, ici).as_bytes()) {
+        Ok(()) => {}
+        Err(e) if matches!(e.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => return Ok(Occupant::AutreProgramme),
+        Err(e) => return Err(refus(e)),
+    }
     let mut l = String::new();
-    BufReader::new(c).read_line(&mut l).ok()?;
-    l.trim_end().strip_prefix(REPONSE).map(|r| r.trim().to_string())
+    match BufReader::new(c).read_line(&mut l) {
+        Ok(_) => {}
+        Err(e)
+            if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::InvalidData) =>
+        {
+            return Ok(Occupant::AutreProgramme)
+        }
+        Err(e) => return Err(refus(e)),
+    }
+    Ok(match l.trim_end().strip_prefix(REPONSE) {
+        Some(r) => Occupant::Installation(r.trim().to_string()),
+        None => Occupant::AutreProgramme,
+    })
 }
 
 /// Le verrou tenu : il repond a qui demande, par le dossier de l'installation, et ramene la fenetre devant quand c'est
 /// la MEME installation qui est relancee (une autre ne fait que demander qui est la). Le fil tient seul la prise ; il la
 /// rend des que le `Verrou` tombe (la prise attend sans bloquer : le fil regarde le drapeau toutes les 50 ms).
-fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static) -> Verrou {
+fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static) -> Result<Verrou, String> {
     let ferme = Arc::new(AtomicBool::new(false));
     let vu = ferme.clone();
-    let _ = ecoute.set_nonblocking(true);
+    ecoute.set_nonblocking(true).map_err(|e| format!("Le verrou de la fenetre n'attend pas sans bloquer : {}", e))?;
     std::thread::spawn(move || {
         while !vu.load(Ordering::SeqCst) {
             let c = match ecoute.accept() {
                 Ok((c, _)) => c,
-                Err(_) => {
+                // Personne ne demande (`WouldBlock`), ou une demande s'est perdue avant d'etre prise (le demandeur parti) :
+                // le verrou attend la suivante. Il ne rend jamais le creneau tant que la fenetre vit.
+                Err(attente) => {
+                    drop(attente);
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
@@ -163,7 +212,9 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
             let _ = c.set_read_timeout(Some(DELAI));
             let mut lecteur = BufReader::new(&c);
             let mut ligne = String::new();
-            if lecteur.read_line(&mut ligne).is_err() {
+            // Une demande qui ne vient pas a temps, ou coupee : le demandeur est parti, rien a lui repondre.
+            if let Err(partie) = lecteur.read_line(&mut ligne) {
+                drop(partie);
                 continue;
             }
             let ligne = ligne.trim_end();
@@ -180,71 +231,76 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
             }
         }
     });
-    Verrou { ferme }
+    Ok(Verrou { ferme })
 }
 
-fn ecouter(port: u16) -> Option<TcpListener> {
-    let l = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).ok()?;
-    super::http::sans_heritage(&l);
-    Some(l)
+/// L'ecoute du port `port` ; `None` s'il est tenu (par un autre, ou refuse par le systeme : une plage reservee de Windows).
+fn ecouter(port: u16) -> Result<Option<TcpListener>, String> {
+    match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
+        Ok(l) => {
+            super::http::sans_heritage(&l);
+            Ok(Some(l))
+        }
+        Err(e) if matches!(e.kind(), ErrorKind::AddrInUse | ErrorKind::PermissionDenied) => Ok(None),
+        Err(e) => Err(format!("Le port {} ne s'ecoute pas : {}", port, e)),
+    }
 }
 
 /// LE VERROU DE L'INSTALLATION `inst` (voir l'en-tete). `devant` : ce que fait la fenetre tenue quand la meme
 /// installation est relancee.
-pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static) -> Instance {
-    let ici = dossier_de(inst);
-    let retenu = creneau_retenu(inst, plage);
-    let depart = retenu.unwrap_or_else(|| creneau_tire(&ici, plage));
+pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
+    let ici = dossier_de(inst)?;
+    let retenu = creneau_retenu(inst, plage)?;
+    let depart = match retenu {
+        Some(k) => k,
+        None => creneau_tire(&ici, plage),
+    };
     for i in 0..plage.creneaux {
         let k = (depart + i) % plage.creneaux;
-        let Some(verrou) = ecouter(plage.verrou(k)) else {
+        let Some(verrou) = ecouter(plage.verrou(k))? else {
             // Tenu : par cette installation (elle revient devant), par une autre, ou par un autre programme.
-            if demander(plage.verrou(k), &ici, true).as_deref() == Some(ici.as_str()) {
-                return Instance::Devant;
+            if matches!(demander(plage.verrou(k), &ici, true)?, Occupant::Installation(d) if d == ici) {
+                return Ok(Instance::Devant);
             }
             continue;
         };
         // Le port de la page doit etre libre aussi : sinon le creneau ne va pas (un autre programme y est).
-        let Some(page) = ecouter(plage.page(k)) else { continue };
+        let Some(page) = ecouter(plage.page(k))? else { continue };
         if retenu != Some(k) {
-            retenir(inst, k);
+            // Un support en lecture seule ne retient rien (`retenir`) : la fenetre s'ouvre quand meme.
+            let _ = retenir(inst, k);
         }
-        let verrou = repondre(verrou, ici.clone(), devant);
-        return Instance::Tenue(Prise { verrou: Some(verrou), page, port: plage.page(k), creneau: Some(k) });
+        let verrou = repondre(verrou, ici.clone(), devant)?;
+        return Ok(Instance::Tenue(Prise { verrou: Some(verrou), page, port: plage.page(k), creneau: Some(k) }));
     }
     // Aucun creneau : la fenetre s'ouvre quand meme, sans verrou, a un port du systeme.
-    match ecouter(0) {
-        Some(page) => {
-            let port = page.local_addr().map(|a| a.port()).unwrap_or(0);
-            Instance::Tenue(Prise { verrou: None, page, port, creneau: None })
-        }
-        None => Instance::Devant,
-    }
+    let page = ecouter(0)?.ok_or("Le systeme ne donne aucun port a la fenetre.")?;
+    let port = page.local_addr().map_err(|e| format!("Le port de la fenetre ne se lit pas : {}", e))?.port();
+    Ok(Instance::Tenue(Prise { verrou: None, page, port, creneau: None }))
 }
 
 /// Le verrou de CETTE installation (`compagnies::base()`), dans la plage du poste.
-pub fn prendre(devant: impl Fn() + Send + 'static) -> Instance {
+pub fn prendre(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
     prendre_de(&super::compagnies::base(), Plage::DU_POSTE, devant)
 }
 
 /// LA FENETRE DE L'INSTALLATION `inst` EST-ELLE OUVERTE ? (la mise a jour ne s'applique jamais sous elle). On demande au
 /// creneau qu'elle vise -- le retenu, sinon le tire -- et a ceux qui suivent tant qu'une autre installation les tient :
 /// les memes creneaux que `prendre_de` parcourrait. Un creneau libre arrete la recherche (elle l'aurait pris).
-pub fn ouverte(inst: &Path, plage: Plage) -> bool {
-    let ici = dossier_de(inst);
-    let depart = creneau_vise(inst, plage);
+pub fn ouverte(inst: &Path, plage: Plage) -> Result<bool, String> {
+    let ici = dossier_de(inst)?;
+    let depart = creneau_vise(inst, plage)?;
     for i in 0..plage.creneaux {
         let k = (depart + i) % plage.creneaux;
-        if let Some(l) = ecouter(plage.verrou(k)) {
+        if let Some(l) = ecouter(plage.verrou(k))? {
             drop(l);
-            return false;
+            return Ok(false);
         }
-        match demander(plage.verrou(k), &ici, false) {
-            Some(d) if d == ici => return true,
-            _ => continue,
+        if matches!(demander(plage.verrou(k), &ici, false)?, Occupant::Installation(d) if d == ici) {
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 /// Le dossier propre a une fenetre sur ce poste : le profil de son navigateur, le jeton de sa page, son journal d'avant

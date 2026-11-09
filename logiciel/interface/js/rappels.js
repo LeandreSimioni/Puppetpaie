@@ -222,7 +222,7 @@ async function enregistrerDemarrage(liste) {
     }
   } catch (e) {
     if (bouton) bouton.disabled = false;
-    const anomalies = ((e.detail || {}).anomalies || []).filter((a) => a.gravite === "erreur");
+    const anomalies = (((e.detail || {}).a_part || {}).anomalies || []).filter((a) => a.gravite === "erreur");
     dit.textContent = anomalies.length ? anomalies.map((a) => `${a.libelle || a.champ} : ${a.message}`).join(" ; ") : e.message;
     dit.hidden = false;
     await relireEtat();
@@ -290,8 +290,7 @@ async function lireDemarrage(lu) {
 }
 
 /** Aller à ce qui manque : l'onglet, puis la case (son tiroir ouvert, le
- *  curseur dedans). Le taux AT/MP n'est pas une case de la fiche
- *  (`ATMP_HTML`) ; les organismes ont leur onglet ; ce qui se dit sur la
+ *  curseur dedans). Les organismes ont leur onglet ; ce qui se dit sur la
  *  fiche d'un salarié ou d'un spectacle (`salarie`, `spectacle`, du moteur)
  *  ouvre sa fiche. */
 async function allerAuManque(champ, onglet, nom, cle) {
@@ -313,6 +312,7 @@ async function allerAuManque(champ, onglet, nom, cle) {
     if (sous && !sous.classList.contains("actif")) sous.click();
   }
   if (fiche === "organismes" || fiche === "coffre" || !champ) return;
+  // Le taux AT/MP n'est pas une case du formulaire : son encart (`ATMP_HTML`).
   const trouver = () => champ === "taux_atmp" ? document.getElementById("atmp-valeur")
     : document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
       || document.querySelector(`#config-formulaire [data-sous-de="${CSS.escape(champ)}"]:not([type="hidden"])`);
@@ -464,7 +464,7 @@ async function agirSurRappel(r) {
 function boiteRevueSpectacles(r, charge) {
   const lignes = (r.spectacles || []).map((s, i) => `
     <label class="coche"><input type="checkbox" class="rv-garde" data-cle="${echapper(s.cle)}" checked>
-      ${echapper(s.titre)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
+      ${echapper(s.nomme)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
   ouvrirBoite(`
     <h3>${echapper(r.titre_boite)}</h3>
     <p>${echapper(r.question)}</p>
