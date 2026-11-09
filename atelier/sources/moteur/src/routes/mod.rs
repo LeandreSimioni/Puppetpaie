@@ -16,17 +16,24 @@
 //!
 //! BRANCHER UN MODULE SUR L'ENVELOPPE :
 //! 1. sa fonction `route` prend la porte et la charge et rend un rendu :
-//!    `pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu>` ;
+//!    `pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu>` ; la porte porte la route (`porte.route`), la compagnie
+//!    sous la configuration du mois de la charge (`porte.ctx`) et les options de la commande (`porte.options`) ;
 //! 2. chaque bras lit la charge de sa route en sa forme et finit par l'ecrire :
-//!    `Route::X => en_json(faire(porte.ctx, charge.lire()?)?)` (`enveloppe::en_json`) ; une route qui ne prend rien lit
-//!    `SansCharge`. La forme de la charge est une structure `serde` (`deny_unknown_fields`) ; le mot de passe du logiciel
-//!    n'y est pas : `charge.mot_de_passe()` ;
-//! 3. ce que la route rend est une structure `serde` qui porte sa phrase et la dit (`impl Dite`) ;
+//!    `Route::X => en_json(faire(porte.ctx, charge.lire()?)?)` (`enveloppe::en_json`, importe de `enveloppe`) ; une route
+//!    qui ne prend rien lit `SansCharge`. La forme de la charge est une structure `serde` (`deny_unknown_fields`) ; le mot
+//!    de passe du logiciel n'y est pas : `charge.mot_de_passe()` ; une route inconnue du module :
+//!    `Err(enveloppe::route_inconnue(autre.nom()))` ;
+//! 3. ce que la route rend est une structure `serde` qui porte sa phrase et la dit (`impl Dite`) ; la porte en controle les
+//!    phrases (`Rendu::phrases`, `Rendu::plus_longue_phrase`) ;
 //! 4. un refus est un `Echec` dont la classe est un mot du logiciel (`erreur(Classe::Manque, …)`), ce qui n'est pas pour
-//!    l'ecran a part (`socle::echec::avec`) ; la fiche dit quoi corriger pour chaque classe qu'elle refuse ;
+//!    l'ecran a part (`socle::echec::avec`, que la reponse rend dans `refus.a_part`) ; la fiche dit quoi corriger pour
+//!    chaque classe qu'elle refuse ;
 //! 5. dans `servir`, son bras passe de `brute(m::route(o, &ctx, route, charge.brute()))` a `m::route(&porte, charge)`.
 //!
-//! Ce que les routes partagent (le salarie d'une charge, l'encart, la pastille, `INTERFACE`) est ici.
+//! Un module qui n'est pas encore branche lit sa charge en JSON (`Charge::brute`, `lire_charge`) et rend le sien
+//! (`brute`, `Rendu::brut`) : ce JSON-la est dans `brut`, qui s'efface avec le dernier module qui s'en sert.
+//!
+//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`) est ici.
 
 use std::collections::HashMap;
 use std::path::Path;
