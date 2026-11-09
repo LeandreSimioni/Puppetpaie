@@ -934,7 +934,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
         return format!("la paie {} a changé", socle::texte::de(&socle::mois::Mois::en_clair(m)));
     }
     // La configuration de la compagnie : une valeur datee de ses fiches qui s'applique, ou son bareme de l'annee
-    // (`config/baremes/<annee>.json` : le taux AT/MP, qui vaut pour toute l'annee).
+    // (`config/baremes/<annee>.json` : ses choix de bareme, qui valent pour toute l'annee).
     let config_avant = &avant.empreinte.configuration;
     let config_nouvelle = apres.empreinte.configuration.iter().filter(|r| !config_avant.contains(r)).max().cloned();
     let annee_du_bareme = changees.iter().find_map(|k| {

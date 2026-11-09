@@ -393,17 +393,17 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
     let plate: droit::fiche::ChampsEntreprise = droit::fiche::lire_saisie(&ent, droit::contexte::ENTREPRISE)?;
-    let fiche = socle::ecriture::en_valeur(&<droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate));
-    ecrire(&cfg.join("entreprise.json"), &fiche)?;
+    let mut fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
+    // Le code risque AT/MP : le risque par defaut du socle de l'annee, son taux celui de l'arrete, dits a l'ecran et
+    // modifiables (`routes::atmp`).
+    fiche.taux_atmp = crate::routes::atmp::a_la_creation(i64::from(creation.an)).map_err(|e| e.message)?;
+    ecrire(&cfg.join("entreprise.json"), &socle::ecriture::en_valeur(&fiche))?;
     ecrire(&cfg.join("salaries.json"), &json!({}))?;
     ecrire(&cfg.join("spectacles.json"), &json!({}))?;
     ecrire(
         &cfg.join(FICHIER_CREATION),
         &json!({"le": creation.iso(), "venue": venue.mot(), "quoi": "Le jour ou la compagnie a ete ajoutee a PuppetPaie (« Ajouter une compagnie »). Ce qui tombait avant lui ne la regarde pas (l'horloge d'une fictive ne coche pas une echeance d'avant). `venue` : le chemin du « + », une compagnie neuve ou d'un logiciel precedent (elle commence alors par l'import)."}),
     )?;
-    // Le code risque et le taux AT/MP de l'annee : le risque par defaut du socle et le taux de l'arrete, dits a l'ecran et
-    // modifiables (`routes::atmp`).
-    crate::routes::atmp::poser_a_la_creation(&dossier, i64::from(creation.an)).map_err(|e| e.message)?;
     // VENUE D'UN LOGICIEL PRECEDENT, elle commence par reprendre son passe : la boite ou poser ses pieces (`import/`,
     // celle que `importation-etat` nomme) est la des le premier jour.
     if matches!(venue, Venue::LogicielPrecedent) {

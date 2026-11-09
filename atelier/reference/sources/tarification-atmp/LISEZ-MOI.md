@@ -66,12 +66,13 @@ la sécurité sociale qu'ils appliquent (D. 242-6-2, D. 242-6-14) sont relevés 
   dossier.
 - `droit::bareme::risques_atmp`, `droit::bareme::taux_de_l_arrete` : la lecture de cette table ; le taux d'un risque TC,
   ou d'un risque sans TC sous 20 salariés ; rien en Alsace-Moselle.
-- `moteur::routes::atmp` : à la création d'une compagnie (`poser_a_la_creation`, appelé par
-  `moteur::interface::compagnies::ajouter_venant`), 92.3AD et le taux de l'arrêté de l'année se posent d'eux-mêmes dans
-  `config/baremes/<année>.json` ; la route `taux-atmp` les dit à l'écran (Configuration › Entreprise), avec leur libellé,
-  l'explication, où le lire, et l'avancé qui les change ; `declarations::demarrage::poses` les dit dans « Pour démarrer ».
-- `droit::bareme::taux_atmp_reporte`, appelé par `droit::contexte::Contexte::bareme_brut` : une année que la compagnie n'a
-  pas dite reprend le code risque de la dernière année dite ; s'il est « TC » et que le taux d'avant était déjà le taux
+- `moteur::routes::atmp` : à la création d'une compagnie (`a_la_creation`, appelé par
+  `moteur::interface::compagnies::ajouter_venant`), 92.3AD se pose de lui-même dans la fiche entreprise (`taux_atmp`, le
+  code seul : son taux est celui de l'arrêté de chaque année, `droit::contexte::Contexte::taux_atmp_de`) ; la route
+  `taux-atmp` les dit à l'écran (Configuration › Entreprise), avec leur libellé, l'explication, où le lire, et l'avancé qui
+  les change ; `declarations::demarrage::poses` les dit dans « Pour démarrer ».
+- `droit::bareme::taux_atmp_reporte`, appelé par `droit::contexte::Contexte::taux_atmp_de` : une année que la fiche
+  entreprise ne dit pas reprend le code risque de l'année qu'elle dit ; s'il est « TC » et que le taux d'avant était déjà le taux
   collectif, le taux de l'année est celui de l'annexe 1 de l'arrêté de l'année (D. 242-6-14, I). Sinon (un taux notifié
   propre, un risque sans TC, 999ZZ, l'Alsace-Moselle, une année dont l'arrêté n'est pas déposé), le taux notifié de
   l'année se demande, en disant pourquoi.

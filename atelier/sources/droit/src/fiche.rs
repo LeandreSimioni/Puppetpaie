@@ -1091,9 +1091,17 @@ cases! {
 }
 
 cases! {
-    /// Le taux AT/MP d'un etablissement, et l'annee qu'il vaut (D. 242-6-15 : celle de sa date d'effet), que l'ecran pose
-    /// (`routes::etablissements`).
-    pub struct TauxAtmp { code_risque: String, valeur: Montant, annee: i64 }
+    /// LA NOTIFICATION DE LA CARSAT d'ou viennent un code risque et un taux (retour DSN de nature 34,
+    /// `moteur::routes::atmp::poser_notifie`) : le jour ou elle a paru, celui de son calcul, sa date d'effet.
+    pub struct NotificationAtmp { le: Jour, calcul: Jour, effet: Jour }
+}
+
+cases! {
+    /// LE CODE RISQUE ET LE TAUX AT/MP du siege (`taux_atmp` de la fiche, `moteur::routes::atmp`) ou d'un autre
+    /// etablissement (`etablissements`, `moteur::routes::etablissements`), dates comme toute la configuration. `annee` :
+    /// celle que le taux vaut (D. 242-6-15 : celle de sa date d'effet) ; sans taux, le code seul, le taux est celui de
+    /// l'arrete de l'annee quand il s'applique (`bareme::taux_atmp_applique`). `notification` : celle d'ou ils viennent.
+    pub struct TauxAtmp { code_risque: String, valeur: Montant, annee: i64, notification: NotificationAtmp }
 }
 
 cases! {
@@ -1260,6 +1268,7 @@ fiche! {
         taxe_sur_les_salaires: TaxeSurLesSalaires,
         taxe_apprentissage_motif_non_assujettissement: MotifNonAssujettissement,
         cinquante_salaries_et_plus: bool,
+        taux_atmp: TauxAtmp,
         etablissements: Vec<Etablissement>,
         signataire: Signataire,
         declarant_dsn: DeclarantDsn,

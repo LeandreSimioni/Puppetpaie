@@ -1232,8 +1232,8 @@ async function ouvrirOptionDfs() {
 }
 
 /* LE CODE RISQUE ET LE TAUX AT/MP, en tête du bloc « Vos numéros chez les
- * organismes ». Ils ne sont pas des champs de la fiche : ils vivent dans le
- * barème de la compagnie (`config/baremes/<année>.json`). Le moteur
+ * organismes ». Ils sont dans la fiche (`taux_atmp`, datés), mais pas parmi
+ * ses cases : la route `taux-atmp` les pose. Le moteur
  * (`taux-atmp`) dit ce qui est posé, le risque tel que l'arrêté l'écrit,
  * pourquoi, où le lire, où le changer, et les codes qu'il connaît ; la page
  * les affiche. « Avancé » les change : le moteur refuse ce qui ne va pas. */

@@ -298,7 +298,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!(engagements_ecrits(&racine), avant);
 
     // Decembre se paie ici : le contrat s'y reprend avec son numero et ses dates.
-    for f in ["entreprise.json", "organismes.json", "baremes/2026.json"] {
+    for f in ["entreprise.json", "organismes.json"] {
         let cible = racine.join("config").join(f);
         std::fs::create_dir_all(cible.parent().unwrap()).unwrap();
         std::fs::copy(banc.join("config").join(f), cible).unwrap();

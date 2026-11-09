@@ -1034,6 +1034,33 @@
    "ecran": true
   },
   {
+   "note": "LE CODE RISQUE ET LE TAUX AT/MP DU SIEGE, dates comme toute la configuration : saisis dans l'encart « Accidents du travail (AT/MP) » (route `taux-atmp`, a partir du 1er janvier de l'annee), recus d'une notification de la CARSAT a sa date d'effet (`moteur::routes::atmp::poser_notifie`), ou poses a la creation (le code seul). `annee` : celle que le taux vaut (D. 242-6-15). Le seul lecteur : `droit::contexte::Contexte::taux_atmp_de`.",
+   "cle": "taux_atmp",
+   "libelle": "Accidents du travail (AT/MP)",
+   "forme": "structure",
+   "aide": "",
+   "champs": [
+    {"cle": "code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": false},
+    {"cle": "valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": false},
+    {"cle": "annee", "libelle": "Année du taux AT/MP", "forme": "chiffres", "ecran": false},
+    {"cle": "notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
+    {"cle": "notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
+    {"cle": "notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false}
+   ],
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si_permanents": false,
+   "si": null,
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "booleen_defaut": true,
+   "ecran": false
+  },
+  {
    "note": "LES AUTRES ETABLISSEMENTS que le siege (celui du `nic` ci-dessus) : chacun son SIRET, son adresse, sa date d'ouverture, son code risque et son taux AT/MP (`taux_atmp`, D. 242-6-1 du code de la securite sociale : le taux est determine par etablissement). Chacun a sa DSN (S21.G00.11) ; un engagement dit le sien (`engagement::Engagement::etablissement`). La liste se date a chaque ouverture, modification et fermeture (`moteur::routes::etablissements`).",
    "cle": "etablissements",
    "ligne": "établissement",
@@ -1052,6 +1079,9 @@
     {"cle": "taux_atmp.code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": true},
     {"cle": "taux_atmp.valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": true},
     {"cle": "taux_atmp.annee", "libelle": "Année du taux AT/MP", "forme": "chiffres", "aide": "Celle de la date d'effet du taux (D. 242-6-15) : l'écran la pose.", "ecran": false},
+    {"cle": "taux_atmp.notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
+    {"cle": "taux_atmp.notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
+    {"cle": "taux_atmp.notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false},
     {"cle": "versement_mobilite.taux", "libelle": "Versement mobilité (%)", "forme": "montant", "ecran": true, "aide": "0 si aucun", "si_configuration": "versement_mobilite_des_etablissements"},
     {"cle": "versement_mobilite.code_insee", "libelle": "Code INSEE de la commune", "forme": "texte", "ecran": true, "si_configuration": "versement_mobilite_des_etablissements"}
    ],

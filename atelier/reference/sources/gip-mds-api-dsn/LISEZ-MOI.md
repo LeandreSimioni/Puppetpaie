@@ -144,7 +144,7 @@ pièce brute.
 - `envois/src/retours.rs`, `taux_atmp_d_octets` (30/10/2026) : la notification de nature 34 lue d'après `taux_AT` (ci-dessus,
   « La notification du taux AT/MP ») ; `moteur/src/compagnie/suites.rs`, `appliquer_taux_atmp`, et
   `moteur/src/routes/atmp.rs`, `poser_notifie` : le code risque et le taux de l'établissement de la compagnie se posent
-  dans la surcouche de l'année de la date d'effet (`config/baremes/<année>.json`, `taux_atmp`), avec la notification pour
+  dans la fiche entreprise à leur date d'effet (`config/entreprise.json`, `taux_atmp`), avec la notification pour
   source ; un autre établissement, une notification illisible ou à plusieurs codes se disent, sans rien poser.
   `envois/src/organismes_simules.rs`, `crm_atmp` : la même pièce, jouée pour une compagnie fictive (annonce `taux_atmp`).
 

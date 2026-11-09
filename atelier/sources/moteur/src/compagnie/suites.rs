@@ -80,9 +80,9 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
 }
 
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;
-/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et se posent dans la surcouche de
-/// l'annee de leur date d'effet (`routes::atmp::poser_notifie`). Seul l'etablissement de la fiche entreprise (son SIREN et
-/// son NIC) a un taux dans la configuration : une notification pour un autre, illisible, ou qui donne plusieurs codes
+/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et se posent dans la fiche
+/// entreprise a leur date d'effet (`routes::atmp::poser_notifie`). Seul le siege (le SIREN et le NIC de la fiche
+/// entreprise) recoit ici son taux : une notification pour un autre etablissement, illisible, ou qui donne plusieurs codes
 /// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
 fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
     use std::collections::BTreeMap;
@@ -93,8 +93,9 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         _ => "et la fiche Entreprise ne dit pas son SIREN et son NIC".to_string(),
     };
     for (retour, chemin) in notifications {
-        let le = envois::releve_retours::date_publication(retour).unwrap_or_else(|| "?".into());
-        let le_iso = socle::date::Jour::lire(&le).map(|j| j.iso()).unwrap_or_default();
+        let publiee = envois::releve_retours::date_publication(retour);
+        let le_jour = publiee.as_deref().map(socle::date::Jour::lire).transpose().map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
+        let le = publiee.unwrap_or_else(|| "?".into());
         let archive = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let source = format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive);
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
@@ -128,7 +129,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
             }
             for t in &taux {
                 let source = format!("{}, effet au {}.", source, t.date_effet.jj_mm_aaaa());
-                if let Some(pourquoi) = crate::routes::atmp::poser_notifie(ctx, t, &le_iso, &source)? {
+                if let Some(pourquoi) = crate::routes::atmp::poser_notifie(ctx, t, le_jour, &source)? {
                     a_faire.push(pourquoi);
                 }
             }
