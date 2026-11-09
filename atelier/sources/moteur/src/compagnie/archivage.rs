@@ -76,10 +76,10 @@ pub fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Option<&m
     let deja = client.lister(&cible)?;
     let mut deposes = Vec::new();
     for f in &fichiers {
-        let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| ErreurGoogle::nouvelle(socle::echec::Classe::DefautDuLogiciel, "Défaut du logiciel : une pièce à archiver n'a pas de nom."))?;
         let r = client.televerser(f, &cible, None, deja.get(&nom_local))?;
         let octets = std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?.len();
-        let nom = r.nom.or_else(|| f.file_name().map(|n| n.to_string_lossy().into_owned()));
+        let nom = r.nom.or(Some(nom_local));
         deposes.push(FichierArchive { nom, octets, remplace: r.remplace });
     }
     Ok(Archivage { mois: mois.to_string(), racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })

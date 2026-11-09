@@ -31,7 +31,7 @@
 
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
@@ -77,7 +77,7 @@ fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> Result<(), S
         _ => Map::new(),
     };
     let mut annees = d.get(CLE).and_then(Value::as_object).cloned().unwrap_or_default();
-    annees.insert(annee.to_string(), json!({"paies": paies, "poste": poste, "parti_le": socle::paris::maintenant()}));
+    annees.insert(annee.to_string(), socle::ecriture::en_valeur(&AnneeRetenue { paies: paies as u64, poste: poste.to_string(), parti_le: socle::paris::maintenant() }));
     d.insert(CLE.into(), Value::Object(annees));
     socle::ecriture::ecrire_json(&p, &Value::Object(d), 2)
 }
@@ -100,10 +100,14 @@ fn empechement(racine: &Path) -> Option<&'static str> {
 /// A l'ouverture et a chaque passage de la veille : envoie le nombre de paies de l'annee passee s'il est du et pas encore
 /// parti. Ne leve jamais (l'ouverture n'echoue pas) : rend ce qui s'est passe, `{"annee", "envoye", "paies", "raison",
 /// "erreur"}` -- `erreur` non vide quand le passage suivant recommencera.
-pub fn envoyer_si_du(ctx: &Contexte) -> Value {
+pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
     let racine = ctx.racine.as_path();
-    let bilan = |annee: Option<i32>, envoye: bool, paies: Option<usize>, raison: &str, erreur: &str| {
-        json!({"annee": annee, "envoye": envoye, "paies": paies, "raison": raison, "erreur": erreur})
+    let bilan = |annee: Option<i32>, envoye: bool, paies: Option<usize>, raison: &str, erreur: &str| BilanDesPaies {
+        annee,
+        envoye,
+        paies,
+        raison: (!raison.is_empty()).then(|| raison.to_string()),
+        erreur: (!erreur.is_empty()).then(|| erreur.to_string()),
     };
     if let Some(r) = empechement(racine) {
         return bilan(None, false, None, r, "");
@@ -135,19 +139,49 @@ pub fn envoyer_si_du(ctx: &Contexte) -> Value {
     }
 }
 
+/// Ce que rend un passage de l'envoi du nombre de paies (`envoyer_si_du`) : l'annee due, si elle est partie, combien,
+/// pourquoi rien n'est parti, et l'erreur quand le passage suivant recommencera.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BilanDesPaies {
+    pub annee: Option<i32>,
+    pub envoye: bool,
+    pub paies: Option<usize>,
+    pub raison: Option<String>,
+    pub erreur: Option<String>,
+}
+
+/// Une annee retenue dans `config/diagnostic.json` (`retenir`) : son nombre de paies, le poste, quand elle est partie.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnneeRetenue {
+    paies: u64,
+    poste: String,
+    parti_le: String,
+}
+
 /// Ce que l'ecran « Ce qui est parti chez l'editeur » montre de chaque annee partie, la plus recente en tete : exactement ce
-/// qui a quitte le poste (`contenu`), et quand.
+/// qui a quitte le poste (`contenu`), et quand (`annees_parties`). Ce qui ne se lit pas va au fil du moteur, et l'ecran
+/// ne montre rien.
 pub fn pour_l_ecran(racine: &Path) -> Vec<AnneePartie> {
-    let mut v: Vec<(String, Value)> = parties(racine).into_iter().collect();
+    match annees_parties(racine) {
+        Ok(v) => v,
+        Err(e) => {
+            crate::compagnie::diagnostic::noter_moteur(&format!("paies annuelles : {}", e.phrase()));
+            Vec::new()
+        }
+    }
+}
+
+/// Les annees parties chez l'editeur, la plus recente en tete. Une annee retenue qui ne se lit pas se refuse.
+pub fn annees_parties(racine: &Path) -> R<Vec<AnneePartie>> {
+    let mut v: Vec<(i64, AnneeRetenue)> = Vec::new();
+    for (annee, e) in parties(racine) {
+        let an: i64 = annee.parse().map_err(|_| socle::echec::Echec::from(format!("Une année partie chez l'éditeur ne se lit pas : {}.", annee)))?;
+        let e: AnneeRetenue = socle::forme::lire(&e, "Une année partie chez l'éditeur ne se lit pas.")?;
+        v.push((an, e));
+    }
     v.sort_by(|a, b| b.0.cmp(&a.0));
-    v.into_iter()
-        .filter_map(|(annee, e)| {
-            let an: i64 = annee.parse().ok()?;
-            let paies = e.get("paies").and_then(Value::as_u64)?;
-            let poste = e.get("poste").cloned().unwrap_or(Value::Null);
-            Some(AnneePartie { annee: an, paies, parti_le: e.get("parti_le").and_then(Value::as_str).map(String::from), contenu: ContenuParti { annee: an, paies, poste } })
-        })
-        .collect()
+    Ok(v.into_iter().map(|(an, e)| AnneePartie { annee: an, paies: e.paies, parti_le: Some(e.parti_le), contenu: ContenuParti { annee: an, paies: e.paies, poste: e.poste } }).collect())
 }
 
 /// Une annee partie, telle que l'ecran du filet la montre : son nombre de paies, quand il est parti, et ce qui est parti.
@@ -164,5 +198,5 @@ pub struct AnneePartie {
 pub struct ContenuParti {
     pub annee: i64,
     pub paies: u64,
-    pub poste: Value,
+    pub poste: String,
 }

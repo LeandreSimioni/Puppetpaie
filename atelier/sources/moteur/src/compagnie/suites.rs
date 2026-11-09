@@ -4,7 +4,6 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::Classe;
-use serde_json::json;
 
 use droit::contexte::Contexte;
 use envois::suites::Suites;
@@ -52,7 +51,6 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`droit::pas::EN_RETOUR_DE`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
-    use serde_json::Value;
     let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
@@ -67,12 +65,16 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
         let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
-            let Value::Object(mut m) = socle::ecriture::en_valeur(x) else { continue };
-            m.insert("mis_a_disposition".into(), json!(retour.publication));
-            if let Some(mois) = &en_retour_de {
-                m.insert(droit::pas::EN_RETOUR_DE.into(), Value::String(mois.clone()));
-            }
-            tous.push(Value::Object(m));
+            // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
+            let mis_a_disposition = retour.publication.clone().ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
+            tous.push(crate::compagnie::taux_pas::TauxRecu {
+                salarie: x.salarie.clone(),
+                taux: x.releve.taux.clone(),
+                type_taux: x.releve.type_taux.clone(),
+                identifiant: x.releve.identifiant.clone(),
+                mis_a_disposition,
+                en_retour_de: en_retour_de.clone(),
+            });
         }
     }
     crate::compagnie::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
@@ -95,9 +97,11 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
     for (retour, chemin) in notifications {
         let publiee = envois::releve_retours::date_publication(retour);
         let le_jour = publiee.as_deref().map(socle::date::Jour::lire).transpose().map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
-        let le = publiee.unwrap_or_else(|| "?".into());
-        let archive = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let source = format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive);
+        let archive = socle::fichiers::nom_du(chemin);
+        let source = match &publiee {
+            Some(le) => format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive),
+            None => format!("Notification AT/MP de la CARSAT (retour DSN de nature 34, archive retours/{})", archive),
+        };
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
@@ -149,8 +153,17 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) {
             ou: &format!("depot-{}", d.quoi),
             quoi: &d.classe,
             resume: &d.message,
-            detail: json!({"reel": d.reel, "apres_test_conforme": apres_test, "repetition": d.repetition.as_ref().map_or(json!({}), |r| json!(r))}),
+            detail: socle::ecriture::en_valeur(&DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() }),
             ..Default::default()
         },
     );
+}
+
+/// Ce que l'incident d'un depot refuse porte au developpeur : reel ou test, s'il suivait une repetition conforme, et
+/// cette repetition.
+#[derive(serde::Serialize)]
+struct DetailDuDepotRefuse<'a> {
+    reel: bool,
+    apres_test_conforme: bool,
+    repetition: Option<&'a envois::journal::Ouverture>,
 }

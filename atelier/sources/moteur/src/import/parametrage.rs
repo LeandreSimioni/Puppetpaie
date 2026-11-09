@@ -173,7 +173,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
     };
     let Ok(changes) = crate::compagnie::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") else { return };
     for r in &releves {
-        let cle = texte(r, "salarie");
+        let cle = r.salarie.clone();
         if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
             continue;
         }
@@ -181,9 +181,9 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         faits.push(format!(
             "Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).",
             qui.filter(|q| !q.is_empty()).unwrap_or(cle),
-            texte(r, "taux").replace('.', ","),
+            r.taux.clone().unwrap_or_default().replace('.', ","),
             // Le mois du versement qui l'applique (`mis_a_disposition`, AAAAMMJJ000000) : celui que la DSN declare.
-            texte(r, "mis_a_disposition").get(..8).and_then(socle::date::lire_aaaammjj).map(|j| j.mois_civil().libelle(socle::mois::Graphie::Accentuee)).unwrap_or_default()
+            r.mis_a_disposition.get(..8).and_then(socle::date::lire_aaaammjj).map(|j| j.mois_civil().libelle(socle::mois::Graphie::Accentuee)).unwrap_or_default()
         ));
     }
 }

@@ -124,11 +124,10 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
 /// compagnie qui n'a ni paie saisie ni DSN au journal n'a encore rien a declarer avant le mois courant (des fiches ne
 /// sont pas un passe). `None` : rien ne borne -- une compagnie qui a deja des paies ou des declarations.
 pub(crate) fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
-    let embauche: String = ctx.entreprise.premiere_embauche.dite().map(|j| j.iso()).unwrap_or_default().chars().take(7).collect();
-    if !embauche.is_empty() {
-        return Ok(Some(embauche));
+    if let Some(j) = ctx.entreprise.premiere_embauche.dite() {
+        return Ok(Some(socle::mois::Mois::du_jour(j).to_string()));
     }
-    if !engagement::stock::mois_saisis(&ctx.racine).unwrap_or_default().is_empty() {
+    if !engagement::stock::mois_saisis(&ctx.racine).map_err(socle::echec::Echec::from)?.is_empty() {
         return Ok(None);
     }
     let journal = envois::journal::lu(&ctx.racine)?;
