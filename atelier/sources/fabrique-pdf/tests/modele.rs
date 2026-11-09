@@ -19,8 +19,12 @@ fn dossier_temp(nom: &str) -> PathBuf {
 fn ecrire_modele(nom: &str, texte: &str) -> String {
     let f = dossier_temp("modeles").join(nom);
     // Plusieurs tests écrivent le même fichier en parallèle : on l'écrit à côté puis on le
-    // renomme, pour qu'un lecteur ne le voie jamais à moitié écrit.
-    let provisoire = f.with_extension(format!("{:?}.tmp", std::thread::current().id()).replace(['(', ')'], ""));
+    // renomme, pour qu'un lecteur ne le voie jamais à moitié écrit. Le nom provisoire porte le
+    // processus et le fil : nextest lance chaque test dans son processus, où les fils se
+    // numérotent de même.
+    let provisoire = f.with_extension(
+        format!("{}-{:?}.tmp", std::process::id(), std::thread::current().id()).replace(['(', ')'], ""),
+    );
     std::fs::write(&provisoire, texte).unwrap();
     std::fs::rename(&provisoire, &f).unwrap();
     f.to_str().unwrap().replace('\\', "/")

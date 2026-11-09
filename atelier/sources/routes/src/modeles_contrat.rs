@@ -289,7 +289,13 @@ fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleD
 fn numero_d_id(id: &str) -> R<u32> {
     match id.strip_prefix('m').map(str::parse::<u32>) {
         Some(Ok(n)) => Ok(n),
-        _ => Err(erreur(Classe::MalFormee, format!("gabarits/contrats/modeles.json : l'id « {} » n'est pas de la forme m<numéro> que la copie donne : le corriger.", id))),
+        _ => Err(erreur(
+            Classe::MalFormee,
+            socle::echec::avec(
+                format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", id),
+                socle::echec::APart { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() },
+            ),
+        )),
     }
 }
 
