@@ -143,8 +143,14 @@ pub const A_VENIR: &str = "a_venir";
 pub const INDETERMINE: &str = "indetermine";
 pub const A_LA_CHARGE_DU_SALARIE: &str = "a_la_charge_du_salarie";
 
-/// Minuit, en minutes depuis minuit : le debut d'un jour.
+/// Minuit, en minutes depuis minuit : le debut d'un jour. L'heure de connaissance de l'accident que la compagnie ne dit
+/// pas : decision de Leandre (09/11/2026, ticket #406 du prive) -- pre-remplie a minuit du jour de connaissance, a
+/// verifier ; les 48 heures (CSS R. 441-3) se comptent depuis elle. Elle ne sert qu'a l'echeance : aucune declaration
+/// ne la porte.
 const DEBUT_DU_JOUR: u32 = 0;
+
+/// Ce que la saisie dit de l'heure de connaissance de l'accident quand elle est minuit (`DEBUT_DU_JOUR`).
+const HEURE_A_VERIFIER: &str = "Minuit par défaut : si vous connaissez l'heure, la corriger donne plus de temps.";
 
 const JOURS: [&str; 7] =["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
@@ -462,11 +468,17 @@ impl FaitDit {
     }
 }
 
-/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`).
+/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`). Pour
+/// l'accident, l'heure aussi : celle dont les 48 heures partent, minuit (`DEBUT_DU_JOUR`) tant qu'aucune n'est dite, que
+/// la page met dans sa case ; et, a minuit, la phrase qui dit de la verifier (`heure_dite`).
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnaissanceDemandee {
     pub de: &'static str,
     titre: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heure: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heure_dite: Option<&'static str>,
 }
 
 /// Une suite de la declaration d'accident (les reserves, la feuille d'accident) : ce qu'elle est, son texte, jusqu'a
@@ -649,8 +661,12 @@ impl Obligation {
             CleDObligation::DeclarationAccident => Some(("accident", "Connaissance de l'accident")),
             _ => None,
         };
-        self.connaissance = match connaissance {
-            Some((de, titre)) if self.depart.is_some() && self.subrogation != Some(true) => Some(ConnaissanceDemandee { de, titre }),
+        self.connaissance = match (connaissance, &self.depart) {
+            (Some((de, titre)), Some(depart)) if self.subrogation != Some(true) => {
+                let heure = (self.cle == CleDObligation::DeclarationAccident).then(|| depart.heure.clone().unwrap_or_else(|| heure_lisible(DEBUT_DU_JOUR)));
+                let heure_dite = heure.as_deref().filter(|h| lire_heure(h) == Some(DEBUT_DU_JOUR)).map(|_| HEURE_A_VERIFIER);
+                Some(ConnaissanceDemandee { de, titre, heure, heure_dite })
+            }
             _ => None,
         };
         self
@@ -1000,7 +1016,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         match depart {
             None => out.push(m.indeterminee("La date de l'accident n'est pas saisie : les quarante-huit heures ne se comptent pas.")),
             Some(depart) => {
-                // INFERENCE : un depart sans heure dite court du debut de son jour (le delai le plus court).
+                // Un depart sans heure dite court de minuit (`DEBUT_DU_JOUR`, decision du 09/11/2026, #406).
                 let minute = match depart.minute {
                     Some(m) => m,
                     None => DEBUT_DU_JOUR,
