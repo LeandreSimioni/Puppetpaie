@@ -355,11 +355,11 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
 
 /// Les temps d'une case datee `liste` a `jour`, tels que la route les dit ; `None` si elle n'a qu'une valeur.
 fn temps_d_une_case(champ: &'static str, liste: &[droit::fiche::Datee<Valeur>], jour: &socle::date::Jour) -> R<Option<TempsDeLaCase>> {
-    let temps = droit::fiche::temps_au(liste, jour).map_err(Echec::from)?;
+    let temps = droit::fiche::temps_au(liste, jour, |a, b| a == b).map_err(Echec::from)?;
     if temps.toutes.len() < 2 {
         return Ok(None);
     }
-    let avant = temps.avant.map(|a| LigneDuTemps { valeur: a.valeur, depuis: None, jusqu_au: Some(a.jusqu_au), dit: quand_dit(None, Some(a.jusqu_au)), en_vigueur: false, note: a.note });
+    let avant = temps.avant.map(|a| LigneDuTemps { valeur: Some(a.valeur), depuis: None, jusqu_au: Some(a.jusqu_au), dit: quand_dit(None, Some(a.jusqu_au)), en_vigueur: false, note: a.note });
     let a_venir = temps.a_venir.map(|a| LigneDuTemps { valeur: a.valeur, depuis: Some(a.depuis), jusqu_au: None, dit: quand_dit(Some(a.depuis), None), en_vigueur: false, note: a.note });
     // Chaque date n'y est qu'une fois : la sienne nomme la valeur en vigueur.
     let en_vigueur = temps.en_vigueur.map(|e| e.depuis);

@@ -253,9 +253,12 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 }
 
 /// LA LIGNE D'AVANT, CELLE EN VIGUEUR `aujourdhui`, ET CELLE A VENIR d'une case du taux AT/MP, telles que
-/// `droit::fiche::temps_au` les lit, chacune avec sa note ; une ligne vide se dit sans taux.
+/// `droit::fiche::temps_au` les lit, chacune avec sa note ; une ligne qui ne dit rien est vide, et une ligne du meme
+/// code et du meme taux que celle en vigueur, d'ou qu'elle vienne, n'est pas un changement.
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
-    let temps = droit::fiche::temps_au(liste, aujourdhui).map_err(|m| erreur(Classe::Illisible, m))?;
+    let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
+    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()));
+    let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| erreur(Classe::Illisible, m))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {
             Some(t) => ligne_dite(t)?,
@@ -275,7 +278,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
         l.note = note;
         Ok(l)
     };
-    let avant = temps.avant.map(|a| dite("Avant : ", a.valeur.as_ref(), None, Some(a.jusqu_au), a.note)).transpose()?;
+    let avant = temps.avant.map(|a| dite("Avant : ", Some(&a.valeur), None, Some(a.jusqu_au), a.note)).transpose()?;
     let maintenant = temps.en_vigueur.filter(|e| e.valeur.as_ref().is_some_and(|t| !t.est_vide())).map(|e| dite("En vigueur : ", e.valeur.as_ref(), e.depuis, None, e.note)).transpose()?;
     let a_venir = temps.a_venir.map(|a| dite("À venir : ", a.valeur.as_ref(), Some(a.depuis), None, a.note)).transpose()?;
     Ok((avant, maintenant, a_venir))
