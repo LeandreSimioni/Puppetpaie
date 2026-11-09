@@ -1019,7 +1019,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             // La DSN de l'ancien logiciel, et la saisie qui ajoute au mois : ce qui reste a declarer va dans une DSN
             // suivante (`import::mois::dsn_de_l_ancien_logiciel`).
             Etat::Importee => crate::import::mois::dsn_de_l_ancien_logiciel(ctx, nom)?.is_some_and(|d| d.engagements > 0),
-            Etat::Passee => m.etat_remplacement(socle::mois::Mois::lire(nom)?, &Value::Null)?.a_envoyer,
+            Etat::Passee => m.etat_remplacement(socle::mois::Mois::lire(nom)?, None)?.a_envoyer,
             Etat::Attente => false,
             _ => true,
         };

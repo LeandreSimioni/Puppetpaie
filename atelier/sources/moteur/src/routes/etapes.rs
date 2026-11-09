@@ -1731,8 +1731,8 @@ impl<'a> Moteur<'a> {
     /// Ou en est le mois vis-a-vis de
     /// l'annule-et-remplace.
     /// `nic` : l'etablissement dont on parle (`Null` : le principal).
-    pub(crate) fn etat_remplacement(&mut self, le_mois: Mois, nic: &Value) -> R<Remplacement> {
-        let faits = self.depots_reels(le_mois, nic.as_str())?;
+    pub(crate) fn etat_remplacement(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Remplacement> {
+        let faits = self.depots_reels(le_mois, nic)?;
         let lim = self.limite(le_mois)?;
         let mois = &le_mois.to_string();
         let admis = self.ctx.aujourdhui <= lim;
@@ -1771,7 +1771,10 @@ impl<'a> Moteur<'a> {
         } else {
             let departs = self.departs()?;
             let plusieurs = !self.ctx.entreprise_du_mois(mois).map_err(plain)?.secondaires().is_empty();
-            let voulu = if vrai(nic) { valeur_en_texte(nic) } else { self.nic()? };
+            let voulu = match nic {
+                Some(n) => n.to_string(),
+                None => self.nic()?,
+            };
             let mut n = 0;
             for e in self.etats_du_mois(le_mois)? {
                 let Some(v) = e.valide() else { continue };
@@ -2131,7 +2134,7 @@ impl<'a> Moteur<'a> {
             return Ok(Groupe::de(EtatCase::Refuse, None, String::new(), "refusée · l'éditeur est prévenu".into(), Some(au_depot), Some(historique(le_mois))));
         }
         // Partie : faite, tant qu'aucun retour ne revient KO. Ce qui la rouvre : une paie modifiee depuis.
-        let r = self.etat_remplacement(le_mois, nic)?;
+        let r = self.etat_remplacement(le_mois, nic.as_str())?;
         let libelle = format!("Refaire la DSN (annule-et-remplace, ordre {})…", r.prochain_ordre);
         let veille = echeance_dsn(r.limite, "à minuit", "Cahier technique DSN 2026.1, § 1.4.2 (atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt)");
         let modifiee = r.saisie_modifiee == Some(true);

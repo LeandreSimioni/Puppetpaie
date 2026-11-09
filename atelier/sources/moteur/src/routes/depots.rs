@@ -287,16 +287,18 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
     let mut e = Vec::new();
     let (deja_depose, reel) = match apercu {
         DepotApercu::Dsn(Dit { apercu: a, .. }) => {
-            if !a.remplace.is_empty() {
-                e.push(Encart::de("information", "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", a.remplace)));
+            if let Some(remplace) = &a.remplace {
+                e.push(Encart::de("information", "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", remplace)));
             }
-            if let Some(r) = a.remplacement.as_ref().filter(|r| r.fichier_remplace) {
+            // Un fichier qui remplace la DSN partie porte son ordre (`apercu_dsn::remplacement_du_fichier`).
+            if let (Some(r), Some(ordre)) = (a.remplacement.as_ref().filter(|r| r.fichier_remplace), &a.ordre) {
+                let partie: String = r.etat.dernier_ordre.iter().map(|o| format!(" (ordre {})", o)).collect();
                 e.push(Encart::de(
                     "a_faire",
-                    format!("Annule-et-remplace intégral — ordre {}", a.ordre),
+                    format!("Annule-et-remplace intégral — ordre {}", ordre),
                     format!(
-                        "Il remplace la DSN réelle déjà partie pour ce mois (ordre {}), ordres de télépaiement compris : c'est lui qui vaudra. Admis jusqu'au {} à minuit.",
-                        r.etat.dernier_ordre.map(|o| o.to_string()).unwrap_or_default(),
+                        "Il remplace la DSN réelle déjà partie pour ce mois{}, ordres de télépaiement compris : c'est lui qui vaudra. Admis jusqu'au {} à minuit.",
+                        partie,
                         r.etat.limite.jj_mm_aaaa()
                     ),
                 ));
@@ -697,7 +699,7 @@ pub(crate) fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcrit
         // partie. Une DSN refusee au bilan n'est pas partie (regle 5).
         let nic = d.nic();
         let e = crate::compagnie::etat_dsn::du_mois(ctx, le_mois, nic.as_str())?;
-        if e.deposee() && !e.refusee() && !crate::routes::etapes::Moteur::nouveau(ctx).etat_remplacement(le_mois, &nic)?.a_envoyer {
+        if e.deposee() && !e.refusee() && !crate::routes::etapes::Moteur::nouveau(ctx).etat_remplacement(le_mois, nic.as_str())?.a_envoyer {
             if let Some(c) = partie(ctx, d, le_mois)? {
                 return Ok((c, DitALEcriture::default()));
             }

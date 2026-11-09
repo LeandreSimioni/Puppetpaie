@@ -193,7 +193,7 @@ function recapitulatifDsn(r) {
       <td class="dates">${echapper(c.dates_dit)}</td>
       <td>${echapper(c.emploi)}</td>
       <td class="num">${echapper(c.activite_dit)}</td>
-      <td class="num">${c.remunere ? echapper(signe(euros(c.brut))) : "—"}</td>
+      <td class="num">${c.remunere && c.brut != null ? echapper(signe(euros(c.brut))) : "—"}</td>
       <td class="fin">${echapper(c.fin_dit)}</td>
     </tr>
     ${c.ecarts.length ? `<tr class="ecart"><td></td><td colspan="6">
