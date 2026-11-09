@@ -25,9 +25,6 @@ pub use envois::releve_signatures::{ReleveSignatures, SignatureRecue};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
-
-/// L'acte d'une demande de signature qui ne dit pas le sien : celui du contrat lui-meme.
-const CONTRAT: &str = "contrat";
 use crate::horloge::{HorlogeFictive, QUI_HORLOGE};
 use envois::simulation_courriels::BoiteQuiRepond;
 
@@ -196,12 +193,10 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
-        // Une demande qui ne dit pas son acte est celle du contrat lui-meme.
-        let acte = match &a.acte {
-            Some(acte) => acte.clone(),
-            None => CONTRAT.to_string(),
-        };
-        let est_avenant = acte == "avenant";
+        // Une demande qui ne dit pas son acte est celle du contrat lui-meme (la forme du journal des envois,
+        // `envois::etats`) : l'absence passe telle quelle.
+        let acte = a.acte.clone();
+        let est_avenant = acte.as_deref() == Some("avenant");
         let mut notes = 0usize;
         for c in &contrats {
             let son_fichier = if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() };

@@ -117,11 +117,13 @@ pub fn installation_de(racine: &Path) -> PathBuf {
     }
 }
 
-/// Le chemin absolu, liens suivis ; un dossier qui n'existe pas se compare tel qu'il s'ecrit.
+/// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
+/// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
+/// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
 fn absolu(p: &Path) -> Result<PathBuf, String> {
     let c = match std::fs::canonicalize(p) {
         Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => p.to_path_buf(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
         Err(e) => return Err(socle::echec::du_disque(p, &e)),
     };
     Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {

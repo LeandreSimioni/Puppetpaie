@@ -264,14 +264,14 @@ fn ordre_d_essai_du_fichier(calcule: Option<i64>, chemin: &Path) -> R<Option<i64
     }))
 }
 
-/// Le mois de constitution (`AAAA-MM`) d'une DSN (S20.G00.05.007) ; sans elle, celui d'aujourd'hui (la date de
-/// constitution est le jour ou le fichier s'ecrit, `dsn::generer`).
-fn mois_de_constitution(a: &DsnLue, aujourdhui: &socle::date::Jour) -> String {
-    let constitution = match a.depot {
-        Some(j) => j,
-        None => *aujourdhui,
-    };
-    constitution.mois_civil().to_string()
+/// Le mois de constitution (`AAAA-MM`) d'une DSN (S20.G00.05.007). La rubrique est obligatoire pour toute nature de
+/// declaration (norme DSN, `atelier/reference/norme-dsn/dsn-note-differentielle-ct-2026.1.2-vers-2027.1.2-20251224.txt`,
+/// l. 4838 : « S20.G00.05.007 Date de constitution du fichier O O O O O O O ») : une DSN qui ne la dit pas se refuse.
+fn mois_de_constitution(a: &DsnLue) -> R<String> {
+    match a.depot {
+        Some(j) => Ok(j.mois_civil().to_string()),
+        None => Err(erreur(Classe::Illisible, "Cette DSN ne dit pas sa date de constitution (S20.G00.05.007, obligatoire) : elle ne part pas.")),
+    }
 }
 
 /// Le rang que la DSN porte (S20.G00.05.004), s'il y en a un ; un rang qui ne se lit pas se refuse.
@@ -338,7 +338,7 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     // CE QUE LA PLATE-FORME A VU EN REEL au mois de constitution du fichier, lu en silence dans les bilans archives
     // (`ordre_signalements::dernier_ordre_des_mensuelles`) : une mensuelle reelle envoyee d'un autre poste compte, comme
     // a la production (`depart::forme_a_produire`).
-    let constitution = mois_de_constitution(a, &ctx.aujourdhui);
+    let constitution = mois_de_constitution(a)?;
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, &constitution, mois)?;
     let dernier = match dernier {
         Some(d) => d.max(vues.ordre),
@@ -520,7 +520,7 @@ pub fn deposer_dsn_dans(
 
     // UN ESSAI DE PLUS SUR UN MOIS DEJA ESSAYE part en annule-et-remplace, a l'ordre suivant : la base de test
     // garde les essais. JAMAIS PLUS BAS QUE L'ORDRE DU FICHIER.
-    let ordre_test = if reel || apercu.est_signalement() { None } else { prochain_ordre_de_test(ctx, le_mois, nic, &mois_de_constitution(&apercu, &ctx.aujourdhui))? };
+    let ordre_test = if reel || apercu.est_signalement() { None } else { prochain_ordre_de_test(ctx, le_mois, nic, &mois_de_constitution(&apercu)?)? };
     let ordre_test = ordre_test.max(ordre_d_essai);
     let ordre_test = ordre_d_essai_du_fichier(ordre_test, &chemin)?;
 

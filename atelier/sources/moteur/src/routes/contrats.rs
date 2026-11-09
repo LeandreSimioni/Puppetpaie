@@ -558,7 +558,9 @@ pub(crate) struct ParCourriel {
     pub(crate) fichier_signe: Option<String>,
     /// La mention posee ; aucune quand la fiche ne dit pas le nom du salarie (rien ne s'est contresigne).
     pub(crate) mention: Option<String>,
-    pub(crate) acte: String,
+    /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
+    /// `envois::etats`).
+    pub(crate) acte: Option<String>,
     pub(crate) avenant: Option<i64>,
 }
 
@@ -623,7 +625,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         preuve: courriel.map(|m| m.preuve.clone()),
         fichier_signe: courriel.and_then(|m| m.fichier_signe.clone()),
         mention: courriel.and_then(|m| m.mention.clone()),
-        acte: courriel.map(|m| m.acte.clone()),
+        acte: courriel.and_then(|m| m.acte.clone()),
         qui: qui.to_string(),
         reponse,
     };

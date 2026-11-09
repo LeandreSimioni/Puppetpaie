@@ -570,18 +570,23 @@ pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Pa
     if let Some(dossier) = portable {
         return normal(dossier.to_path_buf());
     }
-    // Le dossier de configuration du systeme : `APPDATA` sous Windows, `XDG_CONFIG_HOME` ailleurs, et quand il n'est pas
-    // dit, celui que chaque systeme lui donne dans le dossier de la personne.
+    // LE DOSSIER DE CONFIGURATION DU SYSTEME, et quand la variable ne le dit pas, celui que le systeme lui donne par
+    // defaut (`atelier/reference/sources/dossiers-de-configuration/`) :
+    // - Windows, `APPDATA` : FOLDERID_RoamingAppData, « Default Path %APPDATA% (%USERPROFILE%\AppData\Roaming) »
+    //   (Microsoft, KNOWNFOLDERID) ;
+    // - ailleurs, `XDG_CONFIG_HOME` : « If $XDG_CONFIG_HOME is either not set or empty, a default equal to $HOME/.config
+    //   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of
+    //   these variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
     if cfg!(windows) {
         let base = match env("APPDATA") {
-            Some(b) => PathBuf::from(b),
-            None => maison().join("AppData").join("Roaming"),
+            Some(b) if !b.is_empty() => PathBuf::from(b),
+            Some(_) | None => maison().join("AppData").join("Roaming"),
         };
         return normal(base.join("PuppetPaie"));
     }
     let base = match env("XDG_CONFIG_HOME") {
-        Some(b) => PathBuf::from(b),
-        None => maison().join(".config"),
+        Some(b) if Path::new(&b).is_absolute() => PathBuf::from(b),
+        Some(_) | None => maison().join(".config"),
     };
     normal(base.join("puppetpaie"))
 }
