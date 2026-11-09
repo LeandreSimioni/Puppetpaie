@@ -584,7 +584,13 @@ contrat.",
             jour.jj_mm_aaaa()
         ))),
         _ => {
-            let liste: Vec<String> = candidats.iter().map(|c| format!("{} du {} au {}", texte(&c.numero), c.debut, c.fin)).collect();
+            let liste: Vec<String> = candidats
+                .iter()
+                .map(|c| match &c.fin {
+                    Some(f) => format!("{} du {} au {}", texte(&c.numero), c.debut, f),
+                    None => format!("{} depuis le {}", texte(&c.numero), c.debut),
+                })
+                .collect();
             Err(refus(format!(
                 "Deux contrats de {} couvrent le {} ({}). Le cahier technique laisse le choix au declarant : dire lequel.",
                 cle,
@@ -1384,7 +1390,7 @@ fn signalement_subroge(a: &Value) -> R<bool> {
 
 /// Ce qu'une suspension doit tenir avant de s'ecrire : son motif se declare (`imprevus::verifier_motif_de_suspension` :
 /// connu, pas le 200), elle finit apres avoir commence, et ne deborde pas de son contrat.
-fn verifier_suspension(s: &Value, contrat_fin: &str) -> R<()> {
+fn verifier_suspension(s: &Value, contrat_fin: Option<&str>) -> R<()> {
     imprevus::verifier_motif_de_suspension(&valeur_en_texte(&s["motif"]), &valeur_en_texte(&s["salarie"])).map_err(refus)?;
     let (debut, fin) = (jour(&s["debut"])?, jour(&s["fin"])?);
     if fin < debut {
@@ -1394,7 +1400,7 @@ fn verifier_suspension(s: &Value, contrat_fin: &str) -> R<()> {
             fin.jj_mm_aaaa()
         )));
     }
-    if !contrat_fin.is_empty() && fin.iso().as_str() > contrat_fin {
+    if let Some(contrat_fin) = contrat_fin.filter(|f| fin.iso().as_str() > *f) {
         return Err(refus(format!(
             "Suspension jusqu'au {}, mais le contrat {} finit le {} : une suspension ne survit pas a son contrat.",
             fin.jj_mm_aaaa(),
@@ -1422,7 +1428,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     s.insert("qui".into(), json!(INTERFACE));
     s.insert("note".into(), json!(c.note.clone().unwrap_or_default()));
     let s = Value::Object(s);
-    verifier_suspension(&s, &contrat.fin)?;
+    verifier_suspension(&s, contrat.fin.as_deref())?;
     if trouver(ctx, SUSPENSION, &cle, &debut)?.is_some() {
         return Err(refus(format!(
             "Une suspension de {} au {} est deja enregistree : la modifier plutot que d'en saisir une seconde.",
@@ -1454,8 +1460,8 @@ fn suspension_modifier(ctx: &Contexte, c: &ChargeSuspensionModifier) -> R<Repons
     if let Some(m) = &c.motif {
         s["motif"] = json!(m);
     }
-    let fin_du_contrat = contrat_de(ctx, &s)?.map(|c| c.fin).unwrap_or_default();
-    verifier_suspension(&s, &fin_du_contrat)?;
+    let fin_du_contrat = contrat_de(ctx, &s)?.and_then(|c| c.fin);
+    verifier_suspension(&s, fin_du_contrat.as_deref())?;
     sans_chevauchement(ctx, &s, Some(&avant))?;
     liste[i] = s.clone();
     ecrire(ctx, &debut.mois_civil().to_string(), liste)?;
@@ -2382,7 +2388,7 @@ pub(crate) struct ContratAuJour {
     nom: String,
     pub numero: Value,
     pub debut: String,
-    fin: String,
+    fin: Option<String>,
     mois: String,
     spectacle: Value,
     mensuel: bool,
@@ -2428,14 +2434,14 @@ fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
             // tard l'emporte) : il est retenu, couvrant ou non, avant les mois plus anciens.
             let mensuel = e.nature_lue().map(|n| n.mensuelle()).unwrap_or(false);
             let numero = e.numero.clone().map_or(Value::Null, Value::String);
-            if debut.is_empty() || (fin.is_empty() && !mensuel) {
+            if debut.is_empty() || (fin.is_none() && !mensuel) {
                 continue;
             }
             if vus.contient(&[json!(c), json!(debut), numero.clone()])? {
                 continue;
             }
             vus.poser(vec![json!(c), json!(debut), numero.clone()], ())?;
-            if !(debut.as_str() <= jour && (fin.is_empty() || jour <= fin.as_str())) {
+            if !(debut.as_str() <= jour && fin.as_deref().is_none_or(|f| jour <= f)) {
                 continue;
             }
             let salarie = cle_du_nom(ctx, cle)?;

@@ -609,7 +609,7 @@ async function chargerMois(mois, repeint = false) {
     throw e;
   }
   if (DEMANDE_MOIS !== mois) return;
-  majAvisDuMois(mois, r.phrase);
+  majAvisDuMois(mois, r.ferme_aux_neufs ? "" : r.phrase);
   dessinerMoisImporte(r.ferme_aux_neufs, r);
   document.getElementById("resultat").innerHTML = "";
   // L'aperçu de la saisie enregistrée est dans la lecture : il ne se recalcule que quand on modifie la saisie.
@@ -658,7 +658,7 @@ async function repeindreLeMois(mois, ancien, frais) {
     if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
     afficherRappelsMois();
     IMPORTES = r.importes || [];
-    majAvisDuMois(mois, r.phrase);
+    majAvisDuMois(mois, r.ferme_aux_neufs ? "" : r.phrase);
     dessinerMoisImporte(r.ferme_aux_neufs, r);
   } catch (e) { /* la saisie se lit telle quelle : rien à changer */ }
   if (!enCours) calculerApercu(frais.lectures.apercu);
