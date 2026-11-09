@@ -4,7 +4,7 @@
 //! contact DSN, la medecine du travail interne) ; ici se pose ce qui vit ailleurs :
 //!
 //! - LE CODE RISQUE ET LE TAUX AT/MP (S21.G00.40.040, .043 ; `norme-dsn/texte/bloc-S21.G00.40.txt` l. 1224-1315) dans la
-//!   surcouche du bareme de chaque annee (`routes::atmp::poser`). Une annee dont une DSN est reprise recoit le code et le
+//!   fiche entreprise, au 1er janvier de chaque annee (`routes::atmp::poser`). Une annee dont une DSN est reprise recoit le code et le
 //!   taux qu'elle declare, s'ils n'y sont pas deja dits par la compagnie. L'annee en cours, sans DSN, recoit le code de la
 //!   derniere DSN a la place de celui pose a la creation ou repris d'une annee d'avant, s'il est autre : le code reste celui que la CARSAT a notifie tant qu'elle n'en
 //!   notifie pas un autre (inference : la norme dit que l'employeur declare un code « qui lui a deja ete notifie ») ; son
@@ -73,7 +73,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         // Le taux de l'annee n'est pas celui de l'arrete pour ce code (ou l'etablissement est en Alsace-Moselle) : le code
         // se garde, sans taux, et « Pour demarrer » demande le taux notifie.
         let note = format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040).", socle::mois::Mois::en_clair(mois));
-        if crate::routes::atmp::poser_code_sans_taux(&ctx.racine, i64::from(courante), code, note).is_ok() {
+        if crate::routes::atmp::poser_code_sans_taux(ctx, i64::from(courante), code, note).is_ok() {
             faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; son taux de {} est celui de la notification, à saisir.", code, socle::mois::Mois::en_clair(mois), courante));
         }
     }

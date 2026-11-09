@@ -737,6 +737,24 @@ pub(crate) fn poser_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, chang
     ecrire_fichier::<F>(ctx, &contenu)
 }
 
+/// UNE VALEUR QUI VAUT A PARTIR DE SA DATE D'EFFET, telle quelle (le taux AT/MP du siege qu'une notification ou un
+/// geste date, `routes::atmp`) : `ch` s'ecrit a `depuis` dans la fiche `cle` (`FicheDatee::changer`), ce qui precede et
+/// ce qui suit restent ; une case que la fiche ne disait pas encore reste vide avant `depuis`. Sans comparaison a ce que
+/// l'ecran montre : la date vient de la piece ou du geste. L'ancien fichier sauvegarde.
+pub(crate) fn dater_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, ch: F::Changement, depuis: &Jour, note: &str) -> R<()> {
+    let mut contenu = lire_fichier::<F>(ctx)?;
+    let Some(brute) = F::existante(&mut contenu, cle) else {
+        return Err(refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.into_iter().collect::<String>())));
+    };
+    let case = F::case_changee(&ch);
+    if brute.depuis(case).is_empty() {
+        let vide = F::changement(&F::Plate::default(), case).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", case, F::NOM)))?;
+        brute.changer(vide, None, None);
+    }
+    brute.changer(ch, Some(depuis), Some(note));
+    ecrire_fichier::<F>(ctx, &contenu)
+}
+
 // ------------------------------------------------------------------ enregistrer une fiche
 
 /// CE QUE L'ENREGISTREMENT D'UNE FICHE PASSE OUTRE.

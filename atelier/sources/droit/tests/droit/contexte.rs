@@ -19,7 +19,7 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     std::fs::create_dir_all(racine.join("config")).unwrap();
     let j = |s: &str| Jour::lire(s).unwrap();
     let plate = r#"{"raison_sociale": "CIE DATEE", "idcc": "3090", "annexe_convention": "4", "adresse": "21 RUE DU PORT",
-                    "premiere_embauche": "2026-01-01"}"#;
+                    "premiere_embauche": "2026-01-01", "taux_atmp": {"valeur": 1.25, "code_risque": "923AD", "annee": 2026}}"#;
     let e = |texte: &str| lu::<ChampsEntreprise>(texte);
     let mut ent = FicheEntrepriseDatee::neuve(&e(plate));
     let ce = |texte: &str| lu::<ChangementEntreprise>(texte);
@@ -33,8 +33,6 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     ecrire("entreprise.json", socle::ecriture::json_indente(&ent, 2));
     ecrire("salaries.json", socle::ecriture::json_indente(&BTreeMap::from([("BRIOCHE", &sal)]), 2));
     ecrire("spectacles.json", "{}".to_string());
-    std::fs::create_dir_all(racine.join("config").join("baremes")).unwrap();
-    ecrire("baremes/2026.json", r#"{"annee": 2026, "socle": 2026, "taux_atmp": {"valeur": 1.25, "code_risque": "923AD"}}"#.to_string());
 
     // Le contexte d'aujourd'hui (decembre) et celui d'octobre : la meme compagnie, chacun sous ses valeurs.
     let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15"))).unwrap();

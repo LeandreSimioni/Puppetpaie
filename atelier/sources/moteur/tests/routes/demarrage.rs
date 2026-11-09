@@ -73,7 +73,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             for x in &m {
                 let Some(champ) = x["champ"].as_str() else { continue };
                 if x["ou"] != json!("Configuration › Entreprise") || champ == "taux_atmp" {
-                    continue; // le taux AT/MP vit dans le bareme de la compagnie (`ATMP_HTML`)
+                    continue; // le taux AT/MP a son propre encart, hors des cases de la fiche (`ATMP_HTML`)
                 }
                 let c = fiche.iter().find(|c| c.cle == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
                 assert!(montre(&c.cle), "{} : « {} » demande, case masquee", nom, champ);

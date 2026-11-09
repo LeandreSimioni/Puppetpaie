@@ -788,6 +788,12 @@ pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: droit::fich
     ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::taux_pas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
+/// LE TAUX AT/MP DU SIEGE S'ECRIT DANS LA FICHE ENTREPRISE (`taux_atmp`), a sa date d'effet (`ecriture::dater_au`) ;
+/// `note` dit d'ou il vient.
+pub(crate) fn dater_taux_atmp(ctx: &Contexte, valeur: droit::fiche::TauxAtmp, depuis: &Jour, note: &str) -> R<()> {
+    ecriture::dater_au::<FicheEntrepriseDatee>(ctx, None, ChangementEntreprise::taux_atmp(Some(valeur)), depuis, note)
+}
+
 /// Une case de la fiche entreprise (`poser`).
 pub(crate) fn poser_entreprise(ctx: &Contexte, case: ChangementEntreprise, depuis: Option<Jour>) -> R<()> {
     poser::<FicheEntrepriseDatee>(ctx, None, vec![case], depuis, None)

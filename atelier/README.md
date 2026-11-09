@@ -1260,12 +1260,9 @@ fois l'embauche commencée.
 1. **Le taux AT/MP**, et lui seul, si vous êtes une compagnie : l'Assurance
    Maladie le notifie courant janvier (compte AT/MP sur net-entreprises), il
    est propre à votre établissement, et il s'écrit une fois dans
-   `config/baremes/<année>.json` :
-
-   ```json
-   {"annee": 2027, "socle": 2027,
-    "taux_atmp": {"valeur": 1.50, "code_risque": "923AD"}}
-   ```
+   Configuration › Entreprise, « Accidents du travail (AT/MP) » (la fiche
+   entreprise le garde, daté) ; reçu avec les retours de la DSN, il s'y pose
+   de lui-même.
 
    Tout le reste — SMIC, plafond de Sécurité sociale, taux Urssaf,
    Agirc-Arrco, chômage, CSG, taux de la branche — est **livré avec le

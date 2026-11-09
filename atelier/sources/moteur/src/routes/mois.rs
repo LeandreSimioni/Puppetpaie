@@ -415,7 +415,7 @@ pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &
 // ------------------------------------------------------------------ outils
 
 /// Le fichier d'une saisie, lu en JSON ; un fichier illisible refuse en le nommant. TRAVAIL A FAIRE : ses lecteurs
-/// (`rappels` : l'echeancier livre et celui de la compagnie ; `atmp` ; `fiches`) lisent chacun un fichier de leur domaine,
+/// (`rappels` : l'echeancier livre et celui de la compagnie ; `fiches`) lisent chacun un fichier de leur domaine,
 /// qui se declarera avec lui.
 pub(crate) fn lire_saisie(chemin: &Path) -> R<Value> {
     let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;

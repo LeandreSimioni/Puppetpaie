@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmpEcrit, ValeurAtmp, VersementMobiliteEcrit};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::APart;
 use socle::num::Decimal;
 
@@ -520,18 +520,11 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &str) -> Re
     Ok(())
 }
 
-/// LA SURCOUCHE DE LA COMPAGNIE PAR-DESSUS : son annee, son taux AT/MP, son versement mobilite, et ce qu'elle decide
-/// des rubriques et des cotisations au-dela d'un seuil d'effectif (`controler_effectif`). Rend le `depuis` du taux AT/MP
-/// de `jour`, quand une notification le date.
-fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, jour: &Jour, ou: &str) -> Resultat<Option<Jour>> {
+/// LA SURCOUCHE DE LA COMPAGNIE PAR-DESSUS : son annee, son versement mobilite, et ce qu'elle decide des rubriques et des
+/// cotisations au-dela d'un seuil d'effectif (`controler_effectif`).
+fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> Resultat<()> {
     let ou = format!("La surcouche de la compagnie ({})", ou);
     pile.annee = s.annee;
-    let mut depuis = None;
-    if let Some(t) = &s.taux_atmp {
-        let (t, d) = t.au_jour(jour)?;
-        pile.taux_atmp = Some(t);
-        depuis = d;
-    }
     if s.versement_mobilite.is_some() {
         pile.versement_mobilite = s.versement_mobilite;
     }
@@ -556,7 +549,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, jour: &Jour, ou: &str) -> 
     for (n, m) in s.par_nature.iter().flatten() {
         modifier_la_nature(pile.par_nature.get_mut(n).ok_or_else(|| inconnue(&ou, &format!("par_nature.{}", n)))?, m, &ou)?;
     }
-    Ok(depuis)
+    Ok(())
 }
 
 // ----------------------------------------- l'entreprise et ses etablissements
@@ -1239,9 +1232,6 @@ pub const SPECTACLES: &str = "config/spectacles.json";
 pub const EFFECTIFS: &str = "config/effectifs.json";
 /// Les baremes propres a la compagnie (`<annee>.json`), sous sa racine.
 pub const BAREMES: &str = "config/baremes";
-
-/// Combien d'annees en arriere le taux AT/MP d'une annee que la compagnie n'a pas dite se cherche.
-const ANNEES_DU_TAUX_ATMP: i32 = 5;
 /// Le fichier des organismes et contrats de la DSN, sous `config/`.
 pub const ORGANISMES: &str = "organismes.json";
 
@@ -1290,7 +1280,7 @@ impl Contexte {
     }
 
     /// LE TAUX AT/MP QU'UNE PIECE ATTESTE : le meme contexte, qui lit pour l'annee `an` le taux AT/MP `valeur` (en
-    /// pourcent) quand la compagnie n'a pas encore pose le sien (`config/baremes/<an>.json`). Ce taux est propre a
+    /// pourcent) quand la compagnie n'a pas dit le sien pour cette annee (`taux_atmp_dit`). Ce taux est propre a
     /// l'etablissement, notifie par l'Assurance Maladie : il ne se devine pas, il se lit, ici du bulletin d'un autre
     /// logiciel qui l'a applique. Rien ne s'ecrit ; une compagnie qui a pose le sien garde le sien.
     pub fn avec_le_taux_atmp_lu(mut self, an: i32, valeur: Decimal) -> Contexte {
@@ -1399,11 +1389,13 @@ impl Contexte {
 
     fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> String {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
-        // Les surcouches des annees d'avant : le taux AT/MP que l'annee ne dit pas s'en reprend (`taux_atmp_reporte`).
-        let sig: Vec<_> = (an - ANNEES_DU_TAUX_ATMP..=an)
-            .flat_map(|y| [socle::fichiers::signature(&cfg.join("baremes").join(format!("{}.json", y))), socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", y)))])
-            .chain([socle::fichiers::signature(&cfg.join("effectifs.json"))])
-            .collect();
+        let sig: Vec<_> = [
+            socle::fichiers::signature(&cfg.join("baremes").join(format!("{}.json", an))),
+            socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", an))),
+            socle::fichiers::signature(&cfg.join("effectifs.json")),
+        ]
+        .into_iter()
+        .collect();
         format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu)
     }
 
@@ -1425,8 +1417,9 @@ impl Contexte {
     }
 
     /// LES TROIS ETAGES EMPILES A `jour`, avant leur controle : le socle de l'annee que la surcouche reprend, la couche de
-    /// la convention que la fiche `ent` nomme, la surcouche de la compagnie ; et le `depuis` de chaque valeur datee qui s'y
-    /// applique (le SMIC compris).
+    /// la convention que la fiche `ent` nomme, la surcouche de la compagnie (si elle en a une), puis le taux AT/MP du siege
+    /// que la fiche `ent` dit (`taux_atmp_du_siege`) ; et le `depuis` de chaque valeur datee du bareme qui s'y applique (le
+    /// SMIC compris).
     fn empiler(&self, jour: &Jour, ent: &ChampsEntreprise) -> Result<(Pile, Vec<Jour>), Refus> {
         let an = jour.an;
         let ou = format!("config/baremes/{}.json", an);
@@ -1434,45 +1427,18 @@ impl Contexte {
         let organisation = ent.organisation_patronale.dite().map(String::as_str);
         let p = self.racine.join(BAREMES).join(format!("{}.json", an));
         let mut regles = Vec::new();
-        let mut surcouche = if socle::fichiers::existe(&p) {
-            Some(crate::forme_bareme::lire_la_surcouche(&p)?)
-        } else {
-            match &self.atmp_lu {
-                Some((a, v)) if *a == an => Some(Surcouche {
-                    annee: an,
-                    socle: an,
-                    taux_atmp: Some(TauxAtmpEcrit { valeur: Some(ValeurAtmp::Seule(socle::forme::Nombre(*v))), ..TauxAtmpEcrit::default() }),
-                    ..Surcouche::default()
-                }),
-                _ => None,
-            }
-        };
-        // Le taux AT/MP que la compagnie n'a pas dit pour l'annee se lit de celui qu'elle a dit avant
-        // (`bareme::taux_atmp_reporte`) ; ce qui ne se reprend pas dit pourquoi, et ce qu'il faut saisir.
-        if !surcouche.as_ref().is_some_and(|s| s.taux_atmp.is_some()) {
-            match self.taux_atmp_reporte_de(an, ent) {
-                Some(Ok(t)) => surcouche.get_or_insert_with(|| Surcouche { annee: an, socle: an, ..Surcouche::default() }).taux_atmp = Some(t),
-                Some(Err(pourquoi)) => match surcouche.as_mut() {
-                    Some(s) => s.taux_atmp = Some(TauxAtmpEcrit { manque: Some(pourquoi), ..TauxAtmpEcrit::default() }),
-                    None if fichier_du_socle(&dossier, an).is_some() => return Err(introuvable(pourquoi)),
-                    None => {}
-                },
-                None => {}
-            }
-        }
-        let Some(surcouche) = surcouche else {
-            if fichier_du_socle(&dossier, an).is_none() {
+        // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
+        let surcouche = match socle::fichiers::existe(&p) {
+            true => crate::forme_bareme::lire_la_surcouche(&p)?,
+            false if fichier_du_socle(&dossier, an).is_some() => Surcouche { annee: an, socle: an, ..Surcouche::default() },
+            false => {
                 return Err(introuvable(format!(
                     "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
                     an,
                     disponibles(&dossier),
                     an
-                )));
+                )))
             }
-            return Err(introuvable(format!(
-                "Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                an
-            )));
         };
         let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle) else {
             return Err(introuvable(format!(
@@ -1494,63 +1460,99 @@ depuis le plus recent.",
                 fondre_la_convention(&mut pile, &c, idcc)?;
             }
         }
-        regles.extend(fondre_la_surcouche(&mut pile, surcouche, jour, &ou)?);
+        fondre_la_surcouche(&mut pile, surcouche, &ou)?;
+        // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee ; ce qui ne se reprend pas d'une autre annee dit
+        // pourquoi, et ce qu'il faut saisir.
+        pile.taux_atmp = match self.taux_atmp_du_siege(an, ent, Some(&pile)) {
+            Some(Ok(t)) => Some(t),
+            Some(Err(pourquoi)) => return Err(introuvable(pourquoi)),
+            None => {
+                return Err(introuvable(format!(
+                    "Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
+                    an
+                )))
+            }
+        };
         regles.sort();
         regles.dedup();
         Ok((pile, regles))
     }
 
-    /// LE TAUX AT/MP DE L'ANNEE `an` QUE LA COMPAGNIE N'A PAS DIT, d'apres le dernier qu'elle a dit dans les annees d'avant
-    /// (sa surcouche `config/baremes/<annee>.json`, `ANNEES_DU_TAUX_ATMP` au plus) : `bareme::taux_atmp_reporte`. `None`
-    /// : aucun code dit avant.
-    pub fn taux_atmp_reporte(&self, an: i32) -> Option<Result<TauxAtmpEcrit, String>> {
-        self.taux_atmp_reporte_de(an, &self.entreprise)
+    /// LE JOUR OU SE LIT LE TAUX AT/MP DE L'ANNEE `an` : aujourd'hui dans l'annee en cours, son dernier jour pour une
+    /// annee passee, son premier pour une annee a venir.
+    fn jour_du_taux_atmp(&self, an: i32) -> Resultat<Jour> {
+        let jour = match self.aujourdhui.an {
+            a if a < an => Jour::nouveau(an, 1, 1),
+            a if a > an => Jour::nouveau(an, 12, 31),
+            _ => Some(self.aujourdhui),
+        };
+        jour.ok_or_else(|| format!("Année {} hors du calendrier.", an))
     }
 
-    /// LE TAUX AT/MP DE L'ANNEE `an` TEL QUE LE BAREME LE LIT (`bareme_brut_sans_cache`) : celui que la surcouche de
-    /// l'annee dit (`config/baremes/<an>.json`, `taux_atmp`), sinon celui qui se reprend d'une annee d'avant
-    /// (`taux_atmp_reporte`, qui porte `reporte_de`). `Some(Err)` : pourquoi il ne se reprend pas, ou la surcouche
-    /// illisible ; `None` : rien de dit ni d'avant. Tout ce qui demande « le taux de l'annee est-il pose ? » lit ici.
-    pub fn taux_atmp_de(&self, an: i32) -> Option<Result<TauxAtmpEcrit, String>> {
-        let p = self.racine.join(BAREMES).join(format!("{}.json", an));
-        if socle::fichiers::existe(&p) {
-            match crate::forme_bareme::lire_la_surcouche(&p) {
-                Ok(Surcouche { taux_atmp: Some(t), .. }) => return Some(Ok(t)),
-                Ok(_) => {}
+    /// LE TAUX AT/MP DE L'ANNEE `an` TEL QUE LE BAREME LE LIT : celui que la fiche entreprise dit (`taux_atmp`), lue au
+    /// jour de l'annee (`jour_du_taux_atmp`), avec la notification d'ou il vient (`taux_atmp_du_siege`). `Some(Err)` :
+    /// pourquoi il ne se reprend pas d'une autre annee, ou un socle illisible ; `None` : rien de dit. Tout ce qui demande
+    /// « le taux de l'annee est-il pose ? » lit ici.
+    pub fn taux_atmp_de(&self, an: i32) -> Option<Result<TauxAtmp, String>> {
+        let jour = match self.jour_du_taux_atmp(an) {
+            Ok(j) => j,
+            Err(e) => return Some(Err(e)),
+        };
+        let socle_an = match socle_livre_lu(an) {
+            Ok(s) => s,
+            Err(e) => return Some(Err(e)),
+        };
+        self.taux_atmp_du_siege(an, &self.entreprise_au(&jour), socle_an.as_ref())
+    }
+
+    /// La compagnie a-t-elle dit son taux AT/MP pour l'annee `an` (sa fiche le porte avec cette annee) ? Sinon, celui
+    /// qu'une piece atteste se lit (`avec_le_taux_atmp_lu`).
+    pub fn taux_atmp_dit(&self, an: i32) -> Resultat<bool> {
+        let jour = self.jour_du_taux_atmp(an)?;
+        Ok(self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.annee == Some(i64::from(an))))
+    }
+
+    /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`, datee comme
+    /// toute la configuration ; une notification recue s'y ecrit a sa date d'effet) : le taux de cette annee ; le code
+    /// seul, sans annee (pose a la creation), avec le taux de l'arrete de l'annee quand il s'applique
+    /// (`bareme::taux_atmp_applique`, d'apres `socle_an`) ; le taux d'une autre annee, ce qui s'en reprend
+    /// (`bareme::taux_atmp_reporte`). Le taux qu'une piece atteste (`atmp_lu`) vaut pour une annee que la fiche ne dit pas.
+    fn taux_atmp_du_siege(&self, an: i32, ent: &ChampsEntreprise, socle_an: Option<&Pile>) -> Option<Result<TauxAtmp, String>> {
+        let dit = ent.taux_atmp.as_ref().filter(|t| !t.est_vide());
+        let pour_l_annee = dit.is_some_and(|t| t.annee == Some(i64::from(an)));
+        if let Some((a, v)) = &self.atmp_lu {
+            if *a == an && !pour_l_annee {
+                return Some(Ok(TauxAtmp { valeur: Some(*v), ..TauxAtmp::default() }));
+            }
+        }
+        let dit = dit?;
+        let alsace = crate::bareme::en_alsace_moselle(ent.code_postal.portee());
+        if let Some(a) = dit.annee.filter(|a| *a != i64::from(an)) {
+            let pa = match i32::try_from(a).map_err(|e| format!("L'année du taux AT/MP de la fiche entreprise, {}, n'est pas une année ({}).", a, e)) {
+                Ok(pa) => pa,
                 Err(e) => return Some(Err(e)),
-            }
+            };
+            let socle_avant = match socle_livre_lu(pa) {
+                Ok(s) => s,
+                Err(e) => return Some(Err(e)),
+            };
+            return crate::bareme::taux_atmp_reporte(an, socle_an, (pa, dit), socle_avant.as_ref(), alsace);
         }
-        self.taux_atmp_reporte(an)
-    }
-
-    fn taux_atmp_reporte_de(&self, an: i32, ent: &ChampsEntreprise) -> Option<Result<TauxAtmpEcrit, String>> {
-        match self.dernier_taux_atmp_pose_avant(an) {
-            Err(e) => Some(Err(e)),
-            Ok(None) => None,
-            Ok(Some((pa, pose))) => {
-                let (socle_an, socle_avant) = match (socle_livre_lu(an), socle_livre_lu(pa)) {
-                    (Ok(a), Ok(b)) => (a, b),
-                    (Err(e), _) | (_, Err(e)) => return Some(Err(e)),
-                };
-                let alsace = crate::bareme::en_alsace_moselle(ent.code_postal.portee());
-                crate::bareme::taux_atmp_reporte(an, socle_an.as_ref(), (pa, &pose), socle_avant.as_ref(), alsace)
-            }
+        let valeur = match dit.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose() {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        let mut t = TauxAtmp {
+            valeur,
+            code_risque: dit.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty()).map(str::to_string),
+            pose_a_la_creation: (dit.annee.is_none() && valeur.is_none()).then_some(true),
+            notification: dit.notification.clone(),
+            ..TauxAtmp::default()
+        };
+        if t.valeur.is_none() {
+            t.valeur = socle_an.and_then(|s| crate::bareme::taux_atmp_applique(&crate::bareme::risques_de(s), &t, alsace));
         }
-    }
-
-    /// Le dernier taux AT/MP qu'une surcouche d'une des annees d'avant `an` pose avec son code risque, et son annee.
-    fn dernier_taux_atmp_pose_avant(&self, an: i32) -> Resultat<Option<(i32, TauxAtmpEcrit)>> {
-        let dossier = self.racine.join(BAREMES);
-        for y in (an - ANNEES_DU_TAUX_ATMP..an).rev() {
-            let p = dossier.join(format!("{}.json", y));
-            if !socle::fichiers::existe(&p) {
-                continue;
-            }
-            if let Some(t) = crate::forme_bareme::lire_la_surcouche(&p)?.taux_atmp.filter(|t| t.code_risque.as_deref().is_some_and(|c| !c.trim().is_empty())) {
-                return Ok(Some((y, t)));
-            }
-        }
-        Ok(None)
+        Some(Ok(t))
     }
 
     /// LE BAREME DE `jour` AVANT SON CONTROLE (le socle, la convention, la surcouche de la compagnie) : ce contre quoi une

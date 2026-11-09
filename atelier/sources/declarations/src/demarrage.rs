@@ -376,8 +376,9 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             }
         }
     }
-    // EN ALSACE-MOSELLE, le taux pose a la creation (celui de l'annexe 1) ne vaut pas : l'annexe 3 en fixe d'autres (art. 4
-    // de l'arrete, `atelier/reference/sources/tarification-atmp/`), et le taux se saisit (`droit::bareme::taux_de_l_arrete`).
+    // EN ALSACE-MOSELLE, le code pose a la creation n'a pas de taux (celui de l'annexe 1 ne vaut pas : l'annexe 3 en fixe
+    // d'autres, art. 4 de l'arrete, `atelier/reference/sources/tarification-atmp/`), et le taux se saisit
+    // (`droit::bareme::taux_de_l_arrete`).
     if en_alsace_moselle(ctx) && pose_a_la_creation(ctx)? {
         out.push(manque(
             "taux_atmp",
@@ -499,7 +500,7 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
 }
 
 /// CE QUE LE MOTEUR A POSE DE LUI-MEME A LA CREATION, et qui se dit avec ce qui manque : le code risque et le taux AT/MP de
-/// l'annee (`moteur::routes::atmp::poser_a_la_creation`), tant que personne ne les a changes, ou ceux que la notification
+/// l'annee (`moteur::routes::atmp::a_la_creation`), tant que personne ne les a changes, ou ceux que la notification
 /// de la CARSAT a poses, avec sa date (`moteur::routes::atmp::poser_notifie`). Le libelle est celui de l'arrete
 /// de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
@@ -515,7 +516,7 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
         Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
         None => None,
     };
-    let taux = t.valeur.as_ref().and_then(|v| v.au(&ctx.aujourdhui)).map(|v| format!("{:.2} %", v.round_dp(2)).replace('.', ","));
+    let taux = t.valeur.map(|v| format!("{:.2} %", v.round_dp(2)).replace('.', ","));
     let nom = match &risque {
         Some(r) => Some(match &r.code_arrete {
             Some(c) => c.clone(),
@@ -536,12 +537,12 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
             "{}Le code risque et le taux sont ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN et posés de lui-même. Rien à recopier.",
             de,
             // Sans jour de calcul, celui de la notification.
-            Jour::lire(match &n.calcul {
+            match &n.calcul {
                 Some(c) => c,
-                None => &n.le,
-            })?
+                None => n.le.exigee("taux_atmp.notification.le")?,
+            }
             .jj_mm_aaaa(),
-            Jour::lire(&n.effet)?.jj_mm_aaaa()
+            n.effet.exigee("taux_atmp.notification.effet")?.jj_mm_aaaa()
         ))]);
     }
     let Some(r) = risque else { return Ok(Vec::new()) };
