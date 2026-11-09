@@ -15,8 +15,8 @@
 //! et leurs `Groupe`), les carres d'un engagement (`Carre`), le geste d'un clic (`Action`). Ce que ce module lit d'un
 //! autre domaine se lit tel qu'il est : le journal des envois (`envois::etats` : les DPAE, les signatures, les avenants,
 //! les depots ; `envois::journal`), l'engagement ecrit et sa saisie (`engagement` : l'identite, la frise, l'objet brut),
-//! la fiche d'un spectacle (son titre), le dossier d'un contrat signe ailleurs (`compagnie::signature`), le journal des
-//! ecritures (`compagnie::depart`) et un mois importe (`import::mois`).
+//! la fiche d'un spectacle (son titre), le dossier d'un contrat signe ailleurs (`gestes::signature`), le journal des
+//! ecritures (`compagnie::pieces_ecrites`) et un mois importe (`import::mois`).
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -45,7 +45,7 @@ use crate::routes::SansCharge;
 use socle::ecran::couleur_de_l_etat;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::depots::{Designation, EmbaucheDesignee, Quoi};
-use crate::compagnie::signature::ContratSigneDit;
+use crate::gestes::signature::ContratSigneDit;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Lecture;
@@ -1517,7 +1517,7 @@ impl<'a> Moteur<'a> {
                 repris,
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement).map_err(plain)?,
                 ailleurs,
-                dossier: ailleurs.then(|| crate::compagnie::signature::contrat_signe_dit(self.ctx, &cle, &p.engagement.debut.iso())),
+                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, &p.engagement.debut.iso())),
                 anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &p.engagement.debut.iso(), mois).map_err(plain)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles
@@ -1912,9 +1912,9 @@ impl<'a> Moteur<'a> {
     }
 
     /// `paie_changee_depuis_l_ecriture` : `None` si le fichier declare la paie
-    /// d'aujourd'hui, sinon POURQUOI. Le journal des ecritures (`compagnie::depart`) se lit tel qu'il est.
+    /// d'aujourd'hui, sinon POURQUOI. Le journal des ecritures (`compagnie::pieces_ecrites`) se lit tel qu'il est.
     pub(crate) fn paie_changee_depuis_l_ecriture(&self, le_mois: Mois, fichier: &Path) -> R<Option<String>> {
-        use crate::compagnie::depart::{piece_notee, EmpreinteNotee};
+        use crate::compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
         let note = piece_notee(self.racine(), fichier)?;
         if let Some((n, EmpreinteNotee::Saisie(notee))) = note.as_ref().and_then(|n| Some((n, n.empreinte_saisie.as_ref()?))) {
             if self.empreinte_saisie(le_mois)?.as_deref() != Some(notee.as_str()) {
@@ -1939,7 +1939,7 @@ impl<'a> Moteur<'a> {
         // « Ecrite » pour une DSN : le meme critere que l'horloge, l'accueil et les rappels (`depart::mois_ecrit`,
         // la DSN mensuelle notee au journal des ecritures), pas un fichier pose dans `sorties/<mois>/`. Un mois passe lu a
         // l'ouverture (`ecrit`) ne demande que ce qui reste, pas le geste qui l'ouvre.
-        if self.ecrit || (quoi == DSN && !crate::compagnie::depart::mois_ecrit(self.racine(), mois)?) {
+        if self.ecrit || (quoi == DSN && !crate::gestes::depart::mois_ecrit(self.racine(), mois)?) {
             return Ok(None);
         }
         let fichiers = self.fichiers_deposables(le_mois)?;
@@ -2251,7 +2251,7 @@ impl<'a> Moteur<'a> {
                 return Ok(Groupe::fait());
             }
             // Avant son premier jour de depot, la case reste a deposer : c'est le depot qui dit le jour
-            // (`compagnie::depart::fabriquer_dsn`).
+            // (`gestes::depart::fabriquer_dsn`).
             let (a, refus) = self.action_de_depot(le_mois, DSN, nic, Some(deposer_dsn(le_mois, nic, "Déposer la DSN…".into())))?;
             let etat = if a_declarer { "à déposer" } else { "à déposer, sans salarié" };
             let quoi = avec_refus(etat, refus);
@@ -2337,9 +2337,9 @@ impl<'a> Moteur<'a> {
 
     // ------------------------------------------------------- les autres routes
 
-    /// `exercice_clos` : l'annee de ce mois est-elle close (`compagnie::exercice_ecrit::lire_exercices`) ?
+    /// `exercice_clos` : l'annee de ce mois est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
     pub(crate) fn exercice_clos(&self, mois_ou_annee: &str) -> R<bool> {
-        Ok(crate::compagnie::exercice_ecrit::lire_exercices(self.racine())?.de(mois_ou_annee).is_some())
+        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(mois_ou_annee).is_some())
     }
 
     /// `mois_a_ouvrir` : le plus ancien mois passe dont une etape n'est pas

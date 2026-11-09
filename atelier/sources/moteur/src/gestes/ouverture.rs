@@ -34,7 +34,7 @@ use envois::etats;
 use socle::echec::R;
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
-use crate::compagnie::releve_signatures::{self, ReleveSignatures};
+use crate::gestes::releve_signatures::{self, ReleveSignatures};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -783,7 +783,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         if retours {
             dire_l_etape(ctx, "Compagnie fictive : retours des dépôts joués…");
             let mut releve = Releve::default();
-            match crate::compagnie::releve::rattacher_simulation(ctx) {
+            match crate::gestes::releve::rattacher_simulation(ctx) {
                 Ok((n, a_faire)) => (releve.rattaches, releve.a_faire) = (n, a_faire),
                 // L'ouverture ne doit pas tomber.
                 Err(e) => r.incidents.push(format!("Retours : {}", e.message)),
@@ -933,7 +933,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…");
             let fin = socle::paris::maintenant_naif();
-            match crate::compagnie::releve::relever_retours(ctx, fin - opt.jours * 86_400, fin, false, "production", client_dsn, None) {
+            match crate::gestes::releve::relever_retours(ctx, fin - opt.jours * 86_400, fin, false, "production", client_dsn, None) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -970,8 +970,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
             let rel = match client_dpae {
-                Some(c) => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
-                None => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, None),
+                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
+                None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             };
             match rel {
                 Ok(rel) => {
@@ -1012,7 +1012,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         Some(d) => Some(&mut **d),
         None => None,
     };
-    match sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
+    match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
         // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.

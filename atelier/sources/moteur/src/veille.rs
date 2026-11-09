@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use crate::compagnie::ouverture::Trace;
+use crate::gestes::ouverture::Trace;
 
 /// L'ETAT DE LA VEILLE, tel que le bandeau le dessine (`js/veille.js`) : ce qu'il dit (`dit`), le passage en cours, la
 /// boucle (`minutes`), la trace du dernier passage (`dernier`), et ce qui l'a empeche (`erreur`).

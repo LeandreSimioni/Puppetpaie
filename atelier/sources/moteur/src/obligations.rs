@@ -31,7 +31,7 @@
 //! reference. Rien de
 //! cela ne se devine : sans connaissance saisie, le moteur prend le point de depart le plus exigeant et dit lequel
 //! (`depart.presume`) ; sans declaration dite, l'accident n'est pas declare. Le fichier des arrets eux-memes
-//! (`imprevus/AAAA-MM.json`, les imprevus de genre arret) n'est pas touche : ce module le lit par `crate::routes::imprevus::tous_les_arrets`.
+//! (`imprevus/AAAA-MM.json`, les imprevus de genre arret) n'est pas touche : ce module le lit par `crate::metier::imprevus::tous_les_arrets`.
 
 use std::collections::HashMap;
 use socle::echec::Classe;
@@ -1173,7 +1173,7 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 /// L'arret du salarie `nom` (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
 fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(String, ArretSaisi)> {
     let cle = ctx.cle_du_salarie(nom).map_err(|m| erreur(Classe::Manque, m))?.to_string();
-    for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::routes::imprevus::refus_magasin)? {
+    for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::metier::imprevus::refus_magasin)? {
         if let Imprevu::Arret(a) = imp {
             if a.salarie == cle && a.dernier_jour_travaille == dernier.iso() {
                 return Ok((cle, a));
@@ -1456,7 +1456,7 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Err(e) => return Ok(Err(e.message)),
     };
     let Some(motif) = tape(&c.motif) else { return Ok(Err("le motif n'est pas encore dit.".to_string())) };
-    let mut arret = crate::routes::imprevus::arret_a_ecrire(crate::routes::imprevus::ArretDit {
+    let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {
         cle: &cle,
         contrat: &contrat,
         motif,

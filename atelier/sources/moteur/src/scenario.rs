@@ -672,7 +672,7 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> Result<(usize, usize), String> {
 /// en cours d'un passage de la veille, et le journal des incidents (chaque incident porte le fil de la fenetre, ce que la
 /// page a fait avant lui, et la fenetre y note les refus que la page a recus : `compagnie::incidents::noter`).
 fn hors_comparaison(rel: &str) -> bool {
-    rel == crate::compagnie::installation::JOURNAL_INTERFACE || rel == crate::compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::compagnie::ouverture::ETAPE)
+    rel == crate::compagnie::installation::JOURNAL_INTERFACE || rel == crate::compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::gestes::ouverture::ETAPE)
 }
 
 /// Les fichiers d'une compagnie, relatifs (barres droites), hors caches.
@@ -954,7 +954,7 @@ mod enregistreur {
     fn hors_empreinte(rel: &str) -> bool {
         rel == crate::compagnie::installation::JOURNAL_INTERFACE
             || rel == "ouverture.etat.json"
-            || rel.ends_with(crate::compagnie::ouverture::ETAPE)
+            || rel.ends_with(crate::gestes::ouverture::ETAPE)
             || rel.ends_with(".verrou")
     }
 

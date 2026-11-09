@@ -18,7 +18,7 @@
 //!
 //! La carte d'un engagement et la vue du mois sont `engagement::saisie::{Carte, VueDuMois}`. Les cartes importees
 //! (`import::mois::cartes`) se composent en JSON dans leur module, et passent ici telles quelles ; le conseil de saisie
-//! est la forme de son module (`compagnie::conseils::ConseilVu`).
+//! est la forme de son module (`gestes::conseils::ConseilVu`).
 
 use droit::fiche::Lue as _;
 use std::collections::{HashMap, HashSet};
@@ -1627,9 +1627,9 @@ pub(crate) struct VuePaie {
     avertissements: Vec<String>,
     informations: Vec<String>,
     emploi: EmploiVu,
-    /// Le conseil que la saisie appelle (`compagnie::conseils::de_saisie`).
+    /// Le conseil que la saisie appelle (`gestes::conseils::de_saisie`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    conseil: Option<crate::compagnie::conseils::ConseilVu>,
+    conseil: Option<crate::gestes::conseils::ConseilVu>,
     /// La ligne de « Pour démarrer » qui demande les conges acquis avant le logiciel (`declarations::demarrage::conges_a_dire`).
     #[serde(skip_serializing_if = "Option::is_none")]
     a_dire: Option<[declarations::demarrage::Manque; 1]>,
@@ -2184,7 +2184,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     // LES CONSEILS DE SAISIE : au plus un par carte, quand l'option de la compagnie est cochee, pour un
     // engagement en saisie seulement. Ils ne vivent qu'ici, dans la vue de l'ecran : ni dans les avertissements de la
     // paie, ni au bulletin, ni a `produire`.
-    for (i, (v, c)) in vues.iter_mut().zip(crate::compagnie::conseils::de_saisie(ctx, &paies)?).enumerate() {
+    for (i, (v, c)) in vues.iter_mut().zip(crate::gestes::conseils::de_saisie(ctx, &paies)?).enumerate() {
         if !tous.get(i).is_some_and(SaisieCarte::est_validee) {
             v.conseil = c;
         }

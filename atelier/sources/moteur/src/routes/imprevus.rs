@@ -32,7 +32,7 @@ use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60};
-use engagement::imprevus::{self, ArretSaisi, GenreArret, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
+use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
 use engagement::numeros::NumeroContrat;
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
@@ -44,6 +44,7 @@ use socle::num::Decimal;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::{Ecran, Place};
+use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, refus_magasin, tous_les_arrets, ArretDit, ContratAuJour};
 
 const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé avant l'arrêt, qui le désigne", avance: false };
 const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d'absence"), forme: Forme::Date, sens: "le premier jour de l'absence, qui la désigne", avance: false };
@@ -253,7 +254,7 @@ impl ChargeArretSignaler {
         ChargeArretSignaler { salarie, dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
     }
 
-    /// Le signalement parti, refait pour se lire (`compagnie::depart::refaire_le_signalement`) : son numero d'ordre et son
+    /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
     pub(crate) fn refait(salarie: String, dernier_jour: Jour, nature: NatureSignalement, ordre: i64, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
@@ -321,7 +322,7 @@ impl ChargeFinContratSignaler {
         ChargeFinContratSignaler { mois, salarie, remplace: None, ordre: None, test: None, le: None }
     }
 
-    /// Le signalement parti, refait pour se lire (`compagnie::depart::refaire_le_signalement`).
+    /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
     pub(crate) fn refait(mois: Mois, salarie: String, ordre: i64, le: Jour) -> ChargeFinContratSignaler {
         ChargeFinContratSignaler { ordre: Some(ordre), le: Some(le), ..ChargeFinContratSignaler::de(mois, salarie) }
     }
@@ -571,10 +572,6 @@ fn clair(t: &str) -> R<String> {
     Ok(jour(t)?.jj_mm_aaaa())
 }
 
-fn magasin<T>(r: Result<T, String>) -> R<T> {
-    r.map_err(refus_magasin)
-}
-
 /// Un numero de contrat tel qu'une phrase le dit.
 fn numero_dit(n: &Option<String>) -> String {
     match n {
@@ -805,7 +802,7 @@ pub(crate) enum Resume {
     Suspension(Box<ResumeDeSuspension>),
 }
 
-/// UN ARRET RESUME, tel que le lisent la liste des imprevus et la DSN qui le reporte (`compagnie::depart`) : ses champs
+/// UN ARRET RESUME, tel que le lisent la liste des imprevus et la DSN qui le reporte (`gestes::depart`) : ses champs
 /// tels que l'arret les ecrit, ce qui en est parti (`signalements` : 04 et 05 ; `reporte_par` : les mois des DSN
 /// mensuelles), et l'etat de son signalement.
 #[derive(Debug, Clone, Serialize)]
@@ -1667,50 +1664,6 @@ fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: &str) -> R<R
     Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase: phrase.to_string() })
 }
 
-/// CE QUI FAIT UN ARRET A ECRIRE : qui, quel contrat, le motif et les jours, et ce que la saisie en dit d'autre.
-pub(crate) struct ArretDit<'a> {
-    pub cle: &'a str,
-    pub contrat: &'a ContratAuJour,
-    pub motif: &'a str,
-    pub dernier_jour: Jour,
-    pub debut: Jour,
-    pub fin: Jour,
-    pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<u32>,
-    pub note: Option<String>,
-}
-
-/// UN ARRET TEL QUE LE MAGASIN L'ECRIT (`engagement::imprevus::ArretSaisi`) : ce qu'il n'a pas encore reste vide (la
-/// subrogation, que le droit tire ensuite : `poser_la_subrogation` ; la reprise ; les indemnites journalieres).
-pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
-    ArretSaisi {
-        genre: GenreArret::Arret,
-        salarie: x.cle.to_string(),
-        contrat_debut: x.contrat.debut.clone(),
-        contrat_numero: x.contrat.numero.clone(),
-        motif: x.motif.to_string(),
-        dernier_jour_travaille: x.dernier_jour.iso(),
-        debut: x.debut.iso(),
-        fin_previsionnelle: x.fin.iso(),
-        subrogation: None,
-        subrogation_debut: None,
-        subrogation_fin: None,
-        reprise: None,
-        reprise_motif: None,
-        date_accident: x.date_accident.map(|j| j.iso()),
-        jours_deja_indemnises: x.jours_deja_indemnises.map(|j| Chiffre::entier(i64::from(j))),
-        ij_brute: None,
-        ij_nette: None,
-        ij_brute_majoree: None,
-        ij_nette_majoree: None,
-        prolongations: Vec::new(),
-        reprises: Vec::new(),
-        saisi_le: maintenant(),
-        qui: INTERFACE.to_string(),
-        note: x.note,
-    }
-}
-
 /// `arret-enregistrer`. Les controles de la norme sont ceux du signalement (`signalement::verifier`, nature 04), avant
 /// toute ecriture ; un arret ne chevauche pas un autre imprevu du meme contrat (`sans_chevauchement`).
 fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArret> {
@@ -1920,7 +1873,7 @@ fn echec_fctu(e: declarations::fctu::Echec) -> Echec {
 /// signalement normal deja parti pour ce contrat ne se refait pas : toute modification posterieure « doit faire l'objet
 /// d'un signalement « Annule et remplace » ou « Annule » » (cahier technique DSN, `norme-dsn/texte/chapitre-5-modeles.txt`,
 /// 5.2) ; la route le dit et n'ecrit rien. `refaire` : la piece partie, refaite pour se lire
-/// (`compagnie::depart::refaire_le_signalement`). L'annule-et-remplace a son nom (`_AR<ordre>`) : le fichier parti reste
+/// (`gestes::depart::refaire_le_signalement`). L'annule-et-remplace a son nom (`_AR<ordre>`) : le fichier parti reste
 /// tel qu'il est parti.
 pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refaire: bool) -> R<ReponseSignalementFin> {
     let mois = c.mois.to_string();
@@ -1951,7 +1904,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.replace('-', "")), remplace.is_some(), ordre);
     let cible = ctx.racine.join("sorties").join(&mois).join(&nom);
-    crate::compagnie::depart::refuser_si_partie(&ctx.racine, &cible)?;
+    crate::compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration: type_declaration.to_string(),
         ordre,
@@ -1969,7 +1922,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         .collect();
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
-    crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&cible), None, None)?;
+    crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let preavis = declarations::fctu::libelle_preavis(&fin.type_preavis).map_err(plain)?;
     Ok(ReponseSignalementFin {
         fichier: cible.to_string_lossy().into_owned(),
@@ -2019,7 +1972,7 @@ impl Trace<'_> {
 /// defait par la trace qu'elle a laissee, de la plus recente a la plus ancienne -- une prolongation (`prolongations`) rend
 /// la fin prescrite et la fin de subrogation d'avant, une reprise (`reprises`) la reprise et son motif d'avant. Une saisie
 /// de la minute meme a pu preceder l'instant ou le suivre : chacun de ces etats est rendu, du plus recent au plus ancien ;
-/// l'empreinte de ce qui est parti dit lequel c'etait (`compagnie::depart::refaire_le_signalement`).
+/// l'empreinte de ce qui est parti dit lequel c'etait (`gestes::depart::refaire_le_signalement`).
 pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, instant: &str) -> R<Vec<ArretSaisi>> {
     let (_, _, lu) = l_arret(ctx, &cle_du_nom(ctx, salarie)?, dernier_jour)?;
     let mut traces: Vec<Trace> = lu.prolongations.iter().map(Trace::Prolongation).chain(lu.reprises.iter().map(Trace::Reprise)).collect();
@@ -2043,10 +1996,10 @@ pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, 
 /// Le numero d'ordre (`S20.G00.05.004`) du prochain signalement : un de plus que le plus grand de tous ceux que
 /// la compagnie a deja envoyes, arrets, reprises, fins de contrat et amorcages confondus. Cahier technique
 /// DSN, p. 136 : « Pour un signalement, ce numero ne doit pas etre remis a zero afin qu'il soit unique quel que
-/// soit le mois d'emission ». LA PLATE-FORME FAIT FOI : `crate::compagnie::releve::dernier_ordre_connu` la consulte ; ce
+/// soit le mois d'emission ». LA PLATE-FORME FAIT FOI : `crate::gestes::releve::dernier_ordre_connu` la consulte ; ce
 /// qu'il faut en dire (elle n'a pas repondu, elle connaissait plus que le journal) part avec les avertissements.
 fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
-    let connu = crate::compagnie::releve::dernier_ordre_connu(ctx, None)?;
+    let connu = crate::gestes::releve::dernier_ordre_connu(ctx, None)?;
     Ok((connu.dernier + 1, connu.avertissements))
 }
 
@@ -2056,7 +2009,7 @@ fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// net-entreprises 1983, `atelier/reference/sources/net-entreprises-base-connaissances/
 /// net-entreprises-fiche1983-prolongation-arret-dates-de-subrogation-20250322.txt`, l. 13) ; ce qui le corrige est un
 /// annule et remplace (l. 37). La route le dit et n'ecrit rien. `alors` : la piece partie, refaite pour se lire
-/// (`compagnie::depart::refaire_le_signalement`) depuis l'arret tel qu'il etait a son ecriture (`etats_d_alors`) : une
+/// (`gestes::depart::refaire_le_signalement`) depuis l'arret tel qu'il etait a son ecriture (`etats_d_alors`) : une
 /// prolongation ou une reprise saisie depuis ne la change pas. L'annule-et-remplace a son nom (`_AR<ordre>`) : le
 /// fichier parti reste tel qu'il est parti.
 pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: Option<&ArretSaisi>) -> R<ReponseSignalement> {
@@ -2099,7 +2052,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         ordre,
     );
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
-    crate::compagnie::depart::refuser_si_partie(&ctx.racine, &cible)?;
+    crate::compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature: nature.to_string(),
         type_declaration: type_declaration.to_string(),
@@ -2110,7 +2063,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
-    crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&cible), None, None)?;
+    crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",
@@ -2131,29 +2084,6 @@ fn plain(m: String) -> Echec {
 }
 
 // -------------------------------------------------------------------- arrets
-
-/// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
-#[track_caller]
-pub(crate) fn refus_magasin(m: String) -> Echec {
-    erreur(Classe::Refuse, m)
-}
-
-/// Les arrets de travail du magasin des imprevus (`imprevus/AAAA-MM.json`, genre `arret`), dans l'ordre des mois du
-/// magasin.
-pub(crate) fn tous_les_arrets(ctx: &Contexte) -> R<Vec<ArretSaisi>> {
-    Ok(magasin(imprevus::tous(&ctx.racine))?
-        .into_iter()
-        .filter_map(|i| match i {
-            Imprevu::Arret(a) => Some(a),
-            Imprevu::Suspension(_) => None,
-        })
-        .collect())
-}
-
-/// Les nomenclatures du bloc 60 (`arrets-base.json`), lues par leur forme (`droit::arrets::bloc_60`).
-pub(crate) fn nomenclatures() -> R<Bloc60> {
-    droit::arrets::bloc_60().map_err(plain)
-}
 
 /// Le libelle du motif d'arret dans les codes de la norme. Un motif inconnu ne s'enregistre pas (`verifier`) : dans le
 /// magasin, il se refuse.
@@ -2530,23 +2460,6 @@ pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour)
 
 // ------------------------------------------------------------ les contrats d'un jour
 
-/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, le debut et la fin, le mois qui le
-/// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
-/// (`dit`).
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ContratAuJour {
-    salarie: IdSalarie,
-    nom: String,
-    pub numero: Option<String>,
-    pub debut: String,
-    fin: Option<String>,
-    mois: String,
-    spectacle: Option<String>,
-    mensuel: bool,
-    nature: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dit: Option<String>,
-}
 
 /// `arret-contrats` : les contrats d'un salarie qui couvrent un jour.
 fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> {

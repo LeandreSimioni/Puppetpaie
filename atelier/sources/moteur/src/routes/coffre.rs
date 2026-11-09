@@ -2,7 +2,7 @@
 //! secret (`coffre-poser`, avec le compte DPAE pour l'Urssaf, `coffre-oublier`), lier ou delier le compte Google
 //! (`google-autoriser`, `google-oublier`), changer ou retirer le mot de
 //! passe du logiciel (`mot-de-passe-changer`, `mot-de-passe-retirer`), et ce que l'administrateur est pour la compagnie
-//! (`administrateur-etat`, `administrateur-rattacher`, `administrateur-detacher` ; `compagnie/administrateur.rs`).
+//! (`administrateur-etat`, `administrateur-rattacher`, `administrateur-detacher` ; `gestes/administrateur.rs`).
 //!
 //! Aucune valeur de secret ne sort : la reponse est l'etat du coffre, des presences et des dates. Ces routes passent
 //! par la porte du mot de passe du logiciel s'il est pose (`exiger_mot_de_passe`) ; le coffre lui-meme est
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::compagnie::coffre::{Coffre, Echec as EchecCoffre};
-use crate::compagnie::administrateur::Poste;
+use crate::gestes::administrateur::Poste;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -367,7 +367,7 @@ struct GoogleLie {
 struct EtatAdministrateurDit {
     phrase: String,
     #[serde(flatten)]
-    etat: crate::compagnie::administrateur::EtatAdministrateur,
+    etat: crate::gestes::administrateur::EtatAdministrateur,
 }
 
 /// Ce que rendent `administrateur-rattacher` et `administrateur-detacher`.
@@ -376,7 +376,7 @@ pub struct Rattachement {
     phrase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     compagnies: Option<Vec<String>>,
-    etat: crate::compagnie::administrateur::EtatAdministrateur,
+    etat: crate::gestes::administrateur::EtatAdministrateur,
 }
 
 macro_rules! dites {
@@ -463,16 +463,16 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 // ------------------------------------------------------------------ l'administrateur
 
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
-pub(crate) fn administrateur_etat(racine: &Path) -> R<crate::compagnie::administrateur::EtatAdministrateur> {
-    let inst = crate::compagnie::administrateur::installation_de(racine);
-    crate::compagnie::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
+pub(crate) fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::EtatAdministrateur> {
+    let inst = crate::gestes::administrateur::installation_de(racine);
+    crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
 }
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
 /// `administrateur.rs`. Le mot de passe de l'administrateur vient de la charge (la page), sinon il est tape par un humain ;
 /// `mdp`, le mot de passe actuel de la compagnie, tape pour la route.
 pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, mdp: Option<&str>, poste: &Poste) -> R<Rattachement> {
-    use crate::compagnie::administrateur as adm;
+    use crate::gestes::administrateur as adm;
     let inst = adm::installation_de(racine);
     let admin = match charge.administrateur {
         Some(m) => m,
@@ -742,12 +742,12 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
     let actuel = actuel(mdp);
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
-    let inst = crate::compagnie::administrateur::installation_de(&ctx.racine);
-    if crate::compagnie::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
+    let inst = crate::gestes::administrateur::installation_de(&ctx.racine);
+    if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
-        crate::compagnie::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::compagnie::administrateur::Poste::de_ce_poste()).map_err(refus)?;
+        crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(refus)?;
         return coffre_etat(ctx);
     }
     coffre(ctx).poser_ouverture(&nouveau, actuel.as_deref()).map_err(en_operation)?;
@@ -756,7 +756,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    if crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
+    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
@@ -895,11 +895,11 @@ pub fn compte_autorise(racine: &Path) -> Option<String> {
     }
 }
 
-/// Le faux Google qui remplace Google : dans l'atelier, celui d'`atelier::redirection` ; en essai, celui que l'essai
+/// Le faux Google qui remplace Google : dans l'atelier, celui d'`envois::redirection` ; en essai, celui que l'essai
 /// nomme (`VARIABLE_GOOGLE_ESSAIS`, une adresse locale seulement) ; `None` hors de l'un et de l'autre.
 fn faux_google() -> Option<String> {
     #[cfg(feature = "atelier")]
-    if let Some(b) = crate::atelier::redirection::base(crate::atelier::redirection::VARIABLE_GOOGLE) {
+    if let Some(b) = envois::redirection::base(envois::redirection::VARIABLE_GOOGLE) {
         return Some(b);
     }
     match std::env::var(VARIABLE_GOOGLE_ESSAIS) {

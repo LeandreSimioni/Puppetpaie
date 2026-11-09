@@ -1,7 +1,7 @@
 //! La demande du mot de passe du logiciel, faite PAR LE MOTEUR : une IA ne fait rien de reel sans humain.
 //!
 //! Pour un acte qui engage -- depot reel, envoi aux salaries, demande de signature, tout ce que
-//! `depot_acte::verifier_preuve` et `coffre::exiger_mot_de_passe` gardent --, le moteur demande LUI-MEME le mot de
+//! `preuve::verifier_preuve` et `coffre::exiger_mot_de_passe` gardent --, le moteur demande LUI-MEME le mot de
 //! passe, par un canal qu'un agent ne tient pas :
 //!
 //!   1. s'il y a un ecran : la boite de dialogue du systeme (`fenetre_native`), qui dit ce qui va partir (quoi, quel mois, a qui) ; la
@@ -776,12 +776,12 @@ mod tests {
     }
 
     fn le_poste_n_ouvre_pas(m: &Monde) -> bool {
-        let r = crate::compagnie::releve::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises");
+        let r = crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises");
         r.is_err()
     }
 
     fn proteger_un_acte(m: &Monde) -> Result<String, String> {
-        crate::compagnie::depot_acte::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(|e| e.message)
+        crate::compagnie::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(|e| e.message)
     }
 
     // ------------------------------------------------------------ le mot de passe tape ouvre tout
@@ -792,9 +792,9 @@ mod tests {
         let mauvais = "Pas-le-bon-mot-de-passe-77";
         crate::compagnie::coffre::retenir_mot_de_passe_tape(mauvais);
         for r in [
-            crate::compagnie::releve::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.message),
+            crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.message),
             crate::compagnie::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.to_string()),
-            crate::compagnie::depot_acte::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.message),
+            crate::compagnie::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.message),
         ] {
             let dit = r.expect_err("un mauvais mot de passe ne doit rien ouvrir");
             for secret in [NET, BOITE, LOGICIEL, mauvais] {
@@ -859,10 +859,10 @@ mod tests {
         }
         assert!(proteger_un_acte(&m).unwrap_err().contains("aucun humain"));
         // Et la charge de la route, elle, reste une preuve (la fenetre Tk, la page) : le mot de passe tape y arrive.
-        let preuve = crate::compagnie::depot_acte::Preuve { motdepasse: Some(LOGICIEL.into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::compagnie::depot_acte::verifier_preuve(&m.ctx(), Some(&preuve), "2026-09", "x", "y").is_ok());
-        let mauvaise = crate::compagnie::depot_acte::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::compagnie::depot_acte::verifier_preuve(&m.ctx(), Some(&mauvaise), "2026-09", "x", "y").is_err());
+        let preuve = crate::compagnie::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), mois_recopie: None, ..Default::default() };
+        assert!(crate::compagnie::preuve::verifier_preuve(&m.ctx(), Some(&preuve), "2026-09", "x", "y").is_ok());
+        let mauvaise = crate::compagnie::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), mois_recopie: None, ..Default::default() };
+        assert!(crate::compagnie::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), "2026-09", "x", "y").is_err());
     }
 
     // ------------------------------------------------------------ la seance
@@ -879,7 +879,7 @@ mod tests {
         assert!(f.questions()[0].seance);
         // Plus rien de retenu en memoire : c'est la seance GARDEE (12 h) qui ouvre, dans un processus neuf.
         oublier_mot_de_passe_tape();
-        let lu = crate::compagnie::releve::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").unwrap();
+        let lu = crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").unwrap();
         assert_eq!(lu.as_deref(), Some(NET));
         assert_eq!(crate::compagnie::boite::mot_de_passe(&m.racine).unwrap(), BOITE);
         // Mais un acte reel, lui, redemande -- et sans humain, refuse.

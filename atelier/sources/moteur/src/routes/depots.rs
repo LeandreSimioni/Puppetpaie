@@ -9,7 +9,8 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::compagnie::depot_acte::{self, Preuve};
+use crate::compagnie::preuve::Preuve;
+use crate::gestes::depot_acte;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
@@ -590,7 +591,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let complet = sortie.join(format!("DPAE_{}.txt", etiq));
         // LA DPAE DU MOIS DEJA PARTIE ne se recrit pas (regle 4) : ce qui reste a declarer se cherche, et s'ecrit, sous un
         // nom a la minute, a cote.
-        let partiel = !marque.is_empty() || crate::compagnie::depart::partie_le(&ctx.racine, &complet)?.is_some();
+        let partiel = !marque.is_empty() || crate::compagnie::pieces_ecrites::partie_le(&ctx.racine, &complet)?.is_some();
         let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq)? };
         for x in candidats {
             let contenu = std::fs::read(&x).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&x, &e)))?;
@@ -634,7 +635,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         None => {
             let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
             ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, &maintenant_iso())?;
-            crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&cible), None, None)?;
+            crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
             cible
         }
     };
@@ -663,7 +664,7 @@ pub(crate) struct DpaeEcrite {
 
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
 /// `quand` (`AAAA-MM-JJTHH:MM:SS`, a Paris), l'heure d'embauche `heure` ; et son recapitulatif en clair dans `recap`.
-/// Ce que `dpae` ecrit, et ce que `compagnie::depart::piece_partie` refait d'une DPAE partie dont le fichier manque.
+/// Ce que `dpae` ecrit, et ce que `gestes::depart::piece_partie` refait d'une DPAE partie dont le fichier manque.
 pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: &str) -> R<()> {
     let ent = ctx.entreprise_et_gabarits();
     let code = code_urssaf(&ctx.entreprise)?;
@@ -755,7 +756,7 @@ pub(crate) fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcrit
                 return Ok((c, DitALEcriture::default()));
             }
         }
-        let dsn = crate::compagnie::depart::fabriquer_dsn(ctx, le_mois, "interface")?;
+        let dsn = crate::gestes::depart::fabriquer_dsn(ctx, le_mois, "interface")?;
         let chemin = match d.etablissement.as_deref().filter(|n| !n.is_empty()) {
             Some(n) => dsn.fichiers.iter().find(|f| f.file_name().is_some_and(|x| x.to_string_lossy().contains(&format!("_{}", n)))),
             None => dsn.fichiers.first(),
@@ -850,9 +851,9 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee();
     let releve = if dpae {
-        crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
     } else {
-        crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
+        crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
     };
     let incident = match releve {
         Ok(r) => releve_retours::incidents_en_phrase(&r),
@@ -905,9 +906,9 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
             }
-            Quoi::Dsn => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
+            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
         };
         incident = match releve {
             Ok(rel) => releve_retours::incidents_en_phrase(&rel),

@@ -9,7 +9,7 @@ use droit::fiche::Lue as _;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
+use crate::compagnie::preuve::{verifier_preuve, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::documents::client_courriel;
@@ -322,9 +322,9 @@ impl Dite for Permanents {
     }
 }
 
-/// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`compagnie::ouverture`).
+/// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
-    use crate::compagnie::ouverture::{ouverture, Clients, Options};
+    use crate::gestes::ouverture::{ouverture, Clients, Options};
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
     let r = ouverture(ctx, &opt, Clients::default(), None);
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();

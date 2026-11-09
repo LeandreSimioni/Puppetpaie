@@ -61,7 +61,7 @@ l'actualité ACTU-2018-00014, `11180-PGP` ; « Version en vigueur du 03/12/2018 
   pour les paies des mois qui suivent, jamais pour celle de `M`, même versée après lui ; sans quoi une DSN déposée
   avant son versement serait refaite par son propre compte rendu, puis son annule-et-remplace par le sien (chaque compte
   rendu a « un identifiant propre », CSS, art. R. 133-13, V, 1°). Le relevé note le mois de la DSN à laquelle répond le
-  compte rendu (`moteur/src/compagnie/suites.rs`, `appliquer_taux_pas`) ; `droit::pas::en_vigueur` l'écarte pour ce
+  compte rendu (`moteur/src/gestes/suites.rs`, `appliquer_taux_pas`) ; `droit::pas::en_vigueur` l'écarte pour ce
   mois ; la fiche l'écrit à partir du premier jour du mois suivant (`droit::pas::date_d_effet`). La réponse à une
   demande de taux vaut dès sa mise à disposition.
 - § 80 : le taux le plus récent est la règle ; un taux antérieur encore valide n'est qu'une tolérance pour qui n'a pas pu

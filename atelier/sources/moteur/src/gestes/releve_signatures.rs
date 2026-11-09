@@ -1,4 +1,4 @@
-//! La releve des reponses « Je signe ». La demande de signature (`crate::compagnie::signature::demander_signature`) a garde,
+//! La releve des reponses « Je signe ». La demande de signature (`crate::gestes::signature::demander_signature`) a garde,
 //! au journal, un CODE (`SIG-XXXXXX`) par courriel parti. Cette releve cherche chaque code attendu dans la boite
 //! (`envois::releve_signatures::chercher_reponse`, le tri strict) et fait tout ce qui suit : la preuve archivee
 //! (`Signature_<salarie>_<code>.eml`), le contrat contresigne (`depart::contresigner` : le PDF parti, plus la mention de l'artiste dans sa case), le journal (sur la ligne de
@@ -50,7 +50,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
             None => (
                 "Re: contrat".to_string(),
                 envoi::formater(
-                    crate::compagnie::signature::CORPS_REPONSE,
+                    crate::gestes::signature::CORPS_REPONSE,
                     &[("nom", nom), ("quoi", "le contrat d'engagement".to_string()), ("code", code.clone())],
                 ),
             ),
@@ -126,7 +126,7 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         },
     };
 
-    let (signataire, raison) = crate::compagnie::signature::signataire_et_raison(ctx)?;
+    let (signataire, raison) = crate::gestes::signature::signataire_et_raison(ctx)?;
     let expediteur = client.compte().to_lowercase();
 
     for a in &attendues {
@@ -176,7 +176,7 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
             let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
             let fait = match &mention {
-                Some(m) => crate::compagnie::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.message),
+                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.message),
                 None => Err("la fiche du salarié ne dit pas son nom".to_string()),
             };
             match fait {

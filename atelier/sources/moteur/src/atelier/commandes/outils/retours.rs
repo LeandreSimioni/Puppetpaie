@@ -1,7 +1,7 @@
 //! `moteur-atelier retours [--dpae] [--flux IDFLUX] [--depuis JJ/MM/AAAA] [--jusqu-a JJ/MM/AAAA] [--tout]
 //! [--environnement production|editeur]` : l'enquete de l'editeur sur les retours d'une compagnie -- une plage choisie,
 //! un flux, tout ce que la plate-forme garde (`--tout`), la plate-forme d'essai de l'editeur. Le releve est celui du
-//! moteur (`compagnie::releve`), qui applique ce qui revient (taux de PAS, AER, effectif) ; la releve ordinaire est la route
+//! moteur (`gestes::releve`), qui applique ce qui revient (taux de PAS, AER, effectif) ; la releve ordinaire est la route
 //! `ouverture`. Ici ne reste que ce qui s'affiche.
 //!
 //! Dans le binaire de l'atelier, un organisme qui n'est pas redirige vers un faux serveur local n'est pas appele, hors
@@ -74,9 +74,9 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
     let r = if dpae {
-        crate::compagnie::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
+        crate::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
     } else {
-        crate::compagnie::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
+        crate::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
     };
     for i in &r.incidents {
         dire!("  {}", i);

@@ -107,7 +107,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             en_json(regularisations(ctx)?)
         }
         Route::Cloture => en_json(cloture(ctx, charge.lire()?)?),
-        Route::ExportCompta => en_json(crate::compagnie::exercice_ecrit::export_compta_route(ctx, charge.lire()?)?),
+        Route::ExportCompta => en_json(crate::gestes::exercice_ecrit::export_compta_route(ctx, charge.lire()?)?),
         Route::Archiver => en_json(archiver(ctx, charge.lire()?)?),
         Route::JournalReprise => en_json(reprise(ctx, charge.lire()?)?),
         autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
@@ -278,13 +278,13 @@ fn regularisations(ctx: &Contexte) -> R<Regularisations> {
 struct ClotureDite {
     phrase: String,
     #[serde(flatten)]
-    cloture: crate::compagnie::exercice_ecrit::Cloture,
+    cloture: crate::gestes::exercice_ecrit::Cloture,
 }
 
 /// `cloture` : clore une annee passee, ou la rouvrir (`exercice_ecrit::cloture_route`), et le dire.
-fn cloture(ctx: &Contexte, c: crate::compagnie::exercice_ecrit::ChargeCloture) -> R<ClotureDite> {
-    use crate::compagnie::exercice_ecrit::Cloture;
-    let cloture = crate::compagnie::exercice_ecrit::cloture_route(ctx, c)?;
+fn cloture(ctx: &Contexte, c: crate::gestes::exercice_ecrit::ChargeCloture) -> R<ClotureDite> {
+    use crate::gestes::exercice_ecrit::Cloture;
+    let cloture = crate::gestes::exercice_ecrit::cloture_route(ctx, c)?;
     let phrase = match &cloture {
         Cloture::Rouverte(r) => format!("Exercice {} rouvert ; son archive reste.", r.annee),
         Cloture::Close(e) => {
@@ -311,7 +311,7 @@ struct ExerciceDit {
     annee: String,
     mois: Vec<String>,
     dsn_acceptees: Vec<String>,
-    clos: Option<crate::compagnie::exercice_ecrit::ExerciceNote>,
+    clos: Option<crate::gestes::exercice_ecrit::ExerciceNote>,
     pastille: socle::ecran::Pastille,
     export: Option<ExportDeLAnnee>,
 }
@@ -336,7 +336,7 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
 
 /// `etat_exercices` : chaque annee connue du dossier, de la plus recente a la plus ancienne.
 fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
-    let lus = crate::compagnie::exercice_ecrit::lire_exercices(&ctx.racine)?;
+    let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
     let mois_tous: Vec<String> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
     let mut annees: BTreeSet<String> = mois_tous.iter().map(|m| m.chars().take(4).collect()).collect();
@@ -354,7 +354,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             }
         }
         let export = match chemin.exists() {
-            true => Some(ExportDeLAnnee { fichier, ecrit: crate::compagnie::depart::ecrit_le(&ctx.racine, &chemin)? }),
+            true => Some(ExportDeLAnnee { fichier, ecrit: crate::compagnie::pieces_ecrites::ecrit_le(&ctx.racine, &chemin)? }),
             false => None,
         };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
@@ -383,7 +383,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
 /// DEPOSER LES DOCUMENTS D'UN MOIS DANS LE DRIVE (`archivage::archiver`) : `PuppetPaie/<mois>` du compte lie. Une
 /// compagnie fictive joue le depot (`archivage::DriveJoue`) : la meme liste, rien ne part.
 fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
-    use crate::compagnie::archivage;
+    use crate::gestes::archivage;
     let mois = charge.mois.to_string();
     let joue = crate::compagnie::bridage::branchement(&ctx.racine)?.joue();
     let mut drive_joue = archivage::DriveJoue;

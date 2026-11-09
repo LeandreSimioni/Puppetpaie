@@ -273,9 +273,9 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
-    for (nom, scenario) in crate::atelier::scenario::fictives_de_reference(base) {
+    for (nom, scenario) in crate::scenario::fictives_de_reference(base) {
         let dest = base.join(crate::compagnie::installation::DOSSIER_FICTIVES).join(&nom);
-        crate::atelier::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
+        crate::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }
     let (_, en_plus, empreinte) = entrees_des_fictives(code)?;
     for (nom, octets) in en_plus {

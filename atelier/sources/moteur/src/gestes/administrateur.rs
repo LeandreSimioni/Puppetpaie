@@ -79,12 +79,18 @@ pub struct Poste {
 impl Poste {
     /// Ce poste-ci : la cle la ou `Coffre::du_poste` la trouve, l'heure de Paris.
     pub fn de_ce_poste() -> Poste {
-        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: crate::commandes::actes::maintenant_minutes() }
+        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: maintenant_minutes() }
     }
 
     pub fn coffre(&self, racine: &Path) -> Coffre {
         Coffre::sur(racine, &self.dossier_cle, &self.maintenant)
     }
+}
+
+/// L'heure de Paris, a la minute : ce que le coffre note comme date de pose.
+pub fn maintenant_minutes() -> String {
+    let t = socle::temps::secondes();
+    socle::paris::iso_minutes(t)
 }
 
 // ------------------------------------------------------------------ le registre

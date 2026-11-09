@@ -68,7 +68,7 @@ fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
     // passe par l'enregistreur, qui garde celles qu'il enregistre dans le scenario, avec leur charge et leur instant
     // (`scenario::Enregistreur::route`).
     #[cfg(feature = "atelier")]
-    if let Some(e) = crate::atelier::scenario::enregistreur_actif() {
+    if let Some(e) = crate::scenario::enregistreur_actif() {
         return e.route(racine, nom, charge, || crate::routes::dans_la_fenetre(&o, nom, charge));
     }
     crate::routes::dans_la_fenetre(&o, nom, charge)
@@ -191,10 +191,10 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     // rejeu refait (`scenario::rejouer`, le geste `ajouter`).
     #[cfg(feature = "atelier")]
     if nom == Route::CompagnieAjouter {
-        if let Some(e) = crate::atelier::scenario::enregistreur_actif() {
+        if let Some(e) = crate::scenario::enregistreur_actif() {
             // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue quand elle vient d'un logiciel
             // precedent, et son dossier.
-            use crate::atelier::scenario::{Genre, Geste};
+            use crate::scenario::{Genre, Geste};
             let rendu = e.geste(|| {
                 let a: crate::routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
                 let r = crate::routes::dans_la_fenetre(&o, nom, charge);

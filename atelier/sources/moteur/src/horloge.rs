@@ -60,7 +60,8 @@ use droit::contexte::Contexte;
 use envois::courriel::{Courriel, ErreurCourriel};
 use socle::date::Jour;
 use socle::mois::Mois;
-use crate::compagnie::depot_acte::{self, Preuve};
+use crate::compagnie::preuve::Preuve;
+use crate::gestes::depot_acte;
 use envois::etats;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Rendu};
 use socle::echec::R;
@@ -717,7 +718,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Arret { mois, salarie, dernier, cle, nature } => pas(d, quoi, quand, |ctx| {
             // ENCORE DU au jour du pas ? Le visiteur a pu le faire.
             let iso = dernier.iso();
-            let a = crate::routes::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == iso);
+            let a = crate::metier::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == iso);
             let Some(a) = a else { return Ok(false) };
             let obligations = crate::obligations::de_l_arret(ctx, &a, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?;
             if !une_due(&obligations, *cle, ctx.aujourdhui)? {
@@ -753,7 +754,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 d.reverifier()?;
                 let a_l_echeance = HorlogeFictive { racine: d.racine, jour: (*echeance).min(d.jour) };
                 let ctx_e = a_l_echeance.contexte()?;
-                let fabriquer = || crate::compagnie::depart::fabriquer_dsn(&ctx_e, *mois, QUI_HORLOGE);
+                let fabriquer = || crate::gestes::depart::fabriquer_dsn(&ctx_e, *mois, QUI_HORLOGE);
                 let (_, t) = instant_du_pas(&format!("{}T10:00:00", echeance.iso()))?;
                 socle::temps::pendant(t, fabriquer)?;
                 // TOUTES LES DSN DU MOIS QUI NE SONT PAS PARTIES, dans l'ordre de `crate::routes::etapes::ordre_de_depot` :
@@ -806,14 +807,14 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             if Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || !a_des_paies {
                 return Ok(false);
             }
-            crate::compagnie::exercice_ecrit::cloturer(ctx, &annee.to_string(), false, QUI_HORLOGE)?;
+            crate::gestes::exercice_ecrit::cloturer(ctx, &annee.to_string(), false, QUI_HORLOGE)?;
             Ok(true)
         }),
         Geste::Export { annee } => pas(d, quoi, quand, |ctx| {
-            if !Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &annee.to_string())? {
+            if !Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, &annee.to_string())? {
                 return Ok(false);
             }
-            crate::compagnie::exercice_ecrit::export_compta(ctx, &annee.to_string(), 1, 12, true)?;
+            crate::gestes::exercice_ecrit::export_compta(ctx, &annee.to_string(), 1, 12, true)?;
             Ok(true)
         }),
     }
@@ -927,7 +928,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
     use crate::routes::imprevus::NatureSignalement;
     let natures = [(crate::obligations::CleDObligation::SignalementArret, NatureSignalement::Arret, "d'arrêt"), (crate::obligations::CleDObligation::SignalementReprise, NatureSignalement::Reprise, "de reprise")];
     let suivi = crate::obligations::Suivi::lire(ctx)?;
-    for a in crate::routes::imprevus::tous_les_arrets(ctx)? {
+    for a in crate::metier::imprevus::tous_les_arrets(ctx)? {
         let dernier = Jour::lire(&a.dernier_jour_travaille).map_err(|m| erreur(Classe::Illisible, m))?;
         if dernier.mois_civil() != le_mois {
             continue;
@@ -989,7 +990,7 @@ fn annee_finie(d: &HorlogeFictive, annee: i32) -> R<bool> {
     if !engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.iter().any(|m| m.annee() == annee) {
         return Ok(true);
     }
-    Ok(Moteur::nouveau(&ctx).exercice_clos(&a)? && crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a)?)
+    Ok(Moteur::nouveau(&ctx).exercice_clos(&a)? && crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a)?)
 }
 
 // ------------------------------------------------------------------ les routes

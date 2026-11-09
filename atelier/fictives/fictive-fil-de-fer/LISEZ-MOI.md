@@ -8,7 +8,7 @@ l'heure), venue d'un logiciel précédent (sPAIEctacle) fin 2025, une année 202
 
 | | |
 |---|---|
-| `gestes.jsonl` | **le parcours de référence** : un scénario (`moteur/src/atelier/scenario.rs`) écrit comme l'administratrice l'aurait joué, par les routes seulement (celles de l'écran et du LLM) |
+| `gestes.jsonl` | **le parcours de référence** : un scénario (`moteur/src/scenario.rs`) écrit comme l'administratrice l'aurait joué, par les routes seulement (celles de l'écran et du LLM) |
 | `papiers-2025/` | ce qu'elle importe : les quinze bulletins de septembre à décembre 2025 et la DSN de décembre 2025 de l'ancien logiciel |
 | `description.json` | la compagnie, ses salariés et ses bulletins de 2025, dont `moteur-atelier fabriquer-bulletins description.json papiers-2025 --gabarit spaiectacle` refait les PDF |
 

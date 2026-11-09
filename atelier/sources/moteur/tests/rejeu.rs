@@ -1,5 +1,5 @@
 //! LE REJEU DES SCENARIOS DU BANC D'ESSAI. Un scenario enregistre dans l'interface (`atelier/outils/banc/`,
-//! `moteur/src/atelier/scenario.rs`) se rejoue sans navigateur et reproduit la compagnie, octet pour octet d'un rejeu a l'autre ;
+//! `moteur/src/scenario.rs`) se rejoue sans navigateur et reproduit la compagnie, octet pour octet d'un rejeu a l'autre ;
 //! ses sorties (paies, DSN, DPAE, bulletins, certificats Conges Spectacles, journaux) se comparent a un oracle.
 //!
 //! SEUL DANS `tests/` : le rejeu simule le temps du moteur, qui est celui du processus (`socle/src/temps.rs`), comme un
@@ -284,7 +284,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let relever = || {
         socle::temps::pendant(fin, || {
             let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
-            moteur::compagnie::releve::rattacher_simulation(&ctx).unwrap();
+            moteur::gestes::releve::rattacher_simulation(&ctx).unwrap();
         })
     };
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();

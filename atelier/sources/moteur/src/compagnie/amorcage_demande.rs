@@ -193,9 +193,9 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, m
         };
         let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| erreur(Classe::Refuse, e.message().to_string()))?;
         let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
-        crate::compagnie::depart::refuser_si_partie(&ctx.racine, &cible)?;
+        crate::compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
         declarations::dsn::ecrire(&texte, &cible).map_err(|m| erreur(Classe::Disque, m))?;
-        crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&cible), None, None)?;
+        crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
         fichiers.push(cible);
     }
     Ok(fichiers)

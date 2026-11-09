@@ -1,5 +1,6 @@
-//! DEPOSER UNE DSN OU UNE DPAE, du cote de la compagnie : tout ce que `moteur` verifie avant que le depot parte
-//! (`envois::depot_acte`), et les suites qu'il fait ensuite (`suites::faire`).
+//! DEPOSER UNE DSN OU UNE DPAE : tout ce que `moteur` verifie avant que le depot parte (`envois::depot_acte`), la preuve
+//! et le secret de l'organisme pris aux portes de l'acte reel (`compagnie::preuve`), et les suites qu'il fait ensuite
+//! (`suites::faire`).
 //!
 //! DEPOSER EST L'UN DES RARES GESTES DU LOGICIEL QUI ENGAGENT L'EMPLOYEUR -- jusqu'a des ordres de
 //! telepaiement reellement preleves. L'ordre est donc toujours le meme, et c'est le moteur qui le tient (jamais
@@ -34,6 +35,7 @@ use socle::mois::Mois;
 
 pub use envois::depot_acte::DepotFait;
 use socle::echec::Echec;
+use crate::compagnie::preuve::{motdepasse_organisme, verifier_preuve, Preuve};
 
 /// UN REFUS DE DEPOT QUI PORTE OU EN EST CE QUI LE REFUSE (la DSN du mois, le test du fichier) : sa phrase, et l'etat a
 /// part (`routes::enveloppe::APart`, case `etat`).
@@ -44,137 +46,6 @@ fn avec_etat<T: serde::Serialize>(classe: Classe, message: impl Into<String>, et
         etat: &'a T,
     }
     Echec { classe: Some(classe), message: socle::echec::avec(message, Etat { etat }) }
-}
-
-/// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
-#[derive(Default, Clone)]
-pub struct Preuve {
-    pub motdepasse: Option<String>,
-    pub mois_recopie: Option<String>,
-    /// La preuve deja donnee pour ce geste (sa forme), quand un acte en emporte d'autres : la demande de taux de PAS part
-    /// avec la DPAE sous la meme preuve, sans redemander. Jamais lue d'une charge.
-    pub(crate) donnee: Option<String>,
-}
-
-impl Preuve {
-    /// La preuve que la charge d'un acte porte : le mot de passe du logiciel tape pour lui (vide : rien n'a ete tape).
-    pub fn du_mot_de_passe(motdepasse: Option<String>) -> Preuve {
-        Preuve { motdepasse: motdepasse.filter(|m| !m.is_empty()), ..Preuve::default() }
-    }
-}
-
-// -------------------------------------------------------------------- la preuve
-
-/// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse.
-fn cle_de_version(v: &str) -> R<Vec<i64>> {
-    v.trim().split('.').map(|x| x.trim().parse::<i64>()).collect::<Result<Vec<i64>, _>>().map_err(|e| {
-        erreur(Classe::Illisible, socle::echec::avec("Un numéro de version ne se lit pas : le signaler au développeur.", socle::echec::APart { detail: Some(format!("« {} » : {}", v, e)), ..socle::echec::APart::default() }))
-    })
-}
-
-/// La raison pour laquelle une version telechargee et pas encore appliquee est
-/// indispensable avant de declarer -- ou `""`.
-/// La version prete est celle de l'INSTALLATION du contexte (`<installation>/logiciel/donnees` = `ctx.code`).
-pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
-    let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
-    let Some(p) = crate::compagnie::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
-    let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::compagnie::maj::courante(&code).map_err(|m| erreur(Classe::Illisible, m))?)? {
-        return Ok(String::new());
-    }
-    Ok(format!(
-        "la version {} est indispensable avant de declarer ({}) : fermez et rouvrez PuppetPaie, elle s'appliquera au demarrage",
-        version, exigee
-    ))
-}
-
-/// La forme de preuve retenue, ou un refus. Aucun acte sans elle.
-/// LA REGLE : LE MOT DE PASSE DU LOGICIEL, toujours -- le mois recopie seul n'a jamais prouve qu'un humain
-/// etait la. Un booleen « confirme=True » venu du front ne prouve rien du tout.
-///
-/// DEUX FACONS DE LE PROUVER, et aucune autre : le mot de passe que la fenetre ou la page a fait taper et qui
-/// arrive dans la charge (`Preuve`) ; sinon LE MOTEUR LE DEMANDE LUI-MEME (`demande::autoriser_acte` : fenetre, terminal,
-/// ou refus). Ni la seance (`garder_ouverture`), ni `PUPPETPAIE_MOTDEPASSE`, ni le mot de passe retenu pour ouvrir le
-/// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `quoi` et `a_qui` disent a l'humain ce qui
-/// va partir ; `mois_attendu` est le mois que la preuve recopiee devrait porter.
-pub(crate) fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
-    // Le binaire de l'ATELIER refuse tout acte reel, avant toute autre question (`atelier::redirection`). Un depot reel, un envoi,
-    // une signature passent tous par ici.
-    if let Some(forme) = preuve.and_then(|p| p.donnee.clone()) {
-        return Ok(forme);
-    }
-    #[cfg(feature = "atelier")]
-    return refus_atelier(ctx, preuve, mois_attendu, quoi, a_qui);
-    #[cfg(not(feature = "atelier"))]
-    verifier_preuve_du_logiciel(ctx, preuve, mois_attendu, quoi, a_qui)
-}
-
-#[cfg(feature = "atelier")]
-fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, _quoi: &str, _a_qui: &str) -> R<String> {
-    // UNE COMPAGNIE FICTIVE AUX ENVOIS SIMULES : son « acte reel » est joue (`FICTIF-…`), rien ne part -- comme dans le
-    // binaire livre (`verifier_preuve_du_logiciel`). Le banc d'essai en vit : l'horloge y depose la DSN et la DPAE
-    // « en reel ». Toute autre compagnie : refuse, mot de passe ou non (la commande `signatures` fait de meme).
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
-        return Ok("fictive".into());
-    }
-    Err(erreur(Classe::ActeReelRefuse, envois::redirection::REFUS_ACTE_REEL.to_string()))
-}
-
-#[cfg_attr(feature = "atelier", allow(dead_code))]
-fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
-    // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
-        return Ok("fictive".into());
-    }
-    // Une version EXIGEE attend d'etre appliquee : l'ancienne ferait une declaration fausse.
-    let presse = exigee_en_attente(ctx)?;
-    if !presse.is_empty() {
-        return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
-    }
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::compagnie::coffre::vers_route;
-    if !coffre.ouverture_exigee().map_err(vers)? {
-        return Err(erreur(
-            Classe::PreuveInsuffisante,
-            "Aucun mot de passe du logiciel n'est pose : rien ne peut partir en reel. Le poser d'abord : la fenêtre PuppetPaie le demande à sa première ouverture. Rien n'est parti.",
-        ));
-    }
-    let Some(preuve) = preuve.filter(|p| p.motdepasse.as_deref().is_some_and(|m| !m.is_empty())) else {
-        // Rien n'a ete tape pour cette charge : c'est le moteur qui demande, a un humain, ou il refuse.
-        let acte = crate::compagnie::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
-        return match crate::compagnie::demande::autoriser_acte(&ctx.racine, &acte) {
-            crate::compagnie::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
-            crate::compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(Classe::PreuveInsuffisante, phrase)),
-        };
-    };
-    if let Some(m) = preuve.mois_recopie.as_deref().filter(|m| !m.is_empty()) {
-        if m.trim() != mois_attendu {
-            return Err(erreur(Classe::PreuveInsuffisante, format!("Mois confirme '{}' alors que le fichier declare '{}'. Rien n'est parti.", m.trim(), mois_attendu)));
-        }
-    }
-    // Aucun mot de passe tape n'ouvre rien.
-    let ouvre = preuve.motdepasse.as_deref().map(|m| coffre.verifier_ouverture(m)).transpose().map_err(vers)?;
-    if ouvre != Some(true) {
-        return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'est parti."));
-    }
-    Ok("mot de passe du logiciel".into())
-}
-
-// ------------------------------------------------------------ le secret de l'organisme
-
-/// Le secret de l'organisme -- l'environnement d'abord (quelqu'un l'a tape dans une
-/// fenetre, il vaut confirmation), puis le coffre. Ce qui autorise a y puiser pour un depot REEL, c'est la
-/// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
-pub(crate) fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::compagnie::coffre::vers_route;
-    if !coffre.disponible(service).map_err(vers)? {
-        return Err(erreur(
-            Classe::Refuse,
-            format!("Mot de passe {} absent : ni dans l'environnement, ni au coffre.\n  route coffre-poser, service {}", service, service),
-        ));
-    }
-    coffre.lire(service, crate::compagnie::coffre::DEPOT, true, ouverture).map_err(vers)
 }
 
 // -------------------------------------------------------- la repetition avant l'irreversible
@@ -384,7 +255,7 @@ pub fn deposer_dsn(
 }
 
 /// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`) et l'ordre d'un essai, que seul
-/// l'outil de l'atelier donne (`atelier::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
+/// l'outil de l'atelier donne (`atelier::commandes::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
 /// un depot REEL n'y a pas de sens et reste refuse ici, car le journal le noterait comme une declaration partie.
 ///
 /// `ordre_d_essai` : l'ordre au-dessous duquel un ESSAI de mensuelle ne part pas, donne par qui sait ce que la base
@@ -460,9 +331,9 @@ pub fn deposer_dsn_dans(
             ));
         }
     }
-    // UNE DSN MENSUELLE REELLE DIT CE QU'ELLE CORRIGE : sa fabrication l'a note (`depart::versions_portees_de`). Un fichier
+    // UNE DSN MENSUELLE REELLE DIT CE QU'ELLE CORRIGE : sa fabrication l'a note (`pieces_ecrites::versions_portees_de`). Un fichier
     // que le moteur n'a pas ecrit ne le dit pas, et ce qu'il corrige ne se devine pas (regle 1).
-    if reel && !apercu.est_signalement() && crate::compagnie::depart::versions_portees_de(&ctx.racine, &chemin)?.is_none() {
+    if reel && !apercu.est_signalement() && crate::compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)?.is_none() {
         return Err(erreur(
             Classe::Refuse,
             format!(
@@ -554,7 +425,7 @@ pub fn deposer_dsn_dans(
         // Et ce qu'elle corrige des mois passes, tel que sa fabrication l'a note : un fichier qui part tel qu'il a ete
         // ecrit emporte ce qu'il porte, pas ce qu'une DSN fabriquee aujourd'hui porterait (regle 4). Un essai d'un
         // fichier que le moteur n'a pas ecrit n'emporte rien ; en reel, il est refuse plus haut.
-        if let Some(portees) = crate::compagnie::depart::versions_portees_de(&ctx.racine, &chemin)? {
+        if let Some(portees) = crate::compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)? {
             v.extend(portees);
         }
         v
@@ -562,7 +433,7 @@ pub fn deposer_dsn_dans(
     let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, reel, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
     let mut suites = Suites::default();
     let fait = envois::depot_acte::deposer_dsn(ctx, branchement, &d, &apercu, environnement, ordre_test, &mut suites);
-    let faites = crate::compagnie::suites::faire(ctx, suites)?;
+    let faites = crate::gestes::suites::faire(ctx, suites)?;
     let mut fait = fait?;
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
     Ok(fait)
@@ -675,7 +546,7 @@ pub fn deposer_dpae_avec(
     };
     let mut suites = Suites::default();
     let fait = envois::depot_acte::deposer_dpae(ctx, branchement, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
-    let faites = crate::compagnie::suites::faire(ctx, suites)?;
+    let faites = crate::gestes::suites::faire(ctx, suites)?;
     let mut fait = fait?;
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
     // UN ACTE, UNE PREUVE : la demande de taux part sous celle de la DPAE.
@@ -740,7 +611,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
         if reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
             let (debut, fin) = envois::releve_retours::derniere_journee();
-            let _ = crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, None);
+            let _ = crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None);
             fait = deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ());
         }
         let qui_demande = ctx.nomme(&l.salarie);

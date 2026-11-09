@@ -649,16 +649,16 @@ impl Fenetre {
     fn administrateur_ouvre(&self, racine: &Path) -> bool {
         let inst = installation::base();
         // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
-        if !matches!(crate::compagnie::administrateur::est_rattachee(&inst, racine), Ok(true)) {
+        if !matches!(crate::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
         }
         let garde = tenu(&self.administrateur).clone();
-        garde.is_some_and(|m| matches!(crate::compagnie::administrateur::mot_de_passe_ouvre(&crate::compagnie::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
+        garde.is_some_and(|m| matches!(crate::gestes::administrateur::mot_de_passe_ouvre(&crate::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
     }
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(crate::compagnie::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
+        if matches!(crate::gestes::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
     }
@@ -706,7 +706,7 @@ impl Fenetre {
             Phase::Ouverte { racine, .. } => Some(racine.clone()),
             _ => None,
         };
-        let enr = crate::atelier::scenario::enregistreur_actif();
+        let enr = crate::scenario::enregistreur_actif();
         match geste {
             "etat" => Ok(Atelier::Etat {
                 ok: true,
@@ -734,7 +734,7 @@ impl Fenetre {
                 if let Some(e) = enr {
                     // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
                     // seulement la (`scenario::rejouer`).
-                    use crate::atelier::scenario::{Genre, Geste};
+                    use crate::scenario::{Genre, Geste};
                     e.geste(|| Ok(((), Geste { jour: Some(jour.iso()), veille: ouverte.is_some().then_some(true), ..Geste::du_banc(Genre::Jour) })))?;
                 }
                 self.ecrire(&format!("Banc d'essai : le calendrier avance au {}.\n", jour.iso()));
@@ -750,13 +750,13 @@ impl Fenetre {
             }
             "simuler" => {
                 let racine = ouverte.ok_or("Aucune compagnie n'est ouverte.")?;
-                use crate::atelier::scenario::{Genre, Geste};
+                use crate::scenario::{Genre, Geste};
                 match enr {
                     Some(e) => e.geste(|| {
-                        crate::atelier::scenario::rendre_simulee(&racine)?;
+                        crate::scenario::rendre_simulee(&racine)?;
                         Ok(((), Geste { compagnie: Some(e.compagnie(&racine)?), ..Geste::du_banc(Genre::Simuler) }))
                     })?,
-                    None => crate::atelier::scenario::rendre_simulee(&racine)?,
+                    None => crate::scenario::rendre_simulee(&racine)?,
                 }
                 self.ecrire("Banc d'essai : la compagnie devient une fictive aux envois simules.\n");
                 Ok(Atelier::Fait { ok: true })
@@ -791,9 +791,9 @@ impl Fenetre {
                     Err(e) => RouteReponse::de(nom, Err(e)),
                 };
             }
-            let tableau = crate::compagnie::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
+            let tableau = crate::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
                 let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
-                crate::compagnie::administrateur::tableau_de(&inst, par)
+                crate::gestes::administrateur::tableau_de(&inst, par)
             });
             return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));
         }
@@ -1271,7 +1271,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         }
     }
     let enr = match &dossier {
-        Some(d) => Some(crate::atelier::scenario::Enregistreur::demarrer(d, &installation::base(), lectures)?),
+        Some(d) => Some(crate::scenario::Enregistreur::demarrer(d, &installation::base(), lectures)?),
         None => None,
     };
     let dernier = match enr {
@@ -1296,8 +1296,8 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         // LES ALEAS DU BANC sont ceux du rejeu (`temps::aleas`) : la compagnie du banc et son rejeu s'ecrivent pareil, et
         // `scenario::verifier` le controle. Le banc n'est jamais un poste.
         socle::temps::aleas_fixes();
-        use crate::atelier::scenario::{Genre, Geste};
-        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(crate::atelier::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
+        use crate::scenario::{Genre, Geste};
+        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(crate::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
     }
     Ok(reste)
 }

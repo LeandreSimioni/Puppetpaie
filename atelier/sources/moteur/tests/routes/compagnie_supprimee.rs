@@ -9,10 +9,10 @@
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
-use moteur::compagnie::administrateur::{self, Poste};
 use moteur::accueil::ajouter_venant;
 use moteur::accueil::suppression::{self, supprimer};
 use moteur::compagnie::installation::{liste_de, Venue};
+use moteur::gestes::administrateur::{self, Poste};
 use serde_json::json;
 
 use crate::outils::{debloquer, dossier_de_test, installation};

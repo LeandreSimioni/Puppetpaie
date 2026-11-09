@@ -220,7 +220,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         _ if dans(fiches::ROUTES) => fiches::route(&porte, charge),
         _ if dans(identite::ROUTES) => identite::route(&porte, charge),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
-        _ if dans(crate::compagnie::organismes::ROUTES) => crate::compagnie::organismes::route(&porte, charge),
+        _ if dans(crate::gestes::organismes::ROUTES) => crate::gestes::organismes::route(&porte, charge),
         _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => import::route(&porte, charge),
@@ -232,11 +232,11 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         _ if dans(ouverture::ROUTES) => ouverture::route(&porte, charge),
         _ if dans(rappels::ROUTES) => rappels::route(&porte, charge),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
-        _ if dans(crate::compagnie::conseils::ROUTES) => crate::compagnie::conseils::route(&porte, charge),
+        _ if dans(crate::gestes::conseils::ROUTES) => crate::gestes::conseils::route(&porte, charge),
         // L'ouverture du logiciel et la veille : sauvegarder, relever les retours, les signatures et les fiches, sans
         // jamais echouer. ATTENTION : hors d'une compagnie fictive, cette route va au reseau (net-entreprises, Urssaf,
         // boite courriel, Drive, serveur des incidents).
-        _ if dans(crate::compagnie::ouverture::ROUTES) => crate::compagnie::ouverture::route(&porte, charge),
+        _ if dans(crate::gestes::ouverture::ROUTES) => crate::gestes::ouverture::route(&porte, charge),
         // Le banc : l'horloge de la compagnie fictive (rattraper ce qui etait du, ce que le bandeau « pendant votre
         // absence » lit ; `horloge::HorlogeFictive`).
         Route::HorlogeRattraper => crate::horloge::route(&ctx, charge),

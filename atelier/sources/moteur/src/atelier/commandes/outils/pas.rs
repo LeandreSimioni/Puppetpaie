@@ -62,7 +62,7 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
         return Ok(1);
     }
     let releves = crate::compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
-    let chgts = crate::compagnie::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
+    let chgts = crate::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
     dire!("Amorcage depuis les DSN deposees ({}) :", export.display());
     for c in &chgts {
         dire!("  {}", c);

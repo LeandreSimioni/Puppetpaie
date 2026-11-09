@@ -10,7 +10,7 @@ use socle::echec::erreur;
 pub(crate) fn arrets_pour(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<declarations::dsn::Arret>> {
     socle::mois::Mois::lire(mois).map(socle::mois::Mois::premier_jour).map_err(|m| erreur(socle::echec::Classe::Illisible, m))?;
     let mut out = Vec::new();
-    for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::routes::imprevus::refus_magasin)? {
+    for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::metier::imprevus::refus_magasin)? {
         let engagement::imprevus::Imprevu::Arret(saisi) = imp else { continue };
         let arret = declarations::dsn::Arret { saisi };
         if arret.a_reporter(mois, departs).map_err(|m| erreur(socle::echec::Classe::Illisible, m))? {

@@ -12,7 +12,7 @@ use serde::Serialize;
 use socle::memoire::tenu;
 
 use super::api::route;
-use crate::compagnie::ouverture::ChargeOuverture;
+use crate::gestes::ouverture::ChargeOuverture;
 use crate::veille::{dit_du_bandeau, EtatDeLaVeille};
 use crate::etat_garde::FileDesEtats;
 use crate::routes::catalogue::Route;
@@ -64,7 +64,7 @@ impl Veille {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
         let sauvegarde_en_cours = self.sauvegarde_en_cours.load(Ordering::SeqCst);
         let etape = if en_cours || sauvegarde_en_cours {
-            match crate::compagnie::ouverture::etape_en_cours(&self.racine) {
+            match crate::gestes::ouverture::etape_en_cours(&self.racine) {
                 Ok(e) => e,
                 Err(e) => Some(e.message),
             }
@@ -76,7 +76,7 @@ impl Veille {
 
     /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).
     pub fn etat(&self) -> EtatDeLaVeille {
-        let (dernier, illisible) = match crate::compagnie::ouverture::derniere_ouverture(&self.racine) {
+        let (dernier, illisible) = match crate::gestes::ouverture::derniere_ouverture(&self.racine) {
             Ok(t) => (t, None),
             Err(e) => (None, Some(e.message)),
         };
