@@ -293,50 +293,7 @@ pub(crate) fn nom_de(chemin: &Path) -> String {
     }
 }
 
-/// UN OBJET DONT L'ORDRE COMPTE (un referentiel ecrit dans l'ordre de son texte depose) : ses paires `(cle, valeur)`,
-/// ecrites dans leur ordre (`socle::ecriture::en_ordre`). Une cle posee de nouveau garde sa place et prend la valeur neuve.
-pub(crate) struct EnOrdre<V>(pub Vec<(String, V)>);
-
-impl<V> EnOrdre<V> {
-    pub(crate) fn new() -> EnOrdre<V> {
-        EnOrdre(Vec::new())
-    }
-
-    /// La valeur de la cle `k`, si elle est posee.
-    pub(crate) fn valeur(&self, k: &str) -> Option<&V> {
-        self.0.iter().find(|(c, _)| c == k).map(|(_, v)| v)
-    }
-
-    /// Pose `v` sous la cle `k` : a sa place si elle l'est deja, a la fin sinon.
-    pub(crate) fn poser(&mut self, k: String, v: V) {
-        match self.0.iter_mut().find(|(c, _)| *c == k) {
-            Some((_, deja)) => *deja = v,
-            None => self.0.push((k, v)),
-        }
-    }
-
-    /// La valeur de la cle `k`, posee d'abord par `neuve` si elle ne l'est pas.
-    pub(crate) fn entree(&mut self, k: String, neuve: impl FnOnce() -> V) -> &mut V {
-        let i = match self.0.iter().position(|(c, _)| *c == k) {
-            Some(i) => i,
-            None => {
-                self.0.push((k, neuve()));
-                self.0.len() - 1
-            }
-        };
-        &mut self.0[i].1
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<V: Serialize> Serialize for EnOrdre<V> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        socle::ecriture::en_ordre(&self.0, s)
-    }
-}
+pub(crate) use crate::atelier::EnOrdre;
 
 /// Une ligne d'un tableau releve, case par case : `None` pour une case vide.
 pub(crate) type Rang = Vec<Option<String>>;
