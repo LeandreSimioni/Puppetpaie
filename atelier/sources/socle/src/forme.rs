@@ -1,6 +1,7 @@
 //! LA LECTURE D'UNE FORME : une donnee lue (un fichier, un bareme, la charge d'une route) est une structure derivee
 //! (`serde::Deserialize`), dont chaque type porte `#[serde(deny_unknown_fields)]` (garde par
-//! `moteur/tests/fichiers/structure.rs`) : une cle que la forme ne connait pas est refusee, sans exception. `lire` est la
+//! `moteur/tests/fichiers/structure.rs`) : une cle que la forme ne connait pas est refusee. Seule la reponse d'un tiers
+//! (`ReponseDUnTiers`, Google) peut porter en plus des cles qu'on ignore a la porte (`lire_reponse_tiers`). `lire` est la
 //! seule fonction qui la lit ; son refus est une phrase du moteur, la cle fautive (son chemin dans la donnee) et ce qui ne
 //! va pas a part (`echec::APart`).
 //!
@@ -28,6 +29,19 @@ pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> Resultat<T> {
 pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> Resultat<T> {
     let mut d = serde_json::Deserializer::from_str(texte);
     serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, None, &e))
+}
+
+/// UNE FORME QUI EST LA REPONSE D'UN TIERS (Google, qui ajoute des cles a ses reponses sans prevenir) : elle se declare
+/// telle dans son code, a cote de sa structure, et n'a pas `deny_unknown_fields`. Elle ne se lit que par
+/// `lire_reponse_tiers`. Nos formes et les retours de la norme (net-entreprises, Urssaf) ne la portent jamais.
+pub trait ReponseDUnTiers: DeserializeOwned {}
+
+/// LA PORTE DES TIERS : le texte JSON `texte`, reponse d'un tiers, lu en `T`, comme `lire_texte`. On n'y lit que des
+/// cles connues et typees : une cle exigee qui manque, ou d'un autre type, refuse la reponse. Une cle que le tiers ajoute
+/// et que `T` ne declare pas est ignoree a la porte : ni lue, ni gardee, ni transmise. Sans cela, une cle neuve de Google
+/// couperait la connexion et le Drive jusqu'a une nouvelle version.
+pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> Resultat<T> {
+    lire_texte(texte, phrase)
 }
 
 /// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon

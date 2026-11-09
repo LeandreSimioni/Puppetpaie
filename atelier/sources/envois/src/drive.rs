@@ -20,16 +20,15 @@ use std::path::Path;
 
 use socle::echec::Classe;
 
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 use crate::google::{encoder, jeton_par_rafraichissement, lue, phrase_de_panne, Application, JETONS};
 use crate::transport::{envoyer, Requete};
 
 /// UN FICHIER (OU UN DOSSIER) TEL QUE DRIVE LE REND, des seuls champs demandes (`fields`) : un element d'un listage, un
-/// dossier cree, un fichier depose.
+/// dossier cree, un fichier depose. Une reponse de Google : une cle qu'il ajoute est ignoree a la porte
+/// (`socle::forme::lire_reponse_tiers`).
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct FichierDrive {
     id: Option<String>,
     name: Option<String>,
@@ -41,9 +40,8 @@ struct FichierDrive {
     type_mime: Option<String>,
     #[serde(rename = "webViewLink")]
     lien: Option<String>,
-    #[serde(rename = "kind")]
-    _sorte: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for FichierDrive {}
 
 impl FichierDrive {
     /// Son identifiant, que Drive donne toujours a ce qu'il rend.
@@ -58,18 +56,14 @@ impl FichierDrive {
 }
 
 /// UN LISTAGE DE DRIVE (`files.list`) : ses fichiers (Drive ecrit la liste, vide s'il n'y en a pas), et la page suivante
-/// s'il y en a une.
+/// s'il y en a une. Une reponse de Google : une cle qu'il ajoute est ignoree a la porte.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Listage {
     files: Vec<FichierDrive>,
     #[serde(rename = "nextPageToken")]
     page_suivante: Option<String>,
-    #[serde(rename = "incompleteSearch")]
-    _incomplet: Option<IgnoredAny>,
-    #[serde(rename = "kind")]
-    _sorte: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for Listage {}
 
 impl Listage {
     /// La page suivante, quand Drive en annonce une.
@@ -289,7 +283,7 @@ impl Client {
     /// UN JETON D'ACCES NE VIT QU'UNE HEURE (3600 s) : garde pour la vie du client, une sauvegarde de plus
     /// d'une heure recevrait des 401 pour chaque fichier restant. Un 401 fait donc oublier le jeton, en demande
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
-    fn appel<T: serde::de::DeserializeOwned>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
+    fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
         lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::nouvelle(Classe::Google, m))
     }

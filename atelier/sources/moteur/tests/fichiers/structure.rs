@@ -1978,7 +1978,9 @@ fn la_carte_valide_a_une_variante_par_nature_et_par_motif() {
 
 /// UNE FORME LUE REFUSE CE QU'ELLE NE CONNAIT PAS : chaque structure derivee de `Deserialize` porte
 /// `#[serde(deny_unknown_fields)]` (atelier/AGENTS.md, « Chaque forme est declaree une fois, en Rust »), ou se lit par une
-/// autre forme qui la porte (`try_from`).
+/// autre forme qui la porte (`try_from`), ou se declare elle-meme, dans son fichier, reponse d'un tiers
+/// (`impl socle::forme::ReponseDUnTiers for <elle>`) : elle ne se lit alors que par la porte des tiers
+/// (`socle::forme::lire_reponse_tiers`), qui ignore les cles que le tiers ajoute.
 #[test]
 fn chaque_forme_lue_refuse_une_cle_inconnue() {
     let mut fautes = Vec::new();
@@ -1993,13 +1995,21 @@ fn chaque_forme_lue_refuse_une_cle_inconnue() {
                 let suite: Vec<&str> = lignes[i + 1..].iter().take_while(|x| !x.contains("struct ") && !x.contains("enum ")).copied().collect();
                 let declare = lignes.get(i + 1 + suite.len()).copied().unwrap_or("");
                 let attributs = suite.join(" ");
-                if declare.contains("struct ") && !attributs.contains("deny_unknown_fields") && !attributs.contains("try_from") {
+                if !declare.contains("struct ") || attributs.contains("deny_unknown_fields") || attributs.contains("try_from") {
+                    continue;
+                }
+                let nom: String = declare.split("struct ").nth(1).unwrap_or("").chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                let tiers = |l: &&str| {
+                    let l = l.trim_start();
+                    l.starts_with("impl ") && l.contains("ReponseDUnTiers for ") && l.split("ReponseDUnTiers for ").nth(1).is_some_and(|r| r.trim_start().starts_with(&format!("{} ", nom)) || r.trim_start().starts_with(&format!("{}{{", nom)))
+                };
+                if nom.is_empty() || !lignes.iter().any(tiers) {
                     fautes.push(format!("{}:{}", f.display(), i + 1));
                 }
             }
         }
     }
-    assert!(fautes.is_empty(), "une forme lue sans deny_unknown_fields :\n{}", fautes.join("\n"));
+    assert!(fautes.is_empty(), "une forme lue sans deny_unknown_fields, qui ne se declare pas reponse d'un tiers (`socle::forme::ReponseDUnTiers`) :\n{}", fautes.join("\n"));
 }
 
 mod page;

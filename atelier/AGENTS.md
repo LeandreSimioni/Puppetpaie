@@ -63,8 +63,12 @@ soient droits.
   d'engagement neuf. L'engagement ne lit pas le journal ; le moteur le lit une fois par geste (`envois::journal::lu`) ;
   le numéro du contrat est la clé de ce qui est parti.
 - **Chaque forme est déclarée une fois, en Rust** : une donnée lue ou rendue (fichier, barème, charge et réponse d'une
-  route) est une structure (`serde`), lue par une seule fonction stricte ; aucune lecture par clé texte, aucune clé
-  inconnue, aucune exception. Les notes d'un fichier sont `source`, `note` et `quoi`.
+  route) est une structure (`serde`, `deny_unknown_fields`), lue par une seule fonction stricte ; aucune lecture par clé
+  texte, aucune clé inconnue n'entre, aucune exception. On ne lit que des clés connues ; seule une réponse de Google peut
+  porter en plus des clés qu'on ignore à la porte : sa forme se déclare elle-même réponse d'un tiers
+  (`socle::forme::ReponseDUnTiers`) et ne se lit que par `socle::forme::lire_reponse_tiers`, stricte sur les clés
+  qu'elle déclare (`docs/ARCHITECTURE.md`, « Le corps et ses portes »). Nos formes et les retours de la norme
+  (net-entreprises, Urssaf) restent stricts. Les notes d'un fichier sont `source`, `note` et `quoi`.
 - **Un champ facultatif ne s'écrit que s'il est rempli** : absent ou `null`, il est vide (`None`), et vide n'est pas
   zéro ; on n'invente rien pour lui. Une case qui n'a pas de sens pour ce qu'on saisit n'existe pas. Un repli, c'est une
   absence qui devient une valeur (0, CDDU, « 12 mois ») : c'est cela qui est interdit.
