@@ -14,7 +14,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME,
 use crate::routes::catalogue::Route;
 use crate::routes::documents::client_courriel;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::routes::INTERFACE;
+use crate::compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::Contexte;
@@ -1020,7 +1020,7 @@ impl ReleveFiches {
             return String::new();
         }
         let noms: Vec<String> = self.recues.iter().map(|r| r.nom.clone()).collect();
-        format!("{} : {}", super::compte(self.recues.len(), "fiche de salarié reçue", "fiches de salarié reçues"), noms.join(", "))
+        format!("{} : {}", socle::ecran::compte(self.recues.len(), "fiche de salarié reçue", "fiches de salarié reçues"), noms.join(", "))
     }
 }
 
@@ -1295,7 +1295,7 @@ fn euros_ecrits(somme: &str) -> R<String> {
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee.to_string()), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee().map_err(|e| Echec { classe: e.classe, message: e.message })?;
-    let bulletins = |x: &documents::fiche_recapitulative::Cout| super::compte(x.bulletins as usize, "bulletin", "bulletins");
+    let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
     let dit = |liste: Vec<(String, documents::fiche_recapitulative::Cout)>| -> R<Vec<(String, CoutDit)>> {
         liste
@@ -1327,7 +1327,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         couts.annee,
         socle::mois::Mois::en_clair(&couts.jusqu_a),
         socle::texte::euros(total),
-        super::compte(couts.spectacles.len(), "spectacle", "spectacles")
+        socle::ecran::compte(couts.spectacles.len(), "spectacle", "spectacles")
     );
     Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a, spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })
 }

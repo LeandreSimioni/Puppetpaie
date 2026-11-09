@@ -570,7 +570,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         mois,
         phrase,
         importes_titre: if n_importes > 1 { "Importés" } else { "Importé" },
-        importes_dit: format!("{} de l'ancien logiciel", super::compte(n_importes, "engagement", "engagements")),
+        importes_dit: format!("{} de l'ancien logiciel", socle::ecran::compte(n_importes, "engagement", "engagements")),
         importes,
         ferme_aux_neufs: ferme,
         defauts,
@@ -762,7 +762,7 @@ fn dit_du_contrat(debut: &str, fin: &str, cachets: Option<i64>, heures: Option<i
     let court = |iso: &str| -> R<String> { Ok(Jour::lire(iso).map_err(plain)?.jj_mm()) };
     let mut dit = format!("{}→{}", court(debut)?, court(fin)?);
     if let Some(c) = cachets {
-        dit.push_str(&format!(" · {}", super::compte(c.max(0) as usize, "cachet", "cachets")));
+        dit.push_str(&format!(" · {}", socle::ecran::compte(c.max(0) as usize, "cachet", "cachets")));
     }
     if let Some(h) = heures.filter(|h| *h > 0) {
         dit.push_str(&format!(" + {} h", h));
@@ -2000,7 +2000,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     }
     let phrase = match &r.phrase_du_mois {
         Some(p) => p.clone(),
-        None => format!("{} : {}.", r.libelle, super::compte(paies.len(), "paie", "paies")),
+        None => format!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
     };
     let mut phrases: Vec<String> = Vec::new();
     for t in r.avertissements.iter().chain(r.informations.iter()).chain(paies.iter().flat_map(|p| p.paie.textes())) {
@@ -2214,7 +2214,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
         .map(|(_, nom, vs)| {
             let trois = Trois::de(vs);
             ParSalarie {
-                engagements_dit: super::compte(vs.len(), "engagement", "engagements"),
+                engagements_dit: socle::ecran::compte(vs.len(), "engagement", "engagements"),
                 survol_dit: format!("coût employeur {} · brut {}", socle::texte::euros(trois.cout_employeur), socle::texte::euros(trois.brut)),
                 salarie: vs[0].salarie.clone(),
                 nom: nom.clone(),

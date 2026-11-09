@@ -26,7 +26,8 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as Refu
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 use crate::routes::imprevus::{FinASignaler, ResumeDArret};
-use crate::routes::{Pastille, SansCharge};
+use crate::routes::SansCharge;
+use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
 use socle::echec::{erreur, Classe, Echec};
 use crate::routes::catalogue::{Ecran, Place};
@@ -264,11 +265,11 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     Ok(Revue { phrase, annee, archives, continuent, configuration })
 }
 
-/// `echeance-faite` : coche (`fait`) ou decoche l'echeance `cle`, au nom de la fenetre (`routes::INTERFACE`).
+/// `echeance-faite` : coche (`fait`) ou decoche l'echeance `cle`, au nom de la fenetre (`compagnie::INTERFACE`).
 fn echeance_faite(ctx: &Contexte, charge: ChargeFaite) -> socle::echec::R<Faite> {
     let ChargeFaite { cle, fait } = charge;
     let fait = fait != Some(false);
-    marquer_echeance(ctx, &cle, fait, crate::routes::INTERFACE)?;
+    marquer_echeance(ctx, &cle, fait, crate::compagnie::INTERFACE)?;
     Ok(Faite { phrase: if fait { "Échéance cochée : faite." } else { "Échéance décochée." }, cle, fait })
 }
 
@@ -296,7 +297,7 @@ pub(crate) enum EtatEcheance {
 use EtatEcheance::{AFaire, EnRetard, Fait, Information};
 
 impl EtatEcheance {
-    /// Son nom, celui que la couleur lit (`super::couleur_de_l_etat`).
+    /// Son nom, celui que la couleur lit (`socle::ecran::couleur_de_l_etat`).
     fn nom(self) -> &'static str {
         match self {
             AFaire => "a_faire",
@@ -648,7 +649,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     ce_mois.sort_by_cached_key(|e| (ordre(e.etat), e.rang()));
     a_venir.sort_by_key(|e| (e.tombe, e.date));
     let compagnie = ctx.entreprise.nommee().map(str::to_string);
-    let combien = format!("{} ce mois-ci, {} à venir.", super::compte(ce_mois.len(), "échéance", "échéances"), a_venir.len());
+    let combien = format!("{} ce mois-ci, {} à venir.", socle::ecran::compte(ce_mois.len(), "échéance", "échéances"), a_venir.len());
     let phrase = match &compagnie {
         Some(c) => format!("{} : {}", c, combien),
         None => combien,

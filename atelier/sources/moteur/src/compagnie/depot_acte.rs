@@ -132,7 +132,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
         return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
     }
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::routes::vers_route;
+    let vers = crate::compagnie::coffre::vers_route;
     if !coffre.ouverture_exigee().map_err(vers)? {
         return Err(erreur(
             Classe::PreuveInsuffisante,
@@ -167,7 +167,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
 /// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
 pub(crate) fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::routes::vers_route;
+    let vers = crate::compagnie::coffre::vers_route;
     if !coffre.disponible(service).map_err(vers)? {
         return Err(erreur(
             Classe::Refuse,

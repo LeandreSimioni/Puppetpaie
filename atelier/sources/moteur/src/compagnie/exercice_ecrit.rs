@@ -582,7 +582,7 @@ pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
     let qui = match c.qui.filter(|q| !q.is_empty()) {
         Some(q) => q,
-        None => crate::routes::INTERFACE.to_string(),
+        None => crate::compagnie::INTERFACE.to_string(),
     };
     if c.rouvrir == Some(true) {
         return rouvrir_exercice(ctx, &annee, &qui).map(Cloture::Rouverte);

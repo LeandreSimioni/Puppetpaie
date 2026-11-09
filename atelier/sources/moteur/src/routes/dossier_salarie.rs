@@ -83,7 +83,7 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
     let p = if d.fichiers.is_empty() {
         format!("Dossier de {} ({}) : rien n'est écrit.", d.salaries.join(", "), d.periode)
     } else {
-        format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, super::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
+        format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
     };
     Ok(DossierRendu::de(d, p, None))
 }

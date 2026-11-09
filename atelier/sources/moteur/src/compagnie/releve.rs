@@ -13,7 +13,7 @@ use socle::echec::{Echec, R};
 /// quand rien n'est pose. Un coffre qui ne s'ouvre pas est un refus, pas une absence.
 pub fn mot_de_passe_de_consultation(ctx: &Contexte, service: &str) -> R<Option<String>> {
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    coffre.lire(service, crate::compagnie::coffre::CONSULTATION, false, None).map_err(crate::routes::vers_route)
+    coffre.lire(service, crate::compagnie::coffre::CONSULTATION, false, None).map_err(crate::compagnie::coffre::vers_route)
 }
 
 /// Le client net-entreprises de la consultation, dans le monde seulement : `None` quand aucun mot de passe n'est pose.

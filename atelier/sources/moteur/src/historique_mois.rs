@@ -1090,7 +1090,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         organisme: Some(RetourDOrganisme {
             titre_dit,
             nature_dit,
-            quand_dit: quand.as_deref().map(crate::routes::quand),
+            quand_dit: quand.as_deref().map(socle::ecran::quand),
             nature,
             libelle,
             organisme,

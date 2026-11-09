@@ -188,6 +188,11 @@ pub struct Echec {
 
 pub type R<T> = Result<T, Echec>;
 
+/// Le refus du coffre tel qu'un geste le rend (`socle::echec::Echec`) : sa classe et sa phrase.
+pub(crate) fn vers_route(x: Echec) -> socle::echec::Echec {
+    socle::echec::Echec { classe: Some(x.classe), message: x.message }
+}
+
 fn echec(classe: Classe, message: impl Into<String>) -> Echec {
     Echec { classe, message: message.into() }
 }

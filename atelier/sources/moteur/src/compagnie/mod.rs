@@ -38,3 +38,12 @@ pub mod sauvegarde;
 pub mod signature;
 pub mod suites;
 pub mod taux_pas;
+
+/// QUI ECRIT : ce que les routes et les gestes de la compagnie inscrivent, la fenetre comme la ligne de commande
+/// (`moteur route`, qui sert les memes).
+pub(crate) const INTERFACE: &str = "interface";
+
+/// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
+pub(crate) fn maintenant() -> String {
+    socle::paris::maintenant()[..16].replacen('T', " ", 1)
+}

@@ -1455,7 +1455,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
                 let nature = crate::routes::imprevus::NatureSignalement::du_code(n)?;
                 let charge = crate::routes::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());
-                for a in crate::routes::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &crate::routes::maintenant())? {
+                for a in crate::routes::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &crate::compagnie::maintenant())? {
                     crate::routes::imprevus::signaler_l_arret(&ctx_j, &charge, Some(&a))?;
                     rendu = garder_si_identique(l, &[cible.to_path_buf()]);
                     if rendu.is_ok() {

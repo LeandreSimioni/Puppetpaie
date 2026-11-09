@@ -27,7 +27,8 @@ use envois::etats::Repetition;
 use envois::ligne::Ligne;
 use crate::apercu_dsn::ApercuDsn;
 use super::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use super::{Encart, Pastille};
+use super::Encart;
+use socle::ecran::Pastille;
 use crate::routes::catalogue::{Ecran, Place};
 
 // LA DESIGNATION d'une declaration (`designee`) : la DSN ou la DPAE d'un mois, ou un signalement ecrit.
@@ -351,7 +352,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
             if deja > 0 {
                 e.push(Encart::de(
                     "a_faire",
-                    format!("{} déjà envoyée{}", super::compte(deja, "embauche", "embauches"), if deja > 1 { "s" } else { "" }),
+                    format!("{} déjà envoyée{}", socle::ecran::compte(deja, "embauche", "embauches"), if deja > 1 { "s" } else { "" }),
                     "Le fichier porte tout le mois : le déposer les redéclare, et l'Urssaf reçoit deux déclarations pour un seul contrat.",
                 ));
             }
@@ -362,7 +363,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
         e.push(Encart::de(
             "a_faire",
             "Ce fichier a déjà été déposé",
-            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", super::quand(deja.quand()), if deja.reel() { "réel" } else { "test" }),
+            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", socle::ecran::quand(deja.quand()), if deja.reel() { "réel" } else { "test" }),
         ));
     }
     if !reel {
@@ -888,7 +889,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     } else {
         (format!("{} attend le retour de l'organisme.", nom), "en_attente")
     };
-    Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: crate::routes::couleur_de_l_etat(etat) })
+    Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
 
 // ------------------------------------------------------------------ bilan-repetition
@@ -1207,14 +1208,14 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             // Une DSN se dit par sa nature, son mois et ses salaries quand rien d'autre n'est a dire.
             let phrase = match ecrite {
                 Some(p) => p,
-                None => format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), super::compte(a.salaries, "salarié", "salariés")),
+                None => format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
             DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
         Quoi::Dpae => {
             let a = apercu_depot_dpae(ctx, &fichier)?;
             // Une DPAE se dit par son mois et ses embauches quand rien d'autre n'est a dire.
-            let embauches = super::compte(a.embauches.len(), "embauche", "embauches");
+            let embauches = socle::ecran::compte(a.embauches.len(), "embauche", "embauches");
             let phrase = match (ecrite, a.mois) {
                 (Some(p), _) => p,
                 (None, Some(m)) => format!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),

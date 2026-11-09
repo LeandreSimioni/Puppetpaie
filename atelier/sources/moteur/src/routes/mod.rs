@@ -30,11 +30,13 @@
 //!    chaque classe qu'elle refuse ;
 //! 5. dans `servir`, son bras est `m::route(&porte, charge)`.
 //!
-//! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`, le nom d'un salarie) est ici.
+//! Ce que les routes partagent (l'encart, le nom d'un salarie) est ici ; la pastille, `quand` et `compte` sont a
+//! l'ecran du socle (`socle::ecran`), qui ecrit (`INTERFACE`) et quand (`maintenant`) a la compagnie.
 
 use std::path::Path;
 
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::ecran::couleur_de_l_etat;
 use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
@@ -343,24 +345,10 @@ pub fn est_une_ecriture(route: Route) -> bool {
     catalogue::FICHES.iter().any(|l| catalogue::dans(l, route).is_some_and(|f| f.acte != catalogue::Acte::Lit))
 }
 
-/// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
-pub(crate) fn maintenant() -> String {
-    socle::paris::maintenant()[..16].replacen('T', " ", 1)
-}
-
-/// QUI ECRIT : ce que les routes inscrivent, la fenetre comme la ligne de commande (`moteur route`, qui sert les memes).
-pub(crate) const INTERFACE: &str = "interface";
-
 /// La charge d'une route qui ne prend rien : `{}`.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SansCharge {}
-
-/// LA COULEUR D'UN ETAT, la meme sur tout l'ecran : `vert` ce qui est fait, `orange` ce qui reste a faire et que la
-/// compagnie peut faire (une signature attendue se relance), `rouge` ce qui est refuse, `gris` ce qui n'est qu'une
-/// information (rien a faire). La page dessine la couleur qu'on lui donne ; elle n'en choisit aucune. Sa pastille :
-/// `Pastille`.
-pub(crate) use socle::ecran::{couleur_de_l_etat, Pastille};
 
 /// UN ENCART, tel que la page le dessine (`encart` de js/tuyau.js) : un titre en gras, sa phrase, la couleur de l'etat.
 /// La page n'ecrit aucune phrase : ce qu'une boite dit d'un cas, la route le rend ainsi.
@@ -382,24 +370,3 @@ impl Encart {
     }
 }
 
-/// « 12/09/2026 à 18:18 » : un horodatage ISO tel que l'ecran le dit ; ce qui n'en est pas un, tel quel.
-pub(crate) fn quand(iso: &str) -> String {
-    let b = iso.as_bytes();
-    if b.len() < 10 || b[4] != b'-' || b[7] != b'-' {
-        return iso.to_string();
-    }
-    let jour = format!("{}/{}/{}", &iso[8..10], &iso[5..7], &iso[..4]);
-    match iso.get(11..16) {
-        Some(h) => format!("{} à {}", jour, h),
-        None => jour,
-    }
-}
-
-pub(crate) fn vers_route(x: crate::compagnie::coffre::Echec) -> Echec {
-    Echec { classe: Some(x.classe), message: x.message }
-}
-
-/// « 1 salarié », « 3 salariés » : `n` et le nom, au pluriel quand il le faut (un `s` de plus, ou `pluriel`).
-pub(crate) fn compte(n: usize, un: &str, pluriel: &str) -> String {
-    format!("{} {}", n, if n > 1 { pluriel } else { un })
-}

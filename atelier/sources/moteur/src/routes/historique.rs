@@ -174,7 +174,7 @@ struct AjoutDit {
     depot: DepotVu,
     dit: String,
     origine_dit: String,
-    pastille: super::Pastille,
+    pastille: socle::ecran::Pastille,
 }
 
 /// Ce que l'Historique dit de la reprise : le resume replie, son titre, l'explication, les depots reels, le nom du
@@ -194,7 +194,7 @@ struct EcranDeLaReprise {
 fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
     let r = crate::compagnie::incidents::noter_ceux_des_retours(
         &ctx.racine,
-        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), crate::routes::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
+        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), crate::compagnie::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
     )?;
     let n = r.ajoutes.len();
     let reels = r.ajoutes.iter().filter(|d| d.mode == Mode::Reel && d.accepte).count();
@@ -221,7 +221,7 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
         None => "mois inconnu".to_string(),
     };
     let dit = match &d.quand {
-        Some(q) => format!("{} — {}", super::quand(q), mois),
+        Some(q) => format!("{} — {}", socle::ecran::quand(q), mois),
         None => mois,
     };
     let origine_dit = match &d.logiciel {
@@ -230,7 +230,7 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
     };
     let reel = d.mode == Mode::Reel;
     let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if d.accepte { "" } else { " — refusé" });
-    let pastille = super::Pastille::de(if !reel { "information" } else if d.accepte { "fait" } else { "refuse" }, &mots);
+    let pastille = socle::ecran::Pastille::de(if !reel { "information" } else if d.accepte { "fait" } else { "refuse" }, &mots);
     AjoutDit { depot: d, dit, origine_dit, pastille }
 }
 
@@ -254,7 +254,7 @@ struct CorrectionDite {
     #[serde(flatten)]
     correction: crate::regularisation::Correction,
     etat: &'static str,
-    pastille: super::Pastille,
+    pastille: socle::ecran::Pastille,
 }
 
 /// La route `regularisations` : par mois d'origine, les corrections que la page montre
@@ -263,7 +263,7 @@ fn regularisations(ctx: &Contexte) -> R<Regularisations> {
     let mut out = Vec::new();
     for mois in engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from) {
         let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, &mois)?;
-        let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: super::Pastille::de(if fait { "fait" } else { "a_faire" }, etat) };
+        let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: socle::ecran::Pastille::de(if fait { "fait" } else { "a_faire" }, etat) };
         let mut corrections: Vec<CorrectionDite> = portees.into_iter().map(|c| dite(c, "portée", true)).collect();
         corrections.extend(a_porter.into_iter().map(|c| dite(c, "à porter", false)));
         if !corrections.is_empty() {
@@ -312,7 +312,7 @@ struct ExerciceDit {
     mois: Vec<String>,
     dsn_acceptees: Vec<String>,
     clos: Option<crate::compagnie::exercice_ecrit::ExerciceNote>,
-    pastille: super::Pastille,
+    pastille: socle::ecran::Pastille,
     export: Option<ExportDeLAnnee>,
 }
 
@@ -359,13 +359,13 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
         let note = clos.get(a);
-        let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", super::quand(&c.le))).collect();
+        let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", socle::ecran::quand(&c.le))).collect();
         let export_dit = match &export {
-            Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", super::quand(e)),
+            Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", socle::ecran::quand(e)),
             Some(_) => " · export compta".to_string(),
             None => " · pas d'export compta".to_string(),
         };
-        let infos_dit = format!("{} mois · {}{}{}", mois.len(), super::compte(acceptees.len(), "DSN acceptée", "DSN acceptées"), clos_dit, export_dit);
+        let infos_dit = format!("{} mois · {}{}{}", mois.len(), socle::ecran::compte(acceptees.len(), "DSN acceptée", "DSN acceptées"), clos_dit, export_dit);
         out.push(ExerciceDit {
             infos_dit,
             annee: a.clone(),
@@ -373,7 +373,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             dsn_acceptees: acceptees,
             clos: note.cloned(),
             // Sa pastille : close, faite ; ouverte, une information (une annee se clot quand la compagnie le veut).
-            pastille: if note.is_some() { super::Pastille::de("fait", "clos") } else { super::Pastille::de("information", "ouvert") },
+            pastille: if note.is_some() { socle::ecran::Pastille::de("fait", "clos") } else { socle::ecran::Pastille::de("information", "ouvert") },
             export,
         });
     }

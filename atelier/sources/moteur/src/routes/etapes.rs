@@ -41,7 +41,8 @@ use socle::echec::Echec;
 use crate::routes::catalogue::{Acte, Fiche};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::Ecran;
-use crate::routes::{couleur_de_l_etat, SansCharge};
+use crate::routes::SansCharge;
+use socle::ecran::couleur_de_l_etat;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::depots::{Designation, EmbaucheDesignee, Quoi};
 use crate::compagnie::signature::ContratSigneDit;
@@ -1152,7 +1153,7 @@ struct DpaeDePage<'a> {
 impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
-        let valide = v.valide.as_deref().filter(|t| !t.is_empty()).map(super::quand);
+        let valide = v.valide.as_deref().filter(|t| !t.is_empty()).map(socle::ecran::quand);
         let embauche = v.debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
         LigneDePage {
             periode_dit: v.debut.map(|d| periode_dite(d, v.fin)),
@@ -2846,7 +2847,7 @@ fn non_actifs(ctx: &Contexte, mois: &str) -> R<Vec<NonActif>> {
             debut: debut.iso(),
             fin,
             non_actif: n.le().to_string(),
-            non_actif_dit: format!("non actif depuis le {}", super::quand(n.le())),
+            non_actif_dit: format!("non actif depuis le {}", socle::ecran::quand(n.le())),
             a_faire: crate::routes::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });
     }

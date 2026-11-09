@@ -228,7 +228,7 @@ dites!(EtatDeLaPage, ConfigurationDite, Version, CourrielsFictifs);
 #[derive(Debug, Clone, serde::Serialize)]
 struct PastilleDeFiche {
     #[serde(flatten)]
-    pastille: super::Pastille,
+    pastille: socle::ecran::Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
 }
@@ -361,15 +361,15 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     };
     let archivee = comble.case("actif") == Some(&Valeur::OuiNon(false));
     let pastille = if archivee {
-        PastilleDeFiche { pastille: super::Pastille::de("information", "archivé"), detail: None }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de("information", "archivé"), detail: None }
     } else if erreurs > 0 {
         let (cases, detail) = nommer(true)?;
-        PastilleDeFiche { pastille: super::Pastille::de("a_faire", &format!("{} erreur{} : {}", erreurs, pluriel(erreurs), cases)), detail: Some(detail) }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} : {}", erreurs, pluriel(erreurs), cases)), detail: Some(detail) }
     } else if a_verifier > 0 {
         let (cases, detail) = nommer(false)?;
-        PastilleDeFiche { pastille: super::Pastille::de("a_faire", &format!("à vérifier : {}", cases)), detail: Some(detail) }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de("a_faire", &format!("à vérifier : {}", cases)), detail: Some(detail) }
     } else {
-        PastilleDeFiche { pastille: super::Pastille::de("fait", "complet"), detail: None }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de("fait", "complet"), detail: None }
     };
     // Ce que la ligne de la fiche dit, dans la liste : ce qui l'identifie (le metier et le matricule d'un salarie, le
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
@@ -600,7 +600,7 @@ pub(crate) struct ImageIdentite {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) autre_personne: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) pastille: Option<super::Pastille>,
+    pub(crate) pastille: Option<socle::ecran::Pastille>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub(crate) ecran: Option<EcranDeLImage>,
 }
@@ -768,7 +768,7 @@ pub(crate) struct ConfigurationDeLaPage {
     salaries: Vec<VueFiche<droit::fiche::ChampsSalarie>>,
     spectacles: Vec<VueFiche<droit::fiche::ChampsSpectacle>>,
     compteurs: documents::ecrire_documents::Compteurs,
-    erreurs: Option<super::Pastille>,
+    erreurs: Option<socle::ecran::Pastille>,
     description: Descriptions,
     /// CE QUE LA CASE « Emploie des permanents » COMMANDE A L'ECRAN : les champs `si_permanents` restent dans la
     /// description -- les retirer, ce serait les effacer au premier enregistrement. La page les replie.
@@ -823,7 +823,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
     let erreurs: usize = entreprise.erreurs() + salaries.iter().map(VueFiche::erreurs).sum::<usize>() + spectacles.iter().map(VueFiche::erreurs).sum::<usize>();
-    let erreurs = (erreurs > 0).then(|| super::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
+    let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
     let permanents = ctx.emploie_des_permanents();
     // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
     // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
@@ -1063,7 +1063,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             Etat::Attente => false,
             _ => true,
         };
-        // CE QUE LA PASTILLE DIT, et sa couleur (`routes::couleur_de_l_etat`) : une DSN qui attend son bilan, ou dont
+        // CE QUE LA PASTILLE DIT, et sa couleur (`socle::ecran::couleur_de_l_etat`) : une DSN qui attend son bilan, ou dont
         // l'ancien logiciel garde la trace, n'est rien que la compagnie ait a faire -- une information, en gris.
         let (couleur, mots) = match lu.etat {
             _ if retard => ("orange", "DSN en retard"),
@@ -1748,8 +1748,8 @@ fn dire_la_configuration(c: &ConfigurationDeLaPage) -> String {
     format!(
         "{} : {}, {}{}.",
         nom,
-        super::compte(c.salaries.len(), "salarié", "salariés"),
-        super::compte(c.spectacles.len(), "spectacle", "spectacles"),
+        socle::ecran::compte(c.salaries.len(), "salarié", "salariés"),
+        socle::ecran::compte(c.spectacles.len(), "spectacle", "spectacles"),
         erreurs
     )
 }

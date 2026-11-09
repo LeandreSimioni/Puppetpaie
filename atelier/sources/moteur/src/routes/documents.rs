@@ -19,7 +19,8 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISI
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::etapes::{ChargeMois, Moteur};
-use crate::routes::{Pastille, INTERFACE};
+use crate::compagnie::INTERFACE;
+use socle::ecran::Pastille;
 use droit::contexte::Contexte;
 use envois::courriel::{BoiteSimulee, Courriel};
 use envois::envoi;
@@ -633,7 +634,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .map(|p| p.quand.as_str())
         .max()
         .filter(|_| tous_a_jour)
-        .map(|q| DejaPartis { quand: q.to_string(), quand_dit: format!("Le {}.", super::quand(q)) });
+        .map(|q| DejaPartis { quand: q.to_string(), quand_dit: format!("Le {}.", socle::ecran::quand(q)) });
     let messages: Vec<MessageVu> = messages
         .into_iter()
         .map(|x| {
@@ -661,7 +662,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .collect();
     phrases.extend(prets.empechements.iter().chain(&avertissements).chain(&prets.informations).cloned());
     Ok(ApercuEnvoi {
-        phrase: format!("Documents à envoyer par courriel, de {} : {}.", expediteur, super::compte(messages.len(), "message", "messages")),
+        phrase: format!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
         expediteur_dit: format!("Courriels depuis {}", expediteur),
         expediteur,
         avertissements,
@@ -696,7 +697,7 @@ fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
         Ok(a) => a,
         Err(std::env::VarError::NotPresent) => {
             let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-            coffre.compte_pose("courriel").map_err(super::vers_route)?.ok_or_else(|| {
+            coffre.compte_pose("courriel").map_err(crate::compagnie::coffre::vers_route)?.ok_or_else(|| {
                 erreur(Classe::Manque, "Le compte de la boîte courriel n'est pas posé : route coffre-poser, service courriel, compte <adresse>.")
             })?
         }
@@ -1124,7 +1125,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: &str, 
     noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &partis.join(", "), &reponse, detail(&messages)?, Some(versions))))?;
     let noms: Vec<String> = messages.iter().map(|m| nom_a_l_ecran(ctx, &m.cle, &m.nom)).collect();
     Ok(DocumentsEnvoyes {
-        phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&Mois::en_clair(mois)), crate::routes::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
+        phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&Mois::en_clair(mois)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
         partis,
         avertissements,
     })

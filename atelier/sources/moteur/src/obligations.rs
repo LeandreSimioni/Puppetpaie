@@ -1266,7 +1266,7 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
             )));
         }
     }
-    Ok(j.map(|j| ConnaissanceSaisie { jour: j.iso(), heure, saisi_le: crate::routes::maintenant() }))
+    Ok(j.map(|j| ConnaissanceSaisie { jour: j.iso(), heure, saisi_le: crate::compagnie::maintenant() }))
 }
 
 /// Ecrit dans la fiche de suivi de l'arret `a` ce que `connaissance_saisie` a controle.
@@ -1390,7 +1390,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 heure: heure_saisie(charge.heure.as_deref())?,
                 depot,
                 reference: charge.reference.clone().filter(|r| !r.trim().is_empty()),
-                saisi_le: crate::routes::maintenant(),
+                saisi_le: crate::compagnie::maintenant(),
             })
         }
     };
@@ -1408,7 +1408,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
         if retiree {
             format!("{} : la note « faite » est retirée. Obligations de l'arrêt : {}.", quoi, n)
         } else {
-            format!("{} notée faite le {}. Obligations de l'arrêt : {}.", quoi, crate::routes::quand(&le), n)
+            format!("{} notée faite le {}. Obligations de l'arrêt : {}.", quoi, socle::ecran::quand(&le), n)
         }
     })
 }
@@ -1493,7 +1493,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     };
     // Ce que la compagnie dit avoir connu, tape et lisible.
     let connue = |jour: &Option<String>, heure: Option<&str>| {
-        jour_tape(jour).map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.filter(|h| lire_heure(h).is_some()).map(String::from), saisi_le: crate::routes::maintenant() })
+        jour_tape(jour).map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.filter(|h| lire_heure(h).is_some()).map(String::from), saisi_le: crate::compagnie::maintenant() })
     };
     let fiche = FicheDeSuivi {
         salarie: String::new(),

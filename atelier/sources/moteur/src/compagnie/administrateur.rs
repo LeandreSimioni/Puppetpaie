@@ -312,7 +312,7 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> Result<EtatAdmi
         question: !fictive && !rattachee && !autres.is_empty() && !pose && !bridee,
         mot_de_passe_pose: pose,
         // La pastille de la compagnie pour l'administrateur : rattachee, faite ; son propre mot de passe, une information.
-        pastille: if rattachee { crate::routes::Pastille::de("fait", "rattachée") } else { crate::routes::Pastille::de("information", "son propre mot de passe") },
+        pastille: if rattachee { socle::ecran::Pastille::de("fait", "rattachée") } else { socle::ecran::Pastille::de("information", "son propre mot de passe") },
         autres,
         autres_dit,
     })
@@ -335,7 +335,7 @@ pub(crate) struct EtatAdministrateur {
     pub(crate) peut_rattacher: bool,
     pub(crate) question: bool,
     pub(crate) mot_de_passe_pose: bool,
-    pub(crate) pastille: crate::routes::Pastille,
+    pub(crate) pastille: socle::ecran::Pastille,
 }
 
 /// Remplace `chemin` par `octets`, d'un coup (a cote puis a la place) ; 0600 sous Unix.
@@ -1052,9 +1052,9 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
     let tranches = suivies.iter().filter(|s| s.suivi.fini).count();
     let attendent = suivies.len() - tranches;
     let phrase = if fini {
-        format!("{} : retours reçus.", crate::routes::compte(tranches, "déclaration tranchée", "déclarations tranchées"))
+        format!("{} : retours reçus.", socle::ecran::compte(tranches, "déclaration tranchée", "déclarations tranchées"))
     } else {
-        format!("{} attendent encore le retour de l'organisme.", crate::routes::compte(attendent, "déclaration", "déclarations"))
+        format!("{} attendent encore le retour de l'organisme.", socle::ecran::compte(attendent, "déclaration", "déclarations"))
     };
     Ok(SuivisDuGroupe { phrase, fini, suivies })
 }
@@ -1167,8 +1167,8 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
     }
     let partis = resultats.iter().filter(|r| r.parti).count();
     let refuses = resultats.len() - partis;
-    let refuses_dit: String = (refuses > 0).then(|| format!(", {}", crate::routes::compte(refuses, "refusée", "refusées"))).into_iter().collect();
-    let phrase = format!("{}{}.", crate::routes::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
+    let refuses_dit: String = (refuses > 0).then(|| format!(", {}", socle::ecran::compte(refuses, "refusée", "refusées"))).into_iter().collect();
+    let phrase = format!("{}{}.", socle::ecran::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
     Ok(DepotGroupe { phrase, reel, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
 }
 

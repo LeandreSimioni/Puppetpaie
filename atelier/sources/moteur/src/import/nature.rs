@@ -415,7 +415,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         phrase.push(' ');
         phrase.push_str(p);
     }
-    Ok(NatureDite { phrase, ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: crate::routes::couleur_de_l_etat("fait") })
+    Ok(NatureDite { phrase, ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat("fait") })
 }
 
 impl crate::routes::enveloppe::Dite for NatureDite {

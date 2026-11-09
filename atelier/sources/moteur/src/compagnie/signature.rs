@@ -691,7 +691,7 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Vec<
 /// « Déjà parti, imprimé le 05/11/2026. » : ce que l'envoi par courriel d'un contrat deja parti dit, sans le refuser.
 fn deja_parti_dit(etats: &[crate::routes::contrats::ContratASigner], salarie: &str, numero: Option<&str>) -> Option<String> {
     let c = etats.iter().rev().find(|c| c.salarie == salarie && c.numero.as_deref() == numero)?;
-    let quand = crate::routes::quand(c.demande_le.as_deref()?.get(..10)?);
+    let quand = socle::ecran::quand(c.demande_le.as_deref()?.get(..10)?);
     let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero), c.nom, comment, quand))
 }
@@ -806,7 +806,7 @@ impl UnAvenant {
 
     /// « Avenant n° 1 de Nom : déjà parti, imprimé le 05/11/2026. », quand il est parti imprimé.
     pub fn deja_parti(&self, nom: &str) -> Option<String> {
-        let quand = crate::routes::quand(self.imprime_le.as_deref()?.get(..10)?);
+        let quand = socle::ecran::quand(self.imprime_le.as_deref()?.get(..10)?);
         Some(format!("Avenant n° {} de {} : déjà parti, imprimé le {}.", self.numero, nom, quand))
     }
 

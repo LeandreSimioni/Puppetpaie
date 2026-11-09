@@ -118,7 +118,7 @@ pub fn question(racine: &Path) -> Result<Suppression, String> {
             let liee = racine.join(socle::fichiers::CONFIG).join(crate::routes::coffre::FICHIER_JETON).is_file();
             let derniere = crate::compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
             let phrase = match &derniere {
-                Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", crate::routes::quand(q)),
+                Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", socle::ecran::quand(q)),
                 None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),
             };
             Some(SauvegardeAProposer { liee, derniere, phrase })

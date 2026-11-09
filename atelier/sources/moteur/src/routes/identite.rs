@@ -293,7 +293,7 @@ fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
 fn identite(ctx: &Contexte) -> R<Identite> {
     let mut v = crate::routes::ouverture::identite(ctx, &ctx.gabarits())?;
     for (_, e) in v.images_mut() {
-        e.pastille = Some(super::Pastille::de(if e.pose || e.automatique { "fait" } else { "a_faire" }, mots_de(e)));
+        e.pastille = Some(socle::ecran::Pastille::de(if e.pose || e.automatique { "fait" } else { "a_faire" }, mots_de(e)));
     }
     Ok(v)
 }
@@ -344,7 +344,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), super::quand(quand))),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), socle::ecran::quand(quand))),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

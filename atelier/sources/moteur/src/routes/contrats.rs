@@ -17,7 +17,9 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place,
 use crate::routes::documents::{client_courriel, refus, Ouvrir};
 use crate::routes::engagement::maintenant;
 use crate::routes::etapes::{ChargeMois, Moteur};
-use crate::routes::{Encart, Pastille, INTERFACE};
+use crate::compagnie::INTERFACE;
+use crate::routes::Encart;
+use socle::ecran::Pastille;
 
 /// Ce que chaque route de ce module rend porte sa phrase.
 macro_rules! dites {
@@ -769,7 +771,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         r.contrats.extend(av.avenants);
         r.avertissements.extend(avertissements);
     }
-    let quoi = [(n_contrats, "contrat", "contrats"), (n_avenants, "avenant", "avenants")].iter().filter(|(n, _, _)| *n > 0).map(|(n, un, des)| super::compte(*n, un, des)).collect::<Vec<_>>().join(" et ");
+    let quoi = [(n_contrats, "contrat", "contrats"), (n_avenants, "avenant", "avenants")].iter().filter(|(n, _, _)| *n > 0).map(|(n, un, des)| socle::ecran::compte(*n, un, des)).collect::<Vec<_>>().join(" et ");
     let avertissements = r.avertissements.join(" ");
     let relancee = c.relance() || (!des_contrats && r.contrats.iter().all(|x| x.relance == Some(true)));
     let s = if n_contrats + n_avenants > 1 { "s" } else { "" };
@@ -981,7 +983,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         // Sa pastille : un contrat parti puis change part en avenant, signe ou non, commence ou non ; parti et pas revenu,
         // il attend sa signature. Toutes a faire : la compagnie le peut.
         let pastille = if caduc {
-            let quand = if recu { " (signé)".to_string() } else { parti.as_deref().map(|q| format!(" (parti le {})", super::quand(q))).into_iter().collect() };
+            let quand = if recu { " (signé)".to_string() } else { parti.as_deref().map(|q| format!(" (parti le {})", socle::ecran::quand(q))).into_iter().collect() };
             let pourquoi = if etat.pourquoi.is_empty() { crate::routes::etapes::CONTRAT_A_REFAIRE } else { etat.pourquoi };
             Some(Pastille::de("a_faire", &format!("{}{}", pourquoi, quand)))
         } else if en_attente {
@@ -1123,7 +1125,7 @@ impl AvenantLu {
             if ailleurs {
                 "signé hors de PuppetPaie".to_string()
             } else if let Some(s) = &self.signe {
-                format!("signé le {}", super::quand(s))
+                format!("signé le {}", socle::ecran::quand(s))
             } else {
                 format!("envoyé le {}", jour_dit(&self.date_contrat))
             }
@@ -1133,10 +1135,10 @@ impl AvenantLu {
             .into_iter()
             .map(|a| {
                 let signe = match a.signe.as_deref() {
-                    Some(s) => format!("signé le {}", super::quand(s)),
+                    Some(s) => format!("signé le {}", socle::ecran::quand(s)),
                     None => "pas encore revenu signé".to_string(),
                 };
-                let phrase = format!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), super::quand(&a.quand), signe);
+                let phrase = format!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), socle::ecran::quand(&a.quand), signe);
                 AvenantDit { parti: a, phrase }
             })
             .collect();
@@ -1175,7 +1177,7 @@ impl AvenantLu {
             reference,
             self.nom,
             jour_dit(&self.effet),
-            super::compte(n, "modification", "modifications")
+            socle::ecran::compte(n, "modification", "modifications")
         );
         let modifications = self
             .modifications
@@ -1432,7 +1434,7 @@ fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &str) -> bool {
 }
 
 fn piece(racine: &Path, quoi: String, quand: &str, mois: Option<Mois>, fichier: &str) -> PiecePartie {
-    PiecePartie { quoi, quand: quand.to_string(), quand_dit: super::quand(quand), mois, fichier: fichier.to_string(), existe: piece_existe(racine, mois, fichier) }
+    PiecePartie { quoi, quand: quand.to_string(), quand_dit: socle::ecran::quand(quand), mois, fichier: fichier.to_string(), existe: piece_existe(racine, mois, fichier) }
 }
 
 /// `pieces-parties` : les FICHIERS partis pour le contrat n° `numero` -- la DPAE deposee, le contrat envoye a la

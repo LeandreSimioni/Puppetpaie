@@ -26,7 +26,7 @@ use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::SansCharge;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
-use super::vers_route;
+use crate::compagnie::coffre::vers_route;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
@@ -528,7 +528,7 @@ fn refus(m: impl Into<String>) -> Echec {
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
 pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
     let coffre = crate::compagnie::coffre::Coffre::du_poste(racine, "");
-    let vers = crate::routes::vers_route;
+    let vers = vers_route;
     if !coffre.ouverture_exigee().map_err(vers)? {
         return Ok(());
     }
@@ -1119,7 +1119,7 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             Pastille::de("a_faire", "fourni par l'environnement")
         } else if s.pose {
             match s.pose_le.as_deref().and_then(|t| t.get(..10)) {
-                Some(le) => Pastille::de("fait", &format!("posé le {}", super::quand(le))),
+                Some(le) => Pastille::de("fait", &format!("posé le {}", socle::ecran::quand(le))),
                 None => Pastille::de("fait", "posé"),
             }
         } else {

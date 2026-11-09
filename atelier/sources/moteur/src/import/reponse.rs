@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
 
-use crate::routes::{couleur_de_l_etat, Pastille};
+use socle::ecran::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
 use socle::mois::Mois;
 
@@ -530,7 +530,7 @@ impl FichierVu {
             _ => None,
         };
         let nb = self.pages.len();
-        self.pages_dit = crate::routes::compte(nb, "page", "pages");
+        self.pages_dit = socle::ecran::compte(nb, "page", "pages");
         for p in &mut self.pages {
             p.page_dit = match p.infos.mois.as_deref().filter(|m| !m.is_empty()) {
                 Some(m) => format!("page {} ({})", p.page, Mois::en_clair(m)),
@@ -817,7 +817,7 @@ impl Importation {
         self.dire();
         let b = &self.bulletins;
         let periode = match (&b.du, &b.au) {
-            (Some(du), Some(au)) => format!(" (du {} au {})", crate::routes::quand(du), crate::routes::quand(au)),
+            (Some(du), Some(au)) => format!(" (du {} au {})", socle::ecran::quand(du), socle::ecran::quand(au)),
             _ => String::new(),
         };
         self.phrase = format!(

@@ -752,14 +752,14 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let repris_dit = (!quoi.is_empty()).then(|| format!("{}{}", quoi.join(", "), periode));
     let le = importe_le.iter().chain(reprises.iter().filter_map(|r| r.le.as_ref())).max();
     let repris_titre = match le {
-        Some(l) => format!("Historique repris le {}", super::quand(&l.chars().take(10).collect::<String>())),
+        Some(l) => format!("Historique repris le {}", socle::ecran::quand(&l.chars().take(10).collect::<String>())),
         None => "Historique repris".to_string(),
     };
     let phrase = match (&importe_le, &debut, &fin) {
         (Some(le), Some(du), Some(au)) => {
-            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", super::quand(le), contrats.len(), salaries.len(), super::quand(du), super::quand(au))
+            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", socle::ecran::quand(le), contrats.len(), salaries.len(), socle::ecran::quand(du), socle::ecran::quand(au))
         }
-        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", super::quand(le), contrats.len(), salaries.len()),
+        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", socle::ecran::quand(le), contrats.len(), salaries.len()),
         (None, _, _) => "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string(),
     };
     Ok(EtatImportation {
@@ -773,7 +773,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         dossier: racine.join("import").display().to_string(),
         reprises,
         editeur,
-        pastille_repris: super::Pastille::de("fait", "fait"),
+        pastille_repris: socle::ecran::Pastille::de("fait", "fait"),
         attend_editeur,
         a_dire: crate::import::nature::a_dire(racine)?,
         guide: crate::import::guide::guide(),
@@ -796,7 +796,7 @@ struct EtatImportation {
     reprises: Vec<RepriseVue>,
     editeur: Vec<MessageEditeur>,
     /// La pastille de l'historique repris.
-    pastille_repris: super::Pastille,
+    pastille_repris: socle::ecran::Pastille,
     attend_editeur: usize,
     /// Les contrats repris dont la nature reste a dire, par salarie.
     a_dire: Vec<crate::import::nature::ADire>,
@@ -839,7 +839,7 @@ struct MessageEditeur {
     resume: String,
     parti: bool,
     repondu: bool,
-    pastille: super::Pastille,
+    pastille: socle::ecran::Pastille,
     titre_dit: String,
 }
 
@@ -970,13 +970,13 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
 fn message(canal: &'static str, quand: Option<String>, resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
     let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
     let titre_dit = match &quand {
-        Some(q) => format!("{} du {}", quoi, super::quand(q)),
+        Some(q) => format!("{} du {}", quoi, socle::ecran::quand(q)),
         None => quoi.to_string(),
     };
     let pastille = match (repondu, parti) {
-        (true, _) => super::Pastille::de("fait", "réponse reçue"),
-        (false, true) => super::Pastille::de("information", "attend l'éditeur"),
-        (false, false) => super::Pastille::de("information", "pas encore parti"),
+        (true, _) => socle::ecran::Pastille::de("fait", "réponse reçue"),
+        (false, true) => socle::ecran::Pastille::de("information", "attend l'éditeur"),
+        (false, false) => socle::ecran::Pastille::de("information", "pas encore parti"),
     };
     let resume: String = resume.into_iter().collect();
     MessageEditeur { canal, quand, resume, parti, repondu, pastille, titre_dit }

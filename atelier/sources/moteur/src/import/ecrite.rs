@@ -578,8 +578,8 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
 /// entrent au journal avec l'historique, pour qu'un mois tenu avant ne se dise pas « en retard »
 /// (`reprise_journal::reprendre_les_depots`). Rend le nombre de depots repris.
 fn depots_attestes_au_journal(ctx: &Contexte) -> R<usize> {
-    let qui = crate::routes::INTERFACE.to_string();
-    crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &crate::routes::maintenant()))
+    let qui = crate::compagnie::INTERFACE.to_string();
+    crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &crate::compagnie::maintenant()))
 }
 
 
@@ -709,10 +709,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
         fiches.push("l'entreprise".into());
     }
     if de(&reponse.salaries) > 0 {
-        fiches.push(crate::routes::compte(de(&reponse.salaries), "salarié", "salariés"));
+        fiches.push(socle::ecran::compte(de(&reponse.salaries), "salarié", "salariés"));
     }
     if de(&reponse.spectacles) > 0 {
-        fiches.push(crate::routes::compte(de(&reponse.spectacles), "spectacle", "spectacles"));
+        fiches.push(socle::ecran::compte(de(&reponse.spectacles), "spectacle", "spectacles"));
     }
     // UN SPECTACLE SANS TITRE (`completer::A_COMPLETER`) : les bulletins en proposent un a valider
     // (`demarrage::TITRE_PROPOSE`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
@@ -740,8 +740,8 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     let b = &reponse.bulletins;
     reponse.phrase = format!(
         "Repris : {}, {} ; fiches écrites : {}.{}",
-        crate::routes::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
-        crate::routes::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
+        socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
+        socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
         titres
     );

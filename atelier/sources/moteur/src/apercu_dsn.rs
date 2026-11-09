@@ -30,7 +30,7 @@ use socle::num::{entier_lu, q2, Decimal};
 
 use crate::routes::depots::{lire_octets, nom_du_chemin, resoudre};
 use crate::routes::etapes::Moteur;
-use crate::routes::Pastille;
+use socle::ecran::Pastille;
 
 type R<T> = Result<T, Echec>;
 
@@ -526,7 +526,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         ordres,
         ordres_erreur,
         // Un depot reel les declenche tous : a regarder (orange) ; joues, rien ne part (une information).
-        couleur_ordres: crate::routes::couleur_de_l_etat(if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() { "information" } else { "a_faire" }),
+        couleur_ordres: socle::ecran::couleur_de_l_etat(if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() { "information" } else { "a_faire" }),
         deja_depose: deja,
         remplacement,
         recapitulatif,

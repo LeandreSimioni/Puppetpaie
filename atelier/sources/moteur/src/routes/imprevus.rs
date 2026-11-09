@@ -25,7 +25,9 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
-use crate::routes::{maintenant, Pastille, SansCharge, INTERFACE};
+use crate::compagnie::{maintenant, INTERFACE};
+use crate::routes::SansCharge;
+use socle::ecran::Pastille;
 use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
@@ -124,7 +126,7 @@ pub const ROUTES: &[Fiche] = &[
 // ------------------------------------------------------------------ les charges
 //
 // `salarie` y est toujours ce que la personne en dit : la cle de la fiche, ou son nom (`Contexte::cle_du_salarie`), resolu
-// a l'entree de la route en `IdSalarie`. Ce qu'elles ecrivent, la fenetre l'ecrit (`routes::INTERFACE`).
+// a l'entree de la route en `IdSalarie`. Ce qu'elles ecrivent, la fenetre l'ecrit (`compagnie::INTERFACE`).
 
 /// La charge de `imprevus` : les imprevus d'un mois, ou d'un salarie ; tous, sans l'un ni l'autre.
 #[derive(Debug, Deserialize)]
@@ -1018,7 +1020,7 @@ struct DejaSignale {
 struct Parti {
     phrase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pastille: Option<crate::routes::Pastille>,
+    pastille: Option<Pastille>,
     #[serde(skip_serializing_if = "Option::is_none")]
     discret: Option<bool>,
 }
@@ -1082,7 +1084,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
     }
     for s in signalements {
         let quoi = if s.nature == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
-        parti.push(dite(format!("{} le {}", quoi, crate::routes::quand(&s.quand))));
+        parti.push(dite(format!("{} le {}", quoi, socle::ecran::quand(&s.quand))));
     }
     if !reporte_par_dit.is_empty() {
         parti.push(dite(format!("déclaré par la DSN {}", reporte_par_dit.join(", "))));
@@ -1091,7 +1093,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
         let libelle = minuscule(o.libelle.clone());
         match &o.fait {
             Some(f) if !f.le().is_empty() && matches!(o.ou, Some(crate::obligations::Ou::Lieux(_))) => {
-                parti.push(dite(format!("{}, faite le {}", libelle, crate::routes::quand(f.le()))));
+                parti.push(dite(format!("{}, faite le {}", libelle, socle::ecran::quand(f.le()))));
             }
             // Une obligation due sans date butoir (son delai ne se compte pas) dit son etat, pas une butoir absente.
             _ if o.du => {
@@ -1131,7 +1133,7 @@ impl Resume {
     /// L'imprevu en lignes, tel que `imprevus` le dit : qui, quel contrat, quoi, quand, ou en est son signalement, puis
     /// chacune de ses obligations.
     fn en_lignes(&self) -> Vec<String> {
-        let quand = crate::routes::quand;
+        let quand = socle::ecran::quand;
         let (salarie, contrat, libelle, premier, dernier, etat, obligations) = match self {
             Resume::Arret(a) => (&a.base.salarie, &a.base.contrat, &a.base.motif_libelle, &a.premier_jour, &a.dernier_jour, a.base.etat.dit(), a.obligations.as_deref()),
             Resume::Suspension(s) => (&s.salarie, &s.contrat, &s.motif_libelle, &s.premier_jour, &s.dernier_jour, "", None),
@@ -2013,7 +2015,7 @@ impl Trace<'_> {
     }
 }
 
-/// CE QU'ETAIT L'ARRET A L'INSTANT `instant` (« AAAA-MM-JJ HH:MM », `routes::maintenant`) : chaque saisie d'apres se
+/// CE QU'ETAIT L'ARRET A L'INSTANT `instant` (« AAAA-MM-JJ HH:MM », `compagnie::maintenant`) : chaque saisie d'apres se
 /// defait par la trace qu'elle a laissee, de la plus recente a la plus ancienne -- une prolongation (`prolongations`) rend
 /// la fin prescrite et la fin de subrogation d'avant, une reprise (`reprises`) la reprise et son motif d'avant. Une saisie
 /// de la minute meme a pu preceder l'instant ou le suivre : chacun de ces etats est rendu, du plus recent au plus ancien ;
@@ -2222,8 +2224,8 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
         phrases.push(format!(
             "{} : dernier jour travaillé le {}, fin prévue le {} — {} — {}",
             b.salarie,
-            crate::routes::quand(&b.dernier_jour_travaille),
-            crate::routes::quand(&b.fin_previsionnelle),
+            socle::ecran::quand(&b.dernier_jour_travaille),
+            socle::ecran::quand(&b.fin_previsionnelle),
             b.motif_libelle,
             b.etat.dit()
         ));
@@ -2234,7 +2236,7 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
     }
     let a_signaler: Vec<Resume> = resumes.iter().filter(|r| matches!(r, Resume::Arret(x) if !x.base.signale && x.base.signalement_du)).cloned().collect();
     Ok(ReponseArrets {
-        phrase: format!("{}, {} à signaler.", crate::routes::compte(resumes.len(), "arrêt de travail", "arrêts de travail"), a_signaler.len()),
+        phrase: format!("{}, {} à signaler.", socle::ecran::compte(resumes.len(), "arrêt de travail", "arrêts de travail"), a_signaler.len()),
         phrases,
         arrets: resumes,
         a_signaler,
@@ -2424,7 +2426,7 @@ pub(crate) struct FinASignaler {
     preavis: Option<Preavis>,
     pub a_saisir: Vec<Manque>,
     pub du: bool,
-    pastille: crate::routes::Pastille,
+    pastille: Pastille,
     pub obligation: crate::obligations::Obligation,
     #[serde(skip_serializing_if = "Option::is_none")]
     qui_dit: Option<String>,

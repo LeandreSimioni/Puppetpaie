@@ -216,6 +216,6 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
     let mut r = libelles_courts(ctx, ChargeLire { format: Some(format) })?;
     let reste = r.libelles.iter().filter(|l| l.court.is_none()).count();
     let suite = if reste == 0 { format!("chaque libellé trop long pour {} a sa valeur courte", borne.nom()) } else { format!("{} encore sans valeur courte pour {}", reste, borne.nom()) };
-    r.phrase = format!("{} enregistré{} ; {}.", crate::routes::compte(c.libelles.len(), "libellé court", "libellés courts"), if c.libelles.len() > 1 { "s" } else { "" }, suite);
+    r.phrase = format!("{} enregistré{} ; {}.", socle::ecran::compte(c.libelles.len(), "libellé court", "libellés courts"), if c.libelles.len() > 1 { "s" } else { "" }, suite);
     Ok(r)
 }

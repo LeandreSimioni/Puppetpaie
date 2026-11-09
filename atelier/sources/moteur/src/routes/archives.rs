@@ -12,7 +12,8 @@ use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
 use crate::import::casc::{marquer_regularise, RegularisationNotee};
 use crate::routes::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::routes::{SansCharge, INTERFACE};
+use crate::compagnie::INTERFACE;
+use crate::routes::SansCharge;
 use socle::mois::Mois;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
@@ -291,7 +292,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
     etat_logiciel(ctx)?;
     let categories: Vec<CategorieProposee> = crate::routes::dossier_salarie::CATEGORIES.iter().map(|c| CategorieProposee { categorie: c, quoi: crate::routes::dossier_salarie::libelle_de(c) }).collect();
     Ok(FormesDuDossier {
-        phrase: format!("Dossiers possibles : {} ; sortes de pièces : {}.", super::compte(salaries.len(), "salarié", "salariés"), categories.len()),
+        phrase: format!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
         salaries,
         categories,
         mois,
@@ -402,7 +403,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         categories: "Une seule case : un PDF. Plusieurs : un ZIP, un PDF par catégorie.",
     };
     Ok(ExportsPossibles {
-        phrase: format!("Exports : {} ; mois payés : {} ; années : {}.", super::compte(etats.len(), "état", "états"), mois.len(), annees.len()),
+        phrase: format!("Exports : {} ; mois payés : {} ; années : {}.", socle::ecran::compte(etats.len(), "état", "états"), mois.len(), annees.len()),
         mois,
         annees,
         etats,
@@ -494,7 +495,7 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = maintenant();
     let notee = marquer_regularise(ctx, &c.annee.texte(), &c.vire_le, &c.montant.texte(), INTERFACE, &aujourd_hui[..10])?;
     let montant = en_euros(&notee.montant)?;
-    Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, super::quand(&notee.vire_le)), notee })
+    Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, socle::ecran::quand(&notee.vire_le)), notee })
 }
 
 /// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (le mois, l'annee, ou toutes les annees),
@@ -715,7 +716,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
     let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), &aujourdhui.mois_civil().to_string(), "envoi du dossier aux salaries", &a_qui)?;
     let d = construire(ctx, &demande(false))?;
     let envoi = envoyer_dossier(ctx, &d, &Preuve { donnee: Some(forme), ..Preuve::default() }, INTERFACE, ouvrir)?;
-    let phrase = format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, super::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
+    let phrase = format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
     Ok(DossierRendu::de(d, phrase, Some(envoi)))
 }
 
