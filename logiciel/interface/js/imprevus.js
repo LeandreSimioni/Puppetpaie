@@ -519,9 +519,10 @@ async function boiteArret(ou) {
       <div class="champs-deux" id="ar-bloc-connu" hidden>
         <label class="champ-boite">Connu le
           <input type="date" id="ar-connu"></label>
-        <label class="champ-boite">à <span class="discret">— si on le sait</span>
+        <label class="champ-boite">à
           <input type="time" id="ar-connu-heure"></label>
       </div>
+      <p class="note" id="ar-connu-dit"></p>
     </div>
     <button type="button" class="lien" id="ar-note-btn">+ une note</button>
     <label class="champ-boite" id="ar-note-l" hidden>Note <span class="discret">— ${aideDe("note_imprevu")}</span>
@@ -548,7 +549,14 @@ async function boiteArret(ou) {
       });
     } catch (e) { ligne.textContent = ""; return; }
     const os = r.obligations || [];
-    avecDeclaration = os.some((o) => o.cle === "declaration_accident");
+    const declaration = os.find((o) => o.cle === "declaration_accident");
+    avecDeclaration = !!declaration;
+    // L'heure dont partent les 48 heures, telle que le moteur la rend (minuit tant qu'aucune n'est dite) : dans la case,
+    // modifiable, avec sa phrase.
+    const connu = (declaration && declaration.connaissance) || {};
+    const heure = document.getElementById("ar-connu-heure");
+    if (!heure.value && connu.heure) heure.value = connu.heure;
+    document.getElementById("ar-connu-dit").textContent = connu.heure_dite || "";
     majFaits();
     ligne.textContent = r.ensuite || "";
   };
@@ -867,9 +875,10 @@ function boiteConnaissance(a, de, o) {
     ${depart.presume ? `<p class="note"><b>Point de départ présumé</b> ${echapper(depart.presume)}</p>` : ""}
     <div class="champs-deux">
       <label class="champ-boite">Le <input type="date" id="co-jour" value="${echapper(depart.saisi ? depart.jour : "")}"></label>
-      <label class="champ-boite">à <span class="discret">— si on le sait</span>
-        <input type="time" id="co-heure" value="${echapper(depart.saisi && depart.heure ? depart.heure : "")}"></label>
+      <label class="champ-boite">à
+        <input type="time" id="co-heure" value="${echapper(o.connaissance.heure || "")}"></label>
     </div>
+    ${o.connaissance.heure_dite ? `<p class="note">${echapper(o.connaissance.heure_dite)}</p>` : ""}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="primaire" id="co-ok">Enregistrer</button>

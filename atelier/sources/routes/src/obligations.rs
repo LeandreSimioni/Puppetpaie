@@ -468,9 +468,9 @@ impl FaitDit {
     }
 }
 
-/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`). Pour
-/// l'accident, l'heure aussi : celle dont les 48 heures partent, minuit (`DEBUT_DU_JOUR`) tant qu'aucune n'est dite, que
-/// la page met dans sa case ; et, a minuit, la phrase qui dit de la verifier (`heure_dite`).
+/// Le jour ou la compagnie l'a su, la ou le delai en court : ce que la page demande (`arret-connaissance`, `de`), et
+/// l'heure que la page met dans sa case : celle qui est dite ; pour l'accident, celle dont les 48 heures partent, minuit
+/// (`DEBUT_DU_JOUR`) tant qu'aucune n'est dite, et a minuit la phrase qui dit de la verifier (`heure_dite`).
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnaissanceDemandee {
     pub de: &'static str,
@@ -663,7 +663,10 @@ impl Obligation {
         };
         self.connaissance = match (connaissance, &self.depart) {
             (Some((de, titre)), Some(depart)) if self.subrogation != Some(true) => {
-                let heure = (self.cle == CleDObligation::DeclarationAccident).then(|| depart.heure.clone().unwrap_or_else(|| heure_lisible(DEBUT_DU_JOUR)));
+                let heure = match self.cle {
+                    CleDObligation::DeclarationAccident => Some(depart.heure.clone().unwrap_or_else(|| heure_lisible(DEBUT_DU_JOUR))),
+                    _ => depart.saisi.then(|| depart.heure.clone()).flatten(),
+                };
                 let heure_dite = heure.as_deref().filter(|h| lire_heure(h) == Some(DEBUT_DU_JOUR)).map(|_| HEURE_A_VERIFIER);
                 Some(ConnaissanceDemandee { de, titre, heure, heure_dite })
             }
