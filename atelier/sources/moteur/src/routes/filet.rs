@@ -1,6 +1,6 @@
 //! Les routes du filet et du canal de l'editeur :
 //!
-//! - `incident-navigateur` : ce qui casse dans la page (le journal des incidents ecrit, et c'est tout ; ne leve jamais) ;
+//! - `incident-navigateur` : ce qui casse dans la page (le journal des incidents ecrit, et c'est tout) ;
 //! - `diagnostic-etat`, `diagnostic-envoyer`, `diagnostic-regler` : ce qui est parti chez l'editeur, et l'envoi de ce
 //!   qui attend ;
 //! - `signalements`, `signalement-apercu`, `signalement-envoyer` (enregistre, ne part pas), `signalements-partir` (le
@@ -14,23 +14,17 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-// Les lignes du journal des incidents et la boite des messages (`compagnie::incidents`, `compagnie::problemes`) sont
-// encore du JSON : ce module les porte telles quelles.
-use serde_json::Value;
 
-use crate::compagnie::incidents::{self, DEPOSE, EN_ATTENTE};
-use crate::compagnie::problemes;
+use crate::compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
+use crate::compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
+use crate::compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuMessage, SignalementVu};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
 use crate::routes::catalogue::Route;
+use crate::routes::catalogue::{Ecran, Place};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::SansCharge;
-use crate::valeur::get;
 use socle::ecran::Pastille;
 use socle::echec::{erreur, Classe, R};
-use crate::valeur::{valeur_en_texte, valeurs_egales, vrai};
-use crate::routes::catalogue::{Ecran, Place};
-
-
 
 const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
 const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
@@ -48,7 +42,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer, mot pour mot, ce qu'un message au développeur emporterait.",
         charge: &[TEXTE, OU, CAPTURES],
         exemple: r#"{"texte":"La phrase de la DSN est coupée.","ecran":"Paie, novembre 2026"}"#,
-        rend: "corps (ce qui part), caviarde, serveur, captures, incidents, peut_envoyer, pourquoi",
+        rend: "corps (ce qui part), caviarde, serveur, captures, incidents",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         avance: false,
@@ -96,7 +90,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Faire partir chez le développeur les messages qui attendent.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "le bilan du passage (partis, reste, erreur), phrase ; ne refuse jamais",
+        rend: "le bilan du passage (partis, reste, erreur, occupe), phrase ; ne refuse jamais",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
         avance: true,
@@ -106,8 +100,8 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentNavigateur,
         geste: "Noter ce qui a cassé dans la page.",
-        charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, pile)", avance: false }],
-        exemple: r#"{"message":"exemple","genre":"erreur"}"#,
+        charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, colonne, pile, canal, ou_dans_la_page)", avance: false }],
+        exemple: r#"{"genre":"TypeError","message":"exemple","fichier":"","ligne":0,"canal":"erreur","ou_dans_la_page":"paie"}"#,
         rend: "note (vrai : noté), empreinte",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
@@ -180,7 +174,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Déposer chez le développeur les incidents qui attendent.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "envoyes, reste, erreur, sans_serveur, phrase ; ne refuse jamais",
+        rend: "envoyes, reste, erreur, occupe, phrase ; ne refuse jamais",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
         avance: true,
@@ -228,11 +222,11 @@ struct ChargeRegler {
     actif: bool,
 }
 
-/// La charge des routes qui lisent les incidents : une seule nature, ou toutes ; ceux qui attendent seulement.
+/// La charge de `incidents-lire` : une seule nature, ou toutes ; ceux qui attendent seulement (absent : tous).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeIncidents {
-    quoi: Option<String>,
+    quoi: Option<Nature>,
     en_attente: Option<bool>,
 }
 
@@ -240,32 +234,11 @@ struct ChargeIncidents {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeNature {
-    quoi: Option<String>,
-}
-
-impl ChargeIncidents {
-    fn nature(&self) -> Option<&str> {
-        self.quoi.as_deref().filter(|q| !q.is_empty())
-    }
-}
-
-impl ChargeNature {
-    fn nature(&self) -> Option<&str> {
-        self.quoi.as_deref().filter(|q| !q.is_empty())
-    }
-}
-
-/// Une capture de la page : son type d'image, ses donnees en base64.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CaptureDeLaPage {
-    #[serde(rename = "type")]
-    genre: Option<String>,
-    donnees: String,
+    quoi: Option<Nature>,
 }
 
 /// La charge d'un message au developpeur : son texte, ou l'on etait, ses captures.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeMessage {
     texte: String,
@@ -274,17 +247,15 @@ struct ChargeMessage {
 }
 
 impl ChargeMessage {
-    /// Le message tel que `compagnie::problemes` le lit : le texte, l'ecran, les captures.
-    fn pour_problemes(&self) -> R<(Value, Value, Vec<Value>)> {
-        let tout = socle::ecriture::en_valeur(self);
-        Ok((socle::ecriture::en_valeur(&self.texte), socle::ecriture::en_valeur(&self.ecran), problemes::captures_de(&tout)?))
+    fn captures(&self) -> &[CaptureDeLaPage] {
+        match &self.captures {
+            Some(c) => c,
+            None => &[],
+        }
     }
 }
 
 // ------------------------------------------------------------------ ce que les routes rendent
-
-/// Une pastille, ou rien.
-type PeutEtrePastille = Option<Pastille>;
 
 /// Ce que rend une route qui ne dit qu'un compte : sa phrase, et ce qu'elle a compte.
 #[derive(Debug, Serialize)]
@@ -301,7 +272,7 @@ struct Compte {
 struct IncidentNote {
     phrase: &'static str,
     note: bool,
-    empreinte: Option<Value>,
+    empreinte: Option<String>,
 }
 
 /// Ce que rendent `incidents-lire` et `incidents-regrouper` : les lignes gardees (`compagnie::incidents`), en phrases.
@@ -310,36 +281,35 @@ struct Incidents {
     phrase: String,
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    lignes: Option<Vec<Value>>,
+    lignes: Option<Vec<Ligne>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    paquets: Option<Vec<Value>>,
+    paquets: Option<Vec<Paquet>>,
 }
 
-/// Ce que rend un passage d'envoi (`incidents-envoyer`, `signalements-partir`) : son bilan (`compagnie::incidents`,
-/// `compagnie::problemes`), et sa phrase.
+/// Ce que rend un passage d'envoi (`incidents-envoyer`, `signalements-partir`) : son bilan, et sa phrase.
 #[derive(Debug, Serialize)]
-struct Envoi {
+struct Envoi<B: Serialize> {
     phrase: String,
     #[serde(flatten)]
-    bilan: Value,
+    bilan: B,
 }
 
-/// Ce que rendent `signalement-apercu` et `signalement-envoyer` : ce que `compagnie::problemes` en dit.
+/// Ce que rend `signalement-apercu` : ce que `compagnie::problemes` en dit, et sa phrase.
 #[derive(Debug, Serialize)]
 struct Message {
     phrase: String,
     #[serde(flatten)]
-    rendu: Value,
+    apercu: Apercu,
 }
 
-/// Un message au developpeur, tel que l'ecran le liste : ce que `compagnie::problemes` en garde, son jour en mots, sa
+/// Un message au developpeur, tel que l'ecran le liste : ce que `compagnie::problemes` en dit, son jour en mots, sa
 /// pastille et son depart.
 #[derive(Debug, Serialize)]
 struct SignalementDit {
     #[serde(flatten)]
-    garde: Value,
+    vu: SignalementVu,
     quand_dit: String,
-    pastille: PeutEtrePastille,
+    pastille: Option<Pastille>,
     depart: Pastille,
 }
 
@@ -358,7 +328,7 @@ pub(crate) struct Signalements {
 #[derive(Debug, Serialize)]
 struct Envoye {
     phrase: String,
-    id: Value,
+    id: String,
     deja: bool,
     signalements: Vec<SignalementDit>,
     non_lues: usize,
@@ -366,22 +336,30 @@ struct Envoye {
     ecran: EcranDuMessage,
 }
 
+/// Exactement ce qui est parti d'un groupe : le dernier incident tel qu'il part, ou le nombre de paies d'une annee.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Contenu {
+    Incident(Box<PourLEditeur>),
+    Paies(ContenuParti),
+}
+
 /// Un groupe d'incidents semblables, tel que l'ecran « ce qui est parti chez l'editeur » le montre.
 #[derive(Debug, Serialize)]
 struct Groupe {
-    quoi: Value,
-    ou: Value,
-    genre: Value,
-    resume: Value,
-    combien: i64,
-    partis: i64,
-    en_attente: i64,
-    premiere: Value,
-    derniere: Value,
-    parti_le: Option<Value>,
-    contenu: Value,
+    quoi: &'static str,
+    ou: String,
+    genre: Option<String>,
+    resume: String,
+    combien: u64,
+    partis: u64,
+    en_attente: u64,
+    premiere: Option<String>,
+    derniere: Option<String>,
+    parti_le: Option<String>,
+    contenu: Contenu,
     dernier_dit: String,
-    quoi_dit: String,
+    quoi_dit: &'static str,
     pastille: Pastille,
 }
 
@@ -389,18 +367,18 @@ struct Groupe {
 #[derive(Debug, Serialize)]
 struct Diagnostic {
     phrase: String,
-    serveur: Option<String>,
+    serveur: String,
     envoi: bool,
     total: usize,
-    partis: i64,
-    en_attente: i64,
+    partis: u64,
+    en_attente: u64,
     dernier_envoi: Option<String>,
-    paies_annuelles: Vec<crate::compagnie::nombre_de_paies::AnneePartie>,
+    paies_annuelles: Vec<AnneePartie>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
     ecran: EcranDuDiagnostic,
     #[serde(skip_serializing_if = "Option::is_none")]
-    bilan: Option<Value>,
+    bilan: Option<BilanIncidents>,
     #[serde(skip_serializing_if = "Option::is_none")]
     couleur: Option<&'static str>,
 }
@@ -414,7 +392,13 @@ macro_rules! dites {
         })*
     };
 }
-dites!(Compte, Incidents, Envoi, Message, Signalements, Envoye, Diagnostic);
+dites!(Compte, Incidents, Message, Signalements, Envoye, Diagnostic);
+
+impl<B: Serialize> Dite for Envoi<B> {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
 
 impl Dite for IncidentNote {
     fn phrase(&self) -> &str {
@@ -431,12 +415,13 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             en_json(signalements_route(racine)?)
         }
         Route::IncidentNavigateur => {
-            // Ce que la page a vu : un rapport libre (message, genre, fichier, ligne, pile), que le journal des
-            // incidents met en forme.
-            let rapport: Value = charge.lire()?;
-            let ligne = incidents::depuis_navigateur(racine, &rapport);
-            let empreinte = ligne.as_ref().and_then(|l| l.get("empreinte")).cloned();
-            en_json(IncidentNote { phrase: if ligne.is_some() { "Incident noté." } else { "Rien n'est noté." }, note: ligne.is_some(), empreinte })
+            // Ce que la page a vu (`incidents::RapportNavigateur`), que le journal des incidents met en forme.
+            let ligne = incidents::depuis_navigateur(racine, &charge.lire()?)?;
+            en_json(IncidentNote {
+                phrase: if ligne.is_some() { "Incident noté." } else { "Rien n'est noté." },
+                note: ligne.is_some(),
+                empreinte: ligne.map(|l| l.empreinte),
+            })
         }
         Route::DiagnosticEtat => {
             let SansCharge {} = charge.lire()?;
@@ -447,11 +432,10 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             let bilan = incidents::envoyer(racine);
             let mut etat = diagnostic_etat(racine)?;
             // La couleur du message qui le dit : un envoi impossible est refuse, sinon parti.
-            let erreur = bilan.get("erreur").filter(|e| vrai(e)).map(valeur_en_texte);
-            etat.couleur = Some(crate::routes::couleur_de_l_etat(if erreur.is_some() { "refuse" } else { "fait" }));
-            etat.phrase = match erreur {
+            etat.couleur = Some(crate::routes::couleur_de_l_etat(if bilan.erreur.is_some() { "refuse" } else { "fait" }));
+            etat.phrase = match &bilan.erreur {
                 Some(e) => format!("Envoi impossible : {}", e),
-                None => format!("{} incident(s) envoyé(s).", super::mot(&bilan["envoyes"])),
+                None => format!("{} incident(s) envoyé(s).", bilan.envoyes),
             };
             etat.bilan = Some(bilan);
             en_json(etat)
@@ -459,7 +443,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::IncidentsEnvoyer => {
             let SansCharge {} = charge.lire()?;
             let bilan = incidents::envoyer(racine);
-            en_json(Envoi { phrase: phrase_d_envoi(&bilan), bilan })
+            en_json(Envoi { phrase: phrase_d_envoi(bilan.envoyes, bilan.reste, bilan.erreur.as_deref(), bilan.occupe), bilan })
         }
         // Couper ou rendre l'envoi des incidents a l'editeur.
         Route::DiagnosticRegler => {
@@ -475,44 +459,36 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::IncidentsLire => {
             let c: ChargeIncidents = charge.lire()?;
-            let lignes = incidents::lire(racine, c.nature(), c.en_attente == Some(true))?;
+            let lignes = incidents::lire(racine, c.quoi, c.en_attente == Some(true))?;
             en_json(Incidents { phrase: format!("{} incident(s) gardé(s) sur ce poste.", lignes.len()), phrases: lignes.iter().map(phrase_d_incident).collect(), lignes: Some(lignes), paquets: None })
         }
         Route::IncidentsRegrouper => {
             let c: ChargeNature = charge.lire()?;
-            let paquets = incidents::regrouper(racine, c.nature())?;
+            let paquets = incidents::regrouper(racine, c.quoi)?;
             en_json(Incidents { phrase: format!("{} sorte(s) d'incident gardée(s) sur ce poste.", paquets.len()), phrases: paquets.iter().map(phrase_de_paquet).collect(), lignes: None, paquets: Some(paquets) })
         }
         Route::IncidentsOublier => {
             let c: ChargeNature = charge.lire()?;
-            let n = incidents::oublier(racine, c.nature());
+            let n = incidents::oublier(racine, c.quoi)?;
             en_json(Compte { phrase: format!("{} incident(s) effacé(s) de ce poste.", n), retires: Some(n), lues: None })
         }
         Route::SignalementApercu => {
             let c: ChargeMessage = charge.lire()?;
-            let (texte, ecran, captures) = c.pour_problemes()?;
-            let rendu = problemes::apercu(racine, &texte, &ecran, &captures)?;
-            let phrase = if rendu["peut_envoyer"] == Value::Bool(true) {
-                format!("Ce message partirait chez {}, avec {} incidents et {} captures.", valeur_en_texte(&rendu["serveur"]), super::mot(&rendu["incidents"]), super::mot(&rendu["captures"]))
-            } else {
-                valeur_en_texte(&rendu["pourquoi"])
-            };
-            en_json(Message { phrase, rendu })
+            let apercu = problemes::apercu(racine, &c.texte, c.ecran.as_deref(), c.captures())?;
+            let phrase = format!("Ce message partirait chez {}, avec {} incidents et {} captures.", apercu.serveur, apercu.incidents, apercu.captures);
+            en_json(Message { phrase, apercu })
         }
         Route::SignalementEnvoyer => {
             let c: ChargeMessage = charge.lire()?;
-            let (texte, ecran, captures) = c.pour_problemes()?;
-            let rendu = problemes::envoyer(racine, &texte, &ecran, &captures)?;
-            let id = rendu["id"].clone();
-            let deja = rendu["deja"] == Value::Bool(true);
+            let e = problemes::envoyer(racine, &c.texte, c.ecran.as_deref(), c.captures())?;
             let liste = signalements_route(racine)?;
-            let depart = liste.signalements.iter().find(|s| s.garde.get("id") == Some(&id)).map(|s| s.depart.mots.clone());
-            let dit = if deja { "Ce message est déjà enregistré." } else { "Message enregistré pour le développeur." };
+            let depart = liste.signalements.iter().find(|s| s.vu.garde.id == e.id).map(|s| s.depart.mots.clone());
+            let dit = if e.deja { "Ce message est déjà enregistré." } else { "Message enregistré pour le développeur." };
             let phrase = match depart {
                 Some(d) => format!("{} {}", dit, d),
                 None => dit.to_string(),
             };
-            en_json(Envoye { phrase, id, deja, signalements: liste.signalements, non_lues: liste.non_lues, reponses_dit: liste.reponses_dit, ecran: liste.ecran })
+            en_json(Envoye { phrase, id: e.id, deja: e.deja, signalements: liste.signalements, non_lues: liste.non_lues, reponses_dit: liste.reponses_dit, ecran: liste.ecran })
         }
         Route::SignalementsLus => {
             let SansCharge {} = charge.lire()?;
@@ -521,8 +497,8 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::SignalementsPartir => {
             let SansCharge {} = charge.lire()?;
-            let bilan = problemes::partir(racine);
-            en_json(Envoi { phrase: phrase_d_envoi(&bilan), bilan })
+            let bilan: BilanMessages = problemes::partir(racine);
+            en_json(Envoi { phrase: phrase_d_envoi(bilan.partis, bilan.reste, bilan.erreur.as_deref(), bilan.occupe), bilan })
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
@@ -530,7 +506,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 
 /// LES PASTILLES DU DIAGNOSTIC (`couleur_de_l_etat`) : coupe par la compagnie, une information ; rien de note ou tout
 /// parti, fait ; des incidents en attente, une information (ils partent d'eux-memes).
-fn pastille_du_diagnostic(envoi: bool, total: usize, attente: i64) -> Pastille {
+fn pastille_du_diagnostic(envoi: bool, total: usize, attente: u64) -> Pastille {
     if !envoi {
         Pastille::de("information", "désactivé")
     } else if total == 0 {
@@ -543,15 +519,12 @@ fn pastille_du_diagnostic(envoi: bool, total: usize, attente: i64) -> Pastille {
 }
 
 /// Le nom de ce qui est parti, tel que la boite le titre.
-fn quoi_dit(quoi: &Value) -> String {
-    match quoi.as_str() {
-        Some("logiciel") => "plantage".to_string(),
-        Some("refus") => "refus du moteur".to_string(),
-        Some("dpae") => "DPAE rejetée".to_string(),
-        Some("dsn") => "DSN rejetée".to_string(),
-        Some("paies") => "nombre de paies".to_string(),
-        Some(autre) => autre.to_string(),
-        None => super::mot(quoi),
+fn quoi_dit(quoi: Nature) -> &'static str {
+    match quoi {
+        Nature::Logiciel => "plantage",
+        Nature::Refus => "refus du moteur",
+        Nature::Dpae => "DPAE rejetée",
+        Nature::Dsn => "DSN rejetée",
     }
 }
 
@@ -559,92 +532,80 @@ fn quoi_dit(quoi: &Value) -> String {
 /// groupe ce qui est parti et ce qui attend -- et, pour le dernier de chaque groupe, EXACTEMENT ce qui part
 /// (`pour_l_editeur`), pas un resume : l'utilisateur lit ce qui quitte son poste.
 fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
-    let serveur = incidents::configuration(racine)?.map(|(s, _)| s);
+    let (serveur, _) = incidents::configuration(racine)?;
     let lignes = incidents::lire(racine, None, false)?;
-    let mut groupes: Vec<(Value, Groupe)> = Vec::new();
+    let mut groupes: Vec<(String, Groupe)> = Vec::new();
     for l in &lignes {
-        let empreinte = get(l, "empreinte")?;
-        let quand = get(l, "quand")?;
-        let quoi = get(l, "quoi")?;
-        let regroupe = quoi.as_str().is_some_and(|q| q == incidents::LOGICIEL || q == incidents::REFUS);
-        let cle = if regroupe { empreinte.clone() } else { Value::String(format!("{}|{}", valeur_en_texte(empreinte), valeur_en_texte(quand))) };
-        let i = match groupes.iter().position(|(k, _)| valeurs_egales(k, &cle)) {
+        let cle = if l.quoi.se_regroupe() { l.empreinte.clone() } else { format!("{}|{}", l.empreinte, l.quand) };
+        let i = match groupes.iter().position(|(k, _)| *k == cle) {
             Some(i) => i,
             None => {
                 let g = Groupe {
-                    quoi: quoi.clone(),
-                    ou: get(l, "ou")?.clone(),
-                    genre: get(l, "genre")?.clone(),
-                    resume: get(l, "resume")?.clone(),
+                    quoi: l.quoi.nom(),
+                    ou: l.ou.clone(),
+                    genre: Some(l.genre.clone()),
+                    resume: l.resume.clone(),
                     combien: 0,
                     partis: 0,
                     en_attente: 0,
-                    premiere: quand.clone(),
-                    derniere: quand.clone(),
+                    premiere: Some(l.quand.clone()),
+                    derniere: Some(l.quand.clone()),
                     parti_le: None,
-                    contenu: Value::Null,
+                    contenu: Contenu::Incident(Box::new(incidents::pour_l_editeur(racine, l))),
                     dernier_dit: String::new(),
-                    quoi_dit: quoi_dit(quoi),
+                    quoi_dit: quoi_dit(l.quoi),
                     pastille: Pastille::de("information", ""),
                 };
                 groupes.push((cle, g));
                 groupes.len() - 1
             }
         };
-        let envoi = get(l, "envoi")?;
-        let etat = envoi.get("etat").and_then(Value::as_str);
         let g = &mut groupes[i].1;
         // Un incident revu (ses doublons, `fois`) compte autant de fois qu'il a eu lieu.
-        let fois = incidents::fois_de(l);
-        g.combien += fois;
-        g.derniere = match l.get("derniere").filter(|d| d.is_string()) {
-            Some(d) => d.clone(),
-            None => quand.clone(),
-        };
-        g.dernier_dit = format!("dernier le {}", super::quand(&super::mot(&g.derniere)));
-        let resume = get(l, "resume")?;
-        if vrai(resume) {
-            g.resume = resume.clone();
+        g.combien += l.fois;
+        g.derniere = Some(l.derniere.clone());
+        g.dernier_dit = format!("dernier le {}", super::quand(&l.derniere));
+        if !l.resume.is_empty() {
+            g.resume = l.resume.clone();
         }
-        g.contenu = incidents::pour_l_editeur(racine, l)?;
-        if etat == Some(DEPOSE) {
-            g.partis += fois;
-            if let Some(q) = envoi.get("quand").filter(|q| vrai(q)) {
+        g.contenu = Contenu::Incident(Box::new(incidents::pour_l_editeur(racine, l)));
+        if l.envoi.etat == DEPOSE {
+            g.partis += l.fois;
+            if let Some(q) = &l.envoi.quand {
                 g.parti_le = Some(q.clone());
             }
-        } else if etat == Some(EN_ATTENTE) {
-            g.en_attente += fois;
+        } else if l.envoi.etat == EN_ATTENTE {
+            g.en_attente += l.fois;
         }
     }
     let mut liste: Vec<Groupe> = groupes.into_iter().map(|(_, g)| g).collect();
     for g in liste.iter_mut() {
         g.pastille = match &g.parti_le {
             _ if g.en_attente > 0 => Pastille::de("information", &format!("{} en attente", g.en_attente)),
-            Some(le) => Pastille::de("fait", &format!("parti le {}", super::quand(&valeur_en_texte(le)))),
+            Some(le) => Pastille::de("fait", &format!("parti le {}", super::quand(le))),
             None => Pastille::de("information", "pas encore parti"),
         };
     }
-    let partis: Vec<String> = liste.iter().filter_map(|g| g.parti_le.as_ref()).map(valeur_en_texte).collect();
-    let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<i64>(), liste.iter().map(|g| g.en_attente).sum::<i64>());
+    let partis: Vec<String> = liste.iter().filter_map(|g| g.parti_le.clone()).collect();
+    let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<u64>(), liste.iter().map(|g| g.en_attente).sum::<u64>());
     // LE NOMBRE DE PAIES DE L'ANNEE se voit dans la meme liste : une entree par annee partie, avec exactement ce qui a
     // quitte le poste. Ce n'est pas un incident : il ne compte ni dans `total`, ni dans `partis`.
     let annees = crate::compagnie::nombre_de_paies::pour_l_ecran(racine);
     for a in &annees {
-        let le = socle::ecriture::en_valeur(&a.parti_le);
         liste.push(Groupe {
-            quoi: Value::String("paies".into()),
-            ou: Value::String("une fois par an".into()),
-            genre: Value::Null,
-            resume: Value::String(format!("{} : {} paie(s) faite(s)", a.annee, a.paies)),
+            quoi: "paies",
+            ou: "une fois par an".to_string(),
+            genre: None,
+            resume: format!("{} : {} paie(s) faite(s)", a.annee, a.paies),
             combien: 1,
             partis: 1,
             en_attente: 0,
-            premiere: le.clone(),
-            derniere: le.clone(),
-            parti_le: Some(le),
-            contenu: socle::ecriture::en_valeur(&a.contenu),
-            dernier_dit: format!("dernier le {}", super::quand(&super::mot(&socle::ecriture::en_valeur(&a.parti_le)))),
-            quoi_dit: "nombre de paies".to_string(),
+            premiere: a.parti_le.clone(),
+            derniere: a.parti_le.clone(),
+            parti_le: a.parti_le.clone(),
+            contenu: Contenu::Paies(a.contenu.clone()),
+            dernier_dit: if let Some(q) = &a.parti_le { format!("dernier le {}", super::quand(q)) } else { "pas encore parti".to_string() },
+            quoi_dit: "nombre de paies",
             pastille: match &a.parti_le {
                 Some(q) => Pastille::de("fait", &format!("parti le {}", super::quand(q))),
                 None => Pastille::de("information", "pas encore parti"),
@@ -652,11 +613,11 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         });
     }
     // Les plus recents d'abord ; tri stable.
-    liste.sort_by(|a, b| super::mot(&b.derniere).cmp(&super::mot(&a.derniere)));
-    let envoi = incidents::envoi_actif(racine);
+    liste.sort_by(|a, b| b.derniere.cmp(&a.derniere));
+    let envoi = incidents::envoi(racine)?;
     let dernier_envoi = partis.into_iter().max();
     let total = lignes.len();
-    let ecran = ecran_du_diagnostic(envoi, serveur.as_deref(), total, &partis_total, dernier_envoi.as_deref(), annees.first());
+    let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi.as_deref(), annees.first());
     Ok(Diagnostic {
         phrase: format!(
             "Signalement des dysfonctionnements : {} ; incidents gardés : {}, partis : {}, en attente : {}.",
@@ -682,25 +643,24 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
 
 /// La route `signalements` : les messages faits depuis ce poste, et les reponses non lues.
 pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
-    let liste = crate::compagnie::problemes::signalements(racine);
+    let liste = problemes::signalements(racine)?;
     // Les reponses que la boite n'a pas encore montrees.
-    let mut non_lues = 0;
-    let mut dits = Vec::new();
-    for l in liste {
-        if vrai(get(&l, "reponse")?) && !vrai(get(&l, "lu")?) {
-            non_lues += 1;
-        }
-        // Son depart, que la boite du message dit juste apres l'envoi : PuppetPaie renvoie de lui-meme ce qui n'est pas
-        // parti, rien n'est a faire (une information).
-        let (pastille, depart) = match l.get("etat").and_then(Value::as_str) {
-            Some("en-cours") => (Some(Pastille::de("information", "en cours d'envoi")), Pastille::de("information", "Envoi en cours…")),
-            Some("pas-parti") => (Some(Pastille::de("information", "pas encore parti")), Pastille::de("information", "Pas encore parti")),
-            _ => (None, Pastille::de("fait", "Message envoyé.")),
-        };
-        dits.push(SignalementDit { quand_dit: super::quand(&super::mot(&l["quand"])), pastille, depart, garde: l });
-    }
+    let non_lues = liste.iter().filter(|s| s.garde.reponse.is_some() && s.garde.lu != Some(true)).count();
+    let dits: Vec<SignalementDit> = liste
+        .into_iter()
+        .map(|vu| {
+            // Son depart, que la boite du message dit juste apres l'envoi : PuppetPaie renvoie de lui-meme ce qui n'est
+            // pas parti, rien n'est a faire (une information).
+            let (pastille, depart) = match vu.etat {
+                EtatDuMessage::EnCours => (Some(Pastille::de("information", "en cours d'envoi")), Pastille::de("information", "Envoi en cours…")),
+                EtatDuMessage::PasParti => (Some(Pastille::de("information", "pas encore parti")), Pastille::de("information", "Pas encore parti")),
+                EtatDuMessage::Arrive => (None, Pastille::de("fait", "Message envoyé.")),
+            };
+            SignalementDit { quand_dit: super::quand(&vu.garde.quand), pastille, depart, vu }
+        })
+        .collect();
     let reponses_dit = (non_lues > 0).then(|| super::compte(non_lues, "réponse", "réponses"));
-    let phrases = dits.iter().map(|s| format!("« {} » : {}", super::mot(&s.garde["texte"]), s.depart.mots.to_lowercase())).collect();
+    let phrases = dits.iter().map(|s| format!("« {} » : {}", s.vu.garde.texte, s.depart.mots.to_lowercase())).collect();
     Ok(Signalements {
         phrase: format!("Messages au développeur : {} ; réponses non lues : {}.", dits.len(), non_lues),
         signalements: dits,
@@ -712,47 +672,25 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
 }
 
 /// Un passage d'envoi (incidents ou messages) : ce qui est parti, ce qui attend, et pourquoi.
-fn phrase_d_envoi(v: &Value) -> String {
-    let n = |k: &str| v.get(k).and_then(Value::as_u64);
-    if v.get("sans_serveur").is_some_and(vrai) {
-        return "Aucun serveur de l'éditeur n'est configuré : rien ne part.".to_string();
-    }
-    if v.get("occupe").is_some_and(vrai) {
+fn phrase_d_envoi(partis: usize, reste: usize, erreur: Option<&str>, occupe: bool) -> String {
+    if occupe {
         return "Un autre envoi est en cours : il prend aussi ceux-ci.".to_string();
     }
-    let partis = match (n("envoyes"), n("partis")) {
-        (Some(a), Some(b)) => a.max(b),
-        (Some(a), None) | (None, Some(a)) => a,
-        (None, None) => 0,
-    };
-    let reste = match n("reste") {
-        Some(r) => format!("{} en attente", r),
-        None => "rien en attente".to_string(),
-    };
-    let mut p = format!("{} parti(s) chez le développeur ; {}.", partis, reste);
-    if let Some(e) = v.get("erreur").filter(|e| vrai(e)) {
-        p.push_str(&format!(" {}", valeur_en_texte(e)));
+    let mut p = format!("{} parti(s) chez le développeur ; {} en attente.", partis, reste);
+    if let Some(e) = erreur {
+        p.push_str(&format!(" {}", e));
     }
     p
 }
 
-/// Ce qu'une ligne gardee dit a la cle `k`, en mots ; rien si elle ne le dit pas.
-fn dit(l: &Value, k: &str) -> String {
-    match l.get(k).filter(|v| vrai(v)) {
-        Some(v) => valeur_en_texte(v),
-        None => String::new(),
-    }
-}
-
 /// Un incident garde : quand, sa nature, ce qu'il dit, et s'il est parti.
-fn phrase_d_incident(l: &Value) -> String {
-    let parti = l.get("envoi").and_then(|e| e.get("etat")).and_then(Value::as_str) == Some(DEPOSE);
-    format!("{} · {} · {} — {}", super::quand(&dit(l, "quand")), dit(l, "quoi"), dit(l, "resume"), if parti { "parti" } else { "pas encore parti" })
+fn phrase_d_incident(l: &Ligne) -> String {
+    format!("{} · {} · {} — {}", super::quand(&l.quand), l.quoi.nom(), l.resume, if l.envoi.etat == DEPOSE { "parti" } else { "pas encore parti" })
 }
 
 /// Un paquet d'incidents semblables : combien, sa nature, ce qu'il dit, le dernier.
-fn phrase_de_paquet(p: &Value) -> String {
-    format!("{} fois · {} · {} — le dernier le {}", dit(p, "combien"), dit(p, "quoi"), dit(p, "resume"), super::quand(&dit(p, "derniere")))
+fn phrase_de_paquet(p: &Paquet) -> String {
+    format!("{} fois · {} · {} — le dernier le {}", p.combien, p.quoi.nom(), p.resume, super::quand(&p.derniere))
 }
 
 /// La boite qui avertit avant de couper l'envoi.
@@ -775,20 +713,18 @@ struct EcranDuDiagnostic {
     rien: &'static str,
 }
 
-fn ecran_du_diagnostic(envoi: bool, serveur: Option<&str>, total: usize, partis: &i64, dernier_envoi: Option<&str>, annee: Option<&crate::compagnie::nombre_de_paies::AnneePartie>) -> EcranDuDiagnostic {
-    let mut compte = match (envoi, serveur, dernier_envoi) {
-        (false, _, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
-        (true, None, _) => Some("aucun serveur de l'éditeur connu : rien ne part".to_string()),
-        (true, Some(_), Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, super::quand(d))),
-        (true, Some(_), None) if total > 0 => Some("rien n'est encore parti".to_string()),
-        (true, Some(_), None) => None,
+fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<&str>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
+    let mut compte = match (envoi, dernier_envoi) {
+        (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
+        (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, super::quand(d))),
+        (true, None) if total > 0 => Some("rien n'est encore parti".to_string()),
+        (true, None) => None,
     };
     if let (true, Some(a)) = (envoi, annee) {
-        let le = match &a.parti_le {
-            Some(q) => format!(" parti le {}", super::quand(q)),
-            None => String::new(),
-        };
-        let paies = format!("nombre de paies de {}{}", a.annee, le);
+        let mut paies = format!("nombre de paies de {}", a.annee);
+        if let Some(q) = &a.parti_le {
+            paies.push_str(&format!(" parti le {}", super::quand(q)));
+        }
         compte = Some(match compte {
             Some(c) => format!("{} · {}", c, paies),
             None => paies,
@@ -804,11 +740,8 @@ fn ecran_du_diagnostic(envoi: bool, serveur: Option<&str>, total: usize, partis:
             question: "Voulez-vous vraiment continuer ?",
         },
         parti: format!(
-            "Quand quelque chose casse, PuppetPaie le note et l'envoie au serveur de l'éditeur, pour qu'il le corrige. Une fois par an, à partir du 16 janvier, il envoie aussi le nombre de paies faites l'année précédente : le logiciel est gratuit, c'est la seule façon pour l'éditeur de savoir s'il sert. Ce qui part est affiché ici tel quel : ce que le logiciel faisait et ses données (montants, dates, codes, spectacles, lieux), ce que vous et le logiciel avez fait les 3 minutes d'avant, et cet ordinateur (système, version, mémoire, disque, écran). Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones des salariés sont remplacés par leur forme (« salarié n°2 », « NIR présent, clé valide ») ; la compagnie n'est pas nommée et le poste est désigné par un numéro tiré au hasard. {}",
-            match serveur {
-                Some(s) => format!("Serveur : {}.", s),
-                None => "Aucun serveur connu : rien ne part.".to_string(),
-            }
+            "Quand quelque chose casse, PuppetPaie le note et l'envoie au serveur de l'éditeur, pour qu'il le corrige. Une fois par an, à partir du 16 janvier, il envoie aussi le nombre de paies faites l'année précédente : le logiciel est gratuit, c'est la seule façon pour l'éditeur de savoir s'il sert. Ce qui part est affiché ici tel quel : ce que le logiciel faisait et ses données (montants, dates, codes, spectacles, lieux), ce que vous et le logiciel avez fait les 3 minutes d'avant, et cet ordinateur (système, version, mémoire, disque, écran). Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones des salariés sont remplacés par leur forme (« salarié n°2 », « NIR présent, clé valide ») ; la compagnie n'est pas nommée et le poste est désigné par un numéro tiré au hasard. Serveur : {}.",
+            serveur
         ),
         rien: "Rien n'a été noté.",
     }

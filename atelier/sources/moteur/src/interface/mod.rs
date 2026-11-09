@@ -811,9 +811,7 @@ impl Fenetre {
                 // CE QUE LA PAGE A FAIT depuis sa derniere demande (`X-Gestes`, js/tuyau.js : clics, champs, boites, console),
                 // note dans le fil AVANT la route qu'il a declenchee (`diagnostic::noter_gestes`, qui le met en forme).
                 if let Some(g) = r.entete("x-gestes").filter(|g| !g.is_empty()) {
-                    if let Ok(lot) = serde_json::from_str::<Value>(&http::decoder_pourcent(g)) {
-                        crate::compagnie::diagnostic::noter_gestes(&racine, &lot);
-                    }
+                    crate::compagnie::diagnostic::noter_gestes(&racine, &http::decoder_pourcent(g));
                 }
                 // SUPPRIMER LA COMPAGNIE OUVERTE (`compagnie-supprimer` confirmee) : la route decide tout
                 // (`suppression::route`) ; la fenetre lache d'abord ce qu'elle tient de la compagnie (sa veille, sa file

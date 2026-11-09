@@ -138,7 +138,7 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> usize {
     let deja: BTreeSet<String> = incidents::lire(&ctx.racine, None, false)
         .unwrap_or_default()
         .iter()
-        .filter_map(|l| l.get("empreinte").and_then(Value::as_str).map(str::to_string))
+        .map(|l| l.empreinte.clone())
         .collect();
     let mut vues: HashSet<String> = HashSet::new();
     let mut notes = 0;
@@ -181,8 +181,10 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> usize {
             sans_contexte: true,
             ..Default::default()
         };
-        if incidents::noter(&ctx.racine, &note).is_some() {
-            notes += 1;
+        match incidents::noter(&ctx.racine, &note) {
+            Ok(Some(_)) => notes += 1,
+            Ok(None) => {}
+            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
         }
     }
     if notes > 0 && incidents::envoi_actif(&ctx.racine) {

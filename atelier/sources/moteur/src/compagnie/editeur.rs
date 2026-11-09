@@ -1,6 +1,10 @@
 //! Le canal vers l'editeur : le POST JSON vers le serveur de l'editeur, pour les incidents
 //! (`rapport`), « Un probleme, une idee ? » (`retour`, `reponses`) et le nombre de paies de l'annee (`paies`).
 //!
+//! CHAQUE ACTION A SES FORMES : ce qui part (une structure `serde`, ecrite en JSON ASCII par `socle::json_ascii`) et ce
+//! que le serveur rend (`Identite`, `Rapport`, `Retour`, `Reponses`, `Paies` ; un refus du serveur, `{"erreur"}`), lu par
+//! `socle::forme`. Les formes sont celles du serveur (`infra/filet/filet_serveur.py` du site de l'editeur, `do_POST`).
+//!
 //! Le PAQUET SOUDE, bride pour toujours (`bridage::paquet_soude`) ne garde que
 //! les actions de l'editeur (et `poste`) : les autres levent `EditionBridee`.
 //!
@@ -15,8 +19,8 @@
 //! le voir nomme un faux mandataire local comme seule porte (`tests/outils`,
 //! `mandataire`), qui refuse.
 
-
-use serde_json::Value;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use socle::echec::{Classe, Echec};
 use envois::transport::{envoyer, Panne, Requete};
@@ -65,6 +69,97 @@ impl ErreurFilet {
     pub fn en_echec(self) -> Echec {
         Echec { classe: self.classe.or(Some(Classe::Filet)), message: self.message }
     }
+}
+
+// ------------------------------------------------------------------ ce que le serveur rend
+
+/// `POST /poste` : l'identite que le serveur donne a ce poste (`creer_poste`), rendue une seule fois.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Identite {
+    pub poste: String,
+    pub cle: String,
+}
+
+/// `POST /rapport` : les cles `(empreinte, quand)` recues, et celles que le serveur a ecartees (une ligne mal formee :
+/// le poste la marque deposee quand meme).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rapport {
+    pub recus: Vec<(String, String)>,
+    pub ecartes: Vec<(String, String)>,
+}
+
+/// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (vide
+/// sinon ; son numero absent).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Retour {
+    pub numero: String,
+    pub ticket: String,
+    pub ticket_numero: Option<i64>,
+}
+
+/// `POST /reponses` : les reponses aux retours de ce poste.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reponses {
+    pub retours: Vec<ReponseDuServeur>,
+}
+
+/// La reponse a un retour : vide tant que l'editeur n'a pas repondu.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReponseDuServeur {
+    pub numero: String,
+    pub reponse: String,
+    pub repondu_le: String,
+}
+
+/// `POST /paies` : ce que le serveur a recu.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Paies {
+    pub recu: bool,
+    pub annee: i32,
+    pub paies: usize,
+}
+
+/// Le corps d'un refus du serveur (un statut hors 2xx).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RefusDuServeur {
+    erreur: String,
+}
+
+// ------------------------------------------------------------------ ce qui part
+
+/// `POST /poste` ne porte rien.
+#[derive(Serialize)]
+struct Rien {}
+
+/// Une action du poste : le numero du poste, et ce qu'elle porte.
+#[derive(Serialize)]
+struct DuPoste<'a, C: Serialize> {
+    poste: &'a str,
+    #[serde(flatten)]
+    corps: C,
+}
+
+#[derive(Serialize)]
+struct Incidents<'a, I: Serialize> {
+    incidents: &'a [I],
+}
+
+#[derive(Serialize)]
+struct CompteDesPaies {
+    annee: i32,
+    paies: usize,
+}
+
+#[derive(Serialize)]
+struct Numeros<'a> {
+    numeros: &'a [String],
 }
 
 /// Le message d'`EditionBridee(quoi)`.
@@ -146,79 +241,39 @@ fn phrase(code: u16) -> &'static str {
     }
 }
 
-/// ASCII seulement (`\uXXXX`, paires de substitution au-dela
-/// du plan de base), separateurs `, ` et `: `.
-pub fn json_ascii(v: &Value) -> String {
-    let mut s = String::new();
-    ecrire(v, &mut s);
-    s
+/// Une panne du transport, en mots.
+fn panne_dite(p: &Panne) -> String {
+    match p {
+        Panne::Statut { code, .. } => format!("HTTP Error {}: {}", code, phrase(*code)),
+        Panne::Reseau(raison) => raison.trim_end_matches('.').to_string(),
+        Panne::Brute { message, .. } => message.trim_end_matches('.').to_string(),
+    }
 }
 
-fn ecrire(v: &Value, s: &mut String) {
-    match v {
-        Value::Null => s.push_str("null"),
-        Value::Bool(b) => s.push_str(if *b { "true" } else { "false" }),
-        Value::Number(n) => match (n.as_i64(), n.as_u64()) {
-            (Some(i), _) => s.push_str(&i.to_string()),
-            (_, Some(u)) => s.push_str(&u.to_string()),
-            _ => s.push_str(&socle::ecriture::repr_flottant(n.as_f64().unwrap_or(0.0))),
+/// Ce que le serveur dit d'un refus : son `erreur` ; un corps vide ou qui n'a pas cette forme laisse le statut seul le
+/// dire, et dit pourquoi.
+fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
+    let propre = format!("HTTP Error {}: {}", code, phrase(code));
+    match corps {
+        Err(p) => format!("{} (corps de la réponse non lu : {})", propre, panne_dite(p)),
+        Ok(o) if o.is_empty() => propre,
+        Ok(o) => match std::str::from_utf8(o) {
+            Err(e) => format!("{} (corps de la réponse illisible : {})", propre, e),
+            Ok(t) => match socle::forme::lire_texte::<RefusDuServeur>(t.trim_start_matches('\u{feff}'), "corps de la réponse illisible") {
+                Ok(r) if !r.erreur.is_empty() => r.erreur,
+                Ok(_) => propre,
+                Err(e) => format!("{} ({})", propre, socle::echec::phrase_de(&e).trim_end_matches('.')),
+            },
         },
-        Value::String(t) => chaine(t, s),
-        Value::Array(a) => {
-            s.push('[');
-            for (i, x) in a.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
-                ecrire(x, s);
-            }
-            s.push(']');
-        }
-        Value::Object(o) => {
-            s.push('{');
-            for (i, (k, x)) in o.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
-                chaine(k, s);
-                s.push_str(": ");
-                ecrire(x, s);
-            }
-            s.push('}');
-        }
     }
 }
 
-fn chaine(t: &str, s: &mut String) {
-    s.push('"');
-    for c in t.chars() {
-        match c {
-            '"' => s.push_str("\\\""),
-            '\\' => s.push_str("\\\\"),
-            '\n' => s.push_str("\\n"),
-            '\r' => s.push_str("\\r"),
-            '\t' => s.push_str("\\t"),
-            '\u{8}' => s.push_str("\\b"),
-            '\u{c}' => s.push_str("\\f"),
-            c if (c as u32) < 0x20 || (c as u32) > 0x7e => {
-                let mut u = [0u16; 2];
-                for unite in c.encode_utf16(&mut u) {
-                    s.push_str(&format!("\\u{:04x}", unite));
-                }
-            }
-            c => s.push(c),
-        }
-    }
-    s.push('"');
-}
-
-/// La reponse JSON du
-/// serveur, ou l'`ErreurFilet` qu'elle a causee.
-pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str)], delai: u64) -> Result<Value, ErreurFilet> {
+/// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
+pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
     if crate::compagnie::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
-        return Err(ErreurFilet::autre(Classe::EditionBridee,edition_bridee(action)));
+        return Err(ErreurFilet::autre(Classe::EditionBridee, edition_bridee(action)));
     }
-    let donnees = json_ascii(corps);
+    let donnees = socle::json_ascii::dumps(corps, None, false, false);
     let url = format!("{}/{}", serveur.trim_end_matches('/'), action);
     // Aucun codage demandé.
     let mut en_tetes: Vec<(&str, &str)> = vec![("User-Agent", "PuppetPaie-filet"), ("Accept-Encoding", "identity")];
@@ -235,35 +290,15 @@ pub fn poster(serveur: &str, action: &str, corps: &Value, entetes: &[(&str, &str
     };
     match envoyer(&r) {
         Ok((brut, _)) => {
-            let octets = if brut.is_empty() { b"{}".to_vec() } else { brut };
-            // Le texte se lit en UTF-8 ; un echec se range avec les pannes de reseau.
-            let texte = match std::str::from_utf8(&octets) {
+            // Une reponse qui ne se lit pas se range avec les pannes de reseau : le passage suivant reessaie.
+            let texte = match std::str::from_utf8(&brut) {
                 Ok(t) => t.trim_start_matches('\u{feff}'),
                 Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
             };
-            match serde_json::from_str::<Value>(texte) {
-                Ok(v) => Ok(v),
-                Err(e) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable (réponse illisible : {}).", e), 0)),
-            }
+            socle::forme::lire_texte::<T>(texte, "réponse illisible")
+                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", socle::echec::phrase_de(&e).trim_end_matches('.')), 0))
         }
-        Err(Panne::Statut { code, corps }) => {
-            let propre = format!("HTTP Error {}: {}", code, phrase(code));
-            let lu = corps.ok().filter(|c| !c.is_empty()).unwrap_or_else(|| b"{}".to_vec());
-            let msg = match std::str::from_utf8(&lu).ok().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()) {
-                Some(Value::Object(o)) => match o.get("erreur") {
-                    Some(e) if crate::valeur::vrai(e) => crate::valeur::valeur_en_texte(e),
-                    _ => propre,
-                },
-                Some(autre) => {
-                    return Err(ErreurFilet::autre(
-                        Classe::Illisible,
-                        socle::fichiers::attendu("un objet", crate::valeur::nom_type(&autre)),
-                    ))
-                }
-                None => propre,
-            };
-            Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", msg), code))
-        }
+        Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), code)),
         Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),
         Err(Panne::Brute { classe, message, .. }) => match classe {
             // Une connexion rompue ou qui ne répond plus : le filet est injoignable.
@@ -281,50 +316,46 @@ pub struct Client {
     pub poste: (String, String),
 }
 
-type Rep = Result<Value, ErreurFilet>;
-
 impl Client {
     /// Le client des actions de l'editeur, avec l'identite de ce poste.
     pub fn du_poste(serveur: &str, numero: &str, cle_du_poste: &str) -> Client {
         Client { serveur: serveur.trim_end_matches('/').to_string(), poste: (numero.to_string(), cle_du_poste.to_string()) }
     }
 
-    /// `POST /poste` : l'identite que le serveur donne a ce poste, `{"poste", "cle"}`,
-    /// rendue une seule fois (il n'en garde que l'empreinte).
-    pub fn demander_poste(serveur: &str) -> Rep {
-        poster(serveur, "poste", &serde_json::json!({}), &[], DELAI)
+    /// `POST /poste` : l'identite que le serveur donne a ce poste, rendue une seule fois (il n'en garde que l'empreinte).
+    pub fn demander_poste(serveur: &str) -> Result<Identite, ErreurFilet> {
+        poster(serveur, "poste", &Rien {}, &[], DELAI)
     }
 
     /// Une action du poste : le numero dans le corps, la cle dans l'en-tete. Un 401
     /// du serveur (poste inconnu, revoque, ou cle fausse : il ne dit pas lequel) se
     /// complete de ce qu'il y a a faire.
-    fn post_du_poste(&self, action: &str, mut corps: Value, delai: u64) -> Rep {
+    fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: u64) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
-        if let Value::Object(o) = &mut corps {
-            o.insert("poste".into(), Value::String(numero.clone()));
-        }
-        match poster(&self.serveur, action, &corps, &[("X-Filet-Cle", cle.as_str())], delai) {
+        match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.as_str())], delai) {
             Err(e) if e.est_filet() && e.statut == 401 => Err(ErreurFilet::filet(format!("{} {}", e.message, REDEMANDER_IDENTITE), 401)),
             r => r,
         }
     }
 
-    pub fn rapporter(&self, incidents: &[Value]) -> Rep {
-        self.post_du_poste("rapport", serde_json::json!({"incidents": incidents}), DELAI)
+    /// `POST /rapport` : un lot d'incidents, tels qu'ils partent (`incidents::PourLEditeur`).
+    pub fn rapporter<I: Serialize>(&self, incidents: &[I]) -> Result<Rapport, ErreurFilet> {
+        self.post_du_poste("rapport", Incidents { incidents }, DELAI)
     }
 
     /// Le nombre de paies de l'annee (`nombre_de_paies`) : `{"annee", "paies"}` et le numero du poste, rien
     /// d'autre.
-    pub fn compter_paies(&self, annee: i32, paies: usize) -> Rep {
-        self.post_du_poste("paies", serde_json::json!({"annee": annee, "paies": paies}), DELAI)
+    pub fn compter_paies(&self, annee: i32, paies: usize) -> Result<Paies, ErreurFilet> {
+        self.post_du_poste("paies", CompteDesPaies { annee, paies }, DELAI)
     }
 
-    /// Un texte, des incidents et des captures : le delai est plus long.
-    pub fn signaler(&self, corps: &Value) -> Rep {
-        self.post_du_poste("retour", corps.clone(), 60)
+    /// Un message au developpeur (`problemes::Corps`) : un texte, des incidents et des captures ; le delai est plus long.
+    pub fn signaler<C: Serialize>(&self, corps: &C) -> Result<Retour, ErreurFilet> {
+        self.post_du_poste("retour", corps, 60)
     }
 
-    pub fn reponses(&self, numeros: &[Value]) -> Rep {
-        self.post_du_poste("reponses", serde_json::json!({"numeros": numeros}), DELAI)
+    /// `POST /reponses` : les reponses aux messages `numeros`.
+    pub fn reponses(&self, numeros: &[String]) -> Result<Reponses, ErreurFilet> {
+        self.post_du_poste("reponses", Numeros { numeros }, DELAI)
     }
 }

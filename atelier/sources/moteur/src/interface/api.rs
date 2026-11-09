@@ -165,6 +165,22 @@ fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, 
     }
 }
 
+/// CE QUE PORTE L'INCIDENT D'UN REFUS DE LA PAGE, de quoi rejouer la route : sa charge (mise en forme par la frontiere
+/// quand l'incident se note), sa duree, l'etat du mois qu'elle touche (ou pourquoi il ne se lit pas), ce que le refus
+/// portait pour la page.
+#[derive(serde::Serialize)]
+struct RefusDeLaPage<'a> {
+    route: Route,
+    charge: &'a Value,
+    duree_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mois: Option<crate::compagnie::diagnostic::EtatDuMois>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mois_illisible: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refus: Option<&'a crate::routes::enveloppe::APart>,
+}
+
 /// La reponse a `/api/<nom>`, dans l'enveloppe des routes.
 pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, etats: Option<&FileDesEtats>) -> Reponse {
     let debut = std::time::Instant::now();
@@ -176,14 +192,14 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     // LE FIL : la route de la page, sa charge mise en forme, sa duree, son issue. Une erreur de la page (`incident-navigateur`)
     // s'y dit comme telle.
     if nom == Route::IncidentNavigateur {
-        let c = |k: &str| charge.brute().get(k).map(crate::valeur::valeur_en_texte).unwrap_or_default();
-        crate::compagnie::diagnostic::noter_moteur(&format!(
-            "erreur JS {} : {} ({}:{})",
-            c("genre"),
-            crate::compagnie::diagnostic::texte_en_forme(Some(racine), &c("message"), 200),
-            crate::compagnie::diagnostic::texte_en_forme(Some(racine), &c("fichier"), 80),
-            c("ligne")
-        ));
+        let dit = match charge.lire::<crate::compagnie::incidents::RapportNavigateur>() {
+            Ok(r) => {
+                let texte = |s: &str, limite: usize| crate::compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
+                format!("erreur JS {} : {} ({}:{})", texte(&r.genre, 80), texte(&r.message, 200), texte(&r.fichier, 80), r.ligne)
+            }
+            Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", socle::echec::phrase_de(&e.message)),
+        };
+        crate::compagnie::diagnostic::noter_moteur(&dit);
     } else {
         crate::compagnie::diagnostic::noter_route(racine, "page", nom, charge.brute(), duree, issue(&rendu));
     }
@@ -201,18 +217,26 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             // DE QUOI REJOUER LA ROUTE : sa charge mise en forme,
             // sa duree, l'etat du mois qu'elle touche, ce que le refus portait pour la page ; et la trace -- l'endroit du
             // code et la chaine des echecs. Le fil et la machine s'y ajoutent dans `incidents::noter`.
-            let mut detail = Map::new();
-            detail.insert("route".into(), json!(nom));
-            detail.insert("charge".into(), crate::compagnie::diagnostic::en_forme(Some(racine), charge.brute()));
-            detail.insert("duree_ms".into(), json!(duree.as_millis() as u64));
-            if let Some(m) = charge.brute().get("mois").and_then(Value::as_str) {
-                detail.insert("mois".into(), crate::compagnie::diagnostic::etat_du_mois(racine, m));
-            }
-            if !r.a_part.est_vide() {
-                detail.insert("refus".into(), crate::compagnie::diagnostic::en_forme(Some(racine), &socle::ecriture::en_valeur(&r.a_part)));
-            }
+            let (mois, mois_illisible) = match charge.mois() {
+                Ok(Some(m)) => match crate::compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
+                    Ok(etat) => (etat, None),
+                    Err(e) => (None, Some(e.message)),
+                },
+                Ok(None) => (None, None),
+                Err(e) => (None, Some(e.message)),
+            };
+            let detail = RefusDeLaPage {
+                route: nom,
+                charge: charge.brute(),
+                duree_ms: duree.as_millis() as u64,
+                mois,
+                mois_illisible,
+                refus: (!r.a_part.est_vide()).then_some(&r.a_part),
+            };
             let trace = crate::compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
-            let _ = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), Value::Object(detail), trace.as_deref());
+            if let Err(e) = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
+                crate::compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, socle::echec::phrase_de(&e.message)));
+            }
         }
     }
     rendu

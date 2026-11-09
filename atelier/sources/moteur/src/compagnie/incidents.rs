@@ -4,63 +4,119 @@
 //! moments ou le logiciel s'est arrete, a refuse, ou s'est fait rejeter. Il
 //! porte le diagnostic a distance : tout s'ecrit ICI, toujours, et une ligne
 //! porte son etat d'envoi (`en-attente`, `depose`, `sans-objet`), c'est tout
-//! ce que l'envoi ajoute. `prive/journal/incidents.json` : une liste, on
+//! ce que l'envoi ajoute. `journal/incidents.json` : une liste de lignes (`Ligne`), on
 //! n'ajoute qu'a la fin.
 //!
-//! Quatre natures (`logiciel`, `refus`, `dpae`, `dsn`) ; les deux premieres se
+//! Quatre natures (`Nature`) ; les deux premieres se
 //! regroupent par empreinte, et le meme incident revu dans les dix minutes se
 //! compte dans sa ligne (`fois`, `derniere`). UNE LIGNE PORTE DE QUOI DEBOGUER :
-//! le detail (la charge de la route, l'etat du mois),
-//! la trace, le fil des trois minutes d'avant et la machine (`diagnostic`).
-//! RIEN QUI DESIGNE UNE PERSONNE : `noter` passe tout par la frontiere de
+//! le detail (la charge de la route, l'etat du mois : une trace, ecrite en texte par la frontiere au moment ou l'incident
+//! se note, que le moteur ne relit jamais), la trace, le fil des trois minutes d'avant, les ecritures et la machine
+//! (`diagnostic`). RIEN QUI DESIGNE UNE PERSONNE : `noter` passe tout par la frontiere de
 //! `diagnostic` (une personne devient sa forme, « salarie n°2 ») puis CAVIARDE
 //! ce qui a la forme d'un NIR, d'un IBAN, d'un BIC ou du jeton de session.
 //!
-//! ET IL NE LEVE JAMAIS : `noter`, `depuis_exception`, `depuis_navigateur`,
-//! `marquer_envoye`, `oublier` et `envoyer` ne remontent aucun refus a
-//! l'appelant. Ce journal est appele depuis le gestionnaire de plantage : s'il
-//! levait, il remplacerait l'erreur qu'on cherche a comprendre par la sienne.
+//! Ce journal est appele depuis le gestionnaire de plantage : `noter` rend son refus (un disque qui refuse, un journal
+//! illisible) a l'appelant, qui le dit sans remplacer l'erreur qu'on cherche a comprendre ; `envoyer` ne leve jamais, son
+//! bilan dit ce qui n'a pas marche.
 //!
 //! Le format sur le disque : `socle::ecriture::ecrire_json`, indent 2.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
+use crate::compagnie::diagnostic::{Ecriture, Machine};
 use crate::compagnie::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
-use crate::valeur::{get, nom_type, valeur_en_texte, valeurs_egales, vrai};
 use socle::echec::R;
 use socle::echec::{erreur, Classe};
 use socle::fichiers::dossier_du_code;
 use regex::Regex;
 use socle::verrou::Verrou;
 
-pub const LOGICIEL: &str = "logiciel";
-pub const REFUS: &str = "refus";
-pub const DPAE: &str = "dpae";
-pub const DSN: &str = "dsn";
-
-pub const EN_ATTENTE: &str = "en-attente";
-pub const DEPOSE: &str = "depose";
-pub const SANS_OBJET: &str = "sans-objet";
-
-/// `NATURES` : (nature, se regroupe).
-const NATURES: [(&str, bool); 4] = [(LOGICIEL, true), (REFUS, true), (DPAE, false), (DSN, false)];
-
-/// Les natures que le journal connait, dans l'ordre de `NATURES`.
-pub fn natures() -> Vec<&'static str> {
-    NATURES.iter().map(|(n, _)| *n).collect()
+/// La nature d'un incident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Nature {
+    /// Un defaut du logiciel (une note qui ne dit pas sa nature en est un).
+    #[default]
+    Logiciel,
+    /// Un refus d'usage.
+    Refus,
+    /// Une DPAE rejetee.
+    Dpae,
+    /// Une DSN rejetee.
+    Dsn,
 }
 
-fn nature_connue(n: &str) -> bool {
-    NATURES.iter().any(|(x, _)| *x == n)
+pub const LOGICIEL: Nature = Nature::Logiciel;
+pub const REFUS: Nature = Nature::Refus;
+pub const DPAE: Nature = Nature::Dpae;
+pub const DSN: Nature = Nature::Dsn;
+
+impl Nature {
+    /// Le nom de la nature, tel qu'il s'ecrit.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Nature::Logiciel => "logiciel",
+            Nature::Refus => "refus",
+            Nature::Dpae => "dpae",
+            Nature::Dsn => "dsn",
+        }
+    }
+
+    /// Un defaut et un refus se regroupent par empreinte ; un rejet de declaration fait une ligne a lui.
+    pub fn se_regroupe(self) -> bool {
+        matches!(self, Nature::Logiciel | Nature::Refus)
+    }
 }
 
-/// Cette nature d'incident se regroupe-t-elle ?
-fn se_regroupe(quoi: &Value) -> bool {
-    quoi.as_str().is_some_and(|q| NATURES.iter().any(|(n, r)| *n == q && *r))
+/// Ou en est l'envoi d'une ligne chez l'editeur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EtatEnvoi {
+    EnAttente,
+    Depose,
+    SansObjet,
+}
+
+pub const EN_ATTENTE: EtatEnvoi = EtatEnvoi::EnAttente;
+pub const DEPOSE: EtatEnvoi = EtatEnvoi::Depose;
+pub const SANS_OBJET: EtatEnvoi = EtatEnvoi::SansObjet;
+
+/// L'envoi d'une ligne : son etat, et quand elle est partie.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Envoi {
+    pub etat: EtatEnvoi,
+    pub quand: Option<String>,
+}
+
+/// UNE LIGNE DU JOURNAL DES INCIDENTS, telle qu'elle s'ecrit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ligne {
+    pub quoi: Nature,
+    pub quand: String,
+    pub version: String,
+    pub empreinte: String,
+    pub ou: String,
+    pub genre: String,
+    pub resume: String,
+    /// La trace de ce que l'incident portait (la charge de la route, l'etat du mois), ecrite par la frontiere.
+    pub detail: String,
+    pub trace: Option<String>,
+    pub caviarde: Vec<String>,
+    /// Combien de fois il a ete vu, et la derniere.
+    pub fois: u64,
+    pub derniere: String,
+    pub fil: Vec<String>,
+    pub ecritures: Vec<Ecriture>,
+    pub machine_detail: Machine,
+    pub envoi: Envoi,
 }
 
 /// Au-dela, on tronque : une trace d'exception peut faire des pages.
@@ -104,7 +160,7 @@ fn motif(source: &str) -> Regex {
 }
 
 /// Le chemin jusqu'au dossier du logiciel . `regex` ne
-/// connait pas `(?=...)` : le dossier qui suit est capture (groupe 2), et la
+/// connait pas `(?=...)` : le dossier qui suit est capture (groupe 1), et la
 /// recherche suivante repart de lui, comme apres une anticipation.
 fn motif_chemin() -> &'static Regex {
     static M: OnceLock<Regex> = OnceLock::new();
@@ -123,13 +179,13 @@ pub(crate) fn motif_maison() -> &'static Regex {
     M.get_or_init(|| motif(r#"(?i)([A-Z]:\\+Users\\+|/home/|/Users/)[^\\/"'\s]+"#))
 }
 
-/// `_CHEMIN.sub("…/", s)` : chaque chemin jusqu'au dossier du logiciel devient
-/// `…/`, le dossier lui-meme reste et la recherche repart de lui.
+/// Chaque chemin jusqu'au dossier du logiciel devient `…/` ; le dossier lui-meme reste et la recherche repart de lui.
 fn sans_chemin(s: &str) -> String {
     let re = motif_chemin();
     let (mut out, mut dernier, mut pos) = (String::new(), 0, 0);
     while let Some(c) = re.captures_at(s, pos) {
-        let (debut, suite) = (c.get(0).map_or(0, |m| m.start()), c.get(1).map_or(0, |m| m.start()));
+        let debut = c.get(0).expect("une capture a toujours son groupe 0").start();
+        let suite = c.get(1).expect("le groupe 1 du motif n'est pas facultatif").start();
         out.push_str(&s[dernier..debut]);
         out.push_str("…/");
         dernier = suite;
@@ -144,9 +200,9 @@ fn sans_chemin(s: &str) -> String {
 /// Ou vit le journal. `PUPPETPAIE_INCIDENTS` le deplace
 /// (les essais).
 pub fn chemin(racine: &Path) -> PathBuf {
-    match std::env::var("PUPPETPAIE_INCIDENTS").ok().filter(|v| !v.is_empty()) {
-        Some(autre) => PathBuf::from(autre).join("incidents.json"),
-        None => racine.join(INCIDENTS),
+    match std::env::var_os("PUPPETPAIE_INCIDENTS") {
+        Some(autre) if !autre.is_empty() => PathBuf::from(autre).join("incidents.json"),
+        Some(_) | None => racine.join(INCIDENTS),
     }
 }
 
@@ -179,165 +235,144 @@ pub fn caviarder(texte: &str) -> (String, Vec<&'static str>) {
     (s, trouve)
 }
 
-/// Caviarde en profondeur (chaines, listes,
-/// dictionnaires) ; une chaine est tronquee a `limite` points de code.
-pub fn nettoyer(v: &Value, trouve: &mut Vec<&'static str>, limite: usize) -> Value {
-    match v {
-        Value::String(s) => {
-            let (propre, vus) = caviarder(s);
-            trouve.extend(vus);
-            Value::String(tete(&propre, limite))
-        }
-        Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), nettoyer(x, trouve, limite))).collect()),
-        Value::Array(a) => Value::Array(a.iter().map(|x| nettoyer(x, trouve, limite)).collect()),
-        autre => autre.clone(),
-    }
+/// Un texte caviarde puis coupe a `limite` points de code ; ce que le caviardage a trouve s'ajoute a `trouve`.
+fn nettoyer(s: &str, trouve: &mut Vec<&'static str>, limite: usize) -> String {
+    let (propre, vus) = caviarder(s);
+    trouve.extend(vus);
+    tete(&propre, limite)
 }
 
 /// Ce qui fait que deux incidents sont LE MEME -- la
 /// nature, l'endroit et le genre, pas le message.
-pub fn empreinte(nature: &str, ou: &str, quoi: &str) -> String {
+pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> String {
     use sha2::{Digest, Sha256};
-    let graine = format!("{}|{}|{}", nature, ou, quoi);
+    let graine = format!("{}|{}|{}", nature.nom(), ou, quoi);
     let h = Sha256::digest(graine.as_bytes());
     h.iter().map(|o| format!("{:02x}", o)).collect::<String>()[..12].to_string()
 }
 
 // ------------------------------------------------------------------------ ecrire
 
-/// La version du logiciel (`incidents._version`) : `VERSION`, a cote du code.
+/// La version du logiciel : `VERSION`, a cote du code ; un fichier qui ne se lit pas le dit.
 pub fn version() -> String {
-    let p = dossier_du_code().parent().map(|d| d.join("VERSION")).unwrap_or_default();
-    if !p.exists() {
-        return "0.0.0".to_string();
-    }
-    match std::fs::read(&p).ok().and_then(|o| String::from_utf8(o).ok()) {
-        Some(t) => sans_blancs_de_bord(&t).to_string(),
-        None => "?".to_string(),
+    let p = dossier_du_code().join("..").join("VERSION");
+    match std::fs::read_to_string(&p) {
+        Ok(t) => sans_blancs_de_bord(&t).to_string(),
+        Err(e) => format!("(VERSION ne se lit pas : {})", e),
     }
 }
 
-/// Ce que `noter` recoit.
+/// Ce que `noter` recoit. `detail` est la forme de ce que l'incident porte (la charge de la route, l'etat du mois) : il
+/// s'ecrit en texte, a travers la frontiere (`diagnostic::en_forme`).
 #[derive(Default)]
-pub struct Note<'a> {
-    pub nature: &'a str,
+pub struct Note<'a, D: Serialize> {
+    pub nature: Nature,
     pub resume: &'a str,
     /// L'endroit : « calcul.rs:614 », « depot-dsn », « fiche/nir ».
     pub ou: &'a str,
     /// Le genre : le type d'exception, le code de controle, le motif du refus.
     pub quoi: &'a str,
-    pub detail: Value,
+    pub detail: D,
     pub trace: Option<&'a str>,
-    /// `en-attente` par defaut.
-    pub envoi: Option<&'a str>,
-    pub quand: Option<&'a str>,
     /// Sans le fil des trois minutes d'avant ni les ecritures : un rapport qui ne vient d'aucun geste a deboguer, et dont
     /// les charges de routes (des saisies, leurs montants) n'ont rien a faire chez l'editeur.
     pub sans_contexte: bool,
 }
 
-/// La liste du fichier ; un fichier absent, illisible ou qui n'est
-/// pas une liste n'en dit aucune.
-fn lignes(p: &Path) -> Vec<Value> {
-    if !p.exists() {
-        return Vec::new();
+/// Les lignes du journal : aucune sans journal ; un journal qui ne se lit pas se refuse.
+fn lignes(p: &Path) -> R<Vec<Ligne>> {
+    if !p.is_file() {
+        return Ok(Vec::new());
     }
-    match std::fs::read(p).ok().and_then(|o| String::from_utf8(o).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
-        Some(Value::Array(a)) => a,
-        _ => Vec::new(),
-    }
+    Ok(socle::forme::lire_fichier(p, "Le journal des incidents ne se lit pas.")?)
 }
 
-/// `noter` : ajoute une ligne. Ne leve jamais ; rend la ligne, ou `None` si
-/// rien n'a pu etre ecrit.
-pub fn noter(racine: &Path, n: &Note) -> Option<Value> {
-    let nature = if nature_connue(n.nature) { n.nature } else { LOGICIEL };
-    if (nature == DPAE || nature == DSN) && crate::compagnie::bridage::branchement(racine).joue() {
+fn ecrire_lignes(p: &Path, toutes: &[Ligne]) -> R<()> {
+    ecrire_json(p, toutes, 2).map_err(|m| erreur(Classe::Disque, m))
+}
+
+/// `noter` : ajoute une ligne, et la rend ; `None` quand rien n'est a noter (les faux envois d'une fictive).
+pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
+    if (n.nature == DPAE || n.nature == DSN) && crate::compagnie::bridage::branchement(racine).joue() {
         // LES FAUX ENVOIS NE SONT PAS DES INCIDENTS : une fictive joue ses depots.
-        return None;
+        return Ok(None);
     }
     let mut trouve = Vec::new();
     // LA FRONTIERE (`diagnostic`) : un message peut nommer un salarie ; il devient son numero, puis le caviardage. L'alarme
     // (`caviarde`) se leve sur ce qui est ARRIVE : ce que la frontiere a deja remplace se dit quand meme.
-    let forme = |s: &str, limite: usize| crate::compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
     let texte = |s: &str, limite: usize, trouve: &mut Vec<&'static str>| {
-        nettoyer(&Value::String(s.to_string()), trouve, limite);
-        nettoyer(&Value::String(forme(s, limite)), trouve, limite + 40)
+        nettoyer(s, trouve, limite);
+        nettoyer(&crate::compagnie::diagnostic::texte_en_forme(Some(racine), s, limite), trouve, limite + 40)
     };
     let ou = texte(n.ou, 200, &mut trouve);
     let genre = texte(n.quoi, 200, &mut trouve);
     let resume = texte(n.resume, TEXTE_MAX, &mut trouve);
-    let detail = if vrai(&n.detail) {
-        nettoyer(&n.detail, &mut trouve, TEXTE_MAX);
-        nettoyer(&crate::compagnie::diagnostic::en_forme(Some(racine), &n.detail), &mut trouve, TEXTE_MAX)
-    } else {
-        json!({})
-    };
+    nettoyer(&socle::ecriture::json_en_ligne(&n.detail), &mut trouve, usize::MAX);
+    let detail = nettoyer(&crate::compagnie::diagnostic::en_forme(Some(racine), &n.detail), &mut trouve, usize::MAX);
     let trace = match n.trace {
-        Some(t) if !t.is_empty() => texte(t, TRACE_MAX, &mut trouve),
-        _ => Value::Null,
+        Some(t) if !t.is_empty() => Some(texte(t, TRACE_MAX, &mut trouve)),
+        Some(_) | None => None,
     };
     trouve.sort_unstable();
     trouve.dedup();
-    let quand = n.quand.map_or_else(socle::paris::maintenant, str::to_string);
-    let empreinte = empreinte(nature, n.ou, n.quoi);
+    let quand = socle::paris::maintenant();
+    let empreinte = empreinte(n.nature, n.ou, n.quoi);
     let p = chemin(racine);
-    let mut toutes = lignes(&p);
-    // LES DOUBLONS  : le meme incident (meme empreinte, meme resume),
-    // encore en attente et vu il y a moins de dix minutes, ne fait pas une ligne de plus -- il se compte (`fois`, `derniere`).
-    // La ligne garde le fil et la machine de la premiere fois : ce qui a mene au refus.
-    let recent = |l: &Value| {
-        let derniere = l.get("derniere").or_else(|| l.get("quand")).and_then(Value::as_str).unwrap_or("");
-        ecart_secondes(derniere, &quand).is_some_and(|s| (0..DOUBLON_SECONDES).contains(&s))
-    };
+    let mut toutes = lignes(&p)?;
+    // LES DOUBLONS : le meme incident (meme empreinte, meme resume), encore en attente et vu il y a moins de dix minutes,
+    // ne fait pas une ligne de plus -- il se compte (`fois`, `derniere`). La ligne garde le fil et la machine de la
+    // premiere fois : ce qui a mene au refus.
     let debut = toutes.len().saturating_sub(50);
-    if let Some(l) = toutes[debut..].iter_mut().rev().find(|l| {
-        l.get("empreinte").and_then(Value::as_str) == Some(empreinte.as_str())
-            && l.get("resume") == Some(&resume)
-            && matches!(etat_d_envoi(l), Ok(Some(e)) if e == EN_ATTENTE)
-            && recent(l)
-    }) {
-        let fois = l.get("fois").and_then(Value::as_u64).unwrap_or(1) + 1;
-        l["fois"] = json!(fois);
-        l["derniere"] = json!(quand);
-        let ligne = l.clone();
-        ecrire_json(&p, &Value::Array(toutes), 2).ok()?;
-        return Some(ligne);
+    let mut doublon = None;
+    for (i, l) in toutes.iter().enumerate().skip(debut).rev() {
+        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&ecart_secondes(&l.derniere, &quand)?) {
+            doublon = Some(i);
+            break;
+        }
     }
-    let fil = if n.sans_contexte { Vec::new() } else { crate::compagnie::diagnostic::fil(socle::temps::maintenant_ms()) };
-    let fil = fil[fil.len().saturating_sub(FIL_PAR_INCIDENT)..].to_vec();
-    let ligne = json!({
-        "quoi": nature,
-        "quand": quand,
-        "version": version(),
-        "empreinte": empreinte,
-        "ou": ou,
-        "genre": genre,
-        "resume": resume,
-        "detail": detail,
-        "trace": trace,
-        "caviarde": trouve,
-        "fois": 1,
-        "derniere": quand,
-        "fil": fil,
-        "ecritures": if n.sans_contexte { Vec::new() } else { crate::compagnie::diagnostic::ecritures(socle::temps::maintenant_ms(), ECRITURES_PAR_INCIDENT) },
-        "machine_detail": crate::compagnie::diagnostic::machine(racine),
-        "envoi": {"etat": n.envoi.unwrap_or(EN_ATTENTE), "quand": Value::Null},
-    });
+    if let Some(i) = doublon {
+        toutes[i].fois += 1;
+        toutes[i].derniere = quand;
+        let ligne = toutes[i].clone();
+        ecrire_lignes(&p, &toutes)?;
+        return Ok(Some(ligne));
+    }
+    let maintenant = socle::temps::maintenant_ms();
+    let (fil, ecritures) = if n.sans_contexte {
+        (Vec::new(), Vec::new())
+    } else {
+        let fil = crate::compagnie::diagnostic::fil(maintenant);
+        (fil[fil.len().saturating_sub(FIL_PAR_INCIDENT)..].to_vec(), crate::compagnie::diagnostic::ecritures(maintenant, ECRITURES_PAR_INCIDENT))
+    };
+    let ligne = Ligne {
+        quoi: n.nature,
+        quand: quand.clone(),
+        version: version(),
+        empreinte,
+        ou,
+        genre,
+        resume,
+        detail,
+        trace,
+        caviarde: trouve.iter().map(|t| t.to_string()).collect(),
+        fois: 1,
+        derniere: quand,
+        fil,
+        ecritures,
+        machine_detail: crate::compagnie::diagnostic::machine(racine),
+        envoi: Envoi { etat: EN_ATTENTE, quand: None },
+    };
     toutes.push(ligne.clone());
-    ecrire_json(&p, &Value::Array(toutes), 2).ok()?;
-    Some(ligne)
+    ecrire_lignes(&p, &toutes)?;
+    Ok(Some(ligne))
 }
 
 /// Note les incidents qu'un rattachement des retours a releves (`envois::etats::AvecIncidents`), meme quand il s'est
-/// arrete sur une erreur, puis rend son resultat.
+/// arrete sur une erreur, puis rend son resultat. Un incident qui ne s'ecrit pas se refuse.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
         let canal = if i.canal == envois::etats::DPAE { DPAE } else { DSN };
-        let _ = noter(
-            racine,
-            &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: socle::ecriture::en_valeur(&i.detail), ..Default::default() },
-        );
+        noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
     }
     r.resultat
 }
@@ -349,12 +384,18 @@ const FIL_PAR_INCIDENT: usize = 100;
 /// Les dernieres ecritures (charges entieres) de la page qu'un incident emporte : de quoi le rejouer.
 const ECRITURES_PAR_INCIDENT: usize = 3;
 
-/// Les secondes entre deux instants `AAAA-MM-JJTHH:MM:SS` (de `b` moins `a`) ; `None` si l'un ne se lit pas.
-fn ecart_secondes(a: &str, b: &str) -> Option<i64> {
-    fn secondes(s: &str) -> Option<i64> {
-        let n = |i: usize, j: usize| s.get(i..j).and_then(|x| x.parse::<i64>().ok());
+/// Les secondes entre deux instants `AAAA-MM-JJTHH:MM:SS` (de `b` moins `a`) ; un instant qui ne se lit pas se refuse.
+fn ecart_secondes(a: &str, b: &str) -> R<i64> {
+    fn secondes(s: &str) -> R<i64> {
+        let n = |i: usize, j: usize| -> R<i64> {
+            match s.get(i..j).map(str::parse::<i64>) {
+                Some(Ok(x)) => Ok(x),
+                Some(Err(e)) => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}) : {}.", s, e))),
+                None => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}).", s))),
+            }
+        };
         let (an, mois, jour) = (n(0, 4)?, n(5, 7)?, n(8, 10)?);
-        let (h, m, sec) = (n(11, 13)?, n(14, 16)?, n(17, 19).unwrap_or(0));
+        let (h, m, sec) = (n(11, 13)?, n(14, 16)?, n(17, 19)?);
         // Jours depuis 1970 (civil -> jours, calendrier gregorien).
         let (y, mo) = if mois <= 2 { (an - 1, mois + 9) } else { (an, mois - 3) };
         let era = y.div_euclid(400);
@@ -362,9 +403,9 @@ fn ecart_secondes(a: &str, b: &str) -> Option<i64> {
         let doy = (153 * mo + 2) / 5 + jour - 1;
         let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
         let jours = era * 146_097 + doe - 719_468;
-        Some(jours * 86_400 + h * 3600 + m * 60 + sec)
+        Ok(jours * 86_400 + h * 3600 + m * 60 + sec)
     }
-    Some(secondes(b)? - secondes(a)?)
+    Ok(secondes(b)? - secondes(a)?)
 }
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
@@ -377,40 +418,52 @@ const REFUS_PAR_CLASSE: [Classe; 15] = [
 ];
 
 /// La nature d'un refus d'apres sa classe : un refus d'usage, ou un defaut du logiciel (un refus sans classe aussi).
-pub fn nature_de(classe: Option<Classe>) -> &'static str {
+pub fn nature_de(classe: Option<Classe>) -> Nature {
     match classe {
         Some(c) if REFUS_PAR_CLASSE.contains(&c) => REFUS,
-        _ => LOGICIEL,
+        Some(_) | None => LOGICIEL,
     }
 }
 
 /// `depuis_exception` : note un refus (sa classe, l'endroit, sa trace).
 /// `nature` absente : elle se deduit de la classe. Les copies de developpement ne
 /// notent rien (« rien ne part d'ici », le moteur tient sa porte).
-pub fn depuis_exception(racine: &Path, classe: Option<Classe>, message: &str, nature: Option<&str>, ou: &str, detail: Value, trace: Option<&str>) -> Option<Value> {
+pub fn depuis_exception<D: Serialize>(racine: &Path, classe: Option<Classe>, message: &str, nature: Option<Nature>, ou: &str, detail: D, trace: Option<&str>) -> R<Option<Ligne>> {
     if matches!(classe, Some(Classe::CopieDeDeveloppement | Classe::EditionBridee | Classe::EnvoiBride)) {
-        return None;
+        return Ok(None);
     }
-    let nature = nature.unwrap_or_else(|| nature_de(classe));
+    let nature = match nature {
+        Some(n) => n,
+        None => nature_de(classe),
+    };
     let classe = socle::echec::classe_notee(classe);
     noter(
         racine,
         &Note {
             nature,
-            ou: if ou.is_empty() { "?" } else { ou },
+            ou: if ou.is_empty() { "(endroit inconnu)" } else { ou },
             quoi: classe,
             resume: &format!("{}: {}", classe, message),
             detail,
             trace,
-            ..Default::default()
+            sans_contexte: false,
         },
     )
 }
 
+/// Ce que porte un recalcul refuse : son mois.
+#[derive(Serialize)]
+struct DuMois<'a> {
+    mois: &'a str,
+}
+
 /// UN RECALCUL QUE LE MOTEUR REFUSE A LA LECTURE D'UN ENGAGEMENT VALIDE (`engagement::etats::du_mois`) : l'engagement garde
-/// sa paie validee, l'utilisateur n'en voit rien, et l'editeur le recoit comme un incident.
+/// sa paie validee, l'utilisateur n'en voit rien, et l'editeur le recoit comme un incident. Un incident qui ne s'ecrit pas
+/// se dit sur la sortie d'erreur.
 fn recalcul_refuse(racine: &Path, mois: &str, refus: &str) {
-    let _ = depuis_exception(racine, Some(Classe::RecalculRefuse), refus, None, "engagement::etats::du_mois", serde_json::json!({ "mois": mois }), None);
+    if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), refus, None, "engagement::etats::du_mois", DuMois { mois }, None) {
+        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message));
+    }
 }
 
 /// Branche l'engagement sur ce qui l'entoure, a l'entree de toute commande du moteur : le temoin des recalculs refuses
@@ -419,292 +472,245 @@ pub fn brancher_l_engagement() {
     engagement::etats::poser_temoin(recalcul_refuse);
 }
 
-/// Une valeur en texte (`null` n'est pas ici un texte : voir l'appelant).
-fn texte_de(v: &Value) -> String {
-    valeur_en_texte(v)
-}
-
 /// « http://hote:7331/interface.js?v=3 » -> « interface.js ».
 /// L'hote et le port varient ; la requete porte le jeton, elle ne se garde jamais.
-fn fichier_court(source: &Value) -> String {
-    let s = if vrai(source) { texte_de(source) } else { String::new() };
-    let s = s.split('?').next().unwrap_or("");
-    let s = s.split('#').next().unwrap_or("");
+fn fichier_court(source: &str) -> String {
+    let s = match source.split_once('?') {
+        Some((avant, _)) => avant,
+        None => source,
+    };
+    let s = match s.split_once('#') {
+        Some((avant, _)) => avant,
+        None => s,
+    };
     let s = s.trim_end_matches('/');
-    let s = s.rsplit('/').next().unwrap_or("");
+    let s = match s.rsplit_once('/') {
+        Some((_, nom)) => nom,
+        None => s,
+    };
     tete(s, 80)
 }
 
-/// Un entier ecrit en chiffres : l'entier, le flottant tronque (sans
-/// limite de taille), le booleen, le texte (espaces et signe permis, `_` entre
-/// deux chiffres) ; `None` pour tout autre chose.
-fn entier_de(v: &Value) -> Option<String> {
-    fn sans_zeros(neg: bool, chiffres: &str) -> String {
-        let t = chiffres.trim_start_matches('0');
-        if t.is_empty() {
-            "0".to_string()
-        } else if neg {
-            format!("-{}", t)
-        } else {
-            t.to_string()
-        }
-    }
-    match v {
-        Value::Bool(b) => Some(if *b { "1" } else { "0" }.to_string()),
-        Value::Number(n) => match n.as_i64() {
-            Some(i) => Some(i.to_string()),
-            None => {
-                let x = n.as_f64()?;
-                if !x.is_finite() {
-                    return None;
-                }
-                let t = format!("{:.0}", x.trunc());
-                let (neg, chiffres) = match t.strip_prefix('-') {
-                    Some(r) => (true, r.to_string()),
-                    None => (false, t),
-                };
-                Some(sans_zeros(neg, &chiffres))
-            }
-        },
-        Value::String(t) => {
-            let u = sans_blancs_de_bord(t);
-            let (neg, reste) = match u.strip_prefix('-') {
-                Some(r) => (true, r),
-                None => (false, u.strip_prefix('+').unwrap_or(u)),
-            };
-            let c: Vec<char> = reste.chars().collect();
-            let chiffre = |x: char| crate::routes::fiches::chiffre_lu(x);
-            let bien_forme = !c.is_empty()
-                && chiffre(c[0]).is_some()
-                && chiffre(c[c.len() - 1]).is_some()
-                && c.iter().all(|x| chiffre(*x).is_some() || *x == '_')
-                && !reste.contains("__");
-            if !bien_forme {
-                return None;
-            }
-            let ascii: String = c.iter().filter_map(|x| chiffre(*x)).map(|d| char::from(b'0' + d as u8)).collect();
-            Some(sans_zeros(neg, &ascii))
-        }
-        _ => None,
-    }
+/// CE QUE LA PAGE A VU CASSER (`noterIncident`, js/tuyau.js) : ce qu'une erreur, un rejet ou une ressource absente de la
+/// page dit. La page dit toujours le genre, le message, le fichier (vide quand elle ne le sait pas), la ligne (0 : elle
+/// ne la sait pas), le canal et l'ecran ; une ressource absente n'a ni pile ni colonne.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RapportNavigateur {
+    pub genre: String,
+    pub message: String,
+    pub fichier: String,
+    pub ligne: u64,
+    pub colonne: Option<u64>,
+    pub pile: Option<String>,
+    pub canal: String,
+    pub ou_dans_la_page: String,
+}
+
+/// Ce que porte un incident de la page.
+#[derive(Serialize)]
+struct DetailDeLaPage {
+    face: &'static str,
+    canal: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    colonne: Option<u64>,
+    ou_dans_la_page: String,
 }
 
 /// `depuis_navigateur` : note ce qui a casse dans l'interface. La page n'envoie
 /// que ce qu'elle a vu ; la nature, l'endroit qui regroupe et le caviardage se
-/// decident ICI. La nature est TOUJOURS `logiciel`.
-pub fn depuis_navigateur(racine: &Path, rapport: &Value) -> Option<Value> {
-    let champ = |c: &str| rapport.get(c).unwrap_or(&Value::Null);
-    let genre = {
-        let g = champ("genre");
-        tete(&if vrai(g) { texte_de(g) } else { "Erreur".to_string() }, 80)
-    };
-    let fichier = fichier_court(champ("fichier"));
-    let ligne = entier_de(champ("ligne")).filter(|l| l != "0").unwrap_or_else(|| "?".to_string());
-    let ou = format!("{}:{}", if fichier.is_empty() { "interface".to_string() } else { fichier }, ligne);
-    let mut detail = Map::new();
-    detail.insert("face".into(), json!("interface"));
-    let canal = champ("canal");
-    detail.insert("canal".into(), json!(tete(&if vrai(canal) { texte_de(canal) } else { "erreur".to_string() }, 20)));
-    let colonne = champ("colonne");
-    if !colonne.is_null() && colonne.as_str() != Some("") {
-        detail.insert("colonne".into(), json!(tete(&texte_de(colonne), 10)));
-    }
-    let dans_la_page = champ("ou_dans_la_page");
-    if vrai(dans_la_page) {
-        detail.insert("ou_dans_la_page".into(), json!(tete(&texte_de(dans_la_page), 120)));
-    }
-    let message = champ("message");
-    let resume = format!("{}: {}", genre, if vrai(message) { texte_de(message) } else { String::new() });
-    let pile = champ("pile");
-    let trace = if vrai(pile) { Some(tete(&texte_de(pile), JS_PILE_MAX)) } else { None };
-    noter(
-        racine,
-        &Note { nature: LOGICIEL, ou: &ou, quoi: &genre, resume: &resume, detail: Value::Object(detail), trace: trace.as_deref(), ..Default::default() },
-    )
+/// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (un fichier vide, la ligne 0)
+/// s'ecrit « interface:? ».
+pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
+    let genre = tete(&rapport.genre, 80);
+    let fichier = fichier_court(&rapport.fichier);
+    let ou = format!(
+        "{}:{}",
+        if fichier.is_empty() { "interface".to_string() } else { fichier },
+        if rapport.ligne > 0 { rapport.ligne.to_string() } else { "?".to_string() }
+    );
+    let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
+    let resume = format!("{}: {}", genre, rapport.message);
+    let trace = rapport.pile.as_deref().filter(|p| !p.is_empty()).map(|p| tete(p, JS_PILE_MAX));
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi: &genre, resume: &resume, detail, trace: trace.as_deref(), sans_contexte: false })
 }
 
 // ------------------------------------------------------------------------- lire
 
-/// `lire` : les lignes, les plus recentes en dernier. Une ligne qui n'est pas
-/// un objet se refuse (`Illisible`).
-pub fn lire(racine: &Path, nature: Option<&str>, en_attente_seulement: bool) -> R<Vec<Value>> {
-    let mut out = lignes(&chemin(racine));
-    if let Some(n) = nature.filter(|n| !n.is_empty()) {
-        let mut gardees = Vec::new();
-        for l in out {
-            if get(&l, "quoi")?.as_str() == Some(n) {
-                gardees.push(l);
-            }
-        }
-        out = gardees;
-    }
-    if en_attente_seulement {
-        let mut gardees = Vec::new();
-        for l in out {
-            if etat_d_envoi(&l)? == Some(EN_ATTENTE.to_string()) {
-                gardees.push(l);
-            }
-        }
-        out = gardees;
-    }
-    Ok(out)
+/// `lire` : les lignes, les plus recentes en dernier ; d'une seule nature, ou celles qui attendent seulement.
+pub fn lire(racine: &Path, nature: Option<Nature>, en_attente_seulement: bool) -> R<Vec<Ligne>> {
+    Ok(lignes(&chemin(racine))?
+        .into_iter()
+        .filter(|l| nature.is_none_or(|n| l.quoi == n))
+        .filter(|l| !en_attente_seulement || l.envoi.etat == EN_ATTENTE)
+        .collect())
 }
 
-/// L'etat d'envoi d'une ligne du journal, s'il y en a un.
-fn etat_d_envoi(l: &Value) -> R<Option<String>> {
-    let envoi = get(l, "envoi")?;
-    let envoi = if vrai(envoi) { envoi } else { return Ok(None) };
-    Ok(get(envoi, "etat")?.as_str().map(str::to_string))
+/// Un paquet d'incidents semblables (`regrouper`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Paquet {
+    pub empreinte: String,
+    pub quoi: Nature,
+    pub ou: String,
+    pub genre: String,
+    pub resume: String,
+    pub combien: u64,
+    pub premiere: String,
+    pub derniere: String,
+    pub versions: Vec<String>,
+    pub caviarde: Vec<String>,
 }
 
 /// `regrouper` : les incidents regroupes par empreinte, le plus frequent en
 /// tete. Les natures qui ne se regroupent pas rendent une entree par ligne.
-pub fn regrouper(racine: &Path, nature: Option<&str>) -> R<Vec<Value>> {
+pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
     // (cle de regroupement, paquet) dans l'ordre d'insertion.
-    let mut paquets: Vec<(Option<Value>, Map<String, Value>)> = Vec::new();
+    let mut paquets: Vec<(Option<String>, Paquet)> = Vec::new();
     for l in lire(racine, nature, false)? {
-        let regroupe = se_regroupe(get(&l, "quoi")?);
-        let cle = if regroupe { Some(get(&l, "empreinte")?.clone()) } else { None };
+        let cle = l.quoi.se_regroupe().then(|| l.empreinte.clone());
         let existant = match &cle {
-            Some(c) => paquets.iter().position(|(k, _)| k.as_ref().is_some_and(|k| valeurs_egales(k, c))),
+            Some(c) => paquets.iter().position(|(k, _)| k.as_ref() == Some(c)),
             None => None,
         };
-        let quand = get(&l, "quand")?.clone();
         match existant {
-            None => {
-                let mut p = Map::new();
-                p.insert("empreinte".into(), get(&l, "empreinte")?.clone());
-                p.insert("quoi".into(), get(&l, "quoi")?.clone());
-                p.insert("ou".into(), get(&l, "ou")?.clone());
-                p.insert("genre".into(), get(&l, "genre")?.clone());
-                p.insert("resume".into(), get(&l, "resume")?.clone());
-                p.insert("combien".into(), json!(fois_de(&l)));
-                p.insert("premiere".into(), quand.clone());
-                p.insert("derniere".into(), quand);
-                p.insert("versions".into(), json!([get(&l, "version")?.clone()]));
-                let cav = get(&l, "caviarde")?;
-                p.insert("caviarde".into(), Value::Array(if vrai(cav) { crate::dico::items(cav)?.into_iter().map(|c| c.into_owned()).collect() } else { Vec::new() }));
-                paquets.push((cle, p));
-            }
+            None => paquets.push((
+                cle,
+                Paquet {
+                    empreinte: l.empreinte.clone(),
+                    quoi: l.quoi,
+                    ou: l.ou.clone(),
+                    genre: l.genre.clone(),
+                    resume: l.resume.clone(),
+                    combien: l.fois,
+                    premiere: l.quand.clone(),
+                    derniere: l.quand.clone(),
+                    versions: vec![l.version.clone()],
+                    caviarde: l.caviarde.clone(),
+                },
+            )),
             Some(i) => {
                 let p = &mut paquets[i].1;
-                let n = p["combien"].as_i64().unwrap_or(0) + fois_de(&l);
-                p.insert("combien".into(), json!(n));
-                p.insert("derniere".into(), quand);
-                let version = get(&l, "version")?.clone();
-                if let Some(Value::Array(vs)) = p.get_mut("versions") {
-                    if !vs.iter().any(|v| valeurs_egales(v, &version)) {
-                        vs.push(version);
-                    }
+                p.combien += l.fois;
+                p.derniere = l.quand.clone();
+                if !p.versions.contains(&l.version) {
+                    p.versions.push(l.version.clone());
                 }
-                let cav = get(&l, "caviarde")?;
-                if vrai(cav) {
-                    for c in crate::dico::items(cav)? {
-                        if let Some(Value::Array(cs)) = p.get_mut("caviarde") {
-                            if !cs.iter().any(|x| valeurs_egales(x, &c)) {
-                                cs.push(c.into_owned());
-                            }
-                        }
+                for c in &l.caviarde {
+                    if !p.caviarde.contains(c) {
+                        p.caviarde.push(c.clone());
                     }
                 }
             }
         }
     }
     // Les plus fréquents d'abord, puis les plus récents ; tri stable.
-    let cle_de = |p: &Map<String, Value>| (p["combien"].as_i64().unwrap_or(0), if vrai(&p["derniere"]) { texte_de(&p["derniere"]) } else { String::new() });
-    let mut v: Vec<Map<String, Value>> = paquets.into_iter().map(|(_, p)| p).collect();
-    v.sort_by(|a, b| cle_de(b).cmp(&cle_de(a)));
-    Ok(v.into_iter().map(Value::Object).collect())
-}
-
-/// Combien de fois une ligne a ete vue (`fois`, les doublons comptes ; 1 pour une ligne d'avant).
-pub fn fois_de(l: &Value) -> i64 {
-    l.get("fois").and_then(Value::as_i64).filter(|n| *n > 0).unwrap_or(1)
+    let mut v: Vec<Paquet> = paquets.into_iter().map(|(_, p)| p).collect();
+    v.sort_by(|a, b| (b.combien, &b.derniere).cmp(&(a.combien, &a.derniere)));
+    Ok(v)
 }
 
 /// `oublier` : vide le journal, en entier ou d'une nature. Rend le nombre retire.
-pub fn oublier(racine: &Path, nature: Option<&str>) -> usize {
+pub fn oublier(racine: &Path, nature: Option<Nature>) -> R<usize> {
     let p = chemin(racine);
-    let toutes = lignes(&p);
-    let gardees: Vec<Value> = match nature.filter(|n| !n.is_empty()) {
-        Some(n) => {
-            let mut g = Vec::new();
-            for l in &toutes {
-                match l.get("quoi") {
-                    Some(q) if q.as_str() == Some(n) => {}
-                    _ if l.is_object() => g.push(l.clone()),
-                    _ => return 0,
-                }
-            }
-            g
-        }
-        None => Vec::new(),
-    };
-    let retires = toutes.len() - gardees.len();
-    if ecrire_json(&p, &Value::Array(gardees), 2).is_err() {
-        return 0;
-    }
-    retires
+    let toutes = lignes(&p)?;
+    let n = toutes.len();
+    // Sans nature, tout s'efface ; avec, ce qui est d'une autre nature reste.
+    let gardees: Vec<Ligne> = toutes.into_iter().filter(|l| nature.is_some_and(|q| l.quoi != q)).collect();
+    ecrire_lignes(&p, &gardees)?;
+    Ok(n - gardees.len())
 }
 
 // -------------------------------------------------------- ce qui part chez l'editeur
 
-/// Ni le chemin du dossier de l'utilisateur (qui porte son nom
-/// de session), ni une adresse courriel.
-fn pour_texte(v: &Value) -> Value {
-    match v {
-        Value::String(s) => {
-            let s = sans_chemin(s);
-            let s = motif_maison().replace_all(&s, "${1}[session]");
-            let s = motif_adresse().replace_all(&s, "[adresse]");
-            Value::String(s.into_owned())
-        }
-        Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), pour_texte(x))).collect()),
-        Value::Array(a) => Value::Array(a.iter().map(pour_texte).collect()),
-        autre => autre.clone(),
-    }
+/// Ni le chemin du dossier de l'utilisateur (qui porte son nom de session), ni une adresse courriel ; puis la frontiere
+/// encore, au depart (`diagnostic::texte_repasse`) : une ligne notee avant qu'un salarie entre dans les fiches ne part
+/// pas avec son nom.
+fn pour_texte(racine: &Path, s: &str) -> String {
+    let s = sans_chemin(s);
+    let s = motif_maison().replace_all(&s, "${1}[session]");
+    let s = motif_adresse().replace_all(&s, "[adresse]");
+    crate::compagnie::diagnostic::texte_repasse(Some(racine), &s)
 }
 
-/// `pour_l_editeur` : ce qui part d'une ligne -- moins son etat d'envoi --, plus
-/// la machine qui l'envoie.
-pub fn pour_l_editeur(racine: &Path, ligne: &Value) -> R<Value> {
-    let mut d = Map::new();
-    for k in ["quoi", "quand", "version", "empreinte", "ou", "genre", "resume", "detail", "trace", "caviarde"] {
-        d.insert(k.to_string(), pour_texte(get(ligne, k)?));
+/// UN INCIDENT TEL QU'IL PART CHEZ L'EDITEUR (`POST /rapport`, `_ligne_de_rapport` du serveur) : la ligne moins son etat
+/// d'envoi, plus la machine qui l'envoie en une ligne ; chaque texte repasse (`pour_texte`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PourLEditeur {
+    pub quoi: Nature,
+    pub quand: String,
+    pub version: String,
+    pub empreinte: String,
+    pub ou: String,
+    pub genre: String,
+    pub resume: String,
+    pub detail: String,
+    pub trace: Option<String>,
+    pub caviarde: Vec<String>,
+    pub machine: String,
+    pub fois: u64,
+    pub derniere: String,
+    pub fil: Vec<String>,
+    pub ecritures: Vec<Ecriture>,
+    pub machine_detail: Machine,
+}
+
+/// `pour_l_editeur` : ce qui part d'une ligne.
+pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
+    let t = |s: &str| pour_texte(racine, s);
+    let m = &l.machine_detail;
+    let page = m.page.clone().map(|p| crate::compagnie::diagnostic::PageDite {
+        ecran: t(&p.ecran),
+        fenetre: t(&p.fenetre),
+        langue: t(&p.langue),
+        langues: t(&p.langues),
+        fuseau: t(&p.fuseau),
+        agent: t(&p.agent),
+        ..p
+    });
+    PourLEditeur {
+        quoi: l.quoi,
+        quand: l.quand.clone(),
+        version: t(&l.version),
+        empreinte: l.empreinte.clone(),
+        ou: t(&l.ou),
+        genre: t(&l.genre),
+        resume: t(&l.resume),
+        detail: t(&l.detail),
+        trace: l.trace.as_deref().map(t),
+        caviarde: l.caviarde.clone(),
+        machine: machine(),
+        fois: l.fois,
+        derniere: l.derniere.clone(),
+        fil: l.fil.iter().map(|x| t(x)).collect(),
+        ecritures: l.ecritures.iter().map(|e| Ecriture { il_y_a: e.il_y_a.clone(), route: e.route.clone(), charge: t(&e.charge), issue: t(&e.issue) }).collect(),
+        machine_detail: Machine {
+            systeme: t(&m.systeme),
+            chemin: t(&m.chemin),
+            mises_a_jour: m.mises_a_jour.iter().map(|x| t(x)).collect(),
+            langue_systeme: m.langue_systeme.as_deref().map(t),
+            page,
+            ..m.clone()
+        },
     }
-    d.insert("machine".into(), json!(machine()));
-    // Ce que le diagnostic ajoute (`diagnostic`) : combien de fois, la derniere, le fil des trois minutes d'avant,
-    // la machine en entier. Une ligne d'avant ne les a pas : ils partent vides.
-    d.insert("fois".into(), ligne.get("fois").cloned().unwrap_or(json!(1)));
-    d.insert("derniere".into(), ligne.get("derniere").cloned().unwrap_or_else(|| ligne.get("quand").cloned().unwrap_or(Value::Null)));
-    d.insert("fil".into(), pour_texte(ligne.get("fil").unwrap_or(&json!([]))));
-    d.insert("ecritures".into(), pour_texte(ligne.get("ecritures").unwrap_or(&json!([]))));
-    d.insert("machine_detail".into(), pour_texte(ligne.get("machine_detail").unwrap_or(&json!({}))));
-    // LA FRONTIERE encore, au depart (`diagnostic::textes_en_forme`) : une ligne notee avant elle, ou avant qu'un salarie
-    // entre dans les fiches, ne part pas avec son nom.
-    Ok(crate::compagnie::diagnostic::textes_en_forme(Some(racine), &Value::Object(d)))
 }
 
 /// Un incident qui pese plus qu'un lot entier (une saisie de cent engagements dans ses ecritures) ne resterait jamais
-/// sans partir : ses ecritures deviennent leur ligne compacte, puis son fil ses quarante dernieres lignes. Rend sa taille.
-fn alleger(c: &mut Value) -> usize {
-    let mut n = c.to_string().len();
+/// sans partir : ses ecritures gardent les 2 000 premiers caracteres de leur charge, puis son fil ses quarante dernieres
+/// lignes. Rend sa taille.
+fn alleger(c: &mut PourLEditeur) -> usize {
+    let taille = |c: &PourLEditeur| socle::ecriture::json_en_ligne(c).len();
+    let mut n = taille(c);
     if n > LOT_OCTETS {
-        if let Some(Value::Array(e)) = c.get_mut("ecritures") {
-            for x in e.iter_mut() {
-                if let Some(ch) = x.get_mut("charge") {
-                    *ch = json!(crate::compagnie::diagnostic::compact(ch, 2_000));
-                }
-            }
+        for e in c.ecritures.iter_mut() {
+            e.charge = crate::compagnie::diagnostic::compact(&e.charge, 2_000);
         }
-        n = c.to_string().len();
+        n = taille(c);
     }
     if n > LOT_OCTETS {
-        if let Some(Value::Array(f)) = c.get_mut("fil") {
-            let debut = f.len().saturating_sub(40);
-            f.drain(..debut);
-        }
-        n = c.to_string().len();
+        let debut = c.fil.len().saturating_sub(40);
+        c.fil.drain(..debut);
+        n = taille(c);
     }
     n
 }
@@ -737,18 +743,23 @@ fn architecture() -> String {
 #[cfg(unix)]
 fn systeme() -> String {
     match std::env::consts::OS {
-        "macos" => {
-            let v = std::process::Command::new("sw_vers").arg("-productVersion").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
-            format!("macOS {}", v)
-        }
+        "macos" => match std::process::Command::new("sw_vers").arg("-productVersion").output() {
+            Ok(o) => format!("macOS {}", String::from_utf8_lossy(&o.stdout).trim()),
+            Err(e) => format!("macOS (version illisible : {})", e),
+        },
         _ => {
-            if let Some(nom) = std::fs::read_to_string("/etc/os-release").ok().and_then(|t| {
-                t.lines().find_map(|l| l.strip_prefix("PRETTY_NAME=").map(|v| v.trim().trim_matches('"').to_string()))
-            }) {
+            let nomme = match std::fs::read_to_string("/etc/os-release") {
+                Ok(t) => t.lines().find_map(|l| l.strip_prefix("PRETTY_NAME=").map(|v| v.trim().trim_matches('"').to_string())),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => Some(format!("Linux (os-release illisible : {})", e)),
+            };
+            if let Some(nom) = nomme {
                 return nom;
             }
-            let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").map(|t| t.trim().to_string()).unwrap_or_default();
-            format!("Linux {}", release)
+            match std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+                Ok(t) => format!("Linux {}", t.trim()),
+                Err(e) => format!("Linux (version illisible : {})", e),
+            }
         }
     }
 }
@@ -758,15 +769,10 @@ fn systeme() -> String {
     use std::os::windows::process::CommandExt;
     // Sans console (CREATE_NO_WINDOW) : la route tourne sans console (`api::route`), et `cmd` en ouvrirait une, le temps
     // de dire sa version -- la boite noire qui clignote a l'envoi d'un message.
-    let sortie = std::process::Command::new("cmd")
-        .args(["/C", "ver"])
-        .creation_flags(0x0800_0000)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
-    windows_de_ver(&sortie)
+    match std::process::Command::new("cmd").args(["/C", "ver"]).creation_flags(0x0800_0000).stdin(std::process::Stdio::null()).output() {
+        Ok(o) => windows_de_ver(&String::from_utf8_lossy(&o.stdout)),
+        Err(e) => format!("Windows (version illisible : {})", e),
+    }
 }
 
 /// Ce que `cmd /C ver` dit du systeme, en « Windows 11 (10.0.22631.4317) ». Le numero est entre crochets, et le mot qui
@@ -777,11 +783,12 @@ fn systeme() -> String {
 /// moteur ne devine pas lequel (regle 1).
 #[cfg_attr(unix, allow(dead_code))]
 fn windows_de_ver(sortie: &str) -> String {
-    let entre = sortie.split_once('[').and_then(|(_, r)| r.split_once(']')).map_or("", |(v, _)| v);
+    let Some((entre, _)) = sortie.split_once('[').and_then(|(_, r)| r.split_once(']')) else { return "Windows".to_string() };
     let numero = |m: &&str| m.contains('.') && m.chars().all(|c| c.is_ascii_digit() || c == '.');
     let Some(version) = entre.split_whitespace().find(numero) else { return "Windows".to_string() };
-    match version.split('.').nth(2).and_then(|b| b.parse::<u32>().ok()) {
-        Some(build) => format!("Windows {} ({})", if build >= 22000 { "11" } else { "10" }, version),
+    match version.split('.').nth(2).map(str::parse::<u32>) {
+        Some(Ok(build)) => format!("Windows {} ({})", if build >= 22000 { "11" } else { "10" }, version),
+        Some(Err(e)) => format!("Windows ({}, build illisible : {})", version, e),
         None => format!("Windows ({})", version),
     }
 }
@@ -791,68 +798,103 @@ pub fn edition() -> String {
     crate::compagnie::bridage::etat().to_string()
 }
 
+// -------------------------------------------------------- l'identite du poste et l'interrupteur
+
+/// UNE ANNEE DONT LE NOMBRE DE PAIES EST PARTI (`nombre_de_paies`) : combien, depuis quel poste, quand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnneeRetenue {
+    pub paies: u64,
+    pub poste: String,
+    pub parti_le: String,
+}
+
+/// `config/diagnostic.json`, TEL QU'IL S'ECRIT : l'interrupteur de l'envoi (`envoi` : absent ou vrai, les incidents
+/// partent), l'identite du poste chez l'editeur (`poste`, `cle`, et le `serveur` qui l'a donnee, ou que la compagnie a
+/// pose), et les annees dont le nombre de paies est parti (`nombre_de_paies::CLE`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigDiagnostic {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envoi: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poste: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serveur: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paies_annuelles: Option<BTreeMap<String, AnneeRetenue>>,
+}
+
+/// `config/diagnostic.json` de `racine` : rien n'est pose sans le fichier ; un fichier qui ne se lit pas se refuse.
+pub fn lire_config(racine: &Path) -> R<ConfigDiagnostic> {
+    let p = racine.join(DIAGNOSTIC);
+    if !p.is_file() {
+        return Ok(ConfigDiagnostic::default());
+    }
+    Ok(socle::forme::lire_fichier(&p, "La configuration du signalement des dysfonctionnements ne se lit pas.")?)
+}
+
+/// Ecrit `config/diagnostic.json` de `racine`.
+pub fn ecrire_config(racine: &Path, c: &ConfigDiagnostic) -> R<()> {
+    ecrire_json(&racine.join(DIAGNOSTIC), c, 2).map_err(|m| erreur(Classe::Disque, m))
+}
+
 /// L'ENVOI A L'EDITEUR SE COUPE (une condition de SignPath). `config/diagnostic.json`,
 /// cle `envoi` : absente ou vraie, les incidents partent ; `false`, ils restent notes sur le poste et rien ne part.
+pub fn envoi(racine: &Path) -> R<bool> {
+    Ok(lire_config(racine)?.envoi != Some(false))
+}
+
+/// `envoi`, pour qui ne peut rien refuser (`nombre_de_paies`, l'import) : une configuration qui ne se lit pas coupe
+/// l'envoi -- rien ne part tant que la compagnie ne peut pas dire qu'elle le veut --, et le fil le dit.
 pub fn envoi_actif(racine: &Path) -> bool {
-    let p = racine.join(DIAGNOSTIC);
-    match crate::valeur::lire_tolerant(&p) {
-        Ok(Some(v)) => v.get("envoi") != Some(&Value::Bool(false)),
-        _ => true,
+    match envoi(racine) {
+        Ok(actif) => actif,
+        Err(e) => {
+            crate::compagnie::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", socle::echec::phrase_de(&e.message)));
+            false
+        }
     }
 }
 
 /// Active ou coupe l'envoi a l'editeur ; le numero du poste reste.
 pub fn regler_envoi(racine: &Path, actif: bool) -> R<()> {
-    let p = racine.join(DIAGNOSTIC);
-    let mut d = match crate::valeur::lire_tolerant(&p)? {
-        Some(Value::Object(o)) => o,
-        _ => Map::new(),
-    };
-    d.insert("envoi".into(), Value::Bool(actif));
-    ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur(Classe::Disque, m))
+    let mut c = lire_config(racine)?;
+    c.envoi = Some(actif);
+    ecrire_config(racine, &c)
 }
 
 /// Un numero de poste tel que le serveur les donne : 32 hexadecimaux.
-fn numero_de_poste(v: &Value) -> Option<String> {
-    let s = v.as_str()?;
-    (s.len() == 32 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))).then(|| s.to_string())
+fn numero_de_poste(s: &str) -> bool {
+    s.len() == 32 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Une cle de poste telle que le serveur les donne : 64 hexadecimaux.
-fn cle_de_poste(v: &Value) -> Option<String> {
-    let s = v.as_str()?;
-    (s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))).then(|| s.to_string())
+fn cle_de_poste(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Le numero de ce poste chez l'editeur, tel que le serveur
-/// l'a donne (`config/diagnostic.json`, dans la compagnie dont vient la
-/// configuration) ; vide tant qu'aucune identite n'a ete demandee. Ne demande
-/// rien : c'est `client_du_poste` qui le fait, a l'envoi.
-pub fn poste(racine: &Path) -> R<String> {
-    let ou = match configuration(racine)? {
-        Some((_, ou)) => ou,
-        None => racine.to_path_buf(),
-    };
-    let p = ou.join(DIAGNOSTIC);
-    Ok(crate::valeur::lire_tolerant(&p)?.as_ref().and_then(|d| d.get("poste")).and_then(numero_de_poste).unwrap_or_default())
+/// Le numero de ce poste chez l'editeur, tel que le serveur l'a donne (`config/diagnostic.json`, dans la compagnie dont
+/// vient la configuration) ; aucun tant qu'aucune identite n'a ete demandee. Ne demande rien : c'est `client_du_poste`
+/// qui le fait, a l'envoi.
+pub fn poste(racine: &Path) -> R<Option<String>> {
+    let (_, ou) = configuration(racine)?;
+    Ok(lire_config(&ou)?.poste.filter(|n| numero_de_poste(n)))
 }
 
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
 /// l'identite de ce poste. Elle se lit dans `config/diagnostic.json` de `ou`
 /// (`poste`, `cle`, `serveur`) ; absente, incomplete, ou donnee par un autre
 /// serveur, elle se DEMANDE au serveur (`POST /poste`) et s'ecrit, une fois pour
-/// toutes. Le numero que les versions d'avant tiraient elles-memes n'est connu
-/// de personne : il se remplace. Une panne du serveur (reseau, 429) se rend
+/// toutes. Une panne du serveur (reseau, 429) se rend
 /// telle quelle : l'appelant laisse tout en attente.
 pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet>> {
-    let p = ou.join(DIAGNOSTIC);
-    let mut d = match crate::valeur::lire_tolerant(&p)? {
-        Some(Value::Object(o)) => o,
-        _ => Map::new(),
-    };
+    let mut c = lire_config(ou)?;
     let serveur = serveur.trim_end_matches('/');
-    let connue = match (d.get("poste").and_then(numero_de_poste), d.get("cle").and_then(cle_de_poste), d.get("serveur").and_then(Value::as_str)) {
-        (Some(n), Some(c), Some(s)) if s.trim_end_matches('/') == serveur => Some((n, c)),
+    let connue = match (&c.poste, &c.cle, &c.serveur) {
+        (Some(n), Some(k), Some(s)) if numero_de_poste(n) && cle_de_poste(k) && s.trim_end_matches('/') == serveur => Some((n.clone(), k.clone())),
         _ => None,
     };
     let (numero, cle) = match connue {
@@ -862,23 +904,24 @@ pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet
                 Ok(r) => r,
                 Err(e) => return Ok(Err(e)),
             };
-            let (Some(n), Some(c)) = (r.get("poste").and_then(numero_de_poste), r.get("cle").and_then(cle_de_poste)) else {
+            if !numero_de_poste(&r.poste) || !cle_de_poste(&r.cle) {
                 return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), 0)));
-            };
-            d.insert("poste".into(), json!(n));
-            d.insert("cle".into(), json!(c));
-            d.insert("serveur".into(), json!(serveur));
-            ecrire_json(&p, &Value::Object(d), 2).map_err(|m| erreur(Classe::Disque, m))?;
-            (n, c)
+            }
+            c.poste = Some(r.poste.clone());
+            c.cle = Some(r.cle.clone());
+            c.serveur = Some(serveur.to_string());
+            ecrire_config(ou, &c)?;
+            (r.poste, r.cle)
         }
     };
     Ok(Ok(Client::du_poste(serveur, &numero, &cle)))
 }
 
-/// Le serveur de l'editeur que cette compagnie a pose : `serveur` de son `config/diagnostic.json` ; vide sinon.
-fn serveur_propre(racine: &Path) -> R<String> {
-    let d = crate::valeur::lire_tolerant(&racine.join(DIAGNOSTIC))?;
-    Ok(d.as_ref().and_then(|d| d.get("serveur")).filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default())
+/// `EDITEUR.json`, que le paquet livre a cote du code : le serveur de l'editeur.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Editeur {
+    serveur: String,
 }
 
 /// Le serveur de l'editeur, pour les incidents, les
@@ -887,130 +930,104 @@ fn serveur_propre(racine: &Path) -> R<String> {
 /// de la vraie compagnie du poste (depuis une FICTIVE seulement : un poste, une
 /// identite) ; sinon celui que le paquet livre (`EDITEUR.json`), l'identite
 /// restant dans la compagnie ouverte ; sinon celui du moteur
-/// (`editeur::SERVEUR_PAR_DEFAUT`). Toujours un serveur : `None`
-/// ne se rend jamais.
-pub fn configuration(racine: &Path) -> R<Option<(String, PathBuf)>> {
-    let serveur = serveur_propre(racine)?;
-    if !serveur.is_empty() {
-        return Ok(Some((serveur, racine.to_path_buf())));
+/// (`editeur::SERVEUR_PAR_DEFAUT`, que `EDITEUR.json` remplace quand le paquet le livre).
+pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
+    if let Some(s) = lire_config(racine)?.serveur.filter(|s| !s.is_empty()) {
+        return Ok((s, racine.to_path_buf()));
     }
-    let logiciel = dossier_du_code().parent().map(Path::to_path_buf).unwrap_or_default();
-    let voisin = logiciel.parent().map(|r| r.join("prive")).unwrap_or_default();
-    let reel = if voisin.join(socle::fichiers::CONFIG).is_dir() { voisin } else { logiciel.clone() };
+    let code = dossier_du_code();
+    let logiciel = code.parent().ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Le dossier du code n'a pas de parent : {}.", code.display())))?;
+    let voisin = match logiciel.parent() {
+        Some(r) => Some(r.join("prive")),
+        None => None,
+    };
+    let reel = match voisin {
+        Some(v) if v.join(socle::fichiers::CONFIG).is_dir() => v,
+        Some(_) | None => logiciel.to_path_buf(),
+    };
     if crate::interface::compagnies::est_fictive(racine) && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
-        let serveur = serveur_propre(&reel)?;
-        if !serveur.is_empty() {
-            return Ok(Some((serveur, reel)));
+        if let Some(s) = lire_config(&reel)?.serveur.filter(|s| !s.is_empty()) {
+            return Ok((s, reel));
         }
     }
-    let e = std::fs::read(logiciel.join(FICHIER_EDITEUR)).ok().and_then(|o| String::from_utf8(o).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok());
-    match e {
-        Some(Value::Object(d)) => match d.get("serveur").filter(|v| vrai(v)).map(valeur_en_texte) {
-            Some(s) => Ok(Some((s, racine.to_path_buf()))),
-            None => Ok(Some((crate::compagnie::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))),
-        },
-        _ => Ok(Some((crate::compagnie::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))),
+    let editeur = logiciel.join(FICHIER_EDITEUR);
+    if editeur.is_file() {
+        let e: Editeur = socle::forme::lire_fichier(&editeur, "Le serveur de l'éditeur livré avec le logiciel ne se lit pas.")?;
+        return Ok((e.serveur, racine.to_path_buf()));
     }
+    Ok((crate::compagnie::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))
 }
 
 /// Le canal vers l'editeur, pret a envoyer.
 pub enum Canal {
-    /// Aucun serveur configure : rien ne peut partir.
+    /// Aucun serveur : n'arrive plus, il y a toujours un serveur (`configuration`) ; gardee pour `nombre_de_paies`.
     Aucun,
     /// Le client, avec l'identite du poste.
     Pret(Client),
-    /// Un serveur configure, mais l'identite n'a pas pu etre obtenue (reseau, 429).
+    /// L'identite n'a pas pu etre obtenue (reseau, 429).
     Panne(ErreurFilet),
 }
 
 /// `canal` : le client des actions de l'editeur pour cette compagnie.
 pub fn canal(racine: &Path) -> R<Canal> {
-    Ok(match configuration(racine)? {
-        None => Canal::Aucun,
-        Some((serveur, ou)) => match client_du_poste(&ou, &serveur)? {
-            Ok(c) => Canal::Pret(c),
-            Err(e) => Canal::Panne(e),
-        },
+    let (serveur, ou) = configuration(racine)?;
+    Ok(match client_du_poste(&ou, &serveur)? {
+        Ok(c) => Canal::Pret(c),
+        Err(e) => Canal::Panne(e),
     })
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(Value, Value)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(String, String)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
     let p = chemin(racine);
-    let mut toutes = lignes(&p);
+    let mut toutes = lignes(&p)?;
     let quand = socle::paris::maintenant();
     let mut n = 0;
     for l in toutes.iter_mut() {
-        let empreinte = get(l, "empreinte")?.clone();
-        let q = get(l, "quand")?.clone();
-        if cles.iter().any(|(e, w)| valeurs_egales(e, &empreinte) && valeurs_egales(w, &q)) && etat_d_envoi(l)? == Some(EN_ATTENTE.to_string()) {
-            l["envoi"] = json!({"etat": DEPOSE, "quand": quand});
+        if l.envoi.etat == EN_ATTENTE && cles.iter().any(|(e, w)| *e == l.empreinte && *w == l.quand) {
+            l.envoi = Envoi { etat: DEPOSE, quand: Some(quand.clone()) };
             n += 1;
         }
     }
     if n > 0 {
-        ecrire_json(&p, &Value::Array(toutes), 2).map_err(|m| erreur(Classe::Disque, m))?;
+        ecrire_lignes(&p, &toutes)?;
     }
     Ok(n)
 }
 
-/// `a + b` de deux listes `recus` et `ecartes` du serveur (`None` : absent).
-fn concatener(a: &Value, b: &Value) -> R<Vec<Value>> {
-    let vide = Value::Array(Vec::new());
-    let (a, b) = (if vrai(a) { a } else { &vide }, if vrai(b) { b } else { &vide });
-    match (a, b) {
-        (Value::Array(x), Value::Array(y)) => Ok(x.iter().chain(y).cloned().collect()),
-        (Value::Array(_), autre) | (autre, _) => Err(erreur(Classe::MalFormee, format!("'recus' et 'ecartes' : {}", socle::fichiers::attendu("une liste", nom_type(autre))))),
-    }
+/// LE BILAN D'UN PASSAGE D'ENVOI DES INCIDENTS : combien sont partis, combien attendent, ce qui n'a pas marche, et si un
+/// autre passage tenait deja le journal.
+#[derive(Debug, Default, Serialize)]
+pub struct BilanIncidents {
+    pub envoyes: usize,
+    pub reste: usize,
+    pub erreur: Option<String>,
+    pub occupe: bool,
 }
 
-/// `tuple(c)` d'un element de `recus` : (empreinte, quand).
-fn paire(c: &Value) -> R<(Value, Value)> {
-    let v: Vec<Value> = crate::dico::items(c)?.into_iter().map(|x| x.into_owned()).collect();
-    Ok((v.first().cloned().unwrap_or(Value::Null), v.get(1).cloned().unwrap_or(Value::Null)))
-}
-
-/// Le bilan d'un passage, rempli au fur et a mesure.
-#[derive(Default)]
-struct Bilan {
-    envoyes: usize,
-    reste: usize,
-    erreur: String,
-    sans_serveur: bool,
-}
-
-impl Bilan {
-    fn json(&self) -> Value {
-        json!({"envoyes": self.envoyes, "reste": self.reste, "erreur": self.erreur, "sans_serveur": self.sans_serveur})
-    }
-}
-
-fn passage(racine: &Path, bilan: &mut Bilan) -> R<()> {
+fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
     let attente = lire(racine, None, true)?;
     bilan.reste = attente.len();
     if attente.is_empty() {
         return Ok(());
     }
     let client = match canal(racine)? {
-        Canal::Aucun => {
-            bilan.sans_serveur = true;
-            return Ok(());
-        }
+        Canal::Aucun => return Ok(()),
         Canal::Panne(e) => {
-            bilan.erreur = e.message;
+            bilan.erreur = Some(e.message);
             return Ok(());
         }
         Canal::Pret(c) => c,
     };
     let a_faire = &attente[..attente.len().min(MAX_PAR_PASSAGE)];
     // Des lots de `LOT` incidents au plus, et de `LOT_OCTETS` : un incident porte son fil et sa machine.
-    let mut lots: Vec<Vec<Value>> = Vec::new();
+    let mut lots: Vec<Vec<PourLEditeur>> = Vec::new();
     let mut taille = 0;
     for l in a_faire {
-        let mut c = pour_l_editeur(racine, l)?;
+        let mut c = pour_l_editeur(racine, l);
         let n = alleger(&mut c);
         match lots.last_mut() {
             Some(lot) if lot.len() < LOT && taille + n <= LOT_OCTETS => {
@@ -1027,11 +1044,11 @@ fn passage(racine: &Path, bilan: &mut Bilan) -> R<()> {
         let r = match client.rapporter(&contenu) {
             Ok(r) => r,
             Err(e) => {
-                bilan.erreur = e.message;
+                bilan.erreur = Some(e.message);
                 break;
             }
         };
-        let cles: Vec<(Value, Value)> = concatener(get(&r, "recus")?, get(&r, "ecartes")?)?.iter().map(paire).collect::<R<_>>()?;
+        let cles: Vec<(String, String)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();
@@ -1039,27 +1056,36 @@ fn passage(racine: &Path, bilan: &mut Bilan) -> R<()> {
 }
 
 /// `envoyer` : depose chez l'editeur ce qui attend. Rend un bilan ; ne leve
-/// jamais. `{"envoyes", "reste", "erreur", "sans_serveur"}` -- `erreur` vide
-/// quand tout s'est bien passe, ou quand il n'y a nulle part ou deposer. Une
-/// panne laisse les lignes `en-attente` : le passage suivant reessaie.
-pub fn envoyer(racine: &Path) -> Value {
-    let mut bilan = Bilan::default();
+/// jamais. Une panne laisse les lignes `en-attente` : le passage suivant reessaie.
+pub fn envoyer(racine: &Path) -> BilanIncidents {
+    let mut bilan = BilanIncidents::default();
     let p = chemin(racine);
-    if !p.exists() || !envoi_actif(racine) {
-        return bilan.json();
+    if !p.exists() {
+        return bilan;
+    }
+    match envoi(racine) {
+        Ok(true) => {}
+        Ok(false) => return bilan,
+        Err(e) => {
+            bilan.erreur = Some(e.message);
+            return bilan;
+        }
     }
     // Un autre passage est en cours : celui-ci n'a rien a faire.
     let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::maintenant());
     let _verrou = match Verrou::prendre(&p.with_file_name(".envoi.verrou"), &marque, socle::verrou::DELAI_VERROU) {
         Ok(Ok(v)) => v,
-        Ok(Err(_)) => return bilan.json(),
+        Ok(Err(socle::verrou::Verrouille { .. })) => {
+            bilan.occupe = true;
+            return bilan;
+        }
         Err(m) => {
-            bilan.erreur = m;
-            return bilan.json();
+            bilan.erreur = Some(m);
+            return bilan;
         }
     };
     if let Err(e) = passage(racine, &mut bilan) {
-        bilan.erreur = e.message;
+        bilan.erreur = Some(e.message);
     }
-    bilan.json()
+    bilan
 }

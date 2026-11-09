@@ -145,8 +145,8 @@ fn l_apercu_annonce_ce_que_l_ecriture_trouvera() {
     let partiraient: Vec<String> = moteur::compagnie::incidents::lire(&racine, None, false)
         .unwrap()
         .iter()
-        .filter(|l| l["ou"] == json!(moteur::import::ecarts::OU))
-        .map(|l| moteur::compagnie::incidents::pour_l_editeur(&racine, l).unwrap().to_string())
+        .filter(|l| l.ou == moteur::import::ecarts::OU)
+        .map(|l| socle::ecriture::json_en_ligne(&moteur::compagnie::incidents::pour_l_editeur(&racine, l)))
         .collect();
     assert!(!partiraient.is_empty(), "l'import n'a rien rapporte de ses ecarts");
     let mut interdits: Vec<String> = Vec::new();

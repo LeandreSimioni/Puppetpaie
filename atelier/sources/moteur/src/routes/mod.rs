@@ -283,16 +283,19 @@ impl<'a> PhraseNotee<'a> {
 
     /// L'incident silencieux `quoi`, resume par `resume`.
     fn noter(&self, racine: &Path, quoi: &str, resume: &str) {
-        // Un incident qui ne s'ecrit pas ne retient pas la route : `noter` ne leve jamais.
-        crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
+        // Un incident qui ne s'ecrit pas ne retient pas la route : le fil le dit.
+        let note = crate::compagnie::incidents::Note {
             nature: crate::compagnie::incidents::LOGICIEL,
             resume,
             ou: self.route,
             quoi,
-            detail: socle::ecriture::en_valeur(self),
+            detail: self,
+            trace: None,
             sans_contexte: true,
-            ..Default::default()
-        });
+        };
+        if let Err(e) = crate::compagnie::incidents::noter(racine, &note) {
+            crate::compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)));
+        }
     }
 }
 

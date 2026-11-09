@@ -2,12 +2,11 @@
 //! l'editeur, la boite des signalements faits depuis ce poste, la releve des
 //! reponses de l'editeur et leur lecture.
 //!
-//! Ce qui part : le texte (caviarde, mis en forme par `diagnostic`), la version, l'ecran, la machine (en entier,
-//! `diagnostic::machine`), le fil des trois minutes d'avant (`diagnostic::fil`), les dix
-//! derniers incidents (chemin du dossier et adresses retires) et cinq captures
-//! PNG ou JPEG au plus. `prive/journal/signalements.json` garde ce que ce poste
-//! a signale, du plus ancien au plus recent ; la page le lit du plus recent au
-//! plus ancien.
+//! Ce qui part (`Corps`, la forme que le serveur lit, `retourner` de `infra/filet/`) : le texte (caviarde, mis en forme
+//! par `diagnostic`), la version, l'ecran, la machine (en entier, `diagnostic::machine`), le fil des trois minutes
+//! d'avant (`diagnostic::fil`), les dix derniers incidents (chemin du dossier et adresses retires) et cinq captures
+//! PNG ou JPEG au plus. `journal/signalements.json` garde ce que ce poste a signale (`Signalement`), du plus ancien au
+//! plus recent ; la page le lit du plus recent au plus ancien.
 //!
 //! L'ENVOI SE FAIT EN FOND : « Envoyer » enregistre le
 //! message (`envoyer` : sa ligne `en-attente` dans la boite, son corps exact dans
@@ -16,17 +15,14 @@
 //! le modele des incidents (`en-attente`, `depose`).
 
 use std::path::{Path, PathBuf};
-use socle::echec::Classe;
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
+use crate::compagnie::diagnostic::{Ecriture, Machine};
+use crate::compagnie::editeur::Retour;
+use crate::compagnie::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
-use crate::dico::items;
-use crate::valeur::{get, nom_type, valeur_en_texte, valeurs_egales};
-use socle::echec::R;
-use socle::echec::erreur;
-use crate::valeur::vrai;
-use crate::compagnie::incidents::{self, Canal, DEPOSE, EN_ATTENTE};
+use socle::echec::{erreur, Classe, R};
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -42,7 +38,7 @@ fn tete(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-fn valeur_erreur(m: &str) -> socle::echec::Echec {
+fn refus(m: &str) -> socle::echec::Echec {
     erreur(Classe::Illisible, m)
 }
 
@@ -50,7 +46,10 @@ fn valeur_erreur(m: &str) -> socle::echec::Echec {
 /// l'alphabet, le remplissage qu'il faut et rien apres.
 pub fn base64_strict(t: &str) -> Option<Vec<u8>> {
     let o = t.as_bytes();
-    let utile = o.iter().position(|&c| c == b'=').unwrap_or(o.len());
+    let utile = match o.iter().position(|&c| c == b'=') {
+        Some(i) => i,
+        None => o.len(),
+    };
     let (donnees, reste) = o.split_at(utile);
     let valeur = |c: u8| -> Option<u32> {
         match c {
@@ -88,128 +87,225 @@ pub fn base64_strict(t: &str) -> Option<Vec<u8>> {
     Some(sortie)
 }
 
-/// Les captures de la page, `donnees` avec ou sans le
-/// prefixe `data:image/...;base64,`.
-pub fn captures_de(charge: &Value) -> R<Vec<Value>> {
-    let vide = Value::Array(Vec::new());
-    let liste = match get(charge, "captures") {
-        Ok(v) if vrai(v) => v,
-        Ok(_) => &vide,
-        Err(_) => return Ok(Vec::new()),
-    };
-    let mut rendu = Vec::new();
-    for c in items(liste)? {
-        let Value::Object(o) = c.as_ref() else { continue };
-        let donnees = match o.get("donnees") {
-            Some(d) if vrai(d) => valeur_en_texte(d),
-            _ => String::new(),
-        };
-        let donnees = if donnees.starts_with("data:") { donnees.split_once(',').map(|(_, r)| r.to_string()).unwrap_or_default() } else { donnees };
-        rendu.push(json!({"type": o.get("type").cloned().unwrap_or(Value::Null), "donnees": donnees}));
-    }
-    Ok(rendu)
+/// UNE CAPTURE DE LA PAGE : son type d'image, ses donnees en base64 (avec ou sans le prefixe `data:image/...;base64,`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureDeLaPage {
+    #[serde(rename = "type")]
+    pub genre: String,
+    pub donnees: String,
 }
 
+/// Une capture qui part : son type, ses donnees en base64 sans prefixe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureQuiPart {
+    #[serde(rename = "type")]
+    pub genre: String,
+    pub donnees: String,
+}
+
+/// Une capture lue : ce qui part, et sa taille decodee.
 struct Capture {
-    mime: String,
-    donnees: String,
+    part: CaptureQuiPart,
     octets: usize,
 }
 
-fn capture_valide(capture: &Value) -> R<Capture> {
-    let mime = capture.get("type").cloned().unwrap_or(Value::Null);
-    let mime = match mime.as_str() {
-        Some(m) if CAPTURE_TYPES.contains(&m) => m.to_string(),
-        _ => return Err(valeur_erreur("Une capture doit être une image PNG ou JPEG.")),
+fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
+    if !CAPTURE_TYPES.contains(&c.genre.as_str()) {
+        return Err(refus("Une capture doit être une image PNG ou JPEG."));
+    }
+    let donnees = match c.donnees.strip_prefix("data:") {
+        Some(d) => match d.split_once(',') {
+            Some((_, r)) => r.to_string(),
+            None => return Err(refus("Une capture est illisible.")),
+        },
+        None => c.donnees.clone(),
     };
-    let donnees = match capture.get("donnees") {
-        Some(d) if vrai(d) => valeur_en_texte(d),
-        _ => String::new(),
-    };
-    let Some(brut) = base64_strict(&donnees) else { return Err(valeur_erreur("Une capture est illisible.")) };
+    let Some(brut) = base64_strict(&donnees) else { return Err(refus("Une capture est illisible.")) };
     if brut.is_empty() {
-        return Err(valeur_erreur("Une capture est vide."));
+        return Err(refus("Une capture est vide."));
     }
     if brut.len() > CAPTURE_MAX {
-        return Err(valeur_erreur("Une capture dépasse 1,5 Mo."));
+        return Err(refus("Une capture dépasse 1,5 Mo."));
     }
-    Ok(Capture { mime, donnees, octets: brut.len() })
+    Ok(Capture { part: CaptureQuiPart { genre: c.genre.clone(), donnees }, octets: brut.len() })
 }
 
-fn captures_valides(captures: &[Value]) -> R<Vec<Capture>> {
-    let gardees: Vec<&Value> = captures.iter().filter(|c| vrai(c)).collect();
-    if gardees.len() > CAPTURES_MAX {
-        return Err(valeur_erreur(&format!("{} captures au plus.", CAPTURES_MAX)));
+fn captures_valides(captures: &[CaptureDeLaPage]) -> R<Vec<Capture>> {
+    if captures.len() > CAPTURES_MAX {
+        return Err(refus(&format!("{} captures au plus.", CAPTURES_MAX)));
     }
-    gardees.into_iter().map(capture_valide).collect()
+    captures.iter().map(capture_valide).collect()
 }
 
-/// Le corps exact qui part, et ce que le caviardage a retire.
-fn corps_signalement(racine: &Path, texte: &Value, ecran: &Value, captures: &[Value]) -> R<(Value, bool, Vec<Capture>)> {
-    let texte = match texte {
-        Value::String(s) => s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)).to_string(),
-        t if !vrai(t) => String::new(),
-        t => return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un texte", nom_type(t)))),
-    };
+/// Ce que le message dit de son contexte (`contexte` du serveur).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Contexte {
+    /// Ou l'on etait, quand la page ou le LLM le dit.
+    pub ecran: Option<String>,
+    /// Le nom du champ que le serveur de l'editeur attend (son contrat, `infra/filet/`) : le retour vient d'une compagnie
+    /// fictive.
+    pub demonstration: bool,
+    /// Le dossier d'une compagnie fictive ; une compagnie reelle n'est pas nommee.
+    pub compagnie: Option<String>,
+    pub systeme: String,
+    /// LA MACHINE EN ENTIER, et ce que la page a vu (`diagnostic::machine`) : de quoi deboguer sans redemander.
+    pub machine: Machine,
+}
+
+/// LE CORPS EXACT D'UN MESSAGE AU DEVELOPPEUR (`POST /retour`), le numero du poste a part (`editeur::Client`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Corps<C> {
+    pub texte: String,
+    pub version: String,
+    pub contexte: Contexte,
+    /// LES TROIS MINUTES D'AVANT : chaque geste et chaque route, une ligne par action.
+    pub fil: Vec<String>,
+    /// Et, entieres (mises en forme), les ecritures et les refus de la page dans ces trois minutes : de quoi les rejouer.
+    pub ecritures: Vec<Ecriture>,
+    pub incidents: Vec<PourLEditeur>,
+    pub captures: Vec<C>,
+}
+
+/// Une capture telle que l'apercu la montre : sa taille, pas ses octets.
+#[derive(Debug, Clone, Serialize)]
+pub struct CaptureMontree {
+    #[serde(rename = "type")]
+    pub genre: String,
+    pub donnees: String,
+}
+
+/// Le corps exact qui part, si le caviardage a retire quelque chose, et les captures lues.
+fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<(Corps<CaptureQuiPart>, bool, Vec<usize>)> {
+    let texte = texte.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)).to_string();
     if texte.is_empty() {
-        return Err(valeur_erreur("Écrivez votre message avant d'envoyer."));
+        return Err(refus("Écrivez votre message avant d'envoyer."));
     }
     if texte.chars().count() > TEXTE_MAX {
-        return Err(valeur_erreur(&format!("Le texte dépasse {} caractères.", TEXTE_MAX)));
+        return Err(refus(&format!("Le texte dépasse {} caractères.", TEXTE_MAX)));
     }
     let caps = captures_valides(captures)?;
     let (texte, trouve) = incidents::caviarder(&texte);
     // La frontiere (`diagnostic`) vaut aussi pour ce que la personne ecrit : un salarie nomme devient son numero.
     let texte = crate::compagnie::diagnostic::texte_en_forme(Some(racine), &texte, TEXTE_MAX + 200);
     let fictive = crate::interface::compagnies::est_fictive(racine);
-    let nom_du_dossier = racine.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let poste = incidents::poste(racine)?;
-    let ecran_txt = if vrai(ecran) { tete(&valeur_en_texte(ecran), 200) } else { String::new() };
+    let compagnie = match (fictive, racine.file_name()) {
+        (true, Some(n)) => Some(n.to_string_lossy().into_owned()),
+        (true, None) | (false, _) => None,
+    };
     let lues = incidents::lire(racine, None, false)?;
     let debut = lues.len().saturating_sub(INCIDENTS_JOINTS);
-    let joints: Vec<Value> = lues[debut..].iter().map(|l| incidents::pour_l_editeur(racine, l)).collect::<R<_>>()?;
-    let corps = json!({
-        "poste": poste,
-        "texte": texte,
-        "version": incidents::version(),
-        "contexte": {
-            // `demonstration` : le nom du champ que le serveur de l'editeur attend (son contrat, `infra/filet/`) ; il dit
-            // si le retour vient d'une compagnie fictive.
-            "ecran": ecran_txt, "demonstration": fictive,
-            "compagnie": if fictive { nom_du_dossier } else { String::new() },
-            "systeme": incidents::machine(),
-            // LA MACHINE EN ENTIER, et ce que la page a vu (`diagnostic::machine`) : de quoi deboguer sans redemander.
-            "machine": crate::compagnie::diagnostic::machine(racine),
+    let maintenant = socle::temps::maintenant_ms();
+    let corps = Corps {
+        texte,
+        version: incidents::version(),
+        contexte: Contexte {
+            ecran: ecran.map(|e| tete(e, 200)),
+            demonstration: fictive,
+            compagnie,
+            systeme: incidents::machine(),
+            machine: crate::compagnie::diagnostic::machine(racine),
         },
-        // LES TROIS MINUTES D'AVANT : chaque geste et chaque route, une ligne par action.
-        "fil": crate::compagnie::diagnostic::fil(socle::temps::maintenant_ms()),
-        // Et, entieres (mises en forme), les ecritures et les refus de la page dans ces trois minutes : de quoi les rejouer.
-        "ecritures": crate::compagnie::diagnostic::ecritures(socle::temps::maintenant_ms(), 12),
-        "incidents": joints,
-        "captures": caps.iter().map(|c| json!({"type": c.mime, "donnees": c.donnees})).collect::<Vec<_>>(),
-    });
-    Ok((corps, !trouve.is_empty(), caps))
+        fil: crate::compagnie::diagnostic::fil(maintenant),
+        ecritures: crate::compagnie::diagnostic::ecritures(maintenant, 12),
+        incidents: lues[debut..].iter().map(|l| incidents::pour_l_editeur(racine, l)).collect(),
+        captures: caps.iter().map(|c| c.part.clone()).collect(),
+    };
+    Ok((corps, !trouve.is_empty(), caps.iter().map(|c| c.octets).collect()))
+}
+
+/// Ce que rend l'apercu d'un message.
+#[derive(Debug, Serialize)]
+pub struct Apercu {
+    /// Ce qui partira, au mot pres (les octets des captures mis a part).
+    pub corps: Corps<CaptureMontree>,
+    pub caviarde: bool,
+    pub serveur: String,
+    pub captures: usize,
+    pub incidents: usize,
 }
 
 /// `signalement_apercu` : ce qui partira, au mot pres (les octets des captures
 /// mis a part). On peut envoyer sans l'avoir regarde.
-pub fn apercu(racine: &Path, texte: &Value, ecran: &Value, captures: &[Value]) -> R<Value> {
-    let (corps, caviarde, caps) = corps_signalement(racine, texte, ecran, captures)?;
-    let mut montre = corps.clone();
-    montre["captures"] = Value::Array(
-        caps.iter().map(|c| json!({"type": c.mime, "donnees": format!("({} Ko, non affichés)", c.octets.div_ceil(1024))})).collect(),
-    );
-    let serveur = incidents::configuration(racine)?.map(|(s, _)| s).unwrap_or_default();
-    let nb_incidents = corps["incidents"].as_array().map_or(0, Vec::len);
-    Ok(json!({
-        "corps": montre, "caviarde": caviarde, "serveur": serveur,
-        "captures": caps.len(), "incidents": nb_incidents,
-        "peut_envoyer": !serveur.is_empty(),
-        "pourquoi": if serveur.is_empty() { "Aucun serveur n'est configuré (config/diagnostic.json) : rien ne peut partir.".to_string() } else { String::new() },
-    }))
+pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<Apercu> {
+    let (corps, caviarde, tailles) = corps_signalement(racine, texte, ecran, captures)?;
+    let (serveur, _) = incidents::configuration(racine)?;
+    let incidents = corps.incidents.len();
+    let montrees = corps
+        .captures
+        .iter()
+        .zip(&tailles)
+        .map(|(c, n)| CaptureMontree { genre: c.genre.clone(), donnees: format!("({} Ko, non affichés)", n.div_ceil(1024)) })
+        .collect();
+    let corps = Corps {
+        texte: corps.texte,
+        version: corps.version,
+        contexte: corps.contexte,
+        fil: corps.fil,
+        ecritures: corps.ecritures,
+        incidents: corps.incidents,
+        captures: montrees,
+    };
+    Ok(Apercu { corps, caviarde, serveur, captures: tailles.len(), incidents })
 }
 
 // ------------------------------------------------------------ la boite des messages
+
+/// L'envoi d'un message : son etat, quand il est parti, son dernier essai, et pourquoi il n'est pas parti.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvoiDuMessage {
+    pub etat: EtatEnvoi,
+    pub quand: Option<String>,
+    pub essai: Option<String>,
+    pub erreur: Option<String>,
+}
+
+/// UN MESSAGE DE LA BOITE (`journal/signalements.json`) : ce qu'on a ecrit, son envoi, et ce que le serveur en a dit
+/// (son numero, ou l'editeur le suit, sa reponse ; vides tant qu'il n'a rien dit).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Signalement {
+    pub id: String,
+    pub quand: String,
+    pub texte: String,
+    pub captures: usize,
+    pub incidents: usize,
+    pub empreinte: String,
+    /// L'heure ou il s'est enregistre, en secondes (les doublons).
+    pub enregistre: i64,
+    pub envoi: EnvoiDuMessage,
+    pub numero: Option<String>,
+    pub ticket: Option<String>,
+    pub ticket_numero: Option<i64>,
+    pub reponse: Option<String>,
+    pub repondu_le: Option<String>,
+    pub lu: Option<bool>,
+}
+
+/// Ou en est un message, pour la page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EtatDuMessage {
+    /// Arrive chez l'editeur.
+    Arrive,
+    /// Il part, ou partira tout de suite.
+    EnCours,
+    /// Un essai a manque.
+    PasParti,
+}
+
+/// Un message, tel que la page le lit : ce que la boite garde, ou il en est, et pourquoi il n'est pas parti.
+#[derive(Debug, Clone, Serialize)]
+pub struct SignalementVu {
+    #[serde(flatten)]
+    pub garde: Signalement,
+    pub etat: EtatDuMessage,
+    pub raison: Option<String>,
+}
 
 /// Au plus tant de messages par passage : chacun peut attendre le serveur 60 s, et le verrou d'envoi se tient pour
 /// abandonne passe `verrou::DELAI_VERROU` (10 minutes).
@@ -231,73 +327,46 @@ fn chemin_corps(racine: &Path, id: &str) -> PathBuf {
 }
 
 /// Ecrit en entier ou pas du tout : un fichier a cote, puis renomme. Un lecteur ne voit jamais un fichier a moitie.
-fn ecrire_entier(p: &Path, v: &Value) -> R<()> {
-    let mut nom = p.file_name().map(|n| n.to_os_string()).unwrap_or_default();
-    nom.push(".ecriture");
-    let provisoire = p.with_file_name(nom);
+fn ecrire_entier<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
+    let provisoire = socle::ecriture::provisoire(p);
     ecrire_json(&provisoire, v, 2).map_err(|m| erreur(Classe::Disque, m))?;
     std::fs::rename(&provisoire, p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))
 }
 
-/// `signalements` : ceux faits depuis ce poste, du plus recent au plus ancien, chacun avec ce que la page en dit :
-/// `etat` -- `arrive`, `en-cours` (il part, ou partira tout de suite) ou `pas-parti` -- et `raison`, la raison lisible
-/// du dernier essai manque.
-pub fn signalements(racine: &Path) -> Vec<Value> {
-    let mut a: Vec<Value> = en_ordre(racine).into_iter().map(pour_la_page).collect();
+/// `signalements` : ceux faits depuis ce poste, du plus recent au plus ancien, chacun avec ce que la page en dit.
+pub fn signalements(racine: &Path) -> R<Vec<SignalementVu>> {
+    let mut a: Vec<SignalementVu> = en_ordre(racine)?.into_iter().map(pour_la_page).collect();
     a.reverse();
-    a
+    Ok(a)
 }
 
-fn pour_la_page(mut l: Value) -> Value {
-    let (etat, raison) = if en_attente(&l) {
-        let e = l["envoi"]["erreur"].as_str().unwrap_or("").to_string();
-        if e.is_empty() { ("en-cours", e) } else { ("pas-parti", e) }
-    } else {
-        ("arrive", String::new())
+fn pour_la_page(l: Signalement) -> SignalementVu {
+    let (etat, raison) = match (en_attente(&l), &l.envoi.erreur) {
+        (true, Some(e)) => (EtatDuMessage::PasParti, Some(e.clone())),
+        (true, None) => (EtatDuMessage::EnCours, None),
+        (false, _) => (EtatDuMessage::Arrive, None),
     };
-    if let Value::Object(o) = &mut l {
-        o.insert("etat".into(), json!(etat));
-        o.insert("raison".into(), json!(raison));
-    }
-    l
+    SignalementVu { garde: l, etat, raison }
 }
 
-/// Le fichier tel quel : du plus ancien au plus recent. Pour la lecture seulement : illisible, il ne dit rien.
-fn en_ordre(racine: &Path) -> Vec<Value> {
-    en_ordre_strict(racine).unwrap_or_default()
-}
-
-/// Le fichier tel quel, pour le reecrire : absent, il est vide ; illisible, on refuse -- reecrire par-dessus perdrait
-/// tout ce qu'il garde.
-fn en_ordre_strict(racine: &Path) -> R<Vec<Value>> {
+/// La boite telle qu'elle est, du plus ancien au plus recent : vide sans fichier ; un fichier qui ne se lit pas se
+/// refuse -- reecrire par-dessus perdrait tout ce qu'il garde.
+fn en_ordre(racine: &Path) -> R<Vec<Signalement>> {
     let p = chemin_signalements(racine);
-    let octets = match std::fs::read(&p) {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&p, &e))),
-    };
-    match String::from_utf8(octets).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
-        Some(Value::Array(a)) => Ok(a),
-        _ => Err(erreur(Classe::Refuse, socle::echec::avec("Un fichier de la compagnie est illisible : rien n'y est écrit, pour ne rien perdre de ce qu'il garde.", serde_json::json!({"chemin": p.to_string_lossy()})))),
+    if !p.is_file() {
+        return Ok(Vec::new());
     }
+    Ok(socle::forme::lire_fichier(&p, "La boîte des messages au développeur ne se lit pas : rien n'y est écrit, pour ne rien perdre de ce qu'elle garde.")?)
 }
 
-fn etat_d_envoi(l: &Value) -> Option<&str> {
-    l.get("envoi").and_then(|e| e.get("etat")).and_then(Value::as_str)
-}
-
-/// Un message qui n'est pas encore arrive chez l'editeur. Une ligne sans `envoi` est arrivee : elle n'a jamais attendu.
-fn en_attente(l: &Value) -> bool {
-    etat_d_envoi(l) == Some(EN_ATTENTE)
-}
-
-fn id_de(l: &Value) -> Option<&str> {
-    l.get("id").and_then(Value::as_str).filter(|s| !s.is_empty())
+/// Un message qui n'est pas encore arrive chez l'editeur.
+fn en_attente(l: &Signalement) -> bool {
+    l.envoi.etat == EN_ATTENTE
 }
 
 /// Le verrou de la boite : chaque ecriture le tient le temps de relire et de reecrire le fichier, jamais le temps d'un
-/// appel au serveur. Tenu par un autre, on attend un peu (dix secondes) ; `Err(())` passe ce delai.
-fn verrouiller(racine: &Path) -> R<Result<Verrou, ()>> {
+/// appel au serveur. Tenu par un autre, on attend un peu (dix secondes) ; passe ce delai, `None`.
+fn verrouiller(racine: &Path) -> R<Option<Verrou>> {
     let p = chemin_signalements(racine).with_file_name(".signalements.verrou");
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
@@ -306,21 +375,21 @@ fn verrouiller(racine: &Path) -> R<Result<Verrou, ()>> {
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
-            Ok(v) => return Ok(Ok(v)),
-            Err(_) if std::time::Instant::now() >= fin => return Ok(Err(())),
-            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Ok(v) => return Ok(Some(v)),
+            Err(socle::verrou::Verrouille { .. }) if std::time::Instant::now() >= fin => return Ok(None),
+            Err(socle::verrou::Verrouille { .. }) => std::thread::sleep(std::time::Duration::from_millis(50)),
         }
     }
 }
 
 /// Relit la boite sous son verrou, la passe a `f`, et la reecrit si `f` dit qu'elle a change. `None` : la boite est
 /// restee occupee.
-fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Value>) -> R<(T, bool)>) -> R<Option<T>> {
-    let Ok(_verrou) = verrouiller(racine)? else { return Ok(None) };
-    let mut lignes = en_ordre_strict(racine)?;
+fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Signalement>) -> R<(T, bool)>) -> R<Option<T>> {
+    let Some(_verrou) = verrouiller(racine)? else { return Ok(None) };
+    let mut lignes = en_ordre(racine)?;
     let (t, change) = f(&mut lignes)?;
     if change {
-        ecrire_entier(&chemin_signalements(racine), &Value::Array(lignes))?;
+        ecrire_entier(&chemin_signalements(racine), &lignes)?;
     }
     Ok(Some(t))
 }
@@ -333,15 +402,11 @@ fn nouvel_id() -> R<String> {
     Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
 }
 
-/// `brut_ou_vide` : `r.get(cle) or ""`, la valeur telle que le serveur l'a donnee.
-fn brut_ou_vide(v: &Value, cle: &str) -> R<Value> {
-    let x = get(v, cle)?;
-    Ok(if vrai(x) { x.clone() } else { json!("") })
-}
-
-fn texte_ou_vide(v: &Value, cle: &str) -> R<String> {
-    let x = get(v, cle)?;
-    Ok(if vrai(x) { valeur_en_texte(x) } else { String::new() })
+/// Ce que rend l'enregistrement d'un message : son identifiant, et s'il l'etait deja.
+#[derive(Debug, Serialize)]
+pub struct Enregistre {
+    pub id: String,
+    pub deja: bool,
 }
 
 /// `signalement-envoyer` : ENREGISTRE le message sur le poste, et rend la main tout de suite (le
@@ -356,39 +421,48 @@ fn texte_ou_vide(v: &Value, cle: &str) -> R<String> {
 ///   rejouee par la fenetre), n'ajoute pas de ligne : la route rend celle qui existe (`deja`) ;
 /// - le corps et sa ligne s'ecrivent sous le meme verrou, que l'effacement (`effacer_les_partis`) tient aussi : un
 ///   passage de `partir` lance par le premier envoi ne peut pas effacer le corps du second avant que sa ligne l'annonce.
-pub fn envoyer(racine: &Path, texte: &Value, ecran: &Value, captures: &[Value]) -> R<Value> {
-    let (corps, _trouve, caps) = corps_signalement(racine, texte, ecran, captures)?;
+pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<Enregistre> {
+    let (corps, _trouve, _tailles) = corps_signalement(racine, texte, ecran, captures)?;
     let empreinte = empreinte_du_message(&corps);
     let maintenant = socle::paris::maintenant_naif();
     let id = nouvel_id()?;
     let fichier = chemin_corps(racine, &id);
-    let ligne = json!({
-        "id": id,
-        "quand": socle::paris::maintenant()[..16].to_string(),
-        "texte": corps["texte"].as_str().unwrap_or(""),
-        "captures": caps.len(),
-        "incidents": corps["incidents"].as_array().map_or(0, Vec::len),
-        "empreinte": empreinte,
-        "enregistre": maintenant,
-        "envoi": {"etat": EN_ATTENTE, "quand": Value::Null, "essai": Value::Null, "erreur": ""},
-    });
+    let ligne = Signalement {
+        id: id.clone(),
+        quand: tete(&socle::paris::maintenant(), 16),
+        texte: corps.texte.clone(),
+        captures: corps.captures.len(),
+        incidents: corps.incidents.len(),
+        empreinte: empreinte.clone(),
+        enregistre: maintenant,
+        envoi: EnvoiDuMessage { etat: EN_ATTENTE, quand: None, essai: None, erreur: None },
+        numero: None,
+        ticket: None,
+        ticket_numero: None,
+        reponse: None,
+        repondu_le: None,
+        lu: None,
+    };
     let ecrit = modifier(racine, |lignes| {
-        let recent = |l: &Value| l["enregistre"].as_i64().is_some_and(|t| maintenant - t < DOUBLON_SECONDES);
-        if let Some(deja) = lignes.iter().rev().find(|l| l["empreinte"] == json!(empreinte) && (en_attente(l) || recent(l))) {
-            return Ok((id_de(deja).map(str::to_string), false));
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant - l.enregistre < DOUBLON_SECONDES)) {
+            return Ok((Some(deja.id.clone()), false));
+        }
+        if let Some(d) = fichier.parent() {
+            std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
         }
         ecrire_entier(&fichier, &corps)?;
         lignes.push(ligne);
         Ok((None, true))
     });
     match ecrit {
-        Ok(Some(Some(existant))) => Ok(json!({"id": existant, "deja": true, "signalements": signalements(racine)})),
-        Ok(Some(None)) => Ok(json!({"id": id, "deja": false, "signalements": signalements(racine)})),
+        Ok(Some(Some(existant))) => Ok(Enregistre { id: existant, deja: true }),
+        Ok(Some(None)) => Ok(Enregistre { id, deja: false }),
         Ok(None) => Err(erreur(Classe::Refuse, "La boîte des messages est occupée : réessayez dans un instant. Rien n'est enregistré.")),
-        Err(e) => {
-            let _ = std::fs::remove_file(&fichier);
-            Err(e)
-        }
+        Err(e) => match std::fs::remove_file(&fichier) {
+            Ok(()) => Err(e),
+            Err(x) if x.kind() == std::io::ErrorKind::NotFound => Err(e),
+            Err(x) => Err(socle::echec::Echec { classe: e.classe, message: format!("{} {}", e.message, socle::echec::du_disque(&fichier, &x)) }),
+        },
     }
 }
 
@@ -397,20 +471,24 @@ const DOUBLON_SECONDES: i64 = 600;
 
 /// L'empreinte de ce qu'on a ecrit : le texte (caviarde) et les captures, rien de ce qui change d'une seconde a l'autre
 /// (incidents joints, version).
-fn empreinte_du_message(corps: &Value) -> String {
+fn empreinte_du_message(corps: &Corps<CaptureQuiPart>) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
-    h.update(corps["texte"].as_str().unwrap_or("").as_bytes());
-    for c in corps["captures"].as_array().into_iter().flatten() {
+    h.update(corps.texte.as_bytes());
+    for c in &corps.captures {
         h.update(b"\n");
-        h.update(c["donnees"].as_str().unwrap_or("").as_bytes());
+        h.update(c.donnees.as_bytes());
     }
     h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Le bilan d'un passage : `{"partis", "reste", "erreur", "occupe"}`.
-fn bilan(partis: usize, reste: usize, erreur: &str, occupe: bool) -> Value {
-    json!({"partis": partis, "reste": reste, "erreur": erreur, "occupe": occupe})
+/// LE BILAN D'UN PASSAGE des messages : partis, ce qui attend encore, la panne, et si un autre passage tenait la boite.
+#[derive(Debug, Serialize)]
+pub struct BilanMessages {
+    pub partis: usize,
+    pub reste: usize,
+    pub erreur: Option<String>,
+    pub occupe: bool,
 }
 
 /// `signalements-partir` : fait partir chez l'editeur ce qui attend, du plus ancien au plus recent, et ne leve jamais.
@@ -418,14 +496,21 @@ fn bilan(partis: usize, reste: usize, erreur: &str, occupe: bool) -> Value {
 /// l'autre prend aussi ce qui s'est enregistre pendant qu'il tournait. Arrive, un message passe a `depose` avec le numero
 /// que le serveur lui a donne, et son fichier d'attente s'efface (les captures ne restent pas sur le poste). Une panne
 /// arrete le passage : tout ce qui attend garde sa ligne, et la raison ; la veille suivante reessaie.
-pub fn partir(racine: &Path) -> Value {
+pub fn partir(racine: &Path) -> BilanMessages {
     match passage(racine) {
         Ok(b) => b,
-        Err(e) => bilan(0, en_ordre(racine).iter().filter(|l| en_attente(l)).count(), &e.message, false),
+        Err(e) => {
+            let reste = match en_ordre(racine) {
+                Ok(l) => l.iter().filter(|l| en_attente(l)).count(),
+                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", e.message, f.message)), occupe: false },
+            };
+            BilanMessages { partis: 0, reste, erreur: Some(e.message), occupe: false }
+        }
     }
 }
 
-fn passage(racine: &Path) -> R<Value> {
+fn passage(racine: &Path) -> R<BilanMessages> {
+    let bilan = |partis: usize, reste: usize, erreur: Option<String>, occupe: bool| BilanMessages { partis, reste, erreur, occupe };
     let p = chemin_signalements(racine).with_file_name(".signalements-envoi.verrou");
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
@@ -433,7 +518,7 @@ fn passage(racine: &Path) -> R<Value> {
     let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::maintenant());
     let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
         Ok(v) => v,
-        Err(_) => return Ok(bilan(0, en_ordre(racine).iter().filter(|l| en_attente(l)).count(), "", true)),
+        Err(socle::verrou::Verrouille { .. }) => return Ok(bilan(0, en_ordre(racine)?.iter().filter(|l| en_attente(l)).count(), None, true)),
     };
     effacer_les_partis(racine)?;
     // Ce qui attend part maintenant : la boite le dit « en cours d'envoi ».
@@ -441,38 +526,36 @@ fn passage(racine: &Path) -> R<Value> {
     let attendent = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
-            l["envoi"]["essai"] = json!(essai);
-            l["envoi"]["erreur"] = json!("");
+            l.envoi.essai = Some(essai.clone());
+            l.envoi.erreur = None;
             n += 1;
         }
         Ok((n, n > 0))
     })?;
-    let Some(attendent) = attendent else { return Ok(bilan(0, 0, "La boîte des messages est occupée.", false)) };
+    let Some(attendent) = attendent else { return Ok(bilan(0, 0, Some("La boîte des messages est occupée.".to_string()), false)) };
     if attendent == 0 {
-        return Ok(bilan(0, 0, "", false));
+        return Ok(bilan(0, 0, None, false));
     }
     let mut client = None;
-    let (mut partis, mut tentes, mut panne) = (0, Vec::<String>::new(), String::new());
+    let (mut partis, mut tentes, mut panne) = (0, Vec::<String>::new(), None::<String>);
     while tentes.len() < PAR_PASSAGE {
         // Le plus ancien qui attend et n'a pas ete tente : un message enregistre pendant le passage part avec lui.
-        let lignes = en_ordre_strict(racine)?;
-        let Some(id) = lignes.iter().filter(|l| en_attente(l)).filter_map(id_de).find(|i| !tentes.iter().any(|t| t == i)).map(str::to_string) else {
+        let lignes = en_ordre(racine)?;
+        let Some(id) = lignes.iter().filter(|l| en_attente(l)).map(|l| &l.id).find(|i| !tentes.contains(i)).cloned() else {
             break;
         };
         tentes.push(id.clone());
-        let corps = std::fs::read(chemin_corps(racine, &id)).ok().and_then(|o| serde_json::from_slice::<Value>(&o).ok());
-        let Some(corps) = corps else {
+        let fichier = chemin_corps(racine, &id);
+        if !fichier.is_file() {
             noter_raison(racine, &[id], "le contenu de ce message n'est plus sur cet ordinateur : il ne peut pas partir.")?;
             continue;
-        };
+        }
+        let corps: Corps<CaptureQuiPart> = socle::forme::lire_fichier(&fichier, "Le contenu d'un message au développeur ne se lit pas.")?;
         if client.is_none() {
             match incidents::canal(racine)? {
-                Canal::Aucun => {
-                    panne = "aucun serveur de l'éditeur n'est configuré.".into();
-                    break;
-                }
+                Canal::Aucun => break,
                 Canal::Panne(e) => {
-                    panne = e.message;
+                    panne = Some(e.message);
                     break;
                 }
                 Canal::Pret(c) => client = Some(c),
@@ -482,11 +565,11 @@ fn passage(racine: &Path) -> R<Value> {
         match c.signaler(&corps) {
             Ok(r) => {
                 marquer_arrive(racine, &id, &r)?;
-                let _ = std::fs::remove_file(chemin_corps(racine, &id));
+                socle::ecriture::effacer(&fichier).map_err(|m| erreur(Classe::Disque, m))?;
                 partis += 1;
             }
             Err(e) => {
-                panne = e.message;
+                panne = Some(e.message);
                 break;
             }
         }
@@ -498,30 +581,36 @@ fn passage(racine: &Path) -> R<Value> {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
             n += 1;
-            let vide = l["envoi"]["erreur"].as_str().unwrap_or("").is_empty();
-            if !panne.is_empty() || vide {
-                l["envoi"]["erreur"] = json!(if panne.is_empty() { "il partira au prochain passage de la veille.".to_string() } else { format!("{} PuppetPaie le renverra de lui-même.", panne) });
-                change = true;
+            match (&panne, &l.envoi.erreur) {
+                (Some(p), _) => {
+                    l.envoi.erreur = Some(format!("{} PuppetPaie le renverra de lui-même.", p));
+                    change = true;
+                }
+                (None, None) => {
+                    l.envoi.erreur = Some("il partira au prochain passage de la veille.".to_string());
+                    change = true;
+                }
+                (None, Some(_)) => {}
             }
         }
         Ok((n, change))
-    })?
-    .unwrap_or(0);
-    Ok(bilan(partis, reste, &panne, false))
+    })?;
+    match reste {
+        Some(n) => Ok(bilan(partis, n, panne, false)),
+        None => Ok(bilan(partis, attendent - partis, Some("La boîte des messages est occupée.".to_string()), false)),
+    }
 }
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
-fn marquer_arrive(racine: &Path, id: &str, r: &Value) -> R<()> {
-    let (numero, ticket, ticket_numero) = (brut_ou_vide(r, "numero")?, brut_ou_vide(r, "ticket")?, get(r, "ticket_numero")?.clone());
+fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
     let quand = socle::paris::maintenant();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
-        for l in lignes.iter_mut().filter(|l| id_de(l) == Some(id)) {
-            let essai = l["envoi"]["essai"].clone();
-            l["envoi"] = json!({"etat": DEPOSE, "quand": quand, "essai": essai, "erreur": ""});
-            l["numero"] = numero.clone();
-            l["ticket"] = ticket.clone();
-            l["ticket_numero"] = ticket_numero.clone();
+        for l in lignes.iter_mut().filter(|l| l.id == id) {
+            l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand.clone()), essai: l.envoi.essai.clone(), erreur: None };
+            l.numero = Some(r.numero.clone());
+            l.ticket = Some(r.ticket.clone()).filter(|t| !t.is_empty());
+            l.ticket_numero = r.ticket_numero;
             change = true;
         }
         Ok(((), change))
@@ -534,8 +623,8 @@ fn marquer_arrive(racine: &Path, id: &str, r: &Value) -> R<()> {
 fn noter_raison(racine: &Path, ids: &[String], raison: &str) -> R<()> {
     modifier(racine, |lignes| {
         let mut change = false;
-        for l in lignes.iter_mut().filter(|l| en_attente(l) && id_de(l).is_some_and(|i| ids.iter().any(|x| x == i))) {
-            l["envoi"]["erreur"] = json!(raison);
+        for l in lignes.iter_mut().filter(|l| en_attente(l) && ids.contains(&l.id)) {
+            l.envoi.erreur = Some(raison.to_string());
             change = true;
         }
         Ok(((), change))
@@ -550,12 +639,15 @@ fn noter_raison(racine: &Path, ids: &[String], raison: &str) -> R<()> {
 /// d'ici, n'est jamais celui d'un message en train de s'enregistrer. Boite occupee : rien ne s'efface ce passage-ci.
 fn effacer_les_partis(racine: &Path) -> R<()> {
     modifier(racine, |lignes| {
-        let Ok(entrees) = std::fs::read_dir(dossier_attente(racine)) else { return Ok(((), false)) };
-        for e in entrees.flatten() {
-            let nom = e.file_name().to_string_lossy().into_owned();
+        let Some(fichiers) = socle::fichiers::lister(&dossier_attente(racine))? else { return Ok(((), false)) };
+        for f in fichiers {
+            let nom = match f.file_name() {
+                Some(n) => n.to_string_lossy().into_owned(),
+                None => continue,
+            };
             let Some(id) = nom.strip_suffix(".json") else { continue };
-            if !lignes.iter().any(|l| en_attente(l) && id_de(l) == Some(id)) {
-                let _ = std::fs::remove_file(e.path());
+            if !lignes.iter().any(|l| en_attente(l) && l.id == id) {
+                socle::ecriture::effacer(&f).map_err(|m| erreur(Classe::Disque, m))?;
             }
         }
         Ok(((), false))
@@ -566,13 +658,7 @@ fn effacer_les_partis(racine: &Path) -> R<()> {
 /// `relever_reponses` : rend le nombre de reponses nouvelles. Rien a demander,
 /// rien ne part que les numeros des signalements qui n'en ont pas encore.
 pub fn relever_reponses(racine: &Path) -> R<usize> {
-    let mut attendent = Vec::new();
-    for l in &en_ordre(racine) {
-        let numero = get(l, "numero")?;
-        if vrai(numero) && !vrai(get(l, "reponse")?) {
-            attendent.push(numero.clone());
-        }
-    }
+    let attendent: Vec<String> = en_ordre(racine)?.into_iter().filter(|l| l.reponse.is_none()).filter_map(|l| l.numero).collect();
     if attendent.is_empty() {
         return Ok(0);
     }
@@ -588,39 +674,21 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         Err(e) if e.est_filet() => return Ok(0), // la veille suivante reessaie
         Err(e) => return Err(e.en_echec()),
     };
-    let retours = get(&r, "retours")?;
-    let mut recues: Vec<(Value, Value)> = Vec::new();
-    if vrai(retours) {
-        for x in items(retours)? {
-            if let Value::Object(o) = x.as_ref() {
-                if o.get("reponse").is_some_and(vrai) {
-                    let k = o.get("numero").cloned().unwrap_or(Value::Null);
-                    match recues.iter().position(|(c, _)| valeurs_egales(c, &k)) {
-                        Some(i) => recues[i].1 = x.clone().into_owned(),
-                        None => recues.push((k, x.into_owned())),
-                    }
-                }
-            }
-        }
-    }
+    // Une reponse vide : l'editeur n'a pas encore repondu.
+    let recues: Vec<_> = r.retours.into_iter().filter(|x| !x.reponse.is_empty()).collect();
     // La boite se relit sous son verrou apres l'appel : un message enregistre ou parti pendant ce temps reste.
     let n = modifier(racine, |lignes| {
         let mut n = 0;
-        for l in lignes.iter_mut() {
-            let numero = get(l, "numero")?.clone();
-            let Some((_, x)) = recues.iter().find(|(c, _)| valeurs_egales(c, &numero)) else { continue };
-            if vrai(get(l, "reponse")?) {
-                continue;
-            }
-            let o = l.as_object_mut().expect("get a verifie");
-            o.insert("reponse".into(), json!(tete(&valeur_en_texte(&x["reponse"]), 2000)));
-            o.insert("repondu_le".into(), json!(texte_ou_vide(x, "repondu_le")?));
-            o.insert("lu".into(), json!(false));
+        for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
+            let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
+            l.reponse = Some(tete(&x.reponse, 2000));
+            l.repondu_le = Some(x.repondu_le.clone()).filter(|q| !q.is_empty());
+            l.lu = Some(false);
             n += 1;
         }
         Ok((n, n > 0))
     })?;
-    Ok(n.unwrap_or(0))
+    n.ok_or_else(|| erreur(Classe::Refuse, "La boîte des messages est occupée : les réponses seront relevées au prochain passage."))
 }
 
 /// `signalements_lus` : la boite est ouverte, ce qu'elle montre est lu. Rend le
@@ -628,15 +696,13 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
 pub fn signalements_lus(racine: &Path) -> R<usize> {
     let n = modifier(racine, |lignes| {
         let mut n = 0;
-        for l in lignes.iter_mut() {
-            if vrai(get(l, "reponse")?) {
-                if !vrai(get(l, "lu")?) {
-                    n += 1;
-                }
-                l.as_object_mut().expect("get a verifie").insert("lu".into(), json!(true));
+        for l in lignes.iter_mut().filter(|l| l.reponse.is_some()) {
+            if l.lu != Some(true) {
+                n += 1;
             }
+            l.lu = Some(true);
         }
         Ok((n, n > 0))
     })?;
-    Ok(n.unwrap_or(0))
+    n.ok_or_else(|| erreur(Classe::Refuse, "La boîte des messages est occupée : réessayez dans un instant."))
 }

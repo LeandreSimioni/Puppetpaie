@@ -986,6 +986,9 @@ pub struct Resultat {
     pub refus: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub classe: Option<Classe>,
+    /// Le flux de ce qui est parti (ce que `suivre-depot` prend pour suivre ses retours).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flux: Option<String>,
 }
 
 /// CE QUE REND LE DEPOT GROUPE : reel ou de test, combien sont partis et refuses, sa phrase, chaque declaration, et le
@@ -1028,7 +1031,7 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
                     }
                 }
             }
-            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(socle::echec::phrase_de(&m)), classe: None }),
+            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(socle::echec::phrase_de(&m)), classe: None, flux: None }),
         }
     }
     // RIEN DE PRET : rien ne part, et la phrase dit pourquoi (ce n'est pas un refus : il n'y a rien a corriger).
@@ -1061,20 +1064,24 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
     }
     for (racine, nom, d) in &a_faire {
         let charge = en_charge(ChargeDeposer::de(designation(d)?, reel, mdp.clone()))?;
+        let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::routes::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         crate::compagnie::coffre::oublier_mot_de_passe_tape();
-        let (parti, phrase, refus, classe) = match rep.en_resultat() {
+        let (parti, phrase, refus, classe, flux) = match rep.en_resultat() {
             Ok(_) => {
                 let phrase = if reel {
                     "Partie pour de vrai : son bilan arrive avec les retours."
                 } else {
                     "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme."
                 };
-                (true, Some(phrase), None, None)
+                // Le flux de ce qui est parti : la ligne que le depot a ecrite au journal des envois.
+                let journal = envois::journal::lu(racine)?;
+                let flux = journal.lignes.get(avant..).and_then(|nouvelles| nouvelles.last()).map(|l| l.flux().to_string());
+                (true, Some(phrase), None, None, flux)
             }
-            Err(r) => (false, None, Some(r.phrase), r.classe),
+            Err(r) => (false, None, Some(r.phrase), r.classe, None),
         };
-        resultats.push(Resultat { compagnie: nom.clone(), titre: Some(d.titre.clone()), fichier: d.fichier.clone(), genre: Some(d.genre), parti, phrase, refus, classe });
+        resultats.push(Resultat { compagnie: nom.clone(), titre: Some(d.titre.clone()), fichier: d.fichier.clone(), genre: Some(d.genre), parti, phrase, refus, classe, flux });
     }
     let partis = resultats.iter().filter(|r| r.parti).count();
     let refuses = resultats.len() - partis;
