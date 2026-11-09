@@ -11,7 +11,6 @@ use socle::echec::{erreur, Classe};
 use socle::echec::Echec;
 use socle::echec::R;
 use socle::verrou::Verrou;
-use socle::echec::Refus;
 use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
 
@@ -100,14 +99,14 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
 /// Les numeros de contrat (FA1.26.13) et de bulletin (17/2026) que les paies porteraient (`engagement::numeros::numeroter`), en
 /// memoire : l'apercu n'ecrit rien. Un engagement qui PORTE DEJA son numero de contrat le garde (`engagement::numeros`),
 /// une paie partie son numero de bulletin (`engagement::etats::numeros_des_documents`).
-pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> Result<(), Refus> {
+pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     numeroter_en_attente(ctx, paies, annee, &mut HashMap::new(), departs)
 }
 
 /// La meme, avec les numeros de bulletin deja RESERVES par un appel precedent du meme processus : `annee -> dernier
 /// numero`, sinon a la suite du compteur de l'annee (`config/compteurs.json`) et des bulletins importes de l'annee
 /// (`engagement::numeros::dernier_bulletin_importe`).
-pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, attente: &mut HashMap<i32, i64>, departs: &engagement::departs::Departs) -> Result<(), Refus> {
+pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, attente: &mut HashMap<i32, i64>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     let n_bull = match attente.get(&annee) {
         Some(v) => v + 1,
         None => {
@@ -185,7 +184,7 @@ impl Reserves {
 /// validation (`engagement::numeros`), chaque bulletin sous le sien (ecrit dans la paie a son depart, ou celui que le
 /// compteur propose). `reserves` : les numeros de bulletin qu'un envoi propose, que la route d'envoi ecrit plus loin. Un
 /// mois sans engagement valide n'a rien.
-pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Refus> {
+pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Echec> {
     let Some((data, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else {
         return Ok((engagement::saisie::VueDuMois::vide(socle::mois::Mois::lire(mois)?), Vec::new()));
     };

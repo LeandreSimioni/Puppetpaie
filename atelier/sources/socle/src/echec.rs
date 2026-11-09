@@ -278,38 +278,9 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
     crate::memoire::tenu(les_echecs())
 }
 
-/// Un refus et, quand il porte un nom, sa classe
-/// (`SaisieIncomplete`, `Manque`...).
-#[derive(Debug)]
-pub struct Refus {
-    pub classe: Option<Classe>,
-    pub message: String,
-}
-
-
-impl From<String> for Refus {
-    fn from(message: String) -> Self {
-        Refus { classe: None, message }
-    }
-}
-
-impl From<&str> for Refus {
-    fn from(m: &str) -> Self {
-        Refus { classe: None, message: m.to_string() }
-    }
-}
-
-impl From<Echec> for Refus {
-    fn from(e: Echec) -> Self {
-        Refus { classe: e.classe, message: e.message }
-    }
-}
-
-impl From<Refus> for Echec {
-    fn from(r: Refus) -> Self {
-        Echec { classe: r.classe, message: r.message }
-    }
-}
+/// `Echec`, sous le nom que lui donnent `routes::rappels`, `routes::dossier_salarie` et `routes::engagement` du moteur ;
+/// un refus n'a qu'un type.
+pub type Refus = Echec;
 
 // ============================================================================================ ce qui va a part
 

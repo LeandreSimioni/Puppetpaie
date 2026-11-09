@@ -208,8 +208,8 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             if let Some(m) = charge.brute().get("mois").and_then(Value::as_str) {
                 detail.insert("mois".into(), crate::compagnie::diagnostic::etat_du_mois(racine, m));
             }
-            if !r.a_part.is_empty() {
-                detail.insert("refus".into(), crate::compagnie::diagnostic::en_forme(Some(racine), &Value::Object(r.a_part.clone())));
+            if !r.a_part.est_vide() {
+                detail.insert("refus".into(), crate::compagnie::diagnostic::en_forme(Some(racine), &socle::ecriture::en_valeur(&r.a_part)));
             }
             let trace = crate::compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
             let _ = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), Value::Object(detail), trace.as_deref());

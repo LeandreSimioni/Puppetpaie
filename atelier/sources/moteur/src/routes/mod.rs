@@ -31,18 +31,16 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
-
-use socle::date::repr_texte;
 use socle::echec::{erreur, Classe, Echec, R};
-use crate::valeur::vrai;
-use droit::contexte::Contexte;
-use crate::valeur::{valeur_ecrite, valeur_en_texte};
 use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
+use brut::brute;
 
+pub use enveloppe::{phrases_rendues, plus_longue_phrase};
+pub(crate) use brut::{brut, cle_du_salarie, en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, pastille, periode_en_clair, phrase_en_tete, salarie};
 
+mod brut;
 pub mod enveloppe;
 pub mod ouverture;
 pub mod depots;
@@ -107,12 +105,12 @@ pub fn dans_la_fenetre(o: &HashMap<String, String>, route: Route, charge: &Charg
     match rendu {
         Ok(rep) => rep,
         Err(panique) => {
-            let pourquoi = panique
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| panique.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "sans phrase".into());
-            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée ({}).", route, pourquoi))))
+            let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+                (Some(s), _) => format!(" ({})", s),
+                (None, Some(s)) => format!(" ({})", s),
+                (None, None) => String::new(),
+            };
+            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))))
         }
     }
 }
@@ -141,7 +139,7 @@ pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge:
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
         if catalogue::dans(accueil::ROUTES, route).is_none() && catalogue::dans(catalogue::ROUTES, route).is_none() {
-            phrase_a_sa_place(r, route, v.valeur());
+            phrase_a_sa_place(r, route, v);
         }
     }
     let reponse = Reponse::de(route, rendu);
@@ -149,11 +147,6 @@ pub(crate) fn servir_la_route(o: &HashMap<String, String>, route: Route, charge:
         refus_a_sa_place(r, route.nom(), &refus.phrase);
     }
     reponse
-}
-
-/// Ce qu'une route qui n'est pas encore branchee sur l'enveloppe a rendu, en JSON.
-fn brute(rendu: R<Value>) -> R<Rendu> {
-    rendu.map(Rendu::brut)
 }
 
 /// LA ROUTE `route` SERVIE : ce qu'elle rend, ou son refus. L'aiguillage, rien d'autre.
@@ -193,7 +186,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         Some(m) => contexte(o)?.du_mois(&m.to_string())?,
         None => contexte(o)?,
     };
-    let porte = Porte { route, ctx: &ctx };
+    let porte = Porte { route, ctx: &ctx, options: o };
     let dans = |l: &[catalogue::Fiche]| catalogue::dans(l, route).is_some();
     let c = charge.brute();
     let rendu: R<Rendu> = match route {
@@ -245,10 +238,54 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
     match rendu {
         Err(Echec { classe, message }) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && classe != Some(Classe::EnvoiBride) => {
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
-            let message = if crate::valeur::separer(&message).1.is_empty() { let suite = match declarations::demarrage::a_la_suite(&ctx, &message) { Ok(s) => s.unwrap_or_default(), Err(e) => format!(" {}", e) }; message + &suite } else { message };
+            let message = if message.contains(socle::echec::A_PART) {
+                message
+            } else {
+                match declarations::demarrage::a_la_suite(&ctx, &message) {
+                    Ok(Some(suite)) => message + &suite,
+                    Ok(None) => message,
+                    Err(e) => format!("{} {}", message, e),
+                }
+            };
             Err(Echec { classe, message })
         }
         autre => autre,
+    }
+}
+/// Ce qu'un incident silencieux de la porte dit au developpeur d'une phrase : la route, et selon le cas le defaut, les
+/// cles d'une reponse sans phrase, la place et la longueur. Jamais la phrase, qui peut nommer un salarie.
+#[derive(serde::Serialize)]
+struct PhraseNotee<'a> {
+    route: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    defaut: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refus: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cles: Option<Vec<&'a str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    place: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    longueur: Option<usize>,
+}
+
+impl<'a> PhraseNotee<'a> {
+    fn de(route: &'a str) -> PhraseNotee<'a> {
+        PhraseNotee { route, defaut: None, refus: None, cles: None, place: None, longueur: None }
+    }
+
+    /// L'incident silencieux `quoi`, resume par `resume`.
+    fn noter(&self, racine: &Path, quoi: &str, resume: &str) {
+        // Un incident qui ne s'ecrit pas ne retient pas la route : `noter` ne leve jamais.
+        crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
+            nature: crate::compagnie::incidents::LOGICIEL,
+            resume,
+            ou: self.route,
+            quoi,
+            detail: socle::ecriture::en_valeur(self),
+            sans_contexte: true,
+            ..Default::default()
+        });
     }
 }
 
@@ -258,108 +295,35 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
 fn refus_a_sa_place(racine: &Path, route: &str, phrase: &str) {
     let Some(d) = affiche::defaut(phrase, usize::MAX, false) else { return };
     let resume = format!("Un refus de la route {} n'est pas fait pour l'écran : {}.", route, d.corriger());
-    let _ = crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
-        nature: crate::compagnie::incidents::LOGICIEL,
-        resume: &resume,
-        ou: route,
-        quoi: "PhrasePasFaitePourLEcran",
-        detail: json!({"route": route, "defaut": format!("{:?}", d), "refus": true}),
-        sans_contexte: true,
-        ..Default::default()
-    });
+    PhraseNotee { defaut: Some(format!("{:?}", d)), refus: Some(true), ..PhraseNotee::de(route) }.noter(racine, "PhrasePasFaitePourLEcran", &resume);
 }
 
-/// LA PLUS LONGUE DES PHRASES QUE REND UNE ROUTE, en caracteres : la sienne, et celle de chaque ligne qu'elle porte (la
-/// `phrase` d'une carte, d'un carre, de la frise d'un engagement), a toute profondeur. Chacune s'affiche dans la place
-/// de la route (`Fiche::phrase`).
-pub fn plus_longue_phrase(v: &Value) -> usize {
-    match v {
-        Value::Object(o) => o
-            .iter()
-            .map(|(k, x)| match (k.as_str(), x) {
-                ("phrase", Value::String(p)) => p.chars().count(),
-                _ => plus_longue_phrase(x),
-            })
-            .max()
-            .unwrap_or(0),
-        Value::Array(a) => a.iter().map(plus_longue_phrase).max().unwrap_or(0),
-        _ => 0,
-    }
-}
-
-/// LES PHRASES QUE REND UNE ROUTE, celles que l'ecran lit : la `phrase`, les `phrases` et les `aides` de la reponse et de chaque ligne
-/// qu'elle porte, a toute profondeur.
-pub fn phrases_rendues(v: &Value) -> Vec<&str> {
-    let mut out = Vec::new();
-    match v {
-        Value::Object(o) => {
-            for (k, x) in o {
-                match (k.as_str(), x) {
-                    ("phrase", Value::String(p)) => out.push(p.as_str()),
-                    ("phrases", Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
-                    ("aides", Value::Object(a)) => out.extend(a.values().filter_map(Value::as_str)),
-                    _ => out.extend(phrases_rendues(x)),
-                }
-            }
-        }
-        Value::Array(a) => out.extend(a.iter().flat_map(phrases_rendues)),
-        _ => {}
-    }
-    out
-}
-
-/// UNE PHRASE PLUS LONGUE QUE SA PLACE (la `phrase` de la fiche ; `plus_longue_phrase`) se lit entiere, et note un incident silencieux au
-/// developpeur : la route, la place, la longueur ; jamais la phrase, qui peut nommer un salarie. On la corrige a la cause,
-/// en l'ecrivant plus breve.
-fn phrase_a_sa_place(racine: &Path, route: Route, rendu: &Value) {
+/// UNE PHRASE PLUS LONGUE QUE SA PLACE (la `phrase` de la fiche ; `Rendu::plus_longue_phrase`) se lit entiere, et note un
+/// incident silencieux au developpeur : la route, la place, la longueur ; jamais la phrase, qui peut nommer un salarie. On
+/// la corrige a la cause, en l'ecrivant plus breve.
+fn phrase_a_sa_place(racine: &Path, route: Route, rendu: &Rendu) {
     // UNE REPONSE SANS PHRASE d'une route du catalogue (un avertissement, une variante que l'exemple de sa fiche ne joue
     // pas) : ni l'ecran ni `moteur route --texte` n'ont rien a lire. Le meme incident silencieux, pour la reponse qui l'a
     // oubliee. Une route branchee ne rend pas sans phrase (`enveloppe::Dite`). (L'horloge du banc, hors catalogue, rend
     // ses phrases en liste.)
-    let au_catalogue = route.au_catalogue();
-    if au_catalogue && !rendu.get("phrase").and_then(Value::as_str).is_some_and(|p| !p.trim().is_empty()) {
+    if route.au_catalogue() && !rendu.a_sa_phrase() {
         let resume = format!("La route {} a rendu une réponse sans phrase.", route);
-        let cles: Vec<&str> = rendu.as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
-        let _ = crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
-            nature: crate::compagnie::incidents::LOGICIEL,
-            resume: &resume,
-            ou: route.nom(),
-            quoi: "PhraseManquante",
-            detail: json!({"route": route, "cles": cles}),
-            sans_contexte: true,
-            ..Default::default()
-        });
+        PhraseNotee { cles: Some(rendu.cles()), ..PhraseNotee::de(route.nom()) }.noter(racine, "PhraseManquante", &resume);
         return;
     }
     // UNE PHRASE QUI N'EST PAS FAITE POUR L'ECRAN (un nom de fichier, un terme de code : `affiche::defaut`) : le meme
     // incident silencieux, sans la phrase.
-    if let Some(d) = phrases_rendues(rendu).into_iter().find_map(|p| affiche::defaut(p, usize::MAX, false)) {
+    if let Some(d) = rendu.phrases().into_iter().find_map(|p| affiche::defaut(p, usize::MAX, false)) {
         let resume = format!("Une phrase de la route {} n'est pas faite pour l'écran : {}.", route, d.corriger());
-        let _ = crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
-            nature: crate::compagnie::incidents::LOGICIEL,
-            resume: &resume,
-            ou: route.nom(),
-            quoi: "PhrasePasFaitePourLEcran",
-            detail: json!({"route": route, "defaut": format!("{:?}", d)}),
-            sans_contexte: true,
-            ..Default::default()
-        });
+        PhraseNotee { defaut: Some(format!("{:?}", d)), ..PhraseNotee::de(route.nom()) }.noter(racine, "PhrasePasFaitePourLEcran", &resume);
     }
     let Some(place) = catalogue::catalogue().iter().find(|f| f.route == route).map(|f| f.phrase).filter(|p| *p > 0) else { return };
-    let longueur = plus_longue_phrase(rendu);
+    let longueur = rendu.plus_longue_phrase();
     if longueur <= place {
         return;
     }
     let resume = format!("La phrase de la route {} passe sa place : {} caractères pour {}.", route, longueur, place);
-    let _ = crate::compagnie::incidents::noter(racine, &crate::compagnie::incidents::Note {
-        nature: crate::compagnie::incidents::LOGICIEL,
-        resume: &resume,
-        ou: route.nom(),
-        quoi: "PhraseTropLongue",
-        detail: json!({"route": route, "place": place, "longueur": longueur}),
-        sans_contexte: true,
-        ..Default::default()
-    });
+    PhraseNotee { place: Some(place), longueur: Some(longueur), ..PhraseNotee::de(route.nom()) }.noter(racine, "PhraseTropLongue", &resume);
 }
 
 /// Les routes qui ecrivent ou engagent, d'apres l'acte de leur fiche : apres elles, la fenetre verifie les etats des mois
@@ -376,42 +340,10 @@ pub(crate) fn maintenant() -> String {
 /// QUI ECRIT : ce que les routes inscrivent, la fenetre comme la ligne de commande (`moteur route`, qui sert les memes).
 pub(crate) const INTERFACE: &str = "interface";
 
-/// LA CHARGE D'UNE ROUTE QUI N'EST PAS ENCORE BRANCHEE (son module la recoit en JSON), lue en sa forme comme
-/// `Charge::lire` : une cle que la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent
-/// (`MalFormee`, `catalogue::FORME`), la cle fautive a part ; rien ne s'ecrit.
-pub(crate) fn lire_charge<T: serde::de::DeserializeOwned>(charge: &Value) -> R<T> {
-    socle::forme::lire(charge, "La demande est mal formée.").map_err(|m| erreur(Classe::MalFormee, m))
-}
-
-/// La reponse d'une route qui n'est pas encore branchee, en JSON : chacune est une structure de son module, que
-/// `serde_json` ecrit toujours.
-pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
-    serde_json::to_value(v).map_err(|e| Echec::from(e.to_string()))
-}
-
 /// La charge d'une route qui ne prend rien : `{}`.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SansCharge {}
-
-/// Le salarié que `nom` désigne (`Contexte::salarie`) ; refus (`Manque`) avec la phrase de `Contexte::salarie`.
-pub(crate) fn salarie(ctx: &Contexte, nom: &Value) -> R<droit::fiche::FicheSalarie> {
-    ctx.salarie(&cle_du_salarie(ctx, nom)?).map_err(|m| erreur(Classe::Manque, m))
-}
-
-/// La cle de la fiche que `nom` designe (`Contexte::cle_du_salarie`) ; refus (`Manque`) avec sa phrase, qui cite `nom`
-/// tel que la charge l'ecrit.
-pub(crate) fn cle_du_salarie(ctx: &Contexte, nom: &Value) -> R<droit::contexte::IdSalarie> {
-    let texte = valeur_en_texte(nom);
-    ctx.cle_du_salarie(&texte).map_err(|m| {
-        let m = match nom {
-            Value::String(_) => m,
-            autre if m.starts_with("Salarie ") => m.replacen(&repr_texte(&texte), &valeur_ecrite(autre), 1),
-            _ => m,
-        };
-        erreur(Classe::Manque, m)
-    })
-}
 
 /// LA COULEUR D'UN ETAT, la meme sur tout l'ecran : `vert` ce qui est fait, `orange` ce qui reste a faire et que la
 /// compagnie peut faire (une signature attendue se relance), `rouge` ce qui est refuse, `gris` ce qui n'est qu'une
@@ -421,11 +353,6 @@ pub(crate) use socle::ecran::{couleur_de_l_etat, Pastille};
 
 /// UN ENCART, tel que la page le dessine (`encart` de js/tuyau.js) : un titre en gras, sa phrase, la couleur de l'etat.
 /// La page n'ecrit aucune phrase : ce qu'une boite dit d'un cas, la route le rend ainsi.
-pub(crate) fn encart(etat: &str, titre: impl Into<String>, phrase: impl Into<String>) -> Value {
-    json!(Encart::de(etat, titre, phrase))
-}
-
-/// UN ENCART, tel que la page le dessine (`encart` de js/tuyau.js) : un titre en gras, sa phrase, la couleur de l'etat.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Encart {
     pub couleur: &'static str,
@@ -444,11 +371,6 @@ impl Encart {
     }
 }
 
-/// `Pastille::de`, en JSON.
-pub(crate) fn pastille(etat: &str, mots: &str) -> Value {
-    json!(Pastille::de(etat, mots))
-}
-
 /// « 12/09/2026 à 18:18 » : un horodatage ISO tel que l'ecran le dit ; ce qui n'en est pas un, tel quel.
 pub(crate) fn quand(iso: &str) -> String {
     let b = iso.as_bytes();
@@ -462,71 +384,11 @@ pub(crate) fn quand(iso: &str) -> String {
     }
 }
 
-/// LE NOM D'UN SALARIE TEL QU'UN ECRAN LE MONTRE : le nom de famille en capitales, sous sa forme lisible (`nom_affichage`,
-/// accents compris : « SÉRAPHIN »), puis le prenom lisible. La forme declaree (`nom`, sans accents) reste celle de la DSN
-/// et de la DPAE ; une fiche qui n'a que celle-la la montre.
-pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie) -> String {
-    sal.nomme().unwrap_or_default()
-}
-
-/// `sortie_json.brut` d'une valeur lue d'un fichier : un dictionnaire perd ses
-/// cles qui commencent par `_`.
-pub(crate) fn brut(v: &Value) -> Value {
-    match v {
-        Value::Object(o) => Value::Object(o.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, x)| (k.clone(), brut(x))).collect()),
-        Value::Array(a) => Value::Array(a.iter().map(brut).collect()),
-        autre => autre.clone(),
-    }
-}
-
-/// Un fichier lu en UTF-8 : un refus du disque sous sa classe (`FichierAbsent`, `Disque`), un texte qui n'est pas de
-/// l'UTF-8 `Illisible`.
-fn lire_texte(p: &Path) -> R<String> {
-    let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(p, &e)))?;
-    String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&p, &e)))
-}
-
 pub(crate) fn vers_route(x: crate::compagnie::coffre::Echec) -> Echec {
     Echec { classe: Some(x.classe), message: x.message }
-}
-
-/// LA PHRASE D'UNE ROUTE, en tete de ce qu'elle rend : celle que l'ecran lit, et que `moteur route --texte` imprime
-/// (`Reponse::en_texte`). Chaque route en rend une ; une phrase deja posee par la route est remplacee.
-pub(crate) fn phrase_en_tete(v: Value, phrase: impl Into<String>) -> Value {
-    let mut m = Map::new();
-    m.insert("phrase".into(), Value::String(phrase.into()));
-    if let Value::Object(o) = v {
-        m.extend(o.into_iter().filter(|(k, _)| k != "phrase"));
-    }
-    Value::Object(m)
 }
 
 /// « 1 salarié », « 3 salariés » : `n` et le nom, au pluriel quand il le faut (un `s` de plus, ou `pluriel`).
 pub(crate) fn compte(n: usize, un: &str, pluriel: &str) -> String {
     format!("{} {}", n, if n > 1 { pluriel } else { un })
-}
-
-/// Le nombre d'elements d'une liste rendue (0 : pas une liste).
-pub(crate) fn nombre(v: &Value) -> usize {
-    v.as_array().map_or(0, Vec::len)
-}
-
-/// Une valeur rendue, en mots dans une phrase : rien pour une valeur absente (jamais « None »).
-pub(crate) fn mot(v: &Value) -> String {
-    if v.is_null() { String::new() } else { valeur_en_texte(v) }
-}
-
-/// Un jour rendu (`2026-11-02`), tel qu'une phrase le dit : « 02/11/2026 » ; ce qui n'en est pas un, tel quel.
-pub(crate) fn jour_en_clair(v: &Value) -> String {
-    let t = mot(v);
-    socle::date::Jour::lire(&t).map(|j| j.jj_mm_aaaa()).unwrap_or(t)
-}
-
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
-pub(crate) fn periode_en_clair(debut: &Value, fin: &Value) -> String {
-    if vrai(fin) {
-        format!("du {} au {}", jour_en_clair(debut), jour_en_clair(fin))
-    } else {
-        format!("depuis le {}", jour_en_clair(debut))
-    }
 }
