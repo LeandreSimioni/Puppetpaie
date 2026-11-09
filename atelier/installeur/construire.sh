@@ -12,7 +12,7 @@
 # suivis par Git de `logiciel/` (ni `logiciel/linux/` ni `logiciel/mac/`, qui ne sont pas suivis), et les fictives
 # livrees telles que les porte leur archive, marques comprises (le moteur Linux les pose : `moteur maj --poser-fictives`) --,
 # et la fenetre fraichement compilee a la place de `logiciel/puppetpaie.exe`. Rien sur le bridage : sans rien qui dise
-# « debloque », le logiciel est bride (ticket #246, moteur/src/compagnie/bridage.rs).
+# « debloque », le logiciel est bride (ticket #246, compagnie/src/bridage.rs).
 #
 # Usage :
 #   atelier/installeur/construire.sh                     tout
@@ -87,7 +87,7 @@ cd "$DEPOT"
 # Les fichiers suivis par Git de `logiciel/`, et eux seuls.
 git ls-files -z logiciel > "$PREPA/liste.z"
 # L'installeur est celui de WINDOWS : les programmes de Linux et de Mac (`logiciel/linux/`, `logiciel/mac/`, que le flux
-# « Publier » pose pour les archives de ces systemes et celle de tous ; moteur/src/compagnie/maj.rs) ne sont jamais suivis
+# « Publier » pose pour les archives de ces systemes et celle de tous ; compagnie/src/maj.rs) ne sont jamais suivis
 # (.gitignore), donc jamais poses. Si l'un l'etait, l'installeur s'arrete plutot que de les livrer a Windows.
 if grep -zqE '^logiciel/(linux|mac)/' "$PREPA/liste.z"; then
     echo "Des programmes Linux ou Mac sont suivis par Git dans logiciel/ : l'installeur Windows ne les pose pas." >&2
@@ -99,7 +99,7 @@ while IFS= read -r -d '' f; do
     cp -p "$f" "$PREPA/pose/$f"
 done < "$PREPA/liste.z"
 # LES FICTIVES : exactement ce que porte l'archive des fictives, leurs marques comprises (`moteur maj --poser-fictives`,
-# moteur/src/atelier/publier.rs). Elles se refont de leur scenario et ne sont pas suivies par Git : c'est le moteur Linux
+# moteur/src/publication/publier.rs). Elles se refont de leur scenario et ne sont pas suivies par Git : c'est le moteur Linux
 # qui les pose, apres que le flux « Publier » les a refaites et marquees (`moteur maj --marquer-fictives`).
 MOTEUR_LINUX="${MOTEUR_LINUX:-$CARGO_TARGET_DIR/release/moteur}"
 test -x "$MOTEUR_LINUX" || { echo "Le moteur Linux, qui pose les fictives, est absent : $MOTEUR_LINUX (MOTEUR_LINUX=...)" >&2; exit 1; }

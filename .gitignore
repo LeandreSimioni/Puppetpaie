@@ -70,11 +70,11 @@ atelier/prive-dev/config/.jeton-interface
 /logiciel/linux/
 /logiciel/mac/
 /ouverture-gardee*.bin
-# LA FENETRE DE CETTE INSTALLATION (ticket #244, moteur/src/interface/instance.rs) : le creneau retenu (son port), et, en
+# LA FENETRE DE CETTE INSTALLATION (ticket #244, moteur/src/compagnie/instance.rs) : le creneau retenu (son port), et, en
 # portable, le profil de son navigateur et le jeton de sa page.
 /.fenetre.json
 /.fenetre/
-# CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (moteur/src/routes/filet.rs, `sans_compagnie`) : les messages ecrits a
+# CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (routes/src/filet.rs, `sans_compagnie`) : les messages ecrits a
 # l'accueil, leur depart et l'identite du poste.
 /.accueil/
 
@@ -103,7 +103,7 @@ demo/*/config/.jeton-interface
 # ET LEUR JOURNAL DE LA FENETRE (14/10/2026, lot N1) : `journal/interface.log`
 # est ecrit par la fenetre a chaque lancement, avec le chemin du dossier sur
 # le poste. Le moteur le range parmi ce qui appartient au poste et non a la
-# compagnie fictive (PROPRES_AU_POSTE, moteur/src/interface/compagnies.rs) : une
+# compagnie fictive (PROPRES_AU_POSTE, moteur/src/compagnie/installation.rs) : une
 # remise a zero le garde, la photo d'origine ne le porte pas. Une fictive n'en
 # a pas besoin pour tourner.
 fictives/*/journal/interface.log
@@ -114,7 +114,7 @@ demo/*/journal/interface.log
 fictives/.livraison.json
 fictives/*/.livree.json
 # LES FICTIVES DE REFERENCE : leur scenario est dans `atelier/fictives/<nom>/` ; `moteur maj --marquer-fictives` les
-# refait dans `fictives/<nom>` (moteur/src/atelier/scenario.rs, `livrer`). Elles se refont, elles ne se suivent pas.
+# refait dans `fictives/<nom>` (routes/src/scenario.rs, `livrer`). Elles se refont, elles ne se suivent pas.
 fictives/fictive-fil-de-fer/
 # LES FICTIVES AJOUTEES SUR UN POSTE (ticket #236) : le « + » d'un logiciel bride les pose sous `fictives/ajoutee-…`,
 # avec les donnees qu'on y met -- de vraies donnees, souvent. Elles n'entrent jamais dans le depot (ni dans une
@@ -157,7 +157,7 @@ atelier/sources/fenetre/gen/schemas/windows-schema.json
 /compagnies/
 atelier/prive-dev/
 import/
-!atelier/sources/moteur/src/import/
+!atelier/sources/import/
 logiciel/donnees/google-application.json
 
 # La sortie de atelier/installeur/construire.sh (Publier la refait a chaque version).

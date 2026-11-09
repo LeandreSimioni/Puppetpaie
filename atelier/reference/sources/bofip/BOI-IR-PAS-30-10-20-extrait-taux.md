@@ -48,11 +48,11 @@ l'actualité ACTU-2018-00014, `11180-PGP` ; « Version en vigueur du 03/12/2018 
   **Inférence** (aucun texte ne date un taux qu'on lit dans une DSN déjà déposée, la DSN ne portant pas la date du compte
   rendu) : un taux de type 01 qu'une DSN reprise applique a été mis à disposition au plus tard le jour du versement
   (S21.G00.50.001) ; l'import le date de ce jour, la date la plus tardive que les textes permettent
-  (`moteur/src/compagnie/taux_pas.rs`, `derniers_taux_des_dsn`, sa `mis_a_disposition`).
+  (`compagnie/src/taux_pas.rs`, `derniers_taux_des_dsn`, sa `mis_a_disposition`).
 - § 20, second alinéa : la demande de taux par anticipation (le signalement d'amorçage) ; le simulateur y répond par un
   compte rendu (`envois/src/organismes_simules.rs`).
 - § 30 : le compte rendu suit la déclaration dans un délai qui « ne devrait pas excéder 5 jours ouvrés » : la réponse
-  attendue d'une demande partie (`moteur/src/compagnie/amorcage_demande.rs`, `en_cours`). **Inférence** (le texte ne
+  attendue d'une demande partie (`compagnie/src/amorcage_demande.rs`, `en_cours`). **Inférence** (le texte ne
   dit pas ce que devient une demande restée sans réponse) : passé ce délai, elle n'attend plus ; la paie prend la grille
   (§ 10) et le taux se demande de nouveau (§ 20).
 - § 20 et § 70, exemple 1 : le compte rendu est établi « en retour de chaque déclaration sociale nominative », et celui
@@ -61,7 +61,7 @@ l'actualité ACTU-2018-00014, `11180-PGP` ; « Version en vigueur du 03/12/2018 
   pour les paies des mois qui suivent, jamais pour celle de `M`, même versée après lui ; sans quoi une DSN déposée
   avant son versement serait refaite par son propre compte rendu, puis son annule-et-remplace par le sien (chaque compte
   rendu a « un identifiant propre », CSS, art. R. 133-13, V, 1°). Le relevé note le mois de la DSN à laquelle répond le
-  compte rendu (`moteur/src/compagnie/suites.rs`, `appliquer_taux_pas`) ; `droit::pas::en_vigueur` l'écarte pour ce
+  compte rendu (`routes/src/gestes/suites.rs`, `appliquer_taux_pas`) ; `droit::pas::en_vigueur` l'écarte pour ce
   mois ; la fiche l'écrit à partir du premier jour du mois suivant (`droit::pas::date_d_effet`). La réponse à une
   demande de taux vaut dès sa mise à disposition.
 - § 80 : le taux le plus récent est la règle ; un taux antérieur encore valide n'est qu'une tolérance pour qui n'a pas pu

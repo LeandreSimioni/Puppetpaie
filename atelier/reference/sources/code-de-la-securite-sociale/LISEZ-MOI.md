@@ -76,7 +76,7 @@ professionnelle (par la victime) ».
 
 `articles-20261029.md`, section « La reduction generale et les deductions forfaitaires pour frais professionnels »
 (`xml/D241-10.xml`, version en vigueur depuis le 15/06/2026, issue du décret n° 2026-509 du 12/06/2026) ; domaine
-`reduction_generale` de `moteur/src/atelier/releve/codes/textes.rs`.
+`reduction_generale` de `atelier/src/releve/codes/textes.rs`.
 
 - **D. 241-10, I** : pour les salariés du IV de L. 241-13, « Coefficient = (T min + (T delta × [(1/2) × (3 × a × salaire minimum
   calculé pour un an / rémunération annuelle brute - 1)] P )) × b », les autres valeurs étant celles de D. 241-7.
@@ -106,13 +106,13 @@ en vigueur depuis le 02/01/2020).
 
 **Où le moteur s'en sert** : `atelier/sources/envois/src/organismes_simules.rs` (`effectif_annuel`), le compte rendu de
 nature 118 que le simulateur rend à une compagnie fictive ; `droit/src/contexte.rs` (`Effectif::atteint`) pour la règle
-des cinq ans, et `Effectif::a_dire` pour les années qui manquent ; `moteur/src/routes/fiches.rs` (route `effectif`) pour
+des cinq ans, et `Effectif::a_dire` pour les années qui manquent ; `routes/src/fiches.rs` (route `effectif`) pour
 l'effectif qu'une compagnie venue d'un autre logiciel dit d'une année sans compte rendu 118, tronqué au centième (R. 130-1, I),
 qu'un 118 de la même année remplace (`envois/src/releve_retours.rs`, `poser_effectif`).
 
 ## Le mode de tarification des AT/MP : D. 242-6-2 et D. 242-6-14 (relevé du 29/10/2026)
 
-Domaine `atmp_tarification` de `moteur/src/atelier/releve/codes/textes.rs`, relevé le 29/10/2026 (`moteur releve-codes
+Domaine `atmp_tarification` de `atelier/src/releve/codes/textes.rs`, relevé le 29/10/2026 (`moteur-atelier releve-codes
 moissonner`, puis `rapport`) : `articles-20261029.md`, section « Le mode de tarification des accidents du travail et
 maladies professionnelles » ; `xml/D242-6-2.xml`, `xml/D242-6-14.xml`.
 
@@ -146,7 +146,7 @@ cotisations dues à compter de 2027 : `../tarification-atmp/`).
   risque que l'entreprise n'avait pas, a les taux nets collectifs l'année de sa création et les deux années civiles
   suivantes (version du décret, cotisations de 2027 et après : le moteur ne s'en sert pas). **La version applicable aux
   cotisations jusqu'à 2026** (`xml-anterieur/D242-6-17.xml`, `LEGIARTI000022446511`, en vigueur du 01/01/2012 au
-  15/10/2026, relevée le 30/10/2026 par `moteur releve-codes comparer` dans l'archive globale LEGI) : « Les taux nets
+  15/10/2026, relevée le 30/10/2026 par `moteur-atelier releve-codes comparer` dans l'archive globale LEGI) : « Les taux nets
   collectifs sont applicables aux établissements nouvellement créés durant l'année de leur création et les deux années
   civiles suivantes, quel que soit leur effectif ou celui de l'entreprise dont ils relèvent », sauf le taux unique d'une
   entreprise qui l'a choisi, et sauf un établissement issu d'un précédent (même activité, mêmes moyens, la moitié du
@@ -161,15 +161,15 @@ cotisations dues à compter de 2027 : `../tarification-atmp/`).
 **Où le moteur s'en sert** : `droit/src/bareme.rs` (`taux_atmp_de_l_annee`, la même règle pour le siège et chaque
 établissement, `surcharger`) : une ligne du taux vaut à partir de sa date ; celle d'un risque sans « TC » ne vaut pas
 au-delà du 31 décembre de son année (l'inférence ci-dessus), et la paie demande la suivante. `droit/src/bareme.rs`
-(`etablissement_neuf`, D. 242-6-17 de 2012) et `moteur/src/routes/atmp.rs` (`inscrire_l_arrete`) : un établissement
+(`etablissement_neuf`, D. 242-6-17 de 2012) et `routes/src/atmp.rs` (`inscrire_l_arrete`) : un établissement
 ouvert dans l'année ou les deux précédentes reçoit, jusqu'en 2026, le taux collectif de l'arrêté pour son risque (TC ou
 non), inscrit à l'ouverture ; ce que l'article excepte se dit par le taux notifié, qui s'inscrit.
-`moteur/src/routes/etablissements.rs` (`ecrire`) : la ligne d'un établissement dont le taux change se date à la date de
+`routes/src/etablissements.rs` (`ecrire`) : la ligne d'un établissement dont le taux change se date à la date de
 ce taux.
 
 ## La réduction de cotisations salariales des heures supplémentaires et complémentaires, et la déduction patronale (relevé du 02/11/2026, lot LONG7)
 
-Domaine `heures_supplementaires` de `moteur/src/atelier/releve/codes/textes.rs` : L241-17 (la réduction, son taux par
+Domaine `heures_supplementaires` de `atelier/src/releve/codes/textes.rs` : L241-17 (la réduction, son taux par
 décret, son imputation sur la vieillesse de L241-3 et sa limite), L241-18 et L241-18-1 (la déduction forfaitaire patronale
 par heure supplémentaire, sous vingt salariés et à partir de vingt), D241-21 (le taux : la somme des taux de vieillesse à la
 charge du salarié, au plus 11,31 %), D241-22, D241-24 (1,50 € et 0,50 €), D241-25 ; D241-23 et D241-26 n'ont plus de

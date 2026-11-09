@@ -29,6 +29,6 @@ refuse le conteneur du nuage) :
 réduits à ce qu'une paie peut lire : pour chaque lieu, les lignes en vigueur depuis le 1er janvier de la plus ancienne
 année dont un barème est livré (`droit::missions::pour_les_paies` ; 2025 au 03/11/2026 : 87 Ko au lieu de 1,3 Mo pour
 les taux). Les tables entières restent ici. `droit::missions` les lit, `engagement::frais_au_dela` en tire la limite d'un
-jour à l'étranger (le choix « Lieu » d'une ligne de nuitée ou de repas). `moteur releve-missions`
-(`atelier/sources/moteur/src/atelier/releve/missions.rs`) les relève par l'API d'opendatasoft avant chaque publication,
+jour à l'étranger (le choix « Lieu » d'une ligne de nuitée ou de repas). `moteur-atelier releve-missions`
+(`atelier/sources/atelier/src/releve/missions.rs`) les relève par l'API d'opendatasoft avant chaque publication,
 les dépose ici, datées et entières, et livre la part lisible.

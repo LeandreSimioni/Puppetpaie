@@ -1,5 +1,5 @@
 //! LE REJEU DES SCENARIOS DU BANC D'ESSAI. Un scenario enregistre dans l'interface (`atelier/outils/banc/`,
-//! `moteur/src/atelier/scenario.rs`) se rejoue sans navigateur et reproduit la compagnie, octet pour octet d'un rejeu a l'autre ;
+//! `routes/src/scenario.rs`) se rejoue sans navigateur et reproduit la compagnie, octet pour octet d'un rejeu a l'autre ;
 //! ses sorties (paies, DSN, DPAE, bulletins, certificats Conges Spectacles, journaux) se comparent a un oracle.
 //!
 //! SEUL DANS `tests/` : le rejeu simule le temps du moteur, qui est celui du processus (`socle/src/temps.rs`), comme un
@@ -279,12 +279,12 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
         let a: envois::organismes_simules::Annonce = socle::forme::lire(&a, "l'annonce").unwrap();
         // Annoncee avant le depot : le 1er novembre.
         let le = socle::paris::naif_de_iso("2026-11-01T12:00:00").unwrap() as f64;
-        socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, moteur::compagnie::bridage::branchement(&racine).unwrap(), &a)).unwrap();
+        socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, compagnie::bridage::branchement(&racine).unwrap(), &a)).unwrap();
     };
     let relever = || {
         socle::temps::pendant(fin, || {
             let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
-            moteur::compagnie::releve::rattacher_simulation(&ctx).unwrap();
+            routes::gestes::releve::rattacher_simulation(&ctx).unwrap();
         })
     };
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
@@ -318,7 +318,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let de_novembre = || outils::journal(&racine).as_array().unwrap().iter().filter(|l| l["fichier"] == json!("DSN_Novembre2026.dsn")).count();
     let ouvrir = |jour: &str| {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap()
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap()
     };
     let avant = de_novembre();
     ouvrir("2026-12-20");
@@ -385,7 +385,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
 
     for jour in ["2026-11-20", "2026-12-16"] {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     let depots = outils::journal(&racine);
     let demandes = |s: &str| {
@@ -428,7 +428,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     outils::reussi(&outils::valider_la_carte(&racine, "2026-11", "FULLER", "2026-11-16"));
     for jour in ["2026-11-20", "2026-12-01"] {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     for reel in [false, true] {
         outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "reel": reel}), "2026-12-14"));
@@ -453,7 +453,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
 fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&str]) -> (std::path::PathBuf, &'static str) {
     let d = outils::dossier_de_test("rejeu", nom);
     let racine = outils::rejeu::livrer(&outils::rejeu::reference(nom), &d, "2026-11-02");
-    assert!(moteur::interface::compagnies::est_fictive_livree(&racine).unwrap(), "la fictive posee n'est pas une fictive livree");
+    assert!(compagnie::installation::est_fictive_livree(&racine).unwrap(), "la fictive posee n'est pas une fictive livree");
     assert!(!racine.join("journal/incidents.json").exists(), "les incidents du rejeu ne se livrent pas");
     let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour))["phrases"].clone();
     assert_eq!(horloge("2026-11-02"), json!([]), "l'horloge a trouve a faire derriere l'administratrice");

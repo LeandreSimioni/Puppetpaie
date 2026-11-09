@@ -12,10 +12,11 @@
 //! `--json` et `--fenetre` sont acceptes et sans effet. Les phrases d'une demande de mot de passe vont sur la sortie
 //! d'erreur ou sur le terminal, jamais sur la sortie standard d'un programme qui lirait du JSON.
 
-use super::actes::{est_refus, maintenant_minutes};
+use super::actes::est_refus;
+use routes::gestes::administrateur::maintenant_minutes;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
-use crate::compagnie::coffre::Coffre;
+use compagnie::coffre::Coffre;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -41,12 +42,12 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     }
 }
 
-fn vers(e: crate::compagnie::coffre::Echec) -> Echec {
+fn vers(e: compagnie::coffre::Echec) -> Echec {
     Echec { classe: None, message: e.message }
 }
 
 /// Le refus du coffre sous sa classe (`Coffre`, `Disque`...), pour que la commande sache s'il se rend en phrase.
-fn vers_classe(e: crate::compagnie::coffre::Echec) -> Echec {
+fn vers_classe(e: compagnie::coffre::Echec) -> Echec {
     Echec { classe: Some(e.classe), message: e.message }
 }
 
@@ -105,8 +106,8 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             return Ok(0);
         }
     }
-    match crate::compagnie::demande::ouvrir_seance(&cadre.racine) {
-        crate::compagnie::demande::Verdict::Accepte => {
+    match compagnie::demande::ouvrir_seance(&cadre.racine) {
+        compagnie::demande::Verdict::Accepte => {
             let fin = coffre
                 .fin_ouverture_gardee()
                 .map_err(vers_classe)?
@@ -117,7 +118,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             );
             Ok(0)
         }
-        crate::compagnie::demande::Verdict::Refuse(phrase) => {
+        compagnie::demande::Verdict::Refuse(phrase) => {
             dire!("! {}", phrase);
             Ok(2)
         }

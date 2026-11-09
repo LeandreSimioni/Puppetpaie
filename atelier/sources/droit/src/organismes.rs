@@ -191,7 +191,7 @@ impl Base {
 // ------------------------------------------------------------------------------------------ ce que la compagnie saisit
 
 /// `config/organismes.json` : ce que la compagnie a saisi (Configuration › Organismes et contrats), date. Ecrit par
-/// `moteur::compagnie::organismes`, lu par `saisis`.
+/// `compagnie::organismes`, lu par `saisis`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FichierOrganismes {

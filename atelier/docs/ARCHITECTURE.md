@@ -24,7 +24,15 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`atelier/sources/Cargo.toml`, en tête).
 
 ```
-                         moteur   la ligne de commande, les routes et la page ; la compagnie, l'import, l'atelier
+                         atelier  le binaire du nuage `moteur-atelier`, jamais livré ; rien ne le prend
+                           │
+                         moteur   la ligne de commande et la page ; la publication par GitHub
+                           │
+                         routes   la porte, une route par geste, ce qu'elles font
+                           │
+                         import   les pièces d'un autre logiciel, telles qu'elles le disent
+                           │
+                        compagnie l'installation, le coffre, la mise à jour, la sauvegarde, les incidents
                            │
          ┌─────────────────┼─────────────────┐
        envois        declarations ──────► documents
@@ -45,25 +53,38 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `documents` | contrat, avenant, bulletin, certificat Congés Spectacles, AER, questionnaire, récapitulatif annuel, bordereau, prélèvement, états de paie, du personnel et de comptabilité, plan comptable | ne calcule rien |
 | `declarations` | DSN mensuelle et signalements, DPAE, régularisations, bloc 44, CSA, OETH, CASC-SVP, et la norme qui les contrôle (usages, formats, natures, champs) ; prend à `documents` | ne calcule rien, n'envoie rien |
 | `envois` | ce qui part et revient : net-entreprises, DPAE, signature, courriel, Drive, retours et bilans ; le journal de ce qui est parti ; le branchement (le monde, le simulateur, le message) | ne fabrique rien, n'ouvre jamais le coffre |
-| `moteur` | tout le reste, en dossiers (ci-dessous) | |
+| `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, le filet, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
+| `import` | le passé d'une compagnie tenu dans un autre logiciel, tel que ses pièces le disent : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les certificats et les AEM en PDF, ce qu'une pièce atteste (`attestes`), les fiches proposées, le mois importé, les écarts de calcul, le caviardage | n'écrit rien pour une route : c'est `routes/src/importation/` |
+| `routes` | `moteur route` : la porte (`lib.rs` : l'aiguillage ; `enveloppe`, `catalogue`), une route par geste de l'écran, et ce qu'elles font ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) | ne prend rien à l'interface, aux commandes ni à l'atelier |
+| `moteur` | la ligne de commande (`moteur`), la page, la publication par GitHub, en dossiers (ci-dessous) | ne touche pas le JSON brut (la porte est aux routes) ; ne connaît aucune commande de l'atelier |
+| `atelier` | tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier` (la ligne de commande du moteur, plus la sienne) : le relevé des textes (`releve/` : LEGI, KALI, les missions de la DGFiP), les référentiels extraits (`extraire/`), les tables Unicode (`generer_tables`), la vérification avant commit, le guet, la veille des sources (`sources`), la fabrique des bulletins fictifs, les outils sur une compagnie (`commandes/outils/`), la redirection vers de faux serveurs, et les commandes `scenario` du banc | n'est jamais livré ; rien ne le prend, et il est hors de `default-members` (il allume la feature `atelier` de ce qu'il prend) |
 
 À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page) et `fabrique-pdf/`.
+
+**Ce que porte `routes/src/`**, à côté d'une route par fichier :
+
+| dossier | ce qu'il porte |
+|---|---|
+| `gestes/` | les gestes de la compagnie qui appellent des routes : les portes d'un dépôt réel (`depot_acte`), le départ des pièces (`depart`), le passage de la sauvegarde, l'ouverture, l'administrateur, la clôture et l'export compta (`exercice_ecrit`) |
+| `importation/` | ce que l'import compose et écrit pour les routes : les engagements importés (`ecrite`), la nature à dire, la CASC-SVP des mois importés, le document pas lu |
+| `accueil/` | ce que l'accueil fait des compagnies de l'installation (`accueil.rs` : ses routes, l'ajout ; `suppression`) |
+| `metier/` | le métier que des routes partagent (`imprevus`) |
+
+À sa racine, à côté des routes : `service.rs` (la demande et la réponse de `moteur route`), `etat_garde.rs` (l'état
+d'un mois et de l'ouverture tels que l'écran les lit, refaits en fond), `veille.rs` (ce que la veille dit à la page),
+`horloge.rs` (l'horloge des compagnies fictives), `scenario.rs` (le scénario d'une compagnie et son rejeu, le circuit
+des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.rs`, `obligations.rs`,
+`regularisation.rs`, `simulation_courriels.rs`.
 
 **Les dossiers de `moteur/src/`** :
 
 | dossier | ce qu'il porte |
 |---|---|
-| `routes/` | `moteur route` : une route par geste de l'écran, derrière un aiguillage (`mod.rs`) ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) |
-| `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille |
-| `compagnie/` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : le coffre et ses deux mots de passe, la demande d'un acte réel et ses portes (`depot_acte`), le départ des pièces (`depart`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, l'ouverture, l'administrateur, le filet, les incidents, les conseils, la clôture et l'export compta (`exercice_ecrit`) |
-| `import/` | le passé d'une compagnie tenu dans un autre logiciel : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les engagements importés (`ecrite`), la nature à dire, la CASC-SVP des mois importés, les écarts de calcul, le caviardage des écarts et le document pas lu |
-| `atelier/` | les outils de l'éditeur, jamais à l'écran : le relevé des textes (`releve/` : LEGI, KALI), les référentiels extraits (`extraire/`), les tables Unicode, la vérification avant commit, le guet, les scénarios du banc, la publication des versions et la clé de l'éditeur (`publier`) ; la redirection vers de faux serveurs et les bulletins fictifs n'existent que dans le binaire de l'atelier (`--features atelier`) |
-| `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, les outils de l'éditeur ; les gestes passent par `moteur route` |
+| `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille qui tourne |
+| `publication/` | ce que le flux « Publier » appelle sur le `moteur` qu'il vient de compiler (`moteur maj --publier-github`, `--cle-github`, `--marquer-fictives`, `--poser-fictives`) : les archives, la signature par la graine de GitHub, les fictives livrées |
+| `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, la mise à jour ; l'aiguillage de la ligne de commande (`ligne_de_commande`), que `moteur-atelier` reprend avec ses commandes ; les gestes passent par `moteur route` |
 
-À la racine : `lib.rs`, `main.rs`, `service.rs` (la demande et la réponse de `moteur route`), `etat_garde.rs` (l'état
-d'un mois et de l'ouverture tels que l'écran les lit, refaits en fond), `horloge.rs` (l'horloge des compagnies
-fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.rs`, `obligations.rs`,
-`regularisation.rs`, `simulation_courriels.rs`.
+À la racine : `lib.rs`, `main.rs`.
 
 ## Le flux
 
@@ -87,7 +108,7 @@ fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.
 ```
 
 Plus d'AEM à produire : la compagnie est en 100 % DSN, France Travail édite l'attestation lui-même et la renvoie
-(la relève des retours) ; l'import relit les AEM d'un ancien logiciel (`moteur/src/import/dsn_aem.rs`, `lire_aem`). La source :
+(la relève des retours) ; l'import relit les AEM d'un ancien logiciel (`import/src/dsn_aem.rs`, `lire_aem`). La source :
 le courriel de France Travail du 28/05/2026 (`reference-privee/sources/francetravail-100-dsn/
 francetravail-courriel-fin-phase-pilote-100-dsn-20260528.pdf`, dépôt privé) — fin des AEM, AE Cinéma Spectacle remise
 au salarié, `S21.G00.40.025` vide ; la date vaut pour la compagnie qui l'a reçu, une autre reçoit la sienne.
@@ -138,7 +159,7 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,
   bulletin rectificatif, DSN) se tire de la comparaison entre le présent et la version sur laquelle chaque envoi est
   parti. L'engagement ne lit jamais le journal : le moteur lui passe ce qui est parti (`engagement/src/departs.rs`).
-- **Chaque document se fabrique à son départ** (`moteur/src/compagnie/depart.rs`) : la DSN à son dépôt (`fabriquer_dsn`, route
+- **Chaque document se fabrique à son départ** (`routes/src/gestes/depart.rs`) : la DSN à son dépôt (`fabriquer_dsn`, route
   `depot-apercu`, la DSN désignée par son mois), dès qu'un engagement du mois est validé, sans attendre DPAE ni contrat ; le bulletin et le certificat
   Congés Spectacles à l'envoi des documents (`fabriquer_documents`), qui écrit dans la paie le numéro du bulletin
   (`N/AAAA`, la suite de l'année, après le plus haut que porte une paie de l'année, importée comprise) et le premier
@@ -264,11 +285,11 @@ datée, vérifiable**.
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le
   dépôt ; l'original d'un organisme privé n'y est pas, seule
   sa transcription), SHA-256, mode de vérification, et
-  quels fichiers de données elle nourrit. `moteur sources --verifier`
-  (poste de l'éditeur seulement, `moteur/src/atelier/sources.rs`) retélécharge et compare ; une source `changee` est à RELIRE
+  quels fichiers de données elle nourrit. `moteur-atelier sources --verifier`
+  (`atelier/src/sources.rs`) retélécharge et compare ; une source `changee` est à RELIRE
   (`--relever` pose la nouvelle version à côté). Légifrance refuse les
   robots (403) : la copie ne se revérifie pas en ligne, mais la source
-  porte un bloc `kali` (IDCC, conteneur, texte) et `moteur/src/atelier/releve/kali.rs` lit
+  porte un bloc `kali` (IDCC, conteneur, texte) et `atelier/src/releve/kali.rs` lit
   les **livraisons open data KALI** de la DILA
   (`echanges.dila.gouv.fr/OPENDATA/KALI/`, une archive par soir) depuis
   le relevé : fiche de la convention relivrée avec des textes nouveaux,
@@ -279,17 +300,17 @@ datée, vérifiable**.
   textes de chaque convention, trous de l'index) ; à la première veille,
   l'index est remonté jusqu'à la dernière fiche de chaque convention.
   L'ouverture d'une compagnie ne fait pas cette vérification
-  (`moteur/src/compagnie/ouverture.rs`) : c'est l'éditeur
-  qui la lance, avant chaque publication.
-- `moteur releve-codes` (`moteur/src/atelier/releve/codes.rs`)
+  (`routes/src/gestes/ouverture.rs`) : elle se lance dans le nuage,
+  avant chaque publication.
+- `moteur-atelier releve-codes` (`atelier/src/releve/codes.rs`)
   — **les articles de loi eux-mêmes**, lus dans la base **LEGI**
   de la DILA (même voie que KALI) plutôt qu'à la main sur Légifrance, qui
   refuse les robots. Tous les textes en un seul passage
-  (`atelier/releve/codes/textes.rs`) : travail, sécurité sociale, collectivités
+  (`atelier/src/releve/codes/textes.rs`) : travail, sécurité sociale, collectivités
   territoriales (le versement mobilité), construction, impôts, et les arrêtés
   et la loi que la paie lit. Trois verbes, sur le dossier des sources :
   - `moissonner` tient à jour l'entrepôt `legi-entrepot/`
-    (`moteur/src/atelier/releve/entrepot_dila.rs`) : la première fois, ou avec
+    (`atelier/src/releve/entrepot_dila.rs`) : la première fois, ou avec
     `--reconstruire`, l'archive globale défile (1,1 Go, en flux, jamais
     écrite sur le disque) puis **chaque livraison quotidienne depuis sa
     date** ; ensuite seules les livraisons nouvelles se téléchargent. Il garde
@@ -310,7 +331,7 @@ datée, vérifiable**.
     article), la range dans `<code>/xml-anterieur/` et écrit le diff,
     alinéa par alinéa. Il s'arrête dès qu'il les a toutes : comptez un quart
     d'heure. Il compare le `BLOC_TEXTUEL` seul, et le dit.
-- `moteur releve-conventions` (`moteur/src/atelier/releve/conventions.rs`) — le texte
+- `moteur-atelier releve-conventions` (`atelier/src/releve/conventions.rs`) — le texte
   complet des conventions que cite `sources.json`, tenu dans l'entrepôt
   `kali-entrepot/` : `mettre-a-jour` (les seules livraisons KALI nouvelles ;
   la base entière, 180 Mo, la première fois ou pour une convention nouvelle),
@@ -446,7 +467,7 @@ décrit plus haut, avec le barème.
 ## L'AEM V5
 
 Le moteur n'émet pas d'AEM : il relit, à l'import, celles qu'un ancien logiciel a déposées
-(`moteur/src/import/dsn_aem.rs`, `lire_aem`). Enregistrements de 1000 caractères, latin-1, séparés par CRLF. La
+(`import/src/dsn_aem.rs`, `lire_aem`). Enregistrements de 1000 caractères, latin-1, séparés par CRLF. La
 queue numérique est celle-ci :
 
 | Position | Contenu |
@@ -521,7 +542,7 @@ leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
 
 Une **option de la compagnie** (fiche Entreprise, `conseils`, décochée par défaut) : sans elle, aucune route ne rend
 rien. Le texte, ses chiffres et ses sources sont des données (`logiciel/donnees/conseils.json`, chaque citation lue à
-l'identique dans un texte déposé, `tests/fichiers/sources.rs`) ; `moteur/src/compagnie/conseils.rs` n'a que les conditions.
+l'identique dans un texte déposé, `tests/fichiers/sources.rs`) ; `routes/src/gestes/conseils.rs` n'a que les conditions.
 Trois familles, qui parlent à l'employeur :
 
 | | où | ce qui décide |
@@ -548,7 +569,7 @@ d'heures ».
 
 Une compagnie qui arrive d'un autre logiciel met tout ce qu'elle a dans sa boîte aux lettres `import/` (DSN, AEM,
 bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engagements importés**
-(`moteur/src/import/`, routes `importation-apercu`, `importer`, `importation-etat`).
+(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`).
 
 - **Le tri** (`import/tri.rs`) : chaque fichier reçoit une sorte, par son contenu, jamais par son nom (`dsn`, `aem`,
   `pdf_texte`, `pdf_sans_texte`, `archive`…). Une DSN d'une autre entreprise que la compagnie n'est pas lue.
@@ -564,21 +585,21 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   (`ambigu`), ou dont ce qui identifie le bulletin ne se lit pas (`incomplet`) est refusée, et le compte rendu dit
   pourquoi. Deux contrôles sans correction (le brut vaut la somme des lignes soumises ; le net se retrouve) : un écart
   avertit, le bulletin est repris avec ce qu'il imprime. Chaque bulletin est rapproché de la paie que sa DSN déclare
-  (NIR, début, fin) et la complète (`import/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
+  (NIR, début, fin) et la complète (`importation/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
   qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée.
-- **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`import/ecrite.rs`) : les fiches à créer, par le même
+- **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
-  « A COMPLETER » (`import/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
+  « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
   importés, chacun dans `engagements/AAAA-MM.json`, le fichier du mois où il commence (le contrat qu'une AEM ou un
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage.
-- **La nature à dire** (`import/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
+- **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
   demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
-- **La CASC-SVP des mois importés** (`import/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
+- **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite.
 - **Les écarts de calcul** (`import/ecarts.rs`, `engagement/src/ecarts.rs`) : à la fin de chaque import, et à
@@ -591,7 +612,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique).
-- **Le document accepté mais pas lu** (`import/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
+- **Le document accepté mais pas lu** (`importation/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique
   DSN restent ; toute autre lettre devient `X`, tout chiffre `9`), jamais le fichier. Un scan et un fichier qui n'est
@@ -609,7 +630,7 @@ celles de la version que le fichier porte (`S10.G00.00.006`), et le fichier en
 fabrication décide par elles des rubriques qu'une version a retirées (`06.003`,
 `11.002` en P27V01) ou ajoutées (`Fichier::norme`, `Norme::admet`). Les
 tables P27V01 sont relevées des classeurs 2027.1.2 de net-entreprises (fiches
-3357 et 3358) par `moteur extraire usages` et `moteur extraire formats` (`moteur/src/atelier/extraire/`).
+3357 et 3358) par `moteur-atelier extraire usages` et `moteur-atelier extraire formats` (`atelier/src/extraire/`).
 La part patronale de la CET se déclare en `146` en P26V01 et en `148` en P27V01,
 sous la base 78 du `131` (type 23), à l'Urssaf (fiche net-entreprises 2556 ;
 `cotisation_cet_patronale` de la donnée). Le code APE de la fiche entreprise se
@@ -979,7 +1000,7 @@ bonnes raisons de ne pas avoir.
 pour le siège, la ligne de chaque autre établissement (`etablissements[].taux_atmp`) ; `droit::contexte` le pose sur la
 pile, la surcouche ne le porte pas. Chaque ligne de la case dit le code, le taux, la date à partir de laquelle il vaut
 et d'où il vient (l'import, la notification reçue, la saisie, le taux collectif de l'arrêté pour un risque « TC », inscrit
-à l'ouverture : `moteur::routes::atmp`) ; la paie ne lit qu'elle (`droit::bareme::taux_atmp_de_l_annee`). Les rubriques du socle
+à l'ouverture : `routes::atmp`) ; la paie ne lit qu'elle (`droit::bareme::taux_atmp_de_l_annee`). Les rubriques du socle
 portent leur **facteur** (`_facteur_atmp`) — 0,70 pour un artiste, dont les taux Urssaf sont abattus de 30 % (arrêté
 du 24/01/1975), 1 pour tout le monde d'autre — et `droit::bareme::bareme_atmp` fait la multiplication.
 
@@ -1090,7 +1111,7 @@ permanents, un seul CTP 992.
 
 `logiciel/donnees/permanents-base.json` porte les nombres, chacun avec son article ;
 `droit/src/permanents.rs` porte la règle ; les routes
-(`moteur/src/routes/imprevus.rs`)
+(`routes/src/imprevus.rs`)
 décident. Les articles sont relevés et datés dans
 `atelier/reference/sources/code-du-travail/`.
 
@@ -1135,7 +1156,7 @@ décident. Les articles sont relevés et datés dans
   sécurité sociale**, et lui-même renvoie au régime fiscal de **l'article 80
   duodecies du code général des impôts** — est exclu des cotisations, dans la
   limite de deux plafonds annuels, ce qui n'est pas imposable. Les deux
-  articles se relèvent avec le code du travail (`moteur releve-codes`). Il en sort trois choses :
+  articles se relèvent avec le code du travail (`moteur-atelier releve-codes`). Il en sort trois choses :
   - l'indemnité **légale** de licenciement et celle de mise à la retraite ne
     sont **ni soumises ni imposables** (80 duodecies 3° b et 4° b, qui
     exonèrent « le montant prévu […] par la loi ») ;
@@ -1206,7 +1227,7 @@ décident. Les articles sont relevés et datés dans
   saisissent (D1226-5) ;
 - **certificat de travail** (L1234-19, D1234-6) et **reçu pour solde de tout
   compte** (L1234-20, D1234-7, D1234-8) : produits par
-  `moteur/src/routes/imprevus.rs`, leur texte en donnée dans `logiciel/donnees/modeles/*.modele` (ou le modèle propre de la compagnie, `socle::fichiers::modele_de`).
+  `routes/src/imprevus.rs`, leur texte en donnée dans `logiciel/donnees/modeles/*.modele` (ou le modèle propre de la compagnie, `socle::fichiers::modele_de`).
   Le certificat est le seul document du logiciel dont le contenu soit
   **plafonné** par la loi — D1234-6 dit « exclusivement ».
 
@@ -1294,7 +1315,7 @@ tout le reste du bloc 40                       I  (interdit)
 
 Le contrat est donc **désigné**, jamais redécrit : c'est la DSN mensuelle qui
 l'a déclaré, et ce sont ces deux identifiants-là qui doivent correspondre.
-D'où `contrats_au` (`moteur/src/routes/imprevus.rs`), qui lit les contrats des engagements
+D'où `contrats_au` (`routes/src/imprevus.rs`), qui lit les contrats des engagements
 plutôt que d'en fabriquer un.
 
 Une rubrique interdite écrite par mégarde, c'est une anomalie bloquante
@@ -1441,7 +1462,7 @@ pour la DSN, l'Urssaf pour la DPAE), jamais
 par un portail : un contrat écrit, des retours lus par programme, et une
 erreur qui se voit (un code Urssaf faux, qu'un portail laisserait passer, fait refuser le dépôt).
 
-Trois garde-fous, tous dans le moteur (`moteur/src/compagnie/depot_acte.rs`, `moteur/src/compagnie/demande.rs`) :
+Trois garde-fous, tous dans le moteur (`compagnie/src/preuve.rs`, `routes/src/gestes/depot_acte.rs`, `compagnie/src/demande.rs`) :
 
 - **Une preuve par acte.** Rien ne part en réel sans le mot de passe du
   logiciel tapé au moment de l'acte (`README.md`) ; la séance qui ouvre le
@@ -1469,7 +1490,7 @@ de faire tourner un ou deux mois en parallèle et de comparer.
 
 Une installation (le dossier qui porte `logiciel/`, `prive/`, `compagnies/*`, `fictives/*`) appartient à une personne,
 l'**administrateur**, qui peut y gérer plusieurs compagnies d'un seul mot de passe ; qui veut deux administrateurs
-installe un second logiciel. `moteur/src/compagnie/administrateur.rs` :
+installe un second logiciel. `routes/src/gestes/administrateur.rs` :
 
 - **Rien de neuf dans le chiffrement.** Chaque compagnie garde son coffre (`config/coffre.bin`) et sa clé maîtresse, scellée
   par la clé du poste et par le mot de passe du logiciel. Rattacher une compagnie, c'est sceller cette enveloppe par le mot
@@ -1488,7 +1509,7 @@ installe un second logiciel. `moteur/src/compagnie/administrateur.rs` :
   par la route `deposer` de chacune, avec ses contrôles et son bilan. En réel, un mot de passe tapé au moment de l'acte sert
   de preuve à chaque dépôt, qui le revérifie. Une compagnie qui refuse n'arrête pas les autres. Le bouton n'apparaît qu'à
   partir de deux compagnies qui ont quelque chose de prêt.
-- **Une fenêtre par installation** (`interface/instance.rs`) : deux installations s'ouvrent côte à côte sur un poste (la
+- **Une fenêtre par installation** (`compagnie/instance.rs`) : deux installations s'ouvrent côte à côte sur un poste (la
   clé USB arrive sur un poste qui a déjà son logiciel) ; la même, relancée, ramène sa fenêtre devant. Chacune tient un
   **créneau** de la plage 7330-7429 : un verrou (une prise d'écoute, rendue par le système à la mort du processus) et, au
   port suivant, sa page. Le créneau est **retenu** dans `.fenetre.json` à la racine de l'installation (il voyage avec
@@ -1517,7 +1538,7 @@ installe un second logiciel. `moteur/src/compagnie/administrateur.rs` :
 ## L'horloge des compagnies fictives
 
 Une compagnie fictive (livrée, ou ajoutée par le « + » puis rendue simulée au banc) vit en temps réel : à chaque
-ouverture, et à chaque passage de la veille, son horloge (`moteur/src/horloge.rs`, `rattraper`) joue ce qu'une compagnie
+ouverture, et à chaque passage de la veille, son horloge (`routes/src/horloge.rs`, `rattraper`) joue ce qu'une compagnie
 bien tenue aurait fait **avant aujourd'hui**, à sa date, et seulement ce qui n'est pas fait. Hors d'une compagnie fictive
 elle ne touche à rien (`HorlogeFictive::verifier`, revérifiée avant chaque geste) ; ses dépôts passent par
 `depot_acte` contre le simulateur, ses courriels par une boîte muette.
@@ -1559,9 +1580,9 @@ l'instant où l'horloge le trouve, et les documents suivent. Ce qui vient après
 ## La version, et la mise à jour dans l'ombre
 
 `VERSION` (une date, `AAAA.MM.JJ`, comparée en entiers). Ce qu'une installation reçoit, vérifie et applique est dans
-`moteur/src/compagnie/maj.rs` ; ce que l'éditeur publie (les archives, la signature, sa clé) dans
-`moteur/src/atelier/publier.rs`. **Une mise à jour par installation** : tout se passe dans `<installation>/maj/`, à
-côté de `logiciel/`, et l'installation de l'éditeur reçoit comme les autres. Un dépôt est une adresse qui sert
+`compagnie/src/maj.rs` ; ce que le flux « Publier » publie (les archives, la signature par la clé de GitHub) dans
+`moteur/src/publication/`. **Une mise à jour par installation** : tout se passe dans `<installation>/maj/`, à
+côté de `logiciel/`. Un dépôt est une adresse qui sert
 `derniere.json` et les archives de `logiciel/`.
 
 **Une version s'installe dès qu'elle est prête** : au lancement suivant, ou au clic « Redémarrer pour mettre à jour ».
@@ -1639,14 +1660,13 @@ et `maj/journal.log` le dit.
   sur `macos-latest`), attend l'approbation de Léandre, signe
   (`publier::publier_depuis_l_environnement`) et pose leurs archives, celle de
   tous et celle des fictives, les archives d'installation, `derniere.json` et
-  l'installeur dans une Release (la clé d'un poste, `moteur maj --publier`, est
-  acceptée aussi) ; jamais republier un numéro.
+  l'installeur dans une Release ; jamais republier un numéro.
 
 
 ## L'exercice : rappels, clôture, export compta
 
-`moteur/src/compagnie/exercice_ecrit.rs` (la clôture,
-l'export compta) et `moteur/src/routes/rappels.rs` (les rappels). Trois choses qui regardent plus loin
+`routes/src/gestes/exercice_ecrit.rs` (la clôture,
+l'export compta) et `routes/src/rappels.rs` (les rappels). Trois choses qui regardent plus loin
 que le mois affiché.
 
 **Les rappels** (`rappels(ctx, aujourdhui)`) rendent une liste de `Rappel`,
@@ -1713,9 +1733,9 @@ vit dans `moteur/tests/` ; un test qui n'appelle qu'une crate sur des valeurs vi
 | déclarations | `declarations/`, `moteur/tests/dsn/` | 90 | la norme : usages, formats, blocs, ordre, échéances |
 | envois | `envois/` | 40 | la lecture des retours réels transcrits, le garde-fou réseau, aucun envoi réel sans mot de passe |
 | interface | `moteur/tests/routes/`, `interface_fichiers.rs`, `interface_http.rs`, `src/interface/`, `src/routes/` | 20 | une route refuse et rien n'est écrit ; l'ouverture |
-| compagnie | `moteur/tests/fichiers/` (coffre, clé de signature, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `src/compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
+| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `src/compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
 | import | `moteur/tests/fichiers/bulletin_lu.rs`, `caviardage.rs`, `tests/routes/import_neuve.rs`, `src/import/` | 15 | un passé importé se relit (bulletins, DSN) ; ce qui part chez l'éditeur ne désigne personne |
-| atelier | `moteur/tests/fichiers/donnees_reelles.rs`, `garde_reseau.rs`, `verifier_avant_commit.rs`, `referentiels.rs`, `tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
+| atelier | `atelier/tests/atelier/` (`donnees_reelles.rs`, `verifier_avant_commit.rs`, `referentiels.rs` : sa propre cible), `moteur/tests/fichiers/garde_reseau.rs`, `moteur/tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
 | parcours | `moteur/tests/rejeu.rs` | 4 | un scénario joué de bout en bout à l'horloge, ses sorties comparées à un oracle |
 
 Total visé : environ 350, plafond 400. La commande, et ce qu'un exécutant lance : `atelier/AGENTS.md`, « Faire

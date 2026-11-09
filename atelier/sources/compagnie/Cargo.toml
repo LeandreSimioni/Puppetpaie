@@ -1,0 +1,49 @@
+[package]
+name = "compagnie"
+version = "0.1.0"
+edition = "2021"
+description = "La compagnie de PuppetPaie au-dessus des envois : l'installation qui la porte sur le poste, le coffre, la preuve d'un acte réel, la sauvegarde et la restauration, la mise à jour, le bridage, les incidents."
+license = "EUPL-1.2"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Le binaire de l'ATELIER (`moteur-atelier`, jamais livre) : la preuve d'un acte reel refuse tout acte reel, la mise a
+# jour accepte la cle d'un faux depot local.
+atelier = ["envois/atelier"]
+
+[dependencies]
+socle = { path = "../socle" }
+droit = { path = "../droit" }
+engagement = { path = "../engagement" }
+# Les états de ce qu'une DSN a porté.
+declarations = { path = "../declarations" }
+# Ce qui part et revient, et le journal de ce qui est parti.
+envois = { path = "../envois" }
+serde = { workspace = true }
+# Les empreintes SHA-256 (l'archive de mise a jour, le coffre, les incidents, l'instance).
+sha2 = { workspace = true }
+# L'empreinte MD5 que Drive publie pour chaque fichier (`sauvegarde.rs`) : RustCrypto, sans options par defaut.
+md-5 = { version = "0.10", default-features = false }
+# Les motifs du journal des incidents (caviardage, ce qui part chez l'editeur) ;
+# sans les optimisations par defaut, qui pesent sur le binaire.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# Le telechargement de la mise a jour (`maj.rs`) : HTTP/1.1 synchrone, TLS par rustls, racines du systeme
+# (`SSL_CERT_FILE` honore), proxy lu dans l'environnement.
+ureq = { workspace = true }
+# Le coffre (`coffre.rs`) : AES-256-GCM et scrypt de RustCrypto, aleas du systeme.
+# Rien de leurs options par defaut (ni `password-hash`, ni `std`).
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+scrypt = { version = "0.11", default-features = false }
+getrandom = { workspace = true }
+# La mise a jour (`maj.rs`) : la signature Ed25519 de l'editeur, et l'archive zip (lecture et ecriture).
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
+zip = { workspace = true }
+
+# La saisie du mot de passe SANS ECHO dans la console de Windows (`demande.rs`, le canal « terminal ») : l'API de la
+# console (CONIN$ / CONOUT$, mode sans echo, UTF-16) est celle de cette petite bibliotheque entretenue ; sous Unix le
+# terminal se lit par `/dev/tty` et `stty`, sans dependance. Rien dans le binaire Linux ni macOS.
+[target.'cfg(windows)'.dependencies]
+rpassword = "7"

@@ -46,11 +46,11 @@ fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Les sous-commandes du moteur : `route` et `routes` (la ligne de commande, sous Windows la seule), et la fabrique.
     match args.first().map(String::as_str) {
-        Some("route") => match moteur::service::commande("route", &args[1..]) {
+        Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(code) => std::process::exit(code),
             None => std::process::exit(2),
         },
-        Some("routes") => std::process::exit(moteur::routes::catalogue::commande(&args[1..])),
+        Some("routes") => std::process::exit(routes::catalogue::commande(&args[1..])),
         Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&args[1..]),
         Some("interface") => std::process::exit(moteur::interface::commande(&args[1..])),
         // Le lanceur Linux demande si la fenetre peut s'ouvrir : le programme se charge (WebKitGTK est la), et un ecran.
@@ -59,35 +59,35 @@ fn main() -> std::process::ExitCode {
             let ok = cfg!(any(windows, target_os = "macos")) || ecran("DISPLAY") || ecran("WAYLAND_DISPLAY");
             return if ok { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE };
         }
-        // Le relais de la mise a jour (`moteur::compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
-        Some("maj-relais") => std::process::exit(moteur::compagnie::maj::relais(&args[1..])),
+        // Le relais de la mise a jour (`compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
+        Some("maj-relais") => std::process::exit(compagnie::maj::relais(&args[1..])),
         // `puppetpaie maj` : chercher et preparer une version tout de suite (le bac a sable de l'atelier s'en sert).
-        Some("maj") => std::process::exit(moteur::compagnie::maj::commande(&args[1..])),
+        Some("maj") => std::process::exit(moteur::commandes::maj::commande(&args[1..])),
         _ => {}
     }
 
-    moteur::commandes::compagnie::fixer_le_code();
-    // UNE FENETRE PAR INSTALLATION (`moteur::interface::instance`). Celle de cette installation est deja
+    compagnie::installation::fixer_le_code();
+    // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.
     let prise = match moteur::interface::prendre_instance(devant) {
-        Ok(moteur::interface::Instance::Tenue(p)) => p,
-        Ok(moteur::interface::Instance::Devant) => return std::process::ExitCode::SUCCESS,
+        Ok(compagnie::instance::Instance::Tenue(p)) => p,
+        Ok(compagnie::instance::Instance::Devant) => return std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
             std::process::exit(1);
         }
     };
-    // Une livraison de fictives prete se pose (`moteur::compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
+    // Une livraison de fictives prete se pose (`compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
     // compagnie supprimee s'efface (`suppression::effacer_les_restes`).
     moteur::interface::preparer_l_installation();
     // Une version prete s'applique ICI, avant toute fenetre : le relais attend notre fin, bascule et ouvre la neuve.
-    if moteur::compagnie::maj::au_lancement() {
+    if compagnie::maj::au_lancement() {
         return std::process::ExitCode::SUCCESS;
     }
     // Sinon le logiciel cherche, en fond, une version plus recente pour l'installation : elle s'appliquera au prochain
     // lancement.
-    moteur::compagnie::maj::chercher_en_fond();
+    compagnie::maj::chercher_en_fond();
     let (fenetre, port) = match moteur::interface::demarrer(moteur::interface::MINUTES_VEILLE, &prise) {
         Ok(x) => x,
         Err(e) => {
@@ -98,7 +98,7 @@ fn main() -> std::process::ExitCode {
     // Les compagnies de l'installation se tiennent a jour en fond des maintenant, sans rien ouvrir (calcul local seulement).
     fenetre.prechauffer();
     // LE PROFIL DU NAVIGATEUR DE LA FENETRE, a elle (WebView2 sous Windows, WebKit ailleurs) : un par fenetre
-    // (`instance::dossier_local`), jamais celui d'une autre installation ouverte a cote -- ses cookies, ce qu'elle a
+    // (`navigateur::dossier_local`), jamais celui d'une autre installation ouverte a cote -- ses cookies, ce qu'elle a
     // retenu, et son processus de rendu.
     let profil = fenetre.dossier_local().join("webview");
     let adresse = fenetre.adresse("127.0.0.1", port);

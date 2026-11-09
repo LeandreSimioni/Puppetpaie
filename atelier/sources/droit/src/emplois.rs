@@ -4,7 +4,7 @@
 //! (le catalogue, `BaseEmplois`) et `nomenclature-emplois-ft.json` (les codes France Travail, `Nomenclature`). Un
 //! metier se lit par `metier`, qui rend un `Metier` : celui du catalogue, sinon celui de la nomenclature.
 //!
-//! De l'interface (l'accueil, `moteur::routes::ouverture`) : `catalogue`, `familles`,
+//! De l'interface (l'accueil, `routes::ouverture`) : `catalogue`, `familles`,
 //! `noms_des_conventions` et `controler_fiche`.
 
 use std::collections::BTreeMap;

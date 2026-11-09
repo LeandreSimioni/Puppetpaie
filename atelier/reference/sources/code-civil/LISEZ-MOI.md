@@ -1,6 +1,6 @@
 # Le code civil
 
-Le code civil n'est pas parmi les codes que `moteur releve-codes` suit (`moteur/src/atelier/releve/codes/textes.rs`) : ses
+Le code civil n'est pas parmi les codes que `moteur-atelier releve-codes` suit (`atelier/src/releve/codes/textes.rs`) : ses
 articles se relèvent sur Légifrance, depuis le poste de Léandre (ticket #307 du privé).
 
 | fichier | ce que c'est | relevé |
@@ -23,7 +23,7 @@ articles se relèvent sur Légifrance, depuis le poste de Léandre (ticket #307 
 
 - `logiciel/donnees/contrats-base.json` : les motifs de rupture 036 (sa phrase « hors faute grave, force majeure ou
   inaptitude », L. 1243-4) et 083 ; la phrase « rupture » du contrat d'usage.
-- `moteur/src/routes/ouverture.rs` (« LES DATES ET LA TRANSACTION SELON LE MOTIF ») : la date de notification que la norme
+- `routes/src/ouverture.rs` (« LES DATES ET LA TRANSACTION SELON LE MOTIF ») : la date de notification que la norme
   exige pour le motif 083.
 
 ## `legifrance-code-civil-art1193-force-obligatoire-20261102.md` — article 1193

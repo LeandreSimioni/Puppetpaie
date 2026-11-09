@@ -8,7 +8,7 @@
 //!   anterieurs), D1226-5 (les indemnites journalieres se deduisent), D1226-8 (l'anciennete au premier jour de l'absence) :
 //!   `atelier/reference/sources/code-du-travail/articles-20261015.md` ; les nombres dans `permanents-base.json`.
 //! - La convention : `clauses-conventionnelles-base.json`, section `maintien_de_salaire` de chaque IDCC, chaque article lu
-//!   dans le texte de la DILA (`atelier/reference/sources/kali-entrepot/`, `moteur releve-conventions article`). Une
+//!   dans le texte de la DILA (`atelier/reference/sources/kali-entrepot/`, `moteur-atelier releve-conventions article`). Une
 //!   tranche dure des jours (`jours`), des mois de calendrier (`mois` : la 1285, X.4.6) ou tant que la caisse verse ses
 //!   indemnites (`pendant_ij` : la 1285, X.4.7). `base` dit si le pourcentage porte sur le salaire brut ou net ;
 //!   `plafond_net`, que « les sommes de toutes provenances » ne depassent pas le net qu'il aurait percu ; `subrogation`

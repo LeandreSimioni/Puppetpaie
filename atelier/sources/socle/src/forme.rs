@@ -58,7 +58,7 @@ pub fn lire_fichier<T: DeserializeOwned>(fichier: &Path, phrase: &str) -> Result
     serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, Some(fichier), &e))
 }
 
-/// UNE DONNEE DONT LES VALEURS NE S'AFFICHENT JAMAIS (l'identite d'une vraie compagnie, `moteur::compagnie::essai`) : le
+/// UNE DONNEE DONT LES VALEURS NE S'AFFICHENT JAMAIS (l'identite d'une vraie compagnie, `compagnie::essai`) : le
 /// texte JSON `texte` lu en `T`, comme `lire_texte`, jusqu'a sa fin. Son refus ne dit que le chemin de la cle fautive, et
 /// ce qui ne va pas sans la valeur : la cle qui manque, la cle inconnue (son nom), la forme attendue, la ligne et la
 /// colonne d'un texte qui n'est pas du JSON. Le message de serde, qui peut citer la valeur, ne sort pas.

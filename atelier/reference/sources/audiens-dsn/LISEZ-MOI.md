@@ -53,7 +53,7 @@ Audiens est un organisme privé : les pages telles que servies (HTML) sont dans 
 - `atelier/sources/documents/src/conges_spectacles.rs` : `code_dsn` écrit S21.G00.40.022 = `97` + le numéro d'adhérent
   (`congesspectacles_adherent`, le seul numéro Congés Spectacles de la fiche ; `dsn.rs` l'appelle), `faute_adherent`
   contrôle sa forme (dix chiffres et une lettre) à la saisie (`champs::verifier_champ`) comme à l'écriture de la DSN ;
-  `moteur/src/import/dsn_aem.rs` reprend d'une DSN le numéro d'adhérent qui suit le `97`.
+  `import/src/dsn_aem.rs` reprend d'une DSN le numéro d'adhérent qui suit le `97`.
 
 - `logiciel/donnees/champs-base.json`, `num_conges_spectacles` : le numéro d'immatriculation du salarié, facultatif,
   imprimé sur le bulletin (`documents/src/bulletin.rs`).

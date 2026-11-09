@@ -2,7 +2,7 @@
 ; VERSION (la version LUE, JJ.MM.AAAA : tout ce que l'installeur montre), VERSION_WINDOWS (l'identifiant AAAA.MM.JJ en a.b.c.0), PREPA (le dossier de preparation, avec poser.nsh, retirer.nsh et pose\), ICONE et SORTIE.
 ;
 ; Il pose ce qu'une compagnie recoit -- `logiciel\` et `fictives\` -- dans un dossier ou l'utilisateur ecrit sans etre
-; administrateur : `prive\` et `compagnies\` naitront a cote de `logiciel\` (moteur/src/interface/compagnies.rs,
+; administrateur : `prive\` et `compagnies\` naitront a cote de `logiciel\` (moteur/src/compagnie/installation.rs,
 ; base()). Deux chemins, choisis au debut (Leandre, 14/10/2026) :
 ;   - PAR DEFAUT : Documents\PuppetPaie (visible, par utilisateur, dans les sauvegardes Windows), un raccourci dans le
 ;     menu Demarrer, une entree dans « Applications installees » et son desinstalleur ;

@@ -34,7 +34,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     // Le moteur ouvre le coffre comme pour `retours` s'il est ferme.
     cadre.ouvrir_le_coffre();
-    let Some(mdp) = crate::compagnie::releve::mot_de_passe_de_consultation(&cadre.ctx, "net-entreprises")? else {
+    let Some(mdp) = compagnie::consultation::mot_de_passe_de_consultation(&cadre.ctx, "net-entreprises")? else {
         dire!("Mot de passe absent. Le poser une fois : `route coffre-poser, service net-entreprises`.");
         return Ok(2);
     };

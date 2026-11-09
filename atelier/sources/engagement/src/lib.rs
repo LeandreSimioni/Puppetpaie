@@ -116,7 +116,7 @@ pub struct Engagement {
     pub dernier_jour_paye: Option<String>,
     /// Le jour ou prend effet ce que la saisie de CE mois change au contrat (avenant : nature, motif, duree du
     /// travail, emploi, date de debut ; AAAA-MM-JJ) : la « Date de la modification » du bloc 41 (`dsn::changements_contrat`).
-    /// Il ne se recopie pas d'un mois a l'autre (`moteur::routes::mois::DEFINIT_LE_MENSUEL`) : le mois suivant declare deja
+    /// Il ne se recopie pas d'un mois a l'autre (`routes::mois::DEFINIT_LE_MENSUEL`) : le mois suivant declare deja
     /// la nouvelle valeur.
     pub date_modification: Option<String>,
     pub transaction: Option<String>,
@@ -1131,7 +1131,7 @@ fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> Resultat<
 /// Ce que disent les refus d'une saisie pas encore finie, et non un defaut du logiciel : un spectacle pas encore
 /// choisi, des jours pas encore coches, une ligne sans quantite, sans montant ou sans heures, une quantite qui ne compte
 /// rien. L'ecran enregistre a chaque frappe, et ces refus montent sous `SaisieIncomplete`
-/// (`moteur::routes::etapes::classer_saisie`, `moteur::routes::mois::refus_du_calcul`) ; leur message s'ouvre sur le
+/// (`routes::etapes::classer_saisie`, `routes::mois::refus_du_calcul`) ; leur message s'ouvre sur le
 /// salarie, puis dit quoi faire.
 pub(crate) const PAS_DE_NATURE: &str = " : choisissez la nature du contrat, sur sa carte.";
 const PAS_DE_JOUR: &str = " : cochez les jours joués sur sa ligne de paie.";

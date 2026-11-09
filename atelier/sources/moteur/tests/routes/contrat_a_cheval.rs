@@ -36,7 +36,7 @@ fn le_second_mois_d_un_contrat_d_usage_n_est_pas_une_embauche() {
     assert!(!c.join("sorties/2026-12/envoi").exists(), "un contrat est refait en decembre : {:?}", noms(&c.join("sorties/2026-12/envoi")));
     let jour = "2026-12-20";
     let ctx = droit::contexte::Contexte::nouveau(&c, Some(socle::date::Jour::lire(jour).unwrap())).unwrap();
-    assert!(moteur::routes::etapes::Moteur::nouveau(&ctx).embauches_a_declarer(None).unwrap().is_empty());
+    assert!(routes::etapes::Moteur::nouveau(&ctx).embauches_a_declarer(None).unwrap().is_empty());
     // LA LIGNE DU SECOND MOIS DIT SON EMBAUCHE, sa periode et son contrat, que la boite des DPAE, la carte et le detail d'une
     // piece ecrivent (un bug qui a echappe : la route ne rendait plus ces phrases, la boite ecrivait « FULLER — »).
     let lignes = reussi(&route(&c, "etat-par-engagement", json!({"mois": "2026-12"}), jour))["engagements"].clone();

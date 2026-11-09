@@ -5,6 +5,22 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+/// Ce qui appartient a une installation sur un poste et qu'on ne met pas dans ses donnees (le profil du navigateur de
+/// la fenetre, le jeton de sa page, le journal d'avant toute compagnie) : en mode portable, a sa racine.
+pub const DOSSIER_PORTABLE: &str = ".fenetre";
+
+/// Le dossier propre a une fenetre sur ce poste : le profil de son navigateur, le jeton de sa page, son journal d'avant
+/// toute compagnie. EN PORTABLE (`PORTABLE.json`), dans l'installation (`.fenetre/`) : rien ne reste sur le poste. SINON,
+/// dans le dossier de l'utilisateur, un par PORT de page (`fenetres/<port>/`) -- le port est l'origine que le
+/// navigateur connait : ce qu'il a retenu pour elle reste avec elle, et deux fenetres ouvertes ensemble (deux ports)
+/// n'ont jamais le meme profil.
+pub fn dossier_local(inst: &Path, port: u16) -> PathBuf {
+    if inst.join(compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
+        return inst.join(DOSSIER_PORTABLE);
+    }
+    dossier_utilisateur().join("fenetres").join(port.to_string())
+}
+
 /// Ce qui appartient a l'utilisateur de ce poste (le profil du navigateur) : ni dans les donnees, ni a cote du code. Le
 /// dossier des donnees de la personne, et quand la variable ne le dit pas, celui que le systeme lui donne par defaut
 /// (`atelier/reference/sources/dossiers-de-configuration/`) :
@@ -17,7 +33,7 @@ use std::process::{Child, Command, Stdio};
 ///   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of these
 ///   variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
 pub fn dossier_utilisateur() -> PathBuf {
-    use crate::compagnie::coffre::{env_du_poste, maison_de, IDENTIFIANT_DU_PAQUET};
+    use compagnie::coffre::{env_du_poste, maison_de, IDENTIFIANT_DU_PAQUET};
     if cfg!(windows) {
         let base = match env_du_poste("LOCALAPPDATA") {
             Some(b) => PathBuf::from(b),
@@ -76,7 +92,7 @@ fn sans_console(c: &mut Command) -> &mut Command {
 }
 
 /// Ouvre la page. Rend le processus du navigateur quand on le tient (un Chromium a nous), sinon `None`. `profil` : le
-/// profil du Chromium a nous, un par fenetre (`instance::dossier_local`) : deux installations ouvertes ensemble ne
+/// profil du Chromium a nous, un par fenetre (`dossier_local`) : deux installations ouvertes ensemble ne
 /// partagent pas le leur (un second Chromium sur le meme profil passe la main au premier et s'arrete aussitot).
 pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Option<Child> {
     // Le choix fait a la main : une commande, ou `defaut` ; rien de pose, le premier Chromium.
@@ -122,7 +138,7 @@ pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Op
         }
     }
     journal("Fenetre : le navigateur par defaut.\n");
-    if let Err(e) = super::poste::ouvrir_adresse(url) {
+    if let Err(e) = compagnie::poste::ouvrir_adresse(url) {
         journal(&format!("Le navigateur par defaut ne s'ouvre pas : {}\n", socle::echec::phrase_de(&e)));
     }
     None

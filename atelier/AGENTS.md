@@ -69,7 +69,7 @@ s'écrit à côté** : un manque du LLM est un manque du moteur. Rien ne se déb
 zéro).
 
 **Le moteur rend, l'écran et le LLM lisent la même réponse** ; l'écran n'a que ses règles d'affichage. **Où chaque route
-se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/catalogue.rs`) : `Dessine(place)` (un écran
+se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran
 fait main de cette place l'appelle), `Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
 depuis sa fiche : son nom n'est écrit dans aucun JS), `Lecture` (elle nourrit un écran, n'écrit rien). Les pages sont
 `logiciel/interface/` et `atelier/sources/moteur/src/interface/pages/` (l'accueil). On ne cherche donc jamais une route
@@ -138,7 +138,7 @@ une règle sans texte déposé est un souvenir.
 - Le texte brut tel que servi (`<émetteur>-<objet>-<AAAAMMJJ>.<ext>`), sa transcription s'il ne se lit pas, **un
   `LISEZ-MOI.md` par dossier** (URL, date, **où le moteur s'en sert**) ; une inférence se dit telle ; le code **cite le
   fichier déposé** ; chaque taux livré porte sa `source { fichier, article, citation }`, qu'un test vérifie dans le
-  texte. Les codes se relèvent par `moteur releve-codes`, jamais à la main.
+  texte. Les codes se relèvent par `moteur-atelier releve-codes`, jamais à la main.
 - **Ce qui ne se republie pas** : un document d'organisme privé entre par sa transcription et son URL, l'original va
   dans `reference-privee/` du privé ; une pièce réelle (bulletin, courrier, relevé) ne va **que** là, le public n'en
   garde que l'attendu, sans nom ni NIR. `atelier/reference/` ne se convertit jamais.
@@ -193,7 +193,13 @@ il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `
   fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Un test monte sa
   propre compagnie (`outils::dossier_de_test`).
 - **Aucun test ne sort de la machine** : gardé par `tests/fichiers/garde_reseau.rs`.
-- Ce qui est sous `#[cfg(feature = "atelier")]` compile sans avertissement, dans sa propre cible.
+- **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
+  outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la
+  feature `atelier` de ce qu'il prend, donc il se construit et se teste dans sa propre cible (`<cible>-atelier`,
+  `-p atelier`) ; ce qui est sous `#[cfg(feature = "atelier")]` y compile sans avertissement. **Le dépôt le garde
+  compilé** (`atelier/sources/atelier/bin/linux/moteur-atelier`) : le garde avant commit et la publication s'en servent
+  sans rien compiler. Un lot qui change l'atelier le refait (`cargo build --release -p atelier`, puis copier le binaire)
+  dans le même commit.
 
 ## Les règles de fond du logiciel
 
@@ -218,8 +224,8 @@ il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `
    empilés à un seul endroit (`droit::contexte`) ; une convention sans couche refuse.
 9. **Trois destinations, et les données de la compagnie dans aucun dépôt.** `logiciel/`, `fictives/`, `atelier/` : le
    public. `journal/`, `reference-privee/`, les tickets : le privé. `prive/` : aucun dépôt (le poste, la clé USB, le
-   Drive). Rien de réel n'entre dans le public (`moteur verifier-avant-commit`, avant chaque commit).
-   a) **Les tests** ne lisent rien de `prive/` (gardé par `tests/fichiers/donnees_reelles.rs`). D'une compagnie réelle on
+   Drive). Rien de réel n'entre dans le public (`moteur-atelier verifier-avant-commit`, avant chaque commit).
+   a) **Les tests** ne lisent rien de `prive/` (gardé par `atelier/tests/atelier/donnees_reelles.rs`). D'une compagnie réelle on
       ne garde que ses attendus, sans nom ni NIR, dans un test fictif.
    b) Un conflit sur un journal JSON se résout enregistrement par enregistrement, sans rien perdre.
 10. **Test = réel.** Un dépôt de test accepté (`OK, 0 anomalie`) vaut un dépôt réel : même moteur, même fichier, même
@@ -238,7 +244,7 @@ et ce dont on vérifie une empreinte **ne se convertissent jamais**.
 Depuis GitHub seulement (`journal/finitions/PUBLIER.md` du privé) : suite verte, PR sur `main`, Léandre fusionne ; le
 numéro est la date. **Le rythme est à Léandre : lui seul lance « Publier »**, avec `notes`, et `calcul` **seulement** si
 un calcul de paie change ; **Léandre approuve** (environnement `publication`), le moteur signe avec la clé de GitHub.
-La forme de l'archive de mise à jour (`moteur/src/compagnie/maj.rs`) **est un contrat avec toutes les installations
+La forme de l'archive de mise à jour (`compagnie/src/maj.rs`) **est un contrat avec toutes les installations
 posées et ne change plus**. Le manifeste publié (`derniere.json`) non plus : une installation le lit en strict, avec la
 forme de sa version, et une clé de plus la couperait des mises à jour ; ce qui est neuf va dans l'archive. Un besoin
 contraire se présente d'abord à Léandre, expliqué. Jamais pendant que l'interface tourne ; jamais republier un numéro.

@@ -1,7 +1,23 @@
 # L'espace Cargo du moteur : une crate par partie, chaque flèche descend.
 #
-#     moteur        la ligne de commande `moteur` et les parties du dessus (interface, compagnie, import, atelier) ;
-#                   choisit le branchement des envois, ouvre le coffre, note les incidents
+#     atelier       tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier`, jamais livre : les
+#                   releves des textes, les referentiels, les tables Unicode, le garde avant commit, le guet, les
+#                   bulletins fictifs, les outils sur une compagnie, les scenarios du banc ; rien ne le prend
+#     moteur        la ligne de commande `moteur`, l'interface (le serveur de la fenetre, la page d'accueil, la veille
+#                   qui tourne) et la publication par GitHub (ce que le flux « Publier » appelle)
+#     routes        la porte du moteur (l'enveloppe, le catalogue) et chaque route ; ce qu'elles font : la compagnie
+#                   qu'une route sert, l'etat garde d'un mois, les gestes de la compagnie qui appellent des routes, ce
+#                   que l'import compose et ecrit pour elles (`importation`), les obligations, les regularisations,
+#                   l'Historique d'un mois ; et ce qu'une installation fait d'une fictive (le scenario, l'horloge, les
+#                   courriels joues)
+#     import        le passe d'une compagnie tenu dans un autre logiciel, tel que ses pieces le disent (DSN et AEM
+#                   deposees, bulletins, certificats Congés Spectacles, AEM en PDF), leur tri, les fiches qu'elles
+#                   proposent, les mois importes, les ecarts de calcul, le caviardage ; ce que l'import compose et
+#                   ecrit pour une route est dans les routes (`importation`)
+#     compagnie     ce qui garde et fait vivre la compagnie a cote de ses engagements : l'installation qui la porte sur
+#                   le poste, le coffre et ses mots de passe, la preuve d'un acte reel, la sauvegarde et la restauration,
+#                   la mise a jour, le bridage, les incidents et le filet ; choisit le branchement des envois, ouvre le
+#                   coffre, note les incidents
 #     envois        ce qui part et revient (net-entreprises, DPAE, signature, courriel, Drive, retours et bilans) et le
 #                   journal de ce qui est parti ; recoit des pieces fabriquees et un mot de passe, ne fabrique rien,
 #                   n'ouvre jamais le coffre
@@ -20,14 +36,21 @@
 #                   réseau
 #
 # `declarations` prend à `documents` (le bordereau, le bulletin, le certificat que la DSN reprend), jamais l'inverse.
-# `envois` prend à `declarations` et à `documents` ce qui part ; l'engagement ne lit pas le journal, `moteur` lui passe
-# ce qui est parti.
+# `envois` prend à `declarations` et à `documents` ce qui part ; l'engagement ne lit pas le journal, les routes lui
+# passent ce qui est parti.
 #
 # La fenêtre (`fenetre/`) et la fabrique de PDF (`fabrique-pdf/`) gardent chacune leur verrou et leurs profils : elles ne
-# sont pas de l'espace (la fenêtre prend `moteur` par son chemin).
+# sont pas de l'espace (la fenêtre prend `moteur` et `routes` par leur chemin).
+
+#
+# L'ATELIER EST HORS DE `default-members` : Cargo unifie les features de ce qu'il construit ensemble, et l'atelier
+# allume la feature `atelier` (la redirection vers de faux serveurs) de ce qu'il prend. La suite de l'espace
+# (`cargo nextest run --cargo-profile essais`) ne la voit donc jamais ; l'atelier a sa cible (`-p atelier`, gardé par
+# `tests/fichiers/structure.rs`).
 
 [workspace]
-members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"]
+members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"]
+default-members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"]
 exclude = ["fenetre", "fabrique-pdf"]
 resolver = "2"
 

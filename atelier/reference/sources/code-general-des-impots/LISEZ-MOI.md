@@ -65,7 +65,7 @@ la fin du deuxième mois qui suit sa mise à disposition, et le débiteur appliq
 taux vaut donc pour tout paiement fait à partir du jour de sa mise à disposition, et pour aucun avant.
 
 **Où le moteur s'en sert** : le taux reçu s'écrit dans la fiche du salarié (`taux_pas`, daté de sa mise à disposition :
-`moteur/src/compagnie/taux_pas.rs`) ; `droit::pas::en_vigueur` (`atelier/sources/droit/src/pas.rs`) y choisit le dernier mis
+`compagnie/src/taux_pas.rs`) ; `droit::pas::en_vigueur` (`atelier/sources/droit/src/pas.rs`) y choisit le dernier mis
 à disposition au plus tard le jour du paiement ; `engagement::etats::prelevement` le demande au jour du versement de
 l'engagement (`Engagement::date_du_versement` : sa date de paiement, sinon la fin de sa période). Le test
 `un_taux_vaut_pour_tout_paiement_a_partir_de_sa_mise_a_disposition` (`droit/src/pas.rs`).

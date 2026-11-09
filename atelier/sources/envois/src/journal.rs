@@ -308,7 +308,7 @@ fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) 
 }
 
 /// Ne garde du journal de `racine` que les envois que `garder` retient, et ce qui leur est revenu : le journal d'une
-/// compagnie montee depuis une autre (`moteur::compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
+/// compagnie montee depuis une autre (`compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
 /// n'est a garder.
 pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat<()> {
     let p = chemin(racine);
@@ -347,7 +347,7 @@ thread_local! {
 }
 
 /// `f`, chaque ligne qu'il note portant `quand` et `origine` : un pas que l'horloge d'une compagnie fictive joue a sa
-/// date (`moteur::horloge`).
+/// date (`routes::horloge`).
 pub fn dater_pendant<T>(quand: &str, origine: &str, f: impl FnOnce() -> T) -> T {
     let avant = DATE.with(|d| d.replace(Some((quand.to_string(), origine.to_string()))));
     let r = f();

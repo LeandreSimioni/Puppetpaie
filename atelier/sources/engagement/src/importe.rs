@@ -45,9 +45,6 @@ use socle::num::{Decimal, Resultat};
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
 pub const IMPORTE: &str = "importe";
 
-/// Dans la ligne du contrat qu'un bulletin atteste : sa nature reste a dire (le bulletin d'un permanent ne la porte pas).
-pub const A_DIRE: &str = "nature_a_dire";
-
 // ------------------------------------------------------------------ la forme
 
 /// LA ZONE `importe` D'UN ENGAGEMENT : le jour de l'import, le contrat atteste, s'il l'est, et les paies versees, par
@@ -396,7 +393,7 @@ impl Importe {
 
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste ; une piece qui ne la
     /// porte pas et ne la laisse pas a dire est celle d'un contrat d'usage : son bulletin porte une marque du spectacle
-    /// (numero d'objet ou Congés Spectacles, `moteur::import::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
+    /// (numero d'objet ou Congés Spectacles, `routes::importation::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
     /// `None` : elle reste a dire (`a_dire`).
     pub fn nature(&self) -> Option<String> {
         match self.nature_dite() {

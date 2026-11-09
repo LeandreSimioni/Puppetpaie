@@ -1,10 +1,10 @@
-//! La mise a jour d'une INSTALLATION (`moteur::compagnie::maj`) : `--cle-github` lance depuis une installation. Le programme de l'archive
+//! La mise a jour d'une INSTALLATION (`compagnie::maj`) : `--cle-github` lance depuis une installation. Le programme de l'archive
 //! est le `moteur` des essais, copie sous le nom de la fenetre de ce systeme (`linux/puppetpaie` ici). Rien ne sort du dossier
 //! du test, rien ne touche le reseau.
 
 use std::path::{Path, PathBuf};
 
-use moteur::compagnie::maj;
+use compagnie::maj;
 
 use crate::outils::{code_livre, copier, dossier_de_test};
 
@@ -37,7 +37,7 @@ fn la_cle_de_github_va_dans_le_dossier_maj_de_l_installation() {
     let s = std::process::Command::new(maj::programme(&code, "puppetpaie"))
         .args(["maj", "--cle-github"])
         .env_remove("PUPPETPAIE_CODE")
-        .env_remove(moteur::atelier::publier::VARIABLE_GRAINE)
+        .env_remove(moteur::publication::VARIABLE_GRAINE)
         .current_dir(&inst)
         .output()
         .unwrap();

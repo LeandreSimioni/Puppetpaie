@@ -89,6 +89,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "atelier"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "flate2",
+ "icu_normalizer",
+ "import",
+ "moteur",
+ "regex",
+ "routes",
+ "roxmltree 0.20.0",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socle",
+ "ureq",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -272,6 +299,28 @@ checksum = "cfc320937d09e6de266b31b9afb480f197d7a861be86be7cb2ea7e5d1bfffc5e"
 dependencies = [
  "bytes",
  "memchr",
+]
+
+[[package]]
+name = "compagnie"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "declarations",
+ "droit",
+ "ed25519-dalek",
+ "engagement",
+ "envois",
+ "getrandom 0.3.4",
+ "md-5",
+ "regex",
+ "rpassword",
+ "scrypt",
+ "serde",
+ "sha2",
+ "socle",
+ "ureq",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -891,6 +940,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "import"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "regex",
+ "serde",
+ "sha2",
+ "socle",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1132,7 +1199,7 @@ dependencies = [
 name = "moteur"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
+ "compagnie",
  "declarations",
  "documents",
  "droit",
@@ -1142,24 +1209,16 @@ dependencies = [
  "fabrique-pdf",
  "flate2",
  "getrandom 0.3.4",
- "icu_normalizer",
- "imap-proto",
- "lettre",
+ "import",
  "mailparse",
  "md-5",
  "regex",
- "roxmltree 0.20.0",
- "rpassword",
+ "routes",
  "rust_decimal",
- "rust_xlsxwriter",
- "rustls",
- "rustls-platform-verifier",
- "scrypt",
  "serde",
  "serde_json",
  "sha2",
  "socle",
- "ureq",
  "zip 2.4.2",
 ]
 
@@ -1507,6 +1566,29 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "routes"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "flate2",
+ "import",
+ "mailparse",
+ "regex",
+ "rust_decimal",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socle",
 ]
 
 [[package]]

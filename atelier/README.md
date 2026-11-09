@@ -63,7 +63,7 @@ l'historique de la compagnie ; le dossier `import/` peut ensuite être vidé.
 **L'import COPIE ce qu'il reprend** — les DSN, les AEM et les PDF dont une
 page au moins est reprise — dans `historique/bulletins/`, sous le nom de sa
 copie (une empreinte : rien de personnel dans le nom), et relit l'aperçu
-**dans ces copies** (`moteur/src/import/ecrite.rs`). Un fichier déjà copié
+**dans ces copies** (`routes/src/importation/ecrite.rs`). Un fichier déjà copié
 n'est jamais écrasé ; s'il revient avec un autre contenu sous le même nom,
 l'import le signale. Pour que le dossier d'un salarié ait ses années
 CoolPaie, les PDF sont à sortir de CoolPaie avant :
@@ -139,13 +139,13 @@ confirmation, une compagnie réelle sur le mot de passe du logiciel (le double
 des bulletins se conserve cinq ans, article L3243-4) ; une fictive livrée ne
 se supprime pas, elle se remet à zéro. Le dossier est renommé en dossier caché
 (`.supprimee-…`) puis effacé ; un reste s'efface au lancement suivant
-(`moteur/src/interface/suppression.rs`).
+(`routes/src/accueil/suppression.rs`).
 
 **L'archive de mise à jour** (`puppetpaie-<version>-<système>.zip`, celle que
 `derniere.json` nomme et que le logiciel télécharge tout seul) ne sert pas à
 installer : elle porte le contenu de `logiciel/` à sa racine, et rien d'autre.
 Cette forme est un contrat avec toutes les installations déjà posées, dont le
-code la déballe telle quelle : elle ne change plus (tête de `moteur/src/compagnie/maj.rs`).
+code la déballe telle quelle : elle ne change plus (tête de `compagnie/src/maj.rs`).
 
 **Les compagnies fictives voyagent à part** (`puppetpaie-<version>-fictives.zip`,
 signée, nommée dans `derniere.json` sous `fictives` avec l'empreinte de son
@@ -160,7 +160,7 @@ renommée, une fictive faite sur le poste) n'est jamais touché, ni rien hors de
 Le flux « Publier » compile les programmes des trois systèmes (Linux et Mac ne
 sont posés dans `logiciel/linux/` et `logiciel/mac/` que par lui : jamais
 suivis par Git) et publie les quatre archives de mise à jour ensemble (une par système, et une tout-système) ;
-chaque installation prend celle de son système (`moteur/src/compagnie/maj.rs`). Au
+chaque installation prend celle de son système (`compagnie/src/maj.rs`). Au
 lancement de « Publier », on choisit ce qu'on publie (`systemes` : `tous`,
 `windows-linux`, `windows`) : seules les archives fabriquées sont publiées,
 celle de tous porte ce qui a été fabriqué (et le dit, `systemes` dans
@@ -293,7 +293,7 @@ service certifié : le procédé identifie le signataire (son adresse) et le lie
 à l'acte (le code, le message gardé).
 
 Le jeton est écrit dans `config/google-jeton.bin`, scellé par la clé de ce
-poste (AES-256-GCM, voir `moteur/src/compagnie/coffre.rs`) — illisible sur une autre
+poste (AES-256-GCM, voir `compagnie/src/coffre.rs`) — illisible sur une autre
 machine, et illisible dans une sauvegarde du dossier privé, puisque la clé vit
 ailleurs.
 
@@ -363,26 +363,20 @@ Ce qui l'ouvre, ce sont deux enveloppes d'une même clé maîtresse :
 La clé du poste vit **hors du dossier des données**, et c'est tout l'intérêt :
 `prive/` est sauvegardé sur le Drive et copié ; une sauvegarde ne transporte
 donc qu'un fichier illisible. En contrepartie, la perdre c'est perdre
-`google-jeton.bin`, qui n'a pas de seconde enveloppe. `maj-cle-privee.bin` (la
-clé qui signe les mises à jour) est scellée par la clé
-maîtresse du coffre : elle s'ouvre où il s'ouvre, et seulement avec lui.
+`google-jeton.bin`, qui n'a pas de seconde enveloppe.
 
 **Un coffre d'un autre format ne se convertit pas** : il refuse (`VERSION`, en tête de
-`moteur/src/compagnie/coffre.rs`), et trois mots de passe se retapent en une minute. On
-supprime les trois fichiers — `coffre.bin`, `google-jeton.bin` et
-`maj-cle-privee.bin` — et on repose :
+`compagnie/src/coffre.rs`), et trois mots de passe se retapent en une minute. On
+supprime les deux fichiers — `coffre.bin` et `google-jeton.bin` — et on repose :
 
 ```bash
 echo '{"route":"mot-de-passe-changer","charge":{}}' | moteur route
 echo '{"route":"coffre-poser","charge":{"service":"net-entreprises"}}' | moteur route
 echo '{"route":"coffre-poser","charge":{"service":"urssaf"}}' | moteur route
 echo '{"route":"coffre-poser","charge":{"service":"courriel","compte":"<adresse>"}}' | moteur route
-moteur maj --cle --remplacer     # si ce poste publie les mises à jour
 ```
 
-La dernière ligne rend une nouvelle clé publique, à reporter dans
-`moteur/src/compagnie/maj.rs` (`CLE_PUBLIQUE`). Les versions publiées depuis GitHub sont signées par l'autre clé
-(`CLE_PUBLIQUE_GITHUB`), que ce geste ne touche pas.
+Les versions publiées sont signées par la clé de GitHub (`CLE_PUBLIQUE_GITHUB`), que le coffre ne touche pas.
 
 ### Le mot de passe du logiciel, et ce qu'il autorise
 
@@ -424,7 +418,7 @@ vérifié contre le fichier : un script qui se trompe de mois est arrêté.
 | déposer en réel, envoyer, faire signer | **non** | oui, mot de passe retapé |
 
 **Ce que garder les mots de passe demande.** Le logiciel travaille seul parce qu'il garde les mots de passe des
-organismes ; ce qui les protège est écrit en tête de `moteur/src/compagnie/coffre.rs`. Le secret ne sort jamais, ni
+organismes ; ce qui les protège est écrit en tête de `compagnie/src/coffre.rs`. Le secret ne sort jamais, ni
 par l'état du coffre, ni en clair sur le disque (`tests/fichiers/coffre.rs`) ; les modules qui parlent au réseau
 (la crate `envois`) ne peuvent pas ouvrir le coffre : ils n'en dépendent pas, ils reçoivent un mot de passe (règle 3).
 
@@ -474,8 +468,8 @@ ne se lit jamais dans la charge : la route le fait taper par le moteur.
 
 ### Les outils de l'atelier sur une compagnie
 
-Le binaire de l'atelier (`moteur-atelier`, `--features atelier`, jamais livré) garde des enquêtes et des gestes
-d'éditeur qui ne sont pas des gestes de l'écran (`moteur/src/atelier/outils/`) ; ils appellent les fonctions du moteur :
+Le binaire de l'atelier (`moteur-atelier`, la crate `atelier`, jamais livré) garde des enquêtes et des gestes
+d'éditeur qui ne sont pas des gestes de l'écran (`atelier/src/commandes/outils/`) ; ils appellent les fonctions du moteur :
 
 ```
 moteur-atelier pas                          # les taux de PAS connus, et ceux à demander
@@ -782,7 +776,7 @@ Ce que le moteur refuse plutôt que de le deviner :
   suspendu, et un arrêt qui disparaît en silence est un arrêt non déclaré.
 
 **Ce que chaque arrêt fait naître, et pour quand** : la route `arrets` le rend
-sous chaque arrêt (`moteur/src/obligations.rs`, règles dans
+sous chaque arrêt (`routes/src/obligations.rs`, règles dans
 `logiciel/donnees/obligations-base.json`, chacune avec son texte déposé) — le
 signalement et son délai, la déclaration d'accident du travail (hors DSN,
 quarante-huit heures), et pour un **deuil d'enfant** (motif 19), à la place du
@@ -932,7 +926,7 @@ l'heure comme au mois ; la NAO 2026, non étendue, est dans le fichier sans
 **Les sources** de ces données — notices France Travail, nomenclature des
 emplois, PCS-ESE de l'Insee, avenants salaires sur Légifrance, NAO — sont
 décrites et datées dans `logiciel/donnees/sources.json`, leurs copies rangées
-dans `atelier/reference/sources/`. **`moteur sources`** les relit (`moteur/src/atelier/sources.rs`) :
+dans `atelier/reference/sources/`. **`moteur-atelier sources`** les relit (`atelier/src/sources.rs`) :
 pour chacune, ce qu'elle contient, sa
 version, la date du relevé et son âge, et si la copie colle au condensat du
 manifeste (conforme, différente, absente). **`--verifier`** retourne voir en
@@ -944,20 +938,17 @@ revérifie pas en ligne est `manuelle`, avec la page à ouvrir. **`--relever`**
 côté** de l'ancienne, suffixée du jour, jamais par-dessus. `--json` rend la
 même chose pour un programme.
 
-C'est un **outil de l'éditeur**, lancé avant chaque publication (`atelier/AGENTS.md`,
-« Publier une version ») : la commande est dans le `moteur` livré, comme
-`moteur maj --publier`, et refusée de la même façon ailleurs que sur son poste
-(le réglage de l'installation, `"editeur": true` ; jamais depuis une copie). Elle
-ne figure pas dans l'aide. Une installation ne fait que recevoir la mise à jour
-signée ; la publication ne vérifie pas d'elle-même que les sources l'ont été.
+C'est un **outil de l'atelier**, lancé dans le nuage avant chaque publication (`atelier/AGENTS.md`,
+« Publier une version ») : la commande est dans `moteur-atelier`, jamais dans le `moteur` livré. Une installation ne
+fait que recevoir la mise à jour signée ; la publication ne vérifie pas d'elle-même que les sources l'ont été.
 
 **Les tables Unicode du moteur** (`socle/src/tables_nfkc.rs`, `socle/src/nfkd_ascii.rs`,
 `tables_retours.rs`, `tables_journal.rs` : la normalisation NFKC/NFKD, les
 chiffres et lettres de `str.isdigit`/`str.isalnum`/`\d`, cp437 et cp1252, les
 encodages qu'un XML de retour peut déclarer, les caractères d'un nom XML)
 s'écrivent depuis les textes déposés (`atelier/reference/sources/unicode/`,
-`python/`, `w3c/`, chacun avec son `LISEZ-MOI.md`) par **`moteur generer-tables
-atelier/reference/sources atelier/sources`** (`moteur/src/atelier/generer_tables.rs`).
+`python/`, `w3c/`, chacun avec son `LISEZ-MOI.md`) par **`moteur-atelier generer-tables
+atelier/reference/sources atelier/sources`** (`atelier/src/generer_tables.rs`).
 Le test `referentiels` vérifie que les tables commitées sont
 celles que les textes donnent. Monter de version d'Unicode : déposer les
 nouveaux fichiers, changer les constantes `UNICODE_*` du module, relancer, lire
@@ -967,7 +958,7 @@ Légifrance refuse les robots, mais la DILA publie chaque soir en open data
 ce qui a bougé dans les conventions collectives (base KALI, une archive de
 quelques centaines de Ko, sans compte). Pour les sources qui portent un bloc
 `kali` (CCN 1285 et 3090), `--verifier` lit ces livraisons depuis le relevé
-(`moteur/src/atelier/releve/kali.rs`) et dit si la convention a bougé : un texte dont le titre
+(`atelier/src/releve/kali.rs`) et dit si la convention a bougé : un texte dont le titre
 parle de salaires, ou le texte cité lui-même, met la source « à relire » avec
 son titre, sa date et son état (étendu ou non) ; les autres mouvements sont
 montrés en second. `--relever` garde le XML du texte touché
@@ -977,10 +968,10 @@ reprend où elle s'était arrêtée) ; la
 première fois, elle remonte l'index (environ un an) jusqu'à la dernière fiche
 de chaque convention, pour savoir ensuite rattacher un texte à la sienne : une
 minute, une fois. L'ouverture d'une compagnie ne la fait pas
-(`moteur/src/compagnie/ouverture.rs`) : c'est l'éditeur qui la lance.
+(`routes/src/gestes/ouverture.rs`) : elle se lance dans le nuage.
 
 Quand une source a changé, le référentiel qu'elle nourrit se **relève** par
-**`moteur extraire`** (`moteur/src/atelier/extraire/`) : `naf` (les deux classeurs INSEE →
+**`moteur-atelier extraire`** (`atelier/src/extraire/`) : `naf` (les deux classeurs INSEE →
 `naf-base.json`), `usages` et `formats` (le classeur de net-entreprises ou le
 cahier technique en PDF → `usages-dsn-*.json`, `formats-dsn-*.json`), `urssaf`
 (la Table des Urssaf, la liste des sites, le COG 2015 →
@@ -988,30 +979,30 @@ cahier technique en PDF → `usages-dsn-*.json`, `formats-dsn-*.json`), `urssaf`
 une sortie qui existe ne se remplace qu'avec `--remplacer`, et rien ne s'écrit
 avant que le relevé soit fait. La `note` du JSON nomme la commande, les
 fichiers déposés et le jour du relevé. Par exemple :
-`moteur extraire naf <structure.xlsx> <correspondances.xlsx> logiciel/donnees/naf-base.json --remplacer`
+`moteur-atelier extraire naf <structure.xlsx> <correspondances.xlsx> logiciel/donnees/naf-base.json --remplacer`
 (les commandes de chaque table sont dans `atelier/reference/norme-dsn/LISEZMOI.md`
 et `atelier/reference/sources/insee-naf-2025/LISEZ-MOI.md`). Puis
 `git diff logiciel/donnees/` dit ce qui a bougé, et
-`tests/fichiers/referentiels.rs` vérifie que chaque table livrée est bien ce que
+`atelier/tests/atelier/referentiels.rs` (la suite de l'atelier) vérifie que chaque table livrée est bien ce que
 ses textes déposés donnent.
 
 **Les textes eux-mêmes**, articles de loi et de convention, se relèvent dans les
 bases LEGI et KALI de la DILA et se gardent dans deux entrepôts du dépôt
 (`atelier/reference/sources/legi-entrepot/` et `kali-entrepot/` : tous les
 articles des textes suivis, et la liste des livraisons déjà appliquées ;
-`moteur/src/atelier/releve/entrepot_dila.rs`). Deux commandes de l'atelier, qui prennent le
+`atelier/src/releve/entrepot_dila.rs`). Deux commandes de l'atelier, qui prennent le
 dossier des sources :
 
 ```
-moteur releve-codes moissonner atelier/reference/sources     # les livraisons LEGI nouvelles, puis releve.json et xml/ de chaque texte
-moteur releve-codes rapport atelier/reference/sources [code]  # articles-<date>.md, le document lisible
-moteur releve-codes comparer atelier/reference/sources       # chaque article changé, relu contre sa version d'avant (archive globale, 1,1 Go en flux)
-moteur releve-conventions mettre-a-jour atelier/reference/sources
-moteur releve-conventions article atelier/reference/sources 3090 7.6
-moteur releve-conventions chercher atelier/reference/sources 3090 licenciement
+moteur-atelier releve-codes moissonner atelier/reference/sources     # les livraisons LEGI nouvelles, puis releve.json et xml/ de chaque texte
+moteur-atelier releve-codes rapport atelier/reference/sources [code]  # articles-<date>.md, le document lisible
+moteur-atelier releve-codes comparer atelier/reference/sources       # chaque article changé, relu contre sa version d'avant (archive globale, 1,1 Go en flux)
+moteur-atelier releve-conventions mettre-a-jour atelier/reference/sources
+moteur-atelier releve-conventions article atelier/reference/sources 3090 7.6
+moteur-atelier releve-conventions chercher atelier/reference/sources 3090 licenciement
 ```
 
-Les textes suivis sont dans `moteur/src/atelier/releve/codes/textes.rs` (un article
+Les textes suivis sont dans `atelier/src/releve/codes/textes.rs` (un article
 ajouté y est déjà dans l'entrepôt : `moissonner` l'écrit sans rien télécharger)
 et, pour les conventions, ceux que cite `sources.json`. `--reconstruire` refait
 défiler l'archive globale (1,1 Go pour LEGI, 180 Mo pour KALI) : on ne le
@@ -1546,7 +1537,7 @@ sinon l'adresse par défaut du code). Si elle existe,
 l'archive de son système (`derniere.json` en nomme quatre : `windows`, `linux`,
 `mac`, et `tout-systeme`, prise si la sienne manque) est téléchargée dans le
 fil de fond, vérifiée (condensat, puis **signature de l'éditeur**, une par
-archive — Ed25519, la clé publique est dans `moteur/src/compagnie/maj.rs`,
+archive — Ed25519, la clé publique est dans `compagnie/src/maj.rs`,
 `CLE_PUBLIQUE` : un dépôt compromis ne peut pas glisser une version qui n'est
 pas la nôtre), déballée dans `maj/`, à côté de `logiciel/`, et **contrôlée** :
 son programme doit lire la configuration de chaque compagnie de l'installation.
@@ -1579,26 +1570,11 @@ téléchargée, **aucun dépôt réel ne part** tant qu'elle n'est pas appliqué
 
 Une version se publie par le flux « Publier » du dépôt public
 (`.github/workflows/publier.yml`, approuvé par l'éditeur), qui compile, signe
-avec la clé de GitHub et pose tout dans une Release (`moteur/src/atelier/publier.rs`).
-Le moteur accepte aussi la clé d'un poste d'éditeur (`"editeur": true` dans le
-réglage de l'installation), après relecture des sources (voir plus haut) ; son
-installation reçoit comme les autres une version plus récente que la sienne :
-
-```bash
-moteur maj --cle                      # une fois : la clé qui signe
-moteur maj --publier --notes "..." [--calcul "..."] [--exigee "..."]
-```
-
-pose les archives **signées** (une par système dont la fenêtre est dans
-`logiciel/`, et celle de tous) et `derniere.json` dans le dépôt, et refuse de
-republier un numéro déjà pris : augmenter `VERSION` d'abord. La clé privée
-vit dans `prive/config/maj-cle-privee.bin`, scellée par la clé maîtresse
-du coffre : elle s'ouvre où le coffre s'ouvre, par la clé du
-poste ou, sur un autre, par le mot de passe du logiciel ; elle dépend donc du
-`coffre.bin` qui l'a scellée. `moteur maj --cle` refuse de la fabriquer sans mot
-de passe du logiciel. Perdue, les compagnies refuseraient
-toute version suivante. Le dépôt n'est qu'une
-adresse ; le format est le même sur un disque et sur un site.
+avec la clé de GitHub et pose tout dans une Release (`moteur/src/publication/`, `moteur maj --publier-github`, sur
+le `moteur` que le flux vient de compiler). Il pose les archives **signées** (une par système dont la fenêtre est dans
+`logiciel/`, et celle de tous) et `derniere.json`, et refuse de republier un numéro déjà pris : augmenter `VERSION`
+d'abord. La graine de la clé n'existe que dans le secret `PUPPETPAIE_CLE_SIGNATURE` de l'environnement `publication`.
+Le dépôt n'est qu'une adresse ; le format est le même sur un disque et sur un site.
 
 ## Les compagnies fictives (le crash-test)
 
@@ -1643,7 +1619,7 @@ et l'horloge de la fictive joue ce qui était dû. La notice entière, celle
 qu'un agent suit : `outils/banc/LISEZ-MOI.md` ; le modèle d'une partie :
 `outils/banc/exemple.js`.
 
-Pendant ce temps, **l'enregistreur** (`moteur/src/atelier/scenario.rs`, dans le seul
+Pendant ce temps, **l'enregistreur** (`routes/src/scenario.rs`, dans le seul
 binaire de l'atelier) consigne chaque route que la fenêtre sert, avec sa
 charge, son instant et ce qu'on avait déposé (`gestes.jsonl`, `pieces/`).
 Le scénario se **rejoue** sans navigateur, depuis un dossier vide, dans une
@@ -1712,7 +1688,7 @@ atelier/                  ← ce dossier : tout le reste
                           (lois et codes, conventions, norme DSN, BOFiP,
                           BOSS…), leur transcription et un LISEZ-MOI.md par
                           dossier (d'un organisme privé, seule la
-                          transcription) ; `moteur sources` y vérifie les copies
+                          transcription) ; `moteur-atelier sources` y vérifie les copies
   docs/                   ARCHITECTURE.md, RUBRIQUES.md,
                           COMPAGNIE-D-ESSAI.md, COOLPAIE-SORTIR-SES-DOCUMENTS.md
   AVANT-LE-PREMIER-COMMIT.md   ce qui n'entre jamais dans le dépôt
@@ -1720,7 +1696,8 @@ atelier/                  ← ce dossier : tout le reste
                           Node : LISEZ-MOI.md), `demos/` (un scénario de
                           démonstration). Le garde avant commit, le guet, les
                           tables Unicode, les relevés des référentiels, des codes
-                          et des conventions sont des commandes de `moteur`
+                          et des conventions sont des commandes de
+                          `moteur-atelier`, le binaire du nuage, jamais livré
                           (`verifier-avant-commit`, `guet`, `generer-tables`,
                           `extraire`, `releve-codes`, `releve-conventions`)
   PuppetPaie.sh, PuppetPaie.command   les lanceurs Linux et Mac
@@ -1759,26 +1736,26 @@ d'où vient chaque taux.
 
 ### Avant un commit : le garde des données réelles
 
-Rien de la compagnie du poste n'entre dans le dépôt public. `moteur
+Rien de la compagnie du poste n'entre dans le dépôt public. `moteur-atelier
 verifier-avant-commit` cherche, dans ce que Git emporterait (hors de
 `prive/`), les NIR, IBAN et BIC qui ne portent pas la marque d'invention, et
 les vraies valeurs qu'il lit dans `prive/config/` quand il est là (SIRET,
 SIREN, comptes des organismes, IBAN, BIC, NIR, courriels, adresses, nom et
 prénom des salariés). Il dit le fichier, la ligne et ce que c'est, jamais la
 valeur ; il sort en 0 (rien), 1 (trouvé) ou 2 (il n'a pas pu vérifier). Le
-test `donnees_reelles` de la suite le complète sans lire `prive/`.
+test `donnees_reelles` de la suite de l'atelier le complète sans lire `prive/`.
 
 ```bash
-moteur verifier-avant-commit             # tout ce qui partirait
-moteur verifier-avant-commit --indexes   # ce que l'index porte : le prochain commit
+moteur-atelier verifier-avant-commit             # tout ce qui partirait
+moteur-atelier verifier-avant-commit --indexes   # ce que l'index porte : le prochain commit
 git config core.hooksPath atelier/.githooks   # une fois : le crochet le lance à chaque commit
 ```
 
-Le crochet (`atelier/.githooks/pre-commit`) prend le `moteur` de
+Le crochet (`atelier/.githooks/pre-commit`) prend le `moteur-atelier` de
 `PUPPETPAIE_FABRIQUE`, sinon celui que Cargo a compilé (`CARGO_TARGET_DIR`,
-sinon `atelier/sources/target`), sinon celui que le dépôt livre
-(`atelier/sources/moteur/bin/<système>/`) ; si aucun ne connaît la commande, le
+sinon `atelier/sources/target`, ou la cible de l'atelier à côté, `<cible>-atelier`) ;
+il n'est jamais livré, et si aucun ne connaît la commande, le
 commit est refusé. Une trouvaille se regarde : une valeur réelle sort du
 dépôt, une valeur inventée s'inscrit dans `FICTIVES`
-(`atelier/sources/moteur/src/atelier/verifier_avant_commit.rs`). Passer outre en
+(`atelier/sources/atelier/src/verifier_avant_commit.rs`). Passer outre en
 connaissance de cause : `git commit --no-verify`.

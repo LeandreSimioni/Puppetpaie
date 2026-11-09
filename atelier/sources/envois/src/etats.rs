@@ -637,7 +637,7 @@ pub fn pourquoi_rate(ligne: &Ligne) -> String {
 /// (`ok`, `ko`, `attendu`, ou rien sans test conforme), les essais rates du meme contenu et ceux d'un contenu d'avant sous
 /// le meme nom, la couleur et les mots de l'encart qui le dit.
 ///
-/// Elle se relit avec la reponse qui la porte (le refus d'un depot reel sans test, `moteur::routes::enveloppe::APart`).
+/// Elle se relit avec la reponse qui la porte (le refus d'un depot reel sans test, `routes::enveloppe::APart`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repetition {
@@ -1083,7 +1083,7 @@ fn libelle_nature(code: &str, acte: Acte) -> String {
     retours::libelle_nature(code)
 }
 
-/// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`moteur::compagnie::incidents`) : son
+/// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`compagnie::incidents`) : son
 /// canal, l'endroit, le premier code d'anomalie (ou `KO`), le resume (dix anomalies au plus), et le detail.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IncidentDeRetour {

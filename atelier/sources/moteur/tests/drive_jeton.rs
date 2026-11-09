@@ -8,7 +8,7 @@ mod outils;
 use std::path::PathBuf;
 use std::sync::Once;
 
-use moteur::compagnie::coffre::Coffre;
+use compagnie::coffre::Coffre;
 use envois::drive::Drive;
 
 use outils::{http, Recu, Requete};
@@ -49,8 +49,8 @@ fn compagnie_liee(nom: &str) -> PathBuf {
 fn jeton_revoque_au_rafraichissement_rien_ne_part_vers_drive() {
     let (base, recu) = serveur(|_| reponse(400, br#"{"error": "invalid_grant", "error_description": "Token has been expired or revoked."}"#));
     let r = compagnie_liee("revoque");
-    std::env::set_var(moteur::routes::coffre::VARIABLE_GOOGLE_ESSAIS, &base);
-    let mut c = moteur::routes::coffre::client_drive(&r).unwrap();
+    std::env::set_var(routes::coffre::VARIABLE_GOOGLE_ESSAIS, &base);
+    let mut c = routes::coffre::client_drive(&r).unwrap();
     assert!(c.lister("P").is_err());
     assert_eq!(recu.lock().unwrap().len(), 1);
 }

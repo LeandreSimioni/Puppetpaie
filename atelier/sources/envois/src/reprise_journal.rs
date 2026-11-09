@@ -353,7 +353,7 @@ pub struct RepriseDpae {
 /// Remet au journal les DPAE que les certificats de l'Urssaf attestent. Memes formes
 /// et memes regles que la reprise DSN : `ecrire` a faux par defaut (elle DIT), idempotente par le flux, chaque ligne porte `origine`.
 /// Aucun reseau, aucun depot, pas de mot de passe.
-/// Elle sert l'outil de l'atelier `moteur journal --dpae` (`moteur::atelier::outils::journal`) : pas un geste de l'ecran.
+/// Elle sert l'outil de l'atelier `moteur-atelier journal --dpae` (`atelier::commandes::outils::journal`) : pas un geste de l'ecran.
 #[cfg(feature = "atelier")]
 pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> R<RepriseDpae> {
     let (attestees, inconnus) = embauches_attestees(ctx)?;

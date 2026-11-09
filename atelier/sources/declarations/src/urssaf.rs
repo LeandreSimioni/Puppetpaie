@@ -1,4 +1,4 @@
-//! LES ORGANISMES DE RECOUVREMENT (`urssaf-dpae-base.json`, extrait par `moteur extraire urssaf`) : le code a trois
+//! LES ORGANISMES DE RECOUVREMENT (`urssaf-dpae-base.json`, extrait par `moteur-atelier extraire urssaf`) : le code a trois
 //! chiffres que la DPAE attend en C_URSSAF (positions 133-136, annexe II.1 de la norme), et l'organisme du territoire
 //! de chaque departement. `base` est sa seule lecture.
 

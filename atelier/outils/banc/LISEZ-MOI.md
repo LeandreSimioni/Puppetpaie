@@ -1,7 +1,7 @@
 # Le banc d'essai daté (#236, phase 2)
 
 Faire vivre une compagnie dans l'interface, comme un testeur, en avançant le calendrier — et que tout ce qu'on y fait
-s'enregistre dans un **scénario** rejouable sans navigateur (`moteur/src/atelier/scenario.rs`). Le banc ne décide rien : il lance
+s'enregistre dans un **scénario** rejouable sans navigateur (`routes/src/scenario.rs`). Le banc ne décide rien : il lance
 le binaire de l'atelier (`moteur-atelier`, qui refuse tout acte réel) sur une copie d'installation **bridée** neuve, et lui
 parle par `/atelier/<geste>` (`moteur/src/interface/mod.rs`, `Fenetre::atelier`).
 
@@ -10,7 +10,7 @@ parle par `/atelier/<geste>` (`moteur/src/interface/mod.rs`, `Fenetre::atelier`)
 **0. Le programme** (une fois, par l'orchestrateur ; plusieurs bancs le partagent) :
 
 ```bash
-cd atelier/sources/moteur && CARGO_TARGET_DIR=<cible>-atelier cargo build --profile essais --features atelier --bin moteur-atelier
+cd atelier/sources && CARGO_TARGET_DIR=<cible>-atelier cargo build --profile essais -p atelier
 export PUPPETPAIE_ATELIER=<cible>-atelier/essais/moteur-atelier
 ```
 
@@ -111,14 +111,14 @@ cd atelier/sources/moteur && CARGO_TARGET_DIR=<cible> cargo run --profile essais
 
 Une compagnie qui entre par « D'un logiciel précédent » importe, par la page, les bulletins de son ancien logiciel. Ces
 bulletins sont **fictifs** : l'orchestrateur les fabrique d'une description JSON, au gabarit CoolPaie ou sPAIEctacle
-que l'import sait lire, un PDF par bulletin (`moteur/src/atelier/fabriquer_bulletins.rs`, la fabrique même des tests) :
+que l'import sait lire, un PDF par bulletin (`atelier/src/fabriquer_bulletins.rs`, la fabrique même des tests) :
 
 ```bash
 moteur-atelier fabriquer-bulletins description.json /tmp/banc-<nom>/bulletins --gabarit spaiectacle
 ```
 
 La compagnie ajoutée par ce chemin s'ouvre sur Configuration › Reprendre l'historique, et son guide (ce qu'on met dans le
-dossier, ce qui s'en lit : `moteur/src/import/guide.rs`) tant que rien n'est repris. Le joueur dépose les bulletins dans le
+dossier, ce qui s'en lit : `import/src/guide.rs`) tant que rien n'est repris. Le joueur dépose les bulletins dans le
 dossier que la page désigne (`import/` de la compagnie, ou le champ du dossier), puis « Importer » (`#import-tout`) : tout
 se reprend d'un geste, et la page dit au-dessus ce qui reste à dire (la nature des contrats, les congés, « Pour
 démarrer »). Le dépôt se fait comme

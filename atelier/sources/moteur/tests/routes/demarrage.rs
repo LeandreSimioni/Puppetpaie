@@ -15,7 +15,8 @@
 
 use std::path::PathBuf;
 
-use moteur::interface::compagnies::{ajouter_venant, Venue};
+use routes::accueil::ajouter_venant;
+use compagnie::installation::Venue;
 use serde_json::{json, Value};
 
 use crate::outils::{datee, dossier_de_test, ecrire, fiche_au, lire, reussi, route};

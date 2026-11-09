@@ -1841,7 +1841,7 @@ const DERNIERE_ANNEE_D242_6_17_DE_2012: i32 = 2026;
 /// crees durant l'annee de leur creation et les deux annees civiles suivantes, quel que soit leur effectif ou celui de
 /// l'entreprise dont ils relevent » (D. 242-6-17, version applicable aux cotisations jusqu'a 2026,
 /// `code-de-la-securite-sociale/xml-anterieur/D242-6-17.xml`) : l'annee de son ouverture et les deux suivantes, le taux de
-/// l'arrete pour son risque, TC ou non (`moteur::routes::atmp`, qui l'inscrit). Ce que cet article excepte (un
+/// l'arrete pour son risque, TC ou non (`routes::atmp`, qui l'inscrit). Ce que cet article excepte (un
 /// etablissement issu d'un precedent, le taux unique d'une entreprise qui l'a choisi) se dit par le taux notifie. A compter
 /// de 2027, la version du decret n° 2026-951 ne se lit pas ici.
 pub fn etablissement_neuf(e: &Etablissement, an: i32) -> bool {
@@ -1914,7 +1914,7 @@ fn pourcent(t: Decimal) -> String {
 
 /// LE TAUX AT/MP DE L'ANNEE `an`, d'apres la ligne de la case en vigueur (`dit`, `fiche::TauxAtmp`, celle du siege ou
 /// d'un etablissement) : la paie ne lit que la case, que l'import, la notification recue, la saisie et le taux collectif
-/// de l'arrete ecrivent (`moteur::routes::atmp`). Le taux vaut a partir de sa date (`depuis`). Celui d'un risque sans
+/// de l'arrete ecrivent (`routes::atmp`). Le taux vaut a partir de sa date (`depuis`). Celui d'un risque sans
 /// « TC » (ou en Alsace-Moselle, art. 4 de l'arrete : l'annexe 3 n'a pas de TC) ne vaut pas au-dela du 31 decembre de
 /// l'annee de cette date : la CARSAT le notifie chaque annee (inference ; l'arrete est « pour l'annee », et D. 242-6-15 borne
 /// la variation du taux notifie « d'une annee sur l'autre », `code-de-la-securite-sociale/xml-anterieur/D242-6-15.xml`).
@@ -1991,7 +1991,7 @@ pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) ->
 
 /// LE TAUX RECU QU'UNE SAISIE CHANGE : la ligne en vigueur a la date saisie (`recue`) vient d'une notification de la
 /// CARSAT, et la saisie (`apres`) en dit un autre code ou un autre taux. La phrase a confirmer avant d'ecrire
-/// (`moteur::routes::fiches`, `usage`).
+/// (`routes::fiches`, `usage`).
 pub fn taux_atmp_a_confirmer(recue: Option<&crate::fiche::TauxAtmp>, apres: &crate::fiche::TauxAtmp) -> Resultat<Option<String>> {
     let a = match recue.filter(|a| a.provenance == Some(crate::fiche::ProvenanceAtmp::Notification)) {
         Some(a) => a,

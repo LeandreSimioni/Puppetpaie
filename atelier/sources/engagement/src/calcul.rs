@@ -1008,7 +1008,7 @@ pub fn etablissement_du_contrat(mut fiche: SalarieDuContrat, eng: &Engagement) -
 
 /// L'ANCIENNETE DANS L'ENTREPRISE (S21.G00.86.003, `norme-dsn/texte/bloc-S21.G00.86.txt`) d'une fiche qui ne la date pas
 /// encore : elle part de l'embauche, le premier jour de ce contrat, qui est le premier du salarie (la validation de son
-/// premier engagement la pose sur sa fiche, `moteur::routes::fiches::poser_anciennete_a_l_embauche`, ou elle se change).
+/// premier engagement la pose sur sa fiche, `routes::fiches::poser_anciennete_a_l_embauche`, ou elle se change).
 /// INFERENCE : l'anciennete dans l'entreprise commence a l'entree dans l'entreprise.
 fn anciennete_a_l_embauche(mut fiche: SalarieDuContrat, eng: &Engagement) -> SalarieDuContrat {
     if !fiche.date_anciennete.est_dite() {

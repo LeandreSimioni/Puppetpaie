@@ -501,6 +501,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "compagnie"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "declarations",
+ "droit",
+ "ed25519-dalek",
+ "engagement",
+ "envois",
+ "getrandom 0.3.4",
+ "md-5",
+ "regex",
+ "rpassword",
+ "scrypt",
+ "serde",
+ "sha2",
+ "socle",
+ "ureq",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1951,6 +1973,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "import"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "regex",
+ "serde",
+ "sha2",
+ "socle",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2452,34 +2492,19 @@ dependencies = [
 name = "moteur"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "declarations",
+ "compagnie",
  "documents",
  "droit",
  "ed25519-dalek",
  "engagement",
  "envois",
  "fabrique-pdf",
- "flate2",
  "getrandom 0.3.4",
- "icu_normalizer",
- "imap-proto",
- "lettre",
  "mailparse",
- "md-5",
- "regex",
- "roxmltree 0.20.0",
- "rpassword",
- "rust_decimal",
- "rust_xlsxwriter",
- "rustls",
- "rustls-platform-verifier",
- "scrypt",
+ "routes",
  "serde",
- "serde_json",
  "sha2",
  "socle",
- "ureq",
  "zip 2.4.2",
 ]
 
@@ -3183,8 +3208,10 @@ dependencies = [
 name = "puppetpaie"
 version = "0.1.0"
 dependencies = [
+ "compagnie",
  "fabrique-pdf",
  "moteur",
+ "routes",
  "tauri",
  "tauri-build",
 ]
@@ -3410,6 +3437,29 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "routes"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "flate2",
+ "import",
+ "mailparse",
+ "regex",
+ "rust_decimal",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socle",
 ]
 
 [[package]]

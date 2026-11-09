@@ -304,7 +304,7 @@ impl Champ {
     /// Le champ de la fiche `donnees` est-il A L'ECRAN ? Il se saisit (ni deduit, ni hors de l'ecran), sa condition `si`
     /// est remplie par la fiche, celle de l'entreprise (`si_entreprise`, pour la fiche d'un salarie ou d'un spectacle :
     /// `entreprise`) aussi, la compagnie emploie des permanents s'il ne vaut que pour eux (`si_permanents`) et a plusieurs
-    /// etablissements s'il les nomme (`si_etablissements`). La page montre ce que cette fonction dit (`moteur::routes::
+    /// etablissements s'il les nomme (`si_etablissements`). La page montre ce que cette fonction dit (`routes::
     /// fiches::montres`), et rien d'autre.
     pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, permanents: bool, etablissements: bool) -> bool {
         self.ecran

@@ -1,4 +1,4 @@
-//! Les petits outils des commandes : les classes d'un refus, les garde-fous du binaire de l'atelier, l'heure du coffre.
+//! Les petits outils des commandes : les classes d'un refus, les garde-fous du binaire de l'atelier.
 
 use socle::echec::{Classe, Echec};
 
@@ -23,7 +23,7 @@ pub fn est_refus(classe: Option<Classe>) -> bool {
 
 // ------------------------------------------------------------------ le binaire de l'atelier
 
-/// Ce que la redirection de l'atelier tient : net-entreprises, l'Urssaf et Google (`atelier::redirection`). Le reste -- la boite courriel --
+/// Ce que la redirection de l'atelier tient : net-entreprises, l'Urssaf et Google (`envois::redirection`). Le reste -- la boite courriel --
 /// n'est jamais redirige.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Organisme {
@@ -38,11 +38,11 @@ pub enum Organisme {
 #[cfg(feature = "atelier")]
 pub fn pas_redirige(cadre: &super::Cadre, organisme: Organisme) -> bool {
     let variable = match organisme {
-        Organisme::Dsn => crate::atelier::redirection::VARIABLE_DSN,
-        Organisme::Dpae => crate::atelier::redirection::VARIABLE_DPAE,
-        Organisme::Google => crate::atelier::redirection::VARIABLE_GOOGLE,
+        Organisme::Dsn => envois::redirection::VARIABLE_DSN,
+        Organisme::Dpae => envois::redirection::VARIABLE_DPAE,
+        Organisme::Google => envois::redirection::VARIABLE_GOOGLE,
     };
-    crate::atelier::redirection::base(variable).is_none() && !matches!(crate::compagnie::bridage::branchement(&cadre.racine), Ok(b) if b.joue())
+    envois::redirection::base(variable).is_none() && !matches!(compagnie::bridage::branchement(&cadre.racine), Ok(b) if b.joue())
 }
 
 #[cfg(not(feature = "atelier"))]
@@ -74,10 +74,4 @@ pub fn refuser_si_pas_redirige(cadre: &super::Cadre, organisme: Organisme, quoi:
 #[cfg(not(feature = "atelier"))]
 pub fn refuser_si_pas_redirige(_cadre: &super::Cadre, _organisme: Organisme, _quoi: &str) -> Result<(), Echec> {
     Ok(())
-}
-
-/// L'heure de Paris, a la minute : ce que le coffre note comme date de pose.
-pub fn maintenant_minutes() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_minutes(t)
 }

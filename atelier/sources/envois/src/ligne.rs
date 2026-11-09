@@ -288,7 +288,7 @@ impl Ligne {
 
 // ------------------------------------------------------------------ la DSN et la DPAE
 
-/// CE QUI A OUVERT UN DEPOT REEL (`moteur::compagnie::depot_acte::exiger_repetition`) : le test conforme de ce contenu
+/// CE QUI A OUVERT UN DEPOT REEL (`routes::gestes::depot_acte::exiger_repetition`) : le test conforme de ce contenu
 /// (son heure, son flux, son compte rendu), ou le motif ecrit d'un reel parti sans test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -391,7 +391,7 @@ pub struct PersonneCertifiee {
     pub enregistree: bool,
     pub deja_existante: bool,
     pub formalites: Vec<String>,
-    /// Ce que la page en montre (`moteur::routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
+    /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub pastille: Option<socle::ecran::Pastille>,
 }
@@ -622,7 +622,7 @@ pub struct DetailSignature {
     pub echec_a: Option<String>,
 }
 
-/// CE QUI REVIENT D'UN CONTRAT PARTI (`moteur::routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
+/// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
 /// numero, avenant), s'il est revenu signe (`recu`, ou la mention retiree), et, pour une reponse « Je signe » relevee
 /// par courriel (`origine`), ce qui la prouve. `quand`, `qui`, `reponse` : la note.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
