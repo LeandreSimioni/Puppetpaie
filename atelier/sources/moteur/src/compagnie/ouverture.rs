@@ -753,7 +753,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     // DPAE, ni contrat signe. La veille ne les releve pas, et ne demande pas les mots de passe qui serviraient a les relever :
     // le bandeau ne presente pas comme une panne ce qui est voulu. Le coffre, lui, s'y pose comme ailleurs (Configuration).
     // Un marqueur qui ne se lit pas ne dit pas si la compagnie envoie : la veille s'arrete la, et le dit.
-    let (branchement, fictive) = match crate::compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, crate::interface::compagnies::est_fictive(&ctx.racine)?))) {
+    let (branchement, fictive) = match crate::compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, crate::compagnie::installation::est_fictive(&ctx.racine)?))) {
         Ok(x) => x,
         Err(e) => {
             r.incidents.push(e);

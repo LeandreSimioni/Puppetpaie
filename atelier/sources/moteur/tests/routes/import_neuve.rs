@@ -17,7 +17,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use moteur::interface::compagnies::{ajouter_venant, Venue};
+use moteur::accueil::ajouter_venant;
+use moteur::compagnie::installation::Venue;
 use serde_json::{json, Value};
 
 use crate::bulletins_fictifs::{a_heures, a_repetitions, page_a, page_aem, page_certificat, pdf, Aem, Certificat, A};

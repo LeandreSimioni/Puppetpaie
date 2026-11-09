@@ -199,7 +199,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
                 let a: crate::routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
                 let r = crate::routes::dans_la_fenetre(&o, nom, charge);
                 let ajoutee: crate::routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
-                let venue = (a.venue != crate::interface::compagnies::Venue::Neuve).then_some(a.venue);
+                let venue = (a.venue != crate::compagnie::installation::Venue::Neuve).then_some(a.venue);
                 let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });

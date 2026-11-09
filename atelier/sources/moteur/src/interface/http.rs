@@ -237,29 +237,9 @@ fn servir_connexion(flux: TcpStream, traiter: Arc<dyn Fn(Requete) -> Reponse + S
 /// Ecoute sur 127.0.0.1:`port` (le port fixe s'il est libre, sinon un port tire par le systeme). Rend l'ecouteur et son port.
 pub fn ecouter(port: u16) -> std::io::Result<(TcpListener, u16)> {
     let l = TcpListener::bind(("127.0.0.1", port)).or_else(|_| TcpListener::bind(("127.0.0.1", 0)))?;
-    sans_heritage(&l);
+    crate::compagnie::instance::sans_heritage(&l);
     let p = l.local_addr()?.port();
     Ok((l, p))
-}
-
-/// Une prise d'ecoute ne passe jamais a un processus enfant (une route, le relais de la mise a jour). La bibliotheque
-/// standard la cree deja non heritable, mais un fournisseur reseau intercale (un antivirus) peut perdre ce drapeau : un
-/// enfant la gardait alors ouverte apres la mort de la fenetre (port tenu par un PID mort).
-pub fn sans_heritage(l: &TcpListener) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawSocket;
-        extern "system" {
-            fn SetHandleInformation(objet: isize, masque: u32, drapeaux: u32) -> i32;
-        }
-        const HANDLE_FLAG_INHERIT: u32 = 1;
-        // SAFETY : la prise est vivante (empruntee) ; on ne change que son drapeau d'heritage.
-        unsafe {
-            SetHandleInformation(l.as_raw_socket() as isize, HANDLE_FLAG_INHERIT, 0);
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = l;
 }
 
 /// Sert pour toujours ; chaque connexion dans son propre fil, chaque requete traitee par `traiter`.

@@ -513,7 +513,7 @@ pub struct Demarrage<'a> {
     ecran: Option<EcranDuMois<'a>>,
     /// La veille de la fenetre : hors d'elle, aucune.
     #[serde(skip_serializing_if = "Option::is_none")]
-    veille: Option<crate::interface::veille::EtatDeLaVeille>,
+    veille: Option<crate::veille::EtatDeLaVeille>,
     #[serde(skip_serializing_if = "Option::is_none")]
     maj: Option<crate::compagnie::maj::EtatDeLaRecherche>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -529,14 +529,14 @@ impl Dite for Demarrage<'_> {
 /// CE QUI SE LIT A COTE DE L'ETAT GARDE, a chaque demarrage : ce qui vit dans la memoire de la fenetre (la veille, la
 /// recherche de la mise a jour) et ce que l'etat garde ne suit pas (les signalements, `journal/signalements.json`).
 pub struct ACote {
-    pub veille: Option<crate::interface::veille::EtatDeLaVeille>,
+    pub veille: Option<crate::veille::EtatDeLaVeille>,
     pub maj: crate::compagnie::maj::EtatDeLaRecherche,
     pub signalements: Reponse,
 }
 
 impl ACote {
     /// Ce qui se lit a cote pour `racine` ; `veille` : celle de la fenetre, s'il y en a une.
-    pub fn de(racine: &Path, veille: Option<crate::interface::veille::EtatDeLaVeille>) -> ACote {
+    pub fn de(racine: &Path, veille: Option<crate::veille::EtatDeLaVeille>) -> ACote {
         let signalements = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).and_then(en_json));
         ACote { veille, maj: crate::compagnie::maj::RECHERCHE.etat(), signalements }
     }
@@ -1258,7 +1258,7 @@ impl FileDesEtats {
         self.fil.reveil.notify_all();
     }
 
-    /// LA COMPAGNIE S'EN VA (supprimee, ou deplacee quand on la garde au deblocage : `interface::suppression`) : sa file
+    /// LA COMPAGNIE S'EN VA (supprimee, ou deplacee quand on la garde au deblocage : `accueil::suppression`) : sa file
     /// quitte le fil, qui continue de servir les autres -- meme s'il n'en reste aucune, la fenetre lui en donnera d'autres --,
     /// et l'on attend la fin du calcul qui tourne pour elle : rien ne s'ecrit plus dans son dossier ensuite.
     pub fn quitter(&self) {

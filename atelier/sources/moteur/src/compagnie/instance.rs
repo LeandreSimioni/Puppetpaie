@@ -27,7 +27,7 @@
 
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,9 +36,6 @@ use serde::{Deserialize, Serialize};
 
 /// Le fichier, a la racine de l'installation, qui retient son creneau.
 pub const FICHIER: &str = ".fenetre.json";
-/// Ce qui appartient a une installation sur un poste et qu'on ne met pas dans ses donnees (le profil du navigateur de
-/// la fenetre, le jeton de sa page, le journal d'avant toute compagnie) : en mode portable, a sa racine.
-pub const DOSSIER_PORTABLE: &str = ".fenetre";
 
 const DEMANDE_DEVANT: &str = "PuppetPaie devant";
 const DEMANDE_QUI: &str = "PuppetPaie qui";
@@ -238,7 +235,7 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
 fn ecouter(port: u16) -> Result<Option<TcpListener>, String> {
     match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
         Ok(l) => {
-            super::http::sans_heritage(&l);
+            sans_heritage(&l);
             Ok(Some(l))
         }
         Err(e) if matches!(e.kind(), ErrorKind::AddrInUse | ErrorKind::PermissionDenied) => Ok(None),
@@ -279,9 +276,9 @@ pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static)
     Ok(Instance::Tenue(Prise { verrou: None, page, port, creneau: None }))
 }
 
-/// Le verrou de CETTE installation (`compagnies::base()`), dans la plage du poste.
+/// Le verrou de CETTE installation (`installation::base()`), dans la plage du poste.
 pub fn prendre(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
-    prendre_de(&super::compagnies::base(), Plage::DU_POSTE, devant)
+    prendre_de(&super::installation::base(), Plage::DU_POSTE, devant)
 }
 
 /// LA FENETRE DE L'INSTALLATION `inst` EST-ELLE OUVERTE ? (la mise a jour ne s'applique jamais sous elle). On demande au
@@ -303,14 +300,22 @@ pub fn ouverte(inst: &Path, plage: Plage) -> Result<bool, String> {
     Ok(false)
 }
 
-/// Le dossier propre a une fenetre sur ce poste : le profil de son navigateur, le jeton de sa page, son journal d'avant
-/// toute compagnie. EN PORTABLE (`PORTABLE.json`), dans l'installation (`.fenetre/`) : rien ne reste sur le poste. SINON,
-/// dans le dossier de l'utilisateur, un par PORT de page (`fenetres/<port>/`) -- le port est l'origine que le
-/// navigateur connait : ce qu'il a retenu pour elle reste avec elle, et deux fenetres ouvertes ensemble (deux ports)
-/// n'ont jamais le meme profil.
-pub fn dossier_local(inst: &Path, port: u16) -> PathBuf {
-    if inst.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
-        return inst.join(DOSSIER_PORTABLE);
+/// Une prise d'ecoute ne passe jamais a un processus enfant (une route, le relais de la mise a jour). La bibliotheque
+/// standard la cree deja non heritable, mais un fournisseur reseau intercale (un antivirus) peut perdre ce drapeau : un
+/// enfant la gardait alors ouverte apres la mort de la fenetre (port tenu par un PID mort).
+pub fn sans_heritage(l: &TcpListener) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawSocket;
+        extern "system" {
+            fn SetHandleInformation(objet: isize, masque: u32, drapeaux: u32) -> i32;
+        }
+        const HANDLE_FLAG_INHERIT: u32 = 1;
+        // SAFETY : la prise est vivante (empruntee) ; on ne change que son drapeau d'heritage.
+        unsafe {
+            SetHandleInformation(l.as_raw_socket() as isize, HANDLE_FLAG_INHERIT, 0);
+        }
     }
-    super::navigateur::dossier_utilisateur().join("fenetres").join(port.to_string())
+    #[cfg(not(windows))]
+    let _ = l;
 }

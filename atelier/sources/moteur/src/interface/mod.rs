@@ -12,13 +12,8 @@
 //! l'ouvre dans un Chromium en mode application, sinon dans le navigateur par defaut (`navigateur.rs`).
 
 pub mod api;
-pub mod auteur;
-pub mod compagnies;
 pub mod http;
-pub mod instance;
 pub mod navigateur;
-pub mod poste;
-pub mod suppression;
 pub mod veille;
 
 use std::collections::HashMap;
@@ -31,7 +26,12 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use http::{Reponse, Requete};
+use crate::accueil::suppression;
+use crate::compagnie::installation::{self, JOURNAL_INTERFACE};
+use crate::compagnie::instance::{self, Instance, Prise};
+use crate::compagnie::poste;
 use crate::etat_garde::{Fil, FileDesEtats};
+use crate::veille::EtatDeLaVeille;
 use veille::Veille;
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
@@ -39,9 +39,6 @@ use socle::echec::Classe;
 use socle::memoire::tenu;
 
 pub const MINUTES_VEILLE: u64 = 20;
-
-/// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
-pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
 
 const MOT_DE_PASSE: &str = include_str!("pages/mot_de_passe.html");
 const CHOIX_MOT_DE_PASSE: &str = include_str!("pages/choix_mot_de_passe.html");
@@ -137,7 +134,7 @@ enum Geste {
     Dit { ok: bool, phrase: String },
     /// Le dossier choisi ; aucun quand la boite a ete fermee.
     Dossier { ok: bool, dossier: Option<String> },
-    Veille { ok: bool, etat: Box<veille::EtatDeLaVeille> },
+    Veille { ok: bool, etat: Box<EtatDeLaVeille> },
     Etape { ok: bool, etat: veille::EtapeDeLaVeille },
     Maj { ok: bool, etat: crate::compagnie::maj::EtatDeLaRecherche },
     Refuse { ok: bool, refus: Refus },
@@ -163,7 +160,7 @@ enum Atelier {
         ok: bool,
         jour: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        veille: Option<veille::EtatDeLaVeille>,
+        veille: Option<EtatDeLaVeille>,
     },
     Fait { ok: bool },
     Refuse { ok: bool, refus: Refus },
@@ -189,7 +186,7 @@ pub struct Fenetre {
     /// Le port de la page : le cookie du jeton porte son nom (`jeton-<port>`), car un cookie ne connait pas le port --
     /// deux installations ouvertes dans le meme navigateur ne s'ecrasent pas leur jeton.
     port: u16,
-    /// Le dossier de cette fenetre sur le poste (`instance::dossier_local`) : le jeton, le profil du navigateur, le
+    /// Le dossier de cette fenetre sur le poste (`navigateur::dossier_local`) : le jeton, le profil du navigateur, le
     /// journal d'avant toute compagnie.
     local: PathBuf,
     /// LE FIL DES CALCULS EN FOND (`etat_garde::Fil`) et la file de chaque compagnie qu'il tient, par
@@ -240,7 +237,7 @@ fn version() -> String {
 
 #[cfg(not(feature = "atelier"))]
 fn version() -> String {
-    let p = compagnies::logiciel().join("VERSION");
+    let p = installation::logiciel().join("VERSION");
     match std::fs::read_to_string(&p) {
         Ok(v) => crate::compagnie::maj::version_lue(&v),
         Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e)),
@@ -248,7 +245,7 @@ fn version() -> String {
 }
 
 fn ressources() -> PathBuf {
-    compagnies::logiciel().join("interface")
+    installation::logiciel().join("interface")
 }
 
 /// Douze caracteres qui changent des qu'une feuille ou un script change : la fenetre ne garde rien de perime.
@@ -343,7 +340,7 @@ fn fichier_de_la_page(chemin: &str) -> Result<Option<(Vec<u8>, &'static str)>, S
     std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e))
 }
 
-/// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`instance::dossier_local`).
+/// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`navigateur::dossier_local`).
 /// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
 /// previsible.
 fn jeton(local: &Path) -> Result<String, String> {
@@ -395,7 +392,7 @@ fn logo_en_ligne(logo: &Path) -> Option<String> {
 
 /// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit (`routes::accueil::liste`).
 fn page_accueil() -> Result<String, String> {
-    let r = crate::routes::accueil::liste(&compagnies::base())?;
+    let r = crate::routes::accueil::liste(&installation::base())?;
     let mut tuiles = Vec::new();
     for c in &r.compagnies {
         let medaillon = match c.logo.as_deref().map(Path::new).and_then(logo_en_ligne) {
@@ -467,15 +464,15 @@ fn page_accueil() -> Result<String, String> {
 /// La page du logiciel, telle que la fenetre la recoit (publique pour `tests/interface_fichiers.rs`).
 pub fn page_logiciel(racine: &Path, jeton: &str) -> Result<String, String> {
     let brut = std::fs::read_to_string(ressources().join("index.html")).map_err(|e| socle::echec::du_disque(&ressources().join("index.html"), &e))?;
-    let copie = compagnies::est_copie(racine);
+    let copie = installation::est_copie(racine);
     let mut p = brut
         .replace("{{JETON}}", jeton)
         .replace("{{EMPREINTE}}", &empreinte())
         .replace("{{COPIE}}", if copie { "1" } else { "" })
-        .replace("{{COPIE_TEXTE}}", &compagnies::texte_copie(racine)?)
+        .replace("{{COPIE_TEXTE}}", &installation::texte_copie(racine)?)
         .replace(
             "{{STYLE_COMPAGNIE}}",
-            &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", compagnies::couleur(racine)?) },
+            &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", installation::couleur(racine)?) },
         )
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if crate::compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
@@ -533,7 +530,7 @@ impl Fenetre {
         }
     }
 
-    /// Le dossier de cette fenetre sur le poste (`instance::dossier_local`).
+    /// Le dossier de cette fenetre sur le poste (`navigateur::dossier_local`).
     pub fn dossier_local(&self) -> &Path {
         &self.local
     }
@@ -563,7 +560,7 @@ impl Fenetre {
         }
         let f = self.clone();
         crate::routes::fil_de_routes(move || {
-            let reelles = match compagnies::a_tenir_a_jour(&compagnies::base()) {
+            let reelles = match installation::a_tenir_a_jour(&installation::base()) {
                 Ok(r) => r,
                 Err(e) => {
                     f.ecrire(&format!("Calcul en fond non lance : {}\n", socle::echec::phrase_de(&e)));
@@ -590,7 +587,7 @@ impl Fenetre {
 
     /// La compagnie choisie devient celle de la fenetre ; une fictive s'ouvre sans mot de passe.
     fn prendre(&self, racine: PathBuf) -> Result<(), String> {
-        if let Err(e) = compagnies::figer_origine(&racine) {
+        if let Err(e) = installation::figer_origine(&racine) {
             self.ecrire(&format!("Photo d'origine non prise : {}\n", e));
         }
         // Aucune variable du processus ne dit la compagnie : chaque route la recoit (`--racine`, `o["racine"]`,
@@ -607,7 +604,7 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        if crate::compagnie::bridage::est_bride() || compagnies::est_fictive(&racine)? {
+        if crate::compagnie::bridage::est_bride() || installation::est_fictive(&racine)? {
             self.ouvrir(racine);
             return Ok(());
         }
@@ -650,7 +647,7 @@ impl Fenetre {
 
     /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ?
     fn administrateur_ouvre(&self, racine: &Path) -> bool {
-        let inst = compagnies::base();
+        let inst = installation::base();
         // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
         if !matches!(crate::compagnie::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
@@ -661,7 +658,7 @@ impl Fenetre {
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(crate::compagnie::administrateur::est_rattachee(&compagnies::base(), racine), Ok(true)) {
+        if matches!(crate::compagnie::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
     }
@@ -720,7 +717,7 @@ impl Fenetre {
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
                 simulee: ouverte.as_deref().map(crate::compagnie::bridage::branchement).transpose()?.is_some_and(|b| b.joue()),
-                ajoutee: ouverte.as_deref().map(compagnies::est_ajoutee).transpose()?.is_some_and(|a| a),
+                ajoutee: ouverte.as_deref().map(installation::est_ajoutee).transpose()?.is_some_and(|a| a),
             }),
             "jour" => {
                 if !socle::temps::simule() {
@@ -773,7 +770,7 @@ impl Fenetre {
     /// le tableau de l'administrateur se lit, comme l'ecran d'un mois, dans ce que son fil a deja refait (`prechauffer`),
     /// et ne releve les comptes rendus (le reseau, le coffre) qu'une fois le mot de passe de l'administrateur tape ici.
     fn route_de_l_installation(&self, nom: Route, charge: &Charge) -> RouteReponse {
-        let inst = compagnies::base();
+        let inst = installation::base();
         if nom == Route::CompagniesGarder {
             match suppression::a_garder(&inst) {
                 Ok(cies) => cies.iter().for_each(|c| self.lacher(&c.racine)),
@@ -815,7 +812,7 @@ impl Fenetre {
         let fait = |recharger: bool| Geste::Fait { ok: true, recharger };
         match (nom, self.phase()) {
             ("choisir", Phase::Accueil) => {
-                let r = compagnies::racine_choisie(&compagnies::base(), texte(args, 0)?)?;
+                let r = installation::racine_choisie(&installation::base(), texte(args, 0)?)?;
                 self.prendre(r)?;
                 Ok(fait(true))
             }
@@ -1172,9 +1169,7 @@ pub fn preparer_l_installation() {
     }
 }
 
-pub use instance::{Instance, Prise};
-
-/// LE VERROU DE CETTE INSTALLATION (`instance.rs`) : un creneau par installation -- son verrou et le port de sa page.
+/// LE VERROU DE CETTE INSTALLATION (`compagnie::instance`) : un creneau par installation -- son verrou et le port de sa page.
 /// La meme installation relancee : `Devant` (sa fenetre est revenue devant) ; une autre installation ouverte sur le poste
 /// ne change rien, chacune a son creneau.
 pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
@@ -1185,7 +1180,7 @@ pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> Result<Instance, 
 /// garde tant que la fenetre vit : elle porte le verrou). Rend la fenetre et son port.
 pub fn demarrer(minutes_veille: u64, prise: &Prise) -> std::io::Result<(Arc<Fenetre>, u16)> {
     let page = prise.page.try_clone()?;
-    http::sans_heritage(&page);
+    instance::sans_heritage(&page);
     servir_sur(minutes_veille, page, prise.port)
 }
 
@@ -1200,7 +1195,7 @@ pub fn demarrer_sur(minutes_veille: u64, port: u16) -> std::io::Result<(Arc<Fene
 fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     // L'heure du lancement et les paniques notees (`diagnostic`) : ce qu'un retour et un incident disent de la fenetre.
     crate::compagnie::diagnostic::installer();
-    let f = Fenetre::nouvelle(minutes_veille, instance::dossier_local(&compagnies::base(), port), port).map_err(std::io::Error::other)?;
+    let f = Fenetre::nouvelle(minutes_veille, navigateur::dossier_local(&installation::base(), port), port).map_err(std::io::Error::other)?;
     let servie = f.clone();
     std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
     f.ecrire(&format!("PuppetPaie {} : la fenetre ecoute sur 127.0.0.1:{}.\n", version(), port));
@@ -1208,7 +1203,7 @@ fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io:
 }
 
 /// Ce que `moteur interface` a lu de sa ligne de commande. `port` : celui qu'on impose ; sans lui, celui de l'installation
-/// (`instance.rs`).
+/// (`compagnie::instance`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub port: Option<u16>,
@@ -1276,7 +1271,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         }
     }
     let enr = match &dossier {
-        Some(d) => Some(crate::atelier::scenario::Enregistreur::demarrer(d, &compagnies::base(), lectures)?),
+        Some(d) => Some(crate::atelier::scenario::Enregistreur::demarrer(d, &installation::base(), lectures)?),
         None => None,
     };
     let dernier = match enr {

@@ -1,7 +1,8 @@
 //! LES GESTES DU POSTE : ouvrir un fichier ou un dossier dans l'explorateur, choisir un dossier dans la boite du
 //! systeme, ouvrir une adresse dans le navigateur. Ce ne sont pas des gestes du logiciel mais de l'outil qui regarde :
 //! une route rend le chemin, la fenetre l'ouvre (`window.pywebview.api.ouvrir`, `choisir_dossier`, servis par
-//! `interface::Fenetre::lanceur`) ; en ligne de commande, le LLM lit le chemin.
+//! `interface::Fenetre::lanceur`) ; en ligne de commande, le LLM lit le chemin. Un geste de la compagnie en prend aussi
+//! (une adresse a ouvrir, une chaine PowerShell) : ils n'ont besoin de rien au-dessus de la compagnie.
 
 use std::path::{Component, Path};
 use std::process::{Command, Stdio};

@@ -1,5 +1,5 @@
 //! UN LOGICIEL = UN ADMINISTRATEUR. Une installation de PuppetPaie
-//! (le dossier qui porte `logiciel/`, et a cote `prive/`, `compagnies/*`, `fictives/*` : `interface/compagnies.rs`)
+//! (le dossier qui porte `logiciel/`, et a cote `prive/`, `compagnies/*`, `fictives/*` : `compagnie/installation.rs`)
 //! appartient a une personne qui gere une ou plusieurs compagnies ; qui veut deux administrateurs installe un second
 //! logiciel. Les compagnies fictives restent hors de tout cela.
 //!
@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::compagnie::coffre::Coffre;
-use crate::interface::compagnies::{self, Compagnie};
+use crate::compagnie::installation::{self as compagnies, Compagnie};
 use crate::routes::catalogue::Route;
 use crate::routes::depots::{ChargeDeposer, Designation, Quoi};
 use crate::routes::enveloppe::Dite;
@@ -169,7 +169,7 @@ pub fn rattachees(inst: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(lire_registre(inst)?.into_iter().map(|e| inst.join(e.dossier)).filter(|racine| racine.join(droit::contexte::ENTREPRISE).is_file()).collect())
 }
 
-/// UNE COMPAGNIE SUPPRIMEE (`interface::suppression`) sort du registre : une compagnie creee plus tard sous
+/// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous
 /// le meme dossier n'en herite pas. Rien a faire si elle n'y est pas.
 pub fn oublier(inst: &Path, racine: &Path) -> Result<(), String> {
     let Some(rel) = relatif(inst, racine)? else { return Ok(()) };

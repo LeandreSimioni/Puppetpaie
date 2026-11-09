@@ -26,7 +26,7 @@
 //! JAMAIS : depuis une compagnie fictive ni depuis la copie de developpement (le marqueur `COPIE-DE-DEVELOPPEMENT.json`,
 //! `compagnies::est_copie`, que portent l'une et l'autre) ; depuis un logiciel bride (`bridage::est_bride`), ce qui couvre une
 //! compagnie ajoutee sur un logiciel bride tant qu'il l'est. GARDEE AU DEBLOCAGE, elle est une compagnie reelle (son
-//! marqueur est parti, `interface::suppression::garder`) : son nombre part, et ses paies validees en demo comptent -- le
+//! marqueur est parti, `accueil::suppression::garder`) : son nombre part, et ses paies validees en demo comptent -- le
 //! logiciel les a faites ; qu'elles ne soient pas parties ne change pas la regle du compte.
 
 use std::collections::BTreeMap;
@@ -72,9 +72,9 @@ fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> R<()> {
 
 /// Pourquoi rien ne part de cette compagnie, ou `None` si elle peut envoyer.
 fn empechement(racine: &Path) -> R<Option<&'static str>> {
-    Ok(if crate::interface::compagnies::est_fictive(racine)? {
+    Ok(if crate::compagnie::installation::est_fictive(racine)? {
         Some("compagnie fictive")
-    } else if crate::interface::compagnies::est_copie(racine) {
+    } else if crate::compagnie::installation::est_copie(racine) {
         Some("copie de developpement")
     } else if crate::compagnie::bridage::est_bride() {
         Some("logiciel bride")

@@ -1514,14 +1514,14 @@ struct OrganismeUrssaf {
 pub struct EtatDeLaPage {
     phrase: String,
     configuration: ConfigurationDeLaPage,
-    auteur: crate::interface::auteur::Auteur,
+    auteur: crate::compagnie::auteur::Auteur,
     simulation: bool,
     coulisses: Option<Coulisses>,
     note_fictive: Option<super::Encart>,
     envoi_sans_mot_de_passe: bool,
     supprimable: bool,
     suppression: &'static str,
-    demo: Option<crate::interface::suppression::MentionDemo>,
+    demo: Option<crate::accueil::suppression::MentionDemo>,
     commencer_par_l_import: bool,
     historique: Vec<MoisDuBilan>,
     /// Pourquoi l'Historique ne montre que la liste nue des mois, quand le bilan ne se fait pas.
@@ -1614,8 +1614,8 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     Ok(EtatDeLaPage {
         phrase: dire_la_configuration(&configuration),
         configuration,
-        // L'auteur, au pied de la page (`interface::auteur`).
-        auteur: crate::interface::auteur::auteur(),
+        // L'auteur, au pied de la page (`compagnie::auteur`).
+        auteur: crate::compagnie::auteur::auteur(),
         // UNE COMPAGNIE FICTIVE : les envois sont joues (`bridage::branchement`).
         simulation: joue,
         // Ce que la boite d'un envoi joue en dit.
@@ -1625,11 +1625,11 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // avant toute preuve (une fictive ajoutee) ; la page ne demande alors pas le mot de passe du logiciel.
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
-        // fictive livree, qui se remet a zero (`interface::suppression::genre`).
-        supprimable: crate::interface::suppression::genre(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).is_ok(),
+        // fictive livree, qui se remet a zero (`accueil::suppression::genre`).
+        supprimable: crate::accueil::suppression::genre(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).is_ok(),
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
-        demo: crate::interface::suppression::mention(&ctx.racine).map_err(plain)?,
+        demo: crate::accueil::suppression::mention(&ctx.racine).map_err(plain)?,
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
         commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine).map_err(plain)?,

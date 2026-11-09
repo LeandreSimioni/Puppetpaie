@@ -35,7 +35,7 @@ const CRATES: [&str; 7] = ["socle", "droit", "engagement", "documents", "declara
 
 /// Les fichiers qui n'ouvrent de connexion que vers la machine elle-meme, nommes dans leur crate (`src/...`), ou qu'elle soit.
 const LOCAUX: [(&str, &str); 2] = [
-    ("src/interface/instance.rs", "le verrou d'une installation : la fenetre deja ouverte, sur 127.0.0.1"),
+    ("src/compagnie/instance.rs","le verrou d'une installation : la fenetre deja ouverte, sur 127.0.0.1"),
     ("src/google_autorisation.rs", "reveille son propre ecouteur local (127.0.0.1) ; l'echange de jetons passe par `transport`"),
 ];
 

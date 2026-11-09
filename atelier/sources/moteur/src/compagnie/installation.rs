@@ -1,8 +1,10 @@
-//! Les compagnies du poste, telles que l'accueil les propose.
+//! L'INSTALLATION : ce qu'est une compagnie sur le poste, et les compagnies que l'accueil propose.
 //!
 //! A cote du code : `prive/` (la vraie), `compagnies/*` (les autres vraies), `fictives/*` (les compagnies fictives, livrees
 //! avec le logiciel). La copie de developpement (`prive-dev/`) n'est jamais proposee. Bride (`bridage.rs`), l'accueil ne
-//! montre que les fictives. Supprimer une compagnie, et garder au deblocage celles qu'on a ajoutees en demo : `suppression.rs`.
+//! montre que les fictives. Une compagnie est une copie, une fictive (livree ou ajoutee) d'apres son marqueur ; ajoutee,
+//! elle dit le jour et le chemin de son ajout (`creation.json`). En ajouter une, en supprimer une, garder au deblocage
+//! celles qu'on a ajoutees en demo : `crate::accueil`.
 
 use std::path::{Path, PathBuf};
 
@@ -10,6 +12,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::fichiers::dossier_du_code;
+
+/// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
+pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
 
 pub const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
@@ -19,7 +24,7 @@ const AFFICHAGE: &str = "config/affichage.json";
 const DOSSIER_ORIGINE: &str = ".origine";
 /// Ce qui appartient au poste et survit a une remise a zero.
 const PROPRES_AU_POSTE: [&str; 4] =
-    [crate::compagnie::incidents::DIAGNOSTIC, crate::compagnie::problemes::SIGNALEMENTS, crate::compagnie::incidents::INCIDENTS, crate::interface::JOURNAL_INTERFACE];
+    [crate::compagnie::incidents::DIAGNOSTIC, crate::compagnie::problemes::SIGNALEMENTS, crate::compagnie::incidents::INCIDENTS, JOURNAL_INTERFACE];
 
 /// Le dossier qui porte `p`. La racine d'un disque n'a pas de dossier au-dessus d'elle : elle se porte elle-meme.
 pub(crate) fn dessus(p: &Path) -> PathBuf {
@@ -91,7 +96,7 @@ pub const MARQUE_FICTIVE: &str = "compagnie fictive";
 
 /// LE MARQUEUR D'UNE COPIE (`COPIE-DE-DEVELOPPEMENT.json`) : ce qu'elle copie (`copie_de`), quand, et ce qu'elle est.
 /// Ses ecrivains : la livraison d'une fictive (`scenario::poser_livree` : « compagnie fictive <son dossier> », `quand` le
-/// dernier geste rejoue, s'il en a un), le « + » d'un logiciel bride (`ajouter_venant`, avec la marque `ajoutee`), le banc
+/// dernier geste rejoue, s'il en a un), le « + » d'un logiciel bride (`accueil::ajouter_venant`, avec la marque `ajoutee`), le banc
 /// d'essai (`scenario::rendre_simulee`), la compagnie d'essai (`essai::monter`, avec la fictive copiee, `depuis`).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -128,7 +133,7 @@ pub fn est_fictive(racine: &Path) -> Result<bool, String> {
 /// d'elle a l'editeur qu'un incident ou un message), mais elle porte des donnees qu'on y a mises, pas celles d'une
 /// fictive livree : ses envois NE SONT PAS JOUES, ILS SONT REFUSES (`bridage::branchement`), elle n'a pas de photo
 /// d'origine ni de remise a zero, et la livraison des fictives (`compagnie::maj`) ne la touche jamais. SA MARQUE : le champ
-/// `ajoutee` de son marqueur (`Marqueur`, que `ajouter_venant` ecrit) -- lu ICI et nulle part ailleurs.
+/// `ajoutee` de son marqueur (`Marqueur`, que `accueil::ajouter_venant` ecrit) -- lu ICI et nulle part ailleurs.
 ///
 /// UN DOSSIER DE `fictives/` SANS MARQUEUR DE FICTIVE (un marqueur retire) se lit aussi comme ajoute : l'accueil le
 /// propose parmi les fictives, rien ne doit en partir, et rien n'en est joue.
@@ -249,7 +254,7 @@ pub struct Compagnie {
 const NATURES_DITES: [&str; 3] = [" (fictive)", " (démonstration)", " (demonstration)"];
 
 /// La tuile de la compagnie `racine` (`nom_et_lieu`).
-fn entree(id: String, racine: &Path, reelle: bool) -> Result<Compagnie, String> {
+pub(crate) fn entree(id: String, racine: &Path, reelle: bool) -> Result<Compagnie, String> {
     let (mut n, lieu) = nom_et_lieu(racine)?;
     if !reelle {
         // Le nom d'une fictive porte parfois sa nature, entre parentheses : la tuile la dit deja.
@@ -285,7 +290,7 @@ fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Le nom du dossier d'une compagnie.
-fn nom_dossier(p: &Path) -> Result<String, String> {
+pub(crate) fn nom_dossier(p: &Path) -> Result<String, String> {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
         socle::echec::avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
     })
@@ -316,7 +321,7 @@ pub fn liste_de(b: &Path) -> Result<Vec<Compagnie>, String> {
 pub fn a_tenir_a_jour(b: &Path) -> Result<Vec<PathBuf>, String> {
     let mut datees = Vec::new();
     for c in liste_de(b)?.into_iter().filter(|c| c.reelle) {
-        let journal = c.racine.join(crate::interface::JOURNAL_INTERFACE);
+        let journal = c.racine.join(JOURNAL_INTERFACE);
         let date = match std::fs::metadata(&journal).and_then(|m| m.modified()) {
             Ok(d) => Some(d),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -385,7 +390,7 @@ pub(crate) fn nom_de_dossier(nom: &str) -> String {
     }
 }
 
-/// LE JOUR OU UNE COMPAGNIE A ETE AJOUTEE : `config/creation.json`, ecrit par `ajouter_venant` et nulle part
+/// LE JOUR OU UNE COMPAGNIE A ETE AJOUTEE : `config/creation.json`, ecrit par `accueil::ajouter_venant` et nulle part
 /// ailleurs ; il suit la compagnie quand elle change de dossier. Une compagnie d'avant (une fictive livree, la vraie
 /// compagnie d'une installation) n'en a pas.
 pub const FICHIER_CREATION: &str = "creation.json";
@@ -393,10 +398,10 @@ pub const FICHIER_CREATION: &str = "creation.json";
 /// `config/creation.json` : le jour ou la compagnie a ete ajoutee, et par quel chemin du « + ».
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Creation {
-    le: socle::date::Jour,
-    venue: Venue,
-    quoi: String,
+pub(crate) struct Creation {
+    pub(crate) le: socle::date::Jour,
+    pub(crate) venue: Venue,
+    pub(crate) quoi: String,
 }
 
 fn creation(racine: &Path) -> Result<Option<Creation>, String> {
@@ -432,72 +437,6 @@ impl Venue {
 /// Le chemin du « + » par lequel la compagnie est venue ; `None` pour une compagnie d'avant.
 pub fn venue(racine: &Path) -> Result<Option<Venue>, String> {
     Ok(creation(racine)?.map(|c| c.venue))
-}
-
-/// « Ajouter une compagnie » (la route `compagnie-ajouter`) dans l'installation `inst`, par le chemin `venue` : le
-/// dossier et les trois fiches sans lesquelles le contexte ne s'ouvre pas.
-///
-/// LOGICIEL BRIDE : la compagnie ajoutee est une FICTIVE AJOUTEE (`est_ajoutee`) -- sous `fictives/`, dans
-/// un dossier `ajoutee-…`, avec le marqueur d'une fictive et sa marque. Debloque : une compagnie reelle, sous `compagnies/`.
-pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie, String> {
-    let nom = nom.split_whitespace().collect::<Vec<_>>().join(" ");
-    if nom.chars().count() < 2 {
-        return Err("Le nom de la compagnie, s'il vous plait.".into());
-    }
-    let bride = crate::compagnie::bridage::est_bride_de(inst);
-    let (parent, racine_nom) = if bride {
-        (inst.join(DOSSIER_FICTIVES), format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))
-    } else {
-        (inst.join("compagnies"), nom_de_dossier(&nom))
-    };
-    let mut dossier = parent.join(&racine_nom);
-    let mut n = 2;
-    while dossier.exists() {
-        dossier = parent.join(format!("{}-{}", racine_nom, n));
-        n += 1;
-    }
-    let cfg = dossier.join(socle::fichiers::CONFIG);
-    std::fs::create_dir_all(&cfg).map_err(|e| socle::echec::du_disque(&cfg, &e))?;
-    // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`routes::fiches::deriver` : majuscules
-    // SANS ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration.
-    let mut saisie = declarations::champs::Saisie::default();
-    saisie.poser("nom_affichage", declarations::champs::Valeur::Texte(nom.clone()));
-    crate::routes::fiches::deriver("entreprise", &mut saisie, false, &|_| true).map_err(|e| e.message)?;
-    // Toute la configuration est datee (`droit::fiche::dater`) : la premiere valeur vaut de tout temps.
-    // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
-    let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
-    let plate: droit::fiche::ChampsEntreprise = droit::fiche::lire_saisie(&saisie, droit::contexte::ENTREPRISE)?;
-    let fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SALARIES), &droit::fiche::Salaries::default(), 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SPECTACLES), &droit::fiche::Spectacles::default(), 2)?;
-    let quand = Creation {
-        le: creation,
-        venue,
-        quoi: "Le jour ou la compagnie a ete ajoutee a PuppetPaie (« Ajouter une compagnie »). Ce qui tombait avant lui ne la regarde pas (l'horloge d'une fictive ne coche pas une echeance d'avant). `venue` : le chemin du « + », une compagnie neuve ou d'un logiciel precedent (elle commence alors par l'import).".to_string(),
-    };
-    socle::ecriture::ecrire_json(&cfg.join(FICHIER_CREATION), &quand, 2)?;
-    // VENUE D'UN LOGICIEL PRECEDENT, elle commence par reprendre son passe : la boite ou poser ses pieces (`import/`,
-    // celle que `importation-etat` nomme) est la des le premier jour.
-    if matches!(venue, Venue::LogicielPrecedent) {
-        let import = dossier.join("import");
-        std::fs::create_dir_all(&import).map_err(|e| socle::echec::du_disque(&import, &e))?;
-    }
-    let nom_du_dossier = nom_dossier(&dossier)?;
-    if !bride {
-        return entree(format!("cie:{}", nom_du_dossier), &dossier, true);
-    }
-    // Le marqueur d'une fictive (`est_fictive`), et la marque qui la dit ajoutee. `copie_de` ne dit pas le nom d'une
-    // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
-    let marqueur = Marqueur {
-        copie_de: format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
-        depuis: None,
-        ajoutee: Some(true),
-        quand: Some(socle::paris::maintenant()),
-        quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
-    };
-    socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
-    entree(format!("fictive:{}", nom_du_dossier), &dossier, false)
 }
 
 fn origine(racine: &Path) -> Result<PathBuf, String> {

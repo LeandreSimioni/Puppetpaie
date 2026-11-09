@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use socle::date::Jour;
 
-use crate::interface::compagnies::MARQUEUR;
+use crate::compagnie::installation::MARQUEUR;
 const FICHIER_MODE: &str = ".mode-developpeur.json";
 const NOM_DEV: &str = "prive-dev";
 
@@ -21,7 +21,7 @@ const NOM_DEV: &str = "prive-dev";
 /// code absolu et sans `..`.
 fn parent_du_logiciel() -> PathBuf {
     // `<...>/logiciel/donnees` -> `<...>/logiciel` -> `<...>`
-    crate::interface::compagnies::dessus(&crate::interface::compagnies::logiciel())
+    crate::compagnie::installation::dessus(&crate::compagnie::installation::logiciel())
 }
 
 /// Le dossier `donnees/` (le code livre : baremes, echeancier...) : `PUPPETPAIE_CODE` si elle est posee, sinon celui que
@@ -91,9 +91,9 @@ pub fn mode_actif() -> Result<bool, String> {
     Ok(m.actif)
 }
 
-/// La copie de developpement est-elle faite ? Son marqueur le dit, dans sa forme (`interface::compagnies::Marqueur`).
+/// La copie de developpement est-elle faite ? Son marqueur le dit, dans sa forme (`compagnie::installation::Marqueur`).
 pub fn copie_faite() -> Result<bool, String> {
-    Ok(crate::interface::compagnies::marqueur(&dossier_dev())?.is_some())
+    Ok(crate::compagnie::installation::marqueur(&dossier_dev())?.is_some())
 }
 
 /// Le jour de Paris, aujourd'hui.

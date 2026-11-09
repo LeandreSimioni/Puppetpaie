@@ -541,7 +541,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         return Ok(false);
     }
     let fin = le_mois.dernier_jour();
-    let valide_le = match crate::interface::compagnies::cree_le(d.racine)? {
+    let valide_le = match crate::compagnie::installation::cree_le(d.racine)? {
         Some(c) if c > suivant => c.min(jour),
         _ => suivant,
     };

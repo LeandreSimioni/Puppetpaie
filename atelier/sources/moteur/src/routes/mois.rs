@@ -1126,7 +1126,7 @@ pub(crate) fn ecrire_une_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>
     }
     let id = engagement::stock::ecrire_la_carte(ctx, mois, id, saisie, &squelette(ctx, &fichier)?).map_err(|m| erreur(Classe::Refuse, m))?;
     // UN MOIS FAIT EN DEMO, retravaille dans la compagnie gardee : il cesse d'etre « de demo » (`suppression::sortir_de_la_demo`).
-    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
+    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
     Ok(id)
 }
 

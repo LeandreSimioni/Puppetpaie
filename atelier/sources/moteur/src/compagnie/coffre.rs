@@ -546,7 +546,7 @@ pub const CONTENU_PORTABLE: &str = "{\"_quoi\": \"Ce dossier est une installatio
 
 /// Le dossier portable, s'il y en a un : ce qui est a cote de `logiciel/` quand il porte `PORTABLE.json`.
 pub fn dossier_portable() -> Option<PathBuf> {
-    let base = crate::interface::compagnies::base();
+    let base = crate::compagnie::installation::base();
     base.join(MARQUEUR_PORTABLE).is_file().then_some(base)
 }
 

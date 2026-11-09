@@ -120,7 +120,7 @@ type R<T> = Result<T, String>;
 
 /// Le dossier du logiciel (`logiciel/`), resolu.
 pub fn code() -> PathBuf {
-    crate::interface::compagnies::logiciel()
+    crate::compagnie::installation::logiciel()
 }
 
 /// Le dossier des programmes de CE systeme dans `logiciel/` (`dossier_programmes_de`).
@@ -231,7 +231,7 @@ pub(crate) fn ecrire_json<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
 /// `maj/`. Il n'y a qu'un logiciel par installation, et c'est lui qui se met a jour, pas une compagnie : la mise a jour se cherche, se range et
 /// s'applique ici, sans qu'aucune compagnie soit ouverte. Un dossier portable est une installation comme une autre.
 pub fn installation() -> PathBuf {
-    crate::interface::compagnies::base()
+    crate::compagnie::installation::base()
 }
 
 /// `<installation>/maj/` : le reglage, la version prete, ce qui a ete applique, le journal. A cote de `logiciel/`, que la
@@ -565,7 +565,7 @@ fn verifier_la_signature(octets: &[u8], signature: &str, cle_publique: &str) -> 
 /// une copie de developpement.
 pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     let mut v = vec![inst.join("prive")];
-    let groupes: [&str; 2] = ["compagnies", crate::interface::compagnies::DOSSIER_FICTIVES];
+    let groupes: [&str; 2] = ["compagnies", crate::compagnie::installation::DOSSIER_FICTIVES];
     for groupe in groupes {
         let mut autres: Vec<PathBuf> = socle::fichiers::lister(&inst.join(groupe))?.into_iter().flatten().collect();
         autres.sort();
@@ -573,7 +573,7 @@ pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     }
     let mut gardees = Vec::new();
     for r in v {
-        if !crate::interface::compagnies::est_cache(&r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::interface::compagnies::est_copie(&r) || crate::interface::compagnies::est_fictive(&r)?) {
+        if !crate::compagnie::installation::est_cache(&r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::compagnie::installation::est_copie(&r) || crate::compagnie::installation::est_fictive(&r)?) {
             gardees.push(r);
         }
     }
@@ -593,7 +593,7 @@ fn deballer(octets: &[u8], neuf: &Path) -> R<()> {
 /// qu'un dossier portable ajoute (`completer_le_portable`).
 fn deballer_ce_qui(octets: &[u8], neuf: &Path, garder: &dyn Fn(&str) -> bool) -> R<()> {
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(octets)).map_err(|e| format!("archive illisible : {}", e))?;
-    if z.file_names().any(|n| n == format!("{}/VERSION", LOGICIEL) || n.starts_with(&format!("{}/", crate::interface::compagnies::DOSSIER_FICTIVES))) {
+    if z.file_names().any(|n| n == format!("{}/VERSION", LOGICIEL) || n.starts_with(&format!("{}/", crate::compagnie::installation::DOSSIER_FICTIVES))) {
         return Err("C'est une archive d'installation, pas une archive de mise à jour.".into());
     }
     for i in 0..z.len() {
@@ -956,7 +956,7 @@ pub fn empreinte_retenue(fictives: &Path) -> R<Option<String>> {
 }
 
 fn dossier_des_fictives(inst: &Path) -> PathBuf {
-    inst.join(crate::interface::compagnies::DOSSIER_FICTIVES)
+    inst.join(crate::compagnie::installation::DOSSIER_FICTIVES)
 }
 
 /// L'archive des fictives deballee dans `cible` (`cible/fictives/...`). Tout ce qu'elle porte est sous `fictives/` et y
@@ -967,7 +967,7 @@ fn deballer_les_fictives(octets: &[u8], cible: &Path) -> R<()> {
         let mut f = z.by_index(i).map_err(|e| e.to_string())?;
         let rel = f
             .enclosed_name()
-            .filter(|r| r.starts_with(crate::interface::compagnies::DOSSIER_FICTIVES))
+            .filter(|r| r.starts_with(crate::compagnie::installation::DOSSIER_FICTIVES))
             .ok_or_else(|| format!("archive des fictives suspecte : {}", f.name()))?;
         let chemin = cible.join(rel);
         if f.is_dir() {
@@ -996,7 +996,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
     let empreinte = f.empreinte.as_str();
     let maj = dossier_maj(inst);
     let pretes = maj.join(FICTIVES_PRETES);
-    let vise = pretes.join(crate::interface::compagnies::DOSSIER_FICTIVES);
+    let vise = pretes.join(crate::compagnie::installation::DOSSIER_FICTIVES);
     if inst.join(".git").exists() {
         return None;
     }
@@ -1012,7 +1012,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
         let part = maj.join(format!("{}.part", FICTIVES_PRETES));
         let _ = std::fs::remove_dir_all(&part);
         deballer_les_fictives(&octets, &part)?;
-        if empreinte_retenue(&part.join(crate::interface::compagnies::DOSSIER_FICTIVES))?.as_deref() != Some(empreinte) {
+        if empreinte_retenue(&part.join(crate::compagnie::installation::DOSSIER_FICTIVES))?.as_deref() != Some(empreinte) {
             let _ = std::fs::remove_dir_all(&part);
             return Err("l'archive des fictives ne dit pas l'empreinte annoncee".into());
         }
@@ -1030,7 +1030,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
 /// exactement ce que porte chaque fictive livree (`fictives/<nom>/COPIE-DE-DEVELOPPEMENT.json`). Une fictive copiee et
 /// renommee sur le poste dit encore le nom de celle qu'elle copie : ce n'est pas le sien.
 fn marquee_comme_livree(dossier: &Path, nom: &str) -> Result<bool, String> {
-    Ok(crate::interface::compagnies::copie_de(dossier)? == Some(format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom)))
+    Ok(crate::compagnie::installation::copie_de(dossier)? == Some(format!("{} {}", crate::compagnie::installation::MARQUE_FICTIVE, nom)))
 }
 
 /// AU LANCEMENT, avant toute fenetre (`interface::preparer_l_installation`) : la livraison de fictives prete se pose.
@@ -1048,7 +1048,7 @@ fn marquee_comme_livree(dossier: &Path, nom: &str) -> Result<bool, String> {
 /// suivant reessaie. Rend ce qui s'est passe, ou `None` s'il n'y avait rien de pret.
 pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     let pretes = dossier_maj(inst).join(FICTIVES_PRETES);
-    let neuves = pretes.join(crate::interface::compagnies::DOSSIER_FICTIVES);
+    let neuves = pretes.join(crate::compagnie::installation::DOSSIER_FICTIVES);
     let poste = dossier_des_fictives(inst);
     let (nouvelle, ancienne) = match (livraison_retenue(&neuves), livraison_retenue(&poste)) {
         (Ok(None), _) => return None,
@@ -1900,12 +1900,12 @@ fn attendre_fin(pid: u32, _inst: &Path) -> Result<bool, String> {
 }
 
 /// Hors Windows, la prise du verrou n'est jamais heritee (CLOEXEC) : quand LA FENETRE DE CETTE INSTALLATION ne repond plus
-/// a son creneau (`interface::instance::ouverte`, qui compare le dossier de l'installation), elle est partie. Une autre
+/// a son creneau (`instance::ouverte`, qui compare le dossier de l'installation), elle est partie. Une autre
 /// installation ouverte sur le poste a son propre creneau, et ne se confond jamais avec elle.
 #[cfg(not(windows))]
 fn attendre_fin(_pid: u32, inst: &Path) -> Result<bool, String> {
     for _ in 0..120 {
-        if !crate::interface::instance::ouverte(inst, crate::interface::instance::Plage::DU_POSTE)? {
+        if !crate::compagnie::instance::ouverte(inst, crate::compagnie::instance::Plage::DU_POSTE)? {
             return Ok(true);
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -2031,13 +2031,13 @@ pub fn commande(args: &[String]) -> i32 {
         publier(&racine, valeur("--publier").as_deref(), &phrase_publiee(valeur("--notes")), &phrase_publiee(valeur("--calcul")), &phrase_publiee(valeur("--exigee")))
             .map(|r| format!("Publiee : {} ({}) dans {}", version_lue(&r.manifeste.version), r.dire_les_archives(), r.dossier.display()))
     } else if drapeau("--appliquer") {
-        match crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
+        match crate::compagnie::instance::ouverte(&installation(), crate::compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into()),
             Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
             Err(e) => Err(e),
         }
     } else if drapeau("--revenir") {
-        match crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
+        match crate::compagnie::instance::ouverte(&installation(), crate::compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into()),
             Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v))),
             Err(e) => Err(e),

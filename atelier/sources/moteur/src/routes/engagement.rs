@@ -298,7 +298,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
             crate::routes::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
         }
     }
-    crate::interface::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
+    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
     let phrase = match depuis {
         Some(j) => format!("Engagement modifié. {}", vaut_a_partir_du(&j)),
         None => "Engagement modifié.".to_string(),

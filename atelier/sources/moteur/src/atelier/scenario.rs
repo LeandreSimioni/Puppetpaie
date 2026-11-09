@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 
-use crate::interface::compagnies::Venue;
+use crate::compagnie::installation::Venue;
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{Charge, Options, Refus, Reponse};
 
@@ -195,18 +195,18 @@ fn lit_la_boite_aux_lettres(route: Route) -> bool {
 /// d'essai ») n'est celui d'aucune fictive livree : la livraison des fictives (`compagnie::maj`) ne la prend jamais pour une
 /// des siennes. Refuse hors d'une fictive ajoutee.
 pub fn rendre_simulee(racine: &Path) -> Result<(), String> {
-    if !crate::interface::compagnies::est_ajoutee(racine)? {
+    if !crate::compagnie::installation::est_ajoutee(racine)? {
         return Err(format!("{} n'est pas une compagnie ajoutee par le « + » : rien a changer.", racine.display()));
     }
     let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or(format!("{} : un dossier est attendu", racine.display()))?;
-    let marqueur = crate::interface::compagnies::Marqueur {
-        copie_de: format!("{} {} sur le banc d'essai", crate::interface::compagnies::MARQUE_FICTIVE, nom),
+    let marqueur = crate::compagnie::installation::Marqueur {
+        copie_de: format!("{} {} sur le banc d'essai", crate::compagnie::installation::MARQUE_FICTIVE, nom),
         depuis: None,
         ajoutee: None,
         quand: Some(socle::paris::maintenant()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(crate::interface::compagnies::MARQUEUR), &marqueur, 2)
+    socle::ecriture::ecrire_json(&racine.join(crate::compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
 /// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas. L'un et
@@ -434,9 +434,9 @@ pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arr
     let travail = inst.join("pieces-deposees");
     socle::temps::liberer();
     socle::temps::aleas_fixes();
-    crate::interface::compagnies::poser_l_installation_du_rejeu(Some(inst.clone()));
+    crate::compagnie::installation::poser_l_installation_du_rejeu(Some(inst.clone()));
     let rendu = rejouer_les_gestes(scenario, &inst, &travail, &gestes, &instants, options, arrets, lire_au);
-    crate::interface::compagnies::poser_l_installation_du_rejeu(None);
+    crate::compagnie::installation::poser_l_installation_du_rejeu(None);
     socle::temps::liberer();
     rendu
 }
@@ -514,7 +514,7 @@ fn rejouer_les_gestes(
                     Some(v) => v,
                     None => Venue::Neuve,
                 };
-                let c = crate::interface::compagnies::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, m))?;
+                let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, m))?;
                 let rel = relatif(inst, &c.racine).map_err(|m| format!("geste {} : {}", n, m))?;
                 let nomme = match compagnie {
                     Some(c) if c != rel => {
@@ -672,7 +672,7 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> Result<(usize, usize), String> {
 /// en cours d'un passage de la veille, et le journal des incidents (chaque incident porte le fil de la fenetre, ce que la
 /// page a fait avant lui, et la fenetre y note les refus que la page a recus : `compagnie::incidents::noter`).
 fn hors_comparaison(rel: &str) -> bool {
-    rel == crate::interface::JOURNAL_INTERFACE || rel == crate::compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::compagnie::ouverture::ETAPE)
+    rel == crate::compagnie::installation::JOURNAL_INTERFACE || rel == crate::compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::compagnie::ouverture::ETAPE)
 }
 
 /// Les fichiers d'une compagnie, relatifs (barres droites), hors caches.
@@ -758,7 +758,7 @@ pub fn fictives_de_reference(depot: &Path) -> Vec<(String, PathBuf)> {
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.
 fn hors_livraison(rel: &str) -> bool {
-    rel == crate::interface::compagnies::MARQUEUR || rel == crate::compagnie::incidents::INCIDENTS || hors_comparaison(rel)
+    rel == crate::compagnie::installation::MARQUEUR || rel == crate::compagnie::incidents::INCIDENTS || hors_comparaison(rel)
 }
 
 /// LIVRER UNE FICTIVE DE REFERENCE : rejoue `scenario` (jusqu'au jour `jusqu_au`, ou entier) dans une installation de
@@ -795,14 +795,14 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> Result<(), Stri
         }
         std::fs::copy(&source, &cible).map_err(|e| format!("{} : {}", cible.display(), e))?;
     }
-    let marqueur = crate::interface::compagnies::Marqueur {
-        copie_de: format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom),
+    let marqueur = crate::compagnie::installation::Marqueur {
+        copie_de: format!("{} {}", crate::compagnie::installation::MARQUE_FICTIVE, nom),
         depuis: None,
         ajoutee: None,
         quand: fin.map(heure),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&dest.join(crate::interface::compagnies::MARQUEUR), &marqueur, 2)
+    socle::ecriture::ecrire_json(&dest.join(crate::compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
 const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lectures] [--jusqu-au AAAA-MM-JJ]\n\
@@ -952,7 +952,7 @@ mod enregistreur {
 
     /// Ce qu'une empreinte de la compagnie ne regarde pas : les caches que la fenetre refait en fond, et son journal.
     fn hors_empreinte(rel: &str) -> bool {
-        rel == crate::interface::JOURNAL_INTERFACE
+        rel == crate::compagnie::installation::JOURNAL_INTERFACE
             || rel == "ouverture.etat.json"
             || rel.ends_with(crate::compagnie::ouverture::ETAPE)
             || rel.ends_with(".verrou")

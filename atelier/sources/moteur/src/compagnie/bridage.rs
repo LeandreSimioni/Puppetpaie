@@ -69,7 +69,7 @@ fn dit(p: &Path) -> Option<bool> {
 /// Le PAQUET SOUDE : `logiciel/EDITION.json` dit `"edition": "bride"` (ou `"demo"`). Bride pour toujours ; ses envois
 /// sont joues.
 pub fn paquet_soude() -> bool {
-    paquet_soude_de(&crate::interface::compagnies::base())
+    paquet_soude_de(&crate::compagnie::installation::base())
 }
 
 /// Le paquet soude de l'installation `inst` (le dossier qui porte `logiciel/`).
@@ -79,7 +79,7 @@ pub fn paquet_soude_de(inst: &Path) -> bool {
 
 /// Bride ou debloque, pour le logiciel qui tourne (`est_bride_de`).
 pub fn est_bride() -> bool {
-    est_bride_de(&crate::interface::compagnies::base())
+    est_bride_de(&crate::compagnie::installation::base())
 }
 
 /// Bride ou debloque, pour l'installation `inst` : le paquet soude reste bride ; sinon ce que le geste a retenu sur le
@@ -105,7 +105,7 @@ pub const REFUS_D_ENVOI: &str = "L'envoi n'est pas possible depuis la version d�
 /// Chaque envoi vers un organisme ou une personne l'ouvre avant que rien ne s'ecrive (`Branchement::ouvrir`). Ce qui va
 /// a l'editeur (incidents, « Un probleme, une idee ? ») et la verification d'un mot de passe ne sont pas des envois.
 pub fn branchement(racine: &Path) -> Result<envois::branchement::Branchement, String> {
-    use crate::interface::compagnies::{est_ajoutee, est_fictive};
+    use crate::compagnie::installation::{est_ajoutee, est_fictive};
     use envois::branchement::{Branchement, Refus};
     Ok(if est_ajoutee(racine)? {
         Branchement::Message(Refus { classe: socle::echec::Classe::EnvoiBride, phrase: REFUS_D_ENVOI })
@@ -127,7 +127,7 @@ pub fn etat() -> &'static str {
 
 /// Le geste secret de l'accueil : bride <-> debloque, retenu sur le poste. Sans effet sur un paquet soude.
 pub fn basculer() -> Result<(), String> {
-    basculer_de(&crate::interface::compagnies::base())
+    basculer_de(&crate::compagnie::installation::base())
 }
 
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu

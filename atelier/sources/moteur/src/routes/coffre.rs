@@ -954,7 +954,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     let (application, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
-        if let Err(e) = crate::interface::poste::ouvrir_adresse(u) {
+        if let Err(e) = crate::compagnie::poste::ouvrir_adresse(u) {
             eprintln!("Le navigateur ne s'ouvre pas : {}", e);
         }
     };

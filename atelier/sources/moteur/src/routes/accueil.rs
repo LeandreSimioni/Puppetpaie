@@ -1,5 +1,5 @@
 //! L'ACCUEIL DES COMPAGNIES : les routes de l'installation (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`,
-//! `fictives/` : `interface/compagnies.rs`), et non d'une compagnie. Les lister, en ajouter une, choisir sa couleur, remettre
+//! `fictives/` : `compagnie/installation.rs`), et non d'une compagnie. Les lister, en ajouter une, choisir sa couleur, remettre
 //! une fictive livree a zero, garder au deblocage les compagnies creees en demo, completer un dossier portable des systemes
 //! qui lui manquent (`maj::completer_le_portable`) ; et ce que l'administrateur fait sur
 //! toutes ses compagnies a la fois (son tableau, son depot groupe).
@@ -17,7 +17,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::compagnie::administrateur;
-use crate::interface::{compagnies, suppression};
+use crate::accueil::suppression;
+use crate::compagnie::installation as compagnies;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Options, Rendu};
@@ -254,7 +255,7 @@ pub(crate) struct Liste {
     pub(crate) bride: bool,
     pub(crate) a_garder: Vec<suppression::Gardee>,
     phrases: Vec<String>,
-    pub(crate) auteur: crate::interface::auteur::Auteur,
+    pub(crate) auteur: crate::compagnie::auteur::Auteur,
 }
 
 /// Ce que rend `compagnie-ajouter` : la compagnie, et le chemin que la fenetre ouvre.
@@ -344,7 +345,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieAjouter => {
             let a: ChargeAjouter = charge.lire()?;
-            let c = compagnies::ajouter_venant(&inst, &a.nom, a.venue).map_err(operation)?;
+            let c = crate::accueil::ajouter_venant(&inst, &a.nom, a.venue).map_err(operation)?;
             let phrase = if c.reelle {
                 format!("{} est ajoutée.", c.nom)
             } else {
@@ -420,5 +421,5 @@ pub(crate) fn liste(inst: &std::path::Path) -> Result<Liste, String> {
     let reelles = cies.iter().filter(|c| c.reelle).count();
     let phrase = format!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
     let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
-    Ok(Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::interface::auteur::auteur() })
+    Ok(Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::compagnie::auteur::auteur() })
 }

@@ -191,7 +191,7 @@ fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: 
     let (texte, trouve) = incidents::caviarder(&texte);
     // La frontiere (`diagnostic`) vaut aussi pour ce que la personne ecrit : un salarie nomme devient son numero.
     let texte = crate::compagnie::diagnostic::texte_en_forme(Some(racine), &texte, TEXTE_MAX + 200);
-    let fictive = crate::interface::compagnies::est_fictive(racine)?;
+    let fictive = crate::compagnie::installation::est_fictive(racine)?;
     let compagnie = match (fictive, racine.file_name()) {
         (true, Some(n)) => Some(n.to_string_lossy().into_owned()),
         (true, None) | (false, _) => None,

@@ -264,8 +264,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
         Route::CompagnieSupprimer => {
-            let r: crate::interface::suppression::Suppression =
-                crate::interface::suppression::route(&ctx.racine, charge.lire()?, charge.mot_de_passe(), &|_| {}).map_err(|m| erreur(Classe::Refuse, m))?;
+            let r: crate::accueil::suppression::Suppression =
+                crate::accueil::suppression::route(&ctx.racine, charge.lire()?, charge.mot_de_passe(), &|_| {}).map_err(|m| erreur(Classe::Refuse, m))?;
             en_json(r)
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),

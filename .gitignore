@@ -70,7 +70,7 @@ atelier/prive-dev/config/.jeton-interface
 /logiciel/linux/
 /logiciel/mac/
 /ouverture-gardee*.bin
-# LA FENETRE DE CETTE INSTALLATION (ticket #244, moteur/src/interface/instance.rs) : le creneau retenu (son port), et, en
+# LA FENETRE DE CETTE INSTALLATION (ticket #244, moteur/src/compagnie/instance.rs) : le creneau retenu (son port), et, en
 # portable, le profil de son navigateur et le jeton de sa page.
 /.fenetre.json
 /.fenetre/
@@ -103,7 +103,7 @@ demo/*/config/.jeton-interface
 # ET LEUR JOURNAL DE LA FENETRE (14/10/2026, lot N1) : `journal/interface.log`
 # est ecrit par la fenetre a chaque lancement, avec le chemin du dossier sur
 # le poste. Le moteur le range parmi ce qui appartient au poste et non a la
-# compagnie fictive (PROPRES_AU_POSTE, moteur/src/interface/compagnies.rs) : une
+# compagnie fictive (PROPRES_AU_POSTE, moteur/src/compagnie/installation.rs) : une
 # remise a zero le garde, la photo d'origine ne le porte pas. Une fictive n'en
 # a pas besoin pour tourner.
 fictives/*/journal/interface.log

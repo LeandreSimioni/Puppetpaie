@@ -1488,7 +1488,7 @@ installe un second logiciel. `moteur/src/compagnie/administrateur.rs` :
   par la route `deposer` de chacune, avec ses contrôles et son bilan. En réel, un mot de passe tapé au moment de l'acte sert
   de preuve à chaque dépôt, qui le revérifie. Une compagnie qui refuse n'arrête pas les autres. Le bouton n'apparaît qu'à
   partir de deux compagnies qui ont quelque chose de prêt.
-- **Une fenêtre par installation** (`interface/instance.rs`) : deux installations s'ouvrent côte à côte sur un poste (la
+- **Une fenêtre par installation** (`compagnie/instance.rs`) : deux installations s'ouvrent côte à côte sur un poste (la
   clé USB arrive sur un poste qui a déjà son logiciel) ; la même, relancée, ramène sa fenêtre devant. Chacune tient un
   **créneau** de la plage 7330-7429 : un verrou (une prise d'écoute, rendue par le système à la mort du processus) et, au
   port suivant, sa page. Le créneau est **retenu** dans `.fenetre.json` à la racine de l'installation (il voyage avec

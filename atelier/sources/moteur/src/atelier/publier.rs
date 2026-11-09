@@ -90,7 +90,7 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
 const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
-    ["config/coffre.bin", crate::routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", crate::interface::JOURNAL_INTERFACE, LIVREE];
+    ["config/coffre.bin", crate::routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", crate::compagnie::installation::JOURNAL_INTERFACE, LIVREE];
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -98,7 +98,7 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
 /// d'une remise a zero en cours) n'en est pas. Sans aucune fictive, une archive decompressee ouvrirait un accueil vide
 /// (le logiciel y est bride) : refus.
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
-    let dossier = base(code)?.join(crate::interface::compagnies::DOSSIER_FICTIVES);
+    let dossier = base(code)?.join(crate::compagnie::installation::DOSSIER_FICTIVES);
     if !dossier.is_dir() {
         return Err(format!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
     }
@@ -114,7 +114,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
             continue;
         }
         // Une fictive AJOUTEE sur le poste porte les donnees qu'on y a mises : elle ne se livre jamais.
-        if !crate::interface::compagnies::est_fictive_livree(&e.path())? {
+        if !crate::compagnie::installation::est_fictive_livree(&e.path())? {
             continue;
         }
         n += 1;
@@ -168,7 +168,7 @@ fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>>
 /// une fictive, ses seuls fichiers, nommes depuis son dossier) : elle ne depend que des fichiers livres et de leurs noms,
 /// ni de la compression ni des dates, et deux publications aux memes fictives ont la meme.
 fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, String)> {
-    let racine = crate::interface::compagnies::DOSSIER_FICTIVES;
+    let racine = crate::compagnie::installation::DOSSIER_FICTIVES;
     let dossier = base(code)?.join(racine);
     let hex = |h: Sha256| h.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
     let mut entrees = Vec::new();
@@ -275,7 +275,7 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
     for (nom, scenario) in crate::atelier::scenario::fictives_de_reference(base) {
-        let dest = base.join(crate::interface::compagnies::DOSSIER_FICTIVES).join(&nom);
+        let dest = base.join(crate::compagnie::installation::DOSSIER_FICTIVES).join(&nom);
         crate::atelier::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }
     let (_, en_plus, empreinte) = entrees_des_fictives(code)?;
@@ -355,7 +355,7 @@ pub fn cle_de_signature(coffre: &Coffre) -> R<Vec<u8>> {
 }
 
 pub(crate) fn exiger_editeur(racine: &Path, quoi: &str) -> R<()> {
-    if crate::interface::compagnies::est_copie(racine) {
+    if crate::compagnie::installation::est_copie(racine) {
         return Err(format!("Copie de developpement : {} ne part jamais d'ici.", quoi));
     }
     if !reglage(&installation())?.1 {
@@ -392,7 +392,7 @@ pub fn generer_cle(racine: &Path, remplacer: bool) -> R<ClePosee> {
 /// est celui de l'editeur ») se regarde dans `generer_cle` ; ici, seule une copie est refusee.
 pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<ClePosee> {
     let racine = coffre.racine.as_path();
-    if crate::interface::compagnies::est_copie(racine) {
+    if crate::compagnie::installation::est_copie(racine) {
         return Err("Copie de developpement : la cle de signature ne part jamais d'ici.".into());
     }
     let chemin = racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE);

@@ -453,7 +453,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
 fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&str]) -> (std::path::PathBuf, &'static str) {
     let d = outils::dossier_de_test("rejeu", nom);
     let racine = outils::rejeu::livrer(&outils::rejeu::reference(nom), &d, "2026-11-02");
-    assert!(moteur::interface::compagnies::est_fictive_livree(&racine).unwrap(), "la fictive posee n'est pas une fictive livree");
+    assert!(moteur::compagnie::installation::est_fictive_livree(&racine).unwrap(), "la fictive posee n'est pas une fictive livree");
     assert!(!racine.join("journal/incidents.json").exists(), "les incidents du rejeu ne se livrent pas");
     let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour))["phrases"].clone();
     assert_eq!(horloge("2026-11-02"), json!([]), "l'horloge a trouve a faire derriere l'administratrice");

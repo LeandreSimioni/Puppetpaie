@@ -36,7 +36,7 @@ const DU_CODE: [&str; 10] = [
 
 /// LA SIGNATURE DE L'EDITEUR : l'editeur et la compagnie du poste portent le meme nom, et le logiciel le signe en un seul
 /// fichier (la mention de l'auteur et ses sites). Le verrou du nom le laisse passer, lui seul.
-const SIGNATURE: &str = "atelier/sources/moteur/src/interface/auteur.rs";
+const SIGNATURE: &str = "atelier/sources/moteur/src/compagnie/auteur.rs";
 
 fn depot() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()

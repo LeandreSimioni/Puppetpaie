@@ -1479,7 +1479,7 @@ pub struct Machine {
 
 /// La machine, en entier.
 pub fn machine(racine: &Path) -> Machine {
-    let base = crate::interface::compagnies::base();
+    let base = crate::compagnie::installation::base();
     let (totale, libre) = memoire();
     let installation = if base.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
         "portable"
@@ -1518,7 +1518,7 @@ pub fn machine(racine: &Path) -> Machine {
         installation: installation.to_string(),
         chemin: chemin_sans_session(&base),
         edition: crate::compagnie::bridage::etat().to_string(),
-        compagnie: match crate::interface::compagnies::est_fictive(racine) {
+        compagnie: match crate::compagnie::installation::est_fictive(racine) {
             Ok(true) => "fictive".to_string(),
             Ok(false) => "réelle (non nommée)".to_string(),
             Err(e) => socle::echec::phrase_de(&e),

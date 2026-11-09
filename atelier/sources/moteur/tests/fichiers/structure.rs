@@ -14,7 +14,8 @@ use crate::bulletins_fictifs::{a_heures, a_repetitions, page_a, pdf};
 use crate::outils::rejeu::{rejouer_dossier, scenario};
 use crate::outils::{dossier_de_test, route, route_avec};
 use moteur::compagnie::administrateur::Poste;
-use moteur::interface::compagnies::{ajouter_venant, Venue};
+use moteur::accueil::ajouter_venant;
+use moteur::compagnie::installation::Venue;
 use moteur::compagnie::demande::VARIABLE_ESSAIS;
 
 /// La longueur d'un geste, en caracteres : une phrase breve.

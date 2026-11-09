@@ -1,5 +1,5 @@
 //! SUPPRIMER UNE COMPAGNIE, ET GARDER AU DEBLOCAGE CELLES QU'ON A AJOUTEES EN DEMO
-//! (`interface::suppression`). Les contrats : la question du deblocage ne liste que les fictives ajoutees d'un logiciel
+//! (`accueil::suppression`). Les contrats : la question du deblocage ne liste que les fictives ajoutees d'un logiciel
 //! debloque ; une compagnie gardee devient reelle (sous `compagnies/`, sans marqueur, son coffre garde, ses mois faits en
 //! demo montres non declares) ; une compagnie qu'on ne garde pas est effacee ; une fictive livree ne se supprime pas ; une
 //! compagnie reelle ne se supprime que sur le mot de passe du logiciel (code du travail, article L3243-4, `atelier/
@@ -10,8 +10,9 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use moteur::compagnie::administrateur::{self, Poste};
-use moteur::interface::compagnies::{ajouter_venant, liste_de, Venue};
-use moteur::interface::suppression::{self, supprimer};
+use moteur::accueil::ajouter_venant;
+use moteur::accueil::suppression::{self, supprimer};
+use moteur::compagnie::installation::{liste_de, Venue};
 use serde_json::json;
 
 use crate::outils::{debloquer, dossier_de_test, installation};

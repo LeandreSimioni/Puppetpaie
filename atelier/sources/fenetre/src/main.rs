@@ -67,12 +67,12 @@ fn main() -> std::process::ExitCode {
     }
 
     moteur::commandes::compagnie::fixer_le_code();
-    // UNE FENETRE PAR INSTALLATION (`moteur::interface::instance`). Celle de cette installation est deja
+    // UNE FENETRE PAR INSTALLATION (`moteur::compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.
     let prise = match moteur::interface::prendre_instance(devant) {
-        Ok(moteur::interface::Instance::Tenue(p)) => p,
-        Ok(moteur::interface::Instance::Devant) => return std::process::ExitCode::SUCCESS,
+        Ok(moteur::compagnie::instance::Instance::Tenue(p)) => p,
+        Ok(moteur::compagnie::instance::Instance::Devant) => return std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
             std::process::exit(1);
@@ -98,7 +98,7 @@ fn main() -> std::process::ExitCode {
     // Les compagnies de l'installation se tiennent a jour en fond des maintenant, sans rien ouvrir (calcul local seulement).
     fenetre.prechauffer();
     // LE PROFIL DU NAVIGATEUR DE LA FENETRE, a elle (WebView2 sous Windows, WebKit ailleurs) : un par fenetre
-    // (`instance::dossier_local`), jamais celui d'une autre installation ouverte a cote -- ses cookies, ce qu'elle a
+    // (`navigateur::dossier_local`), jamais celui d'une autre installation ouverte a cote -- ses cookies, ce qu'elle a
     // retenu, et son processus de rendu.
     let profil = fenetre.dossier_local().join("webview");
     let adresse = fenetre.adresse("127.0.0.1", port);

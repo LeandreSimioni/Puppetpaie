@@ -1,8 +1,8 @@
 //! SUPPRIMER UNE COMPAGNIE, ET GARDER AU DEBLOCAGE CELLES QU'ON A AJOUTEES EN DEMO. Tout se decide ici ; la fenetre (`interface/mod.rs`) passe la saisie de la page et lache ce qu'elle tient
 //! de la compagnie (sa veille, sa file sur le fil des calculs, son journal) au moment ou on le lui dit.
 //!
-//! SUPPRIMER (`supprimer`). Une FICTIVE LIVREE ne se supprime pas : elle se remet a zero (`compagnies::remettre_a_zero`),
-//! et la route le refuse (`genre`). Une FICTIVE AJOUTEE (`compagnies::est_ajoutee`) se supprime sur une confirmation simple
+//! SUPPRIMER (`supprimer`). Une FICTIVE LIVREE ne se supprime pas : elle se remet a zero (`installation::remettre_a_zero`),
+//! et la route le refuse (`genre`). Une FICTIVE AJOUTEE (`installation::est_ajoutee`) se supprime sur une confirmation simple
 //! de la page. Une COMPAGNIE REELLE (`prive/`, `compagnies/<nom>`) porte des documents qu'un employeur conserve (le double
 //! des bulletins, cinq ans : code du travail, article L3243-4, `atelier/reference/sources/code-du-travail/
 //! articles-20261021.md`) : la supprimer est irreversible, et se confirme PAR LE MOT DE PASSE DU LOGICIEL, tape par un
@@ -15,7 +15,7 @@
 //! efface ; ce qui ne s'efface pas reste cache (l'accueil, la mise a jour et l'administrateur ignorent un dossier qui
 //! commence par un point) et s'efface au lancement suivant (`effacer_les_restes`). Avec la compagnie partent : son
 //! entree au registre de l'administrateur (`administrateur::oublier`), sa seance gardee a cote de la cle du poste
-//! (`Coffre::oublier_ouverture_gardee`). Le prechauffage (`compagnies::a_tenir_a_jour`) et la derniere ouverte (la date
+//! (`Coffre::oublier_ouverture_gardee`). Le prechauffage (`installation::a_tenir_a_jour`) et la derniere ouverte (la date
 //! de son `journal/interface.log`) se lisent sur le disque : rien a defaire.
 //!
 //! AU DEBLOCAGE (`a_garder`, `repondre`). Un logiciel debloque qui porte encore des fictives ajoutees demande, a l'accueil,
@@ -41,7 +41,7 @@
 use std::path::{Path, PathBuf};
 
 
-use super::compagnies::{self, Compagnie};
+use crate::compagnie::installation::{self, Compagnie};
 use crate::compagnie::administrateur::Poste;
 
 /// La mention de demo d'une compagnie gardee.
@@ -80,7 +80,7 @@ fn de_l_installation(inst: &Path, racine: &Path) -> Result<bool, String> {
     if nom.starts_with('.') || !r.join(droit::contexte::ENTREPRISE).is_file() {
         return Ok(false);
     }
-    Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(compagnies::DOSSIER_FICTIVES)))
+    Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(installation::DOSSIER_FICTIVES)))
 }
 
 /// Ce qu'est `racine` pour sa suppression, ou pourquoi elle ne se supprime pas.
@@ -91,13 +91,13 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
             socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
         ));
     }
-    if compagnies::est_ajoutee(racine)? {
+    if installation::est_ajoutee(racine)? {
         return Ok(Genre::Ajoutee);
     }
-    if compagnies::est_fictive(racine)? {
+    if installation::est_fictive(racine)? {
         return Err("Une compagnie fictive livrée ne se supprime pas : elle se remet à zéro, depuis sa tuile de l'accueil.".into());
     }
-    if compagnies::est_copie(racine) {
+    if installation::est_copie(racine) {
         return Err("Une copie de test ne se supprime pas depuis le logiciel.".into());
     }
     Ok(Genre::Reelle)
@@ -108,7 +108,7 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
 pub fn question(racine: &Path) -> Result<Suppression, String> {
     let inst = crate::compagnie::administrateur::installation_de(racine);
-    let nom = compagnies::nom_de(racine)?;
+    let nom = installation::nom_de(racine)?;
     let g = match genre(&inst, racine) {
         Ok(g) => g,
         Err(phrase) => return Ok(Suppression { phrase, ..Suppression::de(nom) }),
@@ -226,7 +226,7 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) ->
 /// n'efface rien et n'appelle pas `avant`.
 pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &Poste, avant: &dyn Fn(&Path)) -> Result<String, String> {
     let g = genre(inst, racine)?;
-    let nom = compagnies::nom_de(racine)?;
+    let nom = installation::nom_de(racine)?;
     if g == Genre::Reelle {
         prouver(racine, &nom, motdepasse, poste)?;
     }
@@ -260,7 +260,7 @@ fn effacer(racine: &Path) -> Result<(), String> {
 /// AU LANCEMENT : les restes d'une suppression qui ne s'etaient pas effaces. Rend ceux qui sont partis.
 pub fn effacer_les_restes(inst: &Path) -> Vec<PathBuf> {
     let mut partis = Vec::new();
-    for d in [inst.to_path_buf(), inst.join("compagnies"), inst.join(compagnies::DOSSIER_FICTIVES)] {
+    for d in [inst.to_path_buf(), inst.join("compagnies"), inst.join(installation::DOSSIER_FICTIVES)] {
         for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             if e.file_name().to_string_lossy().starts_with(PREFIXE_RESTE) && std::fs::remove_dir_all(e.path()).is_ok() {
                 partis.push(e.path());
@@ -279,8 +279,8 @@ pub fn a_garder(inst: &Path) -> Result<Vec<Compagnie>, String> {
         return Ok(Vec::new());
     }
     let mut ajoutees = Vec::new();
-    for c in compagnies::liste_de(inst)? {
-        if !c.reelle && compagnies::est_ajoutee(&c.racine)? {
+    for c in installation::liste_de(inst)? {
+        if !c.reelle && installation::est_ajoutee(&c.racine)? {
             ajoutees.push(c);
         }
     }
@@ -290,13 +290,13 @@ pub fn a_garder(inst: &Path) -> Result<Vec<Compagnie>, String> {
 /// GARDER la fictive ajoutee `racine` : elle devient une compagnie reelle, sous `compagnies/` (un nom de dossier tire du
 /// sien, jamais celui d'une compagnie deja la), sans marqueur de fictive, avec sa mention de demo. Rend la compagnie.
 fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
-    let nom = compagnies::nom_de(racine)?;
-    let creee_le = compagnies::marqueur(racine)?
+    let nom = installation::nom_de(racine)?;
+    let creee_le = installation::marqueur(racine)?
         .and_then(|m| m.quand)
         .ok_or("Le marqueur de la compagnie créée en démo ne dit pas quand elle a été créée : rien n'a changé.")?;
     let parent = inst.join("compagnies");
     std::fs::create_dir_all(&parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
-    let base = compagnies::nom_de_dossier(&nom);
+    let base = installation::nom_de_dossier(&nom);
     let mut cible = parent.join(&base);
     let mut n = 2;
     while cible.exists() {
@@ -317,10 +317,10 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.
     let a_part = || socle::echec::APart { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
-    std::fs::remove_file(cible.join(compagnies::MARQUEUR))
+    std::fs::remove_file(cible.join(installation::MARQUEUR))
         .map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", socle::echec::APart { detail: Some(e.to_string()), ..a_part() }))?;
     let gardee = absolu(&cible)?;
-    for c in compagnies::liste_de(inst)? {
+    for c in installation::liste_de(inst)? {
         if absolu(&c.racine)? == gardee {
             return Ok(c);
         }

@@ -139,7 +139,7 @@ confirmation, une compagnie réelle sur le mot de passe du logiciel (le double
 des bulletins se conserve cinq ans, article L3243-4) ; une fictive livrée ne
 se supprime pas, elle se remet à zéro. Le dossier est renommé en dossier caché
 (`.supprimee-…`) puis effacé ; un reste s'efface au lancement suivant
-(`moteur/src/interface/suppression.rs`).
+(`moteur/src/accueil/suppression.rs`).
 
 **L'archive de mise à jour** (`puppetpaie-<version>-<système>.zip`, celle que
 `derniere.json` nomme et que le logiciel télécharge tout seul) ne sert pas à

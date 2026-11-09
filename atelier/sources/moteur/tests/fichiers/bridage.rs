@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use moteur::compagnie::bridage::{est_bride_de, paquet_soude_de};
-use moteur::interface::compagnies::liste_de;
+use moteur::compagnie::installation::liste_de;
 
 use crate::outils::dossier_de_test;
 

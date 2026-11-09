@@ -945,7 +945,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         Some(v) if v.join(socle::fichiers::CONFIG).is_dir() => v,
         Some(_) | None => logiciel.to_path_buf(),
     };
-    if crate::interface::compagnies::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
+    if crate::compagnie::installation::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
         if let Some(s) = lire_config(&reel)?.serveur.filter(|s| !s.is_empty()) {
             return Ok((s, reel));
         }
