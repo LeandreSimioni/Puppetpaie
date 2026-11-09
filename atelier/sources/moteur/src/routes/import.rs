@@ -103,14 +103,14 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         // `{"dossier": ...}` (vide ou absent : `import/` de la compagnie) : la boite aux lettres entiere, bulletins
         // compris (`import::bulletins`).
-        Route::ImportationApercu => en_json(crate::import::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
+        Route::ImportationApercu => en_json(crate::importation::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
             en_json(etat_importation(&ctx.racine)?)
         }
-        Route::Importer => en_json(crate::import::ecrite::importer(ctx, &charge.lire()?)?),
+        Route::Importer => en_json(crate::importation::ecrite::importer(ctx, &charge.lire()?)?),
         // La nature des contrats repris qu'aucun bulletin ne dit.
-        Route::ImportationNature => en_json(crate::import::nature::dire(ctx, &charge.lire()?)?),
+        Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
         autre => Err(enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -169,7 +169,7 @@ fn ecarts(nom: &str, fiche: &Saisie, declare: &Saisie, mois: &str) -> R<Vec<Ecar
     for c in declarations::champs::fiche(nom)? {
         let (Some(b), Some(a)) = (declare.case(&c.cle).filter(|_| c.declare), fiche.case(&c.cle)) else { continue };
         // Une case vide ou « A COMPLETER » n'est pas un ecart : l'import la complete (`import::completer`).
-        if crate::import::completer::vide(Some(a)) || en_mots(a) == en_mots(b) {
+        if crate::importation::completer::vide(Some(a)) || en_mots(a) == en_mots(b) {
             continue;
         }
         // Une structure (la banque) ne differe que par ce que la DSN en declare : ses notes et autres cases restent.
@@ -228,7 +228,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
     let du_catalogue = match m {
         Some(m) => Some(m),
         None => match emploi.and_then(|e| e.emploi.as_deref()) {
-            Some(intitule) => match droit::emplois::par_intitule(intitule, crate::import::bulletins::compare)? {
+            Some(intitule) => match droit::emplois::par_intitule(intitule, crate::importation::bulletins::compare)? {
                 Some((c, _)) => droit::emplois::metier(&c)?,
                 None => None,
             },
@@ -312,7 +312,7 @@ pub(crate) struct Apercu {
     pub(crate) reponse: Importation,
     pub(crate) a_creer: Vec<ACreer>,
     /// Les fiches existantes que l'import completerait (`import::completer`).
-    pub(crate) a_completer: Vec<crate::import::completer::ACompleter>,
+    pub(crate) a_completer: Vec<crate::importation::completer::ACompleter>,
     pub(crate) contrats: Vec<dsn_aem::ContratAtteste>,
     /// Les versements declares par les DSN, rattaches a une fiche (ou `<a creer>`).
     pub(crate) paies: Vec<engagement::importe::PaieLue>,
@@ -470,13 +470,13 @@ pub(crate) fn apercu_lu(
     let mut entreprise: Option<FicheImportee> = None;
     let mut a_creer = 0usize;
     let mut a_creer_liste: Vec<ACreer> = Vec::new();
-    let mut a_completer: Vec<crate::import::completer::ACompleter> = Vec::new();
+    let mut a_completer: Vec<crate::importation::completer::ACompleter> = Vec::new();
     let vide = Saisie::default();
     if !lecture.entreprise.est_vide() {
         let mut e = fiche_entreprise(&lecture)?;
         garder_le_nom(ctx, &mut e)?;
         if ctx.entreprise.siren.is_none() {
-            let anomalies = proposee::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
             let libelle = match e.mot("raison_sociale") {
                 Some(r) => r,
                 None => "?".to_string(),
@@ -492,10 +492,10 @@ pub(crate) fn apercu_lu(
             let fiche = proposee::de("entreprise", &ctx.entreprise)?;
             let ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, &lecture.dernier_mois)?;
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::import::completer::champs_a_completer("entreprise", &fiche, &e)?;
+            let champs = crate::importation::completer::champs_a_completer("entreprise", &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(&lecture.dernier_mois));
             entreprise = Some(f);
-            crate::import::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
+            crate::importation::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
         }
     }
 
@@ -516,14 +516,14 @@ pub(crate) fn apercu_lu(
             let fiche = vue_salarie(ctx, cle)?;
             let ec = ecarts("salarie", &fiche, &decl.fiche()?, &decl.mois)?;
             let mut entree = FicheImportee::new("salarie", Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::import::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
+            let champs = crate::importation::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(&decl.mois));
-            crate::import::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
             salaries.push(entree);
             continue;
         }
         let donnees = fiche_salarie(decl)?;
-        let anomalies = proposee::verifier_comme_a_l_ecriture("salarie", &donnees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &donnees)?;
         salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         a_creer_liste.push(ACreer { nom: "salarie", rang: Some(salaries.len() - 1), donnees });
         cles_a_venir.insert(decl.nir.clone());
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
         }
         let source = if o.aem { "AEM" } else { "DSN" };
         let sp = SpectacleDesPieces {
-            titre: crate::import::completer::A_COMPLETER,
+            titre: crate::import::proposee::A_COMPLETER,
             numero_objet: o.numero.clone(),
             alias: Vec::new(),
             actif: o.dernier >= seuil,
@@ -600,7 +600,7 @@ pub(crate) fn apercu_lu(
             titre_lu_dans: None,
         };
         let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = proposee::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         spectacles.push(FicheImportee::new(
             "spectacle",
             None,
@@ -775,7 +775,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         editeur,
         pastille_repris: socle::ecran::Pastille::de("fait", "fait"),
         attend_editeur,
-        a_dire: crate::import::nature::a_dire(racine)?,
+        a_dire: crate::importation::nature::a_dire(racine)?,
         guide: crate::import::guide::guide(),
         repris_dit,
         repris_titre,
@@ -799,7 +799,7 @@ struct EtatImportation {
     pastille_repris: socle::ecran::Pastille,
     attend_editeur: usize,
     /// Les contrats repris dont la nature reste a dire, par salarie.
-    a_dire: Vec<crate::import::nature::ADire>,
+    a_dire: Vec<crate::importation::nature::ADire>,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: crate::import::guide::Guide,
     repris_dit: Option<String>,

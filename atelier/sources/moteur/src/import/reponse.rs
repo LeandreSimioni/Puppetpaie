@@ -667,12 +667,6 @@ pub struct Importation {
     pub couleur: Option<&'static str>,
 }
 
-impl crate::routes::enveloppe::Dite for Importation {
-    fn phrase(&self) -> &str {
-        &self.phrase
-    }
-}
-
 /// « 3 bulletins » : `n` et le mot, au pluriel quand il le faut ; rien pour zero.
 pub(crate) fn n_mots(n: usize, mot: &str) -> String {
     match n {

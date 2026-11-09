@@ -1,15 +1,15 @@
 //! `importer` : ecrit ce que `importation-apercu` annonce.
 //!
-//! `{"dossier": ...}` : la boite aux lettres `import/` entiere, comme l'apercu (`import::bulletins`). Dans l'ordre : ce
+//! `{"dossier": ...}` : la boite aux lettres `import/` entiere, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
 //! qui est repris (DSN, AEM, PDF dont une page au moins est reprise) est COPIE dans `historique/bulletins/`, sous le nom
-//! de sa copie (`<empreinte>.<pdf|dsn|txt>` : rien de personnel ; `import::bulletins::nom_copie`) -- rien ne s'ecrase ;
+//! de sa copie (`<empreinte>.<pdf|dsn|txt>` : rien de personnel ; `importation::bulletins::nom_copie`) -- rien ne s'ecrase ;
 //! l'apercu est relu DANS ces copies, et c'est lui qui s'ecrit ; l'alerte CASC-SVP (`alerte_apres_import`) ; les fiches
 //! a creer (entreprise, salaries, spectacles), ecrites comme celles de l'ecran (`crate::routes::fiches::ecrire_fiche`,
 //! `forcer`) ; les ENGAGEMENTS IMPORTES (`engagement::importe`), chacun dans `engagements/AAAA-MM.json`, le fichier de son
 //! mois d'entree (`engagement::importe::ecrire_tous`) : le contrat qu'une AEM ou un bulletin atteste, et ce qui a ete verse, mois par mois (la DSN
 //! deposee, completee par le bulletin). Un import se rejoue sans dommage. La reponse est celle de l'apercu, completee de
 //! ce qui a ete ecrit (`ecrit`, `fichiers`, `copie`) ; elle garde le compte rendu (`tri`) du dossier lu, pour l'ecran ;
-//! un document accepte et pas lu part en incident, masque (`import::incident`). Les pieces copiees restent sous
+//! un document accepte et pas lu part en incident, masque (`importation::incident`). Les pieces copiees restent sous
 //! `historique/` : le dossier du salarie montre les pages des bulletins, l'alerte CASC-SVP relit les DSN.
 //!
 //! UNE PAIE, DEUX SOURCES, UNE LIGNE (les deux chemins) : une ligne de DSN qui arrive sur une ligne que des bulletins
@@ -135,7 +135,7 @@ fn declaree_par_bulletin(x: &PaieLue) -> bool {
     x.paie.declare_par == Declaration::Bulletin
 }
 
-/// Complete une paie par ce qu'un bulletin a ecrit d'elle (`b`), comme `import::bulletins::completer` : sur le
+/// Complete une paie par ce qu'un bulletin a ecrit d'elle (`b`), comme `importation::bulletins::completer` : sur le
 /// brut, le net imposable, le net a payer et le PAS, le bulletin l'emporte ; le numero d'objet et le jour du versement
 /// remplissent ce qui est vide ; les colonnes du bulletin s'ajoutent (les heures, cachets et jours sont ceux du mois
 /// d'un permanent).
@@ -444,7 +444,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
     let mut ecrits: BTreeSet<String> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (cle, anomalies) = crate::import::proposee::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
+        let (cle, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
         let emplacement = match (a.nom, a.rang) {
             ("entreprise", _) => reponse.entreprise.as_mut(),
             ("salarie", Some(i)) => reponse.salaries.get_mut(i),
@@ -468,7 +468,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
     for a in &imp.a_completer {
-        let faits = crate::import::proposee::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
+        let faits = crate::importation::fiches::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
         if !faits.est_dite() {
             continue;
         }
@@ -605,7 +605,7 @@ fn dossier_bulletins(ctx: &Contexte) -> PathBuf {
 /// La copie de ce que le dossier lu reprend, dans `historique/bulletins/`, sous le nom de sa copie. RIEN NE S'ECRASE :
 /// un fichier deja copie et identique est laisse ; un autre contenu sous le meme nom est laisse aussi, et SIGNALE (il
 /// n'est pas relu). Rend le compte, et les noms a relire.
-fn copier_repris(ctx: &Contexte, lu: &crate::import::bulletins::DossierLu) -> R<(Copie, Vec<String>)> {
+fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) -> R<(Copie, Vec<String>)> {
     let dossier = dossier_bulletins(ctx);
     let (mut copies, mut identiques) = (0usize, 0usize);
     let (mut differents, mut noms): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
@@ -641,9 +641,9 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     let aujourdhui = ctx.date;
     let dossier = crate::routes::import::dossier_import(ctx, charge)?;
     // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
-    let (tri, copie, noms, deposes) = crate::import::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |mut lu| {
+    let (tri, copie, noms, deposes) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |mut lu| {
         let (copie, noms) = copier_repris(ctx, &lu)?;
-        crate::import::incident::noter_les_non_lus(ctx, &lu)?;
+        crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = std::mem::take(&mut lu.ap.reponse.tri);
         // La copie se relit sous le nom du fichier depose.
         let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.clone(), lu.tri.fichiers[*i].chemin.clone())).collect();
@@ -660,7 +660,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
             std::fs::copy(copies.join(nom), relu.join(nom)).map_err(|e| en_os(&e, &copies.join(nom)))?;
         }
         let frais_avant = Contexte::nouveau(&ctx.racine, None).map_err(Echec::from)?;
-        crate::import::bulletins::lire_dossier(&frais_avant, &relu, &deposes, |lu| Ok(lu.ap))
+        crate::importation::bulletins::lire_dossier(&frais_avant, &relu, &deposes, |lu| Ok(lu.ap))
     };
     let rendu = relire();
     let _ = std::fs::remove_dir_all(&relu);
@@ -695,9 +695,9 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     // Ce que les DSN reprises disent de la configuration hors de la fiche (le taux AT/MP, les organismes), lu avec les
     // fiches telles que l'import les a ecrites.
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(Echec::from)?;
-    let mut faits = crate::import::parametrage::parametrer(&frais);
+    let mut faits = crate::importation::parametrage::parametrer(&frais);
     // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
-    faits.extend(crate::import::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
+    faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
     reponse.parametrage = faits;
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
@@ -721,7 +721,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDos
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(Echec::from)?;
     {
         for sp in frais.spectacles.values().filter(|sp| !sp.archivee()) {
-            if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(crate::import::completer::A_COMPLETER)) {
+            if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(crate::import::proposee::A_COMPLETER)) {
                 if sp.titre_propose.as_deref().is_some_and(|t| !t.is_empty()) {
                     proposes += 1;
                 } else {

@@ -18,7 +18,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::forme::NombreLu;
 
 use super::{date_proposee, ecrire, maintenant, plain, refus, DejaDeclare};
-use crate::import::completer::A_COMPLETER;
+use crate::import::proposee::A_COMPLETER;
 use crate::routes::mois::sauver_avant;
 
 // ------------------------------------------------------------------ les trois fiches

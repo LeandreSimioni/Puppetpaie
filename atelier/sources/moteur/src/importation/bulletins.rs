@@ -58,7 +58,7 @@ use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
 use socle::echec::erreur;
-use crate::import::completer as completer;
+use crate::importation::completer as completer;
 use crate::import::proposee;
 use crate::import::tri::Sorte;
 use socle::num::Decimal;
@@ -615,7 +615,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             completer_a_creer(&mut ap.a_creer, &mut reponse, "salarie", Some(nir), &proposees)?;
             continue;
         }
-        let anomalies = proposee::verifier_comme_a_l_ecriture("salarie", &proposees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &proposees)?;
         let libelle = libelle_propose(&proposees);
         reponse.salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
         ap.a_creer.push(ACreer { nom: "salarie", rang: Some(reponse.salaries.len() - 1), donnees: proposees });
@@ -653,7 +653,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             completer_a_creer(&mut ap.a_creer, &mut reponse, "salarie", Some(nir), &proposees)?;
             continue;
         }
-        let anomalies = proposee::verifier_comme_a_l_ecriture("salarie", &proposees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &proposees)?;
         let libelle = libelle_propose(&proposees);
         let mut entree = FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
         entree.lu_dans = Some(origine_cert(dernier));
@@ -795,14 +795,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             if let Some(x) = &analytique {
                 proposee::completer_de(&mut a.donnees, &code(x)?);
             }
-            let anomalies = proposee::verifier_comme_a_l_ecriture("spectacle", &a.donnees)?;
+            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &a.donnees)?;
             reponse.spectacles[rang].poser(&a.donnees, anomalies);
             continue;
         }
         // Un numero d'objet est lu sur un bulletin au moins : il a son premier et son dernier mois.
         let (Some(premier), Some(dernier)) = (rangs.iter().map(|&k| lus[k].mois.clone()).min(), rangs.iter().map(|&k| lus[k].mois.clone()).max()) else { continue };
         let sp = SpectacleDesPieces {
-            titre: completer::A_COMPLETER,
+            titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
             alias: Vec::new(),
             actif: dernier >= seuil,
@@ -812,7 +812,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             titre_lu_dans: propose.as_ref().map(|p| p.1),
         };
         let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = proposee::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         let libelle = match &propose {
             Some((t, _)) => format!("numéro d'objet {}, titre proposé « {} » (bulletins de {} à {})", numero, t, premier, dernier),
             None => format!("numéro d'objet {}, sans titre (bulletins de {} à {})", numero, premier, dernier),
@@ -837,7 +837,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let (Some(premier), Some(dernier)) = (mois.iter().min().cloned(), mois.iter().max().cloned()) else { continue };
         let sp = SpectacleDesPieces {
-            titre: completer::A_COMPLETER,
+            titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
             alias: Vec::new(),
             actif: dernier >= seuil,
@@ -847,7 +847,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             titre_lu_dans: None,
         };
         let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = proposee::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         let libelle = format!("numéro d'objet {}, sans titre (AEM de {} à {})", numero, premier, dernier);
         reponse.spectacles.push(FicheImportee::new("spectacle", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         ap.a_creer.push(ACreer { nom: "spectacle", rang: Some(reponse.spectacles.len() - 1), donnees });
@@ -1489,7 +1489,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &st
         return Ok(());
     }
     proposee::fondre(&mut a.donnees, &champs);
-    let anomalies = proposee::verifier_comme_a_l_ecriture(nom, &a.donnees)?;
+    let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(nom, &a.donnees)?;
     let entree = match (nom, a.rang) {
         ("entreprise", _) => reponse.entreprise.as_mut(),
         (_, Some(i)) => reponse.salaries.get_mut(i),
@@ -1505,7 +1505,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &st
 /// bulletin), sous le nom que la personne lui a donne.
 fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation, mut e: Saisie, origine: Option<Origine>) -> R<()> {
     ri::garder_le_nom(ctx, &mut e)?;
-    let anomalies = proposee::verifier_comme_a_l_ecriture("entreprise", &e)?;
+    let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
     let libelle = match e.mot("raison_sociale") {
         Some(r) => r,
         None => "?".to_string(),

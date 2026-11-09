@@ -15,6 +15,7 @@ pub mod etat_garde;
 pub mod historique_mois;
 pub mod horloge;
 pub mod import;
+pub mod importation;
 pub mod interface;
 pub mod obligations;
 pub mod regularisation;

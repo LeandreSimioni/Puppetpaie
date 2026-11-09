@@ -1,27 +1,20 @@
-//! L'IMPORT : le passe d'une compagnie, tenu dans un autre logiciel. Les DSN et les AEM deposees (`dsn_aem`), les
-//! bulletins (`bulletin_lu`, `bulletins`), les certificats Congés Spectacles (`certificat_lu`) et les AEM en PDF (`aem_lu`),
-//! ce qu'une piece atteste une seule fois (`attestes`), leur tri dans la boite d'import, ce qui s'ecrit (`ecrite` : les engagements
-//! importes), ce qui complete une fiche, la nature des contrats que les bulletins n'ont pas dite, le mois importe tel
-//! que la page le montre, la regularisation CASC-SVP des mois importes, les ecarts de calcul et l'incident d'un import
-//! qui n'a pas abouti (caviarde avant de partir) ; le guide de ce qu'on y met (`guide`) ; ce que les DSN reprises
-//! disent de la configuration (`parametrage`).
+//! L'IMPORT : le passe d'une compagnie, tenu dans un autre logiciel, tel que ses pieces le disent. Les DSN et les AEM
+//! deposees (`dsn_aem`), les bulletins (`bulletin_lu`), les certificats Congés Spectacles (`certificat_lu`) et les AEM en
+//! PDF (`aem_lu`), ce qu'une piece atteste une seule fois (`attestes`), leur tri dans la boite d'import (`tri`), les
+//! fiches que les pieces proposent (`proposee`), la reponse de l'import telle que la page la lit (`reponse`), le mois
+//! importe tel que la page le montre (`mois`), les ecarts de calcul (`ecarts`) et le caviardage de ce qui part chez
+//! l'editeur (`caviardage`) ; le guide de ce qu'on y met (`guide`). Rien ici ne prend au-dessus de la compagnie : ce que
+//! l'import compose et ecrit pour une route est dans `crate::importation`.
 
 pub mod aem_lu;
 pub mod attestes;
 pub mod bulletin_lu;
-pub mod bulletins;
-pub mod casc;
 pub mod certificat_lu;
 pub mod caviardage;
-pub mod completer;
 pub mod dsn_aem;
 pub mod ecarts;
-pub mod ecrite;
 pub mod guide;
-pub mod incident;
 pub mod mois;
-pub mod nature;
-pub mod parametrage;
 pub mod proposee;
 pub mod releve;
 pub mod reponse;

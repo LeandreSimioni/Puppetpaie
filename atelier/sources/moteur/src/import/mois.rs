@@ -20,7 +20,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu
 use envois::etats;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::num::Decimal;
-use crate::import::completer::A_COMPLETER;
+use crate::import::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
 fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {

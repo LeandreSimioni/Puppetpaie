@@ -24,7 +24,7 @@ use regex::Regex;
 use sha2::{Digest, Sha256};
 
 use crate::compagnie::incidents;
-use crate::import::bulletins::DossierLu;
+use crate::importation::bulletins::DossierLu;
 use crate::import::tri::Sorte;
 use droit::contexte::Contexte;
 use socle::texte::sans_accent;

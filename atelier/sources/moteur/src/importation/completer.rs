@@ -3,9 +3,9 @@
 //!
 //! Une fiche que l'import CREE recoit tout ce que la DSN et les bulletins disent. Une fiche qui EXISTE recoit ce qui y
 //! est vide ou « A COMPLETER » (sans casse : le titre que l'import des DSN donne a un spectacle dont la DSN ne porte que
-//! le numero d'objet, `crate::routes::import::apercu_lu`), et garde tout champ rempli : la fiche fait foi, l'ecart reste
+//! le numero d'objet, `import::proposee::A_COMPLETER`), et garde tout champ rempli : la fiche fait foi, l'ecart reste
 //! seulement signale (`ecarts`). L'apercu dit, fiche par fiche, ce qui serait complete et d'ou ca vient (`completer`) ;
-//! l'import l'ecrit (`crate::import::proposee::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
+//! l'import l'ecrit (`importation::fiches::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
 //!
 //! Un champ que la piece ne porte pas ne s'invente pas (regle 1) : on ne complete que de ce que la DSN ou le bulletin
 //! imprime, par le meme chemin que la fiche qu'il creerait. La fiche qui existe et ce que l'import en ferait se
@@ -13,9 +13,6 @@
 
 use declarations::champs::{Saisie, Valeur};
 use socle::echec::R;
-
-/// Le titre que l'import donne a un spectacle dont il ne connait que le numero d'objet.
-pub(crate) const A_COMPLETER: &str = "A COMPLETER";
 
 /// Une case qui ne dit rien : absente, un texte blanc ou « A COMPLETER » (sans casse), une liste ou une structure vides.
 /// Un booleen ou un nombre disent quelque chose.

@@ -4,7 +4,7 @@
 //!
 //! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees (le brut que la DSN deposee ou
 //! le bulletin dit), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). Un mois dont la
-//! DSN importee porte deja la CASC-SVP (`import::ecrite::lire_dsn_casc`), ou deja regularise
+//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), ou deja regularise
 //! (`config/casc-svp.json`), n'y entre pas.
 //!
 //! Le classeur du CASC-SVP se recree avec les colonnes du modele (`donnees/modeles/casc-svp-liste-nominative.xlsx`) :
@@ -274,9 +274,9 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         if paies.is_empty() {
             continue;
         }
-        let dsn = crate::import::ecrite::dsn_importee(ctx, m).map_err(refus)?;
+        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(refus)?;
         // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
-        let porte = dsn.as_deref().map(|c| crate::import::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|(_, porte)| porte);
+        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|(_, porte)| porte);
         if porte {
             portees.push(m.clone());
             continue;

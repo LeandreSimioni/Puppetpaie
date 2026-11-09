@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
-use crate::import::casc::{marquer_regularise, RegularisationNotee};
+use crate::importation::casc::{marquer_regularise, RegularisationNotee};
 use crate::routes::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::compagnie::INTERFACE;
@@ -542,7 +542,7 @@ pub(crate) struct EtatExporte {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum EtatRendu {
-    Casc(crate::import::casc::Regularisation),
+    Casc(crate::importation::casc::Regularisation),
     Livre(documents::etats_paie::LivreDePaie),
     Tableau(documents::tableaux_export::Tableau),
 }
@@ -603,7 +603,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
 
 /// Ce qu'un export rend, avant d'etre mis en JSON (le chemin ecrit en entier, les montants en `Decimal`).
 pub(crate) enum Exporte {
-    Casc(crate::import::casc::Regularisation),
+    Casc(crate::importation::casc::Regularisation),
     Livre(documents::etats_paie::LivreDePaie),
     Tableau(documents::tableaux_export::Tableau),
 }
@@ -636,10 +636,10 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         departs: envois::journal::lu(&ctx.racine).map(|j| j.departs)?,
     };
     if etat == "regularisation-casc-svp" {
-        let demande = crate::import::casc::Demande { mois: d.mois.clone(), annee: d.annee.clone(), toutes_les_annees: d.toutes, boite_liee: crate::routes::ouverture::boite_liee(ctx)?, ..Default::default() };
-        let mut r = crate::import::casc::regularisation(ctx, &demande)?;
+        let demande = crate::importation::casc::Demande { mois: d.mois.clone(), annee: d.annee.clone(), toutes_les_annees: d.toutes, boite_liee: crate::routes::ouverture::boite_liee(ctx)?, ..Default::default() };
+        let mut r = crate::importation::casc::regularisation(ctx, &demande)?;
         if d.ecrire {
-            crate::import::casc::ecrire(ctx, &mut r)?;
+            crate::importation::casc::ecrire(ctx, &mut r)?;
         }
         return Ok(Exporte::Casc(r));
     }
@@ -850,7 +850,7 @@ struct ChargeCasc {
 
 fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir: Ouvrir) -> R<CascEnvoyee> {
     let qui = INTERFACE;
-    use crate::import::casc::{ecrire, regularisation, Demande};
+    use crate::importation::casc::{ecrire, regularisation, Demande};
     let aujourdhui = crate::routes::dossier_salarie::aujourdhui_reel()?;
     let mut dates: Vec<(String, String)> = Vec::new();
     for (a, texte) in &c.vire_le {

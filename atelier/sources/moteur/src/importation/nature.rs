@@ -1,5 +1,5 @@
 //! LA NATURE DES CONTRATS QUE LES BULLETINS N'ONT PAS DITE. L'import d'un bulletin de paie atteste un contrat
-//! (un engagement importe, `import::bulletins::engagement`) ; aucun gabarit n'imprime sa nature. Un bulletin
+//! (un engagement importe, `importation::bulletins::engagement`) ; aucun gabarit n'imprime sa nature. Un bulletin
 //! qui porte une marque du spectacle (numero d'objet, cotisation Congés Spectacles) atteste un CDDU
 //! (`engagement::importe::Importe::nature`). Un bulletin qui n'en porte aucune est celui d'un permanent : CDI ou CDD de
 //! droit commun, que rien ne dit. Son contrat est marque `nature_a_dire` ; ce module :
@@ -401,7 +401,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     // declarent (S21.G00.15) se posent, lus sous la fiche telle qu'elle vient d'etre ecrite.
     let parametrage = if permanents_declares {
         let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(socle::echec::Echec::from)?;
-        crate::import::parametrage::poser_organismes_repris(&frais)?
+        crate::importation::parametrage::poser_organismes_repris(&frais)?
     } else {
         Vec::new()
     };

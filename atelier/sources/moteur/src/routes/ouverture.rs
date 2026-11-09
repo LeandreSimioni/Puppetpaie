@@ -375,7 +375,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
     let lu = |k: &str| comble.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == "spectacle" && lu("titre").is_some_and(|t| t.eq_ignore_ascii_case(crate::import::completer::A_COMPLETER));
+    let sans_titre = nom == "spectacle" && lu("titre").is_some_and(|t| t.eq_ignore_ascii_case(crate::import::proposee::A_COMPLETER));
     // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
     let titre_dit = match (cle, lu("titre")) {
         (None, _) => "Nouveau spectacle".to_string(),
