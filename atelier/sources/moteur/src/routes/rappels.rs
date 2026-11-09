@@ -13,7 +13,7 @@
 use droit::fiche::Lue as _;
 use socle::date::jj_mm_aaaa;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -443,7 +443,7 @@ impl Echeance {
                     _ => action(Route::EtatDuMois, ChargeMois { mois: self.mois? }, None, "Ouvrir le mois".into()),
                 }
             }
-            DSN => deposer_dsn(self.mois?, &Value::Null, "Vérifier et envoyer".into()),
+            DSN => deposer_dsn(self.mois?, None,"Vérifier et envoyer".into()),
             DPAE => action(Route::DepotApercu, crate::routes::depots::Designation::du_mois(crate::routes::depots::Quoi::Dpae, self.mois?), Some(Route::Deposer), "Préparer la DPAE".into()),
             CLOTURE => action(Route::Cloture, annee(), None, format!("Clôturer {}", annee_dite).trim().to_string()),
             EXPORT_COMPTA => action(Route::ExportCompta, annee(), None, "Exporter pour la compta".into()),
@@ -1055,33 +1055,32 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
     Ok(mois)
 }
 
-/// `fichiers_deposables(ctx, mois)["dsn"]` : `(nom,
-/// chemin)` de la DSN mensuelle du dossier du mois, dans l'ordre de `crate::routes::etapes::ordre_de_depot`.
-fn dsn_deposable(st: &Etat, mois: &str) -> Option<(String, String)> {
+/// `(nom, chemin)` de la DSN mensuelle du dossier du mois, la premiere dans l'ordre de
+/// `crate::routes::etapes::ordre_de_depot` ; une DSN qui ne se lit pas se refuse.
+fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
-    if !crate::compagnie::depart::mois_ecrit(st.racine(), mois) {
-        return None;
-    }
     let dossier = st.racine().join("sorties").join(mois);
-    let mut fichiers: Vec<(String, PathBuf)> = entrees_dans_l_ordre(&dossier)
-        .into_iter()
-        .filter(|(nom, c)| c.is_file() && Path::new(nom).extension().map_or(false, |e| e.to_string_lossy().to_lowercase() == "dsn"))
-        // LA MENSUELLE, PAS UN SIGNALEMENT : un signalement d'arret ou de fin ecrit apres la DSN du mois, dans
-        // le meme dossier, devenait « la DSN a deposer » du rappel.
-        .filter(|(nom, c)| std::fs::read(c).is_ok_and(|o| declarations::dsn_lue::lire(&o, nom).is_ok_and(|d| !d.est_signalement())))
-        .collect();
-    fichiers.sort_by_cached_key(|(nom, c)| crate::routes::etapes::ordre_de_depot(nom, c));
-    fichiers.into_iter().next().map(|(nom, c)| (nom, c.to_string_lossy().into_owned()))
-}
-
-/// Les entrees d'un dossier dans l'ordre du systeme (`iterdir`), pour que deux
-/// fichiers de meme date se departagent toujours de la meme facon.
-fn entrees_dans_l_ordre(dossier: &Path) -> Vec<(String, PathBuf)> {
-    match std::fs::read_dir(dossier) {
-        Ok(l) => l.filter_map(|e| e.ok()).map(|e| (e.file_name().to_string_lossy().into_owned(), e.path())).collect(),
-        Err(_) => Vec::new(),
+    if !crate::compagnie::depart::mois_ecrit(st.racine(), mois) || !dossier.is_dir() {
+        return Ok(None);
     }
+    let disque = |e: std::io::Error| erreur(Classe::du_disque(&e), socle::echec::du_disque(&dossier, &e));
+    let mut fichiers = Vec::new();
+    for e in std::fs::read_dir(&dossier).map_err(disque)? {
+        let e = e.map_err(disque)?;
+        let (nom, c) = (e.file_name().to_string_lossy().into_owned(), e.path());
+        if !c.is_file() || !nom.to_lowercase().ends_with(".dsn") {
+            continue;
+        }
+        // LA MENSUELLE, PAS UN SIGNALEMENT : un signalement d'arret ou de fin ecrit apres la DSN du mois, dans le meme
+        // dossier, n'est pas « la DSN a deposer » du rappel.
+        let ordre = crate::routes::etapes::ordre_de_depot(&nom, &c)?;
+        if ordre.0 == 0 {
+            fichiers.push((ordre, nom, c));
+        }
+    }
+    fichiers.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(fichiers.into_iter().next().map(|(_, nom, c)| (nom, c.to_string_lossy().into_owned())))
 }
 
 /// Combien d'engagements le mois montre, et combien sont valides. Muette en cas de pepin : un mois illisible rend
@@ -1138,7 +1137,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     }
 
     let s = |n: i64| if n == 1 { "" } else { "s" };
-    if let Some((nom, chemin)) = dsn_deposable(st, mois) {
+    if let Some((nom, chemin)) = dsn_deposable(st, mois)? {
         r.etape = A_DEPOSER.into();
         r.detail = format!(
             "{} engagement{}, {} validé{}. Le mois est écrit ({}) ; la DSN n'est pas partie.",
@@ -1327,8 +1326,14 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
     for ((mois, debut), groupe) in jours {
         let jour = Jour::lire(&debut)?;
         let retard = jour < aujourdhui;
-        let spectacle = |v: &Value| if vrai(v) { en_texte(v) } else { String::new() };
-        let noms = groupe.iter().map(|e| format!("{} ({})", e.nom, spectacle(&e.spectacle))).collect::<Vec<_>>().join(", ");
+        let noms = groupe
+            .iter()
+            .map(|e| match &e.spectacle {
+                Some(s) => format!("{} ({})", e.nom, s),
+                None => e.nom.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         let quand = if retard {
             format!("L'embauche a commencé le {} : la DPAE est EN RETARD, à envoyer tout de suite.", jj_mm_aaaa(&debut))
         } else if jour == aujourdhui {

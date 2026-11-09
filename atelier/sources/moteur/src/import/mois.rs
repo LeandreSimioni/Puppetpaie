@@ -394,7 +394,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
 /// LES ETAPES D'UN MOIS TENU AVANT (`bilan_du_mois`, le panneau du mois) : tout s'est fait ailleurs,
 /// aucune etape n'a de bouton -- ni « Fermer le mois », ni « Deposer la DSN » (regle 4). La DSN dit ce qu'on en
 /// sait (`compagnie::etat_dsn`) ; sans trace, elle reste en alerte, sans geste.
-pub(crate) fn etapes(vue: &Value) -> Value {
+pub(crate) fn etapes(vue: &Value) -> EtapesImportees {
     let cartes = vue["paies"].as_array().map_or(&[][..], |a| &a[..]);
     let n = cartes.len();
     let pl = |n: usize| if n > 1 { "s" } else { "" };
@@ -419,21 +419,41 @@ pub(crate) fn etapes(vue: &Value) -> Value {
         b => format!("Mois tenu avant PuppetPaie — {} bulletin{} de l'ancien logiciel importé{} sur {} paie{}", b, pl(b), pl(b), n, pl(n)),
     };
     let dsn = &vue["dsn"];
-    let sans_trace = dsn["etat"] == json!("sans_trace") || dsn["etat"] == json!("refusee");
-    json!({
-        "dpae": {"couleur": "vert", "phrase": dpae},
-        "contrat-signature": {"couleur": "vert",
-            "phrase": signature},
-        "dsn": {
-            // La couleur de chaque etape (`routes::couleur_de_l_etat`) : faite ailleurs, verte ; refusee, rouge ; sans trace
-            // ici, tenue par l'ancien logiciel, une information.
-            "couleur": if dsn["etat"] == json!("refusee") { "rouge" } else if sans_trace { "gris" } else { "vert" },
-            "courte": dsn["courte"].clone(),
-            "phrase": dsn["phrase"].clone(),
+    let faite = |phrase: String| EtapeImportee { teinte: Teinte::Faite, courte: None, phrase: Some(phrase) };
+    EtapesImportees {
+        dpae: faite(dpae),
+        signature: faite(signature),
+        // Faite ailleurs ; refusee ; sans trace ici, tenue par l'ancien logiciel : une information.
+        dsn: EtapeImportee {
+            teinte: if dsn["etat"] == json!("refusee") { Teinte::Refusee } else if dsn["etat"] == json!("sans_trace") { Teinte::SansTrace } else { Teinte::Faite },
+            courte: dsn["courte"].as_str().map(String::from),
+            phrase: dsn["phrase"].as_str().map(String::from),
         },
-        "documents": {"couleur": "vert",
-            "phrase": documents},
-    })
+        documents: faite(documents),
+    }
+}
+
+/// LES ETAPES D'UN MOIS TENU AVANT (`etapes`), une par etape du mois.
+pub(crate) struct EtapesImportees {
+    pub(crate) dpae: EtapeImportee,
+    pub(crate) signature: EtapeImportee,
+    pub(crate) dsn: EtapeImportee,
+    pub(crate) documents: EtapeImportee,
+}
+
+/// Une etape d'un mois tenu avant : ce qu'on en sait, ce que la case en dit en court, et sa phrase.
+pub(crate) struct EtapeImportee {
+    pub(crate) teinte: Teinte,
+    pub(crate) courte: Option<String>,
+    pub(crate) phrase: Option<String>,
+}
+
+/// Ce qu'on sait d'une etape d'un mois tenu avant : faite ailleurs, refusee, ou sans trace ici.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Teinte {
+    Faite,
+    Refusee,
+    SansTrace,
 }
 
 /// LES CARTES DES ENGAGEMENTS IMPORTES QUI TOUCHENT `mois`, qu'il soit tenu avant ce logiciel ou qu'il ait aussi des

@@ -515,8 +515,19 @@ pub fn deposer_dsn_dans(
             Some(n) => n.to_string(),
             None => ctx.entreprise.nic.ecrite("nic")?.to_string(),
         };
-        let mut v = envois::journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, _, e| crate::routes::etapes::nic_de_l_engagement_ecrit(ctx, e).as_deref() == Some(nic.as_str()))
-            .map_err(Echec::from)?;
+        // Un etablissement qui ne se lit pas refuse le depot : la premiere faute, rendue apres la lecture.
+        let faute: std::cell::RefCell<Option<Echec>> = std::cell::RefCell::new(None);
+        let garder = |_: &str, _: &str, e: &engagement::stock::Ecrit| match crate::routes::etapes::nic_de_l_engagement_ecrit(ctx, e) {
+            Ok(n) => n.as_deref() == Some(nic.as_str()),
+            Err(x) => {
+                faute.borrow_mut().get_or_insert(x);
+                false
+            }
+        };
+        let mut v = envois::journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, garder).map_err(Echec::from)?;
+        if let Some(x) = faute.into_inner() {
+            return Err(x);
+        }
         // Et ce qu'elle corrige des mois passes, tel que sa fabrication l'a note : un fichier qui part tel qu'il a ete
         // ecrit emporte ce qu'il porte, pas ce qu'une DSN fabriquee aujourd'hui porterait (regle 4). Un essai d'un
         // fichier que le moteur n'a pas ecrit n'emporte rien ; en reel, il est refuse plus haut.

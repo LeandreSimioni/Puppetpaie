@@ -276,7 +276,6 @@ fn lectures(o: &HashMap<String, String>, ctx: &Contexte, mois: &str) -> Value {
 /// recalcule d'elle-meme quand on la lit, `engagement::etats::du_mois`) : l'empreinte d'apres n'est alors
 /// plus celle d'avant, et un second passage, sans recalcul cette fois, la retrouve.
 fn refaire(o: &HashMap<String, String>, ctx: &Contexte, mois: &str) -> R<Value> {
-    let charge = json!({ "mois": mois });
     let mut derniere = None;
     for _ in 0..2 {
         let avant = empreinte(ctx, mois);
@@ -295,8 +294,8 @@ fn refaire(o: &HashMap<String, String>, ctx: &Contexte, mois: &str) -> R<Value> 
             })
         } else {
             let lus = lectures(o, ctx, mois);
-            let mut deux = crate::routes::etapes::lire_ensemble(ctx, &[Route::EtatParEngagement, Route::EtatDuMois], &charge)?.into_iter();
-            let (par_engagement, du_mois) = (deux.next().unwrap_or(Value::Null), deux.next().unwrap_or(Value::Null));
+            let le_mois = socle::mois::Mois::lire(mois)?;
+            let (par_engagement, du_mois) = crate::routes::etapes::les_deux_etats(ctx, le_mois, |p, b| (socle::ecriture::en_valeur(p), socle::ecriture::en_valeur(b)))?;
             json!({
                 "format": FORMAT,
                 "moteur": env!("PAIE_SOURCES"),
@@ -390,7 +389,7 @@ fn pour_la_page(racine: &Path, etat: &Value, brut: &Value) -> Value {
 /// `etat-par-engagement`, `etat-du-mois` et `mois`, servis par l'etat du mois : pour les deux premiers, le meme JSON que
 /// `routes::etapes`.
 pub fn route(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    let le_mois = crate::routes::etapes::mois_de(charge)?;
+    let le_mois = crate::routes::lire_charge::<crate::routes::etapes::ChargeMois>(charge)?.mois;
     let (brut, mois) = (json!(le_mois), le_mois.to_string());
     let etat = lire(o, ctx, &mois)?;
     match nom {

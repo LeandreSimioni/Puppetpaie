@@ -205,7 +205,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(crate::etat_garde::ROUTES) => brute(crate::etat_garde::route(o, &ctx, route, c)),
         // Un geste de l'ecran, une route : un module par geste.
         _ if dans(mois::ROUTES) => brute(mois::route(o, &ctx, route, c)),
-        _ if dans(etapes::ROUTES) => brute(etapes::route(o, &ctx, route, c)),
+        _ if dans(etapes::ROUTES) => etapes::route(&porte, charge),
         _ if dans(engagement::ROUTES) => engagement::route(&porte, charge),
         _ if dans(contrats::ROUTES) => brute(contrats::route(o, &ctx, route, c)),
         _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),

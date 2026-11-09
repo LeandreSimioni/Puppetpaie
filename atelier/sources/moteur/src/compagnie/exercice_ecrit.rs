@@ -213,15 +213,34 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
 }
 
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee
-/// (`crate::routes::etapes::empreinte_de` de la saisie du mois, la meme que celle d'une DSN ecrite) ; une saisie illisible vaut
+/// (`empreinte_de` de la saisie du mois) ; une saisie illisible vaut
 /// `null`. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> Value {
     let mut m = Map::new();
     for mois in engagement::stock::mois_saisis(racine).unwrap_or_default().into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
-        let e = engagement::stock::vue_du_mois(racine, &mois).ok().flatten().map_or(Value::Null, |v| json!(crate::routes::etapes::empreinte_de(&socle::ecriture::en_valeur(&v))));
+        let e = engagement::stock::vue_du_mois(racine, &mois).ok().flatten().map_or(Value::Null, |v| json!(empreinte_de(&socle::ecriture::en_valeur(&v))));
         m.insert(mois, e);
     }
     Value::Object(m)
+}
+
+/// La saisie en JSON, sans les cles `_...`, ni `valide` : ce qui change dans une saisie sans changer la paie.
+fn sans_bruit(x: &Value) -> Value {
+    match x {
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .filter(|(k, _)| !k.starts_with('_') && *k != "valide")
+                .map(|(k, v)| (k.clone(), sans_bruit(v)))
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(a.iter().map(sans_bruit).collect()),
+        autre => autre.clone(),
+    }
+}
+
+/// L'empreinte d'une saisie, en 16 caracteres, sans ce qui ne change pas la paie (`sans_bruit`).
+fn empreinte_de(v: &Value) -> String {
+    socle::fichiers::sha256_hex(socle::ecriture::json_trie(&sans_bruit(v)).as_bytes())[..16].to_string()
 }
 
 /// L'EXPORT COMPTA DE L'ANNEE EST-IL A JOUR ? Un seul critere, celui des rappels (`routes::rappels`) et de

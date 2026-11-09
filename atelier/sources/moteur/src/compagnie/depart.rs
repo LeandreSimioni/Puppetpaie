@@ -164,11 +164,38 @@ pub(crate) fn ecrit_le(racine: &Path, fichier: &Path) -> Value {
         .map_or(Value::Null, |q| json!(q.chars().take(16).collect::<String>()))
 }
 
+/// UNE PIECE NOTEE AU JOURNAL DES ECRITURES, telle que `noter_piece_ecrite` l'ecrit : quand, la paie qu'elle declare, et
+/// ce qu'une DSN mensuelle corrige.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PieceNotee {
+    pub(crate) quand: String,
+    pub(crate) empreinte_saisie: Option<EmpreinteNotee>,
+    versions_portees: Option<Vec<envois::journal::Version>>,
+}
+
+/// La paie qu'une piece declare : celle d'une DSN (l'empreinte de ses paies validees), ou celles des saisies d'une annee
+/// pour l'export compta (`exercice_ecrit::empreintes_des_saisies`, une saisie illisible vide).
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+pub(crate) enum EmpreinteNotee {
+    Saisie(String),
+    #[allow(dead_code)]
+    Annee(std::collections::BTreeMap<String, Option<String>>),
+}
+
+/// La note de la piece `fichier` au journal des ecritures (`PieceNotee`) ; aucune si le moteur ne l'a pas ecrite.
+pub(crate) fn piece_notee(racine: &Path, fichier: &Path) -> R<Option<PieceNotee>> {
+    match journal_des_ecritures(racine).get(&cle_de_piece(fichier)) {
+        Some(n) => socle::forme::lire(n, "Une pièce notée au journal des écritures ne se relit pas.").map(Some).map_err(valeur),
+        None => Ok(None),
+    }
+}
+
 /// CE QUE CETTE DSN MENSUELLE CORRIGE, tel que sa fabrication l'a note (`noter_piece_ecrite`) ; `None` si le moteur ne l'a
 /// pas ecrite.
 pub(crate) fn versions_portees_de(racine: &Path, fichier: &Path) -> R<Option<Vec<envois::journal::Version>>> {
-    let Some(v) = journal_des_ecritures(racine).get(&cle_de_piece(fichier)).and_then(|n| n.get("versions_portees")).cloned() else { return Ok(None) };
-    socle::forme::lire(&v, "Ce qu'une DSN écrite corrige ne se relit pas.").map(Some).map_err(valeur)
+    Ok(piece_notee(racine, fichier)?.and_then(|n| n.versions_portees))
 }
 
 // ------------------------------------------------------------- la DSN, a son depot
