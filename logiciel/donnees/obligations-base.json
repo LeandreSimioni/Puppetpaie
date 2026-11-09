@@ -168,7 +168,7 @@
       ],
       "inferences": [
         "Les quarante-huit heures courent depuis l'heure où la compagnie a connaissance de l'accident (L. 441-2 : « dont il a eu connaissance » ; net-entreprises et le cerfa : « après avoir eu connaissance ») ; un dimanche ou un jour férié ne compte pas du tout, et les jours fériés sont les onze fêtes légales (L. 3133-1 du code du travail, `feries-base.json`), chômées ou non dans la compagnie.",
-        "Sans l'heure de connaissance, le moteur compte depuis minuit du jour de connaissance (la date butoir la plus exigeante) : une décision de Léandre (09/11/2026, #406), pas une inférence. L'heure se pré-remplit à minuit et se corrige ; elle ne sert qu'à l'échéance."
+        "Sans heure de connaissance dite, le décompte part de minuit du jour de connaissance : l'heure se pré-remplit à minuit et se corrige ; elle ne sert qu'à l'échéance."
       ]
     },
     "declaration_maladie_professionnelle": {
