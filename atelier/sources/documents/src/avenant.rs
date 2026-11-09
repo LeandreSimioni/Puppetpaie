@@ -4,15 +4,14 @@
 //! chaque paragraphe des articles du modele qui differe d'une version a l'autre est une modification (`modifications`).
 //!
 //! Ici, les valeurs que le modele de contrat lit dans une paie (`valeurs_de_la_paie`, `contrat.marqueurs`), le contrat
-//! parti que le journal connait (`contrat_parti`) et ses avenants. Le texte de l'avenant vit dans le modele de sa nature
-//! (`contrat_ecrit.avenant` de `contrats-base.json` : `avenant-cddu.modele`, `avenant-permanent.modele`), une donnee,
-//! comme celui du contrat.
+//! parti que le journal connait (`contrat_parti`) et ses avenants. Le texte de l'avenant est celui du modele du contrat
+//! (`contrat_ecrit::ModeleDuContrat::avenant`) : la base de sa nature (`contrat_ecrit.avenant` de `contrats-base.json`)
+//! ou celui d'un modele special.
 
 
 use droit::fiche::Lue as _;
-use std::path::Path;
 
-use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{pour_la_fabrique, Marqueur, Valeurs};
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 
@@ -201,28 +200,24 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> Resu
 }
 
 /// Ce que le contrat verse EN PLUS du brut -- les lignes non soumises qui s'ajoutent (defraiements,
-/// indemnites hors assiette), convenues comme le reste : « , auxquels s'ajoutent 3 défraiements au
-/// forfait à 20,20 € hors brut ». Vide sans elles : la phrase du modele reste alors mot pour mot
-/// celle d'avant. Une ligne qui retranche (un acompte) n'est pas une clause du contrat.
-pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> String {
+/// indemnites hors assiette), convenues comme le reste : « 3 défraiements au forfait à 20,20 € ». `None` sans elles :
+/// l'alinea du modele qui les dit ne s'ecrit pas (`[si remuneration.hors_brut]`). Une ligne qui retranche (un acompte)
+/// n'est pas une clause du contrat.
+pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
     let morceaux: Vec<String> =
         remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > socle::num::Decimal::ZERO).map(ligne_citee).collect();
-    if morceaux.is_empty() {
-        String::new()
-    } else {
-        format!(", auxquels s'ajoutent {} hors brut", et(&morceaux))
-    }
+    (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 
-/// « pour le mois d'octobre 2026 » quand le contrat se poursuit.
-fn periode_remuneration(e: &Eng) -> Resultat<String> {
+/// « le mois d'octobre 2026 » quand le contrat se poursuit apres le mois : le total et le net sont ceux de ce mois.
+fn periode_remuneration(e: &Eng) -> Resultat<Option<String>> {
     if e.f.dernier_mois {
-        return Ok(String::new());
+        return Ok(None);
     }
     let mois = Mois::lire(&e.f.mois)?;
     let nom = mois.nom(socle::mois::Graphie::Accentuee);
     let de = if nom.chars().next().is_some_and(|c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
-    Ok(format!(" pour le mois {}{} {}", de, nom, mois.annee()))
+    Ok(Some(format!("le mois {}{} {}", de, nom, mois.annee())))
 }
 
 /// Les jours joues, et OU chacun se joue quand ils different.
@@ -273,8 +268,12 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     let paiement = e.f.date_paiement.as_deref().filter(|p| !p.is_empty()).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
     poser(Marqueur::ContratDatePaiement, Jour::lire(paiement)?.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
-    poser(Marqueur::RemunerationPeriode, periode_remuneration(e)?);
-    poser(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(remuneration));
+    if let Some(p) = periode_remuneration(e)? {
+        poser(Marqueur::RemunerationPeriode, p);
+    }
+    if let Some(h) = remuneration_hors_brut(remuneration) {
+        poser(Marqueur::RemunerationHorsBrut, h);
+    }
     poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
@@ -286,9 +285,10 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
     // l. 1161-1162) : un spectacle qui n'en a pas encore fait son contrat, qui n'en dit rien. Le bulletin, lui, l'exige
-    // (`exige_par` de `champs-base.json`). Le marqueur est un morceau de phrase : sans numero, il ne dit rien.
-    let objet = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty());
-    poser(Marqueur::SpectacleObjet, if let Some(n) = objet { format!(" (numéro d'objet France Travail {})", n) } else { String::new() });
+    // (`exige_par` de `champs-base.json`). Sans numero, pas de valeur : l'alinea qui le dit ne s'ecrit pas.
+    if let Some(n) = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        poser(Marqueur::SpectacleNumeroObjet, n.to_string());
+    }
     Ok(m)
 }
 
@@ -383,11 +383,14 @@ pub struct Modification {
 pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<Vec<Modification>> {
     let (avant, apres) = (&pour_la_fabrique(avant), &pour_la_fabrique(apres));
     let mut out = Vec::new();
-    for (n, (titre, corps)) in m.articles.iter().enumerate() {
-        let n = n + 1;
+    for (i, (titre, corps)) in m.articles.iter().enumerate() {
+        // Le numero que le contrat signe lui donne ; un paragraphe qu'il taisait prend celui du texte a jour.
+        let n = if modele::s_imprime(corps, avant) { m.numero_imprime(i, avant) } else { m.numero_imprime(i, apres) };
         let (mut anciens, mut neufs, mut blocs): (Vec<String>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
         for (i, bloc) in corps.iter().enumerate() {
-            let (ancien, neuf) = (normaliser(&texte_brut(bloc, avant)?), normaliser(&texte_brut(bloc, apres)?));
+            // Un alinea conditionnel ote s'ecrit vide (`modele::retenu`).
+            let ecrit = |v: &modele::Valeurs| -> Resultat<String> { modele::retenu(bloc, v).map(|t| texte_brut(t, v).map(|s| normaliser(&s))).transpose().map(Option::unwrap_or_default) };
+            let (ancien, neuf) = (ecrit(avant)?, ecrit(apres)?);
             if ancien != neuf {
                 anciens.push(ancien);
                 neufs.push(neuf);
@@ -452,12 +455,6 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
     Ok(m)
 }
 
-/// Le modele du contrat ecrit de la nature `nat`, celui de la compagnie s'il est dans ses gabarits, lu.
-pub fn modele_du_contrat(gabarits: &Path, nat: &droit::natures::Nature) -> Resultat<Modele> {
-    let nom = nat.modele_contrat().ok_or_else(|| format!("La nature {} n'a pas de contrat écrit.", nat.libelle))?;
-    let chemin = socle::fichiers::modele_de(&nom, Some(gabarits), gabarits);
-    ModeleLu::du_fichier(&chemin).map_err(|r| r.message)?.decoupe(&chemin.to_string_lossy())
-}
 
 // ------------------------------------------- l'avenant d'un contrat signe ailleurs
 

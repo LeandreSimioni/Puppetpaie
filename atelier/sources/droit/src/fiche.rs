@@ -1354,7 +1354,6 @@ fiche! {
         courriel_nom: String,
         courriel_signature: String,
         modele_bulletin: ModeleBulletin,
-        clauses_particulieres: String,
         conseils: bool,
     }
     notes {

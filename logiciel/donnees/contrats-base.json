@@ -411,7 +411,7 @@
       "aide": "Contrat à durée déterminée ordinaire, hors contrat d'usage : un remplacement, un accroissement temporaire d'activité (code du travail L. 1242-2, 1° et 2°).",
       "source": "atelier/reference/sources/code-du-travail/xml/L1242-2.xml (1° et 2°).",
       "contrat_ecrit": {
-        "quoi": "Le contrat écrit de cette nature : son modèle livré, celui de son avenant, et les MENTIONS que la loi exige, chacune par son marqueur. Un modèle, livré ou propre à la compagnie (son dossier gabarits/), qui ne cite pas l'un de ces marqueurs ne fait pas de contrat (`documents::contrat_ecrit::refuser_les_mentions_absentes`). `si_dite` : la mention n'est due que si la saisie la dit (la personne remplacée, pour un remplacement).",
+        "quoi": "Le contrat écrit de cette nature : son modèle livré, celui de son avenant, et les MENTIONS que la loi exige, chacune par son marqueur. Un modèle, la base ou un modèle spécial de la compagnie, qui ne cite pas l'un de ces marqueurs ne fait pas de contrat (`documents::contrat_ecrit::manques`). `si_dite` : la mention n'est due que si la saisie la dit (la personne remplacée, pour un remplacement).",
         "source": "Le CDD « est établi par écrit » avec ses mentions (code du travail L. 1242-12, atelier/reference/sources/code-du-travail/xml/L1242-12.xml) ; tout salarié reçoit par écrit les informations principales de sa relation de travail (L. 1221-5-1, R. 1221-34 pour leur liste, R. 1221-35 pour le renvoi aux textes permis aux 7° à 12° et 14° ; xml/L1221-5-1.xml, xml/R1221-34.xml, xml/R1221-35.xml) ; le temps partiel est écrit avec sa durée et sa répartition (L. 3123-6, xml/L3123-6.xml).",
         "nom": "contrat de travail à durée déterminée",
         "modele": "contrat-cdd.modele",

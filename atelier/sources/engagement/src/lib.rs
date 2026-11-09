@@ -143,6 +143,8 @@ pub struct ContratEcrit {
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
+    /// Le modele special de la compagnie que ce contrat suit (son `id`) ; `None` : le modele par defaut de sa nature.
+    pub modele_contrat: Option<String>,
 }
 
 impl ContratEcrit {
@@ -196,6 +198,7 @@ pub struct Assemble {
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
+    pub modele_contrat: Option<String>,
 }
 
 /// Un texte dit et non vide.
@@ -538,6 +541,7 @@ impl Engagement {
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
                 repartition_horaire: v.repartition_horaire.clone().filter(|t| !t.is_empty()),
                 clauses_particulieres: v.clauses_particulieres.clone().filter(|t| !t.is_empty()),
+                modele_contrat: v.modele_contrat.clone().filter(|t| !t.is_empty()),
             },
         })
     }
@@ -1061,6 +1065,7 @@ pub(crate) fn engagements(
             personne_remplacee: termes.personne_remplacee,
             repartition_horaire: termes.repartition_horaire,
             clauses_particulieres: carte.clauses_particulieres.clone(),
+            modele_contrat: carte.modele_contrat.clone(),
             notification_rupture: None,
             transaction: None,
         };

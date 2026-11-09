@@ -648,6 +648,8 @@ function raresDuBloc(div, e) {
 function poserEcrit(div, e) {
   div.querySelectorAll(".e-ecrit-champ").forEach((c) => {
     c.value = e[c.dataset.cle] ?? "";
+    // Un choix garde sa valeur jusqu'à ce que le moteur dise ses options (`montrerEcrit`).
+    c.dataset.valeur = e[c.dataset.cle] ?? "";
     c.onchange = rafraichirApercu;
   });
   const n = div.querySelector(".e-numero-dit");
@@ -655,7 +657,16 @@ function poserEcrit(div, e) {
   montrerEcrit(div, []);
 }
 
-function montrerEcrit(div, demandes) {
+/* `modeles` : les modèles de contrat que la case `modele_contrat` offre
+ * (`contrat.modeles` de l'aperçu), le défaut d'abord. */
+function montrerEcrit(div, demandes, modeles) {
+  const choix = div.querySelector('.e-ecrit-champ[data-cle="modele_contrat"]');
+  if (choix && modeles) {
+    const v = choix.value || choix.dataset.valeur || "";
+    choix.innerHTML = modeles.map((x) => `<option value="${echapper(x.id || "")}">${echapper(x.nom)}</option>`).join("");
+    choix.value = v;
+    choix.dataset.valeur = v;
+  }
   div.querySelectorAll(".e-ecrit [data-ecrit]").forEach((l) => {
     // La case du numéro ne se montre que demandée : sa valeur est celle du contrat, que toute carte porte.
     const c = l.querySelector(".e-ecrit-champ");
@@ -813,7 +824,7 @@ function ouvrirCarte(div) {
   if (div._paies) peindreChiffres(div, div._total);
   // Les cases du contrat écrit que le moteur a demandées pour cet engagement, au dernier aperçu.
   const p = (div._paies || [])[0];
-  montrerEcrit(div, p && p.contrat ? p.contrat.ecrits : div._ecrits);
+  montrerEcrit(div, p && p.contrat ? p.contrat.ecrits : div._ecrits, p && p.contrat ? p.contrat.modeles : div._modeles);
   montrerFaitsAvances(div, p ? p.faits_avances : div._faitsAvances);
   marquerEcrite(div);
 }
@@ -1015,6 +1026,8 @@ function construireCarte(div, e) {
           <input type="text" class="e-ecrit-champ" data-cle="repartition_horaire"></label>
         <label data-ecrit="clauses_particulieres" hidden title="${aideDe("clauses_particulieres")}">Clauses particulières
           <textarea rows="2" class="e-ecrit-champ" data-cle="clauses_particulieres"></textarea></label>
+        <label data-ecrit="modele_contrat" hidden title="${aideDe("modele_contrat")}">Modèle de contrat
+          <select class="e-ecrit-champ" data-cle="modele_contrat"></select></label>
       </div>
       <!-- LA FIN D'UN CONTRAT QUI SE SIGNALE. Trois faits que
            le moteur ne devine pas, et il a raison de ne pas les deviner :
@@ -1248,7 +1261,7 @@ function construireCarte(div, e) {
   const nat = natureDe(selNat.value);
   div.querySelector(".e-options").hidden = !(e.metier || e.cadre != null || aUneValeur(e.date_paiement)
     || CHAMPS_RARES.some((c) => aUneValeur(e[c.cle]))
-    || ["periode_essai_jours", "personne_remplacee", "repartition_horaire", "clauses_particulieres"].some((c) => aUneValeur(e[c]))
+    || ["periode_essai_jours", "personne_remplacee", "repartition_horaire", "clauses_particulieres", "modele_contrat"].some((c) => aUneValeur(e[c]))
     || nat.mensuelle || e.debut && e.debut.slice(0, 7) < (document.getElementById("mois").value || "")
     || e.motif_recours || e.motif_rupture);
   return div;

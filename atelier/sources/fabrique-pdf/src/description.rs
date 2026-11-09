@@ -920,6 +920,7 @@ fn lire_modele(
         })
         .collect();
     let valeurs: &BTreeMap<String, String> = &mb.valeurs;
+    let m = m.retenir(valeurs);
     let c = style_contrat::Contrat {
         variante,
         valeurs,

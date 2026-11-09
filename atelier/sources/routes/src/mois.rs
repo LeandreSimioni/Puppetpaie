@@ -76,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         avance: false,
@@ -1424,7 +1424,8 @@ fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: &str) -> R<Vec<&'static s
 }
 
 /// LES CASES DU CONTRAT ECRIT QUE CET ENGAGEMENT APPELLE (`engagement::ContratEcrit`), et elles seules : la
-/// periode d'essai et les clauses particulieres de tout contrat ecrit ; la personne remplacee d'un CDD de remplacement
+/// periode d'essai et les clauses particulieres de tout contrat ecrit, son modele quand la compagnie a des modeles
+/// speciaux de sa nature (`modeles_contrat::au_choix`) ; la personne remplacee d'un CDD de remplacement
 /// (L1242-12, 1° ; `Nature::motif_de_remplacement`) ; la repartition des horaires d'un temps partiel (L3123-6, 1° : la
 /// modalite 20 de S21.G00.40.014, `Engagement::modalite_temps_travail`). Un engagement dont le contrat ne se fait pas
 /// signer ici (`engagement::contrat_a_signer`) n'en a aucune.
@@ -1445,6 +1446,9 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
         v.push("repartition_horaire");
     }
     v.push("clauses_particulieres");
+    if !crate::modeles_contrat::au_choix(ctx, &nat.cle)?.is_empty() {
+        v.push("modele_contrat");
+    }
     Ok(v)
 }
 
@@ -1470,6 +1474,9 @@ fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: &str
         v.push("personne_remplacee");
     }
     v.push("clauses_particulieres");
+    if !crate::modeles_contrat::au_choix(ctx, &nat.cle)?.is_empty() {
+        v.push("modele_contrat");
+    }
     Ok(v)
 }
 
@@ -1522,6 +1529,8 @@ pub(crate) struct ContratVu {
     jusqu_a: String,
     periode: Periode,
     ecrits: Vec<&'static str>,
+    /// Les modeles de contrat que sa case `modele_contrat` offre (`modeles_contrat::au_choix`).
+    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
     rupture: Option<Rupture>,
 }
 
@@ -1717,6 +1726,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             jusqu_a: mois_du_contrat.last().cloned().ok_or_else(trop_courte)?,
             periode: Periode { debut: e.debut_periode()?, fin: e.fin_periode()? },
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
+            modeles: crate::modeles_contrat::au_choix(ctx, &nat.cle)?,
             rupture: rupture_de(e, &nat)?,
         },
         dates_travail: e.dates_travail.clone(),
@@ -1879,6 +1889,7 @@ struct CleEcrite {
 #[derive(Debug, Serialize)]
 struct EcritsSeuls {
     ecrits: Vec<&'static str>,
+    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2107,7 +2118,10 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)? },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: match e.nature.as_deref().filter(|n| !n.trim().is_empty()) {
+                        Some(n) => crate::modeles_contrat::au_choix(ctx, n)?,
+                        None => Vec::new(),
+                    } },
                 }));
                 // Une carte a completer n'a pas de total.
                 r.blocs.push(None);
