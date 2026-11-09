@@ -15,7 +15,8 @@ use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::documents::client_courriel;
-use crate::routes::{en_json, lire_charge, INTERFACE};
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::routes::{lire_charge, INTERFACE};
 use crate::routes::mois::sauver_avant;
 use declarations::champs;
 use documents::fiche_questionnaire as fq;
@@ -234,26 +235,108 @@ pub const ROUTES: &[Fiche] = &[
         ecran: Ecran::Dessine(Place::Fiches),
     },
 ];
-/// Une route de ce module.
-pub fn route(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
+/// Une route de ce module, branchee sur l'enveloppe. Les fiches elles-memes (les verifier, les enregistrer), l'effectif,
+/// les couts, une demande oubliee et la suppression de la compagnie lisent encore leur charge en JSON (`Charge::brute`),
+/// comme la saisie d'une fiche (`saisie`), et rendent le leur (`Rendu::brut`).
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let (o, ctx) = (porte.options, porte.ctx);
+    match porte.route {
+        Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
+        Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
+        Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, charge.lire()?)?),
+        Route::FicheDemander => en_json(fiche_demander(ctx, charge.lire()?)?),
+        Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
+        Route::SauvegardeMaintenant => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(sauvegarde_maintenant(ctx))
+        }
+        Route::FichesRelever => {
+            let super::SansCharge {} = charge.lire()?;
+            let r = relever_fiches(ctx, None, "interface")?;
+            let phrase = match (r.recues.is_empty(), r.incidents.first()) {
+                (false, _) => format!("{}.", r.resume()),
+                (true, Some(i)) => i.clone(),
+                (true, None) => format!("Aucune réponse pour l'instant ; fiches attendues : {}.", r.attendues),
+            };
+            en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
+        }
+        autre => route_brute(o, ctx, autre, charge.brute()).map(Rendu::brut),
+    }
+}
+
+/// Ce que rend `activer-fiche` : la phrase, et ce que la page relit de la compagnie.
+#[derive(Debug, serde::Serialize)]
+struct FicheActivee {
+    phrase: String,
+    etat: crate::routes::ouverture::EtatDeLaPage,
+}
+
+/// Ce que rend `sauvegarde-maintenant` : la derniere sauvegarde (`compagnie::sauvegarde`), et ce qui l'a empechee.
+#[derive(Debug, serde::Serialize)]
+struct SauvegardeFaite {
+    phrase: String,
+    sauvegarde: Value,
+    erreur: Option<String>,
+}
+
+/// Ce que rend `fiches-relever` : les fiches attendues, celles recues (`ReleveFiches`), et ce qui a manque.
+#[derive(Debug, serde::Serialize)]
+struct FichesRelevees {
+    phrase: String,
+    attendues: usize,
+    recues: Vec<Value>,
+    incidents: Vec<String>,
+}
+
+/// La charge de `activer-fiche` : la fiche (`salarie` ou `spectacle`) et sa cle, active ou archivee.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeActiver {
+    nom: String,
+    cle: String,
+    actif: bool,
+}
+
+macro_rules! dites {
+    ($($t:ty),*) => {
+        $(impl Dite for $t {
+            fn phrase(&self) -> &str {
+                &self.phrase
+            }
+        })*
+    };
+}
+dites!(FicheActivee, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
+
+impl Dite for Permanents {
+    fn phrase(&self) -> &str {
+        self.phrase
+    }
+}
+
+/// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`compagnie::ouverture`).
+fn sauvegarde_maintenant(ctx: &Contexte) -> SauvegardeFaite {
+    use crate::compagnie::ouverture::{ouverture, Clients, Options};
+    let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
+    let r = ouverture(ctx, &opt, Clients::default(), None);
+    let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
+    let derniere = crate::compagnie::sauvegarde::derniere(&ctx.racine);
+    let s = derniere.en_json();
+    let quand = s.get("quand").and_then(Value::as_str).filter(|q| !q.is_empty());
+    let phrase = match (erreurs.is_empty(), quand) {
+        (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
+        (true, None) => "Aucune sauvegarde faite.".to_string(),
+        (true, Some(q)) => format!("Dernière sauvegarde : {}, {} fichiers.", q, super::mot(&s["fichiers"])),
+    };
+    SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) }
+}
+
+/// Une route de ce module qui lit encore sa charge en JSON.
+fn route_brute(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
     match nom {
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
         Route::CompagnieSupprimer => crate::interface::suppression::route(&ctx.racine, charge, &|_| {}).map_err(|m| erreur(Classe::Refuse, m)),
-        // La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`compagnie::ouverture`).
-        Route::SauvegardeMaintenant => {
-            use crate::compagnie::ouverture::{ouverture, Clients, Options};
-            let opt = Options::de_la_charge(&json!({"sauvegarde_seule": true, "incidents_editeur": false}));
-            let r = ouverture(ctx, &opt, Clients::default(), None);
-            let erreur: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
-            let s = crate::compagnie::sauvegarde::derniere(&ctx.racine).en_json();
-            let phrase = match (erreur.is_empty(), valeur_en_texte(&s["quand"])) {
-                (false, _) => format!("Sauvegarde : {}", erreur.join(" ")),
-                (true, q) if q.is_empty() => "Aucune sauvegarde faite.".to_string(),
-                (true, q) => format!("Dernière sauvegarde : {}, {} fichiers.", q, valeur_en_texte(&s["fichiers"])),
-            };
-            Ok(json!({"phrase": phrase, "sauvegarde": s, "erreur": erreur.join(" ")}))
-        }
         Route::Couts => couts(o, ctx, charge).map(|mut v| {
             // Chaque spectacle et son cout, comme l'ecran les liste ; le total de l'annee en tete.
             let cout = |x: &Value| x["cout"].as_str().and_then(|c| c.parse::<f64>().ok()).unwrap_or(0.0);
@@ -277,33 +360,19 @@ pub fn route(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &V
             v["phrases"] = json!(spectacles.iter().map(|(nom, x)| format!("{} : {} ({}, brut {})", nom, euros_de(&x["cout"]), super::compte(x["bulletins"].as_u64().unwrap_or(0) as usize, "bulletin", "bulletins"), euros_de(&x["brut"]))).collect::<Vec<_>>());
             super::phrase_en_tete(v, p)
         }),
-        Route::Permanents => en_json(permanents(ctx, lire_charge(charge)?)?),
-        Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, lire_charge(charge)?)?),
         Route::VerifierFiche => verifier_fiche(charge).map(|mut v| {
             let lignes: Vec<Value> = v["anomalies"].as_array().into_iter().flatten().map(|a| json!(format!("{} : {}", valeur_en_texte(&a["champ"]), valeur_en_texte(&a["message"])))).collect();
             let p = if lignes.is_empty() { "La fiche est juste.".to_string() } else { format!("Anomalies de la fiche : {}.", lignes.len()) };
             v["phrases"] = Value::Array(lignes);
             super::phrase_en_tete(v, p)
         }),
-        Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, lire_charge(charge)?)?),
         Route::Effectif => effectif(ctx, charge),
-        Route::ActiverFiche => activer_fiche_route(o, ctx, charge),
         Route::EnregistrerFiche => enregistrer_fiche(ctx, charge),
         Route::FicheOublierDemande => oublier_demande(o, ctx, charge).map(|v| {
             let p = format!("Demande à {} abandonnée.", valeur_en_texte(&v["adresse"]));
             super::phrase_en_tete(v, p)
         }),
-        Route::FicheDemander => en_json(fiche_demander(ctx, lire_charge(charge)?)?),
-        Route::FichesRelever => {
-            let r = relever_fiches(ctx, None, "interface")?;
-            let phrase = match (r.recues.is_empty(), r.incidents.first()) {
-                (false, _) => format!("{}.", r.resume()),
-                (true, Some(i)) => i.clone(),
-                (true, None) => format!("Aucune réponse pour l'instant ; fiches attendues : {}.", r.attendues),
-            };
-            Ok(json!({"phrase": phrase, "attendues": r.attendues, "recues": r.recues, "incidents": r.incidents}))
-        }
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
@@ -1204,9 +1273,9 @@ pub(crate) fn ecrire<T: serde::Serialize + ?Sized>(chemin: &Path, v: &T) -> R<()
 
 /// La configuration, relue apres l'ecriture (`web._configuration(Contexte(racine))`).
 /// Ce que la page lit de la compagnie (la route `etat`), relu apres une ecriture : la page n'a rien d'autre a relire.
-pub(crate) fn etat_relu(o: &HashMap<String, String>, ctx: &Contexte) -> R<Value> {
+pub(crate) fn etat_relu(ctx: &Contexte) -> R<crate::routes::ouverture::EtatDeLaPage> {
     let neuf = Contexte::nouveau(&ctx.racine, None).map_err(plain)?;
-    crate::routes::ouverture::route(o, &neuf, Route::Etat, &json!({}))
+    crate::routes::ouverture::etat(&neuf)
 }
 
 /// L'heure de Paris, a la seconde.
@@ -1373,25 +1442,28 @@ pub(crate) fn activer_fiche(ctx: &Contexte, nom: &str, cle: &str, actif: bool) -
     poser_champs(ctx, nom, Some(cle), un_champ("actif", Value::Bool(actif)), Some(ctx.aujourdhui), None)
 }
 
-fn activer_fiche_route(o: &HashMap<String, String>, ctx: &Contexte, charge: &Value) -> R<Value> {
-    let (nom, cle) = (texte_requis(charge, "nom")?, texte_requis(charge, "cle")?);
-    activer_fiche(ctx, nom, cle, charge.get("actif").is_some_and(vrai))?;
-    let actif = charge.get("actif").is_some_and(vrai);
+fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
+    let (nom, cle, actif) = (c.nom.as_str(), c.cle.as_str(), c.actif);
+    activer_fiche(ctx, nom, cle, actif)?;
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
-    let qui = if nom == "salarie" {
-        super::salarie(ctx, &json!(cle)).map(|s| super::nom_a_l_ecran(&s)).ok()
+    let nomme = if nom == "salarie" {
+        let id = ctx.cle_du_salarie(cle).map_err(|m| erreur(Classe::Manque, m))?;
+        ctx.salarie(&id).map_err(|m| erreur(Classe::Manque, m))?.nomme()
     } else {
         let fiche = ctx.spectacles.get(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle))))?;
         fiche.titre.portee().filter(|t| !t.trim().is_empty()).map(String::from)
-    }
-    .unwrap_or_else(|| cle.to_string());
-    let p = match (nom, actif) {
+    };
+    let qui = match nomme {
+        Some(n) => n,
+        None => cle.to_string(),
+    };
+    let phrase = match (nom, actif) {
         ("salarie", true) => format!("{} : fiche réactivée.", qui),
         ("salarie", false) => format!("{} : fiche archivée.", qui),
         (_, true) => format!("Spectacle « {} » réactivé.", qui),
         (_, false) => format!("Spectacle « {} » archivé.", qui),
     };
-    Ok(json!({"phrase": p, "etat": etat_relu(o, ctx)?}))
+    Ok(FicheActivee { phrase, etat: etat_relu(ctx)? })
 }
 
 // ----------------------------------------------------- fiche-oublier-demande

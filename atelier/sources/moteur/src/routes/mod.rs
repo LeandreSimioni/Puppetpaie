@@ -38,7 +38,7 @@ use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
 use brut::brute;
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{brut, cle_du_salarie, en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, pastille, periode_en_clair, phrase_en_tete, salarie};
+pub(crate) use brut::{brut, cle_du_salarie, en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, pastille, periode_en_clair, phrase_en_tete};
 
 mod brut;
 pub mod enveloppe;
@@ -207,7 +207,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.
         _ if dans(crate::obligations::ROUTES) => brute(crate::obligations::route(&ctx, route, c)),
-        _ if dans(fiches::ROUTES) => brute(fiches::route(o, &ctx, route, c)),
+        _ if dans(fiches::ROUTES) => fiches::route(&porte, charge),
         _ if dans(identite::ROUTES) => identite::route(&porte, charge),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::compagnie::organismes::ROUTES) => brute(crate::compagnie::organismes::route(&ctx, route, c)),
@@ -219,7 +219,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         // L'Historique d'un mois : ses documents, ses envois et leurs retours, lus (lecture seule).
         Route::HistoriqueMois => brute(crate::historique_mois::route(&ctx, c)),
         _ if dans(dossier_salarie::ROUTES) => brute(dossier_salarie::route(o, &ctx, route, c)),
-        _ if dans(ouverture::ROUTES) => brute(ouverture::route(o, &ctx, route, c)),
+        _ if dans(ouverture::ROUTES) => ouverture::route(&porte, charge),
         _ if dans(rappels::ROUTES) => brute(rappels::route(o, &ctx, route, c)),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
         _ if dans(crate::compagnie::conseils::ROUTES) => brute(crate::compagnie::conseils::route(&ctx, route, c)),

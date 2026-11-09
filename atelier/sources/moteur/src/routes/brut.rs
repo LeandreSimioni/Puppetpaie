@@ -32,11 +32,6 @@ pub(super) fn brute(rendu: R<Value>) -> R<super::Rendu> {
     rendu.map(super::Rendu::brut)
 }
 
-/// Le salarié que `nom` désigne (`Contexte::salarie`) ; refus (`Manque`) avec la phrase de `Contexte::salarie`.
-pub(crate) fn salarie(ctx: &Contexte, nom: &Value) -> R<droit::fiche::FicheSalarie> {
-    ctx.salarie(&cle_du_salarie(ctx, nom)?).map_err(|m| erreur(Classe::Manque, m))
-}
-
 /// La cle de la fiche que `nom` designe (`Contexte::cle_du_salarie`) ; refus (`Manque`) avec sa phrase, qui cite `nom`
 /// tel que la charge l'ecrit.
 pub(crate) fn cle_du_salarie(ctx: &Contexte, nom: &Value) -> R<droit::contexte::IdSalarie> {

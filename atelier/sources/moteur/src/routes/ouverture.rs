@@ -7,13 +7,14 @@
 //! coffre, jamais sa valeur), la compagnie fictive par son marqueur.
 
 use droit::fiche::Lue as _;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::etapes::Moteur;
 use crate::compagnie::etat_dsn::Etat;
 use super::lire_texte;
@@ -190,26 +191,38 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let ctx = porte.ctx;
+    match porte.route {
         Route::Etat => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(etat(ctx)?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(etat(ctx)?)
         }
         // La part « configuration » de l'etat, pour les routes qui la rendent apres un enregistrement.
         Route::Configuration => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(configuration_dite(ctx)?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(configuration_dite(ctx)?)
         }
         Route::MajEtat => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(version()?)
+            let super::SansCharge {} = charge.lire()?;
+            en_json(version()?)
         }
-        Route::CourrielsFictifs => super::en_json(courriels_fictifs(ctx, &super::lire_charge(charge)?)?),
-        autre => Err(plain(format!("route inconnue : {}", autre))),
+        Route::CourrielsFictifs => en_json(courriels_fictifs(ctx, &charge.lire()?)?),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
+
+macro_rules! dites {
+    ($($t:ty),*) => {
+        $(impl Dite for $t {
+            fn phrase(&self) -> &str {
+                &self.phrase
+            }
+        })*
+    };
+}
+dites!(EtatDeLaPage, ConfigurationDite, Version, CourrielsFictifs);
 
 // ------------------------------------------------------------------ les outils
 
