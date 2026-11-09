@@ -914,10 +914,10 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour) -> Resultat<Temps<T>>
         _ => None,
     };
     let suivante = match ici {
-        Some(i) => i + 1,
-        None => 0,
+        Some(i) => toutes.get(i + 1),
+        None => toutes.first(),
     };
-    let a_venir = toutes.get(suivante).and_then(|e| e.depuis.map(|depuis| AVenir { valeur: e.valeur.clone(), depuis, note: e.note.clone() }));
+    let a_venir = suivante.and_then(|e| e.depuis.map(|depuis| AVenir { valeur: e.valeur.clone(), depuis, note: e.note.clone() }));
     Ok(Temps { en_vigueur, avant, a_venir, toutes })
 }
 

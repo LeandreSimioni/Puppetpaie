@@ -169,19 +169,22 @@ pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
 
 /// La derniere ligne d'une case du taux AT/MP (la plus tardive par sa date), d'ou qu'elle vienne.
 fn derniere(liste: &[droit::fiche::Datee<TauxAtmp>]) -> Option<TauxAtmp> {
-    // `lignes` les range par date.
-    lignes(liste.iter().filter_map(|d| d.valeur.clone())).pop()
+    // A meme date, la derniere ecrite.
+    liste.iter().filter_map(|d| d.valeur.clone()).filter(|t| !t.est_vide()).max_by_key(|t| t.depuis)
 }
 
-/// Les lignes d'une case, chacune une fois, dans l'ordre de leur date.
-fn lignes(toutes: impl Iterator<Item = TauxAtmp>) -> Vec<TauxAtmp> {
-    let mut out: Vec<TauxAtmp> = Vec::new();
-    for t in toutes.filter(|t| !t.est_vide()) {
-        if !out.contains(&t) {
-            out.push(t);
+/// LA CASE DU TAUX AT/MP D'UN AUTRE ETABLISSEMENT `nic`, en liste datee comme celle du siege : chaque ligne que porte une
+/// version de la liste des etablissements, a sa propre date, une fois, avec la note de la version qui l'a portee la
+/// premiere.
+fn case_d_un_etablissement(versions: &[&droit::fiche::Datee<Vec<Etablissement>>], nic: Option<&str>) -> Vec<droit::fiche::Datee<TauxAtmp>> {
+    let mut out: Vec<droit::fiche::Datee<TauxAtmp>> = Vec::new();
+    for v in versions {
+        for t in v.valeur.iter().flatten().filter(|x| x.nic.portee() == nic).filter_map(|x| x.taux_atmp.clone()).filter(|t| !t.est_vide()) {
+            if !out.iter().any(|d| d.valeur.as_ref() == Some(&t)) {
+                out.push(droit::fiche::Datee { depuis: t.depuis, valeur: Some(t), note: v.note.clone() });
+            }
         }
     }
-    out.sort_by_key(|t| t.depuis);
     out
 }
 
@@ -218,8 +221,14 @@ struct LigneDite {
     code_risque: Option<String>,
     taux: Option<f64>,
     depuis: Option<Jour>,
+    /// Pour la ligne d'avant : son dernier jour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jusqu_au: Option<Jour>,
     provenance: Option<ProvenanceAtmp>,
     dit: String,
+    /// La note de la ligne datee (d'ou elle vient) ; sans note, rien n'est dit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
@@ -240,25 +249,36 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
     };
     let code: String = t.code_risque.iter().map(|c| format!(", code risque {}", c)).collect();
     let depuis: String = t.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
-    Ok(LigneDite { code_risque: t.code_risque.clone(), taux: valeur.map(socle::num::flottant), depuis: t.depuis, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou) })
+    Ok(LigneDite { code_risque: t.code_risque.clone(), taux: valeur.map(socle::num::flottant), depuis: t.depuis, jusqu_au: None, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou), note: None })
 }
 
-/// LA LIGNE D'AVANT, CELLE EN VIGUEUR `aujourdhui`, ET CELLE A VENIR, parmi les lignes d'une case.
-fn trois(toutes: &[TauxAtmp], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
-    let passees: Vec<&TauxAtmp> = toutes.iter().filter(|t| t.depuis.is_none_or(|d| d <= *aujourdhui)).collect();
-    let a_venir = toutes.iter().find(|t| t.depuis.is_some_and(|d| d > *aujourdhui));
-    let n = passees.len();
-    let avant = if n >= 2 { passees.get(n - 2) } else { None };
-    let precedee = |devant: &str, t: &TauxAtmp| -> R<LigneDite> {
-        let mut l = ligne_dite(t)?;
-        l.dit = format!("{}{}", devant, l.dit);
+/// LA LIGNE D'AVANT, CELLE EN VIGUEUR `aujourdhui`, ET CELLE A VENIR d'une case du taux AT/MP, telles que
+/// `droit::fiche::temps_au` les lit, chacune avec sa note ; une ligne vide se dit sans taux.
+fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
+    let temps = droit::fiche::temps_au(liste, aujourdhui).map_err(|m| erreur(Classe::Illisible, m))?;
+    let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
+        let mut l = match t.filter(|t| !t.est_vide()) {
+            Some(t) => ligne_dite(t)?,
+            None => LigneDite {
+                code_risque: None,
+                taux: None,
+                depuis,
+                jusqu_au: None,
+                provenance: None,
+                dit: format!("aucun taux{}", depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect::<String>()),
+                note: None,
+            },
+        };
+        let jusqu: String = jusqu_au.iter().map(|j| format!(", jusqu'au {}", j.jj_mm_aaaa())).collect();
+        l.dit = format!("{}{}{}", devant, l.dit, jusqu);
+        l.jusqu_au = jusqu_au;
+        l.note = note;
         Ok(l)
     };
-    Ok((
-        avant.map(|t| precedee("Avant : ", t)).transpose()?,
-        passees.last().map(|t| precedee("En vigueur : ", t)).transpose()?,
-        a_venir.map(|t| precedee("À venir : ", t)).transpose()?,
-    ))
+    let avant = temps.avant.map(|a| dite("Avant : ", a.valeur.as_ref(), None, Some(a.jusqu_au), a.note)).transpose()?;
+    let maintenant = temps.en_vigueur.filter(|e| e.valeur.as_ref().is_some_and(|t| !t.est_vide())).map(|e| dite("En vigueur : ", e.valeur.as_ref(), e.depuis, None, e.note)).transpose()?;
+    let a_venir = temps.a_venir.map(|a| dite("À venir : ", a.valeur.as_ref(), Some(a.depuis), None, a.note)).transpose()?;
+    Ok((avant, maintenant, a_venir))
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
@@ -329,7 +349,7 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
         (r.and_then(|r| r.code_arrete.clone()).or_else(|| code.clone()), r)
     };
     let brute = ctx.entreprise_brute();
-    let siege = lignes(brute.taux_atmp.iter().flatten().filter_map(|d| d.valeur.clone()));
+    let siege: Vec<droit::fiche::Datee<TauxAtmp>> = brute.taux_atmp.iter().flatten().cloned().collect();
     let (avant, maintenant, a_venir) = trois(&siege, &aujourdhui)?;
     let code = ctx.entreprise.taux_atmp.as_ref().and_then(|t| t.code_risque.clone());
     let (nom, risque) = nom_de_code(&code);
@@ -339,8 +359,7 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let mut etablissements = Vec::new();
     for e in ctx.etablissements_dits() {
         let n = e.nic.portee().map(String::from);
-        let toutes = lignes(versions.iter().flat_map(|v| v.valeur.iter().flatten()).filter(|x| x.nic.portee() == n.as_deref()).filter_map(|x| x.taux_atmp.clone()));
-        let (avant, maintenant, a_venir) = trois(&toutes, &aujourdhui)?;
+        let (avant, maintenant, a_venir) = trois(&case_d_un_etablissement(&versions, n.as_deref()), &aujourdhui)?;
         let code = e.taux_atmp.as_ref().and_then(|t| t.code_risque.clone());
         let (nom, r) = nom_de_code(&code);
         let lu = e.taux_atmp.as_ref().and_then(|t| bareme::taux_atmp_de_l_annee(t, an, socle.as_ref(), bareme::en_alsace_moselle(e.code_postal.portee())));
