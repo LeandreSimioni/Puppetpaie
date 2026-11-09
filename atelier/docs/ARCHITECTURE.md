@@ -484,7 +484,9 @@ convention de ce jour. On écrit par `contexte::dater`, et seulement par lui : l
 première valeur d'un champ s'y écrit de tout temps, quelle que soit la date
 donnée ; changer une valeur existante exige sa date d'effet
 (`routes::fiches::ecrire_datee`, l'écran la demande alors) ; ce qui précède
-garde l'ancienne valeur.
+garde l'ancienne valeur. Ce qu'une case datée dit à un jour (sa valeur en vigueur, la dernière d'avant, la prochaine à
+venir, chacune avec sa note, et toutes) se lit par `fiche::temps_au`, seule : la route de chaque fiche le rend à la date
+du jour sous chaque case (`historique` de la fiche), le taux AT/MP (`taux-atmp`) de même.
 
 Trois subtilités, chacune trouvée en cherchant pourquoi un centime manquait.
 
