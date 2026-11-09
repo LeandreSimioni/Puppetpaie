@@ -20,7 +20,7 @@ Ce qu'elle dit (transcription, 14 lignes) :
 Ce que ça confirme et ce que ça change :
 - **V4a** a déjà retiré `06.003` et `11.002` des DSN P27V01 (`logiciel/donnees/norme-dsn-base.json`, relevé sur le
   cahier 2027.1.1) : la page le dit en clair, c'est sa source de doctrine.
-- **D1** (la règle de bascule, `prive/journal/norme/corrections/A-RECUPERER-ET-A-TRANCHER.md`) : le **schéma « Pour
+- **D1** (la règle de bascule, `prive/journal/archives/2026-10-08-lots/norme/corrections/A-RECUPERER-ET-A-TRANCHER.md`) : le **schéma « Pour
   résumer »** (image de la page, transcrit dans le `.txt` depuis la capture de Léandre, 11/10/2026) dessine janvier
   2027 coupé par la **« MEP P27 »** (mise en production) : avant elle, **seule la norme P26** se déclare, en NAF 2008 ;
   après elle, **P26 et P27 sont toutes deux déclarables**, en NAF 2025, P26 avec `06.003`/`11.002`/`85.002`, P27 sans

@@ -3,7 +3,7 @@
 Pourquoi un CDDU de douze mois ou plus n'a ni Congés Spectacles ni majorations d'assiette, et pourquoi un CDD de droit
 commun de moins de douze mois d'un artiste les a (`atelier/sources/paie/src/caisse_conges.rs`,
 `affilie` ; l'étage `bareme::bareme_caisse_conges` ; la section `par_caisse_conges` des barèmes 2025 et 2026). Déposé
-le 10/10/2026, lot V2f (`prive/journal/norme/corrections/PASSATION-V2f.md`).
+le 10/10/2026, lot V2f (`prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V2f.md`).
 
 ## Les fichiers de ce dossier
 

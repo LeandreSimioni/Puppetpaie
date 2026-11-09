@@ -70,7 +70,7 @@ la racine du dossier CoolPaie) :
 - **4.0.0.8.302 (27/02/2025) : « DSN - Désactivation temporaire de la brique DSN-VAL (#3011) »** ;
 - la ligne est encore là dans la 4.0.0.8.312 du 10/06/2026. Le « temporaire » dure depuis dix-huit mois : CoolPaie ne valide plus rien en local.
 
-### Décision — 15/09/2026, dossier clos (`journal/ETAT.md` §26.7)
+### Décision — 15/09/2026, dossier clos (`journal/archives/recits/2026-09-15_au_09-19.md`, §26.7)
 
 **DSN-Val n'est pas installé et ne le sera pas.** Le **dépôt en test** (`python -m moteur depot-dsn … --test`, `S10.G00.00.005
 = 01`) fait tourner la même brique de contrôle, à jour, côté plate-forme, et

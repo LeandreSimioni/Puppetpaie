@@ -79,7 +79,7 @@ sociale, texte `artistes-1975`), et déposés à côté.
   période du contrat (R. 242-2, arrêté de 1975), et non quatre fois le plafond mensuel : l'annexe renvoie au plafond de
   L. 241-3, que R. 242-2 réduit ; la fiche Unédic dit « employeur par employeur » pour les intermittents.
 - **`plafond.rs` suit l'arrêté à la lettre depuis la vague 1l** (10/10/2026, tranché par Léandre ;
-  `prive/journal/norme/corrections/PASSATION-V1l.md`) : un artiste engagé moins de cinq jours (du début à la fin du
+  `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1l.md`) : un artiste engagé moins de cinq jours (du début à la fin du
   contrat) a 12 × le plafond horaire par journée de travail datée ; sinon, et pour un technicien, le prorata de
   R. 242-2. **Inférence** : la « période d'engagement continu » est le contrat (ses bornes `debut` et `fin`). Voir
   aussi le BOSS, assiette générale, § 680, 690, 1090 et 1100 (`../boss/`) et le modèle de l'Urssaf
@@ -89,7 +89,7 @@ sociale, texte `artistes-1975`), et déposés à côté.
   paie**, le PSS mensuel proratisé sur les **jours ayant donné lieu à rémunération** dans la paie (les dates
   distinctes des lignes) : la tolérance du BOSS, assiette générale, § 1090 (`../boss/boss-assiette-generale-20260801.txt`,
   l. 1472-1483), avec la formule du § 700. Un jour rémunéré qui ne se lit pas refuse. Le permanent garde R. 242-2 sur
-  sa période de paie. `prive/journal/norme/corrections/PASSATION-V1o.md`.
+  sa période de paie. `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1o.md`.
 - **Reste à déposer** : la page Urssaf « artistes du spectacle, assiette plafonnée » (le conteneur reçoit une
   réponse vide) ; le BOSS (refuse le conteneur) ; le règlement général annexé à la convention du 15/11/2024, art. 49
   (permanents), déposé depuis : `../chomage-permanents/` (lot V2e). Le texte de la majoration de 11,5 % est déposé depuis : `../majoration-caisses-conges/`.

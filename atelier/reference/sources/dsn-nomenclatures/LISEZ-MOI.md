@@ -44,7 +44,7 @@ Dix-neuf motifs, 001 à 019, sans date. Ceux qui peuvent concerner une compagnie
 
 Ce que ça change : `paie/src/assujettissement.rs` écrit que le dépôt n'a pas la table et refuse le code 002 (non
 assujetti à la TA) faute de motif. La table est là ; **rien n'est codé** (séance du 11/10/2026 : on dépose, on ne
-construit pas). Reste la question Q8 de `prive/journal/norme/corrections/A-RECUPERER-ET-A-TRANCHER.md` : une
+construit pas). Reste la question Q8 de `prive/journal/archives/2026-10-08-lots/norme/corrections/A-RECUPERER-ET-A-TRANCHER.md` : une
 association à activité non lucrative avant le 21/02/2026 déclare-t-elle 002 + MNATA 007, ou 001 ? La table ne le dit
 pas (elle liste les motifs, pas les conditions) ; c'est L. 6241-1 (déposé dans `../code-du-travail/`) qui tranche.
 

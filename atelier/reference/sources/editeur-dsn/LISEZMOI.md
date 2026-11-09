@@ -51,7 +51,7 @@ Page d'origine : https://www.net-entreprises.fr/declaration/charte-editeurs-dsn/
 
 **Décision de Léandre, 17/09/2026 : signer la charte en décembre 2026, avant
 d'envoyer le logiciel aux compagnies amies.** Prérequis : la régularisation
-après échéance (`journal/REGULARISATION-APRES-ECHEANCE.md`), et une page
+après échéance (`journal/archives/2026-10-15-avant-la-refonte/documents-avant-seance-8/REGULARISATION-APRES-ECHEANCE.md`), et une page
 « ce que le logiciel ne couvre pas » lisible par une entreprise.
 
 **Décision de Léandre, 23/10/2026 : signer fin octobre ou début novembre 2026**, et non plus en décembre. Les prérequis
