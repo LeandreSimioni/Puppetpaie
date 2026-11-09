@@ -740,7 +740,7 @@ impl Fenetre {
             }),
             "jour" => {
                 if !socle::temps::simule() {
-                    return Err("Le temps n'est pas simule : lancer l'interface avec --jour.".into());
+                    return Err("Le temps n'est pas simulé : relancer la fenêtre en lui donnant un jour.".into());
                 }
                 let texte = std::str::from_utf8(corps).map_err(|e| e.to_string())?;
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;

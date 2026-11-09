@@ -42,7 +42,7 @@ use crate::routes::fiches::{FicheRecue, ReleveFiches};
 use crate::compagnie::sauvegarde::{self, Sauvegarde};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::Dessine(Place::Bandeau);
+const ECRAN: Ecran = Ecran::Auto(Place::Historique, Affiche::new("Relever maintenant"));
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
@@ -59,7 +59,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
+        avance: true,
         phrase: 0,
         ecran: ECRAN,
     },
