@@ -104,16 +104,16 @@ pub const REFUS_D_ENVOI: &str = "L'envoi n'est pas possible depuis la version d�
 ///
 /// Chaque envoi vers un organisme ou une personne l'ouvre avant que rien ne s'ecrive (`Branchement::ouvrir`). Ce qui va
 /// a l'editeur (incidents, « Un probleme, une idee ? ») et la verification d'un mot de passe ne sont pas des envois.
-pub fn branchement(racine: &Path) -> envois::branchement::Branchement {
+pub fn branchement(racine: &Path) -> Result<envois::branchement::Branchement, String> {
     use crate::interface::compagnies::{est_ajoutee, est_fictive};
     use envois::branchement::{Branchement, Refus};
-    if est_ajoutee(racine) {
+    Ok(if est_ajoutee(racine)? {
         Branchement::Message(Refus { classe: socle::echec::Classe::EnvoiBride, phrase: REFUS_D_ENVOI })
-    } else if paquet_soude() || est_fictive(racine) {
+    } else if paquet_soude() || est_fictive(racine)? {
         Branchement::Simulateur
     } else {
         Branchement::Monde
-    }
+    })
 }
 
 /// Le mot qui le dit (le journal des incidents, la description du poste) : `bride` ou `debloque`.

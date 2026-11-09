@@ -25,9 +25,10 @@ pub static SPEC: Spec = Spec {
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    let r = match args.texte("quoi").unwrap_or("etat") {
-        "seance" => seance(cadre, args),
-        _ => faire(cadre),
+    // `quoi` : `etat` (le defaut de la `Spec`) ou `seance`.
+    let r = match args.texte("quoi") {
+        Some("seance") => seance(cadre, args),
+        Some(_) | None => faire(cadre),
     };
     match r {
         Ok(c) => c,
@@ -106,7 +107,10 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     match crate::compagnie::demande::ouvrir_seance(&cadre.racine) {
         crate::compagnie::demande::Verdict::Accepte => {
-            let fin = coffre.fin_ouverture_gardee().map_err(vers_classe)?.unwrap_or_default();
+            let fin = coffre
+                .fin_ouverture_gardee()
+                .map_err(vers_classe)?
+                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), message: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into() })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
                 fin.replace('T', " a ")

@@ -1041,7 +1041,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
         return Ok(r);
     }
     let mut ouverte: Option<Box<dyn Courriel>> = None;
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
+    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let client: &mut dyn Courriel = match client {
         Some(c) => c,
         None if branchement.joue() => {

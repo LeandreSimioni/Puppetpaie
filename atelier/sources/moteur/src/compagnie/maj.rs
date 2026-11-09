@@ -571,8 +571,13 @@ pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
         autres.sort();
         v.extend(autres);
     }
-    v.retain(|r| !crate::interface::compagnies::est_cache(r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::interface::compagnies::est_copie(r) || crate::interface::compagnies::est_fictive(r)));
-    Ok(v)
+    let mut gardees = Vec::new();
+    for r in v {
+        if !crate::interface::compagnies::est_cache(&r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::interface::compagnies::est_copie(&r) || crate::interface::compagnies::est_fictive(&r)?) {
+            gardees.push(r);
+        }
+    }
+    Ok(gardees)
 }
 
 /// L'ARCHIVE DE MISE A JOUR (`archiver` : le contenu de `logiciel/` a sa racine, le contrat de la tete de ce fichier),
@@ -1024,8 +1029,8 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
 /// ou posee par l'installeur Windows) : son `COPIE-DE-DEVELOPPEMENT.json` dit `copie_de` = « compagnie fictive <son nom> »,
 /// exactement ce que porte chaque fictive livree (`fictives/<nom>/COPIE-DE-DEVELOPPEMENT.json`). Une fictive copiee et
 /// renommee sur le poste dit encore le nom de celle qu'elle copie : ce n'est pas le sien.
-fn marquee_comme_livree(dossier: &Path, nom: &str) -> bool {
-    crate::interface::compagnies::copie_de(dossier) == Some(format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom))
+fn marquee_comme_livree(dossier: &Path, nom: &str) -> Result<bool, String> {
+    Ok(crate::interface::compagnies::copie_de(dossier)? == Some(format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom)))
 }
 
 /// AU LANCEMENT, avant toute fenetre (`interface::preparer_l_installation`) : la livraison de fictives prete se pose.
@@ -1067,7 +1072,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
                 let marque: Option<Livree> = lire_forme(&d.join(LIVREE), "La marque d'une fictive livrée ne se lit pas.")?;
                 empreinte_de(a, nom).is_some() && marque.map(|m| m.empreinte) == empreinte_de(a, nom)
             }
-            None => marquee_comme_livree(&d, nom),
+            None => marquee_comme_livree(&d, nom)?,
         })
     };
     let ecarter = |nom: &str| -> R<()> {
@@ -1875,7 +1880,7 @@ pub fn lancer_relais(inst: &Path, version: &str) -> R<bool> {
 /// Attend la fin du processus `pid` (60 s au plus). Vrai s'il est parti. Sous Windows, le processus lui-meme (son numero,
 /// qui ne se confond avec aucun autre) ; le dossier d'installation n'y sert pas.
 #[cfg(windows)]
-fn attendre_fin(pid: u32, _inst: &Path) -> bool {
+fn attendre_fin(pid: u32, _inst: &Path) -> Result<bool, String> {
     extern "system" {
         fn OpenProcess(acces: u32, heriter: i32, pid: u32) -> isize;
         fn WaitForSingleObject(objet: isize, millisecondes: u32) -> u32;
@@ -1886,11 +1891,11 @@ fn attendre_fin(pid: u32, _inst: &Path) -> bool {
     unsafe {
         let h = OpenProcess(SYNCHRONIZE, 0, pid);
         if h == 0 {
-            return true; // deja parti (ou jamais vu : rien a attendre)
+            return Ok(true); // deja parti (ou jamais vu : rien a attendre)
         }
         let r = WaitForSingleObject(h, 60_000);
         CloseHandle(h);
-        r == 0
+        Ok(r == 0)
     }
 }
 
@@ -1898,14 +1903,14 @@ fn attendre_fin(pid: u32, _inst: &Path) -> bool {
 /// a son creneau (`interface::instance::ouverte`, qui compare le dossier de l'installation), elle est partie. Une autre
 /// installation ouverte sur le poste a son propre creneau, et ne se confond jamais avec elle.
 #[cfg(not(windows))]
-fn attendre_fin(_pid: u32, inst: &Path) -> bool {
+fn attendre_fin(_pid: u32, inst: &Path) -> Result<bool, String> {
     for _ in 0..120 {
-        if !crate::interface::instance::ouverte(inst, crate::interface::instance::Plage::DU_POSTE) {
-            return true;
+        if !crate::interface::instance::ouverte(inst, crate::interface::instance::Plage::DU_POSTE)? {
+            return Ok(true);
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
-    false
+    Ok(false)
 }
 
 /// Le relais (`puppetpaie maj-relais --installation I --code C --attendre PID`) : attend la fin du programme qui l'a
@@ -1924,13 +1929,17 @@ pub fn relais(args: &[String]) -> i32 {
     let Some(inst) = code.parent().map(Path::to_path_buf) else { return 2 };
     let pid = valeur("--attendre").and_then(|p| p.to_str().map(str::parse::<u32>));
     let attendu = match pid {
-        Some(Ok(p)) => {
-            let parti = attendre_fin(p, &inst);
-            if !parti {
+        Some(Ok(p)) => match attendre_fin(p, &inst) {
+            Ok(true) => true,
+            Ok(false) => {
                 noter(&inst, "Mise a jour non appliquee : le programme qui l'a lancee ne s'est pas arrete.");
+                false
             }
-            parti
-        }
+            Err(e) => {
+                noter(&inst, &format!("Mise a jour non appliquee : on ne sait pas si le programme qui l'a lancee s'est arrete ({}).", e));
+                false
+            }
+        },
         Some(Err(e)) => {
             noter(&inst, &format!("Mise a jour non appliquee : le numero du programme a attendre ne se lit pas ({}).", e));
             false
@@ -2022,16 +2031,16 @@ pub fn commande(args: &[String]) -> i32 {
         publier(&racine, valeur("--publier").as_deref(), &phrase_publiee(valeur("--notes")), &phrase_publiee(valeur("--calcul")), &phrase_publiee(valeur("--exigee")))
             .map(|r| format!("Publiee : {} ({}) dans {}", version_lue(&r.manifeste.version), r.dire_les_archives(), r.dossier.display()))
     } else if drapeau("--appliquer") {
-        if crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
-            Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into())
-        } else {
-            appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant))
+        match crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
+            Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into()),
+            Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
+            Err(e) => Err(e),
         }
     } else if drapeau("--revenir") {
-        if crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
-            Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into())
-        } else {
-            revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v)))
+        match crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
+            Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into()),
+            Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v))),
+            Err(e) => Err(e),
         }
     } else {
         Ok(verifier(!drapeau("--sans-telecharger")))
@@ -2093,7 +2102,7 @@ mod tests {
     fn une_fictive(base: &Path) {
         let f = base.join("fictives").join("fictive-essai");
         std::fs::create_dir_all(f.join(socle::fichiers::CONFIG)).unwrap();
-        std::fs::write(f.join("COPIE-DE-DEVELOPPEMENT.json"), "{\"copie_de\": \"compagnie fictive (essai)\"}").unwrap();
+        std::fs::write(f.join("COPIE-DE-DEVELOPPEMENT.json"), "{\"copie_de\": \"compagnie fictive (essai)\", \"quoi\": \"essai\"}").unwrap();
         std::fs::write(f.join(droit::contexte::ENTREPRISE), "{\"nom_affichage\": \"Essai\"}").unwrap();
         std::fs::write(base.join("fictives").join("LISEZ-MOI.md"), "Les fictives.\n").unwrap();
     }

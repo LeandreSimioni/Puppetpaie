@@ -1518,7 +1518,11 @@ pub fn machine(racine: &Path) -> Machine {
         installation: installation.to_string(),
         chemin: chemin_sans_session(&base),
         edition: crate::compagnie::bridage::etat().to_string(),
-        compagnie: if crate::interface::compagnies::est_fictive(racine) { "fictive" } else { "réelle (non nommée)" }.to_string(),
+        compagnie: match crate::interface::compagnies::est_fictive(racine) {
+            Ok(true) => "fictive".to_string(),
+            Ok(false) => "réelle (non nommée)".to_string(),
+            Err(e) => socle::echec::phrase_de(&e),
+        },
         langue_systeme: langue,
         lance_depuis: duree_lisible(demarrage().elapsed()),
         mises_a_jour,

@@ -66,7 +66,7 @@ pub fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
 /// ne se joue dans une compagnie qui n'est pas une compagnie fictive (la garde de l'horloge) : la releve rendue est alors
 /// vide.
 pub fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> {
-    if HorlogeFictive::verifier(&ctx.racine).is_none() {
+    if HorlogeFictive::verifier(&ctx.racine)?.is_none() {
         return Ok(ReleveSignatures::nouvelle());
     }
     let mut boite = boite_des_signatures(ctx)?;
@@ -84,7 +84,7 @@ fn os(m: String) -> Echec {
 /// renverrait le contrat contresigne au salarie : un envoi) ; le monde, la vraie boite. `Err` : l'incident qui dit
 /// pourquoi rien ne se releve.
 fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
-    match crate::compagnie::bridage::branchement(&ctx.racine) {
+    match crate::compagnie::bridage::branchement(&ctx.racine)? {
         envois::branchement::Branchement::Simulateur => return Ok(Ok(Box::new(boite_des_signatures(ctx)?))),
         envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}

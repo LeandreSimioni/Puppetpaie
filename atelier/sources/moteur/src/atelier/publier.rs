@@ -94,7 +94,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
             continue;
         }
         // Une fictive AJOUTEE sur le poste porte les donnees qu'on y a mises : elle ne se livre jamais.
-        if !crate::interface::compagnies::est_fictive_livree(&e.path()) {
+        if !crate::interface::compagnies::est_fictive_livree(&e.path())? {
             continue;
         }
         n += 1;

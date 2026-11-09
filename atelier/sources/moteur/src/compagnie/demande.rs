@@ -332,7 +332,7 @@ pub const VARIABLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_DEMANDE";
 /// ni n'y engage), la fausse demande tape ce que `VARIABLE_ESSAIS` dit : les exemples des fiches du coffre se jouent ainsi
 /// sans humain. Une compagnie reelle n'a jamais que le canal du poste.
 pub fn canal_de_la_route(racine: &Path) -> Rc<dyn Canal> {
-    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && crate::compagnie::bridage::branchement(racine).joue());
+    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && matches!(crate::compagnie::bridage::branchement(racine), Ok(b) if b.joue()));
     match fausse {
         Some(m) => Rc::new(Fausse::mot(&m)),
         None => Rc::new(Reel::du_poste()),

@@ -16,7 +16,7 @@
 use serde_json::{json, Value};
 
 use super::analyse::{Args, Opt, Spec};
-use super::rendu::{enveloppe, rendre};
+use super::rendu::rendre;
 use super::Cadre;
 
 pub static SPEC: Spec = Spec {
@@ -58,8 +58,13 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         }
     };
     if args.drapeau("json") {
-        rendre(&enveloppe("sources", json!({"total": liste.len(), "sources": liste})));
-        return 0;
+        /// Ce que rend `moteur sources --json` : les sources, et leur nombre.
+        #[derive(serde::Serialize)]
+        struct Sources<'a> {
+            total: usize,
+            sources: &'a [Value],
+        }
+        return rendre("sources", Sources { total: liste.len(), sources: &liste });
     }
     let s = |e: &Value, k: &str| match &e[k] {
         Value::Null => "?".to_string(),

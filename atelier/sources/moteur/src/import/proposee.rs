@@ -56,11 +56,6 @@ pub(crate) fn verifier_comme_a_l_ecriture(nom: &str, donnees: &Saisie) -> R<Vec<
     Ok(anomalies)
 }
 
-/// Les formes declarees de `donnees` fabriquees depuis leurs formes lisibles (`fiches::deriver`).
-pub(crate) fn deriver(nom: &str, donnees: &mut Saisie, forcer: bool) -> R<()> {
-    fiches::deriver(nom, donnees, forcer, &|_| true)
-}
-
 /// UNE FICHE QUE L'IMPORT CREE, ecrite comme celles de l'ecran (`fiches::ecrire_fiche`, `forcer` : une fiche importee
 /// avec des anomalies est ecrite quand meme). Rend sa cle et ses anomalies, chacune avec le libelle de sa case.
 pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: &str, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {

@@ -370,22 +370,26 @@ fn fichier_de_la_page(chemin: &str) -> Result<Option<(Vec<u8>, &'static str)>, S
 }
 
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`instance::dossier_local`).
-fn jeton(local: &Path) -> String {
+/// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
+/// previsible.
+fn jeton(local: &Path) -> Result<String, String> {
     let p = local.join(".jeton-interface");
-    if let Ok(j) = std::fs::read_to_string(&p) {
-        let j = j.trim();
-        if j.len() >= 24 && j.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return j.to_string();
+    match std::fs::read_to_string(&p) {
+        Ok(j) => {
+            let j = j.trim();
+            if j.len() >= 24 && j.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                return Ok(j.to_string());
+            }
         }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     }
     let mut o = [0u8; 24];
-    let _ = getrandom::fill(&mut o);
+    getrandom::fill(&mut o).map_err(|e| format!("Le jeton de la fenetre ne se tire pas au hasard : {}", e))?;
     let j: String = o.iter().map(|b| format!("{:02x}", b)).collect();
-    if let Some(d) = p.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let _ = std::fs::write(&p, &j);
-    j
+    std::fs::create_dir_all(local).map_err(|e| socle::echec::du_disque(local, &e))?;
+    std::fs::write(&p, &j).map_err(|e| socle::echec::du_disque(&p, &e))?;
+    Ok(j)
 }
 
 /// Un JSON pose dans la page, dans un `<script type="application/json">` : rien ne peut y fermer la balise.
@@ -416,8 +420,8 @@ fn logo_en_ligne(logo: &Path) -> Option<String> {
 }
 
 /// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit (`routes::accueil::liste`).
-fn page_accueil() -> String {
-    let r = crate::routes::accueil::liste(&compagnies::base());
+fn page_accueil() -> Result<String, String> {
+    let r = crate::routes::accueil::liste(&compagnies::base())?;
     let mut tuiles = Vec::new();
     for c in &r.compagnies {
         let medaillon = match c.logo.as_deref().map(Path::new).and_then(logo_en_ligne) {
@@ -475,7 +479,7 @@ fn page_accueil() -> String {
     };
     // La version, sous le nom, comme dans la page d'une compagnie ; les tuiles en dernier : un nom de
     // compagnie n'est jamais lu comme une marque a remplacer.
-    ACCUEIL
+    Ok(ACCUEIL
         .replace("{{VERSION_DITE}}", &format!("version {}", version()))
         .replace("{{AUTEUR}}", &json_dans_la_page(&r.auteur))
         .replace("{{EMPREINTE}}", &empreinte())
@@ -483,7 +487,7 @@ fn page_accueil() -> String {
             "{{SOUS_TITRE}}",
             if bride { "des compagnies fictives, et rien ne part" } else { "quelle compagnie ouvrir ?" },
         )
-        .replace("{{TUILES}}", &grille)
+        .replace("{{TUILES}}", &grille))
 }
 
 /// La page du logiciel, telle que la fenetre la recoit (publique pour `tests/interface_fichiers.rs`).
@@ -494,10 +498,10 @@ pub fn page_logiciel(racine: &Path, jeton: &str) -> Result<String, String> {
         .replace("{{JETON}}", jeton)
         .replace("{{EMPREINTE}}", &empreinte())
         .replace("{{COPIE}}", if copie { "1" } else { "" })
-        .replace("{{COPIE_TEXTE}}", &compagnies::texte_copie(racine))
+        .replace("{{COPIE_TEXTE}}", &compagnies::texte_copie(racine)?)
         .replace(
             "{{STYLE_COMPAGNIE}}",
-            &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", compagnies::couleur(racine)) },
+            &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", compagnies::couleur(racine)?) },
         )
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if crate::compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
@@ -508,9 +512,9 @@ pub fn page_logiciel(racine: &Path, jeton: &str) -> Result<String, String> {
 }
 
 impl Fenetre {
-    pub fn nouvelle(minutes_veille: u64, local: PathBuf, port: u16) -> Arc<Fenetre> {
-        Arc::new(Fenetre {
-            jeton: jeton(&local),
+    pub fn nouvelle(minutes_veille: u64, local: PathBuf, port: u16) -> Result<Arc<Fenetre>, String> {
+        Ok(Arc::new(Fenetre {
+            jeton: jeton(&local)?,
             port,
             local,
             fil: Fil::nouveau(),
@@ -521,7 +525,7 @@ impl Fenetre {
             journal: Mutex::new(None),
             minutes_veille,
             fermer: Mutex::new(None),
-        })
+        }))
     }
 
     pub fn ecrire(&self, texte: &str) {
@@ -585,7 +589,13 @@ impl Fenetre {
         }
         let f = self.clone();
         crate::routes::fil_de_routes(move || {
-            let reelles = compagnies::a_tenir_a_jour(&compagnies::base());
+            let reelles = match compagnies::a_tenir_a_jour(&compagnies::base()) {
+                Ok(r) => r,
+                Err(e) => {
+                    f.ecrire(&format!("Calcul en fond non lance : {}\n", socle::echec::phrase_de(&e)));
+                    return;
+                }
+            };
             for r in &reelles {
                 f.file_de(r).tout_verifier();
             }
@@ -623,7 +633,7 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        if crate::compagnie::bridage::est_bride() || compagnies::est_fictive(&racine) {
+        if crate::compagnie::bridage::est_bride() || compagnies::est_fictive(&racine)? {
             self.ouvrir(racine);
             return Ok(());
         }
@@ -735,8 +745,8 @@ impl Fenetre {
                 secondes: socle::temps::secondes(),
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
-                simulee: ouverte.as_ref().is_some_and(|r| crate::compagnie::bridage::branchement(r).joue()),
-                ajoutee: ouverte.as_ref().is_some_and(|r| compagnies::est_ajoutee(r)),
+                simulee: ouverte.as_deref().map(crate::compagnie::bridage::branchement).transpose()?.is_some_and(|b| b.joue()),
+                ajoutee: ouverte.as_deref().map(compagnies::est_ajoutee).transpose()?.is_some_and(|a| a),
             }),
             "jour" => {
                 if !socle::temps::simule() {
@@ -789,8 +799,9 @@ impl Fenetre {
     fn route_de_l_installation(&self, nom: Route, charge: &Charge) -> RouteReponse {
         let inst = compagnies::base();
         if nom == Route::CompagniesGarder {
-            for c in suppression::a_garder(&inst) {
-                self.lacher(&c.racine);
+            match suppression::a_garder(&inst) {
+                Ok(cies) => cies.iter().for_each(|c| self.lacher(&c.racine)),
+                Err(e) => return RouteReponse::de(nom, Err(socle::echec::erreur(socle::echec::Classe::Refuse, e))),
             }
         }
         if nom == Route::AdministrateurTableau {
@@ -993,7 +1004,10 @@ impl Fenetre {
                         .avec("Set-Cookie", format!("{}={}; Path=/; HttpOnly; SameSite=Strict", self.nom_du_cookie(), self.jeton));
                 }
                 let html = match self.phase() {
-                    Phase::Accueil => page(&page_accueil(), &self.jeton, NOMS_ACCUEIL),
+                    Phase::Accueil => match page_accueil() {
+                        Ok(p) => page(&p, &self.jeton, NOMS_ACCUEIL),
+                        Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::phrase_de(&e)),
+                    },
                     Phase::MotDePasse { racine, premiere } => {
                         // Ce que l'administrateur est pour cette compagnie (la route `administrateur-etat`) : la page le lit,
                         // sans rien decider.
@@ -1035,7 +1049,18 @@ impl Fenetre {
     fn piece_fictive(&self, r: &Requete) -> Reponse {
         let interdit = Reponse::nouvelle(403, "text/plain", Vec::new());
         let Phase::Ouverte { racine, .. } = self.phase() else { return interdit };
-        if !self.autorise(r) || !crate::compagnie::bridage::branchement(&racine).joue() {
+        if !self.autorise(r) {
+            return interdit;
+        }
+        // Une piece fictive ne se sert que d'une compagnie dont les envois sont joues ; un marqueur illisible ne le dit pas.
+        let joue = match crate::compagnie::bridage::branchement(&racine) {
+            Ok(b) => b.joue(),
+            Err(e) => {
+                self.ecrire(&format!("{}\n", socle::echec::phrase_de(&e)));
+                return interdit;
+            }
+        };
+        if !joue {
             return interdit;
         }
         let rien = || Reponse::nouvelle(404, "text/plain", Vec::new());
@@ -1177,7 +1202,7 @@ pub use instance::{Instance, Prise};
 /// LE VERROU DE CETTE INSTALLATION (`instance.rs`) : un creneau par installation -- son verrou et le port de sa page.
 /// La meme installation relancee : `Devant` (sa fenetre est revenue devant) ; une autre installation ouverte sur le poste
 /// ne change rien, chacune a son creneau.
-pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> Instance {
+pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
     instance::prendre(devant)
 }
 
@@ -1200,7 +1225,7 @@ pub fn demarrer_sur(minutes_veille: u64, port: u16) -> std::io::Result<(Arc<Fene
 fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     // L'heure du lancement et les paniques notees (`diagnostic`) : ce qu'un retour et un incident disent de la fenetre.
     crate::compagnie::diagnostic::installer();
-    let f = Fenetre::nouvelle(minutes_veille, instance::dossier_local(&compagnies::base(), port), port);
+    let f = Fenetre::nouvelle(minutes_veille, instance::dossier_local(&compagnies::base(), port), port).map_err(std::io::Error::other)?;
     let servie = f.clone();
     std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
     f.ecrire(&format!("PuppetPaie {} : la fenetre ecoute sur 127.0.0.1:{}.\n", version(), port));
@@ -1331,10 +1356,14 @@ pub fn commande(args: &[String]) -> i32 {
         }
     });
     let prise = match instance {
-        Instance::Tenue(p) => p,
-        Instance::Devant => {
+        Ok(Instance::Tenue(p)) => p,
+        Ok(Instance::Devant) => {
             dire!("PuppetPaie est deja ouvert depuis cette installation : sa fenetre revient devant.");
             return 0;
+        }
+        Err(e) => {
+            eprintln!("La fenetre ne demarre pas : {}", socle::echec::phrase_de(&e));
+            return 1;
         }
     };
     // La mise a jour se cherche au lancement, pour l'installation (`maj::chercher_en_fond`) ; elle s'appliquera au

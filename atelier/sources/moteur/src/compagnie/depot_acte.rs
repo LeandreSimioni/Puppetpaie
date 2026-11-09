@@ -110,7 +110,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
     // UNE COMPAGNIE FICTIVE AUX ENVOIS SIMULES : son « acte reel » est joue (`FICTIF-…`), rien ne part -- comme dans le
     // binaire livre (`verifier_preuve_du_logiciel`). Le banc d'essai en vit : l'horloge y depose la DSN et la DPAE
     // « en reel ». Toute autre compagnie : refuse, mot de passe ou non (la commande `signatures` fait de meme).
-    if crate::compagnie::bridage::branchement(&ctx.racine).joue() {
+    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
     }
     Err(erreur(Classe::ActeReelRefuse, crate::atelier::redirection::REFUS_ACTE_REEL.to_string()))
@@ -119,7 +119,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
 #[cfg_attr(feature = "atelier", allow(dead_code))]
 fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
     // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
-    if crate::compagnie::bridage::branchement(&ctx.racine).joue() {
+    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
     }
     // Une version EXIGEE attend d'etre appliquee : l'ancienne ferait une declaration fausse.
@@ -400,7 +400,7 @@ pub fn deposer_dsn_dans(
     contournement: &str,
     ordre_d_essai: Option<i64>,
 ) -> R<DepotFait> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
+    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     if reel && environnement != "production" {
         return Err(erreur(
@@ -427,7 +427,7 @@ pub fn deposer_dsn_dans(
     }
     // UNE COMPAGNIE D'ESSAI ne depose que ce qu'elle a ecrit sous SON identite : les DSN copiees de la fictive portent le
     // SIREN de la fictive, que le compte net-entreprises ne declare pas. Le refus ne cite aucun des deux numeros.
-    if crate::compagnie::essai::est_essai(&ctx.racine) && apercu.emetteur.as_deref() != ctx.entreprise.siren.portee() {
+    if crate::compagnie::essai::est_essai(&ctx.racine)? && apercu.emetteur.as_deref() != ctx.entreprise.siren.portee() {
         return Err(erreur(
             Classe::Refuse,
             "Compagnie d'essai : ce fichier ne porte pas le SIREN de la compagnie (il a ete ecrit sous une autre identite : celle de la compagnie fictive, avant le montage, ou une identite d'avant). Déposer ici la DSN du mois, qui s'y fabrique. Rien n'est parti.",
@@ -595,7 +595,7 @@ pub fn deposer_dpae_avec(
     contournement: &str,
     client_donne: Option<&mut Client>,
 ) -> R<DepotFait> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
+    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     let chemin = PathBuf::from(crate::routes::depots::resoudre(&ctx.racine, fichier)?);
     let apercu = crate::routes::depots::apercu_depot_dpae(ctx, &chemin.to_string_lossy())?;

@@ -293,7 +293,7 @@ fn ecrire_lignes(p: &Path, toutes: &[Ligne]) -> R<()> {
 
 /// `noter` : ajoute une ligne, et la rend ; `None` quand rien n'est a noter (les faux envois d'une fictive).
 pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
-    if (n.nature == DPAE || n.nature == DSN) && crate::compagnie::bridage::branchement(racine).joue() {
+    if (n.nature == DPAE || n.nature == DSN) && crate::compagnie::bridage::branchement(racine)?.joue() {
         // LES FAUX ENVOIS NE SONT PAS DES INCIDENTS : une fictive joue ses depots.
         return Ok(None);
     }
@@ -945,7 +945,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         Some(v) if v.join(socle::fichiers::CONFIG).is_dir() => v,
         Some(_) | None => logiciel.to_path_buf(),
     };
-    if crate::interface::compagnies::est_fictive(racine) && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
+    if crate::interface::compagnies::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
         if let Some(s) = lire_config(&reel)?.serveur.filter(|s| !s.is_empty()) {
             return Ok((s, reel));
         }

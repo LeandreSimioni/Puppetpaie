@@ -91,10 +91,10 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
             socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
         ));
     }
-    if compagnies::est_ajoutee(racine) {
+    if compagnies::est_ajoutee(racine)? {
         return Ok(Genre::Ajoutee);
     }
-    if compagnies::est_fictive(racine) {
+    if compagnies::est_fictive(racine)? {
         return Err("Une compagnie fictive livrée ne se supprime pas : elle se remet à zéro, depuis sa tuile de l'accueil.".into());
     }
     if compagnies::est_copie(racine) {
@@ -108,7 +108,7 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
 pub fn question(racine: &Path) -> Result<Suppression, String> {
     let inst = crate::compagnie::administrateur::installation_de(racine);
-    let nom = compagnies::nom_de(racine);
+    let nom = compagnies::nom_de(racine)?;
     let g = match genre(&inst, racine) {
         Ok(g) => g,
         Err(phrase) => return Ok(Suppression { phrase, ..Suppression::de(nom) }),
@@ -226,7 +226,7 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) ->
 /// n'efface rien et n'appelle pas `avant`.
 pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &Poste, avant: &dyn Fn(&Path)) -> Result<String, String> {
     let g = genre(inst, racine)?;
-    let nom = compagnies::nom_de(racine);
+    let nom = compagnies::nom_de(racine)?;
     if g == Genre::Reelle {
         prouver(racine, &nom, motdepasse, poste)?;
     }
@@ -274,18 +274,26 @@ pub fn effacer_les_restes(inst: &Path) -> Vec<PathBuf> {
 
 /// LES FICTIVES AJOUTEES A GARDER OU NON : sur un logiciel debloque, celles qui sont encore la ; bride, aucune (la question
 /// ne se pose pas).
-pub fn a_garder(inst: &Path) -> Vec<Compagnie> {
+pub fn a_garder(inst: &Path) -> Result<Vec<Compagnie>, String> {
     if crate::compagnie::bridage::est_bride_de(inst) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    compagnies::liste_de(inst).into_iter().filter(|c| !c.reelle && compagnies::est_ajoutee(&c.racine)).collect()
+    let mut ajoutees = Vec::new();
+    for c in compagnies::liste_de(inst)? {
+        if !c.reelle && compagnies::est_ajoutee(&c.racine)? {
+            ajoutees.push(c);
+        }
+    }
+    Ok(ajoutees)
 }
 
 /// GARDER la fictive ajoutee `racine` : elle devient une compagnie reelle, sous `compagnies/` (un nom de dossier tire du
 /// sien, jamais celui d'une compagnie deja la), sans marqueur de fictive, avec sa mention de demo. Rend la compagnie.
 fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
-    let nom = compagnies::nom_de(racine);
-    let marqueur: compagnies::MarqueurAjoutee = socle::forme::lire_fichier(&racine.join(compagnies::MARQUEUR), "Le marqueur de la compagnie créée en démo ne se lit pas : rien n'a changé.")?;
+    let nom = compagnies::nom_de(racine)?;
+    let creee_le = compagnies::marqueur(racine)?
+        .and_then(|m| m.quand)
+        .ok_or("Le marqueur de la compagnie créée en démo ne dit pas quand elle a été créée : rien n'a changé.")?;
     let parent = inst.join("compagnies");
     std::fs::create_dir_all(&parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
     let base = compagnies::nom_de_dossier(&nom);
@@ -296,7 +304,7 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
         n += 1;
     }
     let mention = FichierDemo {
-        creee_le: marqueur.quand,
+        creee_le,
         gardee_le: socle::paris::maintenant(),
         mois: engagement::stock::mois_saisis(racine).map_err(|e| socle::echec::Echec::from(e).phrase())?.into_iter().map(String::from).collect(),
         quoi: QUOI_DEMO.to_string(),
@@ -312,10 +320,12 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
     std::fs::remove_file(cible.join(compagnies::MARQUEUR))
         .map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", socle::echec::APart { detail: Some(e.to_string()), ..a_part() }))?;
     let gardee = absolu(&cible)?;
-    compagnies::liste_de(inst)
-        .into_iter()
-        .find(|c| absolu(&c.racine).as_ref() == Ok(&gardee))
-        .ok_or_else(|| socle::echec::avec(format!("{} a été gardée, mais l'accueil ne la trouve pas.", nom), a_part()))
+    for c in compagnies::liste_de(inst)? {
+        if absolu(&c.racine)? == gardee {
+            return Ok(c);
+        }
+    }
+    Err(socle::echec::avec(format!("{} a été gardée, mais l'accueil ne la trouve pas.", nom), a_part()))
 }
 
 /// LA REPONSE A LA QUESTION DU DEBLOCAGE : `garder` et `ne_pas_garder`, des identifiants de tuile (`fictive:<dossier>`)
@@ -329,7 +339,7 @@ pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], po
     if let Some(id) = garder_ids.iter().find(|id| ne_pas_garder.contains(id)) {
         return Err(format!("{} est à la fois gardée et supprimée : rien n'a changé.", id));
     }
-    let proposees = a_garder(inst);
+    let proposees = a_garder(inst)?;
     let inconnue = garder_ids.iter().chain(ne_pas_garder).find(|id| !proposees.iter().any(|c| &c.id == *id));
     if let Some(id) = inconnue {
         return Err(format!("{} n'est pas une compagnie créée en démo : rien n'a changé.", id));

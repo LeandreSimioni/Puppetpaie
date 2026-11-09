@@ -516,7 +516,8 @@ pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(&
     // annexe 3 : `reference/sources/iban/`).
     if source("banque") {
         if let Some(Valeur::Bloc(b)) = d.case_mut("banque") {
-            for k in ["iban", "bic"] {
+            const COMPACTES: [&str; 2] = ["iban", "bic"];
+            for k in COMPACTES {
                 if let Some(brut) = b.texte(k) {
                     let forme = socle::iban::iban_compact(brut);
                     if forme != brut {

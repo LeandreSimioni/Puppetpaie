@@ -321,7 +321,8 @@ pub fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
         (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.contains(&n)
     });
     signer_dossier(&mut h, racine, envois::journal::JOURNAL, false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.contains(&n));
-    for d in ["imprevus", "historique", "retours"] {
+    const DOSSIERS_SIGNES: [&str; 3] = ["imprevus", "historique", "retours"];
+    for d in DOSSIERS_SIGNES {
         signer_dossier(&mut h, racine, d, true, &|n| !n.ends_with(".tmp"));
     }
     if ouverture {

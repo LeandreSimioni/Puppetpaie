@@ -59,7 +59,7 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
 
     assert_eq!(supprimer(&i, &b, Some(ADMIN), &p, &|_| appele.set(true)).unwrap(), "Compagnie B");
     assert!(appele.get() && !b.exists());
-    assert!(liste_de(&i).iter().all(|x| x.racine != b), "la tuile a disparu");
+    assert!(liste_de(&i).unwrap().iter().all(|x| x.racine != b), "la tuile a disparu");
     assert_eq!(administrateur::rattachees(&i).unwrap(), vec![a.clone()], "le registre l'oublie");
     // Une compagnie neuve sous le meme dossier n'en herite rien.
     let neuve = ajouter_venant(&i, "Compagnie B", Venue::Neuve).unwrap().racine;

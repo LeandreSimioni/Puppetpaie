@@ -1,7 +1,8 @@
 # Le dossier de configuration d'une personne, selon son système (relevé du 09/11/2026)
 
 Où vit la clé du poste quand rien ne la déplace (`PUPPETPAIE_CLE`) et qu'aucun dossier portable ne la garde :
-`moteur/src/compagnie/coffre.rs`, `dossier_cle_de`. Le système dit où une application range sa configuration (une
+`moteur/src/compagnie/coffre.rs`, `dossier_cle_de` ; et où vit ce qui appartient à la personne sur ce poste (le profil
+du navigateur de la fenêtre, son jeton) : `moteur/src/interface/navigateur.rs`, `dossier_utilisateur`. Le système dit où une application range sa configuration (une
 variable d'environnement) et, quand la variable ne le dit pas, quel dossier il lui donne par défaut : c'est ce défaut que
 le moteur prend, et rien d'autre.
 
@@ -24,3 +25,10 @@ leurs condensats SHA-256 sont donnés ici.
   vide ou relatif).
 - **Windows**, `microsoft-knownfolderid-20230830.txt` l. 1120-1127 : « FOLDERID_RoamingAppData […] Default Path %APPDATA%
   (%USERPROFILE%\AppData\Roaming) ». Le moteur prend `APPDATA` s'il est dit, `%USERPROFILE%\AppData\Roaming` sinon.
+- **Le profil de la fenêtre, Linux et les autres Unix**, `freedesktop-basedir-spec-20210508.txt` l. 66 : « $XDG_DATA_HOME
+  defines the base directory relative to which user-specific data files should be stored. If $XDG_DATA_HOME is either
+  not set or empty, a default equal to $HOME/.local/share should be used. » Le moteur prend `XDG_DATA_HOME` s'il est un
+  chemin absolu, `$HOME/.local/share` sinon.
+- **Le profil de la fenêtre, Windows**, `microsoft-knownfolderid-20230830.txt` l. 614-618 : « FOLDERID_LocalAppData […]
+  Default Path %LOCALAPPDATA% (%USERPROFILE%\AppData\Local) ». Le moteur prend `LOCALAPPDATA` s'il est dit,
+  `%USERPROFILE%\AppData\Local` sinon.

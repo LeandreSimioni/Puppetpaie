@@ -552,23 +552,35 @@ pub fn dossier_portable() -> Option<PathBuf> {
 
 /// Ou vit la cle du poste : `PUPPETPAIE_CLE` la deplace ; sinon le dossier portable (`dossier_portable`), s'il y en a
 /// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
-pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Path>) -> PathBuf {
-    // Le dossier de la personne : `HOME` (vide, la racine), sinon `USERPROFILE` sous Windows, sinon ce que le systeme
-    // en dit, sinon la racine.
-    let maison = || -> PathBuf {
-        let dit = match env("HOME") {
-            Some(h) if h.is_empty() => Some("/".to_string()),
-            Some(h) => Some(h),
-            None if cfg!(windows) => env("USERPROFILE"),
-            None => None,
-        };
-        #[allow(deprecated)]
-        match (dit, std::env::home_dir()) {
-            (Some(h), _) => PathBuf::from(h),
-            (None, Some(h)) => h,
-            (None, None) => PathBuf::from("/"),
-        }
+/// Le dossier de la personne : `HOME` (vide, la racine), sinon `USERPROFILE` sous Windows, sinon ce que le systeme en dit,
+/// sinon la racine.
+pub(crate) fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
+    let dit = match env("HOME") {
+        Some(h) if h.is_empty() => Some("/".to_string()),
+        Some(h) => Some(h),
+        None if cfg!(windows) => env("USERPROFILE"),
+        None => None,
     };
+    #[allow(deprecated)]
+    match (dit, std::env::home_dir()) {
+        (Some(h), _) => PathBuf::from(h),
+        (None, Some(h)) => h,
+        (None, None) => PathBuf::from("/"),
+    }
+}
+
+/// La variable `nom` telle que le moteur la lit pour situer un dossier de la personne : `HOME` telle quelle (vide, elle
+/// dit la racine), les autres si elles disent quelque chose.
+pub(crate) fn env_du_poste(nom: &str) -> Option<String> {
+    if nom == "HOME" {
+        env_tel_quel(nom)
+    } else {
+        env_non_vide(nom)
+    }
+}
+
+pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Path>) -> PathBuf {
+    let maison = || maison_de(env);
     if let Some(force) = env("PUPPETPAIE_CLE") {
         let p = match force.strip_prefix('~') {
             Some(suite) if suite.is_empty() || suite.starts_with('/') || (cfg!(windows) && suite.starts_with('\\')) => {
@@ -644,7 +656,7 @@ impl Coffre {
 
     /// Le dossier de la cle de CE poste, tel que `du_poste` le trouve.
     pub fn dossier_cle_du_poste() -> PathBuf {
-        dossier_cle_de(&|n| if n == "HOME" { env_tel_quel(n) } else { env_non_vide(n) }, dossier_portable().as_deref())
+        dossier_cle_de(&env_du_poste, dossier_portable().as_deref())
     }
 
     /// L'heure locale `AAAA-MM-JJTHH:MM` : celle qu'on a donnee, sinon l'horloge. Les lecteurs du moteur font leur

@@ -1108,7 +1108,7 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
     let coffre = crate::compagnie::coffre::Coffre::du_poste(racine, "");
     let secrets = coffre.services().map_err(vers_route)?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
-    let simule = crate::compagnie::bridage::branchement(racine).joue();
+    let simule = crate::compagnie::bridage::branchement(racine)?.joue();
     let mut services = Vec::new();
     for s in secrets {
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
@@ -1202,7 +1202,7 @@ struct EcranDuCoffre {
 /// et courriel, a quoi servent le compte Google et le filet, et ce que demandent les confirmations. La page n'en ecrit
 /// rien ; chaque service porte aussi ce que sa confirmation d'oubli demande (`oublier`).
 fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
-    let fictive = crate::compagnie::bridage::branchement(&ctx.racine).joue();
+    let fictive = crate::compagnie::bridage::branchement(&ctx.racine)?.joue();
     let adm = if fictive { None } else { Some(administrateur_etat(&ctx.racine)?) };
     let (en_liste, rattachee, peut_rattacher) = match &adm {
         Some(a) => (a.autres_dit.clone(), a.rattachee, a.peut_rattacher),

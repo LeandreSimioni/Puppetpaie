@@ -688,7 +688,7 @@ fn changements_dits(r: &envoi::Renvoi) -> Vec<String> {
 /// Entreprise le demande) ; sinon l'adresse posee avec le mot de passe (jamais le mot de passe), ou celle de
 /// `COURRIEL_COMPTE` quand elle est posee.
 fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
-    if crate::compagnie::bridage::branchement(&ctx.racine).joue() {
+    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         let mail = ctx.entreprise.signataire.dite().and_then(|s| s.email.remplie()).map(String::from);
         return mail.ok_or_else(|| erreur(Classe::Manque, "Le courriel du signataire manque (fiche Entreprise) : la compagnie fictive envoie de lui."));
     }
@@ -716,7 +716,7 @@ pub(crate) fn refus(message: impl Into<String>) -> Echec {
 /// sans les envoyer ; le message refuse, avant la preuve et avant toute ligne au journal des depots ; le monde prend la
 /// vraie boite, et sans mot de passe d'application au coffre, il n'y en a pas (`BoiteAbsente`).
 pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
+    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     if branchement.joue() {
         return Ok(Box::new(BoiteSimulee::du_contexte(ctx)?));

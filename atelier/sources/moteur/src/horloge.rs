@@ -90,8 +90,8 @@ pub struct HorlogeFictive<'a> {
 
 impl<'a> HorlogeFictive<'a> {
     /// `None` si les envois de cette racine ne sont pas joues.
-    pub fn verifier(racine: &'a Path) -> Option<HorlogeFictive<'a>> {
-        crate::compagnie::bridage::branchement(racine).joue().then(|| HorlogeFictive { racine, jour: droit::contexte::jour_reel() })
+    pub fn verifier(racine: &'a Path) -> R<Option<HorlogeFictive<'a>>> {
+        Ok(crate::compagnie::bridage::branchement(racine)?.joue().then(|| HorlogeFictive { racine, jour: droit::contexte::jour_reel() }))
     }
 
     /// Le jour que cette compagnie fictive joue.
@@ -113,7 +113,7 @@ impl<'a> HorlogeFictive<'a> {
 
     /// Relit le marqueur : refuse tout geste si la racine a cesse d'etre une compagnie fictive.
     fn reverifier(&self) -> R<()> {
-        if crate::compagnie::bridage::branchement(self.racine).joue() {
+        if crate::compagnie::bridage::branchement(self.racine)?.joue() {
             Ok(())
         } else {
             Err(erreur(Classe::Refuse, "Ce dossier n'est pas une compagnie fictive : l'horloge ne joue rien ici."))
@@ -390,7 +390,7 @@ struct Pas {
 /// s'ouvre toujours. Hors compagnie fictive : liste vide, rien n'est touche.
 pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Vec<String>> {
     // LA GARDE, d'abord et avant tout.
-    let Some(d) = HorlogeFictive::verifier(racine) else {
+    let Some(d) = HorlogeFictive::verifier(racine)? else {
         return Ok(Vec::new());
     };
     let jour = match aujourdhui {
@@ -541,7 +541,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         return Ok(false);
     }
     let fin = le_mois.dernier_jour();
-    let valide_le = match crate::interface::compagnies::cree_le(d.racine) {
+    let valide_le = match crate::interface::compagnies::cree_le(d.racine)? {
         Some(c) if c > suivant => c.min(jour),
         _ => suivant,
     };
@@ -1039,7 +1039,7 @@ pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
         std::fs::write(r.join(socle::fichiers::CONFIG).join(f), "{}").unwrap();
     }
     if fictive {
-        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "compagnie fictive essai"}"#).unwrap();
+        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "compagnie fictive essai", "quoi": "essai"}"#).unwrap();
     }
     r
 }
@@ -1078,19 +1078,19 @@ mod tests {
         std::fs::create_dir_all(r.join("engagements")).unwrap();
         std::fs::write(r.join("engagements").join("2026-10.json"), "{}").unwrap();
         let avant = photo(&r);
-        assert!(HorlogeFictive::verifier(&r).is_none());
+        assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
         assert_eq!(rattraper(&r, Some(jour("2027-03-01")), true).unwrap(), Vec::<String>::new());
         assert_eq!(rattraper(&r, Some(jour("2027-03-01")), false).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant, "pas meme config/horloge.json");
         assert!(!r.join(FICHIER_HORLOGE).exists());
         // Un marqueur de copie de developpement qui n'est PAS une compagnie fictive ne suffit pas.
-        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive"}"#).unwrap();
+        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive", "quoi": "copie"}"#).unwrap();
         let avant = photo(&r);
-        assert!(HorlogeFictive::verifier(&r).is_none());
+        assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
         assert_eq!(rattraper(&r, Some(jour("2027-03-01")), true).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant);
-        // Ni un marqueur illisible.
+        // Un marqueur illisible se refuse : il ne dit pas si les envois sont joues.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), "{ pas du json").unwrap();
-        assert!(HorlogeFictive::verifier(&r).is_none());
+        assert!(HorlogeFictive::verifier(&r).is_err());
     }
 }

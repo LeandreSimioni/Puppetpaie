@@ -778,7 +778,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     // LE SIMULATEUR REPOND DANS LE GESTE : les salaries d'une compagnie fictive signent aussitot, et la vraie releve lit
     // leur reponse (`releve_signatures::boite_des_signatures`).
     let mut signatures = None;
-    if crate::compagnie::bridage::branchement(&ctx.racine).joue() {
+    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         let releve = crate::compagnie::releve_signatures::relever_signatures(ctx, None, None, INTERFACE)?;
         let resume = releve.resume();
         if !resume.is_empty() {
@@ -878,7 +878,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: 
         return Err(refus("Aucun avenant coché. Rien n'est parti."));
     }
     // La porte du branchement, avant de rien lire.
-    crate::compagnie::bridage::branchement(&ctx.racine).ouvrir()?;
+    crate::compagnie::bridage::branchement(&ctx.racine)?.ouvrir()?;
     let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_voulus(ctx, voulus)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.as_deref().is_some_and(|d| !d.trim().is_empty())));
     let noms_sans: Vec<String> = sans.iter().map(|(k, _)| ctx.nomme(k)).collect();
     if par_salarie.is_empty() {

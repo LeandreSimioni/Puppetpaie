@@ -38,16 +38,16 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("Mot de passe absent. Le poser une fois : `route coffre-poser, service net-entreprises`.");
         return Ok(2);
     };
-    let environnement = args.texte("environnement").unwrap_or("production");
+    let environnement = args.exige("environnement")?;
     let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| ko(p.message))?;
     derouler(cadre, args, client)
 }
 
 /// Le compte rendu, avec un client donne (un test le pointe sur un faux serveur local).
 pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, Echec> {
-    let environnement = args.texte("environnement").unwrap_or("production");
+    let environnement = args.exige("environnement")?;
     let (debut, fin) = fenetre(args)?;
-    dire!("Depots {}, du {} au {}.\n", environnement, jour_de(debut), jour_de(fin));
+    dire!("Depots {}, du {} au {}.\n", environnement, jour_de(debut)?, jour_de(fin)?);
     let _ = cadre;
     let mut depots = Vec::new();
     let resultat: Result<(), Panne> = (|| {
@@ -122,7 +122,7 @@ fn fenetre(args: &Args) -> Result<(i64, i64), Echec> {
 }
 
 /// Le jour d'une heure locale naive, en `JJ/MM/AAAA`.
-fn jour_de(t: i64) -> String {
-    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).unwrap_or_default()
+fn jour_de(t: i64) -> Result<String, Echec> {
+    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).ok_or_else(|| Echec { classe: Some(Classe::Illisible), message: format!("{} n'est pas une heure du calendrier", t) })
 }
 

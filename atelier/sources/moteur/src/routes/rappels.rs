@@ -1400,7 +1400,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
 /// aucun et le dit, une fois.
 fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose, Pastille)>)> {
     use envois::branchement::Branchement;
-    let (texte, mots) = match crate::compagnie::bridage::branchement(&ctx.racine) {
+    let (texte, mots) = match crate::compagnie::bridage::branchement(&ctx.racine)? {
         Branchement::Monde => ("", ""),
         Branchement::Simulateur => ("Les envois de cette compagnie sont simulés : rien ne part, ses mots de passe et ses comptes ne se demandent pas.", "simulé"),
         Branchement::Message(_) => ("Dans la démo, rien ne part de cette compagnie : ses mots de passe et ses comptes ne se demandent pas.", "démo"),
