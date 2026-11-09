@@ -14,6 +14,15 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature est une `enum`.
+- **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
+  porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
+  (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par
+  `socle::forme::lire_reponse_tiers` : stricte sur les clés qu'elle déclare (une clé exigée qui manque, ou d'un autre
+  type, refuse la réponse) ; une clé que Google ajoute et qu'on ne lit pas n'est ni lue, ni gardée, ni transmise. Rien
+  d'inconnu n'entre dans le logiciel. **Pourquoi** : Google ajoute des clés à ses réponses sans prévenir ; en strict, la
+  connexion du compte ou le Drive tomberaient jusqu'à une nouvelle version. Ne l'empruntent que le jeton, l'erreur, le
+  compte et le Drive (`envois::google`, `google_autorisation`, `drive`). Nos propres formes et les retours de la norme
+  (net-entreprises, Urssaf) restent stricts : un format de la norme ne change pas sans nouvelle version de la norme.
 - **Pourquoi** : aucun calcul ne se demande si une case est vide ou mal écrite ; le compilateur oblige chaque calcul à
   traiter chaque cas, et suit chaque lecteur quand une forme change. Et la vitesse : avant, ouvrir une page prenait
   jusqu'à 5 s parce que la même carte se relisait 40 à 50 fois ; lue une fois à la porte, elle se passe ensuite en type
@@ -34,6 +43,8 @@ que par la structure :
   `engagement`.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
+  `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
+  tiers : « Le corps et ses portes »),
   `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
   `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`. Les tests de structure sont
