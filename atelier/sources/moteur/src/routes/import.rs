@@ -1,5 +1,5 @@
 //! Les routes de l'import du passe d'une compagnie : ce qu'il ferait, rien d'ecrit (`importation-apercu`), ou en est
-//! la boite aux lettres (`importation-etat`), l'import lui-meme (`importer`, `import/ecrite.rs`) et la nature d'un
+//! la boite aux lettres (`importation-etat`), l'import lui-meme (`importer`, `importation/ecrite.rs`) et la nature d'un
 //! contrat importe (`importation-nature`).
 //!
 //! `importation-apercu` lit la boite aux lettres `import/` entiere (`{"dossier": ...}` en nomme une autre ;

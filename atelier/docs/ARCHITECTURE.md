@@ -564,21 +564,21 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   (`ambigu`), ou dont ce qui identifie le bulletin ne se lit pas (`incomplet`) est refusée, et le compte rendu dit
   pourquoi. Deux contrôles sans correction (le brut vaut la somme des lignes soumises ; le net se retrouve) : un écart
   avertit, le bulletin est repris avec ce qu'il imprime. Chaque bulletin est rapproché de la paie que sa DSN déclare
-  (NIR, début, fin) et la complète (`import/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
+  (NIR, début, fin) et la complète (`importation/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
   qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée.
-- **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`import/ecrite.rs`) : les fiches à créer, par le même
+- **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
-  « A COMPLETER » (`import/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
+  « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
   importés, chacun dans `engagements/AAAA-MM.json`, le fichier du mois où il commence (le contrat qu'une AEM ou un
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage.
-- **La nature à dire** (`import/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
+- **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
   demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
-- **La CASC-SVP des mois importés** (`import/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
+- **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite.
 - **Les écarts de calcul** (`import/ecarts.rs`, `engagement/src/ecarts.rs`) : à la fin de chaque import, et à
@@ -591,7 +591,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique).
-- **Le document accepté mais pas lu** (`import/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
+- **Le document accepté mais pas lu** (`importation/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique
   DSN restent ; toute autre lettre devient `X`, tout chiffre `9`), jamais le fichier. Un scan et un fichier qui n'est

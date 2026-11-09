@@ -63,7 +63,7 @@ l'historique de la compagnie ; le dossier `import/` peut ensuite être vidé.
 **L'import COPIE ce qu'il reprend** — les DSN, les AEM et les PDF dont une
 page au moins est reprise — dans `historique/bulletins/`, sous le nom de sa
 copie (une empreinte : rien de personnel dans le nom), et relit l'aperçu
-**dans ces copies** (`moteur/src/import/ecrite.rs`). Un fichier déjà copié
+**dans ces copies** (`moteur/src/importation/ecrite.rs`). Un fichier déjà copié
 n'est jamais écrasé ; s'il revient avec un autre contenu sous le même nom,
 l'import le signale. Pour que le dossier d'un salarié ait ses années
 CoolPaie, les PDF sont à sortir de CoolPaie avant :
