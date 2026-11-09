@@ -78,8 +78,10 @@ struct Nomme<'a> {
 // ------------------------------------------------------------------------------------------------- la charge
 
 /// LA CHARGE D'UNE ROUTE, telle qu'elle arrive a la porte : un objet, qui ne se lit qu'en la forme de sa route
-/// (`lire`). Le mot de passe du logiciel qu'elle porte est a l'enveloppe (`mot_de_passe`).
-#[derive(Clone, Debug)]
+/// (`lire`). Le mot de passe du logiciel qu'elle porte est a l'enveloppe (`mot_de_passe`). Elle s'ecrit telle qu'elle
+/// est arrivee (l'exemple d'une fiche, au catalogue).
+#[derive(Clone, Debug, Serialize)]
+#[serde(transparent)]
 pub struct Charge(Value);
 
 impl<'de> serde::Deserialize<'de> for Charge {

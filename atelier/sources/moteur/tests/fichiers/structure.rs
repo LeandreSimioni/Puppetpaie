@@ -117,7 +117,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
             fautes.push(format!("{} : « {} » : {}", ou, t, d.corriger()));
         }
     };
-    for f in moteur::routes::catalogue::catalogue().iter().map(moteur::routes::catalogue::Fiche::en_json) {
+    for f in moteur::routes::catalogue::catalogue().iter().map(|f| serde_json::to_value(f.ecrite().unwrap()).unwrap()) {
         let f = &f;
         let nom = f["nom"].as_str().unwrap();
         if let Some(b) = f["bouton"].as_str() {

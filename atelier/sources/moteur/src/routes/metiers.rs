@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
@@ -96,12 +95,8 @@ impl MetiersAjoutes {
         if !p.exists() {
             return Ok(MetiersAjoutes::default());
         }
-        let v = crate::valeur::lire_json(&p).map_err(|m| erreur(socle::echec::Classe::Illisible, m))?;
-        socle::forme::lire(&v, "Les métiers retenus par la compagnie ne se lisent pas : effacez leur fichier, puis cochez-les de nouveau dans Configuration › Métiers.").map_err(|m| {
-            let (dite, mut plus) = crate::valeur::separer(&m);
-            plus.insert("chemin".into(), Value::String(p.to_string_lossy().into_owned()));
-            erreur(socle::echec::Classe::Illisible, socle::echec::avec(dite, Value::Object(plus)))
-        })
+        socle::forme::lire_fichier(&p, "Les métiers retenus par la compagnie ne se lisent pas : effacez leur fichier, puis cochez-les de nouveau dans Configuration › Métiers.")
+            .map_err(|m| erreur(socle::echec::Classe::Illisible, m))
     }
 
     fn ecrire(&self, ctx: &Contexte) -> R<()> {
@@ -110,7 +105,7 @@ impl MetiersAjoutes {
             creer_dossier(parent)?;
         }
         sauver_avant(&p)?;
-        ecrire(&p, crate::routes::en_json(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: self.codes.clone(), retires: self.retires.clone() })?)
+        ecrire(&p, &MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: self.codes.clone(), retires: self.retires.clone() })
     }
 
     /// Ce metier est-il dans le deroulant de cette compagnie ? Ceux de sa convention le sont d'office ; elle en ajoute
@@ -127,15 +122,18 @@ fn de_la_convention(m: &MetierDuDeroulant, idcc: Option<&str>) -> bool {
 }
 
 /// Les conventions d'un metier en mots : « Spectacle vivant privé (3090) » quand `idcc` est dit.
-fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<String, String>, avec_l_idcc: bool) -> String {
-    m.conventions
+/// Une convention que le catalogue cite sans la nommer est un defaut de la donnee livree.
+fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<String, String>, avec_l_idcc: bool) -> R<String> {
+    let dites = m
+        .conventions
         .iter()
-        .map(|c| {
-            let nom = noms.get(c).cloned().unwrap_or_else(|| c.clone());
-            if avec_l_idcc { format!("{} ({})", nom, c) } else { nom }
+        .map(|c| match noms.get(c) {
+            Some(nom) if avec_l_idcc => Ok(format!("{} ({})", nom, c)),
+            Some(nom) => Ok(nom.clone()),
+            None => Err(erreur(socle::echec::Classe::Illisible, socle::echec::livree("emplois-base.json", &format!("conventions.{}", c)))),
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect::<R<Vec<_>>>()?;
+    Ok(dites.join(", "))
 }
 
 /// Les familles, et l'ordre ou les montrer : les artistes en tete.
@@ -150,7 +148,8 @@ pub(crate) fn metiers(ctx: &Contexte) -> R<Vec<MetierDuDeroulant>> {
     let retenus = MetiersAjoutes::lire(&ctx.racine)?;
     let idcc = ctx.entreprise.idcc.portee();
     let mut liste: Vec<MetierDuDeroulant> = emplois::catalogue(idcc).map_err(plain)?.into_iter().filter(|m| retenus.visible(m, idcc)).collect();
-    liste.sort_by_cached_key(|m| (ordre.get(&m.famille).copied().unwrap_or(ordre.len()), m.libelle.to_lowercase()));
+    // Chaque famille du catalogue a son rang (`emplois::familles`).
+    liste.sort_by_cached_key(|m| (ordre.get(&m.famille).copied(), m.libelle.to_lowercase()));
     Ok(liste)
 }
 
@@ -168,7 +167,7 @@ pub(crate) fn metiers_autres_conventions(ctx: &Contexte) -> R<Vec<MetierAutre>> 
     let retenus = MetiersAjoutes::lire(&ctx.racine)?;
     let idcc = ctx.entreprise.idcc.portee();
     let mut out: Vec<MetierAutre> =
-        emplois::catalogue(idcc).map_err(plain)?.into_iter().filter(|m| !retenus.visible(m, idcc)).map(|m| MetierAutre { de: conventions_dites(&m, &noms, true), metier: m }).collect();
+        emplois::catalogue(idcc).map_err(plain)?.into_iter().filter(|m| !retenus.visible(m, idcc)).map(|m| Ok(MetierAutre { de: conventions_dites(&m, &noms, true)?, metier: m })).collect::<R<_>>()?;
     out.sort_by(|a, b| (&a.de, a.metier.libelle.to_lowercase()).cmp(&(&b.de, b.metier.libelle.to_lowercase())));
     Ok(out)
 }
@@ -180,7 +179,8 @@ struct MetierDeLOnglet {
     metier: MetierDuDeroulant,
     retenu: bool,
     de_la_convention: bool,
-    de: String,
+    /// Les conventions d'un metier qui n'est pas de celle de la compagnie.
+    de: Option<String>,
 }
 
 /// Ce que rend `metiers-catalogue`.
@@ -203,10 +203,11 @@ fn metiers_catalogue(ctx: &Contexte) -> R<MetiersDuCatalogue> {
         .into_iter()
         .map(|m| {
             let conv = de_la_convention(&m, idcc);
-            MetierDeLOnglet { retenu: retenus.visible(&m, idcc), de_la_convention: conv, de: if conv { String::new() } else { conventions_dites(&m, &noms, false) }, metier: m }
+            let de = if conv { None } else { Some(conventions_dites(&m, &noms, false)?) };
+            Ok(MetierDeLOnglet { retenu: retenus.visible(&m, idcc), de_la_convention: conv, de, metier: m })
         })
-        .collect();
-    metiers.sort_by_cached_key(|m| (ordre.get(&m.metier.famille).copied().unwrap_or(ordre.len()), m.metier.libelle.to_lowercase()));
+        .collect::<R<_>>()?;
+    metiers.sort_by_cached_key(|m| (ordre.get(&m.metier.famille).copied(), m.metier.libelle.to_lowercase()));
     let phrase = format!(
         "Métiers du catalogue : {}. Ceux qui sont cochés se proposent dans la fiche d'un salarié et dans un engagement ; ceux de votre convention le sont d'office.",
         metiers.len()

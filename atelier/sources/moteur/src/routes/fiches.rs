@@ -1201,8 +1201,9 @@ pub(crate) fn creer_dossier(d: &Path) -> R<()> {
     std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))
 }
 
-pub(crate) fn ecrire(chemin: &Path, v: Value) -> R<()> {
-    ecrire_json(chemin, &v, 2).map_err(en_os)
+/// Une forme ecrite dans le fichier `chemin` (`socle::ecriture::ecrire_json`).
+pub(crate) fn ecrire<T: serde::Serialize + ?Sized>(chemin: &Path, v: &T) -> R<()> {
+    ecrire_json(chemin, v, 2).map_err(en_os)
 }
 
 /// La configuration, relue apres l'ecriture (`web._configuration(Contexte(racine))`).
@@ -1300,7 +1301,8 @@ impl<F: droit::fiche::FicheDatee> FicheAEcrire for F {
 
 /// LE FICHIER D'UNE FICHE (`config/entreprise.json`, `config/salaries.json`, `config/spectacles.json`), lu par sa forme
 /// (`droit::fiche::lire_fichier`) ; absent, il est vide. Il s'ecrit par elle.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(untagged)]
 pub(crate) enum FichierDeFiche {
     Entreprise(droit::fiche::FicheEntrepriseDatee),
     Salaries(droit::fiche::Salaries),
@@ -1687,7 +1689,7 @@ fn poser_champs(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: Map<Strin
     ecrire_datee(brute, nom, &quoi, &ancienne, &donnees, false, depuis, note, &ctx.lue_au)?;
     let chemin = ctx.racine.join(&quoi);
     sauver_avant(&chemin)?;
-    ecrire(&chemin, contenu.en_valeur())
+    ecrire(&chemin, &contenu)
 }
 
 /// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`droit::pas::CHAMP`), date du jour ou il commence de valoir
@@ -1701,7 +1703,7 @@ pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: Value, depu
     ecrire_datee(brute, "salarie", droit::contexte::SALARIES, &ancienne, &un_champ(droit::pas::CHAMP, valeur), true, Some(depuis), Some(note), &depuis)?;
     let chemin = ctx.racine.join(droit::contexte::SALARIES);
     sauver_avant(&chemin)?;
-    ecrire(&chemin, contenu.en_valeur())
+    ecrire(&chemin, &contenu)
 }
 
 /// Un seul champ, pour `poser_champs`.
@@ -1712,8 +1714,8 @@ fn un_champ(champ: &str, valeur: Value) -> Map<String, Value> {
 }
 
 /// Un champ de la fiche entreprise (`poser_champs`).
-pub(crate) fn poser_entreprise(ctx: &Contexte, champ: &str, valeur: Value, depuis: Option<Jour>) -> R<()> {
-    poser_champs(ctx, "entreprise", None, un_champ(champ, valeur), depuis, None)
+pub(crate) fn poser_entreprise(ctx: &Contexte, champ: &str, valeur: impl serde::Serialize, depuis: Option<Jour>) -> R<()> {
+    poser_champs(ctx, "entreprise", None, un_champ(champ, socle::ecriture::en_valeur(&valeur)), depuis, None)
 }
 
 /// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (S21.G00.86.003, l'anciennete dans l'entreprise :
@@ -2140,7 +2142,7 @@ fn finir_fiche(cle: Option<String>, chemin: &Path, avant: Value, contenu: Fichie
     let champs: Vec<String> = n.as_object().into_iter().flatten().filter(|(k, v)| !interne(k) && a.get(k.as_str()) != Some(*v)).map(|(k, _)| k.clone()).collect();
     if ecrit {
         sauver_avant(chemin)?;
-        ecrire(chemin, apres)?;
+        ecrire(chemin, &apres)?;
     }
     Ok(FicheEcrite { cle, anomalies, ecrit, champs })
 }

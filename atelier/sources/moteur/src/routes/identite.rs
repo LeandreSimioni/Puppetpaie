@@ -228,7 +228,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         let mut registre = crate::routes::ouverture::registre_identite(&dossier)?;
         let signataire = crate::routes::ouverture::signataire_de(&ctx.entreprise);
         registre.signature = Some(crate::routes::ouverture::PoseePour { de: signataire.nom, le: aujourd_hui().iso() });
-        ecrire(&dossier.join("identite.json"), super::en_json(&registre)?)?;
+        ecrire(&dossier.join("identite.json"), &registre)?;
     }
     Ok((identite(ctx)?, poids))
 }
