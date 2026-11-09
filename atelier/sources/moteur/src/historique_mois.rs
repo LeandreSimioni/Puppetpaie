@@ -491,7 +491,7 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
     socle::echec::avec(
         "Le dossier des retours ne se lit pas.",
-        socle::echec::APart { chemin: Some(dossier.display().to_string()), detail: Some(e.to_string()), ..Default::default() },
+        socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
     )
 }
 

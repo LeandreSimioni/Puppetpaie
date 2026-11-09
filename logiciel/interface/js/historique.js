@@ -159,7 +159,7 @@ function dessinerRetour(r) {
     ${r.anomalies.map((a) => `<tr><td><code>${echapper(a.code || "")}</code></td>
       <td>${echapper(a.message || "")}${a.categorie ? ` <span class="discret">(${echapper(a.categorie)})</span>` : ""}${
         a.nombre && a.nombre !== "1" ? ` <span class="discret">× ${echapper(a.nombre)}</span>` : ""}</td>
-      <td>${echapper(a.rubrique || "")}${a.ligne_dit ? ` <span class="discret">${echapper(a.ligne_dit)}</span>` : ""}</td>
+      <td>${echapper(a.rubrique || "")}</td>
       <td>${echapper(a.salarie || "")}</td></tr>`).join("")}</table>` : "";
   return `
     <details class="retour">
