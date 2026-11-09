@@ -482,6 +482,19 @@ async function provenance(ou) {
   return { salarie: ou.salarie, carte: null, apres: ou.apres || rafraichirImprevus };
 }
 
+/* Une case que le moteur pré-remplit (le jour et l'heure de connaissance) : elle montre la valeur qu'il rend tant que
+   la personne n'y a rien tapé, et elle ne part que tapée (ou déjà dite, `dite`) — sinon le moteur reprend la sienne. */
+function suivreLaSaisie(c, dite) {
+  if (dite) c.dataset.tape = "1";
+  c.addEventListener("input", () => { c.dataset.tape = "1"; });
+}
+function preremplirCase(c, valeur) {
+  if (!(c.dataset.tape && c.value)) c.value = valeur || "";
+}
+function tapeDans(c) {
+  return c.dataset.tape ? c.value : "";
+}
+
 /* -------------------------------------------------- un arrêt de travail
    Toujours : le dernier jour travaillé, le début et la fin que l'avis prescrit, le motif (la
    subrogation se tire du droit, dans le moteur). Le reste n'apparaît que si un fait l'appelle :
@@ -545,17 +558,17 @@ async function boiteArret(ou) {
     try {
       r = await api("arret-obligations", {
         motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut"), fin: val("ar-fin"), salarie: p.salarie, ...contratAEnvoyer(trouve),
-        date_accident: val("ar-accident"), connaissance_accident: val("ar-connu"), connaissance_heure: val("ar-connu-heure"),
+        date_accident: val("ar-accident"), connaissance_accident: tapeDans(caseConnu), connaissance_heure: tapeDans(caseHeure),
       });
     } catch (e) { ligne.textContent = ""; return; }
     const os = r.obligations || [];
     const declaration = os.find((o) => o.cle === "declaration_accident");
     avecDeclaration = !!declaration;
-    // L'heure dont partent les 48 heures, telle que le moteur la rend (minuit tant qu'aucune n'est dite) : dans la case,
-    // modifiable, avec sa phrase.
+    // Le jour et l'heure dont partent les 48 heures, tels que le moteur les rend (le jour de l'accident, minuit, tant
+    // que rien n'est dit) : dans les cases, modifiables, avec la phrase de l'heure.
     const connu = (declaration && declaration.connaissance) || {};
-    const heure = document.getElementById("ar-connu-heure");
-    if (!heure.value && connu.heure) heure.value = connu.heure;
+    preremplirCase(caseConnu, connu.jour);
+    preremplirCase(caseHeure, connu.heure);
     document.getElementById("ar-connu-dit").textContent = connu.heure_dite || "";
     majFaits();
     ligne.textContent = r.ensuite || "";
@@ -565,6 +578,10 @@ async function boiteArret(ou) {
     document.getElementById("ar-bloc-accident").hidden = !(m && m.date_accident);
     document.getElementById("ar-bloc-connu").hidden = !avecDeclaration;
   };
+  const caseConnu = document.getElementById("ar-connu");
+  const caseHeure = document.getElementById("ar-connu-heure");
+  suivreLaSaisie(caseConnu);
+  suivreLaSaisie(caseHeure);
   let trouve = null;
   const relireContrats = async () => {
     trouve = await contratsDuJour(p, val("ar-dernier"), document.getElementById("ar-contrats"));
@@ -590,7 +607,7 @@ async function boiteArret(ou) {
     };
     if (m && m.date_accident && val("ar-accident")) charge.date_accident = val("ar-accident");
     if (val("ar-note").trim()) charge.note = val("ar-note").trim();
-    if (avecDeclaration && val("ar-connu")) charge.connu = { jour: val("ar-connu"), heure: val("ar-connu-heure") };
+    if (avecDeclaration && (tapeDans(caseConnu) || tapeDans(caseHeure))) charge.connu = { jour: tapeDans(caseConnu), heure: tapeDans(caseHeure) };
     let r;
     try { r = await api("arret-enregistrer", charge); }
     catch (e) { dire(e.message, "erreur"); return; }
@@ -874,19 +891,26 @@ function boiteConnaissance(a, de, o) {
     <p class="discret">${echapper(nomDuSalarie(a.salarie))} — ${echapper(a.quoi)}</p>
     ${depart.presume ? `<p class="note"><b>Point de départ présumé</b> ${echapper(depart.presume)}</p>` : ""}
     <div class="champs-deux">
-      <label class="champ-boite">Le <input type="date" id="co-jour" value="${echapper(depart.saisi ? depart.jour : "")}"></label>
+      <label class="champ-boite">Le <input type="date" id="co-jour"></label>
       <label class="champ-boite">à
-        <input type="time" id="co-heure" value="${echapper(o.connaissance.heure || "")}"></label>
+        <input type="time" id="co-heure"></label>
     </div>
     ${o.connaissance.heure_dite ? `<p class="note">${echapper(o.connaissance.heure_dite)}</p>` : ""}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="primaire" id="co-ok">Enregistrer</button>
     </div>`);
+  // Ce qui est déjà dit compte comme tapé ; le reste n'est que pré-rempli par le moteur.
+  const caseJour = document.getElementById("co-jour");
+  const caseHeure = document.getElementById("co-heure");
+  suivreLaSaisie(caseJour, depart.saisi);
+  suivreLaSaisie(caseHeure, depart.saisi && !!depart.heure);
+  preremplirCase(caseJour, o.connaissance.jour);
+  preremplirCase(caseHeure, o.connaissance.heure);
   document.getElementById("co-ok").onclick = async () => {
     try {
       await api("arret-connaissance", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille, de,
-        jour: document.getElementById("co-jour").value, heure: document.getElementById("co-heure").value });
+        jour: tapeDans(caseJour), heure: tapeDans(caseHeure) });
     } catch (e) { dire(e.message, "erreur"); return; }
     fermerBoite();
     await rafraichirImprevus();
