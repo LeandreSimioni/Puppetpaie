@@ -28,10 +28,10 @@
 //! 4. un refus est un `Echec` dont la classe est un mot du logiciel (`erreur(Classe::Manque, …)`), ce qui n'est pas pour
 //!    l'ecran a part (`socle::echec::avec`, que la reponse rend dans `refus.a_part`) ; la fiche dit quoi corriger pour
 //!    chaque classe qu'elle refuse ;
-//! 5. dans `servir`, son bras passe de `brute(m::route(o, &ctx, route, charge.brute()))` a `m::route(&porte, charge)`.
+//! 5. dans `servir`, son bras est `m::route(&porte, charge)`.
 //!
-//! Un module qui n'est pas encore branche lit sa charge en JSON (`Charge::brute`, `lire_charge`) et rend le sien
-//! (`brute`, `Rendu::brut`) : ce JSON-la est dans `brut`, qui s'efface avec le dernier module qui s'en sert.
+//! Ce qui lit encore une charge en JSON hors des routes (`Charge::brute`, `lire_charge`) et rend le sien (`Rendu::brut`)
+//! passe par `brut`, qui s'efface avec le dernier qui s'en sert.
 //!
 //! Ce que les routes partagent (l'encart, la pastille, `INTERFACE`, `quand`, `compte`) est ici.
 
@@ -42,10 +42,9 @@ use socle::echec::{erreur, Classe, Echec, R};
 use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
-use brut::brute;
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{en_json, lire_charge, mot, nom_a_l_ecran};
+pub(crate) use brut::{lire_charge, nom_a_l_ecran};
 
 mod brut;
 pub mod enveloppe;
@@ -195,7 +194,6 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
     };
     let porte = Porte { route, ctx: &ctx, options: o };
     let dans = |l: &[catalogue::Fiche]| catalogue::dans(l, route).is_some();
-    let c = charge.brute();
     let rendu: R<Rendu> = match route {
         // Les modules branches sur l'enveloppe : leur charge lue en sa forme, leur rendu ecrit depuis la sienne.
         _ if dans(bulletin::ROUTES) => bulletin::route(&porte, charge),
@@ -220,7 +218,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(crate::compagnie::organismes::ROUTES) => crate::compagnie::organismes::route(&porte, charge),
         _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
-        _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
+        _ if dans(import::ROUTES) => import::route(&porte, charge),
         _ if dans(archives::ROUTES) => archives::route(&porte, charge),
         _ if dans(historique::ROUTES) => historique::route(&porte, charge),
         // L'Historique d'un mois : ses documents, ses envois et leurs retours, lus (lecture seule).

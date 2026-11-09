@@ -34,9 +34,9 @@
 
 use std::path::Path;
 
-use serde_json::Value;
-
 use socle::date::Jour;
+use socle::mois::Mois;
+use socle::num::entier_de_chiffres;
 use socle::num::Decimal;
 
 use crate::import::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
@@ -135,8 +135,8 @@ const LIGNE: f64 = 3.5;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Aem {
     pub page: usize,
-    /// Le mois de l'attestation (`AAAA-MM`).
-    pub mois: Option<String>,
+    /// Le mois de l'attestation.
+    pub mois: Option<Mois>,
     pub numero: Option<String>,
     pub siret: Option<String>,
     pub ape: Option<String>,
@@ -180,9 +180,8 @@ pub struct Aem {
 impl Aem {
     /// La periode que l'AEM atteste : le contrat borne au mois de l'attestation.
     pub fn periode(&self) -> Option<(Jour, Jour)> {
-        let (an, m) = self.mois.as_deref().and_then(|t| Some((t.get(..4)?.parse::<i32>().ok()?, t.get(5..7)?.parse::<u32>().ok()?)))?;
-        let premier = Jour::nouveau(an, m, 1)?;
-        let dernier = Jour::nouveau(an, m, socle::date::jours_du_mois(an, m))?;
+        let mois = self.mois?;
+        let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
         let debut = self.embauche?.max(premier);
         let fin = match (self.fin_contrat, self.en_cours) {
             (Some(f), _) => f.min(dernier),
@@ -194,7 +193,7 @@ impl Aem {
 
     /// Les cachets du mois : isoles et groupes.
     pub fn cachets(&self) -> i64 {
-        self.cachets_isoles.unwrap_or(0) + self.cachets_groupes.unwrap_or(0)
+        self.cachets_isoles.into_iter().chain(self.cachets_groupes).sum()
     }
 
     /// Ce qui manque pour que l'AEM atteste un contrat ; `None` : rien.
@@ -283,8 +282,7 @@ pub struct PageAem {
 /// Les pages du PDF qui sont des AEM (ou leur notice), lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
     let r = crate::import::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
-    let releve = &r.releve;
-    let pages: Vec<Vec<Mot>> = releve.get("pages").and_then(Value::as_array).map(|ps| ps.iter().map(mots_de).collect()).unwrap_or_default();
+    let pages: Vec<Vec<Mot>> = r.releve.pages.iter().map(mots_de).collect();
     let notices: Vec<bool> = pages.iter().map(|m| est_notice(m)).collect();
     let mut out = Vec::new();
     for (i, mots) in pages.iter().enumerate() {
@@ -312,19 +310,30 @@ pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
 /// `CON_OBJET_nn`, dans la colonne de sa premiere periode). Chaque colonne atteste ce qu'une AEM du meme mois
 /// attesterait : elle se lit en `Aem`, et prend le meme chemin (le registre des contrats attestes, le bulletin qui
 /// l'emporte). `None` : ce PDF n'est pas une AER Cinéma Spectacle (un autre formulaire, l'AER du regime general
-/// comprise, n'a pas ces champs).
-pub fn lire_aer(octets: &[u8]) -> Option<Vec<Lecture>> {
-    let champs = documents::aer::champs(octets).ok()?;
+/// comprise, n'a pas ces champs). Un formulaire que la fabrique ne lit pas se refuse, avec sa raison.
+///
+/// Une case qui n'ecrit pas ce que sa rubrique attend (une date, un nombre) ne dit rien : l'AEM qu'elle fait dit alors
+/// ce qui lui manque (`Aem::manque`).
+pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
+    let champs = match documents::aer::champs(octets) {
+        Ok(c) => c,
+        Err(documents::aer::Echec::Fabrique(m) | documents::aer::Echec::Autre(m)) => return Err(m),
+        Err(documents::aer::Echec::Ecarts(l)) => return Err(l.join(" ; ")),
+    };
     let champ = |nom: &str| champs.iter().find(|c| c.nom == nom);
     let v = |nom: &str| champ(nom).and_then(|c| c.valeur.texte()).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     if champ("SALARIE_NIR").is_none() || champ("SAL_DT_DEB_01").is_none() {
-        return None;
+        return Ok(None);
     }
-    let jour = |nom: &str| v(nom).and_then(|t| Jour::lire(&t).ok());
-    let entier = |nom: &str| v(nom).and_then(|t| t.replace([' ', '\u{a0}'], "").parse::<i64>().ok());
+    let jour = |nom: &str| v(nom).and_then(|t: String| Jour::du_texte(&t));
+    let entier = |nom: &str| v(nom).and_then(|t| entier_de_chiffres(&t.replace([' ', '\u{a0}'], "")));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
-    let naissance = match (v("SALARIE_DT_NAISSANCE_A"), v("SALARIE_DT_NAISSANCE_M"), v("SALARIE_DT_NAISSANCE_J")) {
-        (Some(a), Some(m), Some(j)) => a.parse().ok().zip(m.parse().ok()).zip(j.parse().ok()).and_then(|((a, m), j)| Jour::nouveau(a, m, j)),
+    let chiffres = |nom: &str| v(nom).and_then(|t: String| entier_de_chiffres(&t));
+    let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
+        (Some(a), Some(m), Some(j)) => match (i32::try_from(a), u32::try_from(m), u32::try_from(j)) {
+            (Ok(a), Ok(m), Ok(j)) => Jour::nouveau(a, m, j),
+            _ => None,
+        },
         _ => None,
     };
     let mut out = Vec::new();
@@ -336,10 +345,10 @@ pub fn lire_aer(octets: &[u8]) -> Option<Vec<Lecture>> {
             numero_objet = v(&nom("CON_OBJET_"));
         }
         let (Some(debut), Some(fin)) = (jour(&nom("SAL_DT_DEB_")), jour(&nom("SAL_DT_FIN_"))) else { continue };
-        let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).unwrap_or(0);
+        let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| format!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
         let a = Aem {
             page,
-            mois: Some(debut.mois_civil().to_string()),
+            mois: Some(debut.mois_civil()),
             numero: None,
             siret: v("EMP_SIRET"),
             ape: v("EMP_APE"),
@@ -368,28 +377,29 @@ pub fn lire_aer(octets: &[u8]) -> Option<Vec<Lecture>> {
             cachets_isoles: entier(&nom("SAL_NB_CACHET_")),
             cachets_groupes: None,
             jours: None,
-            brut: v(&nom("SAL_MONTANT_")).and_then(|t| t.replace([' ', '\u{a0}'], "").replace(',', ".").parse::<Decimal>().ok()),
+            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_lu(&t.replace([' ', '\u{a0}'], "").replace(',', "."))),
             corrige: None,
             aer: true,
             faute: None,
         };
-        out.push(match a.manque() {
+        let lecture = match a.manque() {
             Some(raison) => Lecture::Refusee { sort: crate::import::reponse::Sort::Incomplet, raison: raison.replacen("AEM", "AER", 1), partiel: Some(a) },
             None => Lecture::Lue(a),
-        });
+        };
+        out.push(PageAem { page, lecture });
     }
-    Some(out)
+    Ok(Some(out))
 }
 
-fn mots_de(p: &Value) -> Vec<Mot> {
+fn mots_de(p: &crate::import::releve::PageRelevee) -> Vec<Mot> {
     let mut mots = Vec::new();
-    for m in p.get("mots").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
-        let texte = m.get("texte").and_then(Value::as_str).unwrap_or("").trim().to_string();
-        let r: Vec<f64> = m.get("rect").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
-        if texte.is_empty() || r.len() != 4 {
+    for m in &p.mots {
+        let texte = m.texte.trim().to_string();
+        if texte.is_empty() {
             continue;
         }
-        mots.push(Mot { texte, x0: r[0], y0: r[1], x1: r[2], y1: r[3] });
+        let [x0, y0, x1, y1] = m.rect;
+        mots.push(Mot { texte, x0, y0, x1, y1 });
     }
     mots
 }
@@ -482,9 +492,9 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         v.sort_by(|a, b| mots[*a].x0.total_cmp(&mots[*b].x0));
         v.into_iter().map(|k| mots[k].texte.clone()).collect()
     };
-    // La premiere rubrique `cle` de la section `s` (toutes si `None`) qui a une valeur.
+    // Les mots de la premiere rubrique `cle` de la section `s` (toutes si `None`) qui a une valeur ; aucun s'il n'y en a pas.
     let lu = |cle: &str, s: Option<usize>| -> Vec<String> {
-        rs.iter().filter(|r| r.cle == cle && s.is_none_or(|s| section(r.y0) == s)).map(&valeur_de).find(|v| !v.is_empty()).unwrap_or_default()
+        rs.iter().filter(|r| r.cle == cle && s.is_none_or(|s| section(r.y0) == s)).map(&valeur_de).find(|v| !v.is_empty()).into_iter().flatten().collect()
     };
     let texte = |v: Vec<String>| -> Option<String> {
         let t = v.join(" ").trim().to_string();
@@ -494,10 +504,8 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     let mut a = Aem { page, ..Default::default() };
     // Le mois : ses chiffres, imprimes case a case (« 0 4 20 2 3 ») : MM puis AAAA.
     let chiffres: String = lu("mois", Some(0)).iter().take_while(|m| m.chars().all(|c| c.is_ascii_digit())).map(String::as_str).collect();
-    if let (6, Some(m), Some(an)) = (chiffres.len(), chiffres.get(..2).and_then(|x| x.parse::<u32>().ok()), chiffres.get(2..).and_then(|x| x.parse::<i32>().ok())) {
-        if (1..=12).contains(&m) {
-            a.mois = Some(format!("{:04}-{:02}", an, m));
-        }
+    if chiffres.len() == 6 {
+        a.mois = Mois::du_texte(&format!("{}-{}", &chiffres[2..], &chiffres[..2]));
     }
     a.numero = lu("attestation", Some(0)).first().cloned();
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
@@ -544,7 +552,7 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         else {
             continue;
         };
-        let lib = jetons(&mots[l].texte).last().cloned().unwrap_or_default();
+        let Some(lib) = jetons(&mots[l].texte).last().cloned() else { continue };
         let s = section(mots[l].y0);
         match (s, lib.as_str()) {
             (0, "complementaire") => a.corrige = Some("complémentaire"),
@@ -574,11 +582,10 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.total_cmp(&b.x0));
     if !en_tetes.is_empty() {
         let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(f64::MIN, f64::max);
-        let bas = brut_tete.map_or(f64::MAX, |r| r.y0);
         let mut par_colonne: std::collections::BTreeMap<&str, Vec<i64>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
         for (k, m) in mots.iter().enumerate() {
-            if pris.contains(&k) || m.y0 < haut || m.y1 > bas {
+            if pris.contains(&k) || m.y0 < haut || brut_tete.is_some_and(|r| m.y1 > r.y0) {
                 continue;
             }
             let Some(n) = entier(&m.texte) else { continue };
@@ -590,7 +597,9 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         if ambigu || par_colonne.values().any(|v| v.len() > 1) {
             fautes.push("un nombre du mois ne tombe sous aucune colonne, ou une colonne en porte deux");
         } else {
-            let v = |c: &str| par_colonne.get(c).map_or(0, |x| x[0]);
+            // Une colonne du formulaire sans nombre ne compte rien : son total est la somme de ce qu'elle porte (aucun
+            // nombre, zero). C'est une inference, tiree du formulaire lui-meme.
+            let v = |c: &str| -> i64 { par_colonne.get(c).into_iter().flatten().sum() };
             let a_l_en_tete = |c: &str| en_tetes.iter().any(|x| x.0 == c);
             if a_l_en_tete("heures") && a_l_en_tete("jours") && (a_l_en_tete("isoles") || a_l_en_tete("groupes")) {
                 a.heures = Some(v("heures"));
@@ -619,6 +628,9 @@ fn entier(t: &str) -> Option<i64> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == ',') || !t.chars().next()?.is_ascii_digit() {
         return None;
     }
-    let (e, d) = t.split_once(',').unwrap_or((t, ""));
-    (d.chars().all(|c| c == '0')).then(|| e.parse().ok()).flatten()
+    match t.split_once(',') {
+        Some((e, d)) if d.chars().all(|c| c == '0') => entier_de_chiffres(e),
+        Some(_) => None,
+        None => entier_de_chiffres(t),
+    }
 }

@@ -1038,7 +1038,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
         let depose = lu.deposee();
         let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
-        if importe && !crate::import::mois::bulletins_repris(&ctx.racine, nom).is_empty() {
+        if importe && !crate::import::mois::bulletins_repris(&ctx.racine, nom)?.is_empty() {
             sortes.insert(0, "bulletins repris");
         }
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
@@ -1632,7 +1632,7 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         demo: crate::interface::suppression::mention(&ctx.racine).map_err(plain)?,
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
-        commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine),
+        commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine).map_err(plain)?,
         historique,
         historique_incomplet,
         salaries,

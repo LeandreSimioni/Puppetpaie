@@ -163,7 +163,10 @@ fn est_marque(c: char) -> bool {
 }
 
 fn chiffre_prive(d: u32) -> char {
-    char::from_u32(CHIFFRES + d).unwrap_or('\u{FFFD}')
+    match char::from_u32(CHIFFRES + d) {
+        Some(c) => c,
+        None => unreachable!("un chiffre prive est un caractere de la zone privee"),
+    }
 }
 
 fn marque(etiquette: usize) -> String {
@@ -172,7 +175,7 @@ fn marque(etiquette: usize) -> String {
 
 fn garde(n: usize) -> String {
     let mut s = String::from(OUVRE_GARDE);
-    s.extend(n.to_string().chars().map(|c| chiffre_prive(c.to_digit(10).unwrap_or(0))));
+    s.extend(n.to_string().chars().filter_map(|c| c.to_digit(10)).map(chiffre_prive));
     s.push(FERME_GARDE);
     s
 }
@@ -226,10 +229,15 @@ impl Travail {
         while let Some(c) = it.next() {
             match c {
                 OUVRE_MARQUE => {
-                    let i = it.next().map_or(0, |d| (d as u32).saturating_sub(CHIFFRES) as usize);
+                    // Une marque porte toujours son chiffre (`marque`).
+                    let Some(d) = it.next() else { break };
+                    let i = (d as u32).saturating_sub(CHIFFRES) as usize;
                     it.next();
                     out.push('<');
-                    out.push_str(ETIQUETTES.get(i).copied().unwrap_or("?"));
+                    out.push_str(match ETIQUETTES.get(i) {
+                        Some(e) => e,
+                        None => "?",
+                    });
                     out.push('>');
                 }
                 OUVRE_GARDE => {
@@ -240,7 +248,9 @@ impl Travail {
                         }
                         n = n * 10 + (d as u32).saturating_sub(CHIFFRES) as usize;
                     }
-                    out.push_str(self.gardes.get(n).map_or("", |g| g.as_str()));
+                    if let Some(g) = self.gardes.get(n) {
+                        out.push_str(g);
+                    }
                 }
                 autre => out.push(autre),
             }
@@ -254,7 +264,10 @@ impl Travail {
 /// Une lettre sans casse ni accent ; UN caractere pour UN caractere, pour que les positions du
 /// texte plie soient celles du texte d'origine.
 fn plier_car(c: char) -> char {
-    let l = c.to_lowercase().next().unwrap_or(c);
+    let l = match c.to_lowercase().next() {
+        Some(l) => l,
+        None => c,
+    };
     match l {
         'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ą' => 'a',
         'ç' | 'ć' | 'č' => 'c',
@@ -308,7 +321,10 @@ impl Plie {
     }
 
     fn origine(&self, b: usize) -> usize {
-        let i = self.debuts_plies.binary_search(&b).unwrap_or_else(|i| i);
+        // Le caractere qui commence en `b`, ou celui ou `b` tombe.
+        let i = match self.debuts_plies.binary_search(&b) {
+            Ok(i) | Err(i) => i,
+        };
         self.debuts_origine[i.min(self.debuts_origine.len() - 1)]
     }
 }
@@ -472,7 +488,7 @@ fn par_les_connus(t: &mut Travail, c: &Connus) {
     motifs.sort_by(|a, b| b.0.cmp(&a.0));
     motifs.dedup_by(|a, b| a.1 == b.1);
     for (_, m, etiquette) in motifs {
-        let Some(re) = motif_de(&m) else { continue };
+        let re = motif_de(&m);
         let plie = Plie::de(&t.s);
         let plages = re.find_iter(&plie.texte).map(|x| (plie.origine(x.start()), plie.origine(x.end()))).collect();
         t.poser(plages, etiquette);
@@ -485,7 +501,7 @@ fn proteger(t: &mut Travail, c: &Connus) {
     valeurs.sort_by_key(|v| std::cmp::Reverse(v.chars().count()));
     for v in valeurs {
         let Some(m) = motif_mots(v) else { continue };
-        let Some(re) = motif_de(&m) else { continue };
+        let re = motif_de(&m);
         let plie = Plie::de(&t.s);
         let plages = re.find_iter(&plie.texte).map(|x| (plie.origine(x.start()), plie.origine(x.end()))).collect();
         t.garder(plages);
@@ -517,17 +533,17 @@ struct Motifs {
     montant: Regex,
 }
 
-/// Le motif d'une valeur connue, compile une fois pour le processus (un motif ne depend que de son texte) ; `None` s'il
-/// ne se compile pas.
-fn motif_de(source: &str) -> Option<Regex> {
+/// Le motif d'une valeur connue, compile une fois pour le processus (un motif ne depend que de son texte). Il est fait
+/// de la valeur echappee (`motif_mots`, `motif_numero`...) : il se compile toujours, comme les motifs du caviardage.
+fn motif_de(source: &str) -> Regex {
     static COMPILES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, Regex>>> = OnceLock::new();
     let compiles = COMPILES.get_or_init(Default::default);
-    if let Some(re) = compiles.lock().unwrap_or_else(|p| p.into_inner()).get(source) {
-        return Some(re.clone());
+    if let Some(re) = socle::memoire::tenu(compiles).get(source) {
+        return re.clone();
     }
-    let re = Regex::new(source).ok()?;
+    let re = motif(source);
     socle::fichiers::ranger(compiles, source.to_string(), re.clone());
-    Some(re)
+    re
 }
 
 fn motif(source: &str) -> Regex {
@@ -633,7 +649,11 @@ fn mot_suivant(s: &str, pos: usize, blancs: usize) -> Option<(usize, usize)> {
 }
 
 fn fin_de_ligne(s: &str, pos: usize) -> usize {
-    s[pos..].find('\n').map_or(s.len(), |i| pos + i)
+    // La ligne finit a son retour a la ligne, ou au bout du texte.
+    match s[pos..].find('\n') {
+        Some(i) => pos + i,
+        None => s.len(),
+    }
 }
 
 /// Les voies dont le mot est aussi un mot de bulletin (« 2 Cours de danse 50,00 100,00 ») : une
@@ -767,7 +787,7 @@ fn est_mot_de_bulletin(mot: &str) -> bool {
 
 /// Le coeur d'un mot : sans « d' » ni « l' » devant.
 fn coeur(mot: &str) -> &str {
-    for p in ["d'", "D'", "l'", "L'", "d’", "D’", "l’", "L’"] {
+    for p in &["d'", "D'", "l'", "L'", "d’", "D’", "l’", "L’"] {
         if let Some(r) = mot.strip_prefix(p) {
             if !r.is_empty() {
                 return r;
@@ -894,9 +914,11 @@ fn noms(t: &mut Travail) {
 
 /// Sans les particules des bords ; un nom s'il y a un mot capitalise ET un mot en majuscules.
 fn sans_bords(m: &[(usize, usize, Genre, bool)]) -> &[(usize, usize, Genre, bool)] {
-    let debut = m.iter().position(|x| x.2 != Genre::Particule).unwrap_or(m.len());
-    let fin = m.iter().rposition(|x| x.2 != Genre::Particule).map_or(debut, |i| i + 1);
-    &m[debut..fin.max(debut)]
+    match (m.iter().position(|x| x.2 != Genre::Particule), m.iter().rposition(|x| x.2 != Genre::Particule)) {
+        (Some(debut), Some(fin)) => &m[debut..=fin],
+        // Que des particules : rien.
+        _ => &m[..0],
+    }
 }
 
 fn est_un_nom(m: &[(usize, usize, Genre, bool)]) -> bool {
@@ -910,8 +932,9 @@ fn etiqueter(m: &[(usize, usize, Genre, bool)], noms: &mut Vec<(usize, usize)>, 
     let m = sans_bords(m);
     let mut genres: Vec<Genre> = m.iter().map(|x| x.2).collect();
     for i in (0..genres.len()).rev() {
-        if genres[i] == Genre::Particule {
-            genres[i] = genres.get(i + 1).copied().unwrap_or(Genre::Majuscules);
+        // Sans ses bords, le groupe finit par un mot qui n'est pas une particule : une particule a toujours un suivant.
+        if let (Genre::Particule, Some(suivant)) = (genres[i], genres.get(i + 1).copied()) {
+            genres[i] = suivant;
         }
     }
     let mut i = 0;

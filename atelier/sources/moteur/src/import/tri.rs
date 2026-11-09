@@ -24,16 +24,11 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use socle::texte::{lignes_du_texte, texte_latin1};
 use socle::echec::R;
 use socle::echec::erreur;
-
-/// Les sortes, dans l'ordre ou le compte rendu les compte.
-pub const SORTES: [Sorte; 8] =
-    [Sorte::Dsn, Sorte::Aem, Sorte::PdfTexte, Sorte::PdfSansTexte, Sorte::Archive, Sorte::Doublon, Sorte::Illisible, Sorte::Autre];
 
 /// Une archive dans une archive dans une archive... s'ouvre jusqu'a cette profondeur, pas au-dela.
 const PROFONDEUR_MAX: usize = 4;
@@ -80,7 +75,7 @@ impl Sorte {
 }
 
 /// Une page d'un PDF, telle que la fabrique l'a relevee (`fabrique_pdf::inspection`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct PageLue {
     pub mots: usize,
     pub polices: usize,
@@ -99,8 +94,6 @@ pub struct Fichier {
     pub taille: u64,
     /// SHA-256 en hexadecimal ; vide pour une entree d'archive qui n'a pas ete extraite.
     pub empreinte: String,
-    /// L'extension, en minuscules, sans le point (`""` s'il n'y en a pas). Elle ne decide de rien.
-    pub extension: String,
     /// Les pages d'un PDF ouvert ; vide pour le reste.
     pub pages: Vec<PageLue>,
     /// Pourquoi, en une phrase, quand il y a quelque chose a dire.
@@ -111,8 +104,6 @@ pub struct Fichier {
     pub archive: Option<String>,
     /// Le mois qu'une DSN declare (`AAAA-MM`).
     pub mois: Option<String>,
-    /// Le nombre d'enregistrements d'une AEM.
-    pub enregistrements: Option<usize>,
 }
 
 /// Le tri d'un dossier : chaque fichier, dans l'ordre du parcours (noms tries, une archive suivie de
@@ -123,86 +114,27 @@ pub struct Tri {
     pub fichiers: Vec<Fichier>,
 }
 
-impl Tri {
-    /// Combien de fichiers ont cette sorte.
-    pub fn compte(&self, sorte: Sorte) -> usize {
-        self.fichiers.iter().filter(|f| f.sorte == sorte).count()
-    }
-
-    /// Ce que l'ecran montre : la liste des fichiers et les comptes par sorte (toutes les sortes, meme a 0).
-    pub fn json(&self) -> Value {
-        let fichiers: Vec<Value> = self.fichiers.iter().map(fichier_json).collect();
-        let mut comptes = Map::new();
-        for s in SORTES {
-            comptes.insert(s.nom().to_string(), json!(self.compte(s)));
-        }
-        json!({
-            "dossier": self.dossier.display().to_string(),
-            "fichiers": fichiers,
-            "comptes": comptes,
-            "total": self.fichiers.len(),
-        })
-    }
-}
-
-fn fichier_json(f: &Fichier) -> Value {
-    let mut m = Map::new();
-    m.insert("chemin".into(), json!(f.chemin));
-    m.insert("sorte".into(), json!(f.sorte.nom()));
-    m.insert("taille".into(), json!(f.taille));
-    m.insert("empreinte".into(), json!(f.empreinte));
-    m.insert("extension".into(), json!(f.extension));
-    if matches!(f.sorte, Sorte::PdfTexte | Sorte::PdfSansTexte) {
-        let pages: Vec<Value> = f
-            .pages
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                json!({"page": i + 1, "texte": p.mots > 0, "mots": p.mots, "polices": p.polices, "images": p.images, "traits": p.traits})
-            })
-            .collect();
-        m.insert("pages".into(), Value::Array(pages));
-    }
-    let mut option = |cle: &str, v: Option<Value>| {
-        if let Some(v) = v {
-            m.insert(cle.into(), v);
-        }
-    };
-    option("raison", f.raison.as_ref().map(|r| json!(r)));
-    option("doublon_de", f.doublon_de.as_ref().map(|d| json!(d)));
-    option("archive", f.archive.as_ref().map(|a| json!(a)));
-    option("mois", f.mois.as_ref().map(|x| json!(x)));
-    option("enregistrements", f.enregistrements.map(|n| json!(n)));
-    Value::Object(m)
-}
-
 /// `trier(dossier, travail)` : parcourt `dossier` et ses sous-dossiers, ouvre chaque zip dans `travail/`
 /// (cree s'il manque ; s'il est sous `dossier`, il n'est pas parcouru), et donne a chaque fichier sa sorte.
 pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     if !dossier.is_dir() {
-        return Err(erreur(socle::echec::Classe::Refuse, socle::echec::avec("Le dossier à trier n'existe pas.", serde_json::json!({"chemin": dossier.to_string_lossy()}))));
+        let a_part = socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
+        return Err(erreur(socle::echec::Classe::Refuse, socle::echec::avec("Le dossier à trier n'existe pas.", a_part)));
     }
     std::fs::create_dir_all(travail)
         .map_err(|e| erreur(socle::echec::Classe::Refuse, socle::echec::du_disque(travail, &e)))?;
-    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon: std::fs::canonicalize(travail).ok(), vus: HashMap::new(), fichiers: Vec::new() };
+    let travail_canon = std::fs::canonicalize(travail).map_err(|e| erreur(socle::echec::Classe::Disque, socle::echec::du_disque(travail, &e)))?;
+    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new() };
     t.parcourir(dossier, "", None, 0);
     Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers })
 }
 
 struct Trieur {
     travail: PathBuf,
-    travail_canon: Option<PathBuf>,
+    travail_canon: PathBuf,
     /// Empreinte -> chemin du premier fichier qui l'a portee.
     vus: HashMap<String, String>,
     fichiers: Vec<Fichier>,
-}
-
-/// L'extension d'un nom, en minuscules, sans le point.
-fn extension(nom: &str) -> String {
-    match nom.rfind('.') {
-        Some(i) if i > 0 && i < nom.len() - 1 => nom[i + 1..].to_lowercase(),
-        _ => String::new(),
-    }
 }
 
 fn hexa(octets: &[u8]) -> String {
@@ -211,9 +143,7 @@ fn hexa(octets: &[u8]) -> String {
 
 impl Trieur {
     fn nouveau(&self, chemin: String, disque: PathBuf, archive: Option<&str>) -> Fichier {
-        let nom = chemin.rsplit('/').next().unwrap_or("").to_string();
         Fichier {
-            extension: extension(&nom),
             chemin,
             disque,
             sorte: Sorte::Autre,
@@ -224,28 +154,43 @@ impl Trieur {
             doublon_de: None,
             archive: archive.map(String::from),
             mois: None,
-            enregistrements: None,
         }
     }
 
     /// Les entrees d'un dossier, par nom, sous-dossiers compris.
     fn parcourir(&mut self, dossier: &Path, prefixe: &str, archive: Option<&str>, profondeur: usize) {
-        let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = match std::fs::read_dir(dossier) {
-            Ok(l) => l.flatten().filter_map(|e| Some((e.file_name().to_string_lossy().into_owned(), e.path(), e.file_type().ok()?))).collect(),
-            Err(e) => {
-                let mut f = self.nouveau(prefixe.trim_end_matches('/').to_string(), dossier.to_path_buf(), archive);
-                f.sorte = Sorte::Illisible;
-                f.raison = Some(format!("dossier qui ne se lit pas ({})", e));
-                self.fichiers.push(f);
-                return;
-            }
+        let illisible = |t: &mut Self, raison: String| {
+            let mut f = t.nouveau(prefixe.trim_end_matches('/').to_string(), dossier.to_path_buf(), archive);
+            f.sorte = Sorte::Illisible;
+            f.raison = Some(raison);
+            t.fichiers.push(f);
         };
+        let lues = match std::fs::read_dir(dossier) {
+            Ok(l) => l,
+            Err(e) => return illisible(self, format!("dossier qui ne se lit pas ({})", e)),
+        };
+        let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = Vec::new();
+        for e in lues {
+            match e.and_then(|e| Ok((e.file_name().to_string_lossy().into_owned(), e.path(), e.file_type()?))) {
+                Ok(x) => entrees.push(x),
+                Err(e) => illisible(self, format!("une entrée du dossier ne se lit pas ({})", e)),
+            }
+        }
         entrees.sort_by(|a, b| a.0.cmp(&b.0));
         for (nom, chemin, genre) in entrees {
             let rel = format!("{}{}", prefixe, nom);
             if genre.is_dir() {
-                if self.travail_canon.is_some() && std::fs::canonicalize(&chemin).ok() == self.travail_canon {
-                    continue;
+                // Le dossier de travail, s'il est sous le dossier trie, ne se trie pas.
+                match std::fs::canonicalize(&chemin) {
+                    Ok(c) if c == self.travail_canon => continue,
+                    Ok(_) => {}
+                    Err(e) => {
+                        let mut f = self.nouveau(rel, chemin, archive);
+                        f.sorte = Sorte::Illisible;
+                        f.raison = Some(format!("dossier qui ne se lit pas ({})", e));
+                        self.fichiers.push(f);
+                        continue;
+                    }
                 }
                 self.parcourir(&chemin, &format!("{}/", rel), archive, profondeur);
             } else if genre.is_symlink() {
@@ -298,7 +243,10 @@ impl Trieur {
                     f.mois = Some(m.to_string());
                 }
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
-                Err(_) => f.sorte = Sorte::Dsn,
+                Err(e) => {
+                    f.sorte = Sorte::Dsn;
+                    f.raison = Some(e.message);
+                }
                 Ok(_) => {
                     f.sorte = Sorte::Illisible;
                     f.raison = Some("commence comme une DSN, mais ne dit pas son mois (S20.G00.05.005)".into());
@@ -328,7 +276,10 @@ impl Trieur {
                 return;
             }
         };
-        let nom = f.chemin.rsplit('/').next().unwrap_or("archive");
+        let nom = match f.chemin.rsplit_once('/') {
+            Some((_, n)) => n,
+            None => f.chemin.as_str(),
+        };
         let assaini: String = nom.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
         let cible = self.travail.join(format!("{}-{}", assaini, &f.empreinte[..12]));
         let _ = std::fs::remove_dir_all(&cible);
@@ -429,7 +380,12 @@ fn lire_pdf(f: &mut Fichier) {
         Err(crate::import::releve::Refus::Fabrique(r)) => {
             f.sorte = Sorte::Illisible;
             // Le refus de la fabrique commence par le chemin du disque : seule la cause compte ici.
-            let cause = r.strip_prefix(&*f.disque.to_string_lossy()).unwrap_or(&r).trim_start_matches([' ', ':']).to_string();
+            let cause = match r.strip_prefix(&*f.disque.to_string_lossy()) {
+                Some(c) => c,
+                None => r.as_str(),
+            }
+            .trim_start_matches([' ', ':'])
+            .to_string();
             f.raison = Some(format!("PDF que la fabrique n'ouvre pas : {}", cause));
             return;
         }
@@ -439,13 +395,8 @@ fn lire_pdf(f: &mut Fichier) {
             return;
         }
     };
-    let (releve, avertissements) = (&r.releve, &r.avertissements);
-    let n = |v: &Value, k: &str| v.get(k).and_then(Value::as_array).map_or(0, Vec::len);
-    f.pages = releve
-        .get("pages")
-        .and_then(Value::as_array)
-        .map(|ps| ps.iter().map(|p| PageLue { mots: n(p, "mots"), polices: n(p, "polices"), images: n(p, "images"), traits: n(p, "traits") }).collect())
-        .unwrap_or_default();
+    let avertissements = &r.avertissements;
+    f.pages = r.releve.pages.iter().map(|p| PageLue { mots: p.mots.len(), polices: p.polices.len(), images: p.images.len(), traits: p.traits.len() }).collect();
     let avec = f.pages.iter().filter(|p| p.mots > 0).count();
     let total = f.pages.len();
     let mut raisons: Vec<String> = Vec::new();
@@ -493,5 +444,4 @@ fn lire_aem(f: &mut Fichier, octets: &[u8]) {
         }
     }
     f.sorte = Sorte::Aem;
-    f.enregistrements = Some(lignes.len());
 }

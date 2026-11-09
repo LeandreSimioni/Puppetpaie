@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use envois::etats;
@@ -415,14 +415,6 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
     }
 }
 
-/// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde (`import::mois::bulletins_repris`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BulletinRepris {
-    chemin: String,
-    salarie: String,
-}
-
 /// Les documents du mois : les fichiers de `sorties/<mois>/` (`mois_connus`, la liste de l'Historique) et les PDF de
 /// `sorties/<mois>/envoi/` (`pieces_de_l_envoi`). Une archive `.zip` n'est que l'emballage
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
@@ -446,8 +438,7 @@ fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
-    for v in crate::import::mois::bulletins_repris(&ctx.racine, mois) {
-        let b: BulletinRepris = socle::forme::lire(&v, "Un bulletin repris de l'ancien logiciel ne se lit pas.").map_err(|m| erreur(Classe::Disque, m))?;
+    for b in crate::import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
         out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie), chemin: b.chemin, fichier: None });
     }

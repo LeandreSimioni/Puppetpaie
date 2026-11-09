@@ -99,7 +99,10 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         return Ok(EtatDsn { etat, courte: Some(courte), phrase: Some(phrase), quand: Some(e.quand), anomalies: Some(e.anomalies), aer_recue: Some(e.aer_recue) });
     }
     if let Some(etablie) = crate::import::mois::dsn_importee_le(&ctx.racine, mois)? {
-        let jour = if etablie.len() == 10 { format!(" (établie le {}/{}/{})", &etablie[8..10], &etablie[5..7], &etablie[..4]) } else { String::new() };
+        let jour = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
+            Some(j) => format!(" (établie le {})", j.jj_mm_aaaa()),
+            None => String::new(),
+        };
         return Ok(EtatDsn::dit(
             Etat::Importee,
             "déclarée avant PuppetPaie",
