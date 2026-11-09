@@ -165,14 +165,13 @@ async function dessinerDossier() {
 
 async function lancerDossier(route, apercu) {
   const coches = [...document.querySelectorAll(".d-sal:checked")].map((c) => c.value);
-  // Tous cochés : la liste vide, qui veut dire « chaque salarié » pour le moteur.
-  const qui = document.getElementById("d-tous").checked ? [] : coches;
   const quand = document.getElementById("d-quand").value;
   const periode = document.getElementById("d-periode").value;
   const charge = {
-    salaries: qui,
     categories: [...document.querySelectorAll(".d-cat:checked")].map((c) => c.value),
   };
+  // Tous cochés : aucune liste, ce qui veut dire « chaque salarié » pour le moteur.
+  if (!document.getElementById("d-tous").checked) charge.salaries = coches;
   // L'envoi refait le dossier de chacun : ni aperçu, ni dossier d'ensemble.
   if (route !== "dossier-envoyer") Object.assign(charge, { ensemble: document.getElementById("d-ensemble").checked, apercu });
   if (quand === "mois") charge.mois = periode;
@@ -417,7 +416,8 @@ function dessinerCalendrier(periodes) {
 }
 
 async function lancerExport(apercu) {
-  const val = (id) => { const e = document.getElementById(id); return e ? e.value : undefined; };
+  // Une case absente ou vide n'est pas dite : elle ne part pas.
+  const val = (id) => { const e = document.getElementById(id); return e && e.value !== "" ? e.value : undefined; };
   const quand = val("x-quand");
   const periode = val("x-periode");
   const coord = document.getElementById("x-coordonnees");
