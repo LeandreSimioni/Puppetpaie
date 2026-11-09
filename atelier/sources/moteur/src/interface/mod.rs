@@ -286,7 +286,8 @@ fn empreinte() -> String {
     type Signature = socle::num::Resultat<Option<(u128, u64)>>;
     let mut noms: Vec<(String, Signature)> = Vec::new();
     // Un dossier qui ne se lit pas entre dans l'empreinte par son erreur : la page se refera quand il se lira.
-    for dossier in ["", "js"] {
+    const DOSSIERS: [&str; 2] = ["", "js"];
+    for dossier in DOSSIERS {
         let it = match std::fs::read_dir(ressources().join(dossier)) {
             Ok(it) => it,
             Err(e) => {
@@ -1012,7 +1013,7 @@ impl Fenetre {
             }
             "/fictive/page" => self.piece_fictive(&r),
             "/apercu/bulletin" => self.apercu_bulletin(&r),
-            c if c.starts_with("/identite/") => self.identite(&r, &c["/identite/".len()..]),
+            c if c.starts_with("/identite/") => self.identite(&r, c.trim_start_matches("/identite/")),
             c => match fichier_de_la_page(c) {
                 // UNE FEUILLE OU UN SCRIPT NOMME PAR SON EMPREINTE (`?v=`, `empreinte`) se garde : la page
                 // d'une compagnie charge vingt-cinq fichiers, qu'elle ne redemande plus a chaque ouverture. Ce qui change

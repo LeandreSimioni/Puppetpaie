@@ -40,7 +40,6 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
 
 use super::compagnies::{self, Compagnie};
 use crate::compagnie::administrateur::Poste;
@@ -286,12 +285,7 @@ pub fn a_garder(inst: &Path) -> Vec<Compagnie> {
 /// sien, jamais celui d'une compagnie deja la), sans marqueur de fictive, avec sa mention de demo. Rend la compagnie.
 fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
     let nom = compagnies::nom_de(racine);
-    let marqueur = racine.join(compagnies::MARQUEUR);
-    let creee_le = std::fs::read_to_string(&marqueur)
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| v.get("quand").and_then(Value::as_str).map(String::from))
-        .unwrap_or_default();
+    let marqueur: compagnies::MarqueurAjoutee = socle::forme::lire_fichier(&racine.join(compagnies::MARQUEUR), "Le marqueur de la compagnie créée en démo ne se lit pas : rien n'a changé.")?;
     let parent = inst.join("compagnies");
     std::fs::create_dir_all(&parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
     let base = compagnies::nom_de_dossier(&nom);
@@ -302,23 +296,26 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
         n += 1;
     }
     let mention = FichierDemo {
-        creee_le,
+        creee_le: marqueur.quand,
         gardee_le: socle::paris::maintenant(),
-        mois: engagement::stock::mois_saisis(racine).unwrap_or_default().into_iter().map(String::from).collect(),
+        mois: engagement::stock::mois_saisis(racine).map_err(|e| socle::echec::Echec::from(e).phrase())?.into_iter().map(String::from).collect(),
         quoi: QUOI_DEMO.to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &serde_json::to_value(&mention).map_err(|e| e.to_string())?, 2)?;
+    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &mention, 2)?;
     if let Err(e) = std::fs::rename(racine, &cible) {
         let _ = std::fs::remove_file(racine.join(FICHIER_DEMO));
         return Err(format!("{} ne se garde pas ({}) : rien n'a changé.", nom, e));
     }
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.
-    std::fs::remove_file(cible.join(compagnies::MARQUEUR)).map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", serde_json::json!({"chemin": cible.to_string_lossy(), "detail": e.to_string()})))?;
+    let a_part = || socle::echec::APart { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
+    std::fs::remove_file(cible.join(compagnies::MARQUEUR))
+        .map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", socle::echec::APart { detail: Some(e.to_string()), ..a_part() }))?;
+    let gardee = absolu(&cible)?;
     compagnies::liste_de(inst)
         .into_iter()
-        .find(|c| absolu(&c.racine) == absolu(&cible))
-        .ok_or_else(|| socle::echec::avec(format!("{} a été gardée, mais l'accueil ne la trouve pas.", nom), serde_json::json!({"chemin": cible.to_string_lossy()})))
+        .find(|c| absolu(&c.racine).as_ref() == Ok(&gardee))
+        .ok_or_else(|| socle::echec::avec(format!("{} a été gardée, mais l'accueil ne la trouve pas.", nom), a_part()))
 }
 
 /// LA REPONSE A LA QUESTION DU DEBLOCAGE : `garder` et `ne_pas_garder`, des identifiants de tuile (`fictive:<dossier>`)
@@ -391,8 +388,7 @@ fn lire_la_demo(racine: &Path) -> Result<Option<FichierDemo>, String> {
     if !p.is_file() {
         return Ok(None);
     }
-    let v = crate::valeur::lire_json(&p)?;
-    socle::forme::lire(&v, "La mention de démo de la compagnie (config/demo.json) ne se lit pas.").map(Some)
+    socle::forme::lire_fichier(&p, "La mention de démo de la compagnie (config/demo.json) ne se lit pas.").map(Some)
 }
 
 /// LA MENTION DE DEMO d'une compagnie gardee, telle que la page la montre : quand elle a ete creee et gardee, les mois
@@ -433,5 +429,5 @@ pub fn sortir_de_la_demo(racine: &Path, mois: &str) -> Result<(), String> {
     if d.mois.len() == avant {
         return Ok(());
     }
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &serde_json::to_value(&d).map_err(|e| e.to_string())?, 2)
+    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &d, 2)
 }

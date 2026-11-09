@@ -239,9 +239,10 @@ pub struct DitDuBandeau {
 }
 
 fn dit_du_bandeau(d: Option<&Trace>, dans: Option<u64>, fictive: bool) -> DitDuBandeau {
+    // Aucun passage encore : le releve est a venir.
     let quand = match d {
         Some(t) => heure_du_passage(&t.quand),
-        None => String::new(),
+        None => "à venir".to_string(),
     };
     let hors_ligne = d.is_some_and(|t| t.hors_ligne);
     let retours = d.and_then(|t| t.retours.as_deref()).is_some_and(|r| !r.is_empty());

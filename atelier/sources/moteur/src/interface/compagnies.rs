@@ -98,6 +98,17 @@ pub fn est_fictive(racine: &Path) -> bool {
 /// `ajoutee` de son marqueur (`COPIE-DE-DEVELOPPEMENT.json`, que `ajouter` ecrit) -- lue ICI et nulle part ailleurs.
 pub const CLE_AJOUTEE: &str = "ajoutee";
 
+/// LE MARQUEUR D'UNE FICTIVE AJOUTEE (`ajouter_venant`), tel qu'il s'ecrit et se relit quand elle est gardee
+/// (`suppression::garder`) : ce qu'elle copie, sa marque, quand elle a ete ajoutee.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarqueurAjoutee {
+    pub copie_de: String,
+    pub ajoutee: bool,
+    pub quand: String,
+    pub quoi: String,
+}
+
 ///
 /// UN DOSSIER DE `fictives/` SANS MARQUEUR DE FICTIVE (un marqueur retire ou illisible) se lit aussi comme ajoute : l'accueil
 /// le propose parmi les fictives, rien ne doit en partir, et rien n'en est joue.
@@ -416,15 +427,13 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     }
     // Le marqueur d'une fictive (`est_fictive`), et la marque qui la dit ajoutee. `copie_de` ne dit pas le nom d'une
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
-    ecrire(
-        &dossier.join(MARQUEUR),
-        &json!({
-            "copie_de": format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
-            CLE_AJOUTEE: true,
-            "quand": socle::paris::maintenant(),
-            "quoi": "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.",
-        }),
-    )?;
+    let marqueur = MarqueurAjoutee {
+        copie_de: format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
+        ajoutee: true,
+        quand: socle::paris::maintenant(),
+        quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
+    };
+    socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
     Ok(entree(format!("fictive:{}", nom_dossier(&dossier)), &dossier, false))
 }
 
