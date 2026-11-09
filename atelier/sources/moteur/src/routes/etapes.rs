@@ -2275,7 +2275,7 @@ impl<'a> Moteur<'a> {
         if modifiee {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
-            let suivant = crate::regularisation::dsn_qui_porte(self.ctx, mois)?;
+            let suivant = crate::compagnie::etat_dsn::dsn_qui_porte(self.ctx, mois)?;
             let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant).map_err(|m| erreur(Classe::Illisible, m))?;
             let a = deposer_dsn(Mois::lire(&suivant)?, nic, format!("Déposer la DSN de {}…", Mois::en_clair(&suivant)));
             return Ok(Groupe::de(

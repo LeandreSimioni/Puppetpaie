@@ -172,7 +172,7 @@ pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois:
     if ctx.aujourdhui <= veille {
         return Ok(Some(DsnDeposee::Remplacee { limite: veille }));
     }
-    Ok(Some(DsnDeposee::Corrigee { porteur: dsn_qui_porte(ctx, &mois.to_string())? }))
+    Ok(Some(DsnDeposee::Corrigee { porteur: crate::compagnie::etat_dsn::dsn_qui_porte(ctx, &mois.to_string())? }))
 }
 
 /// Ce qui arrive a la DSN deposee d'un mois quand une modification la touche (`modification_de_l_engagement`).
@@ -383,19 +383,6 @@ pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Correcti
 }
 
 
-/// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par
-/// l'ancien logiciel, `engagement::importe::dsn_deposee`). Une correction se declare dans la DSN suivante (cahier
-/// technique DSN 2026.1, § 2.1.2.1, `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`).
-pub(crate) fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
-    let partie = |m: &str| -> R<bool> { Ok(crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(m)?, None)?.partie()) };
-    let suivant = |m: &str| -> R<String> { Ok(socle::mois::Mois::lire(m)?.suivant().to_string()) };
-    let mut porteur = suivant(mois)?;
-    while partie(&porteur)? {
-        porteur = suivant(&porteur)?;
-    }
-    Ok(porteur)
-}
-
 /// LA DSN QUI PORTE LA CORRECTION DE `mois` POUR L'ENGAGEMENT `v`, telle que `departs` la connait : celle d'un mois
 /// suivant qui l'a deja declaree (`engagement::etats::paies_declarees`, la derniere correction portee) quand aucune
 /// correction n'est plus due (`engagement::etats::correction_due`) ; sinon la DSN qui portera la suivante
@@ -407,5 +394,5 @@ pub(crate) fn dsn_qui_porte_la_correction(ctx: &Contexte, v: &engagement::etats:
             return Ok(par);
         }
     }
-    dsn_qui_porte(ctx, mois)
+    crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)
 }

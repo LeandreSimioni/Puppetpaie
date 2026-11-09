@@ -55,14 +55,6 @@ pub(crate) fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepri
     Ok(out)
 }
 
-/// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
-pub(crate) fn importe(racine: &Path, mois: &str) -> R<bool> {
-    if engagement::stock::a_une_saisie(racine, mois).map_err(Echec::from)? {
-        return Ok(false);
-    }
-    Ok(!importes_du_mois(racine, mois)?.is_empty())
-}
-
 /// Les mois que les engagements importes touchent, qu'aucun engagement de la saisie ne touche.
 pub(crate) fn mois_importes(racine: &Path) -> R<Vec<String>> {
     let mois: BTreeSet<String> = engagement::importe::tous(racine).map_err(Echec::from)?.iter().flat_map(Importe::mois).collect();
@@ -73,13 +65,6 @@ pub(crate) fn mois_importes(racine: &Path) -> R<Vec<String>> {
         }
     }
     Ok(out)
-}
-
-/// LA DSN QUE L'IMPORT A LUE POUR `mois` (`engagement::importe::dsn_deposee`), que la saisie touche aussi le mois ou
-/// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
-/// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
-pub(crate) fn dsn_importee_le(racine: &Path, mois: &str) -> R<Option<Option<String>>> {
-    Ok(engagement::importe::dsn_deposee(racine, mois).map_err(Echec::from)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
 }
 
 /// LA DSN D'UN MOIS DONT L'ANCIEN LOGICIEL A DEPOSE LA DSN, que la page Paie et la boite d'ouverture disent avec les
@@ -93,7 +78,7 @@ pub(crate) fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<D
     if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(Echec::from)?.is_none() {
         return Ok(None);
     }
-    let porteur = crate::regularisation::dsn_qui_porte(ctx, mois)?;
+    let porteur = crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut n = 0;
     for e in engagement::etats::du_mois(ctx, mois, &departs)? {
@@ -130,7 +115,7 @@ pub(crate) struct DsnDeLAncienLogiciel {
 pub(crate) fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<()> {
     let phrase = match dsn_de_l_ancien_logiciel(ctx, mois)? {
         Some(d) => format!("{} Elle ne se refait pas ici.", d.phrase),
-        None if importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
+        None if crate::compagnie::etat_dsn::importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
         None => return Ok(()),
     };
     Err(socle::echec::erreur(socle::echec::Classe::DsnDeLAncienLogiciel, format!("{} : {} Rien n'est écrit.", socle::mois::Mois::en_clair(mois), phrase)))
@@ -619,7 +604,7 @@ pub(crate) struct VueImportee {
 /// LE MOIS TENU AVANT, comme le panneau du mois le lit : `None` si un engagement de la saisie touche le mois ou si aucun
 /// engagement importe ne le touche.
 pub(crate) fn vue(ctx: &Contexte, mois: &str) -> R<Option<VueImportee>> {
-    if !importe(&ctx.racine, mois)? {
+    if !crate::compagnie::etat_dsn::importe(&ctx.racine, mois)? {
         return Ok(None);
     }
     let paies = cartes(ctx, mois)?;

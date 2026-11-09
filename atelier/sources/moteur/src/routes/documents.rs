@@ -968,14 +968,14 @@ pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::P
 /// sera declaree avec la paie d'un mois suivant. La DSN du mois ne se refait pas (`se_corrige_ailleurs` : sa DSN est
 /// partie et l'annule-et-remplace n'est plus admis, ou c'est celle de l'ancien logiciel) ; une correction deja portee
 /// par une DSN partie se lit dans ce qui est parti (`corrections_du_mois`), une correction a porter part dans la DSN
-/// qui porte le mois (`crate::regularisation::dsn_qui_porte`). `None` : le mois se corrige dans sa propre DSN.
+/// qui porte le mois (`crate::compagnie::etat_dsn::dsn_qui_porte`). `None` : le mois se corrige dans sa propre DSN.
 #[allow(clippy::type_complexity)]
 fn declaration_de_la_correction(ctx: &Contexte, mois: &str) -> R<Option<Box<dyn Fn(&str) -> String>>> {
     let departs = journal::lu(&ctx.racine).map(|j| j.departs)?;
     if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok(None);
     }
-    let porteur = crate::regularisation::dsn_qui_porte(ctx, mois)?;
+    let porteur = crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
     let mut porteurs: HashMap<String, String> = HashMap::new();
     for c in portees {

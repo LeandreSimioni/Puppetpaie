@@ -100,7 +100,7 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         };
         return Ok(EtatDsn { etat, courte: Some(courte), phrase: Some(phrase), quand: Some(e.quand), anomalies: Some(e.anomalies), aer_recue: Some(e.aer_recue) });
     }
-    if let Some(etablie) = crate::import::mois::dsn_importee_le(&ctx.racine, mois)? {
+    if let Some(etablie) = dsn_importee_le(&ctx.racine, mois)? {
         const SANS_BILAN: &str = "aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.";
         let phrase = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
             Some(j) => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée (établie le {}) — {}", j.jj_mm_aaaa(), SANS_BILAN),
@@ -108,7 +108,7 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         };
         return Ok(EtatDsn::dit(Etat::Importee, "déclarée avant PuppetPaie", &phrase));
     }
-    if !crate::import::mois::importe(&ctx.racine, mois)? {
+    if !importe(&ctx.racine, mois)? {
         return Ok(EtatDsn { etat: Etat::ADeposer, courte: None, phrase: None, quand: None, anomalies: None, aer_recue: None });
     }
     Ok(EtatDsn::dit(
@@ -116,6 +116,34 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         "aucune trace de sa DSN",
         "Mois tenu avant PuppetPaie : aucune trace de sa DSN — ni au journal, ni dans les retours relevés, ni parmi les DSN importées. Si elle est partie, le relevé des retours ou l'import de la DSN de l'ancien logiciel la retrouvera ; si elle n'est jamais partie, elle se fait dans le logiciel qui a calculé ces paies.",
     ))
+}
+
+/// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
+pub(crate) fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
+    if engagement::stock::a_une_saisie(racine, mois).map_err(socle::echec::Echec::from)? {
+        return Ok(false);
+    }
+    Ok(!engagement::importe::du_mois(racine, mois).map_err(socle::echec::Echec::from)?.is_empty())
+}
+
+/// LA DSN QUE L'IMPORT A LUE POUR `mois` (`engagement::importe::dsn_deposee`), que la saisie touche aussi le mois ou
+/// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
+/// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
+pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: &str) -> R<Option<Option<String>>> {
+    Ok(engagement::importe::dsn_deposee(racine, mois).map_err(socle::echec::Echec::from)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
+}
+
+/// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par
+/// l'ancien logiciel, `engagement::importe::dsn_deposee`). Une correction se declare dans la DSN suivante (cahier
+/// technique DSN 2026.1, § 2.1.2.1, `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`).
+pub(crate) fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
+    let partie = |m: &str| -> R<bool> { Ok(du_mois(ctx, socle::mois::Mois::lire(m)?, None)?.partie()) };
+    let suivant = |m: &str| -> R<String> { Ok(socle::mois::Mois::lire(m)?.suivant().to_string()) };
+    let mut porteur = suivant(mois)?;
+    while partie(&porteur)? {
+        porteur = suivant(&porteur)?;
+    }
+    Ok(porteur)
 }
 
 /// LE PREMIER MOIS DONT LA COMPAGNIE DOIT UNE DSN, quand on le sait. Une compagnie neuve n'est en retard de rien : le
