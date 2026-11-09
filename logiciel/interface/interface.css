@@ -955,6 +955,9 @@ input.x-court { width: auto; }
   font-size: 12px;
 }
 .histoire-ligne:last-child { border-bottom: none; }
+.histoire-ligne.en-vigueur .histoire-date { color: var(--texte); font-weight: bold; }
+/* Sous une case datée : sa valeur d'avant et celle à venir. */
+.champ .temps-case { font-size: 12px; margin-top: 3px; }
 .histoire-champ { color: var(--discret); min-width: 130px; }
 .histoire-valeur { color: var(--texte); font-weight: bold; }
 .histoire-date { margin-left: auto; color: var(--discret); }

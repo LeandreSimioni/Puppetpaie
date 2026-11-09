@@ -28,6 +28,7 @@ use socle::fichiers::dossier_du_code;
 use socle::num::Resultat;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{reporter, vue, SorteDeFiche};
+use crate::temps::TempsDeLaCase;
 
 
 
@@ -100,7 +101,8 @@ const AIDES: &[(&str, &str)] = &[
     ("fiche_cle", "La clé de la fiche se fabrique à l'enregistrement."),
     ("signature_lourde", "Trop lourde : une image collée pèse tout son poids, préférez une image en ligne."),
     ("urssaf_changer", "D'après l'adresse de l'entreprise, vos déclarations vont à l'Urssaf de son code postal : c'est elle qui reçoit normalement DPAE et DSN. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations. Voulez-vous vraiment la changer ?"),
-    ("historique_fiche", "Les valeurs remplacées, et jusqu'à quand elles ont servi. Elles restent pour les déclarations déjà envoyées."),
+    ("historique_titre", "Historique des valeurs"),
+    ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
     ("dater", "Ce que vous changez vaut à partir d'une date : la voici proposée, changez-la si besoin, puis enregistrez."),
     ("dater_avant", "Avant cette date, la fiche garde ce qu'elle disait."),
@@ -261,24 +263,14 @@ impl<P> VueFiche<P> {
     }
 }
 
-/// LES CASES D'UNE FICHE TELLES QUE L'ECRAN LES MONTRE : la fiche a un jour, sans ses notes, et son histoire.
+/// LES CASES D'UNE FICHE TELLES QUE L'ECRAN LES MONTRE : la fiche a un jour, sans ses notes, et les temps de chaque case
+/// datee qui a plus d'une valeur.
 #[derive(Debug, Clone, serde::Serialize)]
 struct DonneesDeLaFiche<P> {
     #[serde(flatten)]
     fiche: P,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    historique: Vec<LigneDHistoire>,
-}
-
-/// Une valeur qu'une autre a remplacee dans la fiche datee, et jusqu'a quand elle valait (la veille du `depuis` de la
-/// suivante), avec la note du changement.
-#[derive(Debug, Clone, serde::Serialize)]
-struct LigneDHistoire {
-    champ: &'static str,
-    valeur: Option<Valeur>,
-    jusqu_au: socle::date::Jour,
-    jusqu_au_dit: String,
-    note: Option<String>,
+    historique: Vec<TempsDeLaCase<Valeur>>,
 }
 
 /// Une case seule, ecrite comme une fiche qui ne porterait qu'elle.
@@ -293,41 +285,97 @@ impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
     }
 }
 
-/// L'HISTOIRE D'UNE FICHE DATEE `brute` : les valeurs qu'une autre a remplacees, chacune dans la forme que sa ligne de
-/// `champs-base.json` lui donne. La page les montre.
-fn histoire_de<F: SorteDeFiche>(brute: Option<&F>) -> R<Vec<LigneDHistoire>> {
-    type Valeurs = Vec<(Option<socle::date::Jour>, R<Option<Valeur>>, Option<String>)>;
+/// LES TEMPS DE CHAQUE CASE DATEE de la fiche `brute` a `jour` (`droit::fiche::temps_au`), chaque valeur dans la forme
+/// que sa ligne de `champs-base.json` lui donne ; une case qui n'a qu'une valeur n'en a pas. La page les met en page.
+fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<Valeur>>> {
     struct Toutes {
         nom: &'static str,
-        listes: Vec<(&'static str, Valeurs)>,
+        listes: Vec<(&'static str, R<Vec<droit::fiche::Datee<Valeur>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
         fn liste<T: serde::Serialize>(&mut self, cle: &'static str, liste: &[droit::fiche::Datee<T>]) {
-            let valeurs = liste.iter().map(|e| (e.depuis, champs::Saisie::de_la_fiche(self.nom, &UneCase(cle, &e.valeur)).map(|s| s.case(cle).cloned()), e.note.clone())).collect();
-            self.listes.push((cle, valeurs));
+            let lue = liste
+                .iter()
+                .map(|e| {
+                    let valeur = champs::Saisie::de_la_fiche(self.nom, &UneCase(cle, &e.valeur))?.case(cle).cloned();
+                    Ok(droit::fiche::Datee { depuis: e.depuis, valeur, note: e.note.clone() })
+                })
+                .collect();
+            self.listes.push((cle, lue));
         }
     }
     let Some(brute) = brute else { return Ok(Vec::new()) };
     let mut t = Toutes { nom: F::NOM, listes: Vec::new() };
     brute.voir_listes(&mut t);
-    let mut lignes = Vec::new();
-    for (champ, lues) in t.listes {
-        let mut valeurs: Vec<(Option<socle::date::Jour>, Option<Valeur>, Option<String>)> = lues.into_iter().map(|(d, v, n)| v.map(|v| (d, v, n))).collect::<R<_>>()?;
-        valeurs.sort_by_key(|p| p.0); // stable : a meme date, dans l'ordre ecrit
-        for paire in valeurs.windows(2) {
-            let Some(depuis) = paire[1].0 else { continue };
-            let note = valeurs.iter().find(|e| e.0 == Some(depuis)).and_then(|e| e.2.clone());
-            let veille = depuis.plus_jours(-1).map_err(Echec::from)?;
-            lignes.push(LigneDHistoire { champ, valeur: paire[0].1.clone(), jusqu_au: veille, jusqu_au_dit: format!("jusqu'au {}", veille.jj_mm_aaaa()), note });
+    let mut out = Vec::new();
+    for (champ, lue) in t.listes {
+        // Les autres etablissements sont une liste : leurs temps se disent case par case, ligne par ligne
+        // (`temps_des_etablissements`).
+        if champ == "etablissements" {
+            continue;
+        }
+        if let Some(temps) = crate::temps::d_une_case(champ, &lue?, jour, |a, b| a == b)? {
+            out.push(temps);
         }
     }
-    Ok(lignes)
+    Ok(out)
+}
+
+/// LES TEMPS DES CASES DE CHAQUE AUTRE ETABLISSEMENT a `jour`, rangees par NIC, sous la case `etablissements` : la case de
+/// chacun se lit dans les versions datees de la liste (sa valeur a chaque version ou il figure, une fois tant qu'elle ne
+/// change pas, avec la note de la version qui l'a changee). Son taux AT/MP a sa case a lui, que `taux-atmp` dit
+/// (`atmp::case_d_un_etablissement`).
+fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Option<TempsDeLaCase<Valeur>>> {
+    type Cases = Vec<(String, Vec<droit::fiche::Datee<Valeur>>)>;
+    let Some(liste) = ctx.entreprise_brute().etablissements.as_deref() else { return Ok(None) };
+    let principal = ctx.entreprise.nic_principal().map(str::to_string);
+    let mut par_nic: Vec<(String, Cases)> = Vec::new();
+    for version in droit::fiche::valeurs_datees(liste) {
+        let lue = champs::Saisie::de_la_fiche("entreprise", &UneCase("etablissements", &version.valeur))?;
+        let Some(Valeur::Lignes(lignes)) = lue.case("etablissements") else { continue };
+        for l in lignes {
+            let Some(nic) = l.mot("nic").filter(|n| Some(n) != principal.as_ref()) else { continue };
+            if !par_nic.iter().any(|(n, _)| *n == nic) {
+                par_nic.push((nic.clone(), Vec::new()));
+            }
+            let Some((_, cases)) = par_nic.iter_mut().find(|(n, _)| *n == nic) else { continue };
+            for (cle, _) in l.cases() {
+                if cle != "taux_atmp" && !cases.iter().any(|(k, _)| k == cle) {
+                    cases.push((cle.clone(), Vec::new()));
+                }
+            }
+            for (cle, datees) in cases.iter_mut() {
+                let valeur = l.case(cle).cloned();
+                if datees.last().is_some_and(|d| d.valeur == valeur) {
+                    continue;
+                }
+                datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+            }
+        }
+    }
+    let mut lignes = Vec::new();
+    for (nic, cases) in par_nic {
+        // Il se nomme par son dernier libelle, sinon par son NIC.
+        let libelle = cases.iter().find(|(k, _)| k == "libelle").and_then(|(_, d)| d.last()).and_then(|d| d.valeur.as_ref()).and_then(Valeur::mot);
+        let dit = match libelle {
+            Some(l) => l,
+            None => nic.clone(),
+        };
+        let mut temps = Vec::new();
+        for (cle, datees) in cases {
+            if let Some(t) = crate::temps::d_une_case(&cle, &datees, jour, |a, b| a == b)? {
+                temps.push(t);
+            }
+        }
+        lignes.push(crate::temps::TempsDUneLigne { cle: nic, dit, cases: temps });
+    }
+    Ok(crate::temps::d_une_liste("etablissements", lignes))
 }
 
 /// La fiche telle que l'ecran la montre. Ses cases sont COMBLEES : une fiche d'avant ne porte que la forme declaree, et
 /// l'ecran doit proposer une forme lisible de depart. Rien n'est ecrit pour autant. `montres` : les cases que la page en
 /// montre (`fiches::montres`, que la fiche de l'entreprise `ent` commande).
-fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::Plate, historique: Vec<LigneDHistoire>, ent: &champs::Saisie) -> R<VueFiche<F::Plate>> {
+fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::Plate, historique: Vec<TempsDeLaCase<Valeur>>, ent: &champs::Saisie) -> R<VueFiche<F::Plate>> {
     let nom = F::NOM;
     let lue = vue::<F>(&plate)?;
     let anomalies = champs::verifier_fiche(nom, &lue)?;
@@ -803,22 +851,32 @@ pub(crate) fn configuration_dite(ctx: &Contexte) -> R<ConfigurationDite> {
 
 /// Toute la configuration, verifiee, et ce que la page en tire sans un appel de plus.
 fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
+    // LES FICHES SE MONTRENT A LA DATE DU JOUR, chaque case avec sa valeur en vigueur et ses temps a ce jour-la.
+    let du_jour;
+    let ctx = if ctx.lue_au == ctx.aujourdhui {
+        ctx
+    } else {
+        du_jour = ctx.au(&ctx.aujourdhui).map_err(Echec::from)?;
+        &du_jour
+    };
+    let jour = ctx.aujourdhui;
     // La fiche de l'entreprise : ses autres etablissements sont ceux que la fiche dit en dernier (`etablissements::ecrire`),
-    // ceux qui ouvrent plus tard compris ; leur histoire est celle de leurs ouvertures, que chacun dit.
+    // ceux qui ouvrent plus tard compris ; les temps de leurs cases se disent ligne par ligne.
     let ent = champs::Saisie::de_la_fiche("entreprise", &ctx.entreprise)?;
     let autres = ctx.etablissements_dits();
     let montree = droit::fiche::ChampsEntreprise { etablissements: (!autres.is_empty()).then_some(autres), ..ctx.entreprise.clone() };
-    let histoire = histoire_de(Some(ctx.entreprise_brute()))?.into_iter().filter(|l| l.champ != "etablissements").collect();
-    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, histoire, &ent)?;
+    let mut temps = temps_de(Some(ctx.entreprise_brute()), &jour)?;
+    temps.extend(temps_des_etablissements(ctx, &jour)?);
+    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent)?;
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), histoire_de(ctx.salarie_brut(k.as_str()))?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), histoire_de(ctx.spectacle_brut(k.as_str()))?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent))
         .collect::<R<Vec<_>>>()?;
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
@@ -879,7 +937,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let boite_liee = boite_liee(ctx)?;
     let (versement_mobilite_des_etablissements, bareme) = versement_mobilite_des_etablissements(ctx);
     Ok(ConfigurationDeLaPage {
-        ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "ancienne valeur" },
+        ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
         fiches_attendues_titre: format!("{} fiche(s) en attente", fiches_attendues.len()),
         compteurs_dit,
         deduction_forfaitaire: deduction,
