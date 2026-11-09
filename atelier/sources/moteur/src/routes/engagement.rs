@@ -2,12 +2,11 @@
 //! l'on lit ; un refus dit quoi corriger et n'ecrit rien.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use droit::contexte::Contexte;
 use engagement::carte::{Brouillon, Changements};
 use engagement::stock::Identite;
-use socle::echec::{erreur, Classe, Echec, Refus, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusDit, FORME, MOIS};
@@ -184,15 +183,6 @@ struct Retrait {
 #[track_caller]
 pub(super) fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
-}
-
-pub(super) fn en_echec(r: Refus) -> Echec {
-    Echec { classe: r.classe, message: r.message }
-}
-
-/// `charge["cle"]` : un texte requis.
-pub(super) fn texte_requis<'a>(charge: &'a Value, cle: &str) -> R<&'a str> {
-    crate::routes::fiches::exiger(charge, cle)?.as_str().ok_or_else(|| erreur(Classe::MalFormee, socle::echec::charge(cle, "un texte")))
 }
 
 /// L'heure de Paris, a la seconde.

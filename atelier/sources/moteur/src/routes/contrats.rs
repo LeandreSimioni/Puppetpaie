@@ -15,7 +15,7 @@ use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
 use crate::compagnie::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, Impression, UnAvenant};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::routes::documents::{client_courriel, refus, Ouvrir};
-use crate::routes::engagement::{en_echec, maintenant};
+use crate::routes::engagement::maintenant;
 use crate::routes::etapes::{ChargeMois, Moteur};
 use crate::routes::{Encart, Pastille, INTERFACE};
 
@@ -569,7 +569,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let mois = c.mois.to_string();
     let (salarie, debut) = (c.salarie.as_str(), c.debut.iso());
     // Les paies telles que la DSN les a declarees, sans rien ecrire.
-    let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(en_echec)?.1;
+    let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
     // LE CONTRAT, pas le salarie : son numero, celui que l'ecran affiche (ou que la releve a lu) ; sans numero, l'engagement
     // de ce salarie qui commence ce jour-la.
     let numero = c.numero.as_deref().filter(|n| !n.is_empty());

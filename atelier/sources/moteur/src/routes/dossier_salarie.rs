@@ -33,10 +33,7 @@ use engagement::{self, Engagement};
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
 use socle::num::{eur2, Decimal};
-use socle::echec::{Classe, Echec};
-use socle::echec::Refus;
-
-type R<T> = Result<T, Refus>;
+use socle::echec::{Classe, Echec, R};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
@@ -249,16 +246,16 @@ const PIED_REEDITE: &str = "Réédité par PuppetPaie le {} depuis les données 
 
 // ------------------------------------------------------------------ les refus
 
-pub(crate) fn avec(classe: Classe,message: impl Into<String>) -> Refus {
-    Refus { classe: Some(classe), message: message.into() }
+pub(crate) fn avec(classe: Classe, message: impl Into<String>) -> Echec {
+    socle::echec::erreur(classe, message)
 }
 
-fn erreur_operation(message: impl Into<String>) -> Refus {
+fn erreur_operation(message: impl Into<String>) -> Echec {
     avec(Classe::Refuse, message)
 }
 
 /// Un refus de la fabrique de PDF (`FabriqueRefus`) : sa ligne de francais.
-fn refus_fabrique(m: String) -> Refus {
+fn refus_fabrique(m: String) -> Echec {
     avec(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string())
 }
 
@@ -486,7 +483,7 @@ pub(crate) fn charger(ctx: &Contexte, mois: &str) -> R<(engagement::saisie::VueD
 /// `numeroter` d'un mois dont les numeros ne sont pas dans l'archive : les compteurs en attente
 /// d'un mois a l'autre restent dans `attente`, comme `Contexte._compteurs_en_attente`.
 fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [Paie], attente: &mut HashMap<i32, i64>) -> R<()> {
-    documents::ecrire_documents::numeroter_en_attente(ctx, paies, data.mois.annee(), attente, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)
+    Ok(documents::ecrire_documents::numeroter_en_attente(ctx, paies, data.mois.annee(), attente, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?)
 }
 
 /// L'etiquette d'un mois dans le nom d'un fichier (`Aout2026`) ; un mois illisible se refuse (`Illisible`).
@@ -1007,7 +1004,7 @@ fn assembler(pages: &[&Page]) -> R<Option<Vec<u8>>> {
             _ => pieces.push((pg.source.clone(), Some(vec![pg.numero]))),
         }
     }
-    fusion_pieces(&pieces).map(Some)
+    Ok(Some(fusion_pieces(&pieces)?))
 }
 
 // ------------------------------------------------------------------ l'ecriture
@@ -1139,7 +1136,7 @@ fn ecrire_octets(chemin: &Path, octets: &[u8]) -> R<()> {
 type Contenus = Vec<(String, Vec<(&'static str, Vec<u8>)>)>;
 
 /// Un dossier d'une seule categorie n'est fait que de ceux qui en ont des pages : sinon, un defaut.
-fn sans_pages() -> Refus {
+fn sans_pages() -> Echec {
     avec(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier d'une catégorie n'a pas les pages de cette catégorie.")
 }
 

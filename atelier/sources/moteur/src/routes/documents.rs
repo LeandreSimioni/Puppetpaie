@@ -341,7 +341,7 @@ fn aer_manquantes(ctx: &Contexte, mois: &str) -> R<Vec<String>> {
 /// `ecrire_documents::paies_aux_numeros_declares`) ; ce qui les empeche de se lire se refuse.
 fn paies_de_la_periode(ctx: &Contexte, periode: &str) -> R<Vec<engagement::calcul::Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, periode, None, &departs).map_err(crate::routes::engagement::en_echec)?;
+    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, periode, None, &departs)?;
     Ok(paies)
 }
 
