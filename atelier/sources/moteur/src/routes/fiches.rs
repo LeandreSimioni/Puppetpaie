@@ -164,7 +164,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::TauxAtmp,
-        geste: "Dire le code risque et le taux AT/MP en vigueur, celui d'avant et celui à venir, et d'où ils viennent ; une ligne s'inscrit par enregistrer-fiche (case taux_atmp : code_risque, valeur, depuis).",
+        geste: "Dire le taux AT/MP d'avant, en vigueur et à venir, et d'où ils viennent.",
         charge: &[],
         exemple: r#"{}"#,
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",

@@ -1242,7 +1242,7 @@ function ATMP_HTML() {
   return `<div class="encart" id="config-atmp">
     <h4>Accidents du travail (AT/MP)</h4>
     <div id="atmp-dit"></div>
-    <details id="atmp-inscrire"><summary>Inscrire le taux d'une notification</summary>
+    <details id="atmp-inscrire"><summary id="atmp-bouton"></summary>
       <div class="ligne-champs">
         <label>Code risque
           <input id="atmp-code" class="hors-fiche" list="codes-atmp" maxlength="7"></label>
@@ -1284,6 +1284,7 @@ async function brancherAtmp() {
   [code, valeur, depuis].forEach((c) => { c.oninput = null; });
   const peindre = (r) => {
     peindreLignesAtmp($("atmp-dit"), r);
+    $("atmp-bouton").textContent = r.inscrire;
     const ou = document.createElement("p");
     ou.className = "aide";
     ou.textContent = r.ou_le_lire || "";

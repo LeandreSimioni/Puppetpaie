@@ -2186,7 +2186,7 @@
                 "existe racine:config/baremes/2026.json": "non",
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
-                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "51d78b45aae629b0077acdb6833e76efca668d679a35d79b8b5804120990865b",
+                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "2be737a7221b57279b6aa6349117a76a80b3575470a238d32b75dc5d508d1766",
                 "fichier code:baremes/2026.json": "423c8ebda3cb02f03e1732b96900ad5285e2cd92725ebad1205aa16ec08b3258",
                 "fichier code:contrats-base.json": "7b4508c34503f5514efb514acd1cd355fc10379663fa03cd93c76b6d159d8718",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
@@ -2202,6 +2202,7 @@
                 "2026-09-19"
               ],
               "configuration": [
+                "2026-01-01",
                 "2026-11-20"
               ]
             },

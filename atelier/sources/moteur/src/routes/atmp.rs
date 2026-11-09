@@ -298,6 +298,8 @@ pub(crate) struct TauxAtmpDit {
     a_venir: Option<LigneDite>,
     risque: Option<RisqueDit>,
     ou_le_lire: &'static str,
+    /// Le nom du geste qui inscrit une ligne (le geste ordinaire de la fiche, a la date tapee).
+    inscrire: &'static str,
     propose_depuis: Jour,
     codes: Vec<RisqueDit>,
     etablissements: Vec<EtablissementDit>,
@@ -346,6 +348,7 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
         a_venir,
         risque: risque.map(risque_dit),
         ou_le_lire: "La CARSAT notifie à la compagnie son code risque et son taux : la notification se lit dans le compte AT/MP de net-entreprises (compte entreprise › Accidents du travail et maladies professionnelles).",
+        inscrire: "Inscrire le taux d'une notification",
         propose_depuis: premier_janvier(an + 1)?,
         codes: risques.iter().map(risque_dit).collect(),
         etablissements,
