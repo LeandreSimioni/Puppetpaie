@@ -114,7 +114,8 @@ impl LectureDsn {
     /// LES CONVENTIONS QUI DIVERGENT, dites : des contrats d'une meme DSN qui declarent d'autres conventions que
     /// l'etablissement ou entre eux, une convention de l'etablissement qui change d'une DSN a l'autre. La fiche
     /// Entreprise n'en porte qu'une, celle de la DSN la plus recente (`EntrepriseDeclaree::suivre`) : l'ecart se dit, rien
-    /// ne se choisit en silence.
+    /// ne se choisit en silence -- une convention etendue oblige tout employeur de son champ (C. trav. L2261-15,
+    /// `atelier/reference/sources/conventions-champ-d-application/LISEZ-MOI.md`).
     pub(crate) fn conventions_divergentes(&self) -> Vec<String> {
         let mut out = Vec::new();
         for c in &self.conventions {

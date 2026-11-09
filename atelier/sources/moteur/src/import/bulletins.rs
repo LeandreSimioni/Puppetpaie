@@ -503,7 +503,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // LA CONVENTION COLLECTIVE DE L'IMPORT : celle de la fiche Entreprise, sinon celle que les DSN declarent
     // (S21.G00.11.022, S21.G00.40.017), sinon celle que les bulletins impriment, sinon celle des AEM (`EMP_IDCC`, « N°
     // IDCC »). C'est sous elle que se resout le metier d'un salarie qu'une fiche cree (`statut_et_metier`) ; un bulletin
-    // qui imprime la sienne se resout sous la sienne. Aucune : la fiche la demandera (`idcc`), rien ne se suppose.
+    // qui imprime la sienne se resout sous la sienne. Aucune : la fiche la demandera (`idcc`), rien ne se suppose : le
+    // champ d'une convention tient a des faits que les pieces ne portent pas (financement, label, gouvernance : CCN 3090
+    // art. 1er, CCNEAC art. I.1, `atelier/reference/sources/conventions-champ-d-application/`).
     let idcc_lus: Vec<Option<String>> = lus.iter().map(|l| idcc_du_bulletin(&l.b)).collect::<R<_>>()?;
     let convention: Option<String> = ctx
         .entreprise
