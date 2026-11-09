@@ -39,7 +39,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::{FicheRecue, ReleveFiches};
-use crate::compagnie::sauvegarde::{self, Sauvegarde};
+use compagnie::sauvegarde::{self, Sauvegarde};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Auto(Place::Historique, Affiche::new("Relever maintenant"));
@@ -588,7 +588,7 @@ const VERSION_DU_CALCUL: &str = ".version-du-calcul.json";
 /// rectificatif ; puis plus rien jusqu'a la version suivante. La marque ne s'ecrit qu'apres un passage entier : un
 /// passage interrompu se refait.
 fn passer_la_version(ctx: &Contexte) -> R<()> {
-    let marque = VersionDuCalcul { version: format!("{}+{}", crate::compagnie::maj::courante(&crate::compagnie::maj::dossier_installe()?)?, engagement::empreinte::MOTEUR) };
+    let marque = VersionDuCalcul { version: format!("{}+{}", compagnie::maj::courante(&compagnie::maj::dossier_installe()?)?, engagement::empreinte::MOTEUR) };
     let p = ctx.racine.join(socle::fichiers::CONFIG).join(VERSION_DU_CALCUL);
     if p.exists() {
         let lue: VersionDuCalcul = socle::forme::lire_fichier(&p, "La version qui a passé sur les mois finis ne se lit pas.")?;
@@ -639,7 +639,7 @@ fn age_de_la_derniere(precedente: &Trace) -> R<i64> {
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
 fn coffre_dispo(ctx: &Contexte, service: &str) -> Result<bool, String> {
-    crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "").disponible(service).map_err(|e| e.message)
+    compagnie::coffre::Coffre::du_poste(&ctx.racine, "").disponible(service).map_err(|e| e.message)
 }
 
 /// Une seule phrase pour l'absence de reseau, pas une erreur par dossier et par organisme. Les erreurs
@@ -753,7 +753,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     // DPAE, ni contrat signe. La veille ne les releve pas, et ne demande pas les mots de passe qui serviraient a les relever :
     // le bandeau ne presente pas comme une panne ce qui est voulu. Le coffre, lui, s'y pose comme ailleurs (Configuration).
     // Un marqueur qui ne se lit pas ne dit pas si la compagnie envoie : la veille s'arrete la, et le dit.
-    let (branchement, fictive) = match crate::compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, crate::compagnie::installation::est_fictive(&ctx.racine)?))) {
+    let (branchement, fictive) = match compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, compagnie::installation::est_fictive(&ctx.racine)?))) {
         Ok(x) => x,
         Err(e) => {
             r.incidents.push(e);
@@ -852,19 +852,19 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     if opt.filet && opt.incidents_editeur && !bac_a_sable && (!copie || fictive) {
         dire_l_etape(ctx, "Serveur de l'éditeur : incidents, messages et réponses…");
         // Ce qui echoue ici ne fait pas refuser l'ouverture : la veille suivante reessaie, et l'ouverture le dit.
-        if let Some(e) = crate::compagnie::incidents::envoyer(&ctx.racine).erreur {
+        if let Some(e) = compagnie::incidents::envoyer(&ctx.racine).erreur {
             r.incidents.push(format!("Incidents chez l'éditeur : {}", e));
         }
         // LE NOMBRE DE PAIES DE L'ANNEE PASSEE, a partir du 16 janvier, une fois : `nombre_de_paies` decide
         // seul (ni fictive, ni copie de developpement, ni logiciel bride, ni envoi coupe) et retient ce qui est parti.
-        if let Some(e) = crate::compagnie::nombre_de_paies::envoyer_si_du(ctx).erreur {
+        if let Some(e) = compagnie::nombre_de_paies::envoyer_si_du(ctx).erreur {
             r.incidents.push(format!("Nombre de paies chez l'éditeur : {}", e));
         }
         // Les messages « Un probleme, une idee ? » que l'envoi en fond n'a pas fait partir (serveur injoignable...).
-        if let Some(e) = crate::compagnie::problemes::partir(&ctx.racine).erreur {
+        if let Some(e) = compagnie::problemes::partir(&ctx.racine).erreur {
             r.incidents.push(format!("Messages à l'éditeur : {}", e));
         }
-        if let Err(e) = crate::compagnie::problemes::relever_reponses(&ctx.racine) {
+        if let Err(e) = compagnie::problemes::relever_reponses(&ctx.racine) {
             r.incidents.push(format!("Réponses de l'éditeur : {}", e.message));
         }
     }
@@ -885,7 +885,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 /// `sauvegarde_seule` : la seconde moitie de la veille. La copie de developpement et la compagnie fictive ne sauvegardent pas
 /// (rien a faire, la trace n'est pas touchee) ; sinon la sauvegarde, en dernier, et la trace du premier appel completee.
 fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut r: Ouverture, debut: std::time::Instant, precedente: Option<Trace>) -> Ouverture {
-    let joue = match crate::compagnie::bridage::branchement(&ctx.racine) {
+    let joue = match compagnie::bridage::branchement(&ctx.racine) {
         Ok(b) => b.joue(),
         Err(e) => {
             r.incidents.push(e);

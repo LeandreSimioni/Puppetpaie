@@ -190,7 +190,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         Some((_, b)) => b,
         None => charge.contenu.as_str(),
     };
-    let octets = crate::compagnie::problemes::base64_strict(utile).ok_or_else(|| refus("Le fichier n'est pas lisible : base64 invalide."))?;
+    let octets = compagnie::problemes::base64_strict(utile).ok_or_else(|| refus("Le fichier n'est pas lisible : base64 invalide."))?;
     if octets.is_empty() {
         return Err(refus("Le fichier est vide."));
     }

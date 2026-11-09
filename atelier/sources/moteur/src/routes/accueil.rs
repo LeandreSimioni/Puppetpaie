@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::accueil::suppression;
-use crate::compagnie::installation as compagnies;
+use compagnie::installation as compagnies;
 use crate::gestes::administrateur;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
@@ -255,7 +255,7 @@ pub(crate) struct Liste {
     pub(crate) bride: bool,
     pub(crate) a_garder: Vec<suppression::Gardee>,
     phrases: Vec<String>,
-    pub(crate) auteur: crate::compagnie::auteur::Auteur,
+    pub(crate) auteur: compagnie::auteur::Auteur,
 }
 
 /// Ce que rend `compagnie-ajouter` : la compagnie, et le chemin que la fenetre ouvre.
@@ -384,8 +384,8 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
-            let cles = crate::compagnie::maj::cles_de_l_editeur();
-            let complete: crate::compagnie::maj::PortableComplete = crate::compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
+            let cles = compagnie::maj::cles_de_l_editeur();
+            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
             en_json(complete)
         }
         Route::AdministrateurDeposer => {
@@ -421,5 +421,5 @@ pub(crate) fn liste(inst: &std::path::Path) -> Result<Liste, String> {
     let reelles = cies.iter().filter(|c| c.reelle).count();
     let phrase = format!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
     let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
-    Ok(Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::compagnie::auteur::auteur() })
+    Ok(Liste { phrase, compagnies: cies, bride: compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: compagnie::auteur::auteur() })
 }

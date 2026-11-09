@@ -16,7 +16,7 @@ pub struct Preuve {
     pub mois_recopie: Option<String>,
     /// La preuve deja donnee pour ce geste (sa forme), quand un acte en emporte d'autres : la demande de taux de PAS part
     /// avec la DPAE sous la meme preuve, sans redemander. Jamais lue d'une charge.
-    pub(crate) donnee: Option<String>,
+    pub donnee: Option<String>,
 }
 
 impl Preuve {
@@ -40,9 +40,9 @@ fn cle_de_version(v: &str) -> R<Vec<i64>> {
 /// La version prete est celle de l'INSTALLATION du contexte (`<installation>/logiciel/donnees` = `ctx.code`).
 pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
     let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
-    let Some(p) = crate::compagnie::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
+    let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::compagnie::maj::courante(&code).map_err(|m| erreur(Classe::Illisible, m))?)? {
+    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|m| erreur(Classe::Illisible, m))?)? {
         return Ok(String::new());
     }
     Ok(format!(
@@ -60,7 +60,7 @@ pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
 /// ou refus). Ni la seance (`garder_ouverture`), ni `PUPPETPAIE_MOTDEPASSE`, ni le mot de passe retenu pour ouvrir le
 /// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `quoi` et `a_qui` disent a l'humain ce qui
 /// va partir ; `mois_attendu` est le mois que la preuve recopiee devrait porter.
-pub(crate) fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
+pub fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
     // Le binaire de l'ATELIER refuse tout acte reel, avant toute autre question (`atelier::redirection`). Un depot reel, un envoi,
     // une signature passent tous par ici.
     if let Some(forme) = preuve.and_then(|p| p.donnee.clone()) {
@@ -77,7 +77,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
     // UNE COMPAGNIE FICTIVE AUX ENVOIS SIMULES : son « acte reel » est joue (`FICTIF-…`), rien ne part -- comme dans le
     // binaire livre (`verifier_preuve_du_logiciel`). Le banc d'essai en vit : l'horloge y depose la DSN et la DPAE
     // « en reel ». Toute autre compagnie : refuse, mot de passe ou non (la commande `signatures` fait de meme).
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    if crate::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
     }
     Err(erreur(Classe::ActeReelRefuse, envois::redirection::REFUS_ACTE_REEL.to_string()))
@@ -86,7 +86,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
 #[cfg_attr(feature = "atelier", allow(dead_code))]
 fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
     // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    if crate::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
     }
     // Une version EXIGEE attend d'etre appliquee : l'ancienne ferait une declaration fausse.
@@ -94,8 +94,8 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
     if !presse.is_empty() {
         return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
     }
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::compagnie::coffre::vers_route;
+    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
+    let vers = crate::coffre::vers_route;
     if !coffre.ouverture_exigee().map_err(vers)? {
         return Err(erreur(
             Classe::PreuveInsuffisante,
@@ -104,10 +104,10 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
     }
     let Some(preuve) = preuve.filter(|p| p.motdepasse.as_deref().is_some_and(|m| !m.is_empty())) else {
         // Rien n'a ete tape pour cette charge : c'est le moteur qui demande, a un humain, ou il refuse.
-        let acte = crate::compagnie::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
-        return match crate::compagnie::demande::autoriser_acte(&ctx.racine, &acte) {
-            crate::compagnie::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
-            crate::compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(Classe::PreuveInsuffisante, phrase)),
+        let acte = crate::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
+        return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
+            crate::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
+            crate::demande::Verdict::Refuse(phrase) => Err(erreur(Classe::PreuveInsuffisante, phrase)),
         };
     };
     if let Some(m) = preuve.mois_recopie.as_deref().filter(|m| !m.is_empty()) {
@@ -128,14 +128,14 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
 /// Le secret de l'organisme -- l'environnement d'abord (quelqu'un l'a tape dans une
 /// fenetre, il vaut confirmation), puis le coffre. Ce qui autorise a y puiser pour un depot REEL, c'est la
 /// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
-pub(crate) fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::compagnie::coffre::vers_route;
+pub fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
+    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
+    let vers = crate::coffre::vers_route;
     if !coffre.disponible(service).map_err(vers)? {
         return Err(erreur(
             Classe::Refuse,
             format!("Mot de passe {} absent : ni dans l'environnement, ni au coffre.\n  route coffre-poser, service {}", service, service),
         ));
     }
-    coffre.lire(service, crate::compagnie::coffre::DEPOT, true, ouverture).map_err(vers)
+    coffre.lire(service, crate::coffre::DEPOT, true, ouverture).map_err(vers)
 }

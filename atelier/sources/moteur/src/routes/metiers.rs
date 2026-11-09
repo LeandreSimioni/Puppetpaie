@@ -10,7 +10,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place,
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::{creer_dossier, ecrire, plain, refus};
-use crate::compagnie::avant::sauver_avant;
+use compagnie::avant::sauver_avant;
 use droit::contexte::Contexte;
 use droit::emplois::{self, MetierDuDeroulant};
 use socle::echec::{erreur, R};

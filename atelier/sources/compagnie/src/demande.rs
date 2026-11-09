@@ -30,7 +30,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::compagnie::coffre::{retenir_mot_de_passe_tape, Coffre};
+use crate::coffre::{retenir_mot_de_passe_tape, Coffre};
 
 /// Combien de fois on laisse retaper un mot de passe refuse avant de renoncer.
 const ESSAIS: u8 = 3;
@@ -332,7 +332,7 @@ pub const VARIABLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_DEMANDE";
 /// ni n'y engage), la fausse demande tape ce que `VARIABLE_ESSAIS` dit : les exemples des fiches du coffre se jouent ainsi
 /// sans humain. Une compagnie reelle n'a jamais que le canal du poste.
 pub fn canal_de_la_route(racine: &Path) -> Rc<dyn Canal> {
-    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && matches!(crate::compagnie::bridage::branchement(racine), Ok(b) if b.joue()));
+    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && matches!(crate::bridage::branchement(racine), Ok(b) if b.joue()));
     match fausse {
         Some(m) => Rc::new(Fausse::mot(&m)),
         None => Rc::new(Reel::du_poste()),
@@ -512,7 +512,7 @@ mod fenetre_systeme {
     /// CONTENEUR (pas de cible Windows) : a essayer sur le poste.
     #[cfg(windows)]
     fn powershell(titre: &str, lignes: &[String]) -> std::io::Result<std::process::Output> {
-        use crate::compagnie::poste::entre_apostrophes_powershell as ap;
+        use crate::poste::entre_apostrophes_powershell as ap;
         use std::os::windows::process::CommandExt;
         let script = format!(
             "[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false); Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; \
@@ -715,7 +715,7 @@ mod terminal_unix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compagnie::coffre::oublier_mot_de_passe_tape;
+    use crate::coffre::oublier_mot_de_passe_tape;
     use droit::contexte::Contexte;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
@@ -758,7 +758,7 @@ mod tests {
     /// Un coffre ferme par un poste A, mot de passe du logiciel pose, trois secrets ; le processus est sur un poste B.
     fn monde() -> Monde {
         let tour = TOUR.lock().unwrap_or_else(|e| e.into_inner());
-        let racine = crate::compagnie::racine_d_essai(false);
+        let racine = crate::racine_d_essai(false);
         let poste_a = racine.join("poste-a");
         let poste_b = racine.join("poste-b");
         std::fs::create_dir_all(&poste_b).unwrap();
@@ -776,12 +776,12 @@ mod tests {
     }
 
     fn le_poste_n_ouvre_pas(m: &Monde) -> bool {
-        let r = crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises");
+        let r = crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises");
         r.is_err()
     }
 
     fn proteger_un_acte(m: &Monde) -> Result<String, String> {
-        crate::compagnie::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(|e| e.message)
+        crate::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(|e| e.message)
     }
 
     // ------------------------------------------------------------ le mot de passe tape ouvre tout
@@ -790,11 +790,11 @@ mod tests {
     fn un_mauvais_mot_de_passe_n_ouvre_pas_et_ne_dit_rien_du_secret() {
         let m = monde();
         let mauvais = "Pas-le-bon-mot-de-passe-77";
-        crate::compagnie::coffre::retenir_mot_de_passe_tape(mauvais);
+        crate::coffre::retenir_mot_de_passe_tape(mauvais);
         for r in [
-            crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.message),
-            crate::compagnie::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.to_string()),
-            crate::compagnie::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.message),
+            crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.message),
+            crate::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.to_string()),
+            crate::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.message),
         ] {
             let dit = r.expect_err("un mauvais mot de passe ne doit rien ouvrir");
             for secret in [NET, BOITE, LOGICIEL, mauvais] {
@@ -852,17 +852,17 @@ mod tests {
         let m = monde();
         // Le mot de passe est LA, par les trois voies qui ouvrent le coffre : aucune ne vaut aval.
         std::env::set_var("PUPPETPAIE_MOTDEPASSE", LOGICIEL);
-        crate::compagnie::coffre::retenir_mot_de_passe_tape(LOGICIEL);
+        crate::coffre::retenir_mot_de_passe_tape(LOGICIEL);
         {
             let _g = installer(Rc::new(Fausse::mot(LOGICIEL)));
             assert_eq!(ouvrir_seance(&m.racine), Verdict::Accepte);
         }
         assert!(proteger_un_acte(&m).unwrap_err().contains("aucun humain"));
         // Et la charge de la route, elle, reste une preuve (la fenetre Tk, la page) : le mot de passe tape y arrive.
-        let preuve = crate::compagnie::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::compagnie::preuve::verifier_preuve(&m.ctx(), Some(&preuve), "2026-09", "x", "y").is_ok());
-        let mauvaise = crate::compagnie::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::compagnie::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), "2026-09", "x", "y").is_err());
+        let preuve = crate::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), mois_recopie: None, ..Default::default() };
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), "2026-09", "x", "y").is_ok());
+        let mauvaise = crate::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), mois_recopie: None, ..Default::default() };
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), "2026-09", "x", "y").is_err());
     }
 
     // ------------------------------------------------------------ la seance
@@ -879,9 +879,9 @@ mod tests {
         assert!(f.questions()[0].seance);
         // Plus rien de retenu en memoire : c'est la seance GARDEE (12 h) qui ouvre, dans un processus neuf.
         oublier_mot_de_passe_tape();
-        let lu = crate::compagnie::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").unwrap();
+        let lu = crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").unwrap();
         assert_eq!(lu.as_deref(), Some(NET));
-        assert_eq!(crate::compagnie::boite::mot_de_passe(&m.racine).unwrap(), BOITE);
+        assert_eq!(crate::boite::mot_de_passe(&m.racine).unwrap(), BOITE);
         // Mais un acte reel, lui, redemande -- et sans humain, refuse.
         assert!(proteger_un_acte(&m).unwrap_err().contains("aucun humain"));
     }

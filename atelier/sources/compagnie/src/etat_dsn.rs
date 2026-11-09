@@ -21,7 +21,7 @@ use socle::mois::Mois;
 /// mois de ce logiciel dont la DSN n'est pas partie).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Etat {
+pub enum Etat {
     Passee,
     Attente,
     Refusee,
@@ -36,15 +36,15 @@ pub(crate) enum Etat {
 /// Il se relit avec la reponse qui le porte (le refus d'une seconde DSN du mois, `routes::enveloppe::APart`).
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct EtatDsn {
-    pub(crate) etat: Etat,
+pub struct EtatDsn {
+    pub etat: Etat,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) courte: Option<String>,
+    pub courte: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) phrase: Option<String>,
-    pub(crate) quand: Option<String>,
+    pub phrase: Option<String>,
+    pub quand: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) anomalies: Option<Vec<String>>,
+    pub anomalies: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     aer_recue: Option<bool>,
 }
@@ -55,27 +55,27 @@ impl EtatDsn {
     }
 
     /// Une DSN est partie pour ce mois et n'est pas refusée : passée, retour attendu, ou déposée par l'ancien logiciel.
-    pub(crate) fn partie(&self) -> bool {
+    pub fn partie(&self) -> bool {
         self.est(&[Etat::Passee, Etat::Attente, Etat::Importee])
     }
 
     /// Une DSN de ce logiciel est sur la plate-forme, refusée comprise.
-    pub(crate) fn deposee(&self) -> bool {
+    pub fn deposee(&self) -> bool {
         self.est(&[Etat::Passee, Etat::Attente, Etat::Refusee])
     }
 
     /// Passée, sans que France Travail ait encore renvoyé l'attestation employeur (AER) qu'elle en édite.
-    pub(crate) fn aer_attendue(&self) -> bool {
+    pub fn aer_attendue(&self) -> bool {
         self.etat == Etat::Passee && self.aer_recue != Some(true)
     }
 
     /// Le bilan l'a refusée.
-    pub(crate) fn refusee(&self) -> bool {
+    pub fn refusee(&self) -> bool {
         self.etat == Etat::Refusee
     }
 
     /// La DSN reste à faire : refusée, ou jamais partie d'un mois de ce logiciel.
-    pub(crate) fn a_faire(&self) -> bool {
+    pub fn a_faire(&self) -> bool {
         self.est(&[Etat::Refusee, Etat::ADeposer])
     }
 
@@ -86,7 +86,7 @@ impl EtatDsn {
 }
 
 /// L'état de la DSN de `mois` ; `nic` : l'établissement (`None` : le principal ; les états du journal sont les siens).
-pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
+pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
     let mois = &le_mois.to_string();
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     if let Some(e) = etats::etat_dsn_du_mois(&lignes, le_mois, nic, ctx.entreprise.nic.ecrite("nic")?) {
@@ -119,7 +119,7 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
 }
 
 /// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
-pub(crate) fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
+pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
     if engagement::stock::a_une_saisie(racine, mois).map_err(socle::echec::Echec::from)? {
         return Ok(false);
     }
@@ -136,7 +136,7 @@ pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: &str) -> R<Option<
 /// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par
 /// l'ancien logiciel, `engagement::importe::dsn_deposee`). Une correction se declare dans la DSN suivante (cahier
 /// technique DSN 2026.1, § 2.1.2.1, `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`).
-pub(crate) fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
+pub fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
     let partie = |m: &str| -> R<bool> { Ok(du_mois(ctx, socle::mois::Mois::lire(m)?, None)?.partie()) };
     let suivant = |m: &str| -> R<String> { Ok(socle::mois::Mois::lire(m)?.suivant().to_string()) };
     let mut porteur = suivant(mois)?;
@@ -150,7 +150,7 @@ pub(crate) fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
 /// premier mois du est celui de sa premiere embauche (`premiere_embauche` de la fiche Entreprise) ; sans cette date, une
 /// compagnie qui n'a ni paie saisie ni DSN au journal n'a encore rien a declarer avant le mois courant (des fiches ne
 /// sont pas un passe). `None` : rien ne borne -- une compagnie qui a deja des paies ou des declarations.
-pub(crate) fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
+pub fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
     if let Some(j) = ctx.entreprise.premiere_embauche.dite() {
         return Ok(Some(socle::mois::Mois::du_jour(j).to_string()));
     }
@@ -170,7 +170,7 @@ pub(crate) fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 2291-2309) : elle est due chaque mois,
 /// avec ou sans salarie, a partir du premier mois du (`premier_mois_du`), tant qu'elle reste a faire
 /// (`EtatDsn::a_faire`). LE SEUL ENDROIT QUI LE DIT : l'echeancier, les rappels et le panneau des etapes le lisent.
-pub(crate) fn due(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<bool> {
+pub fn due(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<bool> {
     if premier_mois_du(ctx)?.is_some_and(|p| mois.to_string() < p) {
         return Ok(false);
     }

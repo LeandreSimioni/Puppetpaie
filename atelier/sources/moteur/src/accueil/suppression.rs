@@ -41,7 +41,7 @@
 use std::path::{Path, PathBuf};
 
 
-use crate::compagnie::installation::{self, Compagnie};
+use compagnie::installation::{self, Compagnie};
 use crate::gestes::administrateur::Poste;
 
 /// La mention de demo d'une compagnie gardee.
@@ -116,7 +116,7 @@ pub fn question(racine: &Path) -> Result<Suppression, String> {
     let sauvegarde = match g {
         Genre::Reelle => {
             let liee = racine.join(socle::fichiers::CONFIG).join(crate::routes::coffre::FICHIER_JETON).is_file();
-            let derniere = crate::compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
+            let derniere = compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
             let phrase = match &derniere {
                 Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", socle::ecran::quand(q)),
                 None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),
@@ -211,8 +211,8 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) ->
     let tape = match motdepasse.filter(|m| !m.is_empty()) {
         Some(m) => m.to_string(),
         None => {
-            let acte = crate::compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), "", "");
-            crate::compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| format!("{} Rien n'a été supprimé.", m))?
+            let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), "", "");
+            compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| format!("{} Rien n'a été supprimé.", m))?
         }
     };
     if !coffre.verifier_ouverture(&tape).map_err(|e| e.message)? {
@@ -275,7 +275,7 @@ pub fn effacer_les_restes(inst: &Path) -> Vec<PathBuf> {
 /// LES FICTIVES AJOUTEES A GARDER OU NON : sur un logiciel debloque, celles qui sont encore la ; bride, aucune (la question
 /// ne se pose pas).
 pub fn a_garder(inst: &Path) -> Result<Vec<Compagnie>, String> {
-    if crate::compagnie::bridage::est_bride_de(inst) {
+    if compagnie::bridage::est_bride_de(inst) {
         return Ok(Vec::new());
     }
     let mut ajoutees = Vec::new();
@@ -333,7 +333,7 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
 /// reviendra pour elle. `lacher` : ce que la fenetre tient de chacune (sa file sur le fil des calculs), avant qu'elle
 /// bouge. Rend ce qui est garde, supprime, et chaque echec : un echec sur l'une n'arrete pas les autres.
 pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], poste: &Poste, lacher: &dyn Fn(&Path)) -> Result<Reponse, String> {
-    if crate::compagnie::bridage::est_bride_de(inst) {
+    if compagnie::bridage::est_bride_de(inst) {
         return Err("Le logiciel est bridé : ses compagnies ajoutées restent des compagnies fictives.".into());
     }
     if let Some(id) = garder_ids.iter().find(|id| ne_pas_garder.contains(id)) {

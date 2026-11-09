@@ -1083,7 +1083,7 @@ fn libelle_nature(code: &str, acte: Acte) -> String {
     retours::libelle_nature(code)
 }
 
-/// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`moteur::compagnie::incidents`) : son
+/// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`compagnie::incidents`) : son
 /// canal, l'endroit, le premier code d'anomalie (ou `KO`), le resume (dix anomalies au plus), et le detail.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IncidentDeRetour {

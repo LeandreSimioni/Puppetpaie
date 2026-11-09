@@ -939,27 +939,27 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
         t.contains("import") || t.contains("repris")
     };
     let mut out = Vec::new();
-    for l in crate::compagnie::incidents::lire(racine, None, false)? {
+    for l in compagnie::incidents::lire(racine, None, false)? {
         // Les ecarts de calcul de l'import sont l'etude de l'editeur (`import::ecarts`) : rien n'y attend la compagnie.
         if l.ou == crate::import::ecarts::OU {
             continue;
         }
         // Un refus (un dossier mal tape, un export absent) se dit a l'ecran ; il n'attend pas l'editeur.
-        if l.quoi == crate::compagnie::incidents::REFUS || !parle_d_import(&format!("{} {}", l.ou, l.genre)) {
+        if l.quoi == compagnie::incidents::REFUS || !parle_d_import(&format!("{} {}", l.ou, l.genre)) {
             continue;
         }
-        if l.envoi.etat == crate::compagnie::incidents::SANS_OBJET {
+        if l.envoi.etat == compagnie::incidents::SANS_OBJET {
             continue;
         }
-        let parti = l.envoi.etat == crate::compagnie::incidents::DEPOSE;
+        let parti = l.envoi.etat == compagnie::incidents::DEPOSE;
         let dit = if l.resume.is_empty() { l.genre } else { l.resume };
         out.push(message("incident", Some(l.quand).filter(|q| !q.is_empty()), Some(dit), parti, false));
     }
-    for s in crate::compagnie::problemes::signalements(racine)? {
+    for s in compagnie::problemes::signalements(racine)? {
         if !parle_d_import(&s.garde.texte) {
             continue;
         }
-        let (parti, repondu) = (s.etat == crate::compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
+        let (parti, repondu) = (s.etat == compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
         out.push(message("signalement", Some(s.garde.quand).filter(|q| !q.is_empty()), Some(s.garde.texte), parti, repondu));
     }
     Ok(out)

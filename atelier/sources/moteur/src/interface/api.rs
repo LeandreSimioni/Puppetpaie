@@ -45,7 +45,7 @@ pub fn route(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
     }
     let debut = std::time::Instant::now();
     let r = route_seule(racine, nom, charge);
-    crate::compagnie::diagnostic::noter_route(racine, "fond", nom.nom(), crate::routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
+    compagnie::diagnostic::noter_route(racine, "fond", nom.nom(), crate::routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
     r
 }
 
@@ -81,7 +81,7 @@ fn signalements_en_fond(racine: &Path) {
     let r = racine.to_path_buf();
     crate::routes::fil_de_routes(move || {
         if let Some(x) = route(&r, Route::SignalementsPartir, &Charge::vide()).refus() {
-            crate::compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
+            compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
         }
     });
 }
@@ -115,7 +115,7 @@ struct RefusDeLaPage<'a> {
     charge: &'a Charge,
     duree_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mois: Option<crate::compagnie::diagnostic::EtatDuMois>,
+    mois: Option<compagnie::diagnostic::EtatDuMois>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mois_illisible: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,16 +133,16 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     // LE FIL : la route de la page, sa charge mise en forme, sa duree, son issue. Une erreur de la page (`incident-navigateur`)
     // s'y dit comme telle.
     if nom == Route::IncidentNavigateur {
-        let dit = match charge.lire::<crate::compagnie::incidents::RapportNavigateur>() {
+        let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>() {
             Ok(r) => {
-                let texte = |s: &str, limite: usize| crate::compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
+                let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
                 format!("erreur JS {} : {} ({}:{})", texte(&r.genre, 80), texte(&r.message, 200), texte(&r.fichier, 80), r.ligne)
             }
             Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", socle::echec::phrase_de(&e.message)),
         };
-        crate::compagnie::diagnostic::noter_moteur(&dit);
+        compagnie::diagnostic::noter_moteur(&dit);
     } else {
-        crate::compagnie::diagnostic::noter_route(racine, "page", nom.nom(), crate::routes::est_une_ecriture(nom), charge, duree, issue(&rendu));
+        compagnie::diagnostic::noter_route(racine, "page", nom.nom(), crate::routes::est_une_ecriture(nom), charge, duree, issue(&rendu));
     }
     // APRES UNE ECRITURE, les etats de tous les mois se verifient en fond, le mois affiche
     // d'abord : une ecriture d'un mois peut changer les suivants (un contrat en cours, une numerotation, un cumul). Meme
@@ -159,7 +159,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             // sa duree, l'etat du mois qu'elle touche, ce que le refus portait pour la page ; et la trace -- l'endroit du
             // code et la chaine des echecs. Le fil et la machine s'y ajoutent dans `incidents::noter`.
             let (mois, mois_illisible) = match charge.mois() {
-                Ok(Some(m)) => match crate::compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
+                Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
                     Ok(etat) => (etat, None),
                     Err(e) => (None, Some(e.message)),
                 },
@@ -174,9 +174,9 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
                 mois_illisible,
                 refus: r.a_part.as_ref(),
             };
-            let trace = crate::compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
-            if let Err(e) = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
-                crate::compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, socle::echec::phrase_de(&e.message)));
+            let trace = compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
+            if let Err(e) = compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
+                compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, socle::echec::phrase_de(&e.message)));
             }
         }
     }
@@ -199,7 +199,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
                 let a: crate::routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
                 let r = crate::routes::dans_la_fenetre(&o, nom, charge);
                 let ajoutee: crate::routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
-                let venue = (a.venue != crate::compagnie::installation::Venue::Neuve).then_some(a.venue);
+                let venue = (a.venue != compagnie::installation::Venue::Neuve).then_some(a.venue);
                 let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
@@ -214,7 +214,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     if nom == Route::SignalementEnvoyer && rendu.est_rendue() {
         crate::routes::fil_de_routes(move || {
             if let Some(x) = crate::routes::dans_la_fenetre(&crate::routes::enveloppe::Options::sans_compagnie(),Route::SignalementsPartir, &Charge::vide()).refus() {
-                crate::compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
+                compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
             }
         });
     }

@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
-use crate::compagnie::incidents;
+use compagnie::incidents;
 use crate::importation::bulletins::DossierLu;
 use crate::import::tri::Sorte;
 use droit::contexte::Contexte;

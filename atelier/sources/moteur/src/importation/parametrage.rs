@@ -91,7 +91,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     if lecture.adhesions.is_empty() {
         return;
     }
-    let (ecran, attendus) = match (crate::compagnie::organismes::lire(ctx, None), droit::organismes::attendus(ctx)) {
+    let (ecran, attendus) = match (compagnie::organismes::lire(ctx, None), droit::organismes::attendus(ctx)) {
         (Ok(e), Ok(a)) => (e, a),
         (Err(e), _) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase())),
         (_, Err(m)) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", m)),
@@ -127,7 +127,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     }
     let enregistre = match saisies.is_empty() {
         true => false,
-        false => match crate::compagnie::organismes::enregistrer(ctx, crate::compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
+        false => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
             Ok(_) => true,
             Err(e) => {
                 faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase()));
@@ -180,7 +180,7 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 /// l'applique (`compagnie::taux_pas::derniers_taux_des_dsn`, une inference). La validite se lit ensuite comme pour tout taux recu (`droit::pas`).
 fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
     let dossier = ctx.racine.join("historique").join("bulletins");
-    let releves = match crate::compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
+    let releves = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase()),
     };

@@ -23,7 +23,7 @@ fn main() -> std::process::ExitCode {
         eprintln!("{}", m);
         return std::process::ExitCode::from(2);
     }
-    moteur::compagnie::incidents::brancher_l_engagement();
+    compagnie::incidents::brancher_l_engagement();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         // Les commandes de la fabrique, servies par sa bibliotheque.
@@ -45,7 +45,7 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(code.clamp(0, 255) as u8);
         }
         // La compagnie d'essai : un vrai depot de TEST sans `prive/`, l'identite lue dans `PUPPETPAIE_COMPAGNIE`.
-        Some("essai") => return std::process::ExitCode::from(moteur::compagnie::essai::commande(&args[1..]).clamp(0, 255) as u8),
+        Some("essai") => return std::process::ExitCode::from(compagnie::essai::commande(&args[1..]).clamp(0, 255) as u8),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer. L'atelier seulement.
         #[cfg(feature = "atelier")]
         Some("scenario") => return std::process::ExitCode::from(moteur::scenario::commande(&args[1..]).clamp(0, 255) as u8),

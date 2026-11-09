@@ -1914,7 +1914,7 @@ impl<'a> Moteur<'a> {
     /// `paie_changee_depuis_l_ecriture` : `None` si le fichier declare la paie
     /// d'aujourd'hui, sinon POURQUOI. Le journal des ecritures (`compagnie::pieces_ecrites`) se lit tel qu'il est.
     pub(crate) fn paie_changee_depuis_l_ecriture(&self, le_mois: Mois, fichier: &Path) -> R<Option<String>> {
-        use crate::compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
+        use compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
         let note = piece_notee(self.racine(), fichier)?;
         if let Some((n, EmpreinteNotee::Saisie(notee))) = note.as_ref().and_then(|n| Some((n, n.empreinte_saisie.as_ref()?))) {
             if self.empreinte_saisie(le_mois)?.as_deref() != Some(notee.as_str()) {
@@ -2175,7 +2175,7 @@ impl<'a> Moteur<'a> {
         // moteur demande quand meme (une DSN due sans salarie) garde son etat.
         let vide = paies.is_empty();
         // La DSN d'un mois sans engagement, partie sans individu, est faite ; pas due, elle n'a rien a faire.
-        let dsn_partie = vide && crate::compagnie::etat_dsn::du_mois(self.ctx, le_mois, None)?.partie();
+        let dsn_partie = vide && compagnie::etat_dsn::du_mois(self.ctx, le_mois, None)?.partie();
         let rien = |gs: Vec<Groupe>| -> Vec<Groupe> { gs.into_iter().map(|g| if vide && g.etat == EtatCase::Fait { Groupe::rien_ce_mois(g.colonnes) } else { g }).collect() };
         let dsn = if dsn_partie { dsn } else { rien(dsn) };
         // Un mois sans engagement se dit une fois : ce qui reste (sa DSN) se dit dans sa case.
@@ -2241,13 +2241,13 @@ impl<'a> Moteur<'a> {
         let mois = &le_mois.to_string();
         let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| erreur(Classe::Illisible, m))?;
         let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
-        let e = crate::compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
+        let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
         if !partie {
             // Due chaque mois, sans salarie aussi (`etat_dsn::due`, ce que l'echeancier et les rappels lisent) ; un mois
             // sans rien a declarer porte encore la correction d'un mois passe (`dsn_a_declarer`).
             let a_declarer = self.dsn_a_declarer(le_mois, nic)?;
-            if !a_declarer && !crate::compagnie::etat_dsn::due(self.ctx, le_mois, nic)? {
+            if !a_declarer && !compagnie::etat_dsn::due(self.ctx, le_mois, nic)? {
                 return Ok(Groupe::fait());
             }
             // Avant son premier jour de depot, la case reste a deposer : c'est le depot qui dit le jour
@@ -2275,7 +2275,7 @@ impl<'a> Moteur<'a> {
         if modifiee {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
-            let suivant = crate::compagnie::etat_dsn::dsn_qui_porte(self.ctx, mois)?;
+            let suivant = compagnie::etat_dsn::dsn_qui_porte(self.ctx, mois)?;
             let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant).map_err(|m| erreur(Classe::Illisible, m))?;
             let a = deposer_dsn(Mois::lire(&suivant)?, nic, format!("Déposer la DSN de {}…", Mois::en_clair(&suivant)));
             return Ok(Groupe::de(

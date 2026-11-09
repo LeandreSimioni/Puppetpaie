@@ -20,7 +20,7 @@ pub struct Faites {
 pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
     let mut faites = Faites::default();
     if !s.incidents_des_retours.is_empty() {
-        crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours })?;
+        compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours })?;
     }
     if let Some(d) = &s.depot_refuse {
         if let Err(e) = noter_incident_depot(ctx, d) {
@@ -69,7 +69,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.clone().ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
-            tous.push(crate::compagnie::taux_pas::TauxRecu {
+            tous.push(compagnie::taux_pas::TauxRecu {
                 salarie: x.salarie.clone(),
                 taux: x.releve.taux.clone(),
                 type_taux: x.releve.type_taux.clone(),
@@ -148,10 +148,10 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
 /// alors que la repetition etait conforme.
 fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {
     let apres_test = d.reel && d.repetition.as_ref().is_some_and(|r| r.test.is_some());
-    crate::compagnie::incidents::noter(
+    compagnie::incidents::noter(
         &ctx.racine,
-        &crate::compagnie::incidents::Note {
-            nature: if d.quoi == "dsn" { crate::compagnie::incidents::DSN } else { crate::compagnie::incidents::DPAE },
+        &compagnie::incidents::Note {
+            nature: if d.quoi == "dsn" { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi),
             quoi: &d.classe,
             resume: &d.message,

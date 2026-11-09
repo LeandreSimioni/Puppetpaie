@@ -230,7 +230,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
 /// de la paie. Il donne lieu a la declaration d'une correction dans la DSN suivante », et §2.2.2.5 ; fiche
 /// net-entreprises 1741 : un contrat que le systeme DSN ne connait pas encore se declare en entier dans la DSN mensuelle
 /// qui le porte), et le versement de la correction declare son net. Son bulletin est celui de son mois, qui part avec
-/// les documents de ce mois (`moteur::compagnie::depart::fabriquer_documents`).
+/// les documents de ce mois (`moteur::gestes::depart::fabriquer_documents`).
 fn ajout(mois: String, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
     if apres.engagement.numero.is_none() {
         return Err(erreur(

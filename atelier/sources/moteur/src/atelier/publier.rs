@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::compagnie::coffre::{Coffre, FICHIER_CLE_PRIVEE};
-use crate::compagnie::maj::{
+use compagnie::coffre::{Coffre, FICHIER_CLE_PRIVEE};
+use compagnie::maj::{
     b64, code, condensat, courante, derniere_lue, ecrire_json, installation, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de, reglage,
     signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
@@ -89,7 +89,7 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
 const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
-    ["config/coffre.bin", crate::routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", crate::compagnie::installation::JOURNAL_INTERFACE, LIVREE];
+    ["config/coffre.bin", crate::routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -97,7 +97,7 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
 /// d'une remise a zero en cours) n'en est pas. Sans aucune fictive, une archive decompressee ouvrirait un accueil vide
 /// (le logiciel y est bride) : refus.
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
-    let dossier = base(code)?.join(crate::compagnie::installation::DOSSIER_FICTIVES);
+    let dossier = base(code)?.join(compagnie::installation::DOSSIER_FICTIVES);
     if !dossier.is_dir() {
         return Err(format!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
     }
@@ -113,7 +113,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
             continue;
         }
         // Une fictive AJOUTEE sur le poste porte les donnees qu'on y a mises : elle ne se livre jamais.
-        if !crate::compagnie::installation::est_fictive_livree(&e.path())? {
+        if !compagnie::installation::est_fictive_livree(&e.path())? {
             continue;
         }
         n += 1;
@@ -167,7 +167,7 @@ fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>>
 /// une fictive, ses seuls fichiers, nommes depuis son dossier) : elle ne depend que des fichiers livres et de leurs noms,
 /// ni de la compression ni des dates, et deux publications aux memes fictives ont la meme.
 fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, String)> {
-    let racine = crate::compagnie::installation::DOSSIER_FICTIVES;
+    let racine = compagnie::installation::DOSSIER_FICTIVES;
     let dossier = base(code)?.join(racine);
     let hex = |h: Sha256| h.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
     let mut entrees = Vec::new();
@@ -188,10 +188,10 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     let mut posees = std::collections::BTreeMap::new();
     for (nom, h) in par_fictive {
         let e = hex(h);
-        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&crate::compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
+        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
         posees.insert(nom, e);
     }
-    let l = socle::ecriture::json_indente(&crate::compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
+    let l = socle::ecriture::json_indente(&compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
     en_plus.push((format!("{}/{}", racine, LIVRAISON), l));
     Ok((entrees, en_plus, empreinte))
 }
@@ -248,7 +248,7 @@ pub fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
     let (fictives, mut en_plus, _) = entrees_des_fictives(code)?;
     entrees.extend(fictives);
     if systeme == TOUT_SYSTEME {
-        en_plus.push((crate::compagnie::coffre::MARQUEUR_PORTABLE.to_string(), crate::compagnie::coffre::CONTENU_PORTABLE.as_bytes().to_vec()));
+        en_plus.push((compagnie::coffre::MARQUEUR_PORTABLE.to_string(), compagnie::coffre::CONTENU_PORTABLE.as_bytes().to_vec()));
     }
     zipper(&entrees, &en_plus)
 }
@@ -274,7 +274,7 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
     for (nom, scenario) in crate::scenario::fictives_de_reference(base) {
-        let dest = base.join(crate::compagnie::installation::DOSSIER_FICTIVES).join(&nom);
+        let dest = base.join(compagnie::installation::DOSSIER_FICTIVES).join(&nom);
         crate::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }
     let (_, en_plus, empreinte) = entrees_des_fictives(code)?;
@@ -348,7 +348,7 @@ pub fn cle_de_signature(coffre: &Coffre) -> R<Vec<u8>> {
 }
 
 pub(crate) fn exiger_editeur(racine: &Path, quoi: &str) -> R<()> {
-    if crate::compagnie::installation::est_copie(racine) {
+    if compagnie::installation::est_copie(racine) {
         return Err(format!("Copie de developpement : {} ne part jamais d'ici.", quoi));
     }
     if !reglage(&installation())?.1 {
@@ -385,7 +385,7 @@ pub fn generer_cle(racine: &Path, remplacer: bool) -> R<ClePosee> {
 /// est celui de l'editeur ») se regarde dans `generer_cle` ; ici, seule une copie est refusee.
 pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<ClePosee> {
     let racine = coffre.racine.as_path();
-    if crate::compagnie::installation::est_copie(racine) {
+    if compagnie::installation::est_copie(racine) {
         return Err("Copie de developpement : la cle de signature ne part jamais d'ici.".into());
     }
     let chemin = racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE);
@@ -593,7 +593,7 @@ pub fn publier_depuis_l_environnement(logiciel: &Path, sortie: &Path, notes: &st
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compagnie::maj::{courante, deballer, signature_valide, CLE_PUBLIQUE, TOUT_SYSTEME};
+    use compagnie::maj::{courante, deballer, signature_valide, CLE_PUBLIQUE, TOUT_SYSTEME};
 
     /// Une compagnie fictive livree a cote du logiciel : `<base>/fictives/fictive-essai/` (son marqueur et sa fiche), et le
     /// LISEZ-MOI du dossier.
@@ -649,7 +649,7 @@ mod tests {
         assert!(noms.contains(&"fictives/LISEZ-MOI.md".to_string()) && noms.contains(&"fictives/fictive-essai/config/entreprise.json".to_string()), "{:?}", noms);
         assert!(noms.contains(&"fictives/fictive-essai/COPIE-DE-DEVELOPPEMENT.json".to_string()), "{:?}", noms);
         // Celle de tous les systemes est le dossier portable : son marqueur a la racine, que le moteur lit (`coffre::dossier_portable`).
-        assert!(noms.contains(&crate::compagnie::coffre::MARQUEUR_PORTABLE.to_string()), "{:?}", noms);
+        assert!(noms.contains(&compagnie::coffre::MARQUEUR_PORTABLE.to_string()), "{:?}", noms);
         // Les trois fichiers livres, la marque de la fictive et ce que retient la livraison : rien du poste.
         assert!(noms.contains(&"fictives/fictive-essai/.livree.json".to_string()) && noms.contains(&"fictives/.livraison.json".to_string()), "{:?}", noms);
         assert_eq!(noms.iter().filter(|n| n.starts_with("fictives/")).count(), 5, "rien du poste : {:?}", noms);

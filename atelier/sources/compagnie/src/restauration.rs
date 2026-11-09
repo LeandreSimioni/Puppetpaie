@@ -33,9 +33,9 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
-use crate::compagnie::coffre::{Coffre, SERVICES};
+use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, ErreurGoogle};
-use crate::compagnie::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
+use crate::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
 
 /// Un fichier redescendu.
 #[derive(Debug, Clone, PartialEq)]
@@ -417,7 +417,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         }
     }
     // La cle de signature est scellee par la cle maitresse du coffre : elle s'ouvre quand il s'ouvre, et seulement avec lui.
-    if crate::compagnie::coffre::cle_de_signature_posee(cible) {
+    if crate::coffre::cle_de_signature_posee(cible) {
         lignes.push(if coffre.chemin().exists() {
             "config/maj-cle-privee.bin (la cle qui signe les mises a jour) est revenu, scelle par le coffre : il s'ouvre quand le coffre \
              s'ouvre, ici par le mot de passe du logiciel, puis par la cle de ce poste une fois `route mot-de-passe-changer` passe."

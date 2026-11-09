@@ -56,7 +56,7 @@ fn maintenant() -> String {
 
 /// Une DSN est-elle partie pour ce mois, et pas refusee au bilan ? (`compagnie::etat_dsn`)
 fn dsn_acceptee(ctx: &Contexte, mois: &str) -> R<bool> {
-    Ok(crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?.partie())
+    Ok(compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?.partie())
 }
 
 // ------------------------------------------------------------------ l'export compta
@@ -205,10 +205,10 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
         std::fs::write(&f, csv_compta(&ecritures)).map_err(|e| en_os(&e, &f))?;
         // L'export de l'annee entiere note les saisies qu'il a lues (`export_compta_a_jour`).
         let lues = match (du, au) == (JANVIER, DECEMBRE) {
-            true => Some(crate::compagnie::pieces_ecrites::EmpreinteNotee::Annee(empreintes_des_saisies(&ctx.racine, annee)?)),
+            true => Some(compagnie::pieces_ecrites::EmpreinteNotee::Annee(empreintes_des_saisies(&ctx.racine, annee)?)),
             false => None,
         };
-        crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
+        compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
     Ok(ExportCompta { annee: annee.to_string(), du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
@@ -238,8 +238,8 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: &str) -> R<bool> {
     if !f.is_file() {
         return Ok(false);
     }
-    Ok(match crate::compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
-        Some(crate::compagnie::pieces_ecrites::EmpreinteNotee::Annee(lues)) => lues == empreintes_des_saisies(racine, annee)?,
+    Ok(match compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
+        Some(compagnie::pieces_ecrites::EmpreinteNotee::Annee(lues)) => lues == empreintes_des_saisies(racine, annee)?,
         // Le journal ne dit pas ce que l'export a lu : le moteur ne sait pas que les saisies ont change depuis.
         _ => true,
     })
@@ -582,7 +582,7 @@ pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
     let qui = match c.qui.filter(|q| !q.is_empty()) {
         Some(q) => q,
-        None => crate::compagnie::INTERFACE.to_string(),
+        None => compagnie::INTERFACE.to_string(),
     };
     if c.rouvrir == Some(true) {
         return rouvrir_exercice(ctx, &annee, &qui).map(Cloture::Rouverte);

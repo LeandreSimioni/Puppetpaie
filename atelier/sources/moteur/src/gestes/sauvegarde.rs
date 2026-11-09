@@ -7,7 +7,7 @@ use std::path::Path;
 
 use envois::drive::{Client, Drive, ErreurGoogle};
 
-use crate::compagnie::sauvegarde::{
+use compagnie::sauvegarde::{
     cause_de, ecrire_index, empreinte, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
     DOSSIER_DRIVE, GOOGLE_INDISPONIBLE,
 };

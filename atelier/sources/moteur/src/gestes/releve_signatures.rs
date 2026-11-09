@@ -84,18 +84,18 @@ fn os(m: String) -> Echec {
 /// renverrait le contrat contresigne au salarie : un envoi) ; le monde, la vraie boite. `Err` : l'incident qui dit
 /// pourquoi rien ne se releve.
 fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
-    match crate::compagnie::bridage::branchement(&ctx.racine)? {
+    match compagnie::bridage::branchement(&ctx.racine)? {
         envois::branchement::Branchement::Simulateur => return Ok(Ok(Box::new(boite_des_signatures(ctx)?))),
         envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}
     }
-    if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+    if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
         return Ok(Err(
             "Aucune boite courriel : les signatures ne peuvent pas etre relevees. Poser le mot de passe d'application de la boite (Configuration > Mots de passe)."
                 .to_string(),
         ));
     }
-    let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+    let vrai_client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
     Ok(Ok(Box::new(vrai_client)))
 }
 

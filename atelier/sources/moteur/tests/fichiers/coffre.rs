@@ -1,8 +1,8 @@
-//! Le coffre (`moteur::compagnie::coffre`) : poser, relire, oublier un secret, le mot de passe du logiciel, la cle du poste, le scelle,
+//! Le coffre (`compagnie::coffre`) : poser, relire, oublier un secret, le mot de passe du logiciel, la cle du poste, le scelle,
 //! sur des coffres et des mots de passe inventes, chacun dans son dossier (jamais la vraie cle du poste).
 
 use crate::outils::chemin_unique;
-use moteur::compagnie::coffre::{deriver, Coffre, Kdf, CONSULTATION};
+use compagnie::coffre::{deriver, Coffre, Kdf, CONSULTATION};
 use socle::json_ascii::dumps;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -99,7 +99,7 @@ trait Phrase {
     fn starts_with_ce_coffre(&self) -> bool;
 }
 
-impl Phrase for moteur::compagnie::coffre::Echec {
+impl Phrase for compagnie::coffre::Echec {
     fn starts_with_ce_coffre(&self) -> bool {
         self.message.starts_with("Ce coffre ne s'ouvre pas ici")
     }

@@ -288,7 +288,7 @@ impl Ligne {
 
 // ------------------------------------------------------------------ la DSN et la DPAE
 
-/// CE QUI A OUVERT UN DEPOT REEL (`moteur::compagnie::depot_acte::exiger_repetition`) : le test conforme de ce contenu
+/// CE QUI A OUVERT UN DEPOT REEL (`moteur::gestes::depot_acte::exiger_repetition`) : le test conforme de ce contenu
 /// (son heure, son flux, son compte rendu), ou le motif ecrit d'un reel parti sans test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

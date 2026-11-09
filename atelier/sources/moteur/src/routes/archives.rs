@@ -8,11 +8,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::preuve::{verifier_preuve, Preuve};
+use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::importation::casc::{marquer_regularise, RegularisationNotee};
 use crate::routes::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::compagnie::INTERFACE;
+use compagnie::INTERFACE;
 use crate::routes::SansCharge;
 use socle::mois::Mois;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};

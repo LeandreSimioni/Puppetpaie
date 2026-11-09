@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use documents::conges_spectacles::{self, PaieCs};
 use declarations::produire_regularisations::{self as regularisations, Reg};
 use crate::routes::etapes::Moteur;
-use crate::compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
+use compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use engagement::Avis;
@@ -1343,7 +1343,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
                 let nature = crate::routes::imprevus::NatureSignalement::du_code(n)?;
                 let charge = crate::routes::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());
-                for a in crate::routes::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &crate::compagnie::maintenant())? {
+                for a in crate::routes::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &compagnie::maintenant())? {
                     crate::routes::imprevus::signaler_l_arret(&ctx_j, &charge, Some(&a))?;
                     rendu = garder_si_identique(l, &[cible.to_path_buf()]);
                     if rendu.is_ok() {
@@ -1583,7 +1583,7 @@ fn sans_taux_recu<'a>(ctx: &Contexte, paies: impl Iterator<Item = &'a Paie>) -> 
     for p in paies.filter(|p| p.pas.as_ref().is_some_and(|v| v.type_taux.as_deref() != Some("01"))) {
         let paye_le = p.engagement.date_du_versement().map_err(Echec::from)?;
         let pourquoi = droit::pas::avertissements(ctx, Some(&[cle_de(p)]), Some(paye_le), Some(&p.engagement.mois)).map_err(Echec::from)?;
-        let demande: String = crate::compagnie::amorcage_demande::en_cours(ctx, &cle_de(p))?
+        let demande: String = compagnie::amorcage_demande::en_cours(ctx, &cle_de(p))?
             .map(|d| format!(" ; taux demandé le {}, réponse attendue avant le {}", d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa()))
             .into_iter()
             .collect();

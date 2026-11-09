@@ -96,7 +96,7 @@ pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) {
 /// Le fil remis propre apres une route servie dans la fenetre (`dans_la_fenetre`, `etat_garde::FileDesEtats`) : plus
 /// de mot de passe tape, les nombres a leur ecriture normale, aucun registre de lectures ouvert.
 pub(crate) fn remettre_le_fil() {
-    crate::compagnie::coffre::oublier_mot_de_passe_tape();
+    compagnie::coffre::oublier_mot_de_passe_tape();
     socle::num::ECHELLE_GARDEE.with(|f| f.set(false));
     socle::fichiers::fermer_tout();
 }
@@ -144,7 +144,7 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     let _code = socle::fichiers::code_fige();
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
     let _geste = socle::forme::geste();
-    crate::compagnie::incidents::brancher_l_engagement();
+    compagnie::incidents::brancher_l_engagement();
     let rendu = servir(o, route, charge);
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
@@ -165,7 +165,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // Le mot de passe du logiciel tape pour cette route ouvre aussi le coffre (`coffre::retenir_mot_de_passe_tape`) ;
     // dans la fenetre, le temps de cette route seulement (`dans_la_fenetre`).
     if let Some(m) = charge.mot_de_passe() {
-        crate::compagnie::coffre::retenir_mot_de_passe_tape(m);
+        compagnie::coffre::retenir_mot_de_passe_tape(m);
     }
     // UNE ROUTE QUI TOMBE, pour les essais seulement (`garde_reseau::en_essai`, que Cargo pose) : la fenetre doit rendre
     // un refus et servir la suivante (`dans_la_fenetre`, `tests/routes/`). Le fil est laisse sale
@@ -287,8 +287,8 @@ impl<'a> PhraseNotee<'a> {
     /// L'incident silencieux `quoi`, resume par `resume`.
     fn noter(&self, racine: &Path, quoi: &str, resume: &str) {
         // Un incident qui ne s'ecrit pas ne retient pas la route : le fil le dit.
-        let note = crate::compagnie::incidents::Note {
-            nature: crate::compagnie::incidents::LOGICIEL,
+        let note = compagnie::incidents::Note {
+            nature: compagnie::incidents::LOGICIEL,
             resume,
             ou: self.route,
             quoi,
@@ -296,8 +296,8 @@ impl<'a> PhraseNotee<'a> {
             trace: None,
             sans_contexte: true,
         };
-        if let Err(e) = crate::compagnie::incidents::noter(racine, &note) {
-            crate::compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)));
+        if let Err(e) = compagnie::incidents::noter(racine, &note) {
+            compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)));
         }
     }
 }

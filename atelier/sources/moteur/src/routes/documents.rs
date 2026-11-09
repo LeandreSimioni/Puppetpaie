@@ -14,12 +14,12 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::preuve::{verifier_preuve, Preuve};
+use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::etapes::{ChargeMois, Moteur};
-use crate::compagnie::INTERFACE;
+use compagnie::INTERFACE;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
 use envois::courriel::{BoiteSimulee, Courriel};
@@ -512,7 +512,7 @@ fn documents_prets(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::Paie
     }
     // L'AER NE SE FABRIQUE PAS : France Travail la renvoie apres la DSN, et elle part avec les documents quand elle est la.
     let mut informations: Vec<String> = Vec::new();
-    if crate::compagnie::etat_dsn::du_mois(ctx, Mois::lire(mois)?, None)?.aer_attendue() && dues_a_part(paies)?.values().any(|v| v.contains(&"aer")) {
+    if compagnie::etat_dsn::du_mois(ctx, Mois::lire(mois)?, None)?.aer_attendue() && dues_a_part(paies)?.values().any(|v| v.contains(&"aer")) {
         informations.push(
             "L'attestation employeur (AER) de France Travail n'est pas encore revenue : France Travail l'édite à partir de la DSN, et chaque relevé des retours la cherche. Elle partira avec un envoi suivant."
                 .to_string(),
@@ -689,15 +689,15 @@ fn changements_dits(r: &envoi::Renvoi) -> Vec<String> {
 /// Entreprise le demande) ; sinon l'adresse posee avec le mot de passe (jamais le mot de passe), ou celle de
 /// `COURRIEL_COMPTE` quand elle est posee.
 fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         let mail = ctx.entreprise.signataire.dite().and_then(|s| s.email.remplie()).map(String::from);
         return mail.ok_or_else(|| erreur(Classe::Manque, "Le courriel du signataire manque (fiche Entreprise) : la compagnie fictive envoie de lui."));
     }
     let a = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) => a,
         Err(std::env::VarError::NotPresent) => {
-            let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-            coffre.compte_pose("courriel").map_err(crate::compagnie::coffre::vers_route)?.ok_or_else(|| {
+            let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
+            coffre.compte_pose("courriel").map_err(compagnie::coffre::vers_route)?.ok_or_else(|| {
                 erreur(Classe::Manque, "Le compte de la boîte courriel n'est pas posé : route coffre-poser, service courriel, compte <adresse>.")
             })?
         }
@@ -717,18 +717,18 @@ pub(crate) fn refus(message: impl Into<String>) -> Echec {
 /// sans les envoyer ; le message refuse, avant la preuve et avant toute ligne au journal des depots ; le monde prend la
 /// vraie boite, et sans mot de passe d'application au coffre, il n'y en a pas (`BoiteAbsente`).
 pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     if branchement.joue() {
         return Ok(Box::new(BoiteSimulee::du_contexte(ctx)?));
     }
-    if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+    if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
         return Err(erreur(
             Classe::BoiteAbsente,
             socle::echec::cle("Aucune boîte courriel : poser le mot de passe d'application de la boîte dans Configuration › Mots de passe.", "courriel"),
         ));
     }
-    let client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+    let client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
     Ok(Box::new(client))
 }
 
@@ -968,14 +968,14 @@ pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::P
 /// sera declaree avec la paie d'un mois suivant. La DSN du mois ne se refait pas (`se_corrige_ailleurs` : sa DSN est
 /// partie et l'annule-et-remplace n'est plus admis, ou c'est celle de l'ancien logiciel) ; une correction deja portee
 /// par une DSN partie se lit dans ce qui est parti (`corrections_du_mois`), une correction a porter part dans la DSN
-/// qui porte le mois (`crate::compagnie::etat_dsn::dsn_qui_porte`). `None` : le mois se corrige dans sa propre DSN.
+/// qui porte le mois (`compagnie::etat_dsn::dsn_qui_porte`). `None` : le mois se corrige dans sa propre DSN.
 #[allow(clippy::type_complexity)]
 fn declaration_de_la_correction(ctx: &Contexte, mois: &str) -> R<Option<Box<dyn Fn(&str) -> String>>> {
     let departs = journal::lu(&ctx.racine).map(|j| j.departs)?;
     if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok(None);
     }
-    let porteur = crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
+    let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
     let mut porteurs: HashMap<String, String> = HashMap::new();
     for c in portees {

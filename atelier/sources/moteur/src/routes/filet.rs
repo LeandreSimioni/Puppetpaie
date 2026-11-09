@@ -14,9 +14,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
-use crate::compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
-use crate::compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuMessage, SignalementVu};
+use compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
+use compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
+use compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuMessage, SignalementVu};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::{Ecran, Place};
@@ -589,7 +589,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<u64>(), liste.iter().map(|g| g.en_attente).sum::<u64>());
     // LE NOMBRE DE PAIES DE L'ANNEE se voit dans la meme liste : une entree par annee partie, avec exactement ce qui a
     // quitte le poste. Ce n'est pas un incident : il ne compte ni dans `total`, ni dans `partis`.
-    let annees = crate::compagnie::nombre_de_paies::annees_parties(racine)?;
+    let annees = compagnie::nombre_de_paies::annees_parties(racine)?;
     for a in &annees {
         liste.push(Groupe {
             quoi: "paies",

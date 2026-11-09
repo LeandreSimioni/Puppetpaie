@@ -78,7 +78,7 @@ pub(crate) fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<D
     if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(Echec::from)?.is_none() {
         return Ok(None);
     }
-    let porteur = crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
+    let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut n = 0;
     for e in engagement::etats::du_mois(ctx, mois, &departs)? {
@@ -115,7 +115,7 @@ pub(crate) struct DsnDeLAncienLogiciel {
 pub(crate) fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<()> {
     let phrase = match dsn_de_l_ancien_logiciel(ctx, mois)? {
         Some(d) => format!("{} Elle ne se refait pas ici.", d.phrase),
-        None if crate::compagnie::etat_dsn::importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
+        None if compagnie::etat_dsn::importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
         None => return Ok(()),
     };
     Err(socle::echec::erreur(socle::echec::Classe::DsnDeLAncienLogiciel, format!("{} : {} Rien n'est écrit.", socle::mois::Mois::en_clair(mois), phrase)))
@@ -529,7 +529,7 @@ pub(crate) fn etapes(vue: &VueImportee) -> EtapesImportees {
     };
     let dsn = &vue.dsn;
     let faite = |phrase: String| EtapeImportee { teinte: Teinte::Faite, courte: None, phrase: Some(phrase) };
-    use crate::compagnie::etat_dsn::Etat;
+    use compagnie::etat_dsn::Etat;
     EtapesImportees {
         dpae: faite(dpae),
         signature: faite(signature),
@@ -597,17 +597,17 @@ pub(crate) fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
 /// LE MOIS TENU AVANT : la DSN que le moteur en sait, une carte par engagement importe, les totaux de ce qui est connu
 /// et combien de cartes sont incompletes.
 pub(crate) struct VueImportee {
-    pub(crate) dsn: crate::compagnie::etat_dsn::EtatDsn,
+    pub(crate) dsn: compagnie::etat_dsn::EtatDsn,
     pub(crate) paies: Vec<CarteImportee>,
 }
 
 /// LE MOIS TENU AVANT, comme le panneau du mois le lit : `None` si un engagement de la saisie touche le mois ou si aucun
 /// engagement importe ne le touche.
 pub(crate) fn vue(ctx: &Contexte, mois: &str) -> R<Option<VueImportee>> {
-    if !crate::compagnie::etat_dsn::importe(&ctx.racine, mois)? {
+    if !compagnie::etat_dsn::importe(&ctx.racine, mois)? {
         return Ok(None);
     }
     let paies = cartes(ctx, mois)?;
-    let dsn = crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?;
+    let dsn = compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?;
     Ok(Some(VueImportee { dsn, paies }))
 }

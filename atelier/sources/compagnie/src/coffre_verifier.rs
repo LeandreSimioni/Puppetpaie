@@ -14,11 +14,11 @@
 use socle::echec::Classe;
 use socle::ecran::Pastille;
 
-use crate::compagnie::boite::Ouverture;
-use crate::compagnie::coffre::Coffre;
+use crate::boite::Ouverture;
+use crate::coffre::Coffre;
 use droit::contexte::Contexte;
 use socle::echec::erreur;
-use crate::compagnie::consultation::mot_de_passe_de_consultation;
+use crate::consultation::mot_de_passe_de_consultation;
 use envois::releve_retours::{Client, Panne};
 use socle::echec::Echec;
 
@@ -62,7 +62,7 @@ pub fn route(ctx: &Contexte, service: &str) -> R<Verdict> {
 
 /// Le secret pose ouvre-t-il une session : `verifier_secret_avec`, avec les vraies connexions.
 pub fn verifier_secret(ctx: &Contexte, service: &str) -> R<Verdict> {
-    verifier_secret_avec(ctx, service, &mut authentifier_pour_de_vrai, &mut |c| crate::compagnie::boite::verifier(&c.racine))
+    verifier_secret_avec(ctx, service, &mut authentifier_pour_de_vrai, &mut |c| crate::boite::verifier(&c.racine))
 }
 
 /// L'authentification d'un service : le client de la DSN, ou celui de la DPAE (un autre compte).
@@ -80,7 +80,7 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
         }
     };
     let coffre = Coffre::du_poste(&ctx.racine, "");
-    if !coffre.disponible(nom).map_err(crate::compagnie::coffre::vers_route)? {
+    if !coffre.disponible(nom).map_err(crate::coffre::vers_route)? {
         return Err(erreur(Classe::Refuse, format!("Aucun mot de passe {} : rien à vérifier.", nom)));
     }
     if nom == COURRIEL {

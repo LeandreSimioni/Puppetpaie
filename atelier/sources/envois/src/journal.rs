@@ -308,7 +308,7 @@ fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) 
 }
 
 /// Ne garde du journal de `racine` que les envois que `garder` retient, et ce qui leur est revenu : le journal d'une
-/// compagnie montee depuis une autre (`moteur::compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
+/// compagnie montee depuis une autre (`compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
 /// n'est a garder.
 pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat<()> {
     let p = chemin(racine);

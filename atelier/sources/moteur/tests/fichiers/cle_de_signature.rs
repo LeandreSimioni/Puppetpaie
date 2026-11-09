@@ -1,12 +1,12 @@
-//! La cle qui signe les mises a jour (`config/maj-cle-privee.bin`, `moteur::compagnie::maj`) : scellee par la cle maitresse du coffre,
+//! La cle qui signe les mises a jour (`config/maj-cle-privee.bin`, `compagnie::maj`) : scellee par la cle maitresse du coffre,
 //! elle s'ouvre partout ou le coffre s'ouvre — la cle du poste qui l'a faite, ou le mot de passe du logiciel sur un autre
 //! (un poste perdu n'empeche pas de signer la mise a jour suivante). Sur des
 //! compagnies, des postes et des mots de passe inventes, chacun dans son dossier (jamais la vraie cle du poste).
 
 use crate::outils::chemin_unique;
-use moteur::compagnie::coffre::{oublier_mot_de_passe_tape, retenir_mot_de_passe_tape, Coffre};
+use compagnie::coffre::{oublier_mot_de_passe_tape, retenir_mot_de_passe_tape, Coffre};
 use moteur::atelier::publier::{cle_de_signature, generer_cle_au_poste, signer};
-use moteur::compagnie::maj::signature_valide;
+use compagnie::maj::signature_valide;
 use std::collections::BTreeMap;
 use std::path::Path;
 

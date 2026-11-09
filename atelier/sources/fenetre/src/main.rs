@@ -59,35 +59,35 @@ fn main() -> std::process::ExitCode {
             let ok = cfg!(any(windows, target_os = "macos")) || ecran("DISPLAY") || ecran("WAYLAND_DISPLAY");
             return if ok { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE };
         }
-        // Le relais de la mise a jour (`moteur::compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
-        Some("maj-relais") => std::process::exit(moteur::compagnie::maj::relais(&args[1..])),
+        // Le relais de la mise a jour (`compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
+        Some("maj-relais") => std::process::exit(compagnie::maj::relais(&args[1..])),
         // `puppetpaie maj` : chercher et preparer une version tout de suite (le bac a sable de l'atelier s'en sert).
         Some("maj") => std::process::exit(moteur::commandes::maj::commande(&args[1..])),
         _ => {}
     }
 
-    moteur::compagnie::installation::fixer_le_code();
-    // UNE FENETRE PAR INSTALLATION (`moteur::compagnie::instance`). Celle de cette installation est deja
+    compagnie::installation::fixer_le_code();
+    // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.
     let prise = match moteur::interface::prendre_instance(devant) {
-        Ok(moteur::compagnie::instance::Instance::Tenue(p)) => p,
-        Ok(moteur::compagnie::instance::Instance::Devant) => return std::process::ExitCode::SUCCESS,
+        Ok(compagnie::instance::Instance::Tenue(p)) => p,
+        Ok(compagnie::instance::Instance::Devant) => return std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
             std::process::exit(1);
         }
     };
-    // Une livraison de fictives prete se pose (`moteur::compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
+    // Une livraison de fictives prete se pose (`compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
     // compagnie supprimee s'efface (`suppression::effacer_les_restes`).
     moteur::interface::preparer_l_installation();
     // Une version prete s'applique ICI, avant toute fenetre : le relais attend notre fin, bascule et ouvre la neuve.
-    if moteur::compagnie::maj::au_lancement() {
+    if compagnie::maj::au_lancement() {
         return std::process::ExitCode::SUCCESS;
     }
     // Sinon le logiciel cherche, en fond, une version plus recente pour l'installation : elle s'appliquera au prochain
     // lancement.
-    moteur::compagnie::maj::chercher_en_fond();
+    compagnie::maj::chercher_en_fond();
     let (fenetre, port) = match moteur::interface::demarrer(moteur::interface::MINUTES_VEILLE, &prise) {
         Ok(x) => x,
         Err(e) => {

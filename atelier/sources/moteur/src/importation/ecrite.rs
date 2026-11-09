@@ -578,8 +578,8 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
 /// entrent au journal avec l'historique, pour qu'un mois tenu avant ne se dise pas « en retard »
 /// (`reprise_journal::reprendre_les_depots`). Rend le nombre de depots repris.
 fn depots_attestes_au_journal(ctx: &Contexte) -> R<usize> {
-    let qui = crate::compagnie::INTERFACE.to_string();
-    crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &crate::compagnie::maintenant()))
+    let qui = compagnie::INTERFACE.to_string();
+    compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &compagnie::maintenant()))
 }
 
 

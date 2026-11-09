@@ -277,10 +277,10 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 const HORS_DE_L_ECRAN: [&str; 7] = [
     "config/.ouverture.json",
     "config/.sauvegarde.json",
-    crate::compagnie::incidents::DIAGNOSTIC,
-    crate::compagnie::installation::FICHIER_HORLOGE,
-    crate::compagnie::problemes::SIGNALEMENTS,
-    crate::compagnie::incidents::INCIDENTS,
+    compagnie::incidents::DIAGNOSTIC,
+    compagnie::installation::FICHIER_HORLOGE,
+    compagnie::problemes::SIGNALEMENTS,
+    compagnie::incidents::INCIDENTS,
     // Le tableau de l'administrateur (`administrateur.rs`) : le resume de la compagnie que l'accueil lit.
     crate::gestes::administrateur::TABLEAU,
 ];
@@ -349,7 +349,7 @@ fn jour() -> R<Jour> {
 /// Ce que le fil des calculs ne peut pas dire a un ecran (il tourne en fond) : note au diagnostic du moteur, que le
 /// developpeur lit.
 fn noter(quoi: &str, e: &str) {
-    crate::compagnie::diagnostic::noter_moteur(&format!("État gardé : {} ({}).", quoi, e));
+    compagnie::diagnostic::noter_moteur(&format!("État gardé : {} ({}).", quoi, e));
 }
 
 /// Un verrou pris, meme si un fil est tombe en le tenant : ce qu'il garde reste coherent (chaque ecriture s'y fait d'un
@@ -450,7 +450,7 @@ impl Dite for DuMois<'_> {
 }
 
 fn du_mois(racine: &Path, bilan: &Bilan) -> R<Rendu> {
-    let pose = crate::compagnie::coffre::Coffre::du_poste(racine, "")
+    let pose = compagnie::coffre::Coffre::du_poste(racine, "")
         .ouverture_exigee()
         .map_err(|x| Echec { classe: Some(x.classe), message: x.message })?;
     Rendu::de(&DuMois { bilan, mot_de_passe_pose: pose })
@@ -515,7 +515,7 @@ pub struct Demarrage<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     veille: Option<crate::veille::EtatDeLaVeille>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    maj: Option<crate::compagnie::maj::EtatDeLaRecherche>,
+    maj: Option<compagnie::maj::EtatDeLaRecherche>,
     #[serde(skip_serializing_if = "Option::is_none")]
     signalements: Option<Reponse>,
 }
@@ -530,7 +530,7 @@ impl Dite for Demarrage<'_> {
 /// recherche de la mise a jour) et ce que l'etat garde ne suit pas (les signalements, `journal/signalements.json`).
 pub struct ACote {
     pub veille: Option<crate::veille::EtatDeLaVeille>,
-    pub maj: crate::compagnie::maj::EtatDeLaRecherche,
+    pub maj: compagnie::maj::EtatDeLaRecherche,
     pub signalements: Reponse,
 }
 
@@ -538,7 +538,7 @@ impl ACote {
     /// Ce qui se lit a cote pour `racine` ; `veille` : celle de la fenetre, s'il y en a une.
     pub fn de(racine: &Path, veille: Option<crate::veille::EtatDeLaVeille>) -> ACote {
         let signalements = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).and_then(en_json));
-        ACote { veille, maj: crate::compagnie::maj::RECHERCHE.etat(), signalements }
+        ACote { veille, maj: compagnie::maj::RECHERCHE.etat(), signalements }
     }
 }
 
@@ -616,7 +616,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<Etat
         let c: Charge = socle::forme::lire_texte(charge, "La charge d'une lecture de l'ouverture ne se lit pas.")?;
         lectures.insert(route.nom().to_string(), lecture(o, route, &c));
     }
-    crate::compagnie::incidents::brancher_l_engagement();
+    compagnie::incidents::brancher_l_engagement();
     let (ouvre, reponse) = match crate::routes::etapes::le_mois_a_ouvrir(ctx) {
         Ok((m, rendu)) => (Some(m), Reponse::de(Route::MoisAOuvrir, Ok(rendu))),
         Err(e) => (None, Reponse::de(Route::MoisAOuvrir, Err(e))),

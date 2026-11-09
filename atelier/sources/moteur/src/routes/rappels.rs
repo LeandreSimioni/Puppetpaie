@@ -21,7 +21,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use engagement;
-use crate::compagnie::etat_dsn;
+use compagnie::etat_dsn;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
@@ -269,7 +269,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
 fn echeance_faite(ctx: &Contexte, charge: ChargeFaite) -> socle::echec::R<Faite> {
     let ChargeFaite { cle, fait } = charge;
     let fait = fait != Some(false);
-    marquer_echeance(ctx, &cle, fait, crate::compagnie::INTERFACE)?;
+    marquer_echeance(ctx, &cle, fait, compagnie::INTERFACE)?;
     Ok(Faite { phrase: if fait { "Échéance cochée : faite." } else { "Échéance décochée." }, cle, fait })
 }
 
@@ -1401,7 +1401,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
 /// aucun et le dit, une fois.
 fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose, Pastille)>)> {
     use envois::branchement::Branchement;
-    let (texte, mots) = match crate::compagnie::bridage::branchement(&ctx.racine)? {
+    let (texte, mots) = match compagnie::bridage::branchement(&ctx.racine)? {
         Branchement::Monde => ("", ""),
         Branchement::Simulateur => ("Les envois de cette compagnie sont simulés : rien ne part, ses mots de passe et ses comptes ne se demandent pas.", "simulé"),
         Branchement::Message(_) => ("Dans la démo, rien ne part de cette compagnie : ses mots de passe et ses comptes ne se demandent pas.", "démo"),

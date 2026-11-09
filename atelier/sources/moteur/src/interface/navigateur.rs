@@ -15,7 +15,7 @@ pub const DOSSIER_PORTABLE: &str = ".fenetre";
 /// navigateur connait : ce qu'il a retenu pour elle reste avec elle, et deux fenetres ouvertes ensemble (deux ports)
 /// n'ont jamais le meme profil.
 pub fn dossier_local(inst: &Path, port: u16) -> PathBuf {
-    if inst.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
+    if inst.join(compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
         return inst.join(DOSSIER_PORTABLE);
     }
     dossier_utilisateur().join("fenetres").join(port.to_string())
@@ -33,7 +33,7 @@ pub fn dossier_local(inst: &Path, port: u16) -> PathBuf {
 ///   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of these
 ///   variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
 pub fn dossier_utilisateur() -> PathBuf {
-    use crate::compagnie::coffre::{env_du_poste, maison_de, IDENTIFIANT_DU_PAQUET};
+    use compagnie::coffre::{env_du_poste, maison_de, IDENTIFIANT_DU_PAQUET};
     if cfg!(windows) {
         let base = match env_du_poste("LOCALAPPDATA") {
             Some(b) => PathBuf::from(b),
@@ -138,7 +138,7 @@ pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Op
         }
     }
     journal("Fenetre : le navigateur par defaut.\n");
-    if let Err(e) = crate::compagnie::poste::ouvrir_adresse(url) {
+    if let Err(e) = compagnie::poste::ouvrir_adresse(url) {
         journal(&format!("Le navigateur par defaut ne s'ouvre pas : {}\n", socle::echec::phrase_de(&e)));
     }
     None

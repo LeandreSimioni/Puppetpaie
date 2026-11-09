@@ -28,8 +28,8 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::diagnostic::{Ecriture, Machine};
-use crate::compagnie::editeur::{Client, ErreurFilet};
+use crate::diagnostic::{Ecriture, Machine};
+use crate::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::{erreur, Classe};
@@ -293,7 +293,7 @@ fn ecrire_lignes(p: &Path, toutes: &[Ligne]) -> R<()> {
 
 /// `noter` : ajoute une ligne, et la rend ; `None` quand rien n'est a noter (les faux envois d'une fictive).
 pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
-    if (n.nature == DPAE || n.nature == DSN) && crate::compagnie::bridage::branchement(racine)?.joue() {
+    if (n.nature == DPAE || n.nature == DSN) && crate::bridage::branchement(racine)?.joue() {
         // LES FAUX ENVOIS NE SONT PAS DES INCIDENTS : une fictive joue ses depots.
         return Ok(None);
     }
@@ -302,13 +302,13 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     // (`caviarde`) se leve sur ce qui est ARRIVE : ce que la frontiere a deja remplace se dit quand meme.
     let texte = |s: &str, limite: usize, trouve: &mut Vec<&'static str>| {
         nettoyer(s, trouve, limite);
-        nettoyer(&crate::compagnie::diagnostic::texte_en_forme(Some(racine), s, limite), trouve, limite + 40)
+        nettoyer(&crate::diagnostic::texte_en_forme(Some(racine), s, limite), trouve, limite + 40)
     };
     let ou = texte(n.ou, 200, &mut trouve);
     let genre = texte(n.quoi, 200, &mut trouve);
     let resume = texte(n.resume, TEXTE_MAX, &mut trouve);
     nettoyer(&socle::ecriture::json_en_ligne(&n.detail), &mut trouve, usize::MAX);
-    let detail = nettoyer(&crate::compagnie::diagnostic::en_forme(Some(racine), &n.detail), &mut trouve, usize::MAX);
+    let detail = nettoyer(&crate::diagnostic::en_forme(Some(racine), &n.detail), &mut trouve, usize::MAX);
     let trace = match n.trace {
         Some(t) if !t.is_empty() => Some(texte(t, TRACE_MAX, &mut trouve)),
         Some(_) | None => None,
@@ -341,8 +341,8 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let (fil, ecritures) = if n.sans_contexte {
         (Vec::new(), Vec::new())
     } else {
-        let fil = crate::compagnie::diagnostic::fil(maintenant);
-        (fil[fil.len().saturating_sub(FIL_PAR_INCIDENT)..].to_vec(), crate::compagnie::diagnostic::ecritures(maintenant, ECRITURES_PAR_INCIDENT))
+        let fil = crate::diagnostic::fil(maintenant);
+        (fil[fil.len().saturating_sub(FIL_PAR_INCIDENT)..].to_vec(), crate::diagnostic::ecritures(maintenant, ECRITURES_PAR_INCIDENT))
     };
     let ligne = Ligne {
         quoi: n.nature,
@@ -359,7 +359,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
         derniere: quand,
         fil,
         ecritures,
-        machine_detail: crate::compagnie::diagnostic::machine(racine),
+        machine_detail: crate::diagnostic::machine(racine),
         envoi: Envoi { etat: EN_ATTENTE, quand: None },
     };
     toutes.push(ligne.clone());
@@ -629,7 +629,7 @@ fn pour_texte(racine: &Path, s: &str) -> String {
     let s = sans_chemin(s);
     let s = motif_maison().replace_all(&s, "${1}[session]");
     let s = motif_adresse().replace_all(&s, "[adresse]");
-    crate::compagnie::diagnostic::texte_repasse(Some(racine), &s)
+    crate::diagnostic::texte_repasse(Some(racine), &s)
 }
 
 /// UN INCIDENT TEL QU'IL PART CHEZ L'EDITEUR (`POST /rapport`, `_ligne_de_rapport` du serveur) : la ligne moins son etat
@@ -659,7 +659,7 @@ pub struct PourLEditeur {
 pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
     let t = |s: &str| pour_texte(racine, s);
     let m = &l.machine_detail;
-    let page = m.page.clone().map(|p| crate::compagnie::diagnostic::PageDite {
+    let page = m.page.clone().map(|p| crate::diagnostic::PageDite {
         ecran: t(&p.ecran),
         fenetre: t(&p.fenetre),
         langue: t(&p.langue),
@@ -703,7 +703,7 @@ fn alleger(c: &mut PourLEditeur) -> usize {
     let mut n = taille(c);
     if n > LOT_OCTETS {
         for e in c.ecritures.iter_mut() {
-            e.charge = crate::compagnie::diagnostic::compact(&e.charge, 2_000);
+            e.charge = crate::diagnostic::compact(&e.charge, 2_000);
         }
         n = taille(c);
     }
@@ -795,7 +795,7 @@ fn windows_de_ver(sortie: &str) -> String {
 
 /// Le bridage du poste, `bride` ou `debloque` (`bridage::etat`).
 pub fn edition() -> String {
-    crate::compagnie::bridage::etat().to_string()
+    crate::bridage::etat().to_string()
 }
 
 // -------------------------------------------------------- l'identite du poste et l'interrupteur
@@ -853,7 +853,7 @@ pub fn envoi_actif(racine: &Path) -> bool {
     match envoi(racine) {
         Ok(actif) => actif,
         Err(e) => {
-            crate::compagnie::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", socle::echec::phrase_de(&e.message)));
+            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", socle::echec::phrase_de(&e.message)));
             false
         }
     }
@@ -945,7 +945,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         Some(v) if v.join(socle::fichiers::CONFIG).is_dir() => v,
         Some(_) | None => logiciel.to_path_buf(),
     };
-    if crate::compagnie::installation::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
+    if crate::installation::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
         if let Some(s) = lire_config(&reel)?.serveur.filter(|s| !s.is_empty()) {
             return Ok((s, reel));
         }
@@ -955,7 +955,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         let e: Editeur = socle::forme::lire_fichier(&editeur, "Le serveur de l'éditeur livré avec le logiciel ne se lit pas.")?;
         return Ok((e.serveur, racine.to_path_buf()));
     }
-    Ok((crate::compagnie::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))
+    Ok((crate::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))
 }
 
 /// Le canal vers l'editeur, pret a envoyer.

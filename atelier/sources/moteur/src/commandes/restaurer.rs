@@ -13,7 +13,7 @@ use super::actes::refuser_si_pas_redirige;
 use super::actes::Organisme;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
-use crate::compagnie::{restauration, sauvegarde};
+use compagnie::{restauration, sauvegarde};
 
 pub static SPEC: Spec = Spec {
     commande: "restaurer",
@@ -78,7 +78,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(r) => r,
         Err(e) => return refus(e.classe, &e.message),
     };
-    let reste = restauration::a_faire(&crate::compagnie::coffre::Coffre::du_poste(&cible, ""));
+    let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible, ""));
     let code = if r.incidents.is_empty() { 0 } else { 1 };
     if json {
         dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok: code == 0, resultat: r.dite(reste) }));

@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Le moteur : le serveur de la fenetre (`moteur::interface`) et les routes, que ce binaire sert aussi (`puppetpaie route`).
 moteur = { path = "../moteur" }
+# La compagnie : l'installation, l'instance unique sur le poste, la mise a jour au lancement.
+compagnie = { path = "../compagnie" }
 fabrique-pdf = { path = "../fabrique-pdf" }
 tauri = { version = "2", features = [] }
 

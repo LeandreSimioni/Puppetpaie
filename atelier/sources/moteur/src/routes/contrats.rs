@@ -11,13 +11,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
-use crate::compagnie::preuve::{verifier_preuve, Preuve};
+use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, Impression, UnAvenant};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::routes::documents::{client_courriel, refus, Ouvrir};
 use crate::routes::engagement::maintenant;
 use crate::routes::etapes::{ChargeMois, Moteur};
-use crate::compagnie::INTERFACE;
+use compagnie::INTERFACE;
 use crate::routes::Encart;
 use socle::ecran::Pastille;
 
@@ -780,7 +780,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     // LE SIMULATEUR REPOND DANS LE GESTE : les salaries d'une compagnie fictive signent aussitot, et la vraie releve lit
     // leur reponse (`releve_signatures::boite_des_signatures`).
     let mut signatures = None;
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         let releve = crate::gestes::releve_signatures::relever_signatures(ctx, None, None, INTERFACE)?;
         let resume = releve.resume();
         if !resume.is_empty() {
@@ -880,7 +880,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: 
         return Err(refus("Aucun avenant coché. Rien n'est parti."));
     }
     // La porte du branchement, avant de rien lire.
-    crate::compagnie::bridage::branchement(&ctx.racine)?.ouvrir()?;
+    compagnie::bridage::branchement(&ctx.racine)?.ouvrir()?;
     let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_voulus(ctx, voulus)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.as_deref().is_some_and(|d| !d.trim().is_empty())));
     let noms_sans: Vec<String> = sans.iter().map(|(k, _)| ctx.nomme(k)).collect();
     if par_salarie.is_empty() {

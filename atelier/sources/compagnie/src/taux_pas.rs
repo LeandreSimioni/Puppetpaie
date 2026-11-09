@@ -8,7 +8,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
 
-pub(crate) fn ko(m: String) -> Echec {
+pub fn ko(m: String) -> Echec {
     Echec { classe: None, message: m }
 }
 
@@ -16,16 +16,16 @@ pub(crate) fn ko(m: String) -> Echec {
 /// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
 /// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct TauxRecu {
+pub struct TauxRecu {
     #[serde(skip)]
-    pub(crate) salarie: String,
-    pub(crate) taux: Option<String>,
+    pub salarie: String,
+    pub taux: Option<String>,
     #[serde(rename = "type")]
-    pub(crate) type_taux: Option<String>,
-    pub(crate) identifiant: String,
-    pub(crate) mis_a_disposition: String,
+    pub type_taux: Option<String>,
+    pub identifiant: String,
+    pub mis_a_disposition: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) en_retour_de: Option<String>,
+    pub en_retour_de: Option<String>,
 }
 
 /// `AAAAMMJJ000000` du jour `j`.
@@ -46,7 +46,7 @@ fn instant_du_jour(j: Jour) -> String {
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
-pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<TauxRecu>, Echec> {
+pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<TauxRecu>, Echec> {
     let par_nir: std::collections::HashMap<String, String> = ctx
         .salaries
         .iter()

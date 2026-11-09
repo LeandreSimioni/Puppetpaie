@@ -9,7 +9,7 @@ const GARDER_COPIES: usize = 20;
 
 /// La copie horodatee du fichier, avant de le
 /// remplacer (l'heure de Paris), et seulement les `GARDER_COPIES` dernieres.
-pub(crate) fn sauver_avant(chemin: &Path) -> R<()> {
+pub fn sauver_avant(chemin: &Path) -> R<()> {
     if !chemin.exists() {
         return Ok(());
     }

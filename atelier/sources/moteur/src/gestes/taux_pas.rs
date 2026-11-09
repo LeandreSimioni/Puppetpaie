@@ -3,7 +3,7 @@
 
 use droit::contexte::Contexte;
 use socle::echec::Echec;
-use crate::compagnie::taux_pas::{ko, TauxRecu};
+use compagnie::taux_pas::{ko, TauxRecu};
 
 /// Ecrit des taux recus ; rend les changements lisibles (`CLE : ...`). Chacun s'ecrit a sa date d'effet
 /// (`droit::pas::date_d_effet`). Un taux deja recu (meme identifiant, meme taux, meme instant) ne s'ecrit pas deux fois.

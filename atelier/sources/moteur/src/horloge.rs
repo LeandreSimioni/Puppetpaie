@@ -60,7 +60,7 @@ use droit::contexte::Contexte;
 use envois::courriel::{Courriel, ErreurCourriel};
 use socle::date::Jour;
 use socle::mois::Mois;
-use crate::compagnie::preuve::Preuve;
+use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use envois::etats;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Rendu};
@@ -68,7 +68,7 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use crate::routes::etapes::Moteur;
-use crate::compagnie::installation::FICHIER_HORLOGE;
+use compagnie::installation::FICHIER_HORLOGE;
 
 /// Qui signe, au journal, ce que l'horloge joue.
 pub const QUI_HORLOGE: &str = "horloge";
@@ -91,7 +91,7 @@ pub struct HorlogeFictive<'a> {
 impl<'a> HorlogeFictive<'a> {
     /// `None` si les envois de cette racine ne sont pas joues.
     pub fn verifier(racine: &'a Path) -> R<Option<HorlogeFictive<'a>>> {
-        Ok(crate::compagnie::bridage::branchement(racine)?.joue().then(|| HorlogeFictive { racine, jour: droit::contexte::jour_reel() }))
+        Ok(compagnie::bridage::branchement(racine)?.joue().then(|| HorlogeFictive { racine, jour: droit::contexte::jour_reel() }))
     }
 
     /// Le jour que cette compagnie fictive joue.
@@ -113,7 +113,7 @@ impl<'a> HorlogeFictive<'a> {
 
     /// Relit le marqueur : refuse tout geste si la racine a cesse d'etre une compagnie fictive.
     fn reverifier(&self) -> R<()> {
-        if crate::compagnie::bridage::branchement(self.racine)?.joue() {
+        if compagnie::bridage::branchement(self.racine)?.joue() {
             Ok(())
         } else {
             Err(erreur(Classe::Refuse, "Ce dossier n'est pas une compagnie fictive : l'horloge ne joue rien ici."))
@@ -421,7 +421,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
                 break;
             }
             // Un mois fait dont la DSN est refusee apres coup (un bilan arrive plus tard) n'est plus fait.
-            if clos.get(mois) == Some(&empreinte_du_mois(racine, mois)?) && !crate::compagnie::etat_dsn::du_mois(&ctx, socle::mois::Mois::lire(mois)?, None)?.refusee() {
+            if clos.get(mois) == Some(&empreinte_du_mois(racine, mois)?) && !compagnie::etat_dsn::du_mois(&ctx, socle::mois::Mois::lire(mois)?, None)?.refusee() {
                 continue;
             }
             // Un mois echu dont tout est deja fait (par la personne, avant que l'horloge ne passe) est fait : rien n'est a
@@ -541,7 +541,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         return Ok(false);
     }
     let fin = le_mois.dernier_jour();
-    let valide_le = match crate::compagnie::installation::cree_le(d.racine)? {
+    let valide_le = match compagnie::installation::cree_le(d.racine)? {
         Some(c) if c > suivant => c.min(jour),
         _ => suivant,
     };
@@ -555,7 +555,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     if jour < echeance {
         return Ok(false);
     }
-    let (quand_dsn, quand_documents) = if crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?.refusee() {
+    let (quand_dsn, quand_documents) = if compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?.refusee() {
         let maintenant = maintenant_du(jour);
         (maintenant.clone(), maintenant)
     } else {
@@ -745,7 +745,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Dsn { mois, echeance } => {
             let mut a_faire: Vec<String> = Vec::new();
             let mut fait = pas(d, quoi, quand, |ctx| {
-                if crate::compagnie::etat_dsn::du_mois(ctx, *mois, None)?.partie() {
+                if compagnie::etat_dsn::du_mois(ctx, *mois, None)?.partie() {
                     return Ok(false);
                 }
                 // LA DSN SE FABRIQUE A SON DEPOT, depuis les engagements valides du mois, DATEE DE SON ECHEANCE quel que
@@ -771,7 +771,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             let mut sans: Vec<(String, String)> = Vec::new();
             let mut fait = pas(d, quoi, quand, |ctx| {
                 // LES DOCUMENTS D'UN MOIS DONT LA DSN N'EST PAS ACCEPTEE ne partent pas : ils suivent sa DSN, jamais avant.
-                if !crate::compagnie::etat_dsn::du_mois(ctx, *mois, None)?.partie() {
+                if !compagnie::etat_dsn::du_mois(ctx, *mois, None)?.partie() {
                     return Ok(false);
                 }
                 let bilan = Moteur::nouveau(ctx).bilan_du_mois(*mois)?;
@@ -1026,10 +1026,27 @@ pub fn route(ctx: &Contexte, charge: &Charge) -> R<Rendu> {
 
 // ------------------------------------------------------------------ les tests
 
+/// Une racine d'essai (dans le dossier temporaire, jamais `prive/` ni `fictives/`) : les trois fiches vides de quoi ouvrir un
+/// `Contexte`, et, si `fictive`, le marqueur d'une compagnie fictive.
+#[cfg(test)]
+pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let r = std::env::temp_dir().join(format!("paie-horloge-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    let _ = std::fs::remove_dir_all(&r);
+    std::fs::create_dir_all(r.join(socle::fichiers::CONFIG)).unwrap();
+    for f in ["entreprise.json", "salaries.json", "spectacles.json"] {
+        std::fs::write(r.join(socle::fichiers::CONFIG).join(f), "{}").unwrap();
+    }
+    if fictive {
+        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "compagnie fictive essai", "quoi": "essai"}"#).unwrap();
+    }
+    r
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compagnie::racine_d_essai;
 
     fn jour(t: &str) -> Jour {
         Jour::lire(t).unwrap()

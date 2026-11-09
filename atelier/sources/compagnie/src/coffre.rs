@@ -198,7 +198,7 @@ pub struct Echec {
 pub type R<T> = Result<T, Echec>;
 
 /// Le refus du coffre tel qu'un geste le rend (`socle::echec::Echec`) : sa classe et sa phrase.
-pub(crate) fn vers_route(x: Echec) -> socle::echec::Echec {
+pub fn vers_route(x: Echec) -> socle::echec::Echec {
     socle::echec::Echec { classe: Some(x.classe), message: x.message }
 }
 
@@ -540,7 +540,7 @@ pub fn oublier_mot_de_passe_tape() {
 /// Le mot de passe du logiciel qu'un humain a tape pour cette route (`demande::autoriser_acte` le retient), et rien
 /// d'autre : ni la variable, ni la seance. Le geste qui a besoin de l'actuel (le changer, le retirer) le prend ici quand la
 /// charge ne le porte pas.
-pub(crate) fn mot_de_passe_retenu() -> Option<String> {
+pub fn mot_de_passe_retenu() -> Option<String> {
     TAPE.with(|t| t.borrow().clone())
 }
 
@@ -560,19 +560,19 @@ pub const CONTENU_PORTABLE: &str = "{\"_quoi\": \"Ce dossier est une installatio
 
 /// Le dossier portable, s'il y en a un : ce qui est a cote de `logiciel/` quand il porte `PORTABLE.json`.
 pub fn dossier_portable() -> Option<PathBuf> {
-    let base = crate::compagnie::installation::base();
+    let base = crate::installation::base();
     base.join(MARQUEUR_PORTABLE).is_file().then_some(base)
 }
 
 /// L'identifiant du paquet de la fenetre (`identifier` de `fenetre/tauri.conf.json`) : il nomme son dossier sous macOS.
-pub(crate) const IDENTIFIANT_DU_PAQUET: &str = "fr.puppetpaie.fenetre";
+pub const IDENTIFIANT_DU_PAQUET: &str = "fr.puppetpaie.fenetre";
 
 /// Ou vit la cle du poste : `PUPPETPAIE_CLE` la deplace ; sinon le dossier portable (`dossier_portable`), s'il y en a
 /// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows), `~/Library/Application Support/fr.puppetpaie.fenetre`
 /// (macOS) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
 /// Le dossier de la personne : `HOME` (vide, la racine), sinon `USERPROFILE` sous Windows, sinon ce que le systeme en dit,
 /// sinon la racine.
-pub(crate) fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
+pub fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     let dit = match env("HOME") {
         Some(h) if h.is_empty() => Some("/".to_string()),
         Some(h) => Some(h),
@@ -589,7 +589,7 @@ pub(crate) fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
 
 /// La variable `nom` telle que le moteur la lit pour situer un dossier de la personne : `HOME` telle quelle (vide, elle
 /// dit la racine), les autres si elles disent quelque chose.
-pub(crate) fn env_du_poste(nom: &str) -> Option<String> {
+pub fn env_du_poste(nom: &str) -> Option<String> {
     if nom == "HOME" {
         env_tel_quel(nom)
     } else {
@@ -1309,7 +1309,7 @@ impl Coffre {
 }
 
 /// Le service du coffre nomme `service`, ou le refus d'un nom qu'aucun ne porte.
-pub(crate) fn service_connu(service: &str) -> R<&'static Service> {
+pub fn service_connu(service: &str) -> R<&'static Service> {
     if let Some(s) = SERVICES.iter().find(|s| s.nom == service) {
         return Ok(s);
     }

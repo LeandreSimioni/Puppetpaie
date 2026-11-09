@@ -25,7 +25,7 @@ pub fn code_livre() -> PathBuf {
 }
 
 pub fn copier(src: &Path, dst: &Path) {
-    moteur::compagnie::incidents::brancher_l_engagement();
+    ::compagnie::incidents::brancher_l_engagement();
     std::fs::create_dir_all(dst).unwrap();
     for e in std::fs::read_dir(src).unwrap().flatten() {
         let (s, d) = (e.path(), dst.join(e.file_name()));
@@ -60,7 +60,7 @@ pub fn code_de(installation: &Path) -> String {
 
 fn neuf(d: PathBuf) -> PathBuf {
     // Ce que pose toute commande du moteur avant de toucher a un engagement : le lecteur de ce qui est parti.
-    moteur::compagnie::incidents::brancher_l_engagement();
+    ::compagnie::incidents::brancher_l_engagement();
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

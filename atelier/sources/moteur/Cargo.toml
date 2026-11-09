@@ -2,7 +2,7 @@
 name = "moteur"
 version = "0.1.0"
 edition = "2021"
-description = "Le moteur de PuppetPaie au-dessus des envois, des documents et des déclarations : la ligne de commande `moteur`, les routes, la compagnie."
+description = "Le moteur de PuppetPaie au-dessus de la compagnie et de l'import : la ligne de commande `moteur`, les routes."
 license = "EUPL-1.2"
 publish = false
 
@@ -22,7 +22,7 @@ path = "src/main.rs"
 required-features = ["atelier"]
 
 [features]
-atelier = ["envois/atelier"]
+atelier = ["envois/atelier", "compagnie/atelier"]
 
 [dependencies]
 # Les deux parties du dessous : le socle (dates, nombres, fichiers, echecs, temps, garde-fou reseau) et le droit
@@ -39,8 +39,6 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 roxmltree = { workspace = true }
 # L'empreinte d'un fichier du journal (deja liee par la fabrique de PDF).
 sha2 = { workspace = true }
-# L'empreinte MD5 que Drive publie pour chaque fichier (`sauvegarde.rs`) : RustCrypto, sans options par defaut.
-md-5 = { version = "0.10", default-features = false }
 # Les motifs du journal des incidents (caviardage, ce qui part chez l'editeur) ;
 # sans les optimisations par defaut, qui pesent sur le binaire.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
@@ -58,11 +56,10 @@ rust_xlsxwriter = "0.90"
 # synchrone, TLS par rustls, racines du systeme (`SSL_CERT_FILE` honore),
 # proxy lu dans l'environnement. Ni gzip (flate2 s'en charge), ni cookies, ni json.
 ureq = { workspace = true }
-# Le coffre (`coffre.rs`) : AES-256-GCM et scrypt de RustCrypto, aleas du systeme.
-# Rien de leurs options par defaut (ni `password-hash`, ni `std`).
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
-scrypt = { version = "0.11", default-features = false }
+# Les aleas du systeme : le jeton de la fenetre (`interface`), la cle d'une publication (`atelier::publier`).
 getrandom = { workspace = true }
+# Ce qui garde et fait vivre la compagnie : l'installation, le coffre, la preuve d'un acte reel, la mise a jour.
+compagnie = { path = "../compagnie" }
 # Les courriels joués de la démonstration (`simulation_courriels.rs`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"
 # La messagerie (`courriel.rs`, `envoi.rs`) : SMTP par `lettre` (sans son batisseur de messages : on lui passe nos
@@ -72,16 +69,14 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 imap-proto = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"
-# La mise a jour (`maj.rs`, lot J4) : la signature Ed25519 de l'editeur, et l'archive zip (lecture et ecriture).
+# La publication d'une version (`atelier::publier`) : la signature Ed25519 de l'editeur, et l'archive zip.
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
 zip = { workspace = true }
 # La forme composee (NFC) des releves de l'atelier (`extraire/`, `unicodedata.normalize("NFC")` de l'ancien Python) : la
 # normalisation d'ICU4X, deja liee (`lettre` -> `idna`), avec ses seules donnees compilees.
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 
-# La saisie du mot de passe SANS ECHO dans la console de Windows (`demande.rs`, le canal « terminal ») : l'API de la
-# console (CONIN$ / CONOUT$, mode sans echo, UTF-16) est celle de cette petite bibliotheque entretenue ; sous Unix le
-# terminal se lit par `/dev/tty` et `stty`, sans dependance. Rien dans le binaire Linux ni macOS.
-[target.'cfg(windows)'.dependencies]
-rpassword = "7"
+[dev-dependencies]
+# Le faux Drive des essais (`tests/faux_drive`) publie l'empreinte MD5 de chaque fichier, comme Drive.
+md-5 = { version = "0.10", default-features = false }
 

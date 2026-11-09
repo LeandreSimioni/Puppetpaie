@@ -35,7 +35,7 @@ use socle::mois::Mois;
 
 pub use envois::depot_acte::DepotFait;
 use socle::echec::Echec;
-use crate::compagnie::preuve::{motdepasse_organisme, verifier_preuve, Preuve};
+use compagnie::preuve::{motdepasse_organisme, verifier_preuve, Preuve};
 
 /// UN REFUS DE DEPOT QUI PORTE OU EN EST CE QUI LE REFUSE (la DSN du mois, le test du fichier) : sa phrase, et l'etat a
 /// part (`routes::enveloppe::APart`, case `etat`).
@@ -275,7 +275,7 @@ pub fn deposer_dsn_dans(
     contournement: &str,
     ordre_d_essai: Option<i64>,
 ) -> R<DepotFait> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     if reel && environnement != "production" {
         return Err(erreur(
@@ -302,7 +302,7 @@ pub fn deposer_dsn_dans(
     }
     // UNE COMPAGNIE D'ESSAI ne depose que ce qu'elle a ecrit sous SON identite : les DSN copiees de la fictive portent le
     // SIREN de la fictive, que le compte net-entreprises ne declare pas. Le refus ne cite aucun des deux numeros.
-    if crate::compagnie::essai::est_essai(&ctx.racine)? && apercu.emetteur.as_deref() != ctx.entreprise.siren.portee() {
+    if compagnie::essai::est_essai(&ctx.racine)? && apercu.emetteur.as_deref() != ctx.entreprise.siren.portee() {
         return Err(erreur(
             Classe::Refuse,
             "Compagnie d'essai : ce fichier ne porte pas le SIREN de la compagnie (il a ete ecrit sous une autre identite : celle de la compagnie fictive, avant le montage, ou une identite d'avant). Déposer ici la DSN du mois, qui s'y fabrique. Rien n'est parti.",
@@ -333,7 +333,7 @@ pub fn deposer_dsn_dans(
     }
     // UNE DSN MENSUELLE REELLE DIT CE QU'ELLE CORRIGE : sa fabrication l'a note (`pieces_ecrites::versions_portees_de`). Un fichier
     // que le moteur n'a pas ecrit ne le dit pas, et ce qu'il corrige ne se devine pas (regle 1).
-    if reel && !apercu.est_signalement() && crate::compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)?.is_none() {
+    if reel && !apercu.est_signalement() && compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)?.is_none() {
         return Err(erreur(
             Classe::Refuse,
             format!(
@@ -347,7 +347,7 @@ pub fn deposer_dsn_dans(
         // PAS DEUX FOIS SANS LE VOULOIR. Une DSN reelle deja partie pour ce mois, et pas refusee, ne repart pas.
         // UN SIGNALEMENT N'EST PAS CONCERNE : plusieurs peuvent partir le meme mois.
         if !apercu.est_signalement() {
-            let etat_mois = crate::compagnie::etat_dsn::du_mois(ctx, le_mois, nic)?;
+            let etat_mois = compagnie::etat_dsn::du_mois(ctx, le_mois, nic)?;
             // L'ANNULE-ET-REMPLACE EN REGLE PART SANS QU'ON FORCE RIEN (ses gardes passent toujours).
             let remplace = verifier_depot_remplacement(ctx, le_mois, &apercu, nic)?;
             if etat_mois.partie() && !remplace && !forcer {
@@ -425,7 +425,7 @@ pub fn deposer_dsn_dans(
         // Et ce qu'elle corrige des mois passes, tel que sa fabrication l'a note : un fichier qui part tel qu'il a ete
         // ecrit emporte ce qu'il porte, pas ce qu'une DSN fabriquee aujourd'hui porterait (regle 4). Un essai d'un
         // fichier que le moteur n'a pas ecrit n'emporte rien ; en reel, il est refuse plus haut.
-        if let Some(portees) = crate::compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)? {
+        if let Some(portees) = compagnie::pieces_ecrites::versions_portees_de(&ctx.racine, &chemin)? {
             v.extend(portees);
         }
         v
@@ -469,7 +469,7 @@ pub fn deposer_dpae_avec(
     contournement: &str,
     client_donne: Option<&mut Client>,
 ) -> R<DepotFait> {
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
     let chemin = PathBuf::from(crate::routes::depots::resoudre(&ctx.racine, fichier)?);
     let apercu = crate::routes::depots::apercu_depot_dpae(ctx, &chemin.to_string_lossy())?;
@@ -564,7 +564,7 @@ pub fn deposer_dpae_avec(
 /// jours ouvres (compte rendu de nature 94). Il ne fait jamais echouer la DPAE, deja partie : une demande qui ne part pas
 /// reste a faire, et se dit. Rend ce qu'est devenue chaque demande, en une phrase.
 fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree], reel: bool, preuve: Option<&Preuve>, qui: &str, contournement: &str) -> Vec<String> {
-    use crate::compagnie::amorcage_demande as ad;
+    use compagnie::amorcage_demande as ad;
     let mode = if reel { "" } else { " en test" };
     let paies = match paies_des_embauches(ctx, mois, embauches) {
         Ok(p) => p,

@@ -237,7 +237,7 @@ fn servir_connexion(flux: TcpStream, traiter: Arc<dyn Fn(Requete) -> Reponse + S
 /// Ecoute sur 127.0.0.1:`port` (le port fixe s'il est libre, sinon un port tire par le systeme). Rend l'ecouteur et son port.
 pub fn ecouter(port: u16) -> std::io::Result<(TcpListener, u16)> {
     let l = TcpListener::bind(("127.0.0.1", port)).or_else(|_| TcpListener::bind(("127.0.0.1", 0)))?;
-    crate::compagnie::instance::sans_heritage(&l);
+    compagnie::instance::sans_heritage(&l);
     let p = l.local_addr()?.port();
     Ok((l, p))
 }

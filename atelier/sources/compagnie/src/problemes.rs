@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::diagnostic::{Ecriture, Machine};
-use crate::compagnie::editeur::Retour;
-use crate::compagnie::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
+use crate::diagnostic::{Ecriture, Machine};
+use crate::editeur::Retour;
+use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
 use socle::verrou::Verrou;
@@ -29,7 +29,7 @@ const TEXTE_MAX: usize = 5000;
 /// 1,5 Mo decodes.
 const CAPTURE_MAX: usize = 1536 * 1024;
 const CAPTURE_TYPES: [&str; 2] = ["image/png", "image/jpeg"];
-pub(crate) const CAPTURES_MAX: usize = 5;
+pub const CAPTURES_MAX: usize = 5;
 const INCIDENTS_JOINTS: usize = 10;
 /// « Un probleme, une idee ? », sous la racine de la compagnie.
 pub const SIGNALEMENTS: &str = "journal/signalements.json";
@@ -190,8 +190,8 @@ fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: 
     let caps = captures_valides(captures)?;
     let (texte, trouve) = incidents::caviarder(&texte);
     // La frontiere (`diagnostic`) vaut aussi pour ce que la personne ecrit : un salarie nomme devient son numero.
-    let texte = crate::compagnie::diagnostic::texte_en_forme(Some(racine), &texte, TEXTE_MAX + 200);
-    let fictive = crate::compagnie::installation::est_fictive(racine)?;
+    let texte = crate::diagnostic::texte_en_forme(Some(racine), &texte, TEXTE_MAX + 200);
+    let fictive = crate::installation::est_fictive(racine)?;
     let compagnie = match (fictive, racine.file_name()) {
         (true, Some(n)) => Some(n.to_string_lossy().into_owned()),
         (true, None) | (false, _) => None,
@@ -207,10 +207,10 @@ fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: 
             demonstration: fictive,
             compagnie,
             systeme: incidents::machine(),
-            machine: crate::compagnie::diagnostic::machine(racine),
+            machine: crate::diagnostic::machine(racine),
         },
-        fil: crate::compagnie::diagnostic::fil(maintenant),
-        ecritures: crate::compagnie::diagnostic::ecritures(maintenant, 12),
+        fil: crate::diagnostic::fil(maintenant),
+        ecritures: crate::diagnostic::ecritures(maintenant, 12),
         incidents: lues[debut..].iter().map(|l| incidents::pour_l_editeur(racine, l)).collect(),
         captures: caps.iter().map(|c| c.part.clone()).collect(),
     };

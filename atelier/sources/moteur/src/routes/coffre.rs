@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::coffre::{Coffre, Echec as EchecCoffre};
+use compagnie::coffre::{Coffre, Echec as EchecCoffre};
 use crate::gestes::administrateur::Poste;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::routes::catalogue::Route;
@@ -26,7 +26,7 @@ use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::SansCharge;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
-use crate::compagnie::coffre::vers_route;
+use compagnie::coffre::vers_route;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
@@ -345,7 +345,7 @@ struct EtatGoogle {
 struct Verifie {
     phrase: String,
     #[serde(flatten)]
-    verdict: crate::compagnie::coffre_verifier::Verdict,
+    verdict: compagnie::coffre_verifier::Verdict,
 }
 
 /// Ce que rend `google-oublier`.
@@ -417,7 +417,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffrePoser => en_json(coffre_poser(ctx, charge.lire()?, mdp)?),
         Route::CoffreVerifier => {
             let c: ChargeService = charge.lire()?;
-            let verdict = crate::compagnie::coffre_verifier::route(ctx, &c.service)?;
+            let verdict = compagnie::coffre_verifier::route(ctx, &c.service)?;
             let mots = &verdict.pastille.mots;
             // Un compte incomplet se dit avec ce qui lui manque et ou le donner (`identifiant_du_compte`).
             let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, &c.service)?);
@@ -476,7 +476,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
     let inst = adm::installation_de(racine);
     let admin = match charge.administrateur {
         Some(m) => m,
-        None => crate::compagnie::demande::saisir_secret(
+        None => compagnie::demande::saisir_secret(
             "PuppetPaie : le mot de passe de l'administrateur",
             &["Celui qui ouvre les compagnies de l'administrateur.".to_string(), "La frappe ne s'affiche pas.".to_string()],
             "mot de passe (rien ne s'affiche) : ",
@@ -527,7 +527,7 @@ fn refus(m: impl Into<String>) -> Echec {
 /// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer. Decide
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
 pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(racine, "");
+    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
     let vers = vers_route;
     if !coffre.ouverture_exigee().map_err(vers)? {
         return Ok(());
@@ -535,10 +535,10 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
     let Some(mdp) = motdepasse else {
         // Rien n'a ete tape pour cette charge : le moteur demande lui-meme a un humain (fenetre, terminal), ou il refuse.
         // Un « oui » ne laisse que l'ouverture du coffre pour la suite de la commande ; la seance ne vaut pas ici.
-        let acte = crate::compagnie::demande::Acte::nouveau(quoi, "", "");
-        return match crate::compagnie::demande::autoriser_acte(racine, &acte) {
-            crate::compagnie::demande::Verdict::Accepte => Ok(()),
-            crate::compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(
+        let acte = compagnie::demande::Acte::nouveau(quoi, "", "");
+        return match compagnie::demande::autoriser_acte(racine, &acte) {
+            compagnie::demande::Verdict::Accepte => Ok(()),
+            compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(
                 Classe::PreuveInsuffisante,
                 format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, phrase.replace("Rien n'est parti", "Rien n'a ete modifie")),
             )),
@@ -554,7 +554,7 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
 fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<String> {
     match donne {
         Some(v) => Ok(v),
-        None => crate::compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(refus),
+        None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(refus),
     }
 }
 
@@ -563,7 +563,7 @@ fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<St
 fn actuel(mdp: Option<&str>) -> Option<String> {
     match mdp {
         Some(m) => Some(m.to_string()),
-        None => crate::compagnie::coffre::mot_de_passe_retenu(),
+        None => compagnie::coffre::mot_de_passe_retenu(),
     }
 }
 
@@ -592,7 +592,7 @@ fn coffre(ctx: &Contexte) -> Coffre {
 
 /// Le libelle d'un service du coffre, tel que l'ecran le dit (« Urssaf (DPAE) ») ; son nom s'il n'est pas connu.
 fn libelle_du_service(nom: &str) -> String {
-    match crate::compagnie::coffre::SERVICES.iter().find(|s| s.nom == nom) {
+    match compagnie::coffre::SERVICES.iter().find(|s| s.nom == nom) {
         Some(s) => s.libelle.to_string(),
         None => nom.to_string(),
     }
@@ -626,7 +626,7 @@ fn manque_du_compte(identifiant: &Identifiant) -> Option<String> {
 /// seul geste, une seule preuve : tout se verifie avant d'ecrire. Rend l'etat du coffre, sans valeur. Rien a poser se
 /// refuse avant la porte du mot de passe du logiciel : il n'y a rien a autoriser.
 fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    let service = crate::compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     let compte = if c.nom.is_some() || c.prenom.is_some() { compte_dpae_change(ctx, c.nom.as_deref(), c.prenom.as_deref())? } else { None };
     // Sans `valeur` (`moteur route`) : le compte seul s'il change, sinon le secret, tape par un humain apres la porte.
     let donne = c.valeur.as_deref().is_some_and(|v| !socle::texte::strip(v).is_empty());
@@ -653,7 +653,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
     let manque = etat.services.iter().filter(|s| s.service == service.nom).find_map(|s| manque_du_compte(&s.identifiant));
     let (phrase, couleur) = match manque {
         Some(manque) => (format!("{} ; pas essayé : {}.", quoi, manque), "gris"),
-        None => match crate::compagnie::coffre_verifier::route(ctx, service.nom) {
+        None => match compagnie::coffre_verifier::route(ctx, service.nom) {
             Ok(v) if v.ok => (format!("{}, et vérifié : la connexion passe.", quoi), "vert"),
             Ok(v) => {
                 let conseil: String = v.conseil.iter().map(|c| format!(" — {}", c)).collect();
@@ -668,7 +668,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
 /// `coffre-oublier` : retire un secret du coffre.
 fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&str>) -> R<EtatDuCoffre> {
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer un mot de passe")?;
-    let service = crate::compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
     coffre_etat(ctx)
 }
@@ -873,7 +873,7 @@ impl Jeton {
     fn ouvrir(racine: &Path, p: &Path) -> Result<JetonEcrit, String> {
         // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
         let brut = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e))?;
-        let clair = crate::compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
+        let clair = compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
             format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", e.message)
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
@@ -954,7 +954,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     let (application, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
-        if let Err(e) = crate::compagnie::poste::ouvrir_adresse(u) {
+        if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
             eprintln!("Le navigateur ne s'ouvre pas : {}", e);
         }
     };
@@ -967,7 +967,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
 fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoogle) -> R<String> {
     let ecrit = JetonEcrit { rafraichissement: jeton.rafraichissement.clone(), compte: jeton.compte.clone(), permissions: jeton.permissions.clone() };
     let brut = socle::json_ascii::dumps(&ecrit, None, false, false);
-    let scelle = crate::compagnie::coffre::Coffre::du_poste(racine, "")
+    let scelle = compagnie::coffre::Coffre::du_poste(racine, "")
         .proteger(brut.as_bytes(), DESCRIPTION)
         .map_err(|e| erreur_google(format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", e.message)))?;
     let dossier = config(racine);
@@ -1105,10 +1105,10 @@ fn coffre_etat(ctx: &Contexte) -> R<EtatDuCoffre> {
 /// L'etat du coffre sur une fiche entreprise donnee : `coffre_poser` le relit sur la fiche qu'il vient d'ecrire, les
 /// rappels y lisent les acces qui manquent (`routes::rappels`).
 pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(racine, "");
+    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
     let secrets = coffre.services().map_err(vers_route)?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
-    let simule = crate::compagnie::bridage::branchement(racine)?.joue();
+    let simule = compagnie::bridage::branchement(racine)?.joue();
     let mut services = Vec::new();
     for s in secrets {
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
@@ -1202,7 +1202,7 @@ struct EcranDuCoffre {
 /// et courriel, a quoi servent le compte Google et le filet, et ce que demandent les confirmations. La page n'en ecrit
 /// rien ; chaque service porte aussi ce que sa confirmation d'oubli demande (`oublier`).
 fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
-    let fictive = crate::compagnie::bridage::branchement(&ctx.racine)?.joue();
+    let fictive = compagnie::bridage::branchement(&ctx.racine)?.joue();
     let adm = if fictive { None } else { Some(administrateur_etat(&ctx.racine)?) };
     let (en_liste, rattachee, peut_rattacher) = match &adm {
         Some(a) => (a.autres_dit.clone(), a.rattachee, a.peut_rattacher),

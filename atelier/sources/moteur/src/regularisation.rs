@@ -163,7 +163,7 @@ pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois:
     if let Some(porteur) = crate::import::mois::dsn_de_l_ancien_logiciel(ctx, &mois.to_string())?.map(|d| d.porteur) {
         return Ok(Some(DsnDeposee::Corrigee { porteur }));
     }
-    let dsn = crate::compagnie::etat_dsn::du_mois(ctx, mois, None)?;
+    let dsn = compagnie::etat_dsn::du_mois(ctx, mois, None)?;
     if !dsn.deposee() || dsn.refusee() {
         return Ok(None);
     }
@@ -172,7 +172,7 @@ pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois:
     if ctx.aujourdhui <= veille {
         return Ok(Some(DsnDeposee::Remplacee { limite: veille }));
     }
-    Ok(Some(DsnDeposee::Corrigee { porteur: crate::compagnie::etat_dsn::dsn_qui_porte(ctx, &mois.to_string())? }))
+    Ok(Some(DsnDeposee::Corrigee { porteur: compagnie::etat_dsn::dsn_qui_porte(ctx, &mois.to_string())? }))
 }
 
 /// Ce qui arrive a la DSN deposee d'un mois quand une modification la touche (`modification_de_l_engagement`).
@@ -394,5 +394,5 @@ pub(crate) fn dsn_qui_porte_la_correction(ctx: &Contexte, v: &engagement::etats:
             return Ok(par);
         }
     }
-    crate::compagnie::etat_dsn::dsn_qui_porte(ctx, mois)
+    compagnie::etat_dsn::dsn_qui_porte(ctx, mois)
 }

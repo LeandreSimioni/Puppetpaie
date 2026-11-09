@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use faux_drive::{ecrire, FauxDrive};
 use envois::drive::Drive;
-use moteur::compagnie::restauration::restaurer;
+use compagnie::restauration::restaurer;
 use moteur::gestes::sauvegarde::sauvegarder;
 
 const RD: &str = "PuppetPaie";

@@ -1,7 +1,10 @@
 # L'espace Cargo du moteur : une crate par partie, chaque flèche descend.
 #
-#     moteur        la ligne de commande `moteur` et les parties du dessus (interface, compagnie, import, atelier) ;
-#                   choisit le branchement des envois, ouvre le coffre, note les incidents
+#     moteur        la ligne de commande `moteur` et les parties du dessus (interface, routes, import, atelier)
+#     compagnie     ce qui garde et fait vivre la compagnie a cote de ses engagements : l'installation qui la porte sur
+#                   le poste, le coffre et ses mots de passe, la preuve d'un acte reel, la sauvegarde et la restauration,
+#                   la mise a jour, le bridage, les incidents et le filet ; choisit le branchement des envois, ouvre le
+#                   coffre, note les incidents
 #     envois        ce qui part et revient (net-entreprises, DPAE, signature, courriel, Drive, retours et bilans) et le
 #                   journal de ce qui est parti ; recoit des pieces fabriquees et un mot de passe, ne fabrique rien,
 #                   n'ouvre jamais le coffre
@@ -27,7 +30,7 @@
 # sont pas de l'espace (la fenêtre prend `moteur` par son chemin).
 
 [workspace]
-members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"]
+members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "moteur"]
 exclude = ["fenetre", "fabrique-pdf"]
 resolver = "2"
 

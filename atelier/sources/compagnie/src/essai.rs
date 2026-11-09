@@ -62,11 +62,11 @@ pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
 
 /// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
-const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::compagnie::installation::FICHIER_HORLOGE];
+const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::installation::FICHIER_HORLOGE];
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::copie_de`).
 pub fn est_essai(racine: &Path) -> Result<bool, String> {
-    Ok(crate::compagnie::installation::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
+    Ok(crate::installation::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
 }
 
 /// Ce qu'un refus porte a part : le chemin `p`.
@@ -340,12 +340,12 @@ fn installation() -> Result<PathBuf, String> {
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
 fn source(depuis: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(depuis);
-    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::compagnie::installation::DOSSIER_FICTIVES).join(depuis) };
+    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(depuis) };
     if !d.join(droit::contexte::ENTREPRISE).is_file() {
         return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
-    if !crate::compagnie::installation::est_fictive_livree(&d)? {
+    if !crate::installation::est_fictive_livree(&d)? {
         return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
     }
     Ok(d)
@@ -430,7 +430,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
-        let depuis = crate::compagnie::installation::marqueur(dossier)?
+        let depuis = crate::installation::marqueur(dossier)?
             .and_then(|m| m.depuis)
             .ok_or_else(|| socle::echec::avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
         (None, depuis)
@@ -451,7 +451,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         copier(s, dossier, s)?;
         retirer_les_depots_de_dsn(dossier)?;
         let quand = socle::paris::iso_secondes(socle::temps::secondes());
-        let marqueur = crate::compagnie::installation::Marqueur {
+        let marqueur = crate::installation::Marqueur {
             copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
             depuis: Some(nom.clone()),
             ajoutee: None,
@@ -526,7 +526,7 @@ pub fn commande(args: &[String]) -> i32 {
             }
         }
     }
-    crate::compagnie::installation::fixer_le_code();
+    crate::installation::fixer_le_code();
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
         Some(d) => d,

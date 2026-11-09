@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::echec::Echec;
-use crate::compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
+use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};

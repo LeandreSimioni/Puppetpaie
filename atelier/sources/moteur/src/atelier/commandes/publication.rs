@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::atelier::publier::{generer_cle, generer_cle_github, marquer_les_fictives, poser_les_fictives, publier, publier_depuis_l_environnement};
-use crate::compagnie::maj::{dossier_maj, installation, version_lue};
+use compagnie::maj::{dossier_maj, installation, version_lue};
 
 /// Les gestes de la publication de `moteur maj` (`--cle-github [DOSSIER]`, `--publier-github --logiciel L --sortie S
 /// --notes T --calcul T --exigee T`, `--marquer-fictives --logiciel L`, `--poser-fictives DOSSIER --logiciel L`,
@@ -19,7 +19,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile (un chemin du conteneur, que Windows lit sur le lecteur courant : la graine de `--cle-github` irait
     // dans `D:\home\user\...\maj\`).
-    crate::compagnie::installation::fixer_le_code();
+    compagnie::installation::fixer_le_code();
     // Les gestes de la publication par GitHub : ni compagnie ni coffre.
     let r = if drapeau("--cle-github") {
         // Sans dossier dit, la graine va dans `maj/` de l'installation.

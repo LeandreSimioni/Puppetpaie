@@ -67,7 +67,7 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     let args: Vec<String> = args.iter().filter(|a| *a != "--texte").cloned().collect();
     let lues = options(&args)?;
     // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree.
-    crate::compagnie::installation::fixer_le_code();
+    compagnie::installation::fixer_le_code();
     let mut entree = String::new();
     let lue = std::io::stdin().read_to_string(&mut entree);
     let o = match lues {
@@ -88,7 +88,7 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     if let Some(d) = o.date {
         std::env::set_var("PUPPETPAIE_AUJOURDHUI", d.iso());
     }
-    let _canaux = crate::compagnie::demande::installer(crate::compagnie::demande::canal_de_la_route(&racine_de(&o)));
+    let _canaux = compagnie::demande::installer(compagnie::demande::canal_de_la_route(&racine_de(&o)));
     let reponse = match lue {
         Ok(_) => crate::routes::commande(&o, entree.trim_start_matches('\u{feff}')),
         Err(e) => Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e))),

@@ -9,12 +9,12 @@ use droit::fiche::Lue as _;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::compagnie::preuve::{verifier_preuve, Preuve};
+use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::documents::client_courriel;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::compagnie::INTERFACE;
+use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::Contexte;
@@ -283,7 +283,7 @@ struct FicheActivee {
 #[derive(Debug, serde::Serialize)]
 struct SauvegardeFaite {
     phrase: String,
-    sauvegarde: Option<crate::compagnie::sauvegarde::Derniere>,
+    sauvegarde: Option<compagnie::sauvegarde::Derniere>,
     erreur: Option<String>,
 }
 
@@ -328,7 +328,7 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
     let r = ouverture(ctx, &opt, Clients::default(), None);
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
-    let s = crate::compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, message: e.message })?;
+    let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, message: e.message })?;
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),
@@ -1040,7 +1040,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
         return Ok(r);
     }
     let mut ouverte: Option<Box<dyn Courriel>> = None;
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let client: &mut dyn Courriel = match client {
         Some(c) => c,
         None if branchement.joue() => {
@@ -1053,11 +1053,11 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
                 r.incidents.push(refus.phrase.to_string());
                 return Ok(r);
             }
-            if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+            if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
                 r.incidents.push("Aucune boite courriel : les fiches demandees ne peuvent pas etre relevees.".to_string());
                 return Ok(r);
             }
-            let vrai_client = crate::compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+            let vrai_client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
             ouverte.insert(Box::new(vrai_client)).as_mut()
         }
     };

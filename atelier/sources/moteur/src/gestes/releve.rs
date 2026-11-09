@@ -7,7 +7,7 @@ use envois::ordre_signalements::OrdreConnu;
 use envois::releve_retours::{Client, Releve};
 use envois::suites::Suites;
 use socle::echec::{Echec, R};
-use crate::compagnie::consultation::{client_dpae, client_dsn};
+use compagnie::consultation::{client_dpae, client_dsn};
 
 /// Fait les suites d'une releve et les reporte sur elle.
 fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
@@ -25,7 +25,7 @@ pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environ
     let canal = match canal {
         Some(c) => c,
         None => envois::releve_retours::CANAL_DSN,
-    };    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    };    let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,
@@ -37,7 +37,7 @@ pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environ
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
 pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: Option<&str>) -> R<Releve> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();
     let r = envois::releve_retours::relever_retours_dpae(ctx, b, debut, fin, tout, flux, client, &mut s);
@@ -60,7 +60,7 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui
 /// de la consultation net-entreprises.
 pub fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {
-    let b = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, "production")?,

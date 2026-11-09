@@ -192,9 +192,9 @@ struct EcranDeLaReprise {
 /// `journal-reprise` : la reprise du journal d'apres les retours (`envois::reprise_journal::reprise`), ses incidents
 /// notes, et ce que l'ecran en dit.
 fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
-    let r = crate::compagnie::incidents::noter_ceux_des_retours(
+    let r = compagnie::incidents::noter_ceux_des_retours(
         &ctx.racine,
-        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), crate::compagnie::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
+        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), compagnie::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
     )?;
     let n = r.ajoutes.len();
     let reels = r.ajoutes.iter().filter(|d| d.mode == Mode::Reel && d.accepte).count();
@@ -349,12 +349,12 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
         let mut acceptees = Vec::new();
         for x in &mois {
-            if crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(x)?, None)?.partie() {
+            if compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(x)?, None)?.partie() {
                 acceptees.push(x.clone());
             }
         }
         let export = match chemin.exists() {
-            true => Some(ExportDeLAnnee { fichier, ecrit: crate::compagnie::pieces_ecrites::ecrit_le(&ctx.racine, &chemin)? }),
+            true => Some(ExportDeLAnnee { fichier, ecrit: compagnie::pieces_ecrites::ecrit_le(&ctx.racine, &chemin)? }),
             false => None,
         };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
@@ -385,10 +385,10 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
 fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     use crate::gestes::archivage;
     let mois = charge.mois.to_string();
-    let joue = crate::compagnie::bridage::branchement(&ctx.racine)?.joue();
+    let joue = compagnie::bridage::branchement(&ctx.racine)?.joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
-    let r = archivage::archiver(&ctx.racine, &mois, crate::compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| socle::echec::noter_et(e.classe, e.message))?;
+    let r = archivage::archiver(&ctx.racine, &mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| socle::echec::noter_et(e.classe, e.message))?;
     let dossier = format!("{}/{}", r.racine_drive, r.mois);
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
     let ou = format!("{} › {}", r.racine_drive, r.mois);

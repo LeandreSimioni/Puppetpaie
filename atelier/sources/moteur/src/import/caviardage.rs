@@ -32,7 +32,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::compagnie::incidents;
+use compagnie::incidents;
 
 // ------------------------------------------------------------------ les etiquettes
 

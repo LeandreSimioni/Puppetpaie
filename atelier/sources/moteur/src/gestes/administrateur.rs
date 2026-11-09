@@ -45,8 +45,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::coffre::Coffre;
-use crate::compagnie::installation::{self as compagnies, Compagnie};
+use compagnie::coffre::Coffre;
+use compagnie::installation::{self as compagnies, Compagnie};
 use crate::routes::catalogue::Route;
 use crate::routes::depots::{ChargeDeposer, Designation, Quoi};
 use crate::routes::enveloppe::Dite;
@@ -306,7 +306,7 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> Result<EtatAdmi
     };
     // Les autres, en liste lisible (« A, B et C »), et ce que le titre du mot de passe en dit.
     let autres_dit = en_liste(&autres);
-    let bridee = crate::compagnie::bridage::est_bride_de(inst);
+    let bridee = compagnie::bridage::est_bride_de(inst);
     let pose = exigee(poste, racine)?;
     Ok(EtatAdministrateur {
         administrateur: !groupe.is_empty(),
@@ -393,7 +393,7 @@ fn et_la_remise(phrase: String, remise: Result<(), String>) -> String {
 /// son mot de passe donne aussi `actuel` (c'est lui que le rattachement remplace). Un refus n'ecrit rien. Rend les noms des
 /// compagnies de l'administrateur.
 pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> Result<Vec<String>, String> {
-    if crate::compagnie::bridage::est_bride_de(inst) {
+    if compagnie::bridage::est_bride_de(inst) {
         return Err("Le logiciel est bridé : il ne gère que des compagnies fictives.".into());
     }
     if compagnies::est_fictive(racine)? {
@@ -1123,12 +1123,12 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
         let m = match motdepasse.filter(|m| !m.is_empty()) {
             Some(m) => m,
             None => {
-                let acte = crate::compagnie::demande::Acte::nouveau(
+                let acte = compagnie::demande::Acte::nouveau(
                     format!("depot REEL de {} declaration(s), dans {} compagnie(s)", a_faire.len(), groupe.len()),
                     "",
                     "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
                 );
-                crate::compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|p| erreur(Classe::PreuveInsuffisante, p))?
+                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|p| erreur(Classe::PreuveInsuffisante, p))?
             }
         };
         if !ouvre_une(&Poste::de_ce_poste(), &groupe, &m)? {
@@ -1140,7 +1140,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
         let charge = en_charge(ChargeDeposer::de(designation(d)?, reel, mdp.clone()))?;
         let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::routes::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
-        crate::compagnie::coffre::oublier_mot_de_passe_tape();
+        compagnie::coffre::oublier_mot_de_passe_tape();
         let (parti, phrase, refus, classe, flux) = match rep.en_refus() {
             Ok(_) => {
                 let phrase = if reel {

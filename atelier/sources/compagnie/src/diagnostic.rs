@@ -429,7 +429,7 @@ fn texte_avec(p: &Personnes, s: &str, limite: usize) -> String {
     if n > 200 && !tete.chars().any(char::is_whitespace) {
         return format!("(données de {})", car(n));
     }
-    let (t, _) = crate::compagnie::incidents::caviarder(s);
+    let (t, _) = crate::incidents::caviarder(s);
     let t = motif_courriel().replace_all(&t, "[adresse courriel]").into_owned();
     let t = motif_telephone().replace_all(&t, "[téléphone]").into_owned();
     let mut t = motif_iban().replace_all(&t, "[IBAN]").into_owned();
@@ -1443,7 +1443,7 @@ fn duree_lisible(d: Duration) -> String {
 /// Un chemin du poste, sans le nom de la session : le dossier qui suit `Users` ou `home` devient « [session] ».
 fn chemin_sans_session(p: &Path) -> String {
     let s = p.to_string_lossy().into_owned();
-    crate::compagnie::incidents::motif_maison().replace_all(&s, "${1}[session]").into_owned()
+    crate::incidents::motif_maison().replace_all(&s, "${1}[session]").into_owned()
 }
 
 /// La memoire du poste, en Mo.
@@ -1480,9 +1480,9 @@ pub struct Machine {
 
 /// La machine, en entier.
 pub fn machine(racine: &Path) -> Machine {
-    let base = crate::compagnie::installation::base();
+    let base = crate::installation::base();
     let (totale, libre) = memoire();
-    let installation = if base.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
+    let installation = if base.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
         "portable"
     } else if base.join("atelier").is_dir() {
         "atelier (dépôt de développement)"
@@ -1490,7 +1490,7 @@ pub fn machine(racine: &Path) -> Machine {
         "installée"
     };
     // Les dernieres lignes du journal des mises a jour ; sans journal, aucune n'a eu lieu.
-    let journal = crate::compagnie::maj::dossier_maj(&base).join("journal.log");
+    let journal = crate::maj::dossier_maj(&base).join("journal.log");
     let mises_a_jour: Vec<String> = match std::fs::read_to_string(&journal) {
         Ok(t) => {
             let l: Vec<&str> = t.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -1504,10 +1504,10 @@ pub fn machine(racine: &Path) -> Machine {
         Ok(_) | Err(std::env::VarError::NotPresent) | Err(std::env::VarError::NotUnicode(_)) => None,
     });
     Machine {
-        version: crate::compagnie::incidents::version(),
+        version: crate::incidents::version(),
         moteur: env!("PAIE_SOURCES").to_string(),
         profil: if cfg!(debug_assertions) { "debug" } else { "release" }.to_string(),
-        systeme: crate::compagnie::incidents::machine(),
+        systeme: crate::incidents::machine(),
         os: std::env::consts::OS.to_string(),
         architecture: std::env::consts::ARCH.to_string(),
         coeurs: match std::thread::available_parallelism() {
@@ -1518,8 +1518,8 @@ pub fn machine(racine: &Path) -> Machine {
         disque_libre_mo: disque_libre(racine),
         installation: installation.to_string(),
         chemin: chemin_sans_session(&base),
-        edition: crate::compagnie::bridage::etat().to_string(),
-        compagnie: match crate::compagnie::installation::est_fictive(racine) {
+        edition: crate::bridage::etat().to_string(),
+        compagnie: match crate::installation::est_fictive(racine) {
             Ok(true) => "fictive".to_string(),
             Ok(false) => "réelle (non nommée)".to_string(),
             Err(e) => socle::echec::phrase_de(&e),

@@ -275,6 +275,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "compagnie"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "declarations",
+ "droit",
+ "ed25519-dalek",
+ "engagement",
+ "envois",
+ "getrandom 0.3.4",
+ "md-5",
+ "regex",
+ "rpassword",
+ "scrypt",
+ "serde",
+ "sha2",
+ "socle",
+ "ureq",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1132,7 +1154,7 @@ dependencies = [
 name = "moteur"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
+ "compagnie",
  "declarations",
  "documents",
  "droit",
@@ -1149,12 +1171,10 @@ dependencies = [
  "md-5",
  "regex",
  "roxmltree 0.20.0",
- "rpassword",
  "rust_decimal",
  "rust_xlsxwriter",
  "rustls",
  "rustls-platform-verifier",
- "scrypt",
  "serde",
  "serde_json",
  "sha2",

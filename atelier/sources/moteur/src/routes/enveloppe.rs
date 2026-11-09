@@ -398,7 +398,7 @@ pub struct APart {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum EtatAPart {
-    Dsn(crate::compagnie::etat_dsn::EtatDsn),
+    Dsn(compagnie::etat_dsn::EtatDsn),
     Test(Box<envois::etats::Repetition>),
 }
 

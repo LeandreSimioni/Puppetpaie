@@ -42,7 +42,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let relever = args.drapeau("relever");
     let verifier = args.drapeau("verifier") || relever;
     // Les copies sont les textes du logiciel, pas ceux d'une compagnie : elles vivent dans l'installation.
-    let installation = crate::compagnie::maj::installation();
+    let installation = compagnie::maj::installation();
     let liste = if verifier {
         let mut tele = |u: &str| crate::atelier::sources::telecharger(u, 30);
         let mut kali = |u: &str| crate::atelier::sources::telecharger(u, 60).map(|(o, _)| o);

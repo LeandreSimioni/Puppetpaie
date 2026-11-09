@@ -21,7 +21,7 @@
 //! `parti_le`) ; une annee qui y est ne repart pas. Ce fichier est propre au poste (`compagnies::PROPRES_AU_POSTE`) : une
 //! remise a zero de la compagnie ne fait pas renvoyer l'annee. Un envoi qui echoue (hors ligne, serveur en panne) n'ecrit
 //! rien : le passage suivant le refait. L'ecran « Ce qui est parti chez l'editeur » le montre avec les incidents
-//! (`crate::routes::filet::diagnostic_etat`).
+//! (`moteur::routes::filet::diagnostic_etat`).
 //!
 //! JAMAIS : depuis une compagnie fictive ni depuis la copie de developpement (le marqueur `COPIE-DE-DEVELOPPEMENT.json`,
 //! `compagnies::est_copie`, que portent l'une et l'autre) ; depuis un logiciel bride (`bridage::est_bride`), ce qui couvre une
@@ -36,7 +36,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::R;
 
-use crate::compagnie::incidents::{self, AnneeRetenue, Canal};
+use crate::incidents::{self, AnneeRetenue, Canal};
 
 /// Le jour de janvier a partir duquel l'annee passee part.
 pub const JOUR_DE_JANVIER: u32 = 16;
@@ -72,11 +72,11 @@ fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> R<()> {
 
 /// Pourquoi rien ne part de cette compagnie, ou `None` si elle peut envoyer.
 fn empechement(racine: &Path) -> R<Option<&'static str>> {
-    Ok(if crate::compagnie::installation::est_fictive(racine)? {
+    Ok(if crate::installation::est_fictive(racine)? {
         Some("compagnie fictive")
-    } else if crate::compagnie::installation::est_copie(racine) {
+    } else if crate::installation::est_copie(racine) {
         Some("copie de developpement")
-    } else if crate::compagnie::bridage::est_bride() {
+    } else if crate::bridage::est_bride() {
         Some("logiciel bride")
     } else if !incidents::envoi(racine)? {
         Some("envoi coupe")

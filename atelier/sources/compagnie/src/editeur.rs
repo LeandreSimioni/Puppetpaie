@@ -270,7 +270,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
 
 /// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
 pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
-    if crate::compagnie::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
+    if crate::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
         return Err(ErreurFilet::autre(Classe::EditionBridee, edition_bridee(action)));
     }
     let donnees = socle::json_ascii::dumps(corps, None, false, false);

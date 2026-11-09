@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::compagnie::coffre::{Coffre, CONSULTATION};
+use crate::coffre::{Coffre, CONSULTATION};
 use droit::contexte::Contexte;
 use envois::courriel::{Client, ErreurCourriel};
 

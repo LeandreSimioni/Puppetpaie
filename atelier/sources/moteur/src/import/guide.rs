@@ -115,7 +115,7 @@ pub fn guide() -> Guide {
 /// n'en est encore repris (aucun contrat ni aucune paie importes, `engagement::importe`). La page s'ouvre alors sur le
 /// guide (`routes::ouverture::etat`).
 pub fn commencer_par_l_import(racine: &Path) -> Result<bool, String> {
-    Ok(crate::compagnie::installation::venue(racine)? == Some(crate::compagnie::installation::Venue::LogicielPrecedent)
+    Ok(compagnie::installation::venue(racine)? == Some(compagnie::installation::Venue::LogicielPrecedent)
         && engagement::importe::contrats_lus(racine)?.is_empty()
         && engagement::importe::paies_lues(racine)?.is_empty())
 }

@@ -32,7 +32,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use crate::import::caviardage::{self, Connus};
-use crate::compagnie::incidents;
+use compagnie::incidents;
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use engagement::ecarts::{Comparaison, Grandeur};

@@ -2,7 +2,7 @@
 //! nomenclatures du bloc 60, et l'arret tel qu'il s'y ecrit. Les routes des imprevus (`routes::imprevus`), l'horloge et
 //! les obligations le prennent ici.
 
-use crate::compagnie::{maintenant, INTERFACE};
+use compagnie::{maintenant, INTERFACE};
 use droit::arrets::Bloc60;
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::imprevus::{self, ArretSaisi, GenreArret, Imprevu};

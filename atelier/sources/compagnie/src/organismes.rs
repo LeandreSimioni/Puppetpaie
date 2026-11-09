@@ -34,14 +34,14 @@ pub struct ChargeEnregistrer {
 
 impl ChargeEnregistrer {
     /// Les contrats `contrats`, a partir du mois en cours (l'import).
-    pub(crate) fn des_contrats(contrats: BTreeMap<String, Saisie>) -> ChargeEnregistrer {
+    pub fn des_contrats(contrats: BTreeMap<String, Saisie>) -> ChargeEnregistrer {
         ChargeEnregistrer { contrats: Some(contrats), mois: None }
     }
 }
 
 impl Lus {
     /// Les lignes des contrats.
-    pub(crate) fn lignes(&self) -> &[droit::organismes::Ligne] {
+    pub fn lignes(&self) -> &[droit::organismes::Ligne] {
         &self.lignes
     }
 }
@@ -79,10 +79,10 @@ fn periode(ctx: &Contexte, mois: Option<&str>) -> R<(Jour, Jour)> {
 
 /// Ce que l'ecran des contrats lit (`lire`).
 pub struct Lus {
-    pub(crate) idcc: Option<String>,
-    pub(crate) a_saisir: bool,
-    pub(crate) mois: String,
-    pub(crate) lignes: Vec<droit::organismes::Ligne>,
+    pub idcc: Option<String>,
+    pub a_saisir: bool,
+    pub mois: String,
+    pub lignes: Vec<droit::organismes::Ligne>,
 }
 
 /// `organismes-contrats` : une ligne par contrat attendu qui vaut pour la compagnie (`se_montre`) et pour la periode
@@ -128,7 +128,7 @@ mois. Ne pas modifier a la main."
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| plain(e.to_string()))?;
     }
-    crate::compagnie::avant::sauver_avant(&p)?;
+    crate::avant::sauver_avant(&p)?;
     ecrire_json(&p, &date, 2).map_err(plain)?;
     lire(ctx, charge.mois.as_deref())
 }

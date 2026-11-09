@@ -27,9 +27,9 @@ use serde::{Deserialize, Serialize};
 
 use http::{Reponse, Requete};
 use crate::accueil::suppression;
-use crate::compagnie::installation::{self, JOURNAL_INTERFACE};
-use crate::compagnie::instance::{self, Instance, Prise};
-use crate::compagnie::poste;
+use compagnie::installation::{self, JOURNAL_INTERFACE};
+use compagnie::instance::{self, Instance, Prise};
+use compagnie::poste;
 use crate::etat_garde::{Fil, FileDesEtats};
 use crate::veille::EtatDeLaVeille;
 use veille::Veille;
@@ -136,7 +136,7 @@ enum Geste {
     Dossier { ok: bool, dossier: Option<String> },
     Veille { ok: bool, etat: Box<EtatDeLaVeille> },
     Etape { ok: bool, etat: veille::EtapeDeLaVeille },
-    Maj { ok: bool, etat: crate::compagnie::maj::EtatDeLaRecherche },
+    Maj { ok: bool, etat: compagnie::maj::EtatDeLaRecherche },
     Refuse { ok: bool, refus: Refus },
 }
 
@@ -239,7 +239,7 @@ fn version() -> String {
 fn version() -> String {
     let p = installation::logiciel().join("VERSION");
     match std::fs::read_to_string(&p) {
-        Ok(v) => crate::compagnie::maj::version_lue(&v),
+        Ok(v) => compagnie::maj::version_lue(&v),
         Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e)),
     }
 }
@@ -475,7 +475,7 @@ pub fn page_logiciel(racine: &Path, jeton: &str) -> Result<String, String> {
             &if copie { String::new() } else { format!("<style>:root {{ --compagnie: {}; }}</style>", installation::couleur(racine)?) },
         )
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
-        .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if crate::compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
+        .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
     let cale = CALE.replace("{{JETON}}", jeton).replace("{{NOMS}}", NOMS_LOGICIEL);
     // Avant le PREMIER script de la page (`/js/tuyau.js`, qui definit `api`) : la cale doit exister avant lui.
     p = p.replacen("<script src=\"/js/", &format!("{}<script src=\"/js/", cale), 1);
@@ -555,7 +555,7 @@ impl Fenetre {
     /// deja. Les compagnies fictives ne sont pas prechauffees : elles s'ouvrent sur leur dernier etat garde, et le fil les
     /// prend a leur ouverture. Bride, rien.
     pub fn prechauffer(self: &Arc<Self>) {
-        if crate::compagnie::bridage::est_bride() {
+        if compagnie::bridage::est_bride() {
             return;
         }
         let f = self.clone();
@@ -604,11 +604,11 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        if crate::compagnie::bridage::est_bride() || installation::est_fictive(&racine)? {
+        if compagnie::bridage::est_bride() || installation::est_fictive(&racine)? {
             self.ouvrir(racine);
             return Ok(());
         }
-        let exigee = crate::compagnie::coffre::Coffre::du_poste(&racine, "").ouverture_exigee().map_err(|e| e.message)?;
+        let exigee = compagnie::coffre::Coffre::du_poste(&racine, "").ouverture_exigee().map_err(|e| e.message)?;
         // UNE COMPAGNIE DE L'ADMINISTRATEUR, quand son mot de passe a deja ete tape dans cette fenetre : elle s'ouvre sans
         // le redemander (il ouvre encore son coffre : c'est verifie, pas suppose).
         if exigee && self.administrateur_ouvre(&racine) {
@@ -716,7 +716,7 @@ impl Fenetre {
                 secondes: socle::temps::secondes(),
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
-                simulee: ouverte.as_deref().map(crate::compagnie::bridage::branchement).transpose()?.is_some_and(|b| b.joue()),
+                simulee: ouverte.as_deref().map(compagnie::bridage::branchement).transpose()?.is_some_and(|b| b.joue()),
                 ajoutee: ouverte.as_deref().map(installation::est_ajoutee).transpose()?.is_some_and(|a| a),
             }),
             "jour" => {
@@ -817,12 +817,12 @@ impl Fenetre {
                 Ok(fait(true))
             }
             ("basculer", Phase::Accueil) => {
-                crate::compagnie::bridage::basculer()?;
+                compagnie::bridage::basculer()?;
                 Ok(fait(true))
             }
             ("verifier", Phase::MotDePasse { racine, .. }) => {
                 let motdepasse = texte(args, 0)?;
-                if !crate::compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(motdepasse).map_err(|e| e.message)? {
+                if !compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(motdepasse).map_err(|e| e.message)? {
                     return Err("Mot de passe refusé.".into());
                 }
                 self.retenir_administrateur(&racine, motdepasse);
@@ -850,7 +850,7 @@ impl Fenetre {
             ("veille_etape", Phase::Ouverte { veille, .. }) => Ok(Geste::Etape { ok: true, etat: veille.etape() }),
             ("veille_maintenant", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.tour(false, false)) }),
             // Ou en est la recherche de la mise a jour : l'accueil et la page d'une compagnie l'affichent.
-            ("maj", _) => Ok(Geste::Maj { ok: true, etat: crate::compagnie::maj::RECHERCHE.etat() }),
+            ("maj", _) => Ok(Geste::Maj { ok: true, etat: compagnie::maj::RECHERCHE.etat() }),
             // Le site de l'editeur, dans le navigateur du poste : la fenetre ne quitte jamais sa page.
             ("site", _) => {
                 poste::ouvrir_site(texte(args, 0)?)?;
@@ -860,8 +860,8 @@ impl Fenetre {
             // croix (la veille s'arrete) ; le relais attend sa fin, installe et rouvre la fenetre neuve. Rien de pret :
             // refuse, et rien ne se ferme.
             ("redemarrer", _) => {
-                let v = crate::compagnie::maj::redemarrer_pour_mettre_a_jour(&crate::compagnie::maj::installation(), &crate::compagnie::maj::RECHERCHE)?;
-                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", crate::compagnie::maj::version_lue(&v)));
+                let v = compagnie::maj::redemarrer_pour_mettre_a_jour(&compagnie::maj::installation(), &compagnie::maj::RECHERCHE)?;
+                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", compagnie::maj::version_lue(&v)));
                 self.poser_phase(Phase::Accueil);
                 self.fermer_le_logiciel();
                 Ok(fait(false))
@@ -932,7 +932,7 @@ impl Fenetre {
                 // CE QUE LA PAGE A FAIT depuis sa derniere demande (`X-Gestes`, js/tuyau.js : clics, champs, boites, console),
                 // note dans le fil AVANT la route qu'il a declenchee (`diagnostic::noter_gestes`, qui le met en forme).
                 if let Some(g) = r.entete("x-gestes").filter(|g| !g.is_empty()) {
-                    crate::compagnie::diagnostic::noter_gestes(&racine, &http::decoder_pourcent(g));
+                    compagnie::diagnostic::noter_gestes(&racine, &http::decoder_pourcent(g));
                 }
                 // SUPPRIMER LA COMPAGNIE OUVERTE (`compagnie-supprimer` confirmee) : la route decide tout
                 // (`suppression::route`) ; la fenetre lache d'abord ce qu'elle tient de la compagnie (sa veille, sa file
@@ -1026,7 +1026,7 @@ impl Fenetre {
             return interdit;
         }
         // Une piece fictive ne se sert que d'une compagnie dont les envois sont joues ; un marqueur illisible ne le dit pas.
-        let joue = match crate::compagnie::bridage::branchement(&racine) {
+        let joue = match compagnie::bridage::branchement(&racine) {
             Ok(b) => b.joue(),
             Err(e) => {
                 self.ecrire(&format!("{}\n", socle::echec::phrase_de(&e)));
@@ -1156,16 +1156,16 @@ fn egal_en_temps_constant(a: &[u8], b: &[u8]) -> bool {
 /// compagnie supprimee (`suppression::effacer_les_restes`). Ce qui s'est passe va dans le journal de l'installation
 /// (`maj::noter`).
 pub fn preparer_l_installation() {
-    let inst = crate::compagnie::maj::installation();
+    let inst = compagnie::maj::installation();
     // Une livraison de compagnies fictives prete (`maj::preparer_les_fictives`) remplace celles du poste, avant toute fenetre.
-    if let Some(t) = crate::compagnie::maj::poser_les_fictives_pretes(&inst) {
-        crate::compagnie::maj::noter(&inst, &t);
+    if let Some(t) = compagnie::maj::poser_les_fictives_pretes(&inst) {
+        compagnie::maj::noter(&inst, &t);
     }
     // Une compagnie supprimee dont un fichier resistait (`suppression::effacer`) : son reste cache part maintenant.
     let restes = suppression::effacer_les_restes(&inst);
     if !restes.is_empty() {
         let noms: Vec<String> = restes.iter().map(|p| p.display().to_string()).collect();
-        crate::compagnie::maj::noter(&inst, &format!("Restes de compagnies supprimees effaces : {}.", noms.join(", ")));
+        compagnie::maj::noter(&inst, &format!("Restes de compagnies supprimees effaces : {}.", noms.join(", ")));
     }
 }
 
@@ -1194,7 +1194,7 @@ pub fn demarrer_sur(minutes_veille: u64, port: u16) -> std::io::Result<(Arc<Fene
 
 fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     // L'heure du lancement et les paniques notees (`diagnostic`) : ce qu'un retour et un incident disent de la fenetre.
-    crate::compagnie::diagnostic::installer();
+    compagnie::diagnostic::installer();
     let f = Fenetre::nouvelle(minutes_veille, navigateur::dossier_local(&installation::base(), port), port).map_err(std::io::Error::other)?;
     let servie = f.clone();
     std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
@@ -1305,7 +1305,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
 /// `moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]` : la fenetre dans le navigateur du poste.
 pub fn commande(args: &[String]) -> i32 {
     installation::fixer_le_code();
-    crate::compagnie::incidents::brancher_l_engagement();
+    compagnie::incidents::brancher_l_engagement();
     #[cfg(feature = "atelier")]
     let args = &match poser_le_banc(args) {
         Ok(reste) => reste,
@@ -1343,7 +1343,7 @@ pub fn commande(args: &[String]) -> i32 {
     // La mise a jour se cherche au lancement, pour l'installation (`maj::chercher_en_fond`) ; elle s'appliquera au
     // prochain lancement de la fenetre.
     preparer_l_installation();
-    crate::compagnie::maj::chercher_en_fond();
+    compagnie::maj::chercher_en_fond();
     let demarre = match options.port {
         Some(p) => demarrer_sur(minutes, p),
         None => demarrer(minutes, &prise),

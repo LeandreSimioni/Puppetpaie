@@ -15,7 +15,7 @@ use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERAT
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::etapes::Moteur;
-use crate::compagnie::etat_dsn::Etat;
+use compagnie::etat_dsn::Etat;
 use declarations::champs::{self, Valeur};
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
@@ -681,11 +681,11 @@ impl Identite {
 /// Une seule reponse aux deux : le mot de passe de la boite est pose. Ne lit
 /// jamais ce mot de passe : l'adresse (`compte`), et si un secret existe.
 pub fn boite_liee(ctx: &Contexte) -> R<bool> {
-    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(true);
     }
-    let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = |x: crate::compagnie::coffre::Echec| Echec { classe: Some(x.classe), message: x.message };
+    let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
+    let vers = |x: compagnie::coffre::Echec| Echec { classe: Some(x.classe), message: x.message };
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => a,
@@ -1032,8 +1032,8 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
         // L'ETAT DE LA DSN, lu une fois (`compagnie::etat_dsn`) ; une DSN a deposer passee l'echeance est en retard.
-        let importe = crate::compagnie::etat_dsn::importe(&ctx.racine, nom)?;
-        let lu = crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(nom)?, None)?;
+        let importe = compagnie::etat_dsn::importe(&ctx.racine, nom)?;
+        let lu = compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(nom)?, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
         let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
@@ -1514,7 +1514,7 @@ struct OrganismeUrssaf {
 pub struct EtatDeLaPage {
     phrase: String,
     configuration: ConfigurationDeLaPage,
-    auteur: crate::compagnie::auteur::Auteur,
+    auteur: compagnie::auteur::Auteur,
     simulation: bool,
     coulisses: Option<Coulisses>,
     note_fictive: Option<super::Encart>,
@@ -1608,14 +1608,14 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let urssaf = declarations::urssaf::base().map_err(plain)?;
     let deduit = ctx.entreprise.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp));
     let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.iter().map(|o| OrganismeUrssaf { code: o.code.clone(), nom: o.nom.clone() }).collect();
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
+    let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let joue = branchement.joue();
 
     Ok(EtatDeLaPage {
         phrase: dire_la_configuration(&configuration),
         configuration,
         // L'auteur, au pied de la page (`compagnie::auteur`).
-        auteur: crate::compagnie::auteur::auteur(),
+        auteur: compagnie::auteur::auteur(),
         // UNE COMPAGNIE FICTIVE : les envois sont joues (`bridage::branchement`).
         simulation: joue,
         // Ce que la boite d'un envoi joue en dit.
@@ -1707,12 +1707,12 @@ pub(crate) struct Version {
 /// La version du logiciel, ce qui est pret, ce
 /// qui est configure. Ne va voir aucun depot.
 pub(crate) fn version() -> R<Version> {
-    let code = crate::compagnie::maj::dossier_installe().map_err(plain)?;
+    let code = compagnie::maj::dossier_installe().map_err(plain)?;
     // La mise a jour est celle de l'INSTALLATION : son reglage (`maj::reglage`), sa version prete (`maj::prete`).
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| plain("Le logiciel n'est dans aucune installation."))?;
-    let (depot, editeur) = crate::compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
-    let prete = crate::compagnie::maj::prete(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
-    let courante = |code: &Path| crate::compagnie::maj::courante(code).map_err(plain);
+    let (depot, editeur) = compagnie::maj::reglage(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
+    let prete = compagnie::maj::prete(&inst).map_err(|e| erreur(Classe::Illisible, e))?;
+    let courante = |code: &Path| compagnie::maj::courante(code).map_err(plain);
     let courante_v = courante(&code)?;
     let avant = if code.join(".avant").join("donnees").is_dir() { Some(courante(&code.join(".avant"))?) } else { None };
     let dite = match &prete {
@@ -1728,7 +1728,7 @@ pub(crate) fn version() -> R<Version> {
         courante: courante_v,
         editeur,
         // Le depot d'ou l'on recoit : celui qui est pose, sinon celui du moteur (`maj::DEPOT_PAR_DEFAUT`).
-        depot: crate::compagnie::maj::depot(depot),
+        depot: compagnie::maj::depot(depot),
         prete,
         calcul,
         exigee,

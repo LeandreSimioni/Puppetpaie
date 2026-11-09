@@ -6,7 +6,7 @@
 use super::dit;
 use crate::commandes::analyse::{Args, Opt, Spec};
 use crate::commandes::Cadre;
-use crate::compagnie::taux_pas::ko;
+use compagnie::taux_pas::ko;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -61,7 +61,7 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
         dire!("Dossier introuvable : {}", export.display());
         return Ok(1);
     }
-    let releves = crate::compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
+    let releves = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
     let chgts = crate::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
     dire!("Amorcage depuis les DSN deposees ({}) :", export.display());
     for c in &chgts {
@@ -97,7 +97,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
     if !a_demander.is_empty() {
         dire!("A demander a la DGFiP (signalement d'amorcage, nature 08)\n{}", "-".repeat(62));
         for s in a_demander {
-            match crate::compagnie::amorcage_demande::en_cours(ctx, &s.salarie)? {
+            match compagnie::amorcage_demande::en_cours(ctx, &s.salarie)? {
                 Some(d) => dire!("  {:<12} {}  -- demande partie le {}, reponse attendue avant le {}", s.salarie, s.libelle, d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa()),
                 None => dire!("  {:<12} {}", s.salarie, s.libelle),
             }
@@ -113,7 +113,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
 /// `--demander` : ecrire les signalements d'amorcage (nature 08), un fichier par individu. RIEN N'EST DEPOSE : le depot est la
 /// route `deposer` (avec `fichier`), sa preuve et son mot de passe.
 fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    use crate::compagnie::amorcage_demande::{produire, Demande};
+    use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
     let mois = match args.texte("mois") {
         Some(m) if socle::mois::Mois::du_texte(m).is_some() => m.to_string(),

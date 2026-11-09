@@ -81,7 +81,7 @@ impl Veille {
             Err(e) => (None, Some(e.message)),
         };
         // Un marqueur qui ne se lit pas ne dit pas si les envois sont joues : le bandeau les dit vrais, et l'erreur le dit.
-        let (fictive, marqueur) = match crate::compagnie::bridage::branchement(&self.racine) {
+        let (fictive, marqueur) = match compagnie::bridage::branchement(&self.racine) {
             Ok(b) => (b.joue(), None),
             Err(e) => (false, Some(socle::echec::phrase_de(&e))),
         };

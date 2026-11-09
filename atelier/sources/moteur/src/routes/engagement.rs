@@ -433,7 +433,7 @@ fn un_bulletin_rectificatif(mois: &str) -> String {
 
 /// Ce qui arrive a la DSN deposee de `mois` quand sa paie change, comme toute modification d'un mois declare
 /// (`crate::regularisation::modification_de_l_engagement`) : un annule-et-remplace jusqu'a la limite, ensuite la correction
-/// dans la DSN qui porte (`crate::compagnie::etat_dsn::dsn_qui_porte`).
+/// dans la DSN qui porte (`compagnie::etat_dsn::dsn_qui_porte`).
 fn la_dsn_qui_change(m: &mut crate::routes::etapes::Moteur, ctx: &Contexte, mois: &str) -> R<String> {
     use crate::regularisation::{de_mois_en_clair, DsnDeposee};
     let de = de_mois_en_clair(mois);

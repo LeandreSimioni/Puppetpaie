@@ -9,7 +9,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::compagnie::preuve::Preuve;
+use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
@@ -591,7 +591,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let complet = sortie.join(format!("DPAE_{}.txt", etiq));
         // LA DPAE DU MOIS DEJA PARTIE ne se recrit pas (regle 4) : ce qui reste a declarer se cherche, et s'ecrit, sous un
         // nom a la minute, a cote.
-        let partiel = !marque.is_empty() || crate::compagnie::pieces_ecrites::partie_le(&ctx.racine, &complet)?.is_some();
+        let partiel = !marque.is_empty() || compagnie::pieces_ecrites::partie_le(&ctx.racine, &complet)?.is_some();
         let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq)? };
         for x in candidats {
             let contenu = std::fs::read(&x).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&x, &e)))?;
@@ -635,7 +635,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         None => {
             let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
             ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, &maintenant_iso())?;
-            crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+            compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
             cible
         }
     };
@@ -691,7 +691,7 @@ mod tests_dpae_partielles {
     use super::*;
 
     fn dossier() -> PathBuf {
-        let r = crate::compagnie::racine_d_essai(false).join("sorties").join("2026-10");
+        let r = crate::horloge::racine_d_essai(false).join("sorties").join("2026-10");
         std::fs::create_dir_all(&r).unwrap();
         r
     }
@@ -750,7 +750,7 @@ pub(crate) fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcrit
         // mois change depuis, ajoute ou retire (`Moteur::etat_remplacement`, `a_envoyer`) ; sinon, c'est celle qui est
         // partie. Une DSN refusee au bilan n'est pas partie (regle 5).
         let nic = d.nic();
-        let e = crate::compagnie::etat_dsn::du_mois(ctx, le_mois, nic)?;
+        let e = compagnie::etat_dsn::du_mois(ctx, le_mois, nic)?;
         if e.deposee() && !e.refusee() && !crate::routes::etapes::Moteur::nouveau(ctx).etat_remplacement(le_mois, nic)?.a_envoyer {
             if let Some(c) = partie(ctx, d, le_mois)? {
                 return Ok((c, DitALEcriture::default()));
@@ -877,8 +877,8 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         let ligne = du_flux(Quoi::Dsn.acte());
         let nic = ligne.and_then(Ligne::etablissement);
         // Sans son mois, rien ne dit ou en est la DSN : elle attend.
-        let e = mois.map(|m| crate::compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
-        passe = e.as_ref().is_some_and(|e| e.etat == crate::compagnie::etat_dsn::Etat::Passee);
+        let e = mois.map(|m| compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
+        passe = e.as_ref().is_some_and(|e| e.etat == compagnie::etat_dsn::Etat::Passee);
         refuse = e.as_ref().is_some_and(|e| e.refusee());
     }
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.

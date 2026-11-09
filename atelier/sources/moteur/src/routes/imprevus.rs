@@ -25,7 +25,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
-use crate::compagnie::{maintenant, INTERFACE};
+use compagnie::{maintenant, INTERFACE};
 use crate::routes::SansCharge;
 use socle::ecran::Pastille;
 use declarations::signalement;
@@ -1904,7 +1904,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.replace('-', "")), remplace.is_some(), ordre);
     let cible = ctx.racine.join("sorties").join(&mois).join(&nom);
-    crate::compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
+    compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration: type_declaration.to_string(),
         ordre,
@@ -1922,7 +1922,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         .collect();
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
-    crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let preavis = declarations::fctu::libelle_preavis(&fin.type_preavis).map_err(plain)?;
     Ok(ReponseSignalementFin {
         fichier: cible.to_string_lossy().into_owned(),
@@ -2052,7 +2052,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         ordre,
     );
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
-    crate::compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
+    compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature: nature.to_string(),
         type_declaration: type_declaration.to_string(),
@@ -2063,7 +2063,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
-    crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",

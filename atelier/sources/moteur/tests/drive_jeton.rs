@@ -8,7 +8,7 @@ mod outils;
 use std::path::PathBuf;
 use std::sync::Once;
 
-use moteur::compagnie::coffre::Coffre;
+use compagnie::coffre::Coffre;
 use envois::drive::Drive;
 
 use outils::{http, Recu, Requete};

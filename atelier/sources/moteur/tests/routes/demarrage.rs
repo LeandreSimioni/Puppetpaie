@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 
 use moteur::accueil::ajouter_venant;
-use moteur::compagnie::installation::Venue;
+use compagnie::installation::Venue;
 use serde_json::{json, Value};
 
 use crate::outils::{datee, dossier_de_test, ecrire, fiche_au, lire, reussi, route};

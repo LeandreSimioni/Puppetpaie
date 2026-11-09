@@ -119,7 +119,7 @@ pub struct Reporte {
 
 impl Reporte {
     /// La cle de l'index (`echecs`) : un dossier finit par `/`.
-    pub(crate) fn cle(&self) -> String {
+    pub fn cle(&self) -> String {
         if self.dossier {
             format!("{}/", self.quoi)
         } else {
@@ -218,7 +218,7 @@ fn naif(quand: &str) -> Result<i64, ErreurGoogle> {
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
-pub(crate) fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<String>, ErreurGoogle> {
+pub fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<String>, ErreurGoogle> {
     let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
     let mut tous: Vec<(&String, i64, &str, bool)> = Vec::new();
@@ -378,7 +378,7 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 /// reste un echec, la derniere sauvegarde complete et ce qui reste en echec (`souci`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Index {
+pub struct Index {
     pub quand: String,
     pub racine_drive: String,
     pub dossiers: BTreeMap<String, String>,
@@ -392,7 +392,7 @@ pub(crate) struct Index {
 /// Ce qui reste en echec d'un passage a l'autre : depuis quand, combien de passages, la cause en clair (`cause_de`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct EchecIndexe {
+pub struct EchecIndexe {
     pub depuis: String,
     pub passages: i64,
     pub cause: String,
@@ -404,7 +404,7 @@ fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
 }
 
 /// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
-pub(crate) fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
+pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
     let p = chemin_index(racine);
     if !p.exists() {
         return Ok(None);
@@ -412,7 +412,7 @@ pub(crate) fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
     socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::nouvelle(Classe::Illisible, m))
 }
 
-pub(crate) fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
+pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
     socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, e))
 }
 

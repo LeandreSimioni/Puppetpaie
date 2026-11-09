@@ -4,7 +4,7 @@
 //! avec le logiciel). La copie de developpement (`prive-dev/`) n'est jamais proposee. Bride (`bridage.rs`), l'accueil ne
 //! montre que les fictives. Une compagnie est une copie, une fictive (livree ou ajoutee) d'apres son marqueur ; ajoutee,
 //! elle dit le jour et le chemin de son ajout (`creation.json`). En ajouter une, en supprimer une, garder au deblocage
-//! celles qu'on a ajoutees en demo : `crate::accueil`.
+//! celles qu'on a ajoutees en demo : `moteur::accueil`.
 
 use std::path::{Path, PathBuf};
 
@@ -27,10 +27,10 @@ const AFFICHAGE: &str = "config/affichage.json";
 const DOSSIER_ORIGINE: &str = ".origine";
 /// Ce qui appartient au poste et survit a une remise a zero.
 const PROPRES_AU_POSTE: [&str; 4] =
-    [crate::compagnie::incidents::DIAGNOSTIC, crate::compagnie::problemes::SIGNALEMENTS, crate::compagnie::incidents::INCIDENTS, JOURNAL_INTERFACE];
+    [crate::incidents::DIAGNOSTIC, crate::problemes::SIGNALEMENTS, crate::incidents::INCIDENTS, JOURNAL_INTERFACE];
 
 /// Le dossier qui porte `p`. La racine d'un disque n'a pas de dossier au-dessus d'elle : elle se porte elle-meme.
-pub(crate) fn dessus(p: &Path) -> PathBuf {
+pub fn dessus(p: &Path) -> PathBuf {
     match p.parent() {
         Some(d) => d.to_path_buf(),
         None => p.to_path_buf(),
@@ -294,7 +294,7 @@ pub struct Compagnie {
 const NATURES_DITES: [&str; 3] = [" (fictive)", " (démonstration)", " (demonstration)"];
 
 /// La tuile de la compagnie `racine` (`nom_et_lieu`).
-pub(crate) fn entree(id: String, racine: &Path, reelle: bool) -> Result<Compagnie, String> {
+pub fn entree(id: String, racine: &Path, reelle: bool) -> Result<Compagnie, String> {
     let (mut n, lieu) = nom_et_lieu(racine)?;
     if !reelle {
         // Le nom d'une fictive porte parfois sa nature, entre parentheses : la tuile la dit deja.
@@ -330,7 +330,7 @@ fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Le nom du dossier d'une compagnie.
-pub(crate) fn nom_dossier(p: &Path) -> Result<String, String> {
+pub fn nom_dossier(p: &Path) -> Result<String, String> {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
         socle::echec::avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
     })
@@ -340,7 +340,7 @@ pub(crate) fn nom_dossier(p: &Path) -> Result<String, String> {
 /// l'ordre des tuiles. L'administrateur (`administrateur.rs`) lit celles de l'installation qu'on lui donne.
 pub fn liste_de(b: &Path) -> Result<Vec<Compagnie>, String> {
     let mut out = Vec::new();
-    if !crate::compagnie::bridage::est_bride_de(b) {
+    if !crate::bridage::est_bride_de(b) {
         let reel = if b == base() { dossier_reel() } else { b.join("prive") };
         if reel.join(socle::fichiers::CONFIG).is_dir() {
             out.push(entree("reelle".into(), &reel, true)?);
@@ -392,7 +392,7 @@ pub fn poser_couleur(inst: &Path, id: &str, valeur: &str) -> Result<String, Stri
     Ok(v)
 }
 
-pub(crate) fn nom_de_dossier(nom: &str) -> String {
+pub fn nom_de_dossier(nom: &str) -> String {
     let mut s = String::new();
     for c in nom.to_lowercase().chars() {
         let pli = match c {
@@ -438,10 +438,10 @@ pub const FICHIER_CREATION: &str = "creation.json";
 /// `config/creation.json` : le jour ou la compagnie a ete ajoutee, et par quel chemin du « + ».
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Creation {
-    pub(crate) le: socle::date::Jour,
-    pub(crate) venue: Venue,
-    pub(crate) quoi: String,
+pub struct Creation {
+    pub le: socle::date::Jour,
+    pub venue: Venue,
+    pub quoi: String,
 }
 
 fn creation(racine: &Path) -> Result<Option<Creation>, String> {

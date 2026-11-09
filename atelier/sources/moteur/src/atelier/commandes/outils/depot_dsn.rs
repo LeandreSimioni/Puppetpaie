@@ -9,7 +9,7 @@
 use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use crate::commandes::analyse::{Args, Opt, Pos, Spec};
 use crate::commandes::Cadre;
-use crate::compagnie::preuve::Preuve;
+use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use socle::echec::Echec;
 

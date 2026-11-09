@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use moteur::accueil::ajouter_venant;
-use moteur::compagnie::installation::Venue;
+use compagnie::installation::Venue;
 use serde_json::{json, Value};
 
 use crate::bulletins_fictifs::{a_heures, a_repetitions, page_a, page_aem, page_certificat, pdf, Aem, Certificat, A};
@@ -143,11 +143,11 @@ fn l_apercu_annonce_ce_que_l_ecriture_trouvera() {
 
     // LES ECARTS DE CALCUL DE L'IMPORT PARTENT SANS RIEN QUI DESIGNE UNE PERSONNE : ni nom, prenom, NIR, naissance ou
     // adresse des fiches, ni brut, net ou cout d'une paie importee, dans ce qui partirait chez l'editeur.
-    let partiraient: Vec<String> = moteur::compagnie::incidents::lire(&racine, None, false)
+    let partiraient: Vec<String> = compagnie::incidents::lire(&racine, None, false)
         .unwrap()
         .iter()
         .filter(|l| l.ou == moteur::import::ecarts::OU)
-        .map(|l| socle::ecriture::json_en_ligne(&moteur::compagnie::incidents::pour_l_editeur(&racine, l)))
+        .map(|l| socle::ecriture::json_en_ligne(&compagnie::incidents::pour_l_editeur(&racine, l)))
         .collect();
     assert!(!partiraient.is_empty(), "l'import n'a rien rapporte de ses ecarts");
     let mut interdits: Vec<String> = Vec::new();

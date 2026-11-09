@@ -4,6 +4,9 @@
 //! et la restauration, la mise a jour, le bridage, le filet, les incidents et les signalements, le journal des pieces
 //! ecrites, les clients de la consultation, les organismes et les taux de PAS recus.
 
+#[macro_use]
+extern crate socle;
+
 pub mod amorcage_demande;
 pub mod auteur;
 pub mod avant;
@@ -33,10 +36,10 @@ pub mod taux_pas;
 
 /// QUI ECRIT : ce que les routes et les gestes de la compagnie inscrivent, la fenetre comme la ligne de commande
 /// (`moteur route`, qui sert les memes).
-pub(crate) const INTERFACE: &str = "interface";
+pub const INTERFACE: &str = "interface";
 
 /// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
-pub(crate) fn maintenant() -> String {
+pub fn maintenant() -> String {
     socle::paris::maintenant()[..16].replacen('T', " ", 1)
 }
 

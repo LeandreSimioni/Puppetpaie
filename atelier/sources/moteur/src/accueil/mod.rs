@@ -7,9 +7,9 @@ pub mod suppression;
 
 use std::path::Path;
 
-use crate::compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, Creation, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, Creation, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
 
-impl crate::routes::enveloppe::Dite for crate::compagnie::maj::PortableComplete {
+impl crate::routes::enveloppe::Dite for compagnie::maj::PortableComplete {
     fn phrase(&self) -> &str {
         &self.phrase
     }
@@ -25,7 +25,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     if nom.chars().count() < 2 {
         return Err("Le nom de la compagnie, s'il vous plait.".into());
     }
-    let bride = crate::compagnie::bridage::est_bride_de(inst);
+    let bride = compagnie::bridage::est_bride_de(inst);
     let (parent, racine_nom) = if bride {
         (inst.join(DOSSIER_FICTIVES), format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))
     } else {

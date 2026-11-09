@@ -42,7 +42,7 @@ pub fn pas_redirige(cadre: &super::Cadre, organisme: Organisme) -> bool {
         Organisme::Dpae => envois::redirection::VARIABLE_DPAE,
         Organisme::Google => envois::redirection::VARIABLE_GOOGLE,
     };
-    envois::redirection::base(variable).is_none() && !matches!(crate::compagnie::bridage::branchement(&cadre.racine), Ok(b) if b.joue())
+    envois::redirection::base(variable).is_none() && !matches!(compagnie::bridage::branchement(&cadre.racine), Ok(b) if b.joue())
 }
 
 #[cfg(not(feature = "atelier"))]
