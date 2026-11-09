@@ -9,8 +9,6 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
-
 use crate::compagnie::depot_acte::{self, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
@@ -19,7 +17,7 @@ use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use envois::etats;
 use envois::releve_retours;
-use crate::valeur::{en_texte, vrai};
+use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::dossier_du_code;
 use socle::mois::{Graphie, Mois};
@@ -28,7 +26,8 @@ use envois::depot_acte::DepotFait;
 use envois::etats::Repetition;
 use envois::ligne::Ligne;
 use crate::apercu_dsn::ApercuDsn;
-use super::{en_json, lire_charge, Encart, Pastille};
+use super::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use super::{Encart, Pastille};
 use crate::routes::catalogue::{Ecran, Place};
 
 // LA DESIGNATION d'une declaration (`designee`) : la DSN ou la DPAE d'un mois, ou un signalement ecrit.
@@ -145,13 +144,13 @@ pub(crate) struct EmbaucheDesignee {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Designation {
     pub(crate) quoi: Quoi,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mois: Option<Mois>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) etablissement: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) fichier: Option<String>,
 }
 
@@ -166,55 +165,63 @@ impl Designation {
         Designation { quoi: Quoi::Dsn, mois: None, etablissement: None, engagements: None, fichier: Some(fichier.into()) }
     }
 
-    /// L'etablissement nomme (son NIC), en valeur : `Null` sans lui.
-    fn nic(&self) -> Value {
-        self.etablissement.as_deref().filter(|n| !n.is_empty()).map_or(Value::Null, |n| json!(n))
+    /// L'etablissement nomme (son NIC), s'il l'est.
+    fn nic(&self) -> Option<&str> {
+        self.etablissement.as_deref()
     }
 }
 
-/// La charge de `deposer` : la designation, et ce que le depot demande (le reel et son mot de passe, l'annule-et-remplace
-/// voulu, le motif d'un reel sans test).
+/// La charge de `deposer` : la designation, et ce que le depot demande (le reel, l'annule-et-remplace voulu, le motif
+/// d'un reel sans test) ; absents, ils ne sont pas demandes. Le mot de passe du logiciel est a l'enveloppe.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeDeposer {
     quoi: Quoi,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<Mois>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     etablissement: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     engagements: Option<Vec<EmbaucheDesignee>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
-    #[serde(default)]
-    reel: bool,
-    #[serde(default)]
-    forcer: bool,
-    #[serde(default)]
-    contournement: String,
-    /// Le mot de passe du logiciel, tape pour l'acte (`routes::servir` le retient le temps de la route).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reel: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forcer: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contournement: Option<String>,
+}
+
+/// Le depot d'une declaration tel qu'un programme le demande a la route `deposer` : sa charge, et le mot de passe du
+/// logiciel tape pour l'acte, a sa cle de l'enveloppe.
+#[derive(Debug, Serialize)]
+pub(crate) struct DepotDemande {
+    #[serde(flatten)]
+    charge: ChargeDeposer,
+    #[serde(skip_serializing_if = "Option::is_none")]
     motdepasse: Option<String>,
 }
 
 impl ChargeDeposer {
     /// Le depot de la declaration `d`, reel ou de test, sous le mot de passe tape.
-    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<String>) -> ChargeDeposer {
+    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<String>) -> DepotDemande {
         let Designation { quoi, mois, etablissement, engagements, fichier } = d;
-        ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer: false, contournement: String::new(), motdepasse }
+        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel: Some(reel), forcer: None, contournement: None }, motdepasse }
     }
 }
 
-/// La charge de `suivre-depot` : ce qui est parti (`flux`, tel que `deposer` le rend) et son mois.
+/// La charge de `suivre-depot` : ce qui est parti (`flux`, tel que `deposer` le rend ; absent, tout flux) et son mois.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeSuivre {
     quoi: Quoi,
-    #[serde(default)]
-    flux: String,
-    #[serde(default)]
+    flux: Option<String>,
     mois: Option<Mois>,
 }
+
+/// Le flux que `envois::releve_retours` lit comme « tout flux ».
+const TOUT_FLUX: &str = "";
 
 /// CE QUE LA BOITE DU DEPOT DIT, autour de ce que le fichier declare (`A`, l'apercu d'une DSN ou d'une DPAE) : sa
 /// phrase, son titre, ses encarts, et les phrases pour `moteur route --texte`.
@@ -270,13 +277,41 @@ pub(crate) struct BilanDuTest {
 }
 
 /// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
-        Route::DepotApercu => en_json(depot_apercu(ctx, lire_charge(charge)?)?),
-        Route::Deposer => en_json(deposer(ctx, lire_charge(charge)?)?),
-        Route::SuivreDepot => en_json(suivre_depot(ctx, lire_charge(charge)?)?),
-        Route::BilanRepetition => en_json(bilan_repetition(ctx, lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let ctx = porte.ctx;
+    match porte.route {
+        Route::DepotApercu => en_json(depot_apercu(ctx, charge.lire()?)?),
+        Route::Deposer => en_json(deposer(ctx, charge.lire()?, charge.mot_de_passe())?),
+        Route::SuivreDepot => en_json(suivre_depot(ctx, charge.lire()?)?),
+        Route::BilanRepetition => en_json(bilan_repetition(ctx, charge.lire()?)?),
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
+    }
+}
+
+impl Dite for DepotApercu {
+    fn phrase(&self) -> &str {
+        match self {
+            DepotApercu::Dsn(d) => &d.phrase,
+            DepotApercu::Dpae(d) => &d.phrase,
+        }
+    }
+}
+
+impl Dite for Deposee {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Suivi {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for BilanDuTest {
+    fn phrase(&self) -> &str {
+        &self.repetition.phrase
     }
 }
 
@@ -382,12 +417,17 @@ fn ecrire_texte(chemin: &Path, texte: &str) -> R<()> {
 // ------------------------------------------------------------------ dpae
 
 /// Les noms `DPAE_<etiquette>_AAAAMMJJ-HHMM.txt` d'un dossier, du plus grand au plus petit
-/// (le plus récent d'abord).
-fn fichiers_partiels(dossier: &Path, etiq: &str) -> Vec<PathBuf> {
+/// (le plus récent d'abord). Un dossier absent n'en a aucun ; un dossier qui ne se lit pas se refuse.
+fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
     let debut = format!("DPAE_{}_", etiq);
-    let Ok(lecture) = std::fs::read_dir(dossier) else { return Vec::new() };
+    let lecture = match std::fs::read_dir(dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(erreur_io(&e, dossier)),
+    };
     let mut out = Vec::new();
-    for e in lecture.flatten() {
+    for e in lecture {
+        let e = e.map_err(|x| erreur_io(&x, dossier))?;
         let Some(nom) = e.file_name().to_str().map(str::to_string) else { continue };
         let Some(reste) = nom.strip_prefix(&debut) else { continue };
         let Some(reste) = reste.strip_suffix(".txt") else { continue };
@@ -401,7 +441,7 @@ fn fichiers_partiels(dossier: &Path, etiq: &str) -> Vec<PathBuf> {
     }
     out.sort();
     out.reverse();
-    out
+    Ok(out)
 }
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel ecrit maintenant.
@@ -432,7 +472,12 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<String> {
     }
     let base = declarations::urssaf::base().map_err(plain)?;
     let territoire = ent.code_postal.portee().and_then(|cp| base.du_code_postal(cp));
-    Ok(territoire.unwrap_or_else(|| "117".to_string()))
+    territoire.ok_or_else(|| {
+        erreur(
+            Classe::SaisieIncomplete,
+            socle::echec::cle("L'Urssaf de la compagnie ne se lit pas dans son code postal : poser son code Urssaf dans la fiche Entreprise.", "code_urssaf"),
+        )
+    })
 }
 
 /// `Embauche` de la DPAE, lue d'une paie sans montants.
@@ -466,7 +511,8 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     };
     let etiq = le_mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(&mois);
-    let cle_de = |p: &Paie| -> (String, String) { (p.salarie.id.to_string(), p.engagement.numero.as_deref().unwrap_or_default().to_string()) };
+    // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
+    let cle_de = |p: &Paie| -> Option<(String, String)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.to_string(), n.to_string())) };
 
     // LES DPAE A FAIRE DU MOIS (`Moteur::embauches_a_declarer`, la seule liste) : une embauche deja partie en DPAE
     // reelle, ou un contrat en cours depuis un mois precedent (sa DPAE part avec son premier mois), n'y est pas.
@@ -475,7 +521,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         .into_iter()
         .map(|e| (e.salarie, e.numero.to_string()))
         .collect();
-    let mut retenues: Vec<&Paie> = paies.iter().filter(|p| a_faire.contains(&cle_de(p))).collect();
+    let mut retenues: Vec<&Paie> = paies.iter().filter(|p| cle_de(p).is_some_and(|k| a_faire.contains(&k))).collect();
     let mut marque = String::new();
     if let Some(sel) = selection {
         let voulues: BTreeSet<(String, String)> = sel.iter().map(|e| (e.salarie.clone(), e.numero.clone())).collect();
@@ -490,7 +536,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
             );
             return if tous { Ok(Dpae::Rien(phrase)) } else { Err(refus(phrase)) };
         }
-        retenues.retain(|p| voulues.contains(&cle_de(p)));
+        retenues.retain(|p| cle_de(p).is_some_and(|k| voulues.contains(&k)));
         marque = marque_a_la_minute();
     }
     if retenues.is_empty() {
@@ -500,20 +546,18 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     // RETOURS WINDOWS, D : DEUX LIGNES IDENTIQUES d'une saisie declareraient deux fois la meme embauche : la DPAE ne se
     // produit pas, le refus dit lesquelles (salarie, jour) et qu'il faut corriger la saisie. Ni le numero de contrat ni
     // la validation ne distinguent deux lignes.
-    let brutes: Vec<Value> = data.engagements.iter().map(socle::ecriture::en_valeur).collect();
-    if let Some(brutes) = Some(&brutes).filter(|b| b.len() == paies.len()) {
-        let sans_numero = |v: &Value| -> Value {
-            match v {
-                Value::Object(o) => Value::Object(o.iter().filter(|(k, _)| *k != "numero" && *k != "valide").map(|(k, x)| (k.clone(), x.clone())).collect()),
-                autre => autre.clone(),
-            }
-        };
+    // Chaque carte sans son numero ni sa validation : deux cartes qui ne different que par eux sont la meme embauche.
+    let sans_numero: Vec<engagement::saisie::Carte> = data
+        .engagements
+        .iter()
+        .map(|c| engagement::saisie::Carte { numero: None, valide: None, ..c.clone() })
+        .collect();
+    if sans_numero.len() == paies.len() {
         let retenue = |i: usize| retenues.iter().any(|r| std::ptr::eq(*r, &paies[i]));
         let mut doubles: Vec<String> = Vec::new();
         for i in 1..paies.len() {
-            if retenue(i) && (0..i).any(|j| retenue(j) && sans_numero(&brutes[i]) == sans_numero(&brutes[j])) {
-                let (c, d) = (cle_de(&paies[i]).0, paies[i].engagement.debut.iso());
-                let texte = format!("{} au {}", c, d);
+            if retenue(i) && (0..i).any(|j| retenue(j) && sans_numero[i] == sans_numero[j]) {
+                let texte = format!("{} au {}", paies[i].salarie.id, paies[i].engagement.debut.iso());
                 if !doubles.contains(&texte) {
                     doubles.push(texte);
                 }
@@ -548,7 +592,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         // LA DPAE DU MOIS DEJA PARTIE ne se recrit pas (regle 4) : ce qui reste a declarer se cherche, et s'ecrit, sous un
         // nom a la minute, a cote.
         let partiel = !marque.is_empty() || crate::compagnie::depart::partie_le(&ctx.racine, &complet)?.is_some();
-        let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq) };
+        let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq)? };
         for x in candidats {
             let contenu = std::fs::read(&x).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&x, &e)))?;
             if declarations::dpae::meme_declaration(&latin1(&contenu), &voulu) {
@@ -558,15 +602,23 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let mut repetes = Vec::new();
         for x in &pareils {
             let empreinte = envois::journal::empreinte_fichier(x).map_err(plain)?;
-            let nom = x.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let nom = socle::fichiers::nom_du(x);
             if etats::repetition(&journal.lignes, Quoi::Dpae.acte(), &empreinte, &nom).conforme.is_some() {
                 repetes.push(x.clone());
             }
         }
         if !pareils.is_empty() {
-            let choisi = repetes.first().unwrap_or(&pareils[0]).clone();
-            let stem = choisi.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            marque = stem.chars().skip(format!("DPAE_{}", etiq).chars().count()).collect();
+            // Celle qui a son test conforme, sinon la plus recente.
+            let choisi = match repetes.first() {
+                Some(r) => r.clone(),
+                None => pareils[0].clone(),
+            };
+            let nom = socle::fichiers::nom_du(&choisi);
+            marque = nom
+                .strip_prefix(&format!("DPAE_{}", etiq))
+                .and_then(|r| r.strip_suffix(".txt"))
+                .ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::a_la_cle("Défaut du logiciel : une DPAE du mois ne porte pas son nom.", "fichier", &nom)))?
+                .to_string();
             f = Some(choisi);
         } else if partiel && marque.is_empty() {
             marque = marque_a_la_minute();
@@ -698,8 +750,8 @@ pub(crate) fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcrit
         // mois change depuis, ajoute ou retire (`Moteur::etat_remplacement`, `a_envoyer`) ; sinon, c'est celle qui est
         // partie. Une DSN refusee au bilan n'est pas partie (regle 5).
         let nic = d.nic();
-        let e = crate::compagnie::etat_dsn::du_mois(ctx, le_mois, nic.as_str())?;
-        if e.deposee() && !e.refusee() && !crate::routes::etapes::Moteur::nouveau(ctx).etat_remplacement(le_mois, nic.as_str())?.a_envoyer {
+        let e = crate::compagnie::etat_dsn::du_mois(ctx, le_mois, nic)?;
+        if e.deposee() && !e.refusee() && !crate::routes::etapes::Moteur::nouveau(ctx).etat_remplacement(le_mois, nic)?.a_envoyer {
             if let Some(c) = partie(ctx, d, le_mois)? {
                 return Ok((c, DitALEcriture::default()));
             }
@@ -731,24 +783,35 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         None => principal,
     };
     let voulues: Option<BTreeSet<(String, String)>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
+    let voulues: Option<BTreeSet<(String, Option<String>)>> = voulues.map(|v| v.into_iter().map(|(s, n)| (s, Some(n))).collect());
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
-        Ligne::Dsn(_) => l.fichier().unwrap_or("").starts_with("DSN_") && l.etablissement().unwrap_or(principal) == nic,
-        Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.to_string(), x.numero.as_deref().unwrap_or("").to_string())).collect::<BTreeSet<_>>() == *v),
+        // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
+        Ligne::Dsn(_) => {
+            let de = match l.etablissement() {
+                Some(e) => e,
+                None => principal,
+            };
+            l.fichier().is_some_and(|f| f.starts_with("DSN_")) && de == nic
+        }
+        Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.to_string(), x.numero.as_deref().map(str::to_string))).collect::<BTreeSet<_>>() == *v),
         _ => false,
     });
-    Ok(ligne.map(|l| ctx.racine.join("sorties").join(mois.to_string()).join(l.fichier().unwrap_or("")).to_string_lossy().into_owned()))
+    Ok(ligne.and_then(Ligne::fichier).map(|f| ctx.racine.join("sorties").join(mois.to_string()).join(f).to_string_lossy().into_owned()))
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le
 /// corps du POST, il n'est ni journalise ni renvoye. `contournement` : le motif ECRIT d'un depot reel sans
 /// repetition. `forcer` : l'annule-et-remplace voulu, apres l'avertissement que la page affiche sur
 /// `DsnDejaDeposee` -- jamais par defaut.
-fn deposer(ctx: &Contexte, c: ChargeDeposer) -> R<Deposee> {
-    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer, contournement, motdepasse } = c;
+fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Deposee> {
+    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer, contournement } = c;
+    let (reel, forcer) = (reel == Some(true), forcer == Some(true));
     let d = Designation { quoi, mois, etablissement, engagements, fichier };
     let (fichier, _) = designee(ctx, &d)?;
-    let preuve = Preuve::du_mot_de_passe(motdepasse);
-    let contournement = contournement.trim();
+    let preuve = Preuve::du_mot_de_passe(motdepasse.map(String::from));
+    // Le motif ecrit d'un reel sans test ; aucun motif, aucun contournement (`depot_acte::exiger_repetition`).
+    let contournement: String = contournement.iter().map(|c| c.trim()).collect();
+    let contournement = contournement.as_str();
     let mut fait = match quoi {
         Quoi::Dsn => depot_acte::deposer_dsn(ctx, &fichier, reel, Some(&preuve), "interface", forcer, contournement)?,
         Quoi::Dpae => depot_acte::deposer_dpae(ctx, &fichier, reel, Some(&preuve), "interface", false, contournement)?,
@@ -759,7 +822,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer) -> R<Deposee> {
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
-        suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
+        suivre_depot(ctx, ChargeSuivre { quoi, flux: Some(fait.flux.clone()), mois: Some(fait.mois) })?.phrase
     } else {
         "Dépôt réel effectué — ses retours sont attendus.".to_string()
     };
@@ -788,7 +851,11 @@ fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee();
     let releve = if dpae {
-        crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, &flux)
+        let de = match &flux {
+            Some(f) => f.as_str(),
+            None => TOUT_FLUX,
+        };
+        crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, de)
     } else {
         crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, "")
     };
@@ -797,19 +864,21 @@ fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         Err(e) => e.phrase(),
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    let du_flux = |q: envois::journal::Acte| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == flux);
+    // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
+    let du_flux = |q: envois::journal::Acte| flux.as_deref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == f));
     let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);
         // Une embauche que l'etat ne connait pas (une ligne non acceptee) n'est ni passee ni refusee.
         let embauches: Vec<Option<&etats::EtatEmbauche>> = du_flux(Quoi::Dpae.acte())
             .and_then(Ligne::dpae)
-            .map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.to_string(), x.numero.as_deref().map(str::to_string)))).collect())
-            .unwrap_or_default();
+            .into_iter()
+            .flat_map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.to_string(), x.numero.as_deref().map(str::to_string)))))
+            .collect();
         passe = !embauches.is_empty() && embauches.iter().all(|x| x.is_some_and(|x| x.passee));
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
     } else {
-        let ligne = if flux.is_empty() { None } else { du_flux(Quoi::Dsn.acte()) };
+        let ligne = du_flux(Quoi::Dsn.acte());
         let nic = ligne.and_then(Ligne::etablissement);
         // Sans son mois, rien ne dit ou en est la DSN : elle attend.
         let e = mois.map(|m| crate::compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
@@ -839,7 +908,14 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     if repetition.etat == etats::EtatDuTest::EnTest {
         let (debut, fin) = releve_retours::derniere_journee();
         let releve = match d.quoi {
-            Quoi::Dpae => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, repetition.flux_conforme().as_deref().unwrap_or_default()),
+            Quoi::Dpae => {
+                let flux = repetition.flux_conforme();
+                let de = match &flux {
+                    Some(f) => f.as_str(),
+                    None => TOUT_FLUX,
+                };
+                crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, de)
+            }
             Quoi::Dsn => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, ""),
         };
         incident = match releve {
@@ -883,7 +959,10 @@ pub(crate) fn nom_du_chemin(t: &str) -> String {
     if n == "." || n.chars().all(|c| c == '/') {
         return String::new();
     }
-    n.rsplit('/').next().unwrap_or("").to_string()
+    match n.rsplit_once('/') {
+        Some((_, nom)) => nom.to_string(),
+        None => n,
+    }
 }
 
 fn existe(t: &str) -> bool {
@@ -947,26 +1026,46 @@ fn chiffre_du_latin1(c: char) -> bool {
     c.is_ascii_digit() || matches!(c, '\u{b2}' | '\u{b3}' | '\u{b9}')
 }
 
-/// Un jour JJ/MM/AAAA en ISO.
-fn iso_depuis_jjmmaaaa(v: &str) -> String {
-    let t: Vec<char> = v.trim_matches(socle::texte::blanc).chars().collect();
+/// Un jour `JJMMAAAA` du fichier DPAE ; `None` : ce n'est pas un jour.
+fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
+    let t: Vec<char> = v.chars().collect();
     if t.len() != 8 || !t.iter().all(|c| chiffre_du_latin1(*c)) {
-        return String::new();
+        return None;
     }
     let s = |a: usize, b: usize| t[a..b].iter().collect::<String>();
-    format!("{}-{}-{}", s(4, 8), s(2, 4), s(0, 2))
+    socle::date::jour_iso(&format!("{}-{}-{}", s(4, 8), s(2, 4), s(0, 2)))
+}
+
+/// La zone `k` d'un enregistrement DPAE relu (`declarations::dpae::relire`), sans ses blancs ; a blanc, elle est vide.
+fn zone<'a>(e: &'a [(&'static str, String)], k: &str) -> R<Option<&'a str>> {
+    let v = e
+        .iter()
+        .find(|(n, _)| *n == k)
+        .map(|(_, v)| v.trim_matches(socle::texte::blanc))
+        .ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::a_la_cle("Défaut du logiciel : une zone de la DPAE relue manque.", k, "")))?;
+    Ok(Some(v).filter(|v| !v.is_empty()))
+}
+
+/// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
+struct IdentiteDeFiche {
+    cle: String,
+    nir: Option<String>,
+    nom: Option<String>,
+    prenom: Option<String>,
+    naissance: Option<String>,
 }
 
 /// UNE EMBAUCHE QUE LE FICHIER DPAE DECLARE : le salarie (`?` s'il n'est pas de la configuration), son nom, son contrat
 /// (numero, bornes, nature), si elle est deja declaree, et sa pastille.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EmbaucheDuFichier {
-    pub(crate) salarie: String,
+    /// La fiche que l'embauche designe ; `None` : aucune fiche ne porte son identite.
+    pub(crate) salarie: Option<String>,
     pub(crate) nom: String,
     pub(crate) debut: String,
     pub(crate) numero: Option<String>,
-    pub(crate) fin: String,
-    pub(crate) type_contrat: String,
+    pub(crate) fin: Option<String>,
+    pub(crate) type_contrat: Option<String>,
     pub(crate) deja_declaree: bool,
     pastille: Pastille,
 }
@@ -997,23 +1096,19 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let m = crate::routes::etapes::Moteur::nouveau(ctx);
     let lignes_journal = m.lignes()?;
     let faites = etats::embauches_par_depot(&lignes_journal);
-    let mut par_nir: HashMap<String, (&String, &Value)> = HashMap::new();
-    // L'identite d'une embauche se compare aux cases de la fiche par leur nom : en JSON.
-    let vues: Vec<(String, Value)> = ctx.salaries.iter().map(|(k, f)| (k.to_string(), socle::ecriture::en_valeur(&f.champs))).collect();
-    for (cle, s) in &vues {
-        let nir = crate::valeur::get(s, "nir")?;
-        if !vrai(nir) {
-            continue;
-        }
-        match nir {
-            Value::Array(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("list"))),
-            Value::Object(_) => return Err(erreur(Classe::MalFormee, socle::fichiers::pas_une_cle("dict"))),
-            Value::String(t) => {
-                par_nir.insert(t.clone(), (cle, s));
-            }
-            _ => {}
-        }
-    }
+    // L'IDENTITE DE CHAQUE FICHE, telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et
+    // sa date de naissance (`JJMMAAAA`).
+    let fiches: Vec<IdentiteDeFiche> = ctx
+        .salaries
+        .iter()
+        .map(|(k, f)| IdentiteDeFiche {
+            cle: k.to_string(),
+            nir: f.champs.nir.remplie().map(String::from),
+            nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
+            prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
+            naissance: f.champs.date_naissance.dite().map(|j| j.jjmmaaaa()),
+        })
+        .collect();
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
     // qui relie la DPAE, partie ou refusee, a son engagement.
     let departs = m.departs()?;
@@ -1022,18 +1117,17 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let mut natures: HashMap<(String, String), String> = HashMap::new();
     let mut mois_vus: Vec<String> = Vec::new();
     let mut lignes = Vec::new();
+    let mut jours: Vec<Jour> = Vec::new();
     for e in &enrs {
-        let champ = |k: &str| e.iter().find(|(n, _)| *n == k).map(|(_, v)| v.as_str()).unwrap_or("");
-        let m_e: String = iso_depuis_jjmmaaaa(champ("date_embauche")).chars().take(7).collect();
-        if m_e.len() == 7 && !mois_vus.contains(&m_e) {
+        let Some(j) = zone(e, "date_embauche")?.and_then(jour_jjmmaaaa) else { continue };
+        let m_e = j.mois_civil().to_string();
+        if !mois_vus.contains(&m_e) {
             for etat in engagement::etats::tels_qu_ecrits(ctx, &m_e, &departs).map_err(Echec::from)? {
                 let Some(v) = etat.valide() else { continue };
                 let brut = &*v.objet().brut;
                 let Some(cle) = &brut.saisie.carte.salarie else { continue };
-                let id = (cle.to_string(), engagement::debut_brut(&brut));
-                if let Ok(nat) = brut.saisie.carte.nature_lue() {
-                    natures.insert(id.clone(), nat.libelle.clone());
-                }
+                let id = (cle.to_string(), engagement::debut_brut(brut));
+                natures.insert(id.clone(), brut.saisie.carte.nature_lue().map_err(Echec::from)?.libelle.clone());
                 if let Some(n) = brut.saisie.carte.numero.as_deref() {
                     numeros.insert(id, n.to_string());
                 }
@@ -1042,46 +1136,48 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         }
     }
     for e in &enrs {
-        let champ = |k: &str| e.iter().find(|(n, _)| *n == k).map(|(_, v)| v.as_str()).unwrap_or("");
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let identite = |s: &Value| {
-            let t = |k: &str| s.get(k).map(en_texte).unwrap_or_default().trim().to_uppercase();
-            let n = s.get("date_naissance").and_then(Value::as_str).and_then(|d| socle::date::Jour::lire(d).ok()).map(|j| j.jjmmaaaa());
-            t("nom") == champ("nom").trim() && t("prenom") == champ("prenom").trim() && n.as_deref() == Some(champ("date_naissance"))
-        };
-        let trouve = par_nir.get(champ("nir").trim()).copied().or_else(|| {
-            if !champ("nir").trim().is_empty() {
-                return None;
+        let trouve: Option<&IdentiteDeFiche> = match zone(e, "nir")? {
+            Some(nir) => fiches.iter().find(|f| f.nir.as_deref() == Some(nir)),
+            None => {
+                let (nom, prenom, naissance) = (zone(e, "nom")?, zone(e, "prenom")?, zone(e, "date_naissance")?);
+                fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.as_deref() == naissance)
             }
-            vues.iter().find(|(_, s)| identite(s)).map(|(k, s)| (k, s))
-        });
-        let cle = trouve.map(|(c, _)| c);
-        let debut = iso_depuis_jjmmaaaa(champ("date_embauche"));
-        let nom = cle.and_then(|c| ctx.salaries.get(c.as_str())).and_then(|f| f.champs.nomme()).unwrap_or_else(|| "salarie inconnu de la configuration".to_string());
-        let type_brut = champ("type_contrat").trim_matches(socle::texte::blanc);
-        let type_contrat = cle.and_then(|c| natures.get(&(c.clone(), debut.clone()))).cloned().unwrap_or_else(|| {
-            let t = droit::natures::TYPES_CONTRAT_DPAE.iter().find(|(k, _)| *k == type_brut);
-            t.map_or_else(|| format!("type {}", type_brut), |(_, l)| l.to_string())
-        });
-        let numero = cle.and_then(|c| numeros.get(&(c.clone(), debut.clone()))).cloned();
-        let deja = match &numero {
-            Some(n) => cle.is_some_and(|c| faites.contains_key(&(c.clone(), Some(n.clone())))),
-            None => false,
         };
+        let debut = zone(e, "date_embauche")?
+            .and_then(jour_jjmmaaaa)
+            .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
+        jours.push(debut);
+        let id = trouve.map(|f| (f.cle.clone(), debut.iso()));
+        let nom = match trouve.and_then(|f| ctx.salaries.get(f.cle.as_str())).and_then(|f| f.champs.nomme()) {
+            Some(n) => n,
+            None => "salarié inconnu de la configuration".to_string(),
+        };
+        // La nature de l'engagement, par son nom court ; sans engagement, le type que le fichier ecrit (Format 120).
+        let type_contrat = match (id.as_ref().and_then(|k| natures.get(k)), zone(e, "type_contrat")?) {
+            (Some(n), _) => Some(n.clone()),
+            (None, Some(t)) => Some(match droit::natures::TYPES_CONTRAT_DPAE.iter().find(|(k, _)| *k == t) {
+                Some((_, l)) => l.to_string(),
+                None => format!("type {}", t),
+            }),
+            (None, None) => None,
+        };
+        let numero = id.as_ref().and_then(|k| numeros.get(k)).cloned();
+        let deja = trouve.zip(numero.as_ref()).is_some_and(|(f, n)| faites.contains_key(&(f.cle.clone(), Some(n.clone()))));
         lignes.push(EmbaucheDuFichier {
-            salarie: cle.map_or("?", |c| c.as_str()).to_string(),
+            salarie: trouve.map(|f| f.cle.clone()),
             nom,
-            debut,
+            debut: debut.iso(),
             numero,
-            fin: iso_depuis_jjmmaaaa(champ("date_fin")),
+            fin: zone(e, "date_fin")?.and_then(jour_jjmmaaaa).map(|j| j.iso()),
             type_contrat,
             deja_declaree: deja,
             // Deja declaree, a voir (elle partirait deux fois) ; a declarer, une information.
             pastille: if deja { Pastille::de("a_faire", "déjà déclarée") } else { Pastille::de("information", "à déclarer") },
         });
     }
-    let mois = lignes.iter().filter_map(|l| l.debut.get(..7)).filter_map(|m| Mois::lire(m).ok()).min();
+    let mois = jours.iter().map(|j| j.mois_civil()).min();
     let empreinte = envois::journal::empreinte(&contenu);
     let nom_fichier = nom_du_chemin(&chemin);
     let mut deja_depose = etats::deja_depose(&lignes_journal, Quoi::Dpae.acte(), &empreinte);
@@ -1112,28 +1208,27 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
         l.into_iter().filter(|x| if vus.contains(x) { false } else { vus.push(x.clone()); true }).collect::<Vec<_>>()
     };
     let (avertissements, informations) = (une_fois(dit.avertissements), une_fois(dit.informations));
-    let ecrite = dit.phrase.unwrap_or_default();
+    let ecrite = dit.phrase;
     let mut a = match d.quoi {
         Quoi::Dsn => {
             let mut a = crate::apercu_dsn::apercu_depot_dsn(ctx, &fichier)?;
             poser_les_pastilles(&mut a.deja_depose);
             pastilles_du_test(&mut a.repetition);
             // Une DSN se dit par sa nature, son mois et ses salaries quand rien d'autre n'est a dire.
-            let phrase = if ecrite.is_empty() {
-                format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), super::compte(a.salaries, "salarié", "salariés"))
-            } else {
-                ecrite
+            let phrase = match ecrite {
+                Some(p) => p,
+                None => format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), super::compte(a.salaries, "salarié", "salariés")),
             };
             DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
         Quoi::Dpae => {
             let a = apercu_depot_dpae(ctx, &fichier)?;
-            // Une DPAE se dit par ses embauches quand rien d'autre n'est a dire.
-            let phrase = if ecrite.is_empty() {
-                let mois = a.mois.map(|m| m.libelle(Graphie::Accentuee)).unwrap_or_default();
-                format!("DPAE {} : {}.", socle::texte::de(&mois), super::compte(a.embauches.len(), "embauche", "embauches"))
-            } else {
-                ecrite
+            // Une DPAE se dit par son mois et ses embauches quand rien d'autre n'est a dire.
+            let embauches = super::compte(a.embauches.len(), "embauche", "embauches");
+            let phrase = match (ecrite, a.mois) {
+                (Some(p), _) => p,
+                (None, Some(m)) => format!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
+                (None, None) => format!("DPAE : {}.", embauches),
             };
             DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }

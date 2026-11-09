@@ -621,10 +621,10 @@ pub fn deposer_dpae_avec(
         .iter()
         .map(|l| {
             Ok(EmbaucheDeclaree {
-                salarie: IdSalarie::lire(&l.salarie)?,
+                salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| format!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
                 numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
                 debut: l.debut.clone(),
-                fin: Some(l.fin.clone()).filter(|f| !f.is_empty()),
+                fin: l.fin.clone(),
             })
         })
         .collect::<Result<_, String>>()

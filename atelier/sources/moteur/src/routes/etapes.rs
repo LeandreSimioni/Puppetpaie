@@ -1893,7 +1893,12 @@ impl<'a> Moteur<'a> {
         }
         if quoi == DPAE {
             let a = crate::routes::depots::apercu_depot_dpae(self.ctx, &fichier.chemin)?;
-            charge.engagements = Some(a.embauches.into_iter().map(|e| EmbaucheDesignee { salarie: e.salarie, numero: e.numero.unwrap_or_default() }).collect());
+            // La DPAE s'ecrit depuis des engagements valides : chacune de ses embauches a sa fiche et son contrat.
+            let designee = |e: crate::routes::depots::EmbaucheDuFichier| match (e.salarie, e.numero) {
+                (Some(salarie), Some(numero)) => Ok(EmbaucheDesignee { salarie, numero }),
+                _ => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une embauche de la DPAE écrite ({}) n'a pas son engagement.", e.nom))),
+            };
+            charge.engagements = Some(a.embauches.into_iter().map(designee).collect::<R<Vec<_>>>()?);
         }
         let nom = if quoi == DSN { "la DSN" } else { "la DPAE" };
         let deposer = |libelle: String| action(Route::DepotApercu, charge.clone(), Some(Route::Deposer), libelle);
