@@ -1,20 +1,27 @@
 # PuppetPaie — ce qu'un agent doit savoir avant de toucher à quoi que ce soit
 
-Le récit des règles est au journal du privé. **Les numéros des règles de fond (0 à 11) ne bougent pas : le code les
-cite.**
+L'architecture est dans `docs/ARCHITECTURE.md` ; le journal, les méthodes de chaque rôle et les tickets sont dans le
+privé. **Les numéros des règles de fond (0 à 11) ne bougent pas : le code les cite.**
 
-## Es-tu l'orchestrateur ou un exécutant ?
+## Es-tu l'orchestrateur, un exécutant ou le trieur des retours ?
 
-- **L'orchestrateur** est la séance que Léandre a ouverte : il parle à Léandre, découpe, lance les sous-agents,
-  fusionne, lance **la** suite complète, pousse, ouvre la PR, commente et ferme les tickets, écrit le journal. « À la
-  fin de la séance », « on ferme le ticket » : c'est lui.
+Trois rôles, trois méthodes (`journal/methodes/` du privé).
+
+- **L'orchestrateur** est la séance que Léandre a ouverte : il parle à Léandre, **tout le temps**, et lui dit les choses
+  simplement, avec une image ou un exemple plutôt qu'un résumé ; il trie ce qui remonte pour que Léandre ne reçoive
+  que des décisions. Il découpe, lance les sous-agents, fusionne, lance **la** suite complète (en arrière-plan : il reste
+  disponible pour Léandre), pousse, ouvre la PR, commente et ferme les tickets, écrit le journal. « À la fin de la
+  séance », « on ferme le ticket » : c'est lui (`methodes/ORCHESTRATEUR.md`).
+- **Le trieur des retours** (un Opus, bientôt lancé seul de temps en temps) ne croit aucun retour sur parole : il le
+  rejoue, le vérifie contre les textes, le range, et prépare pour chaque vrai problème un traitement justifié que
+  Léandre n'a plus qu'à accepter ou refuser ; il ne change pas le logiciel (`methodes/TRIER-LES-RETOURS.md`).
 - **Un exécutant** (un sous-agent, dans un worktree) fait son lot, commite sur sa branche, rend une passation ; **jamais**
   la suite complète, un push, une PR, une fusion, un ticket, le journal, un mot à Léandre. Au doute, sa consigne tranche.
 - **Une seule vérification, à l'arrivée** : l'exécutant code et ne vérifie que les types (`cargo check`, `--tests`
   compris) ; il ne compile pas le programme, ne lance aucun test, ne livre aucune fictive. L'orchestrateur, à l'arrivée
   du lot, compile une fois, lance les tests, compare les fictives et **corrige lui-même** les petits écarts, sans
   renvoyer le lot ; une grosse casse devient un lot. **Une consigne ne parle ni de compilation ni de preuve** (modèle :
-  `journal/CONSIGNE-TYPE.md` du privé) ; si elle demande de compiler, de tester ou de livrer, c'est une faute de
+  `journal/methodes/CONSIGNE-EXECUTANT.md` du privé) ; si elle demande de compiler, de tester ou de livrer, c'est une faute de
   l'orchestrateur : l'exécutant suit cette règle, pas la consigne.
 
 ## Par quoi on commence
@@ -34,7 +41,17 @@ cite.**
 
 ## L'architecture s'impose, elle ne se raconte pas
 
-`journal/SEANCE-1-ECRANS-ET-MODELE.md` du privé fait foi. Les os et les routes d'abord, la graisse (taux, imports) après.
+**`docs/ARCHITECTURE.md` fait foi** : le corps tout en Rust et ses portes, les garde-fous dans la structure, compiler
+peu. **Les os** (l'engagement, un seul chemin), **puis les muscles** (les routes, une par geste, bien faites), **puis la
+graisse** (taux, imports, fonctions avancées) : un lot de graisse attend que les os et les muscles qu'il traverse
+soient droits.
+
+- **Un garde-fou se met dans la structure, jamais dans une consigne ni dans le code** : le type d'abord (un champ
+  obligatoire n'est pas `Option`), puis le verrou des dépendances et le test de structure. Un verrou n'a aucune
+  exception : une passation qui garde une lecture par nom (`.get("…")`, `json!`, `Value`) ou la dit « légitime » n'est
+  pas finie, l'orchestrateur la renvoie comme travail. Un repli de métier se range : la valeur vient d'un texte (dans la
+  donnée, avec sa `source`) ; seule la compagnie la connaît (une case de sa fiche, et le calcul refuse en la nommant) ;
+  technique (l'erreur remonte). Clippy n'est pas validé.
 
 - **Le code dit ce qui est** : un commentaire donne le *pourquoi* (le texte déposé), jamais l'historique ; celui
   qu'on croise s'efface.
@@ -88,18 +105,20 @@ par son nom dans le JS : on lit sa fiche.
 - **Un ticket** : le reproduire, corriger dans le public, prouver, le **commenter** (quoi, où, comment le voir) et le
   **fermer** dès que c'est sur la branche : « ce sera réglé dans la nouvelle version ». Ce qu'il demande se fait entier.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
-- **Un retour se trie avant de se corriger** (`journal/TRIER-UN-RETOUR.md` du privé) : ne se corrige que ce qui est
-  reproduit et **que les textes autorisent** (un Haiku les cherche) ; une question de métier va d'abord à Léandre.
+- **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
+  ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.
 - **Une consigne ne donne pas de règle sans texte** : elle pose la question, l'exécutant cherche le texte.
-- **À Léandre**, une décision se présente entière, avec ses contre-arguments ; un point de passation ne se répète qu'une
-  fois vu.
+- **À Léandre**, une décision se présente entière, avec ses contre-arguments, et s'explique par un exemple ; réponses
+  courtes ; un point de passation ne se répète qu'une fois vu.
 - **La branche** part de `main`, PR en brouillon, Léandre fusionne. **Il dit la fin de séance** ; puis la suite, le
   journal, `ETAT.md` remplacé.
 
-## Les sous-agents : Opus pour coder, Sonnet ou Haiku pour lire
+## Les sous-agents : des Opus
 
-- **Opus** pour le code qui reste, **Sonnet** pour lire et le jetable, **Haiku** pour chercher un texte ; au plus quatre
-  Opus et deux Sonnet.
+- **Opus par défaut**, pour coder comme pour juger ; Sonnet ou Haiku seulement quand une méthode le dit (le tamis de
+  `methodes/FONDER-UN-TAUX.md`) ; au plus quatre Opus en même temps.
+- **Un lot de code** : un Opus dessine chaque forme neuve sur une ou deux routes en modèle, puis on propage par lots
+  disjoints, par crate et non par route (un Opus tient 150 à 200 appelants), en commitant à chaque étape.
 - **L'orchestrateur** regarde chaque worktree toutes les 30 minutes, relit à la fusion les tests modifiés, décide seul
   du relais (contexte proche de 500 000 jetons, ou une heure sans commit) ; jamais de limite de temps dans une consigne,
   ni de message à un Opus qui a fini.
@@ -108,7 +127,8 @@ par son nom dans le JS : on lit sa fiche.
   prend sa parole pour sûre. Un choix de l'agent qui surprend se comprend en lui demandant sa logique, jamais en la
   supposant.
 - **En tête de chaque consigne** : un test de l'ancien parcours qui casse se supprime ; aucune donnée destinée à être
-  remplacée ne se convertit ; aucun test de plus de 30 secondes ; rien en fond ; aucun acte réel lancé à la main.
+  remplacée ne se convertit ; aucun test de plus de 30 secondes (sauf le rejeu d'une fictive entière,
+  `tests/rejeu.rs`) ; rien en fond ; aucun acte réel lancé à la main.
 - **Les cibles Cargo**, l'orchestrateur les choisit, une par worktree, gardée d'un lot à l'autre (une cible neuve coûte
   une longue compilation) ; **deux chaînes au plus**, deux worktrees gardés où les lots se suivent. Une cible qui change
   de checkout se nettoie d'abord (`cargo clean --profile essais -p <crate>`), sinon elle masque le code présent.
@@ -127,7 +147,7 @@ jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` 
 **On développe dans le nuage, et seulement là** : le poste de Léandre est une installation ordinaire.
 
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
-l'exige ; le nom le plus court. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
+l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.
 
 ## Les sources : tout texte qu'on lit se dépose
@@ -139,6 +159,9 @@ une règle sans texte déposé est un souvenir.
   `LISEZ-MOI.md` par dossier** (URL, date, **où le moteur s'en sert**) ; une inférence se dit telle ; le code **cite le
   fichier déposé** ; chaque taux livré porte sa `source { fichier, article, citation }`, qu'un test vérifie dans le
   texte. Les codes se relèvent par `moteur-atelier releve-codes`, jamais à la main.
+- **Un fondement** : un texte déposé qui dit la valeur, ou la convergence d'au moins deux textes d'émetteurs distincts,
+  raisonnement écrit (`methodes/FONDER-UN-TAUX.md` du privé). L'usage du secteur ou la pratique d'un autre logiciel ne
+  fondent rien. Un texte que le nuage n'atteint pas se demande à Léandre, qui le relève.
 - **Ce qui ne se republie pas** : un document d'organisme privé entre par sa transcription et son URL, l'original va
   dans `reference-privee/` du privé ; une pièce réelle (bulletin, courrier, relevé) ne va **que** là, le public n'en
   garde que l'attendu, sans nom ni NIR. `atelier/reference/` ne se convertit jamais.
@@ -190,7 +213,8 @@ il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `
   `cargo check` seulement ; l'orchestrateur, une compilation à l'arrivée du lot ; après une correction, seul ce qui
   était rouge se relance. Une référence déjà fabriquée ne se refait pas.
 - **Le nombre de tests ne monte pas** : un test par règle d'un texte déposé, un par bug réel échappé, un rejeu par
-  fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Un test monte sa
+  fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Les tests
+  éprouvent des fonctionnements d'ensemble, ils ne rattrapent pas les erreurs des agents. Un test monte sa
   propre compagnie (`outils::dossier_de_test`).
 - **Aucun test ne sort de la machine** : gardé par `tests/fichiers/garde_reseau.rs`.
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
@@ -241,7 +265,7 @@ et ce dont on vérifie une empreinte **ne se convertissent jamais**.
 
 ## Publier une version
 
-Depuis GitHub seulement (`journal/finitions/PUBLIER.md` du privé) : suite verte, PR sur `main`, Léandre fusionne ; le
+Depuis GitHub seulement (`journal/methodes/PUBLIER.md` du privé) : suite verte, PR sur `main`, Léandre fusionne ; le
 numéro est la date. **Le rythme est à Léandre : lui seul lance « Publier »**, avec `notes`, et `calcul` **seulement** si
 un calcul de paie change ; **Léandre approuve** (environnement `publication`), le moteur signe avec la clé de GitHub.
 La forme de l'archive de mise à jour (`compagnie/src/maj.rs`) **est un contrat avec toutes les installations
