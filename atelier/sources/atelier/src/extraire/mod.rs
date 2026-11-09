@@ -1,4 +1,4 @@
-//! `moteur extraire naf|usages|formats|urssaf <sources...> <sortie.json> [--remplacer]` (et `transcrire`, la lecture d'un
+//! `moteur-atelier extraire naf|usages|formats|urssaf <sources...> <sortie.json> [--remplacer]` (et `transcrire`, la lecture d'un
 //! cahier technique en PDF, une fois : `Transcription`) : les releves de l'atelier, qui
 //! fabriquent des referentiels de `logiciel/donnees/` a partir des textes deposes dans `atelier/reference/`.
 //!
@@ -78,7 +78,7 @@ const USAGE: &str = "usage : moteur-atelier extraire naf <structure.xlsx> <corre
 \x20       moteur-atelier extrairetranscrire <dsn-cahier-technique-V.pdf> <usages.txt> <formats.txt> [--remplacer]\n\
 La sortie se nomme toujours ; un fichier deja la ne se remplace qu'avec --remplacer.";
 
-/// `moteur extraire ...` : rend le code de sortie (2 : la commande est mal formee, 1 : le releve refuse, 0 : ecrit).
+/// `moteur-atelier extraire ...` : rend le code de sortie (2 : la commande est mal formee, 1 : le releve refuse, 0 : ecrit).
 pub fn commande(args: &[String]) -> i32 {
     if args.iter().any(|a| matches!(a.as_str(), "-h" | "--help" | "--aide")) {
         dire!("{}", USAGE);
@@ -181,7 +181,7 @@ fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> Resultat<()> {
 
 // ------------------------------------------------------------------ la transcription du cahier en PDF
 
-/// LA TRANSCRIPTION D'UN CAHIER TECHNIQUE EN PDF. Le PDF ne se lit qu'une fois, a son depot (`moteur extraire transcrire`,
+/// LA TRANSCRIPTION D'UN CAHIER TECHNIQUE EN PDF. Le PDF ne se lit qu'une fois, a son depot (`moteur-atelier extraire transcrire`,
 /// une a deux minutes pour 382 pages) : ce qu'un releve en tire -- les cellules du tableau des usages, le texte des
 /// definitions -- se transcrit dans un fichier texte depose a cote de lui, qui porte l'empreinte du PDF dont il vient.
 /// Les releves lisent ensuite la transcription, en un instant ; une transcription dont l'empreinte n'est plus celle du
@@ -246,7 +246,7 @@ pub(crate) fn en_transcription(source: &Path) -> bool {
     source.extension().and_then(|e| e.to_str()) == Some("txt")
 }
 
-/// `moteur extraire transcrire <cahier.pdf> <usages.txt> <formats.txt>` : les deux transcriptions du cahier.
+/// `moteur-atelier extraire transcrire <cahier.pdf> <usages.txt> <formats.txt>` : les deux transcriptions du cahier.
 fn transcrire(args: &[&str], remplacer: bool) -> i32 {
     let [pdf, usages_txt, formats_txt] = args else {
         eprintln!("moteur-atelier extraire transcrire attend le cahier en PDF puis les deux sorties : rien n'est ecrit.\n{}", USAGE);

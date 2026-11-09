@@ -2,7 +2,7 @@
 
 Chaque article est déposé **tel que Légifrance l'imprime** (`.pdf`, « Imprimer » de la page de l'article, dans la version
 datée qu'il faut), et sa transcription à côté (`.txt`, `pdftotext -layout`). Le nom porte la date de **début** de la
-version. Relevés le 04/11/2026 par Léandre sur son poste : Légifrance refuse le conteneur (HTTP 403), et `moteur
+version. Relevés le 04/11/2026 par Léandre sur son poste : Légifrance refuse le conteneur (HTTP 403), et `moteur-atelier
 releve-codes` ne garde que la version en vigueur d'un article.
 
 | fichier | version | ce qu'on en lit | où ça sert |

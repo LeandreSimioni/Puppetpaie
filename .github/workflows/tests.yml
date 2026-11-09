@@ -1,7 +1,7 @@
 # TOUS LES TESTS, LANCES AILLEURS QUE SUR LE POSTE QUI DEPOSE.
 #
-# La suite du moteur : `cargo nextest run` dans l'espace `atelier/sources/` : le socle, le droit, l'engagement et le moteur (puis la suite de l'atelier,
-# dans sa cible). Elle tourne sur des compagnies
+# La suite du moteur : `cargo nextest run` dans l'espace `atelier/sources/` : les crates du logiciel, du socle au moteur
+# (`default-members`) ; puis la suite de la crate `atelier`, dans sa cible. Elle tourne sur des compagnies
 # de test que les tests montent eux-memes, jamais sur `prive/`.
 #
 # ROUGE = ON NE FUSIONNE PAS.
@@ -36,6 +36,7 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Lancer la suite du moteur
         run: cargo nextest run --cargo-profile essais --locked --no-fail-fast
-      # Dans sa propre cible : `--features atelier` recompile toute la caisse (atelier/AGENTS.md, « Les tests »).
+      # La crate `atelier`, hors de `default-members`, dans sa propre cible : elle allume la feature `atelier` de ce
+      # qu'elle prend, qui se recompile donc a part (atelier/AGENTS.md, « Les tests »).
       - name: Lancer la suite de l'atelier
-        run: cargo nextest run --cargo-profile essais --locked -p moteur --features atelier --target-dir target-atelier --lib --test atelier --test fichiers -E 'test(/(^|::)atelier::/)'
+        run: cargo nextest run --cargo-profile essais --locked -p atelier --target-dir target-atelier

@@ -51,7 +51,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         }
     };
     if args.drapeau("json") {
-        /// Ce que rend `moteur sources --json` : les sources, et leur nombre.
+        /// Ce que rend `moteur-atelier sources --json` : les sources, et leur nombre.
         #[derive(serde::Serialize)]
         struct Sources<'a> {
             total: usize,

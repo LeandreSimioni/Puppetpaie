@@ -1,5 +1,5 @@
-//! La veille des conventions collectives par les livraisons open data KALI de la DILA. Un outil de l'EDITEUR
-//! (`moteur sources --verifier`), jamais d'une compagnie.
+//! La veille des conventions collectives par les livraisons open data KALI de la DILA. Un outil de l'ATELIER
+//! (`moteur-atelier sources --verifier`), jamais d'une compagnie.
 //!
 //! Legifrance refuse les robots (403). Mais la DILA publie chaque soir, en open data et sans compte, ce qui a change dans
 //! la base KALI (les conventions collectives) : une archive de quelques centaines de Ko par jour, a

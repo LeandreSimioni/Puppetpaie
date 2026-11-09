@@ -496,8 +496,8 @@ fn salaries_au_mois(ctx: &Contexte) -> R<Vec<String>> {
 }
 
 /// La racine des donnees du poste (`contexte.RACINE`) : `PUPPETPAIE_DONNEES`,
-/// sinon le dossier `prive/` voisin du code, sinon le code lui-meme. LA LIGNE DE COMMANDE SEULEMENT (`moteur COMMANDE`,
-/// `moteur maj --publier`) : une route recoit sa compagnie (`o["racine"]`, `Contexte::racine`) et ne lit jamais cette
+/// sinon le dossier `prive/` voisin du code, sinon le code lui-meme. LA LIGNE DE COMMANDE SEULEMENT (`moteur COMMANDE`) :
+/// une route recoit sa compagnie (`o["racine"]`, `Contexte::racine`) et ne lit jamais cette
 /// variable -- la fenetre sert ses compagnies dans un seul processus.
 pub fn racine_du_poste() -> PathBuf {
     if let Some(e) = std::env::var_os("PUPPETPAIE_DONNEES").filter(|e| !e.is_empty()) {

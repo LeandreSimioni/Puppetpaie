@@ -1,4 +1,4 @@
-//! `moteur extraire urssaf <table-des-urssaf.csv> <liste-des-sites.csv> <cog-2015.zip> <sortie.json>` : les organismes de
+//! `moteur-atelier extraire urssaf <table-des-urssaf.csv> <liste-des-sites.csv> <cog-2015.zip> <sortie.json>` : les organismes de
 //! recouvrement, leur code a trois chiffres et le departement dont chacun releve, pour `logiciel/donnees/urssaf-dpae-base.json`
 //! (que lisent `dpae.rs`, `champs.rs`, `routes/fiches.rs`, `routes/ouverture.rs`).
 //!

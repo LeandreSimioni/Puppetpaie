@@ -3,7 +3,7 @@
 //!
 //! UNE MISE A JOUR PAR INSTALLATION. Il n'y a qu'un logiciel par installation, et c'est lui qui se met a jour, pas une
 //! compagnie : tout se passe dans `<installation>/maj/` (a cote de `logiciel/`, que la bascule ne touche pas), sans
-//! qu'aucune compagnie soit ouverte. Toute installation recoit, celle de l'editeur comprise. Le bridage n'y joue aucun
+//! qu'aucune compagnie soit ouverte. Toute installation recoit. Le bridage n'y joue aucun
 //! role.
 //!
 //!   verifier   au lancement, en fond (`chercher_en_fond` ; lance sans reseau, il reprend de lui-meme). Lit
@@ -72,11 +72,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 
-/// La cle publique de l'editeur (Ed25519, 32 octets en base64) : toute archive non signee par elle est refusee.
+/// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
+/// (`cles_de_l_editeur`) : plus rien ici ne fabrique sa cle privee, seule la cle de GitHub signe.
 pub const CLE_PUBLIQUE: &str = "sDj5+46oBt7Yy1x00VJ1ThJNOwf5jT5+bttXEN/yAIU=";
 /// LA CLE PUBLIQUE DE GITHUB : le flux « Publier » du depot public signe l'archive avec une cle dediee, dont la graine est
-/// le secret `PUPPETPAIE_CLE_SIGNATURE` de l'environnement `publication` (approuve par l'editeur). Fabriquee sur le poste
-/// de l'editeur par `moteur maj --cle-github` (`generer_cle_github`), qui ecrit la cle publique dans un fichier a reporter
+/// le secret `PUPPETPAIE_CLE_SIGNATURE` de l'environnement `publication` (approuve par l'editeur). Fabriquee par
+/// `moteur maj --cle-github` (`generer_cle_github`), qui ecrit la cle publique dans un fichier a reporter
 /// ICI. Vide, aucune archive ne serait acceptee par elle et le flux refuserait de publier (`publier_depuis_l_environnement`).
 pub const CLE_PUBLIQUE_GITHUB: &str = "48dC1Gb82e2Zh7z7NiUH14EbXX7IvXTp83Xaui/31wg=";
 /// Le depot des mises a jour QUAND LE REGLAGE DE L'INSTALLATION NE DIT RIEN : les fichiers de la DERNIERE RELEASE du
@@ -978,7 +979,7 @@ fn deballer_les_fictives(octets: &[u8], cible: &Path) -> R<()> {
 /// (`fictives/.livraison.json`) ni celle qui l'attend deja prete : une Release aux memes fictives ne coute rien. Recues,
 /// condensat et signature verifies comme une archive du logiciel, et leur `.livraison.json` disant l'empreinte annoncee,
 /// elles attendent dans `maj/fictives-pretes/` le prochain lancement (`poser_les_fictives_pretes`). Un DEPOT DE TRAVAIL
-/// (l'installation porte `.git` : le poste de l'editeur, ou `fictives/` est suivi par Git et d'ou partent les
+/// (l'installation porte `.git` : un clone du depot, ou `fictives/` est suivi par Git et d'ou partent les
 /// livraisons) ne les recoit pas. Rend ce qui s'est passe, ou `None` s'il n'y avait rien a faire.
 pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str]) -> Option<String> {
     let f = &d.fictives;
@@ -1170,8 +1171,6 @@ pub fn verifier(telecharger_aussi: bool) -> String {
 /// `verifier`, l'installation et les cles publiques acceptees donnees (le moteur livre passe toujours `installation()` et
 /// `cles_de_l_editeur()` ; les essais de bout en bout, une installation fictive et des cles d'essai :
 /// `tests/fichiers/mise_a_jour.rs`).
-/// Toute installation recoit, celle de l'editeur comprise : elle a deja la version qu'elle vient de publier depuis son
-/// propre `logiciel/`, et recoit celle qu'on aurait publiee d'ailleurs.
 pub fn verifier_avec(inst: &Path, telecharger_aussi: bool, cles: &[&str]) -> String {
     verifier_suivi(inst, telecharger_aussi, cles, &Recherche::nouvelle())
 }

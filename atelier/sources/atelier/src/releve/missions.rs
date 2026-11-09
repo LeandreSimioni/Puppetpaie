@@ -1,4 +1,4 @@
-//! `moteur releve-missions <sources> <donnees>` : les deux tables de la DGFiP dont le moteur tire la limite des frais
+//! `moteur-atelier releve-missions <sources> <donnees>` : les deux tables de la DGFiP dont le moteur tire la limite des frais
 //! d'un deplacement a l'etranger (`droit::missions`), relevees par l'API publique d'opendatasoft de
 //! data.economie.gouv.fr (`/api/explore/v2.1/catalog/datasets/<jeu>/exports/csv`, sans cle) :
 //! - `dgfip-frais-de-mission-etranger` : les indemnites journalieres de mission, par pays et ville, datees ;

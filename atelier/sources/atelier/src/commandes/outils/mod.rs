@@ -1,6 +1,6 @@
 //! LES OUTILS DE L'ATELIER SUR UNE COMPAGNIE : des enquetes et des gestes d'editeur qui ne sont pas des gestes de l'ecran,
-//! dans le binaire de l'atelier seulement (`--features atelier`, `moteur-atelier`). Ils prennent le cadre des commandes
-//! (`commandes::Cadre` : la compagnie, le jour, la demande du mot de passe) et appellent les fonctions du moteur ; aucun
+//! dans le binaire de l'atelier seulement (`moteur-atelier`). Ils prennent le cadre des commandes du moteur
+//! (`moteur::commandes::Cadre` : la compagnie, le jour, la demande du mot de passe) et appellent les fonctions du moteur ; aucun
 //! ne recopie une regle.
 //!
 //! - `pas` : les taux de prelevement a la source connus, `--amorcer` depuis les DSN deposees, `--demander` les

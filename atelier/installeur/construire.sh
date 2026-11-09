@@ -99,7 +99,7 @@ while IFS= read -r -d '' f; do
     cp -p "$f" "$PREPA/pose/$f"
 done < "$PREPA/liste.z"
 # LES FICTIVES : exactement ce que porte l'archive des fictives, leurs marques comprises (`moteur maj --poser-fictives`,
-# moteur/src/atelier/publier.rs). Elles se refont de leur scenario et ne sont pas suivies par Git : c'est le moteur Linux
+# moteur/src/publication/publier.rs). Elles se refont de leur scenario et ne sont pas suivies par Git : c'est le moteur Linux
 # qui les pose, apres que le flux « Publier » les a refaites et marquees (`moteur maj --marquer-fictives`).
 MOTEUR_LINUX="${MOTEUR_LINUX:-$CARGO_TARGET_DIR/release/moteur}"
 test -x "$MOTEUR_LINUX" || { echo "Le moteur Linux, qui pose les fictives, est absent : $MOTEUR_LINUX (MOTEUR_LINUX=...)" >&2; exit 1; }

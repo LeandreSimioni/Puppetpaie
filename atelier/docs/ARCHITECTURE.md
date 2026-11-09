@@ -24,7 +24,9 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`atelier/sources/Cargo.toml`, en tête).
 
 ```
-                         moteur   la ligne de commande et la page ; l'atelier
+                         atelier  le binaire du nuage `moteur-atelier`, jamais livré ; rien ne le prend
+                           │
+                         moteur   la ligne de commande et la page ; la publication par GitHub
                            │
                          routes   la porte, une route par geste, ce qu'elles font
                            │
@@ -54,7 +56,8 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, le filet, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
 | `import` | le passé d'une compagnie tenu dans un autre logiciel, tel que ses pièces le disent : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les certificats et les AEM en PDF, ce qu'une pièce atteste (`attestes`), les fiches proposées, le mois importé, les écarts de calcul, le caviardage | n'écrit rien pour une route : c'est `routes/src/importation/` |
 | `routes` | `moteur route` : la porte (`lib.rs` : l'aiguillage ; `enveloppe`, `catalogue`), une route par geste de l'écran, et ce qu'elles font ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) | ne prend rien à l'interface, aux commandes ni à l'atelier |
-| `moteur` | la ligne de commande, la page et l'atelier, en dossiers (ci-dessous) | ne touche pas le JSON brut (la porte est aux routes) |
+| `moteur` | la ligne de commande (`moteur`), la page, la publication par GitHub, en dossiers (ci-dessous) | ne touche pas le JSON brut (la porte est aux routes) ; ne connaît aucune commande de l'atelier |
+| `atelier` | tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier` (la ligne de commande du moteur, plus la sienne) : le relevé des textes (`releve/` : LEGI, KALI, les missions de la DGFiP), les référentiels extraits (`extraire/`), les tables Unicode (`generer_tables`), la vérification avant commit, le guet, la veille des sources (`sources`), la fabrique des bulletins fictifs, les outils sur une compagnie (`commandes/outils/`), la redirection vers de faux serveurs, et les commandes `scenario` du banc | n'est jamais livré ; rien ne le prend, et il est hors de `default-members` (il allume la feature `atelier` de ce qu'il prend) |
 
 À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page) et `fabrique-pdf/`.
 
@@ -78,8 +81,8 @@ des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_m
 | dossier | ce qu'il porte |
 |---|---|
 | `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille qui tourne |
-| `atelier/` | les outils de l'éditeur, jamais à l'écran : le relevé des textes (`releve/` : LEGI, KALI), les référentiels extraits (`extraire/`), les tables Unicode, la vérification avant commit, le guet, la publication des versions et la clé de l'éditeur (`publier`) ; la redirection vers de faux serveurs et les bulletins fictifs n'existent que dans le binaire de l'atelier (`--features atelier`) |
-| `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, les outils de l'éditeur ; les gestes passent par `moteur route` |
+| `publication/` | ce que le flux « Publier » appelle sur le `moteur` qu'il vient de compiler (`moteur maj --publier-github`, `--cle-github`, `--marquer-fictives`, `--poser-fictives`) : les archives, la signature par la graine de GitHub, les fictives livrées |
+| `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, la mise à jour ; l'aiguillage de la ligne de commande (`ligne_de_commande`), que `moteur-atelier` reprend avec ses commandes ; les gestes passent par `moteur route` |
 
 À la racine : `lib.rs`, `main.rs`.
 
@@ -282,11 +285,11 @@ datée, vérifiable**.
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le
   dépôt ; l'original d'un organisme privé n'y est pas, seule
   sa transcription), SHA-256, mode de vérification, et
-  quels fichiers de données elle nourrit. `moteur sources --verifier`
-  (poste de l'éditeur seulement, `moteur/src/atelier/sources.rs`) retélécharge et compare ; une source `changee` est à RELIRE
+  quels fichiers de données elle nourrit. `moteur-atelier sources --verifier`
+  (`atelier/src/sources.rs`) retélécharge et compare ; une source `changee` est à RELIRE
   (`--relever` pose la nouvelle version à côté). Légifrance refuse les
   robots (403) : la copie ne se revérifie pas en ligne, mais la source
-  porte un bloc `kali` (IDCC, conteneur, texte) et `moteur/src/atelier/releve/kali.rs` lit
+  porte un bloc `kali` (IDCC, conteneur, texte) et `atelier/src/releve/kali.rs` lit
   les **livraisons open data KALI** de la DILA
   (`echanges.dila.gouv.fr/OPENDATA/KALI/`, une archive par soir) depuis
   le relevé : fiche de la convention relivrée avec des textes nouveaux,
@@ -297,17 +300,17 @@ datée, vérifiable**.
   textes de chaque convention, trous de l'index) ; à la première veille,
   l'index est remonté jusqu'à la dernière fiche de chaque convention.
   L'ouverture d'une compagnie ne fait pas cette vérification
-  (`routes/src/gestes/ouverture.rs`) : c'est l'éditeur
-  qui la lance, avant chaque publication.
-- `moteur releve-codes` (`moteur/src/atelier/releve/codes.rs`)
+  (`routes/src/gestes/ouverture.rs`) : elle se lance dans le nuage,
+  avant chaque publication.
+- `moteur-atelier releve-codes` (`atelier/src/releve/codes.rs`)
   — **les articles de loi eux-mêmes**, lus dans la base **LEGI**
   de la DILA (même voie que KALI) plutôt qu'à la main sur Légifrance, qui
   refuse les robots. Tous les textes en un seul passage
-  (`atelier/releve/codes/textes.rs`) : travail, sécurité sociale, collectivités
+  (`atelier/src/releve/codes/textes.rs`) : travail, sécurité sociale, collectivités
   territoriales (le versement mobilité), construction, impôts, et les arrêtés
   et la loi que la paie lit. Trois verbes, sur le dossier des sources :
   - `moissonner` tient à jour l'entrepôt `legi-entrepot/`
-    (`moteur/src/atelier/releve/entrepot_dila.rs`) : la première fois, ou avec
+    (`atelier/src/releve/entrepot_dila.rs`) : la première fois, ou avec
     `--reconstruire`, l'archive globale défile (1,1 Go, en flux, jamais
     écrite sur le disque) puis **chaque livraison quotidienne depuis sa
     date** ; ensuite seules les livraisons nouvelles se téléchargent. Il garde
@@ -328,7 +331,7 @@ datée, vérifiable**.
     article), la range dans `<code>/xml-anterieur/` et écrit le diff,
     alinéa par alinéa. Il s'arrête dès qu'il les a toutes : comptez un quart
     d'heure. Il compare le `BLOC_TEXTUEL` seul, et le dit.
-- `moteur releve-conventions` (`moteur/src/atelier/releve/conventions.rs`) — le texte
+- `moteur-atelier releve-conventions` (`atelier/src/releve/conventions.rs`) — le texte
   complet des conventions que cite `sources.json`, tenu dans l'entrepôt
   `kali-entrepot/` : `mettre-a-jour` (les seules livraisons KALI nouvelles ;
   la base entière, 180 Mo, la première fois ou pour une convention nouvelle),
@@ -627,7 +630,7 @@ celles de la version que le fichier porte (`S10.G00.00.006`), et le fichier en
 fabrication décide par elles des rubriques qu'une version a retirées (`06.003`,
 `11.002` en P27V01) ou ajoutées (`Fichier::norme`, `Norme::admet`). Les
 tables P27V01 sont relevées des classeurs 2027.1.2 de net-entreprises (fiches
-3357 et 3358) par `moteur extraire usages` et `moteur extraire formats` (`moteur/src/atelier/extraire/`).
+3357 et 3358) par `moteur-atelier extraire usages` et `moteur-atelier extraire formats` (`atelier/src/extraire/`).
 La part patronale de la CET se déclare en `146` en P26V01 et en `148` en P27V01,
 sous la base 78 du `131` (type 23), à l'Urssaf (fiche net-entreprises 2556 ;
 `cotisation_cet_patronale` de la donnée). Le code APE de la fiche entreprise se
@@ -1153,7 +1156,7 @@ décident. Les articles sont relevés et datés dans
   sécurité sociale**, et lui-même renvoie au régime fiscal de **l'article 80
   duodecies du code général des impôts** — est exclu des cotisations, dans la
   limite de deux plafonds annuels, ce qui n'est pas imposable. Les deux
-  articles se relèvent avec le code du travail (`moteur releve-codes`). Il en sort trois choses :
+  articles se relèvent avec le code du travail (`moteur-atelier releve-codes`). Il en sort trois choses :
   - l'indemnité **légale** de licenciement et celle de mise à la retraite ne
     sont **ni soumises ni imposables** (80 duodecies 3° b et 4° b, qui
     exonèrent « le montant prévu […] par la loi ») ;
@@ -1577,9 +1580,9 @@ l'instant où l'horloge le trouve, et les documents suivent. Ce qui vient après
 ## La version, et la mise à jour dans l'ombre
 
 `VERSION` (une date, `AAAA.MM.JJ`, comparée en entiers). Ce qu'une installation reçoit, vérifie et applique est dans
-`compagnie/src/maj.rs` ; ce que l'éditeur publie (les archives, la signature, sa clé) dans
-`moteur/src/atelier/publier.rs`. **Une mise à jour par installation** : tout se passe dans `<installation>/maj/`, à
-côté de `logiciel/`, et l'installation de l'éditeur reçoit comme les autres. Un dépôt est une adresse qui sert
+`compagnie/src/maj.rs` ; ce que le flux « Publier » publie (les archives, la signature par la clé de GitHub) dans
+`moteur/src/publication/`. **Une mise à jour par installation** : tout se passe dans `<installation>/maj/`, à
+côté de `logiciel/`. Un dépôt est une adresse qui sert
 `derniere.json` et les archives de `logiciel/`.
 
 **Une version s'installe dès qu'elle est prête** : au lancement suivant, ou au clic « Redémarrer pour mettre à jour ».
@@ -1657,8 +1660,7 @@ et `maj/journal.log` le dit.
   sur `macos-latest`), attend l'approbation de Léandre, signe
   (`publier::publier_depuis_l_environnement`) et pose leurs archives, celle de
   tous et celle des fictives, les archives d'installation, `derniere.json` et
-  l'installeur dans une Release (la clé d'un poste, `moteur maj --publier`, est
-  acceptée aussi) ; jamais republier un numéro.
+  l'installeur dans une Release ; jamais republier un numéro.
 
 
 ## L'exercice : rappels, clôture, export compta
@@ -1731,9 +1733,9 @@ vit dans `moteur/tests/` ; un test qui n'appelle qu'une crate sur des valeurs vi
 | déclarations | `declarations/`, `moteur/tests/dsn/` | 90 | la norme : usages, formats, blocs, ordre, échéances |
 | envois | `envois/` | 40 | la lecture des retours réels transcrits, le garde-fou réseau, aucun envoi réel sans mot de passe |
 | interface | `moteur/tests/routes/`, `interface_fichiers.rs`, `interface_http.rs`, `src/interface/`, `src/routes/` | 20 | une route refuse et rien n'est écrit ; l'ouverture |
-| compagnie | `moteur/tests/fichiers/` (coffre, clé de signature, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `src/compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
+| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `src/compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
 | import | `moteur/tests/fichiers/bulletin_lu.rs`, `caviardage.rs`, `tests/routes/import_neuve.rs`, `src/import/` | 15 | un passé importé se relit (bulletins, DSN) ; ce qui part chez l'éditeur ne désigne personne |
-| atelier | `moteur/tests/fichiers/donnees_reelles.rs`, `garde_reseau.rs`, `verifier_avant_commit.rs`, `referentiels.rs`, `tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
+| atelier | `atelier/tests/atelier/` (`donnees_reelles.rs`, `verifier_avant_commit.rs`, `referentiels.rs` : sa propre cible), `moteur/tests/fichiers/garde_reseau.rs`, `moteur/tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
 | parcours | `moteur/tests/rejeu.rs` | 4 | un scénario joué de bout en bout à l'horloge, ses sorties comparées à un oracle |
 
 Total visé : environ 350, plafond 400. La commande, et ce qu'un exécutant lance : `atelier/AGENTS.md`, « Faire

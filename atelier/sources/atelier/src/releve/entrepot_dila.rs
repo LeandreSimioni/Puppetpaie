@@ -1,6 +1,6 @@
 //! L'entrepot local des textes de la DILA (LEGI, KALI) : lu une fois, tenu a jour ensuite. Ses deux
-//! utilisateurs sont `releve::codes` (`moteur releve-codes`)
-//! et `releve::conventions` (`moteur releve-conventions`).
+//! utilisateurs sont `releve::codes` (`moteur-atelier releve-codes`)
+//! et `releve::conventions` (`moteur-atelier releve-conventions`).
 //!
 //! POURQUOI. Sans entrepot, chaque moisson des codes relirait l'archive globale de la base LEGI (1,1 Go) puis toutes les
 //! livraisons quotidiennes parues depuis (des centaines), pour ne garder que les articles demandes : un article de plus

@@ -1,4 +1,4 @@
-//! `moteur generer-tables SOURCES ESPACE` : ecrit les quatre tables que le moteur tient de l'Unicode (et de quelques autres
+//! `moteur-atelier generer-tables SOURCES ESPACE` : ecrit les quatre tables que le moteur tient de l'Unicode (et de quelques autres
 //! textes) depuis les textes deposes dans `atelier/reference/sources/` (`SOURCES`), dans l'espace `atelier/sources/`
 //! (`ESPACE`) :
 //!
@@ -462,7 +462,7 @@ pub fn generer(sources: &Path) -> Result<Vec<(&'static str, String)>, String> {
     Ok(vec![(FICHIERS[0], tables_nfkc(&u)), (FICHIERS[1], nfkd_ascii(&u)), (FICHIERS[2], tables_retours(sources, &u)?), (FICHIERS[3], tables_journal(&u))])
 }
 
-/// `moteur generer-tables SOURCES SRC`.
+/// `moteur-atelier generer-tables SOURCES SRC`.
 pub fn commande(args: &[String]) -> i32 {
     let [sources, espace] = args else {
         eprintln!("usage : moteur-atelier generer-tables SOURCES ESPACE   (SOURCES : atelier/reference/sources ; ESPACE : atelier/sources)");

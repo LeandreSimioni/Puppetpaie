@@ -1,4 +1,4 @@
-//! `moteur extraire naf <structure.xlsx> <correspondances.xlsx> <sortie.json>` : la NAF 2025 et sa table de correspondance
+//! `moteur-atelier extraire naf <structure.xlsx> <correspondances.xlsx> <sortie.json>` : la NAF 2025 et sa table de correspondance
 //! depuis la NAF rev. 2 (INSEE), pour `logiciel/donnees/naf-base.json` (que lit `naf.rs`).
 //!
 //! Les deux classeurs sont ceux de la page INSEE « NAF 2025 » (https://www.insee.fr/fr/information/8181066), deposes dans

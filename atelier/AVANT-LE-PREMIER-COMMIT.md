@@ -8,25 +8,26 @@ transcrits sur des valeurs inventées (règle de fond 9 a de `AGENTS.md`).
 
 ## Deux gardes
 
-- **Le garde avant commit** : `moteur verifier-avant-commit` (`sources/moteur/src/atelier/verifier_avant_commit.rs`).
+- **Le garde avant commit** : `moteur-atelier verifier-avant-commit` (`sources/atelier/src/verifier_avant_commit.rs`).
   Il cherche, dans ce que Git emporterait, trois formes (un NIR, un IBAN, un BIC), puis, si `prive/config/` est là, les
   vraies valeurs de la compagnie du poste qu'il y lit (`entreprise.json`, et pour chaque fiche de `salaries.json` le
   NIR, le numéro Congés Spectacles, le courriel, l'adresse, le nom et le prénom ; jamais `prive/config/*.bin`). Il ne
   contient aucune donnée réelle, et il ne dit jamais la valeur trouvée : le fichier, la ligne, et ce que c'est.
   Sortie : 0 rien trouvé, 1 trouvé, 2 pas pu vérifier.
-- **Le verrou de la suite** : `sources/moteur/tests/fichiers/donnees_reelles.rs`, à chaque passage de tests, sans lire
-  `prive/`.
+- **Le verrou de la suite de l'atelier** : `sources/atelier/tests/atelier/donnees_reelles.rs`, à chaque passage de ses
+  tests, sans lire `prive/`.
 
 Le garde tourne en crochet avant chaque commit (`atelier/.githooks/pre-commit`, avec `--indexes` : ce que l'index
 porte) ; le crochet se pose une fois par checkout, et `.claude/hooks/session-start.sh` le pose dans le nuage :
 
 ```bash
 git config core.hooksPath atelier/.githooks     # refuse le commit fautif
-moteur verifier-avant-commit                    # à la demande, sur ce qui part
+moteur-atelier verifier-avant-commit            # à la demande, sur ce qui part
 ```
 
-Le crochet se sert du premier moteur qui connaît la commande : celui que nomme `PUPPETPAIE_FABRIQUE`, puis celui de la
-cible Cargo, puis l'exécutable livré (`sources/moteur/bin/<système>/moteur`). Rien à compiler pour commiter.
+Le crochet se sert du premier `moteur-atelier` qui connaît la commande : celui que nomme `PUPPETPAIE_FABRIQUE`, puis
+celui de la cible Cargo de l'espace ou de celle de l'atelier, à côté (`<cible>-atelier`). Il n'est jamais livré : dans
+le nuage, `.claude/hooks/session-start.sh` le compile d'avance (`cargo build --profile essais -p atelier`).
 
 ## Un commit refusé
 

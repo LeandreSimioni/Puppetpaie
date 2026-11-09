@@ -312,7 +312,7 @@ désignation de l'établissement dont dépend le salarié », et le 2° le code 
 ## Le contrat écrit : L1242-12 (CDD), L1221-5-1 et R1221-34 à R1221-40 (tout salarié), L3123-6 (temps partiel) (relevé du 29/10/2026, #285)
 
 Le domaine `information_ecrite` (L1221-5-1, R1221-34, R1221-35, R1221-38, R1221-39, R1221-40) et L3123-6 (domaine
-`temps_partiel`) ajoutés à `moteur/src/atelier/releve/codes/textes.rs`, relevés le 29/10/2026 (`moteur releve-codes
+`temps_partiel`) ajoutés à `atelier/src/releve/codes/textes.rs`, relevés le 29/10/2026 (`moteur-atelier releve-codes
 moissonner`, une livraison nouvelle, puis `rapport`) : `articles-20261029.md`, l. 203-218 (L1242-12, L1242-13), l. 697
 (L3123-6), l. 813-858 (L1221-5-1 à R1221-40) ; XML : `xml/L1242-12.xml`, `xml/L1221-5-1.xml`, `xml/R1221-34.xml`,
 `xml/R1221-35.xml`, `xml/R1221-38.xml`, `xml/R1221-39.xml`, `xml/R1221-40.xml`, `xml/L3123-6.xml`. Ce sont les articles qui
@@ -354,8 +354,8 @@ L1242-12 1°, et la répartition d'un temps partiel, L3123-6, que l'engagement a
 
 ## La modification du contrat : L1221-1, L1222-6, et l'avenant d'un contrat signé hors du logiciel (relevé du 02/11/2026, #338)
 
-Le domaine `modification_du_contrat` (L1221-1, L1222-6) ajouté à `moteur/src/atelier/releve/codes/textes.rs`, relevé le
-02/11/2026 (`moteur releve-codes moissonner`, aucune livraison nouvelle : les articles étaient dans l'entrepôt ; puis
+Le domaine `modification_du_contrat` (L1221-1, L1222-6) ajouté à `atelier/src/releve/codes/textes.rs`, relevé le
+02/11/2026 (`moteur-atelier releve-codes moissonner`, aucune livraison nouvelle : les articles étaient dans l'entrepôt ; puis
 `rapport`) : `articles-20261102.md`, l. 972-980 ; XML : `xml/L1221-1.xml`, `xml/L1222-6.xml`.
 
 - **L1221-1** (`LEGIARTI000006900839`) : « Le contrat de travail est soumis aux règles du droit commun. » Le droit commun
@@ -380,7 +380,7 @@ Le domaine `modification_du_contrat` (L1221-1, L1222-6) ajouté à `moteur/src/a
 
 ## La période d'essai et sa durée maximale : L1242-10 (CDD), L1221-19 à L1221-24 (CDI) (relevé du 29/10/2026)
 
-Le domaine `periode_essai` ajouté à `moteur/src/atelier/releve/codes/textes.rs`, relevé le 29/10/2026 (`moteur
+Le domaine `periode_essai` ajouté à `atelier/src/releve/codes/textes.rs`, relevé le 29/10/2026 (`moteur-atelier
 releve-codes moissonner`, aucune livraison nouvelle : les articles étaient dans l'entrepôt ; puis `rapport`) :
 `articles-20261029.md`, l. 869-912 ; XML : `xml/L1242-10.xml`, `xml/L1221-19.xml` à `xml/L1221-24.xml`.
 
@@ -412,8 +412,8 @@ calcule pas ; il s'enregistre à compléter, et sa validation refuse en citant l
 ## La durée maximale du travail et le repos quotidien (relevé du 30/10/2026, séance 8, lot P2)
 
 `articles-20261030.md`, section « La duree maximale du travail et le repos quotidien » (XML : `xml/L3121-18.xml`,
-`xml/L3121-19.xml`, `xml/L3121-20.xml`, `xml/L3131-1.xml`, `xml/L3131-2.xml`), relevés par `moteur releve-codes moissonner`
-depuis l'entrepôt LEGI (domaine `duree_maximale` de `moteur/src/atelier/releve/codes/textes.rs`).
+`xml/L3121-19.xml`, `xml/L3121-20.xml`, `xml/L3131-1.xml`, `xml/L3131-2.xml`), relevés par `moteur-atelier releve-codes moissonner`
+depuis l'entrepôt LEGI (domaine `duree_maximale` de `atelier/src/releve/codes/textes.rs`).
 
 - **L3121-18** (`LEGIARTI000033020428`, depuis le 10/08/2016) : « La durée quotidienne de travail effectif par salarié ne
   peut excéder dix heures, sauf : 1° En cas de dérogation accordée par l'inspecteur du travail […] ; 2° En cas d'urgence […] ;
@@ -425,7 +425,7 @@ depuis l'entrepôt LEGI (domaine `duree_maximale` de `moteur/src/atelier/releve/
   consécutives de repos quotidien, sauf dérogation par convention ou accord.
 
 **La convention 3090** (spectacle vivant privé), lue dans l'entrepôt KALI (`../kali-entrepot/articles.jsonl.gz`, par
-`moteur releve-conventions chercher atelier/reference/sources 3090 "durée quotidienne"`) : la durée quotidienne dépend de
+`moteur-atelier releve-conventions chercher atelier/reference/sources 3090 "durée quotidienne"`) : la durée quotidienne dépend de
 l'annexe et de la filière. Par exemple : 10 heures, portées à 12 « dans les cas suivants » pour le personnel technique
 (`KALIARTI000028157685`, titre III, III.3, art. 2) ; 10 heures, portées à 12 « selon les nécessités et spécificités des
 tournées », dans une amplitude de 15 heures (`KALIARTI000028157839`, titre III, 3.2.6) ; 10 heures pour l'artiste-interprète
@@ -443,7 +443,7 @@ la saisie ne dit pas les heures de début et de fin d'une journée.
 
 ## Les jours fériés chômés d'un permanent : L3133-3, L3133-5 (relevé LEGI du 29/10/2026, séance 8, lot Q2)
 
-Relevés par `moteur releve-codes` : `articles-20261029.md`, l. 111-124 ; XML : `xml/L3133-3.xml`, `xml/L3133-5.xml`.
+Relevés par `moteur-atelier releve-codes` : `articles-20261029.md`, l. 111-124 ; XML : `xml/L3133-3.xml`, `xml/L3133-5.xml`.
 
 - **L3133-3** (`LEGIARTI000033020893`) : « Le chômage des jours fériés ne peut entraîner aucune perte de salaire pour les
   salariés totalisant au moins trois mois d'ancienneté dans l'entreprise ou l'établissement » ; les saisonniers cumulent
@@ -461,7 +461,7 @@ qui tombent un jour travaillé du salarié, avant ses trois mois comptés depuis
 
 ## Les heures supplémentaires et complémentaires d'un salarié au mois (relevé du 02/11/2026, séance 8, lot LONG7)
 
-Domaine `heures_supplementaires` de `moteur/src/atelier/releve/codes/textes.rs` : L3121-29 (le décompte par semaine),
+Domaine `heures_supplementaires` de `atelier/src/releve/codes/textes.rs` : L3121-29 (le décompte par semaine),
 L3121-30 (le contingent annuel), L3121-33 (l'accord fixe le taux, au moins 10 %, et le contingent), L3121-34, L3121-35,
 L3121-36 (à défaut d'accord : 25 % pour les huit premières heures de la semaine, 50 % au-delà), L3123-22 (le complément
 d'heures par avenant, qui n'est pas une heure complémentaire), L3123-29 (à défaut d'accord : 10 % dans le dixième des heures
@@ -469,4 +469,4 @@ du contrat, 25 % jusqu'au tiers) ; avec, déjà relevés, L3121-28, L3123-20, L3
 `articles-20261102.md`. **Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json` (`heures_en_plus`), lu par
 `atelier/sources/droit/src/heures_en_plus.rs` ; la convention l'emporte quand elle fixe un taux
 (`clauses-conventionnelles-base.json` : 1285, VI.9, VI.12 et VI.13 bis ; 3090, 8.6), `kali-1285-titre-vi-duree-du-travail-
-20261102.md` et `kali-3090-titre-viii-duree-du-travail-20261102.md`, relevés le même jour par `moteur releve-conventions`.
+20261102.md` et `kali-3090-titre-viii-duree-du-travail-20261102.md`, relevés le même jour par `moteur-atelier releve-conventions`.

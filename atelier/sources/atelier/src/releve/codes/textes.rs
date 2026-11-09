@@ -3,7 +3,7 @@
 //! reconnaitre un article de plus au passage.
 //!
 //! CE QUE LA PAIE A BESOIN DE LIRE. Un article ajoute ici est deja dans l'entrepot (`legi-entrepot/`, qui garde TOUS les
-//! articles en vigueur des textes suivis) : `moteur releve-codes moissonner` l'ecrit au prochain passage, sans rien
+//! articles en vigueur des textes suivis) : `moteur-atelier releve-codes moissonner` l'ecrit au prochain passage, sans rien
 //! telecharger de plus ; un TEXTE ajoute, lui, fait relire l'archive globale pour lui seul (`completer`). Rien n'est devine,
 //! tout est releve. L'ordre est celui du document lisible (`rapport`) : texte par texte, domaine par domaine.
 //!

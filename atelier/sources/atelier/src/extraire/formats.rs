@@ -1,4 +1,4 @@
-//! `moteur extraire formats <cahier.pdf | categories-controles-datatypes.xlsx> <sortie.json>` : le FORMAT de chaque rubrique
+//! `moteur-atelier extraire formats <cahier.pdf | categories-controles-datatypes.xlsx> <sortie.json>` : le FORMAT de chaque rubrique
 //! de la norme DSN, pour `logiciel/donnees/formats-dsn-base.json` (P26V01) et `formats-dsn-p27v01-base.json` (P27V01),
 //! que lit `formats.rs`.
 //!

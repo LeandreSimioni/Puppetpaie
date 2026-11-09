@@ -1,4 +1,4 @@
-//! `moteur verifier-avant-commit [--indexes]` : le garde avant commit. Il cherche, dans ce que Git emporterait du dépôt, les
+//! `moteur-atelier verifier-avant-commit [--indexes]` : le garde avant commit. Il cherche, dans ce que Git emporterait du dépôt, les
 //! données personnelles : trois motifs génériques (un NIR, un IBAN, un BIC), puis, si `prive/config/` est là, les VRAIES
 //! valeurs de la compagnie du poste qu'il y lit (SIRET, SIREN, comptes Urssaf, Congés Spectacles et France Travail, IBAN,
 //! BIC, et pour chaque salarié son NIR, son numéro Congés Spectacles, son courriel, son adresse, son nom et son prénom).
@@ -77,7 +77,7 @@ pub const FICTIVES: [(&str, &str); 10] = [
 ];
 
 /// Les textes de référence (`atelier/reference/`) sont des copies, octet pour octet, de ce que d'autres ont
-/// publié (leur empreinte se vérifie, `moteur sources`) : un numéro qui y a la forme d'un NIR, d'un IBAN ou d'un BIC est
+/// publié (leur empreinte se vérifie, `moteur-atelier sources`) : un numéro qui y a la forme d'un NIR, d'un IBAN ou d'un BIC est
 /// celui de l'émetteur -- l'exemple d'une documentation officielle, ou un nombre qui n'en est pas un. Chacun est nommé
 /// ici, fichier par fichier (relatif à la racine du dépôt), avec ce qu'il est ; seuls les motifs GÉNÉRIQUES s'y taisent,
 /// jamais les vraies valeurs lues dans `prive/config/`. Le verrou de la suite s'en sert aussi. Ce qui n'est pas listé
@@ -514,7 +514,7 @@ const USAGE: &str = "usage : moteur-atelier verifier-avant-commit [--indexes]\n\
 \x20 --indexes   ce que l'index porte (le crochet atelier/.githooks/pre-commit)\n\
 \x20 sortie : 0 rien trouve, 1 trouve, 2 pas pu verifier\n";
 
-/// `moteur verifier-avant-commit [--indexes]`, depuis n'importe où dans le dépôt.
+/// `moteur-atelier verifier-avant-commit [--indexes]`, depuis n'importe où dans le dépôt.
 pub fn commande(args: &[String]) -> i32 {
     let mut indexes = false;
     for a in args {

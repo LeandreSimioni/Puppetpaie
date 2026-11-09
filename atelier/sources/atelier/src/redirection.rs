@@ -1,5 +1,5 @@
-//! LA REDIRECTION DU BINAIRE DE L'ATELIER (`moteur-atelier`, `--features atelier`, jamais livre). La construction
-//! ordinaire ne la compile pas : `moteur` garde les adresses des organismes en dur et rien ne permet de les changer.
+//! LA REDIRECTION DU BINAIRE DE L'ATELIER (`moteur-atelier`, jamais livre), qui allume la feature `atelier` de ce qu'il
+//! prend. Le `moteur` livre ne la compile pas : il garde les adresses des organismes en dur et rien ne permet de les changer.
 //!
 //! - Trois variables d'environnement pointent le client de la DSN (net-entreprises), celui de la DPAE (Urssaf) et celui
 //!   de Google (jetons et Drive) vers un faux serveur LOCAL. Une adresse qui n'est pas locale (`http://127.0.0.1:`,

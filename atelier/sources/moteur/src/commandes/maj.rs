@@ -1,5 +1,5 @@
 //! `moteur maj` : la mise a jour en ligne de commande -- la chercher, l'appliquer, revenir a la precedente. Ce que la mise
-//! a jour recoit, verifie et applique : `compagnie::maj` ; la publier, chez l'editeur : `atelier::commandes::publication`.
+//! a jour recoit, verifie et applique : `compagnie::maj` ; la publier, par le flux « Publier » : `publication`.
 
 use compagnie::maj::{appliquer, installation, revenir, verifier, version_lue};
 

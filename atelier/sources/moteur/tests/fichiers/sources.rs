@@ -86,7 +86,7 @@ fn fragments(citation: &str) -> Vec<String> {
 type Cle = (String, String);
 
 /// Le texte des articles `voulus` d'un entrepot de la DILA (`articles.jsonl.gz`), toutes leurs versions deposees. Une
-/// ligne de LEGI s'ecrit cle en tete et les lignes se rangent par cle (`moteur/src/atelier/releve/entrepot_dila.rs`) : seule
+/// ligne de LEGI s'ecrit cle en tete et les lignes se rangent par cle (`atelier/src/releve/entrepot_dila.rs`) : seule
 /// sa cle se lit, et la lecture s'arrete passe la plus grande voulue. Une ligne de KALI se lit entiere.
 fn articles(chemin: &Path, voulus: &HashSet<Cle>) -> HashMap<Cle, String> {
     let mut lus: HashMap<Cle, String> = HashMap::new();

@@ -218,7 +218,7 @@ pub fn nom(code: &str) -> Resultat<Option<String>> {
     Ok(lieux()?.into_iter().find(|(c, _)| c == code).map(|(_, n)| n))
 }
 
-/// DEUX TABLES RELEVEES, relues comme le moteur les lit (`moteur releve-missions`) : le nombre de lieux de la table des
+/// DEUX TABLES RELEVEES, relues comme le moteur les lit (`moteur-atelier releve-missions`) : le nombre de lieux de la table des
 /// indemnites et de taux de chancellerie, ou ce qui ne se lit pas. Une table vide refuse.
 pub fn verifier(indemnites: &str, change: &str) -> Resultat<(usize, usize)> {
     let t = construire_de(indemnites, change, &lire_texte("villes.json")?)?;
@@ -233,7 +233,7 @@ pub fn verifier(indemnites: &str, change: &str) -> Resultat<(usize, usize)> {
 /// qui le designent), les lignes en vigueur a partir de `depuis` -- celles qui prennent effet ce jour ou apres, et la plus
 /// recente d'avant, qui vaut encore ce jour-la (`en_vigueur`) ; une ligne sans date lisible, que `construire_de` ne lit
 /// pas, non plus. Le reste ne se lit plus et ne se livre pas ; la table
-/// relevee entiere se depose dans les sources (`moteur releve-missions`). L'en-tete et l'ordre des lignes restent.
+/// relevee entiere se depose dans les sources (`moteur-atelier releve-missions`). L'en-tete et l'ordre des lignes restent.
 pub fn pour_les_paies(texte: &str, cles: &[&str], depuis: &Jour) -> Resultat<String> {
     let mut lignes = texte.split_inclusive('\n');
     let tete_brute = en_tete(&mut lignes, "table des missions")?;

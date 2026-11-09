@@ -1,30 +1,22 @@
 #!/bin/sh
-# Refuse un commit qui emporterait une donnee personnelle : `moteur verifier-avant-commit --indexes`
-# (atelier/sources/moteur/src/atelier/verifier_avant_commit.rs) juge ce que l'index porte -- les NIR, IBAN et BIC
+# Refuse un commit qui emporterait une donnee personnelle : `moteur-atelier verifier-avant-commit --indexes`
+# (atelier/sources/atelier/src/verifier_avant_commit.rs) juge ce que l'index porte -- les NIR, IBAN et BIC
 # sans la marque d'invention, et les vraies valeurs de prive/config/ quand il est la.
 #
 # A poser une fois, depuis la racine du depot :
 #
 #     git config core.hooksPath atelier/.githooks
 #
-# Le programme : PUPPETPAIE_FABRIQUE s'il nomme un moteur, sinon celui que Cargo a compile
-# (CARGO_TARGET_DIR, sinon atelier/sources/target, la cible de l'espace ; `cargo build --release`, ou le profil `essais` que les
-# seances du nuage compilent pour les tests), sinon celui
-# que le depot livre (atelier/sources/moteur/bin/<systeme>/). Le premier qui connait la commande
-# juge ; si aucun ne la connait, le commit est refuse : un garde qui n'a pas tourne ne laisse
-# pas passer.
+# Le programme : PUPPETPAIE_FABRIQUE s'il nomme un `moteur-atelier`, sinon celui que Cargo a compile (le binaire du
+# nuage, jamais livre : `cargo build --profile essais -p atelier`), dans la cible de l'espace (CARGO_TARGET_DIR, sinon
+# atelier/sources/target) ou dans celle de l'atelier, a cote (`<cible>-atelier`), profils `essais`, `release` ou `debug`.
+# Le premier qui connait la commande juge ; si aucun ne la connait, le commit est refuse : un garde qui n'a pas tourne ne
+# laisse pas passer.
 #
 # Pour passer outre en connaissance de cause : git commit --no-verify.
 # Ne le faire qu'apres avoir REGARDE ce qui est signale.
 
 racine=$(git rev-parse --show-toplevel) || exit 1
-moteur_src="$racine/atelier/sources/moteur"
-
-case "$(uname -s)" in
-    MINGW* | MSYS* | CYGWIN* | Windows*) systeme=windows ;;
-    Darwin) systeme=mac ;;
-    *) systeme=linux ;;
-esac
 
 # Un chemin Windows (C:\...) lu dans l'environnement, en chemin du shell de Git.
 unix() {
@@ -34,10 +26,12 @@ unix() {
 cible=$(unix "${CARGO_TARGET_DIR:-$racine/atelier/sources/target}")
 voulu=$(unix "$PUPPETPAIE_FABRIQUE")
 
-for p in "$voulu" "$cible/release/moteur" "$cible/release/moteur.exe" "$cible/essais/moteur" "$cible/essais/moteur.exe" \
-         "$moteur_src/bin/$systeme/moteur" "$moteur_src/bin/$systeme/moteur.exe"; do
+for p in "$voulu" \
+         "$cible/essais/moteur-atelier" "$cible/release/moteur-atelier" "$cible/debug/moteur-atelier" \
+         "$cible-atelier/essais/moteur-atelier" "$cible-atelier/release/moteur-atelier" "$cible-atelier/debug/moteur-atelier" \
+         "$cible/essais/moteur-atelier.exe" "$cible/release/moteur-atelier.exe" "$cible/debug/moteur-atelier.exe"; do
     [ -n "$p" ] && [ -f "$p" ] || continue
-    case "$(basename "$p")" in moteur | moteur.exe) ;; *) continue ;; esac
+    case "$(basename "$p")" in moteur-atelier | moteur-atelier.exe) ;; *) continue ;; esac
     "$p" verifier-avant-commit --aide >/dev/null 2>&1 || continue
     "$p" verifier-avant-commit --indexes
     code=$?
@@ -52,7 +46,7 @@ for p in "$voulu" "$cible/release/moteur" "$cible/release/moteur.exe" "$cible/es
     exit 1
 done
 
-echo "Commit refuse : aucun moteur ne connait verifier-avant-commit."
-echo "Le compiler : cd atelier/sources/moteur && cargo build --release"
+echo "Commit refuse : aucun moteur-atelier ne connait verifier-avant-commit."
+echo "Le compiler : cd atelier/sources && cargo build --profile essais -p atelier"
 echo "Pour passer outre malgre tout : git commit --no-verify"
 exit 1

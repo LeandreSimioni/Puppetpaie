@@ -1,4 +1,4 @@
-//! `moteur extraire usages <cahier.pdf | tableau-des-usages.xlsx> <sortie.json>` : le tableau des usages de la norme DSN,
+//! `moteur-atelier extraire usages <cahier.pdf | tableau-des-usages.xlsx> <sortie.json>` : le tableau des usages de la norme DSN,
 //! pour `logiciel/donnees/usages-dsn-base.json` (P26V01) et `usages-dsn-p27v01-base.json` (P27V01), que lit `usages.rs`.
 //!
 //! Pour chaque rubrique et chaque nature de declaration : obligatoire (O), conditionnelle (C), interdite (I), sans objet

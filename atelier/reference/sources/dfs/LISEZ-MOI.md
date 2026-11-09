@@ -14,7 +14,7 @@ texte ajouté, `_completer`) ; ce que l'outil ne garde pas (les annexes sans num
 
 | dossier | ce que c'est |
 |---|---|
-| `arrete-2025-frais-professionnels/` | relevé de l'outil (`moteur releve-codes`) : art. 1, 2, 3, 5, 9 et 10 de l'arrêté du 4 septembre 2025 (art. 3, 5 et 10 relevés le 03/11/2026, `articles-20261103.md`) (`releve.json`, `xml/`, `articles-*.md`) |
+| `arrete-2025-frais-professionnels/` | relevé de l'outil (`moteur-atelier releve-codes`) : art. 1, 2, 3, 5, 9 et 10 de l'arrêté du 4 septembre 2025 (art. 3, 5 et 10 relevés le 03/11/2026, `articles-20261103.md`) (`releve.json`, `xml/`, `articles-*.md`) |
 | `annexes-2025/` | ses deux annexes, brutes (LEGIARTI000052206429 et …431, en vigueur depuis le 07/09/2025), et leur transcription |
 | `arrete-2019-reduction-generale/` | relevé de l'outil : art. 1 et 2 de l'arrêté du 4 décembre 2019 (art. 1er dans la rédaction du 07/09/2025) |
 | `cgi-annexe4-art5/` | l'article 5 de l'annexe IV du CGI **dans sa rédaction du 31/03/2000 au 31/03/2002** (LEGIARTI000006300240, état « PERIME ») : celle « en vigueur au 31 décembre 2000 » que l'arrêté cite |

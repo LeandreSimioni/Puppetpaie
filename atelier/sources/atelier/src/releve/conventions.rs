@@ -1,7 +1,7 @@
-//! `moteur releve-conventions mettre-a-jour|article|chercher` : le texte complet des conventions collectives suivies, tenu a
+//! `moteur-atelier releve-conventions mettre-a-jour|article|chercher` : le texte complet des conventions collectives suivies, tenu a
 //! jour en local (`kali-entrepot/`). Un outil de l'atelier : `<sources>` est `atelier/reference/sources` du depot.
 //!
-//! POURQUOI. La veille des conventions (`kali.rs`, `moteur sources --verifier`) est incrementale, mais elle ne garde que
+//! POURQUOI. La veille des conventions (`kali.rs`, `moteur-atelier sources --verifier`) est incrementale, mais elle ne garde que
 //! la LISTE des textes de chaque convention -- pas leurs articles ; sans entrepot, relever une clause demanderait de
 //! retelecharger la base KALI entiere (180 Mo) et toutes ses livraisons, puis de filtrer a la main. L'entrepot garde, dans `kali-entrepot/`, TOUS les articles des
 //! conventions citees par `donnees/sources.json` -- clauses communes, annexes, avenants, toutes versions --, et la liste
@@ -406,7 +406,7 @@ pub fn rendre_recherche(ent: &EntrepotKali, idcc: &str, mot: &str) -> String {
     out
 }
 
-/// `moteur releve-conventions ...` : rend le code de sortie.
+/// `moteur-atelier releve-conventions ...` : rend le code de sortie.
 pub fn commande(args: &[String]) -> i32 {
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);

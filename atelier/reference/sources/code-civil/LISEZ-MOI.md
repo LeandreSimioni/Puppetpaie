@@ -1,6 +1,6 @@
 # Le code civil
 
-Le code civil n'est pas parmi les codes que `moteur releve-codes` suit (`moteur/src/atelier/releve/codes/textes.rs`) : ses
+Le code civil n'est pas parmi les codes que `moteur-atelier releve-codes` suit (`atelier/src/releve/codes/textes.rs`) : ses
 articles se relèvent sur Légifrance, depuis le poste de Léandre (ticket #307 du privé).
 
 | fichier | ce que c'est | relevé |

@@ -1,8 +1,8 @@
 # Le décret n° 2006-781 du 3 juillet 2006 : les frais de déplacement des personnels civils de l'État
 
-`articles-20261103.md`, `xml/`, `releve.json` : relevés par `moteur releve-codes moissonner` puis `rapport` le
+`articles-20261103.md`, `xml/`, `releve.json` : relevés par `moteur-atelier releve-codes moissonner` puis `rapport` le
 03/11/2026, depuis la base LEGI de la DILA (`JORFTEXT000000242359`, NOR BUDB0620002D ; l'identifiant se lit dans les
-liens des articles de l'entrepot qui le citent). Le texte suivi : `atelier/sources/moteur/src/atelier/releve/codes/textes.rs`,
+liens des articles de l'entrepot qui le citent). Le texte suivi : `atelier/sources/atelier/src/releve/codes/textes.rs`,
 clé `missions-2006`. Le décret entier (articles 1 à 14) est dans l'entrepot (`../legi-entrepot/`) ; le relevé garde les
 deux qui servent.
 

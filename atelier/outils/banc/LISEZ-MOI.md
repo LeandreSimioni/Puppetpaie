@@ -10,7 +10,7 @@ parle par `/atelier/<geste>` (`moteur/src/interface/mod.rs`, `Fenetre::atelier`)
 **0. Le programme** (une fois, par l'orchestrateur ; plusieurs bancs le partagent) :
 
 ```bash
-cd atelier/sources/moteur && CARGO_TARGET_DIR=<cible>-atelier cargo build --profile essais --features atelier --bin moteur-atelier
+cd atelier/sources && CARGO_TARGET_DIR=<cible>-atelier cargo build --profile essais -p atelier
 export PUPPETPAIE_ATELIER=<cible>-atelier/essais/moteur-atelier
 ```
 
@@ -111,7 +111,7 @@ cd atelier/sources/moteur && CARGO_TARGET_DIR=<cible> cargo run --profile essais
 
 Une compagnie qui entre par « D'un logiciel précédent » importe, par la page, les bulletins de son ancien logiciel. Ces
 bulletins sont **fictifs** : l'orchestrateur les fabrique d'une description JSON, au gabarit CoolPaie ou sPAIEctacle
-que l'import sait lire, un PDF par bulletin (`moteur/src/atelier/fabriquer_bulletins.rs`, la fabrique même des tests) :
+que l'import sait lire, un PDF par bulletin (`atelier/src/fabriquer_bulletins.rs`, la fabrique même des tests) :
 
 ```bash
 moteur-atelier fabriquer-bulletins description.json /tmp/banc-<nom>/bulletins --gabarit spaiectacle

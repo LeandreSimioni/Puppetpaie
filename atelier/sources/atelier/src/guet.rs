@@ -1,4 +1,4 @@
-//! `moteur guet` : le guet de l'orchestrateur, combien de contexte le sous-agent a-t-il consomme ?
+//! `moteur-atelier guet` : le guet de l'orchestrateur, combien de contexte le sous-agent a-t-il consomme ?
 //! Un outil d'atelier.
 //!
 //! Lit toutes les 30 s le dernier `usage` du transcript du sous-agent (et de celui de l'orchestrateur), jamais un
@@ -18,9 +18,9 @@
 //! dossiers dont le dernier `.jsonl` est le plus recent. `--transcript` force le fichier du sous-agent.
 //!
 //! ```text
-//! moteur guet                              le dernier sous-agent lance, seuil 300 000
-//! moteur guet --seuil 330000 --commits
-//! moteur guet --transcript CHEMIN.jsonl
+//! moteur-atelier guet                              le dernier sous-agent lance, seuil 300 000
+//! moteur-atelier guet --seuil 330000 --commits
+//! moteur-atelier guet --transcript CHEMIN.jsonl
 //! ```
 //!
 //! Ne l'arreter jamais par `pkill -f guet` : le motif tue le shell qui le lance.
@@ -73,7 +73,7 @@ fn options(args: &[String]) -> Result<Options, String> {
     Ok(o)
 }
 
-/// `moteur guet ...` : le code de sortie (0 quand il sonne, 1 sans transcript, 2 sur une option fausse).
+/// `moteur-atelier guet ...` : le code de sortie (0 quand il sonne, 1 sans transcript, 2 sur une option fausse).
 pub fn commande(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--aide" || a == "-h" || a == "--help") {
         dire!("{}", AIDE);

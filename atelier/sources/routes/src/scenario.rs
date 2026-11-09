@@ -34,7 +34,7 @@
 //!   une DSN, un contrat...), ou sous le nom qu'un scenario ecrit a la main lui donne. Le scenario se rejoue ainsi sans
 //!   rien d'exterieur : ni `/tmp`, ni le poste ou on l'a enregistre.
 //!
-//! L'ENREGISTREUR (`Enregistreur`) n'existe que dans le binaire de l'atelier (`moteur-atelier`, `--features atelier`) :
+//! L'ENREGISTREUR (`Enregistreur`) n'existe que dans le binaire de l'atelier (`moteur-atelier`, la feature `atelier`) :
 //! `moteur-atelier interface --enregistrer <dossier> [--lectures] --jour J` (le banc, `atelier/outils/banc/`). Il garde
 //! les routes dont la fiche ecrit ou engage (`routes::est_une_ecriture`) ; une lecture n'y entre qu'avec `--lectures`,
 //! et sans lui elle est servie sans attendre le tour des autres. Le binaire livre n'en a pas une ligne.

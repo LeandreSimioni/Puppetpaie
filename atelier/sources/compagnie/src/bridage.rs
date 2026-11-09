@@ -131,7 +131,7 @@ pub fn basculer() -> Result<(), String> {
 }
 
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
-/// d'un scenario (`atelier::scenario`).
+/// d'un scenario (`routes::scenario`).
 pub fn brider(inst: &Path) -> Result<(), String> {
     socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
 }

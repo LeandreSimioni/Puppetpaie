@@ -22,7 +22,7 @@ fn fichiers_rs(dossier: &Path, o: &mut Vec<PathBuf>) {
     }
 }
 
-/// L'espace `atelier/sources/` : ses crates, du socle aux envois et au moteur.
+/// L'espace `atelier/sources/` : ses crates, du socle aux envois, au moteur et a l'atelier.
 fn espace() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
@@ -30,8 +30,8 @@ fn espace() -> PathBuf {
 /// Ce qui ouvre une connexion (ou un navigateur) vers une adresse.
 const SORTIES: [&str; 8] = ["ureq::Agent", "ureq::get(", "ureq::post(", "TcpStream::connect", "SmtpTransport::", "UdpSocket", "\"xdg-open\"", "rundll32"];
 
-/// Les crates de l'espace, dont les envois, ou vivent les transports.
-const CRATES: [&str; 10] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"];
+/// Les crates de l'espace, dont les envois, ou vivent les transports, et l'atelier, qui telecharge les textes.
+const CRATES: [&str; 11] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"];
 
 /// Les fichiers qui n'ouvrent de connexion que vers la machine elle-meme, nommes dans leur crate (`src/...`), ou qu'elle soit.
 const LOCAUX: [(&str, &str); 2] = [

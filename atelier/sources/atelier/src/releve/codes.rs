@@ -1,4 +1,4 @@
-//! `moteur releve-codes moissonner|rapport|comparer <sources> [code] [--reconstruire]` : les articles de loi dont la paie a
+//! `moteur-atelier releve-codes moissonner|rapport|comparer <sources> [code] [--reconstruire]` : les articles de loi dont la paie a
 //! besoin, releves chez la DILA. Un outil de l'atelier : `<sources>` est `atelier/reference/sources` du depot.
 //!
 //! POURQUOI. Legifrance refuse les robots (403) : un releve A LA MAIN, article par article,
@@ -230,7 +230,7 @@ fn groupe<'a>(m: &Regex, t: &'a str) -> Option<&'a str> {
 
 // ------------------------------------------------------------------ la ligne de commande
 
-/// `moteur releve-codes ...` : rend le code de sortie.
+/// `moteur-atelier releve-codes ...` : rend le code de sortie.
 pub fn commande(args: &[String]) -> i32 {
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);

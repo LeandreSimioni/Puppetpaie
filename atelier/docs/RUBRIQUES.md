@@ -212,7 +212,7 @@ La source de chacune se lit dans `logiciel/donnees/rubriques-base.json` (et
 | ce qu'on y trouve | où |
 |---|---|
 | les 12 h du cachet, les 507 heures, les limites d'enseignement | règlement d'assurance chômage, **annexes VIII et X** (unedic.org) |
-| l'assiette des cotisations | **CSS L.242-1**, relevé par `moteur releve-codes` |
+| l'assiette des cotisations | **CSS L.242-1**, relevé par `moteur-atelier releve-codes` |
 | le régime des indemnités de rupture | **CGI 80 duodecies**, **CSS L.136-1-1**, même outil |
 | les frais professionnels et leurs limites | **arrêté du 20/12/2002** |
 | les jours et heures à déclarer, les codes emploi | **cahier technique AEM V5**, France Travail |
