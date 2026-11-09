@@ -39,7 +39,9 @@ async function dessinerModelesContrat(cible, ouvert = null) {
       ${x.base_changee ? `<div class="encart">${echapper(x.base_changee)}</div>` : ""}
       ${x.manques.length ? `<div class="encart erreur">${x.manques.map(echapper).join("<br>")}</div>` : ""}
       <div class="modele-gestes">
-        <button type="button" class="lien" data-ouvrir>${estOuvert(n.nature, x.id || null) ? "Fermer" : "Ouvrir"}</button>
+        ${estOuvert(n.nature, x.id || null)
+          ? `<button type="button" class="lien" data-ouvrir>Fermer</button>`
+          : `<button type="button" class="lien" data-ouvrir>Ouvrir</button>`}
         ${x.defaut ? "" : `<button type="button" class="lien" data-defaut>Choisir par défaut</button>`}
         ${x.base ? "" : `<button type="button" class="lien" data-supprimer>Supprimer</button>`}
       </div>

@@ -66,17 +66,17 @@ const fn geste(route: Route, geste: &'static str, charge: &'static [Champ], exem
 pub const ROUTES: &[Fiche] = &[
     fiche(
         Route::ModelesContrat,
-        "Lister les modèles de contrat de chaque nature : la base et les spéciaux, chacun avec son avenant.",
+        "Lister les modèles de contrat de chaque nature, la base et les spéciaux.",
         &[],
         r#"{}"#,
         "natures (chacune : ses modèles, la base d'abord, le défaut marqué, ce qui manque à chacun, à son contrat ou à son avenant)",
         &[OPERATION],
         Acte::Lit,
     ),
-    geste(Route::CopierModeleContrat, "Copier le modèle de base d'une nature, contrat et avenant, en un modèle spécial de la compagnie.", &[NATURE, NOM], r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
+    geste(Route::CopierModeleContrat, "Copier en modèle spécial le modèle de base d'une nature, contrat et avenant.", &[NATURE, NOM], r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
     fiche(
         Route::ModeleContrat,
-        "Lire le contrat ou l'avenant d'un modèle, paragraphe par paragraphe, et ce qui lui manque.",
+        "Lire le contrat ou l'avenant d'un modèle, par paragraphe, et ses manques.",
         &[NATURE, ID_OU_BASE, PARTIE],
         r#"{"nature":"cddu_spectacle","id":"m1","partie":"contrat"}"#,
         "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie), engagements (ceux de l'aperçu, le plus récent d'abord)",
@@ -86,7 +86,7 @@ pub const ROUTES: &[Fiche] = &[
     geste(Route::RenommerModeleContrat, "Renommer un modèle spécial.", &[ID, NOM], r#"{"id":"m1","nom":"Tournée d'été"}"#),
     geste(
         Route::EcrireParagrapheContrat,
-        "Écrire un paragraphe d'un modèle spécial : son titre, ses alinéas et leur condition ; le modèle est vérifié d'abord.",
+        "Écrire un paragraphe d'un modèle spécial : titre, alinéas et leur condition.",
         &[
             ID,
             PARTIE,
@@ -110,13 +110,13 @@ pub const ROUTES: &[Fiche] = &[
     ),
     geste(
         Route::SupprimerParagrapheContrat,
-        "Supprimer un paragraphe d'un modèle spécial ; celui d'une mention exigée ne se supprime pas tant qu'elle n'est pas ailleurs.",
+        "Supprimer un paragraphe d'un modèle spécial, sauf une mention exigée seule.",
         &[ID, PARTIE, NUMERO],
         r#"{"id":"m1","partie":"contrat","numero":3}"#,
     ),
     fiche(
         Route::ApercuModeleContrat,
-        "Faire le PDF du contrat ou de l'avenant d'un modèle, rempli avec un engagement de la compagnie.",
+        "Faire le PDF du contrat ou de l'avenant d'un modèle, rempli d'un engagement.",
         &[NATURE, ID_OU_BASE, PARTIE, champ("engagement", "Engagement", Forme::Objet, "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent")],
         r#"{"nature":"cddu_spectacle","id":"m1","partie":"avenant","engagement":null}"#,
         "phrase, chemin (le PDF de l'aperçu)",
@@ -126,7 +126,7 @@ pub const ROUTES: &[Fiche] = &[
     fiche(Route::ModeleContratParDefaut, "Choisir le modèle par défaut d'une nature.", &[NATURE, ID_OU_BASE], r#"{"nature":"cddu_spectacle","id":"m1"}"#, "les modèles, comme modeles-contrat", &[OPERATION, MANQUE], Acte::Ecrit),
     fiche(
         Route::SupprimerModeleContrat,
-        "Supprimer un modèle spécial ; les engagements qui l'avaient choisi suivent le défaut de leur nature, un contrat déjà parti garde son texte.",
+        "Supprimer un modèle spécial ; ses engagements suivent le défaut.",
         &[ID],
         r#"{"id":"m1"}"#,
         "les modèles, comme modeles-contrat ; la phrase nomme les engagements qui l'avaient choisi",

@@ -148,9 +148,9 @@ pub const INDETERMINE: &str = "indetermine";
 pub const A_LA_CHARGE_DU_SALARIE: &str = "a_la_charge_du_salarie";
 
 /// Minuit, en minutes depuis minuit : le debut d'un jour. L'heure de connaissance de l'accident que la compagnie ne dit
-/// pas : decision de Leandre (09/11/2026, ticket #406 du prive) -- pre-remplie a minuit du jour de connaissance, a
-/// verifier ; les 48 heures (CSS R. 441-3) se comptent depuis elle. Elle ne sert qu'a l'echeance : aucune declaration
-/// ne la porte.
+/// pas : un choix de l'editeur, pas un texte -- pre-remplie a minuit du jour de connaissance, l'heure la plus tot, donc
+/// l'echeance la plus tot, a verifier ; les 48 heures (CSS R. 441-3) se comptent depuis elle. Elle ne sert qu'a
+/// l'echeance : aucune declaration ne la porte.
 const DEBUT_DU_JOUR: u32 = 0;
 
 /// Ce que la saisie dit de l'heure de connaissance de l'accident tant qu'elle n'est pas dite (minuit, `DEBUT_DU_JOUR`).
@@ -1028,7 +1028,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         match depart {
             None => out.push(m.indeterminee("La date de l'accident n'est pas saisie : les quarante-huit heures ne se comptent pas.")),
             Some(depart) => {
-                // Un depart sans heure dite court de minuit (`DEBUT_DU_JOUR`, decision du 09/11/2026, #406).
+                // Un depart sans heure dite court de minuit (`DEBUT_DU_JOUR`, l'echeance la plus tot).
                 let minute = match depart.minute {
                     Some(m) => m,
                     None => DEBUT_DU_JOUR,

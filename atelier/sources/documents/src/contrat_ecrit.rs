@@ -364,9 +364,9 @@ pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<V
     Ok(dits)
 }
 
-/// Pourquoi tout modele de contrat cite les clauses particulieres de l'engagement : la decision 8 de Leandre (ticket
-/// #403 du prive, une seule facon de personnaliser), pas un texte de loi. Elles ne s'impriment que par lui ; un modele
-/// qui ne le citerait pas les tairait sans le dire.
+/// Pourquoi tout modele de contrat cite les clauses particulieres de l'engagement : un choix de l'editeur (une seule
+/// facon de personnaliser un contrat), pas un texte de loi. Elles ne s'impriment que par lui ; un modele qui ne le
+/// citerait pas les tairait sans le dire.
 const CLAUSES_EXIGEES: &str = "les clauses particulières qu'un engagement dit ne s'impriment que par lui, dans un alinéa [si contrat.clauses_particulieres] ; un modèle qui ne le cite pas les perdrait sans le dire";
 
 /// LES CHAMPS QU'UN MODELE CITE, lieu par lieu (le titre, le preambule, la phrase d'annulation, le bloc de modification,
