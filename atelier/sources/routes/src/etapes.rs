@@ -710,7 +710,7 @@ fn plur(k: usize, un: &'static str, des: &'static str) -> &'static str {
 /// les heures pas encore saisis (`SaisieIncomplete`, leur liste est
 /// `engagement::saisie_incomplete`) -- gardent leur classe ; tout autre est
 /// celui du moteur.
-pub fn classer_saisie(message: String) -> Echec {
+pub(crate) fn classer_saisie(message: String) -> Echec {
     let incomplete = engagement::saisie_incomplete(&message);
     Echec { classe: if incomplete { Some(Classe::SaisieIncomplete) } else { None }, message }
 }

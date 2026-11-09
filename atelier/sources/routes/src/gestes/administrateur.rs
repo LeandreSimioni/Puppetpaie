@@ -112,7 +112,7 @@ struct EntreeRegistre {
 }
 
 /// L'installation d'une compagnie : `<installation>/compagnies/<nom>` ou `<installation>/prive` (ou `fictives/<nom>`).
-pub fn installation_de(racine: &Path) -> PathBuf {
+pub(crate) fn installation_de(racine: &Path) -> PathBuf {
     let parent = match racine.parent() {
         Some(p) => p,
         None => racine,
@@ -794,7 +794,7 @@ fn cle_d_urgence(en_retard: bool, butoir: &Option<String>) -> (bool, bool, Optio
 
 /// LE TABLEAU DE LA COMPAGNIE `ctx` : ses declarations obligatoires, du plus presse au moins presse, chacune avec sa date
 /// limite et, pour ce qui part par la DSN, ou en est son fichier. Ecrit dans `config/.tableau.json` (ce que l'accueil lit).
-pub fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
+pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
     let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, &ctx.aujourdhui.iso());
@@ -949,7 +949,7 @@ pub fn tableau_de(inst: &Path, par_compagnie: Vec<(PathBuf, Result<TableauCompag
 
 /// Le tableau tel qu'il est garde : AUCUN CALCUL, la lecture de `config/.tableau.json` de chaque compagnie rattachee.
 /// L'accueil le montre tout de suite ; la fenetre le refait ensuite en fond (`tableau`).
-pub fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
+pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
     let par = rattachees(inst)?
         .into_iter()
         .map(|r| {

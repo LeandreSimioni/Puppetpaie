@@ -71,7 +71,7 @@ use crate::etapes::Moteur;
 use compagnie::installation::FICHIER_HORLOGE;
 
 /// Qui signe, au journal, ce que l'horloge joue.
-pub const QUI_HORLOGE: &str = "horloge";
+pub(crate) const QUI_HORLOGE: &str = "horloge";
 
 const ORIGINE: &str = "compagnie fictive : joue par l'horloge";
 const QUOI: &str = "L'horloge de la compagnie fictive : le dernier jour joue, ce qui n'est plus a regarder, et ce qu'elle a fait en dernier (le bandeau le dit).";
@@ -80,7 +80,7 @@ const QUOI: &str = "L'horloge de la compagnie fictive : le dernier jour joue, ce
 
 /// LA GARDE : la preuve que la racine est une COMPAGNIE FICTIVE, exigee de tout ce qui agit. Elle ne se fabrique
 /// que par `verifier`, qui lit `bridage::branchement` ; `reverifier` la relit avant chaque geste.
-pub struct HorlogeFictive<'a> {
+pub(crate) struct HorlogeFictive<'a> {
     racine: &'a Path,
     /// LE JOUR JOUE : celui que l'horloge rattrape. Chaque contexte qu'elle ouvre porte ce jour (`aujourdhui` ET `date`),
     /// jamais l'horloge reelle de la machine : la cloture d'une annee, l'export, le jour inscrit
@@ -305,7 +305,7 @@ fn deposer_les_dsn(
 
 /// `dernier_rattrapage` : ce que l'horloge a joue aujourd'hui, pour le bandeau « pendant votre absence ». Vide si elle
 /// n'a rien joue ce jour-la.
-pub fn dernier_rattrapage(racine: &Path, aujourdhui: Option<Jour>) -> R<Vec<String>> {
+pub(crate) fn dernier_rattrapage(racine: &Path, aujourdhui: Option<Jour>) -> R<Vec<String>> {
     let jour = match aujourdhui {
         Some(j) => j,
         None => droit::contexte::aujourdhui().map_err(Echec::from)?,

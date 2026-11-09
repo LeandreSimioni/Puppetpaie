@@ -59,7 +59,7 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui
 /// de la consultation net-entreprises.
-pub fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {
+pub(crate) fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),

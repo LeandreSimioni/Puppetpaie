@@ -852,7 +852,7 @@ fn poser_entreprise_note(ctx: &Contexte, case: ChangementEntreprise, jour: Jour,
 // ------------------------------------------------------------------ la fiche demandee par courriel
 
 /// Secondes entre une demande de fiche et la reponse de la personne fictive de la compagnie fictive (`DELAI_SIGNATURE`).
-pub const DELAI_FICTIVE: i64 = 20;
+pub(crate) const DELAI_FICTIVE: i64 = 20;
 
 /// Une adresse courriel de forme `x@y.z`, sans blanc ni second `@`.
 fn adresse_valide(adresse: &str) -> bool {
@@ -898,7 +898,7 @@ fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&st
     Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }
 /// compagnie fictive, sinon refus « boite absente ») quand l'appelant n'en donne pas.
-pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
+pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
     let adresse = strip(adresse).to_lowercase();
     if !adresse_valide(&adresse) {
         return Err(refus(format!("« {} » n'est pas une adresse de courriel.", adresse)));
@@ -957,7 +957,7 @@ pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preu
 
 /// Une demande partie et pas encore revenue.
 #[derive(Debug, Clone)]
-pub struct Attendue {
+pub(crate) struct Attendue {
     pub code: String,
     pub adresse: String,
     pub prenom: String,
@@ -974,7 +974,7 @@ fn demande_de(l: &journal::Ligne, code: &str) -> bool {
 
 /// `fiches_attendues` : les demandes parties et pas encore revenues, les plus anciennes d'abord. Une demande a
 /// laquelle on renonce se retire (`fiche-oublier-demande`, `fiches`).
-pub fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
+pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut sortie = Vec::new();
     for e in lignes.iter().filter_map(journal::Ligne::fiche) {
@@ -1032,7 +1032,7 @@ fn os(m: String) -> Echec {
 ///
 /// `client` : la boite, ouverte ici quand l'appelant n'en donne pas -- la personne fictive de la compagnie fictive, ou la
 /// vraie boite ; sans boite, un incident et rien d'autre. `qui` : `interface`, ou `veille`.
-pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &str) -> R<ReleveFiches> {
+pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &str) -> R<ReleveFiches> {
     let mut r = ReleveFiches::default();
     let attendues = fiches_attendues(ctx)?;
     r.attendues = attendues.len();
@@ -1229,7 +1229,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
 /// La boite de la compagnie fictive, vue par la releve. Chaque demande de fiche partie
 /// depuis `delai` secondes y trouve sa reponse remplie ; la vraie releve la lit et cree la fiche. Ce qu'on y envoie
 /// s'ecrit comme tout courriel joue (`BoiteQuiRepond`, partagee avec `BoiteDesSignatures`).
-pub fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
+pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
     let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
     let maintenant_naif = socle::paris::maintenant_naif();
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.

@@ -36,7 +36,7 @@ pub(crate) type R<T> = Result<T, Echec>;
 
 /// De quoi ouvrir la boite : appele UNE fois par envoi. Les tests passent un faux client du trait `Courriel`, ou la
 /// boite simulee ; une route ouvre la vraie (`client_courriel`).
-pub type Ouvrir<'a> = &'a mut dyn FnMut() -> R<Box<dyn Courriel>>;
+pub(crate) type Ouvrir<'a> = &'a mut dyn FnMut() -> R<Box<dyn Courriel>>;
 
 const SALARIES: Champ = Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "seulement ceux-ci (les clés de leurs fiches) ; tous sinon", avance: false };
 

@@ -150,7 +150,7 @@ pub struct ChargeOuverture {
 
 impl Options {
     /// Les options d'une charge de route : un passage ordinaire, et ce que la charge dit autrement.
-    pub fn de_la_charge(c: ChargeOuverture) -> Options {
+    pub(crate) fn de_la_charge(c: ChargeOuverture) -> Options {
         let mut o = Options::default();
         o.sauvegarder = c.sauvegarder != Some(false);
         o.retours = c.retours != Some(false);
@@ -220,7 +220,7 @@ pub struct Ouverture {
 
 impl Ouverture {
     /// `Ouverture.tout_va_bien`.
-    pub fn tout_va_bien(&self) -> bool {
+    pub(crate) fn tout_va_bien(&self) -> bool {
         self.incidents.is_empty() && self.manquants.is_empty()
     }
 

@@ -275,7 +275,7 @@ const DECEMBRE: u32 = 12;
 // ------------------------------------------------------------------ la cloture
 
 /// Les exercices clos de la compagnie, sous sa racine.
-pub const EXERCICES: &str = "config/exercices.json";
+pub(crate) const EXERCICES: &str = "config/exercices.json";
 
 /// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
 /// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.

@@ -242,7 +242,7 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
 /// L'ORDRE COMPTE : 1. lire le fichier ; 2. verifier que le mode demande colle a la nature codee dedans ;
 /// 3. exiger la preuve (reel) ; 4. exiger la REPETITION (reel, `contournement` pour la sortie de secours) ;
 /// 5. seulement alors chercher le secret de l'organisme ; 6. deposer ; 7. NOTER, quoi qu'il arrive.
-pub fn deposer_dsn(
+pub(crate) fn deposer_dsn(
     ctx: &Contexte,
     fichier: &str,
     reel: bool,
@@ -443,7 +443,7 @@ pub fn deposer_dsn_dans(
 
 /// Depose une DPAE. Meme ordre, memes regles que la DSN. La DPAE
 /// declare des EMBAUCHES, et le journal retient lesquelles (salarie, premier jour).
-pub fn deposer_dpae(
+pub(crate) fn deposer_dpae(
     ctx: &Contexte,
     fichier: &str,
     reel: bool,
@@ -459,7 +459,7 @@ pub fn deposer_dpae(
 /// un serveur local). Un client donne n'est jamais confronte au coffre, et ses identifiants sont verifies comme ceux
 /// d'un client construit ici. Sans client, rien ne change.
 #[allow(clippy::too_many_arguments)]
-pub fn deposer_dpae_avec(
+pub(crate) fn deposer_dpae_avec(
     ctx: &Contexte,
     fichier: &str,
     reel: bool,

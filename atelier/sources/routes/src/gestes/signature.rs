@@ -73,7 +73,7 @@ const RAPPEL_RELANCE: &str = "Petit rappel : ta signature n'est pas encore arriv
 const RAPPEL_RELANCE_AVENANT: &str = "Petit rappel : ta signature n'est pas encore arrivée. C'est le même avenant que la dernière fois.\n\n";
 const CORPS_SIGNATURE: &str = "Bonjour {prenom},\n\n{contrats}\n\nPour {le_signer}, un clic suffit : appuie sur le bouton « Je signe » de ce message, puis envoie la réponse qui s'ouvre, sans la modifier. Si ta messagerie n'affiche pas le bouton, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : {code}\n\nTu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}\n\nSi quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.\n\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 const HTML_SIGNATURE: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour {prenom},</p>\n<p>{contrats}</p>\n<p>Pour {le_signer}, un clic suffit : appuie sur le bouton, puis envoie la réponse qui s'ouvre, sans la modifier.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Je signe</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : <b>{code}</b></p>\n<p>Tu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}</p>\n<p>Si quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.</p>\n<p>Bien à toi,<br>{signataire}<br>{raison_sociale}</p>\n</div>\n";
-pub const CORPS_REPONSE: &str = "Je soussigné(e) {nom} déclare avoir lu et accepter {quoi}.\n\nCode de signature : {code}\n";
+pub(crate) const CORPS_REPONSE: &str = "Je soussigné(e) {nom} déclare avoir lu et accepter {quoi}.\n\nCode de signature : {code}\n";
 
 // ------------------------------------------------------------------ les petits outils
 
@@ -84,7 +84,7 @@ pub type Cible = (String, String, Option<String>);
 /// commencent le meme jour se distinguent par leur numero ; sans numero, elle vaut pour tous ceux de ce salarie a ce
 /// debut. `salaries` prend tous les contrats de ces salaries. Rien : tous les contrats du mois.
 #[derive(Default)]
-pub struct Choisis {
+pub(crate) struct Choisis {
     pub salaries: Option<Vec<String>>,
     pub contrats: Option<Vec<Cible>>,
 }
@@ -119,13 +119,13 @@ fn et_fr(morceaux: &[String]) -> String {
 
 /// `code_signature` : `SIG-` puis six signes tires au hasard, sans 0/O ni 1/I/L, pour qu'il se relise sans
 /// hesiter s'il faut le recopier a la main.
-pub fn code_signature() -> R<String> {
+pub(crate) fn code_signature() -> R<String> {
     documents::fiche_questionnaire::code_au_hasard("SIG-").map_err(|m| erreur(Classe::Disque, m))
 }
 
 /// `signataire` et `raison` des courriels : le prenom d'affichage du signataire (sinon son prenom, capitalise), et
 /// le nom d'affichage de la compagnie (sinon sa raison sociale).
-pub fn signataire_et_raison(ctx: &Contexte) -> R<(String, String)> {
+pub(crate) fn signataire_et_raison(ctx: &Contexte) -> R<(String, String)> {
     let sg = ctx.entreprise.signataire.dite().ok_or_else(|| requis_manque("signataire"))?;
     let signataire = match sg.prenom_affichage.portee() {
         Some(p) => p.to_string(),
@@ -192,7 +192,7 @@ fn nom_ou_cle(s: &ChampsSalarie, cle: &str) -> String {
 
 /// Ce que le contrat dit, clause par clause (l'avenant qui le modifiera doit citer l'ancien
 /// texte a cote du nouveau). Un contrat qui ne s'ecrit pas se refuse.
-pub fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte::EntrepriseDuDocument) -> R<std::collections::BTreeMap<String, Option<String>>> {
+pub(crate) fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte::EntrepriseDuDocument) -> R<std::collections::BTreeMap<String, Option<String>>> {
     let v = documents::contrat::valeurs_de_paie(ctx, ent, p)?;
     Ok(CLAUSES_MODIFIABLES.iter().map(|k| (k.nom().to_string(), v.get(k).cloned())).collect())
 }
@@ -354,9 +354,9 @@ fn nom_du_pdf(cle: &str, ps: &[Paie], etiq: &str, suffixe: &str) -> String {
 /// LE PDF A IMPRIMER : les pieces `pieces`, dans leur ordre, reunies en un seul fichier `<dossier>/Impression_<quoi>_<etiq>.pdf`
 /// (une impression d'un mois remplace la precedente : les pieces parties gardent chacune leur fichier).
 /// Le debut du nom du PDF a imprimer : ce fichier n'est la piece de personne, il ne se liste pas parmi les documents.
-pub const PREFIXE_IMPRESSION: &str = "Impression_";
+pub(crate) const PREFIXE_IMPRESSION: &str = "Impression_";
 
-pub fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
+pub(crate) fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
     let octets = documents::fabrique::fusion_pieces(&pieces.iter().map(|p| (p.clone(), None)).collect::<Vec<_>>())?;
     let f = dossier.join(format!("{}{}_{}.pdf", PREFIXE_IMPRESSION, quoi, etiq));
     // Un mois dont seul un avenant s'imprime n'a pas encore son dossier d'envoi.
@@ -368,7 +368,7 @@ pub fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, p
 /// Ce que rend `contrats_imprimer` : chaque piece partie (son chemin), le PDF a imprimer (son nom et son chemin), les
 /// contrats et les avenants partis tels que le journal les note.
 #[derive(Debug, serde::Serialize)]
-pub struct Impression {
+pub(crate) struct Impression {
     pub fichiers: Vec<String>,
     pub impression: String,
     pub chemin: String,
@@ -383,7 +383,7 @@ pub struct Impression {
 /// sien, et le journal le note (`contrat-signature`, `main_propre` ; une ligne pour les contrats, une pour les avenants) ;
 /// ce qui revient signe se note ensuite d'un clic (`contrat-recu`). Rien ne quitte le poste : aucun mot de passe. `qui` :
 /// la ligne du journal.
-pub fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Choisis>, avenants: &[(String, Vec<UnAvenant>)], qui: &str) -> R<Impression> {
+pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Choisis>, avenants: &[(String, Vec<UnAvenant>)], qui: &str) -> R<Impression> {
     let mois = mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &departs)?;
@@ -442,7 +442,7 @@ pub fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Choisis>, 
 /// Ce que rend `demander_signature` : les adresses servies, les contrats partis tels que le journal les note, et ce que
 /// la demande dit des contrats qui ne partent pas (leur salarie n'a pas de courriel).
 #[derive(Debug, Default, serde::Serialize)]
-pub struct ContratsEnvoyes {
+pub(crate) struct ContratsEnvoyes {
     pub partis: Vec<String>,
     pub contrats: Vec<ContratParti>,
     pub avertissements: Vec<String>,
@@ -628,7 +628,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
 
 /// Ce que la demande de signature et son apercu disent des contrats coches dont le salarie n'a pas de courriel : ils ne
 /// partent pas par courriel, ils s'impriment pour se signer en main propre, ou le courriel se saisit dans la fiche.
-pub fn sans_courriel_dit(noms: &[String]) -> String {
+pub(crate) fn sans_courriel_dit(noms: &[String]) -> String {
     if noms.len() == 1 {
         format!(
             "Pas de courriel dans la fiche de {} : son contrat ne part pas à la signature par courriel. Imprimez-le pour le faire signer en main propre, ou saisissez son courriel dans sa fiche.",
@@ -644,7 +644,7 @@ pub fn sans_courriel_dit(noms: &[String]) -> String {
 
 /// Ce que l'envoi des avenants et l'apercu de la signature disent des avenants coches dont le salarie n'a pas de
 /// courriel : ils ne partent pas par courriel, ils s'impriment pour se signer en main propre, ou le courriel se saisit.
-pub fn avenants_sans_courriel_dit(noms: &[String]) -> String {
+pub(crate) fn avenants_sans_courriel_dit(noms: &[String]) -> String {
     if noms.len() == 1 {
         format!(
             "Pas de courriel dans la fiche de {} : son avenant ne part pas à la signature par courriel. Imprimez-le pour le faire signer en main propre, ou saisissez son courriel dans sa fiche.",
@@ -732,12 +732,12 @@ fn verifier_relance(etats: &[crate::contrats::ContratASigner], cles: &[(String, 
 /// LE DOSSIER DU CONTRAT SIGNE HORS DU LOGICIEL (`engagement::signe_ailleurs`) du salarie `cle` commence le `debut` : la
 /// compagnie y depose, si elle le veut, le PDF de ce contrat ; il est garde avec elle (la sauvegarde l'emporte) et part
 /// joint a chaque avenant envoye a la signature, pour que le salarie l'ait sous les yeux. Le logiciel ne le lit pas.
-pub fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debut: &str) -> PathBuf {
+pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debut: &str) -> PathBuf {
     racine.join("salaries").join(cle).join(format!("contrat-du-{}", debut))
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.
-pub fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: &str) -> Vec<PathBuf> {
+pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: &str) -> Vec<PathBuf> {
     let mut pdf: Vec<PathBuf> = std::fs::read_dir(dossier_du_contrat_signe(racine, cle, debut))
         .into_iter()
         .flatten()
@@ -752,14 +752,14 @@ pub fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: &str) ->
 /// Ce que l'ecran et la ligne de commande disent du dossier du contrat signe hors du logiciel : son chemin (la fenetre
 /// l'ouvre, et le cree), les PDF deposes, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ContratSigneDit {
+pub(crate) struct ContratSigneDit {
     pub chemin: String,
     pub deposes: Vec<String>,
     pub phrase: String,
 }
 
 /// Ce dossier, dit (`ContratSigneDit`).
-pub fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: &str) -> ContratSigneDit {
+pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: &str) -> ContratSigneDit {
     let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut).iter().map(|p| nom_du(p)).collect();
     let qui = ctx.nomme(cle);
     let phrase = if deposes.is_empty() {
@@ -805,7 +805,7 @@ impl UnAvenant {
     }
 
     /// « Avenant n° 1 de Nom : déjà parti, imprimé le 05/11/2026. », quand il est parti imprimé.
-    pub fn deja_parti(&self, nom: &str) -> Option<String> {
+    pub(crate) fn deja_parti(&self, nom: &str) -> Option<String> {
         let quand = socle::ecran::quand(self.imprime_le.as_deref()?.get(..10)?);
         Some(format!("Avenant n° {} de {} : déjà parti, imprimé le {}.", self.numero, nom, quand))
     }
@@ -930,7 +930,7 @@ fn avenant_ecrit(
 }
 
 /// Ce que `envoyer_avenants` rend : les adresses servies, et les avenants partis.
-pub struct Avenants {
+pub(crate) struct Avenants {
     pub partis: Vec<String>,
     pub avenants: Vec<ContratParti>,
 }
@@ -942,7 +942,7 @@ pub struct Avenants {
 ///
 /// Le journal `contrat-signature` porte une ligne par courriel, `acte: "avenant"` et le numero de chacun ;
 /// la version de chaque engagement y est notee, et c'est elle qui dit ensuite que le contrat est a jour.
-pub fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAvenant>)], client: &mut dyn Courriel) -> R<Avenants> {
+pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAvenant>)], client: &mut dyn Courriel) -> R<Avenants> {
     let (signataire, raison) = signataire_et_raison(ctx)?;
     let expediteur = client.compte().to_lowercase();
     let aujourdhui_jj = ctx.aujourdhui.jj_mm_aaaa();
