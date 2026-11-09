@@ -148,30 +148,20 @@ struct ChangeLegi {
 type EntrepotLegi = Entrepot<ArticleLegi, EtatLegi>;
 
 /// LE RELEVE D'UN TEXTE (`<texte>/releve.json`) : d'ou il vient, ou en est la lecture des livraisons, ce qui a change
-/// depuis l'archive globale, et ses articles voulus. Les cles en `_` sont celles des releves deposes.
+/// depuis l'archive globale, et ses articles voulus.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReleveDUnTexte {
-    #[serde(rename = "_source")]
     source: String,
-    #[serde(rename = "_global")]
     global: String,
-    #[serde(rename = "_texte")]
     texte: String,
-    #[serde(rename = "_legitext")]
     legitext: String,
-    #[serde(rename = "_livraisons_lues")]
     livraisons_lues: usize,
-    #[serde(rename = "_livraisons_totales")]
     livraisons_totales: usize,
     /// Ce qui reste a lire quand un passage s'interrompt : le document le dira, plutot que de se donner pour complet.
-    #[serde(rename = "_complet")]
     complet: bool,
-    #[serde(rename = "_derniere_livraison")]
     derniere_livraison: Option<String>,
-    #[serde(rename = "_changes_depuis_le_global")]
-    changes: Vec<ChangeLegi>,
-    #[serde(rename = "_releve_le")]
+    changes_depuis_le_global: Vec<ChangeLegi>,
     releve_le: String,
     articles: EnOrdre<ArticleReleve>,
 }
@@ -559,7 +549,7 @@ fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: us
             livraisons_totales: totales,
             complet: lues.len() == totales,
             derniere_livraison: lues.last().cloned(),
-            changes: changes.iter().filter(|c| c.texte == texte.cle).map(|c| (*c).clone()).collect(),
+            changes_depuis_le_global: changes.iter().filter(|c| c.texte == texte.cle).map(|c| (*c).clone()).collect(),
             releve_le: jour.to_string(),
             articles: siens,
         };
@@ -604,13 +594,13 @@ fn jour_lisible(aaaammjj: &str) -> String {
 /// « Aucun n'a change » n'a de valeur que dit par une machine qui a reellement passe les livraisons -- et il faut alors
 /// dire combien.
 fn ce_qui_a_change(meta: &ReleveDUnTexte) -> String {
-    if meta.changes.is_empty() {
+    if meta.changes_depuis_le_global.is_empty() {
         return format!("**aucun de ces {} articles n'a change de version** depuis l'archive globale", meta.articles.len());
     }
     format!(
         "**{} article(s) ont change de version** : {}",
-        meta.changes.len(),
-        meta.changes
+        meta.changes_depuis_le_global.len(),
+        meta.changes_depuis_le_global
             .iter()
             .map(|c| format!("{} ({} -> {}, livraison du {})", c.article, c.avant, c.apres, jour_lisible(dila::premiers_caracteres(&c.livraison, 8))))
             .collect::<Vec<_>>()
@@ -736,7 +726,7 @@ fn changements(racine: &Path) -> R<Vec<ChangeLegi>> {
         if !p.exists() {
             continue;
         }
-        tout.extend(lire_releve(&p)?.changes);
+        tout.extend(lire_releve(&p)?.changes_depuis_le_global);
     }
     Ok(tout)
 }

@@ -4,7 +4,7 @@
 //! `moteur route` en sert une (`--texte` : ses phrases).
 //!
 //! Une commande = un module, qui declare ses options (`analyse::Spec`) et rend un code de sortie ; sa sortie est un
-//! texte, ou l'enveloppe `--json` (`rendu::enveloppe`).
+//! texte, ou l'enveloppe `--json` (`rendu::rendre`).
 //!
 //! LE MOT DE PASSE. Chaque commande installe au demarrage la demande reelle (`demande::installer`). Une
 //! consultation qui trouve le coffre ferme -- ni la cle du poste, ni un mot de passe tape, ni une seance -- le demande

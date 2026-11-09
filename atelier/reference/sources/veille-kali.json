@@ -1,5 +1,5 @@
 {
- "_quoi": "Les livraisons open data KALI deja lues, resumees a ce qui touche les conventions suivies dans sources.json. Une livraison lue n'est jamais retelechargee ; supprimer ce fichier force la relecture.",
+ "quoi":"Les livraisons open data KALI deja lues, resumees a ce qui touche les conventions suivies dans sources.json. Une livraison lue n'est jamais retelechargee ; supprimer ce fichier force la relecture.",
  "livraisons": {
   "20260914-210916": {
    "conteneurs": {},
