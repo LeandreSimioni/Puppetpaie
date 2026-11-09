@@ -41,6 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
@@ -92,13 +93,25 @@ const RUBRIQUES: [(&str, &[&str]); 12] = [
 /// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
 const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::horloge::FICHIER_HORLOGE];
 
-/// Une compagnie d'essai : son marqueur le dit.
+/// Une compagnie d'essai : son marqueur le dit (`interface::compagnies::copie_de`).
 pub fn est_essai(racine: &Path) -> bool {
-    std::fs::read_to_string(racine.join(MARQUEUR))
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| v.get("copie_de").and_then(Value::as_str).map(str::to_string))
-        .is_some_and(|c| c.starts_with(MARQUE_ESSAI))
+    crate::interface::compagnies::copie_de(racine).is_some_and(|c| c.starts_with(MARQUE_ESSAI))
+}
+
+/// LE MARQUEUR D'UNE COMPAGNIE D'ESSAI (`COPIE-DE-DEVELOPPEMENT.json`) : ce qu'elle copie, depuis quelle fictive, quand,
+/// et ce qu'elle est.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarqueurDEssai {
+    copie_de: String,
+    depuis: String,
+    quand: String,
+    quoi: String,
+}
+
+/// Ce qu'un refus porte a part : le chemin `p`.
+fn a_part(p: &Path) -> socle::echec::APart {
+    socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
 }
 
 // ------------------------------------------------------------------ l'identite
@@ -297,27 +310,28 @@ pub struct Montage {
 }
 
 /// Le dossier d'installation : celui qui porte `logiciel/` (`logiciel/donnees` -> `logiciel` -> l'installation).
-fn installation() -> PathBuf {
-    socle::fichiers::dossier_du_code().parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default()
+fn installation() -> Result<PathBuf, String> {
+    let code = socle::fichiers::dossier_du_code();
+    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| socle::echec::avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
 }
 
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
 fn source(depuis: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(depuis);
-    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation().join(crate::interface::compagnies::DOSSIER_FICTIVES).join(depuis) };
+    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::interface::compagnies::DOSSIER_FICTIVES).join(depuis) };
     if !d.join(droit::contexte::ENTREPRISE).is_file() {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", json!({"chemin": d.to_string_lossy()})));
+        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
     if !crate::interface::compagnies::est_fictive_livree(&d) {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", json!({"chemin": d.to_string_lossy()})));
+        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
     }
     Ok(d)
 }
 
 /// Le chemin absolu, sans `..`, meme s'il n'existe pas encore (on remonte au premier ancetre qui existe).
-fn absolu(p: &Path) -> PathBuf {
-    let p = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) };
+fn absolu(p: &Path) -> Result<PathBuf, String> {
+    let p = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().map_err(|e| socle::echec::du_disque(p, &e))?.join(p) };
     let mut reste = Vec::new();
     let mut a = p.as_path();
     loop {
@@ -326,29 +340,30 @@ fn absolu(p: &Path) -> PathBuf {
             for r in reste.iter().rev() {
                 c.push(r);
             }
-            return c;
+            return Ok(c);
         }
         match (a.file_name(), a.parent()) {
             (Some(n), Some(parent)) => {
                 reste.push(n.to_os_string());
                 a = parent;
             }
-            _ => return p,
+            _ => return Ok(p),
         }
     }
 }
 
 /// Le depot Git ou l'installation qui contient `dossier`, s'il y en a un : la copie porterait l'identite d'une vraie compagnie,
 /// elle ne va jamais la ou un `git add` la prendrait, ni a cote de ce que les gens recoivent.
-fn depot_englobant(dossier: &Path) -> Option<PathBuf> {
-    absolu(dossier).ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf)
+fn depot_englobant(dossier: &Path) -> Result<Option<PathBuf>, String> {
+    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
 }
 
 fn copier(src: &Path, dst: &Path, racine: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| socle::echec::du_disque(&dst, &e))?;
-    for e in std::fs::read_dir(src).map_err(|e| socle::echec::du_disque(&src, &e))?.flatten() {
+    for e in std::fs::read_dir(src).map_err(|e| socle::echec::du_disque(&src, &e))? {
+        let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
-        let rel = s.strip_prefix(racine).unwrap_or(&s).to_string_lossy().replace('\\', "/");
+        let rel = s.strip_prefix(racine).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
         if NON_COPIES.contains(&rel.as_str()) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
@@ -377,24 +392,27 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         format!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
     })?;
     let id = Identite::lire(texte)?;
-    if let Some(d) = depot_englobant(dossier) {
+    if let Some(d) = depot_englobant(dossier)? {
         return Err(socle::echec::avec(
             "Ce dossier est dans un dépôt Git ou une installation de PuppetPaie : la compagnie d'essai porte l'identité d'une vraie compagnie, elle se monte hors de tout dépôt (par exemple dans le dossier temporaire, le défaut). Rien n'est écrit.",
-            json!({"chemin": dossier.to_string_lossy(), "depot": d.to_string_lossy()}),
+            socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.display())), ..Default::default() },
         ));
     }
     let existe = dossier.exists();
     let deja = existe && est_essai(dossier);
-    if existe && !deja && std::fs::read_dir(dossier).map(|mut d| d.next().is_some()).unwrap_or(true) {
-        return Err(socle::echec::avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", json!({"chemin": dossier.to_string_lossy()})));
+    if existe && !deja {
+        let plein = std::fs::read_dir(dossier).map_err(|e| socle::echec::du_disque(dossier, &e))?.next().is_some();
+        if plein {
+            return Err(socle::echec::avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", a_part(dossier)));
+        }
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
-        let fiche = crate::valeur::lire_json(&dossier.join(MARQUEUR)).unwrap_or(Value::Null);
-        (None, fiche.get("depuis").and_then(Value::as_str).unwrap_or("?").to_string())
+        let marqueur: MarqueurDEssai = socle::forme::lire_fichier(&dossier.join(MARQUEUR), "Le marqueur de la compagnie d'essai ne se lit pas.")?;
+        (None, marqueur.depuis)
     } else {
         let s = source(depuis)?;
-        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| socle::echec::avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
         (Some(s), nom)
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.
@@ -409,18 +427,18 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         copier(s, dossier, s)?;
         retirer_les_depots_de_dsn(dossier)?;
         let quand = socle::paris::iso_secondes(socle::temps::secondes());
-        let marqueur = json!({
-            "copie_de": format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
-            "depuis": nom,
-            "quand": quand,
-            "quoi": "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.",
-        });
+        let marqueur = MarqueurDEssai {
+            copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
+            depuis: nom.clone(),
+            quand,
+            quoi: "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.".to_string(),
+        };
         socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
         std::fs::write(dossier.join(".gitignore"), "# Compagnie d'essai : l'identite d'une vraie compagnie. Rien ici ne se commite.\n*\n")
             .map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     }
     socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    Ok(Montage { dossier: absolu(dossier), depuis: nom, neuf: !deja })
+    Ok(Montage { dossier: absolu(dossier)?, depuis: nom, neuf: !deja })
 }
 
 // ------------------------------------------------------------------ la commande
@@ -484,8 +502,19 @@ pub fn commande(args: &[String]) -> i32 {
         }
     }
     crate::commandes::compagnie::fixer_le_code();
-    let dossier = dossier.unwrap_or_else(|| std::env::temp_dir().join(DOSSIER_PAR_DEFAUT));
-    let texte = std::env::var(VARIABLE).ok();
+    // Sans dossier dit : dans le dossier temporaire du systeme.
+    let dossier = match dossier {
+        Some(d) => d,
+        None => std::env::temp_dir().join(DOSSIER_PAR_DEFAUT),
+    };
+    let texte = match std::env::var(VARIABLE) {
+        Ok(t) => Some(t),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            eprintln!("{} n'est pas un texte lisible : un objet JSON sur une ligne est attendu. Rien n'est ecrit.", VARIABLE);
+            return 1;
+        }
+    };
     match monter(&dossier, &depuis, texte.as_deref()) {
         Ok(m) => {
             let d = m.dossier.display();
