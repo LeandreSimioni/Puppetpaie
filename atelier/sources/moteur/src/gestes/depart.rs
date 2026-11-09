@@ -553,7 +553,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     }
     // LES ARRETS DE TRAVAIL : la DSN mensuelle REPORTE ceux que `Arret::a_reporter` y met, signales ou non.
     let arrets = &lu.arrets;
-    let nomenclature = crate::routes::imprevus::nomenclatures()?;
+    let nomenclature = crate::metier::imprevus::nomenclatures()?;
     let jour = |t: &str| -> R<String> { socle::date::Jour::lire(t).map(|j| j.jj_mm_aaaa()).map_err(valeur) };
     let mut non_signales = 0;
     for a in arrets {
@@ -577,7 +577,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         }
     }
     // LES SUSPENSIONS (bloc 65) : chacune se declare entiere dans la DSN de chaque mois qu'elle traverse.
-    for s in engagement::imprevus::du_mois(&ctx.racine, mois, Some(engagement::imprevus::SUSPENSION)).map_err(crate::routes::imprevus::refus_magasin)? {
+    for s in engagement::imprevus::du_mois(&ctx.racine, mois, Some(engagement::imprevus::SUSPENSION)).map_err(crate::metier::imprevus::refus_magasin)? {
         let engagement::imprevus::Imprevu::Suspension(s) = s else { continue };
         avertissements.push(info(format!("Suspension declaree dans la DSN : {}, motif {}, du {} au {}.", s.salarie, s.motif, jour(&s.debut)?, jour(&s.fin)?)));
     }

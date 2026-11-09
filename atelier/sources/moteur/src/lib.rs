@@ -14,6 +14,7 @@ pub mod historique_mois;
 pub mod horloge;
 pub mod import;
 pub mod interface;
+pub mod metier;
 pub mod obligations;
 pub mod regularisation;
 pub mod routes;

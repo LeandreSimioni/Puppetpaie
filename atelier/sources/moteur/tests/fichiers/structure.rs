@@ -725,7 +725,7 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
 #[test]
 fn un_module_du_moteur_ne_prend_qu_aux_crates_du_dessous() {
     const ORDRE: [&str; 5] = ["compagnie", "import", "routes", "moteur", "atelier"];
-    const CIBLES: [(&str, &str); 18] = [
+    const CIBLES: [(&str, &str); 19] = [
         ("compagnie", "compagnie"),
         ("import", "import"),
         ("routes", "routes"),
@@ -738,6 +738,7 @@ fn un_module_du_moteur_ne_prend_qu_aux_crates_du_dessous() {
         ("apercu_dsn", "routes"),
         ("simulation_courriels", "routes"),
         ("gestes", "routes"),
+        ("metier", "routes"),
         ("scenario", "routes"),
         ("lib", "moteur"),
         ("main", "moteur"),

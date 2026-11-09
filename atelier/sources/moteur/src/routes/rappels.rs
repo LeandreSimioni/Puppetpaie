@@ -1277,11 +1277,11 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         out.push(r);
     }
 
-    // CE QU'UN ARRET FAIT NAITRE : tous les arrets du magasin des imprevus (`crate::routes::imprevus::tous_les_arrets`), leurs
+    // CE QU'UN ARRET FAIT NAITRE : tous les arrets du magasin des imprevus (`crate::metier::imprevus::tous_les_arrets`), leurs
     // obligations comptees par `obligations::de_l_arret` au jour du rappel.
-    let arrets = crate::routes::imprevus::tous_les_arrets(st.ctx)?;
+    let arrets = crate::metier::imprevus::tous_les_arrets(st.ctx)?;
     if !arrets.is_empty() {
-        let n = crate::routes::imprevus::nomenclatures()?;
+        let n = crate::metier::imprevus::nomenclatures()?;
         let suivi = crate::obligations::Suivi::lire(st.ctx)?;
         for a in &arrets {
             let obligations = crate::obligations::de_l_arret(st.ctx, a, &suivi, st.aujourdhui)?;

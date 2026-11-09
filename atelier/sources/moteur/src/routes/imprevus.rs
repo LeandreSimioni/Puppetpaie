@@ -30,7 +30,7 @@ use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60};
-use engagement::imprevus::{self, ArretSaisi, GenreArret, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
+use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
 use engagement::numeros::NumeroContrat;
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
@@ -42,6 +42,7 @@ use socle::num::Decimal;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::{Ecran, Place};
+use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, refus_magasin, tous_les_arrets, ArretDit, ContratAuJour};
 
 const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé avant l'arrêt, qui le désigne", avance: false };
 const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d'absence"), forme: Forme::Date, sens: "le premier jour de l'absence, qui la désigne", avance: false };
@@ -567,10 +568,6 @@ fn jour(t: &str) -> R<Jour> {
 /// Un jour ecrit, tel qu'une phrase le dit (« 02/11/2026 »).
 fn clair(t: &str) -> R<String> {
     Ok(jour(t)?.jj_mm_aaaa())
-}
-
-fn magasin<T>(r: Result<T, String>) -> R<T> {
-    r.map_err(refus_magasin)
 }
 
 /// Un numero de contrat tel qu'une phrase le dit.
@@ -1665,50 +1662,6 @@ fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: &str) -> R<R
     Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase: phrase.to_string() })
 }
 
-/// CE QUI FAIT UN ARRET A ECRIRE : qui, quel contrat, le motif et les jours, et ce que la saisie en dit d'autre.
-pub(crate) struct ArretDit<'a> {
-    pub cle: &'a str,
-    pub contrat: &'a ContratAuJour,
-    pub motif: &'a str,
-    pub dernier_jour: Jour,
-    pub debut: Jour,
-    pub fin: Jour,
-    pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<u32>,
-    pub note: Option<String>,
-}
-
-/// UN ARRET TEL QUE LE MAGASIN L'ECRIT (`engagement::imprevus::ArretSaisi`) : ce qu'il n'a pas encore reste vide (la
-/// subrogation, que le droit tire ensuite : `poser_la_subrogation` ; la reprise ; les indemnites journalieres).
-pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
-    ArretSaisi {
-        genre: GenreArret::Arret,
-        salarie: x.cle.to_string(),
-        contrat_debut: x.contrat.debut.clone(),
-        contrat_numero: x.contrat.numero.clone(),
-        motif: x.motif.to_string(),
-        dernier_jour_travaille: x.dernier_jour.iso(),
-        debut: x.debut.iso(),
-        fin_previsionnelle: x.fin.iso(),
-        subrogation: None,
-        subrogation_debut: None,
-        subrogation_fin: None,
-        reprise: None,
-        reprise_motif: None,
-        date_accident: x.date_accident.map(|j| j.iso()),
-        jours_deja_indemnises: x.jours_deja_indemnises.map(|j| Chiffre::entier(i64::from(j))),
-        ij_brute: None,
-        ij_nette: None,
-        ij_brute_majoree: None,
-        ij_nette_majoree: None,
-        prolongations: Vec::new(),
-        reprises: Vec::new(),
-        saisi_le: maintenant(),
-        qui: INTERFACE.to_string(),
-        note: x.note,
-    }
-}
-
 /// `arret-enregistrer`. Les controles de la norme sont ceux du signalement (`signalement::verifier`, nature 04), avant
 /// toute ecriture ; un arret ne chevauche pas un autre imprevu du meme contrat (`sans_chevauchement`).
 fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArret> {
@@ -2130,29 +2083,6 @@ fn plain(m: String) -> Echec {
 
 // -------------------------------------------------------------------- arrets
 
-/// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
-#[track_caller]
-pub(crate) fn refus_magasin(m: String) -> Echec {
-    erreur(Classe::Refuse, m)
-}
-
-/// Les arrets de travail du magasin des imprevus (`imprevus/AAAA-MM.json`, genre `arret`), dans l'ordre des mois du
-/// magasin.
-pub(crate) fn tous_les_arrets(ctx: &Contexte) -> R<Vec<ArretSaisi>> {
-    Ok(magasin(imprevus::tous(&ctx.racine))?
-        .into_iter()
-        .filter_map(|i| match i {
-            Imprevu::Arret(a) => Some(a),
-            Imprevu::Suspension(_) => None,
-        })
-        .collect())
-}
-
-/// Les nomenclatures du bloc 60 (`arrets-base.json`), lues par leur forme (`droit::arrets::bloc_60`).
-pub(crate) fn nomenclatures() -> R<Bloc60> {
-    droit::arrets::bloc_60().map_err(plain)
-}
-
 /// Le libelle du motif d'arret dans les codes de la norme. Un motif inconnu ne s'enregistre pas (`verifier`) : dans le
 /// magasin, il se refuse.
 fn libelle_motif(n: &Bloc60, a: &ArretSaisi) -> R<String> {
@@ -2528,23 +2458,6 @@ pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour)
 
 // ------------------------------------------------------------ les contrats d'un jour
 
-/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, le debut et la fin, le mois qui le
-/// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
-/// (`dit`).
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ContratAuJour {
-    salarie: IdSalarie,
-    nom: String,
-    pub numero: Option<String>,
-    pub debut: String,
-    fin: Option<String>,
-    mois: String,
-    spectacle: Option<String>,
-    mensuel: bool,
-    nature: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dit: Option<String>,
-}
 
 /// `arret-contrats` : les contrats d'un salarie qui couvrent un jour.
 fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> {

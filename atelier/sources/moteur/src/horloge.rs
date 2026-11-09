@@ -719,7 +719,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Arret { mois, salarie, dernier, cle, nature } => pas(d, quoi, quand, |ctx| {
             // ENCORE DU au jour du pas ? Le visiteur a pu le faire.
             let iso = dernier.iso();
-            let a = crate::routes::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == iso);
+            let a = crate::metier::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == iso);
             let Some(a) = a else { return Ok(false) };
             let obligations = crate::obligations::de_l_arret(ctx, &a, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?;
             if !une_due(&obligations, *cle, ctx.aujourdhui)? {
@@ -929,7 +929,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
     use crate::routes::imprevus::NatureSignalement;
     let natures = [(crate::obligations::CleDObligation::SignalementArret, NatureSignalement::Arret, "d'arrêt"), (crate::obligations::CleDObligation::SignalementReprise, NatureSignalement::Reprise, "de reprise")];
     let suivi = crate::obligations::Suivi::lire(ctx)?;
-    for a in crate::routes::imprevus::tous_les_arrets(ctx)? {
+    for a in crate::metier::imprevus::tous_les_arrets(ctx)? {
         let dernier = Jour::lire(&a.dernier_jour_travaille).map_err(|m| erreur(Classe::Illisible, m))?;
         if dernier.mois_civil() != le_mois {
             continue;
