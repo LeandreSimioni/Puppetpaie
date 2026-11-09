@@ -117,7 +117,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
     if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
     }
-    Err(erreur(Classe::ActeReelRefuse, crate::atelier::redirection::REFUS_ACTE_REEL.to_string()))
+    Err(erreur(Classe::ActeReelRefuse, envois::redirection::REFUS_ACTE_REEL.to_string()))
 }
 
 #[cfg_attr(feature = "atelier", allow(dead_code))]

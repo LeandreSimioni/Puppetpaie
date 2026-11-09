@@ -356,7 +356,7 @@ fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> Result<bool, String> 
 
 /// Ce qu'il reste a faire a la main apres une restauration, d'apres ce qui est revenu dans `coffre.racine` : le coffre (ce
 /// qu'il porte, s'il s'ouvre a ce poste, par quoi), la cle de signature des mises a jour (scellee par le coffre ;
-/// `publier::cle_de_signature_posee` ne lit que la presence du fichier). Ne lit aucun secret : les fiches
+/// `coffre::cle_de_signature_posee` ne lit que la presence du fichier). Ne lit aucun secret : les fiches
 /// du coffre sont en clair (ce qui est pose, depuis quand), et `ouvre_a_ce_poste` ne rend qu'un oui ou un non. Le coffre
 /// est celui du poste (`Coffre::du_poste`) ; la preuve en donne un dont la cle est ailleurs.
 pub fn a_faire(coffre: &Coffre) -> Vec<String> {
@@ -417,7 +417,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         }
     }
     // La cle de signature est scellee par la cle maitresse du coffre : elle s'ouvre quand il s'ouvre, et seulement avec lui.
-    if crate::atelier::publier::cle_de_signature_posee(cible) {
+    if crate::compagnie::coffre::cle_de_signature_posee(cible) {
         lignes.push(if coffre.chemin().exists() {
             "config/maj-cle-privee.bin (la cle qui signe les mises a jour) est revenu, scelle par le coffre : il s'ouvre quand le coffre \
              s'ouvre, ici par le mot de passe du logiciel, puis par la cle de ce poste une fois `route mot-de-passe-changer` passe."

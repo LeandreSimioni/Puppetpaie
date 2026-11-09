@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::compagnie::coffre::Coffre;
+use crate::compagnie::coffre::{Coffre, FICHIER_CLE_PRIVEE};
 use crate::compagnie::maj::{
     b64, code, condensat, courante, derniere_lue, ecrire_json, installation, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de, reglage,
     signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
@@ -30,7 +30,6 @@ type R<T> = Result<T, String>;
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
 pub const VARIABLE_GRAINE: &str = "PUPPETPAIE_CLE_SIGNATURE";
-const FICHIER_CLE_PRIVEE: &str = "maj-cle-privee.bin";
 const DESCRIPTION_CLE: &str = "PuppetPaie : cle de signature des mises a jour";
 /// Ce que porte `maj-cle-privee.bin` : `{"format": FORMAT_CLE, "scelle": <base64>}`, la graine scellee par
 /// la cle maitresse du coffre. Tout autre contenu est refuse.
@@ -323,12 +322,6 @@ fn scelle_par_le_coffre(chemin: &Path) -> R<Vec<u8>> {
         return Err(AUTRE.to_string());
     }
     b64(&cle.scelle).map_err(|e| format!("{} ({})", AUTRE, e))
-}
-
-/// La compagnie de `racine` porte-t-elle une cle de signature (scellee par son coffre) ? Ne lit que la presence du
-/// fichier, n'ouvre rien.
-pub fn cle_de_signature_posee(racine: &Path) -> bool {
-    racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE).is_file()
 }
 
 /// Ecrit la cle scellee par le coffre, d'un coup (`socle::ecriture::ecrire_json`) : jamais un fichier coupe en route

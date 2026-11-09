@@ -11,6 +11,11 @@ pub const VARIABLE_DPAE: &str = "PUPPETPAIE_ATELIER_DPAE";
 /// Le faux Google : `BASE/token`, `BASE/drive/v3/files`, `BASE/upload/drive/v3/files`.
 pub const VARIABLE_GOOGLE: &str = "PUPPETPAIE_ATELIER_GOOGLE";
 
+/// La phrase du refus d'un acte reel dans le binaire de l'atelier : un depot reel, un envoi, une signature passent tous
+/// par `depot_acte::verifier_preuve`, qui y refuse, mot de passe ou non.
+pub const REFUS_ACTE_REEL: &str =
+    "Ceci est le binaire de l'atelier (moteur-atelier) : il refuse tout acte reel (depot reel, envoi, signature), mot de passe ou non. Rien n'est parti.";
+
 /// Ce que dit une redirection refusee : l'adresse qui n'est pas locale n'est jamais appelee.
 pub const ADRESSE_REFUSEE: &str = "http://127.0.0.1:9/adresse-non-locale-refusee-par-l-atelier/";
 

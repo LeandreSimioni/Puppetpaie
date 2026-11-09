@@ -33,6 +33,15 @@ pub const VERSION: i64 = 2;
 pub const CONSULTATION: &str = "consultation";
 pub const DEPOT: &str = "depot";
 pub const DESCRIPTION: &str = "PuppetPaie - mots de passe des organismes";
+/// LA CLE DE SIGNATURE DES MISES A JOUR (`config/maj-cle-privee.bin`), sur le poste de l'editeur : sa graine est scellee
+/// par la cle maitresse du coffre (`atelier::publier` l'ecrit et l'ouvre).
+pub const FICHIER_CLE_PRIVEE: &str = "maj-cle-privee.bin";
+
+/// La compagnie de `racine` porte-t-elle une cle de signature (scellee par son coffre) ? Ne lit que la presence du
+/// fichier, n'ouvre rien.
+pub fn cle_de_signature_posee(racine: &Path) -> bool {
+    racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE).is_file()
+}
 
 const SCRYPT_N: u64 = 32768;
 const SCRYPT_R: u64 = 8;
@@ -818,7 +827,7 @@ impl Coffre {
     /// Ce que la cle maitresse scelle hors du coffre, s'il y en a (la cle de signature des mises a jour) : tant qu'il est
     /// la, le coffre ne s'efface pas quand il ne porte plus rien. Sa cle maitresse est la seule qui l'ouvre.
     fn scelle_ailleurs(&self) -> bool {
-        crate::atelier::publier::cle_de_signature_posee(&self.racine)
+        cle_de_signature_posee(&self.racine)
     }
 
     // ------------------------------------------------------------ le fichier
