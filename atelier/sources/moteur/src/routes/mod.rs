@@ -209,7 +209,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(engagement::ROUTES) => engagement::route(&porte, charge),
         _ if dans(contrats::ROUTES) => brute(contrats::route(o, &ctx, route, c)),
         _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),
-        _ if dans(documents::ROUTES) => brute(documents::route(o, &ctx, route, c)),
+        _ if dans(documents::ROUTES) => documents::route(&porte, charge),
         _ if dans(depots::ROUTES) => brute(depots::route(o, &ctx, route, c)),
         _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.

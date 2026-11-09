@@ -783,7 +783,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 let salaries: Vec<String> = sans.iter().map(|(c, _)| c.clone()).collect();
                 let quoi = format!("documents de {} imprimés pour {} (pas de courriel dans sa fiche), remis en main propre", mois_fr(&mois.to_string()), noms);
                 fait.extend(pas(d, &quoi, quand, |ctx| {
-                    let charge = crate::routes::documents::ChargeDocumentsImprimer { mois: *mois, salaries: salaries.clone() };
+                    let charge = crate::routes::documents::ChargeDocumentsImprimer { mois: *mois, salaries: Some(salaries.clone()) };
                     crate::routes::documents::documents_imprimer(ctx, charge, QUI_HORLOGE)?;
                     Ok(true)
                 }));
