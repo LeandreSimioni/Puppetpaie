@@ -519,9 +519,6 @@ pub enum Modele {
     Complet,
 }
 
-/// La case qui porte le choix, dans la fiche entreprise comme dans la fiche salarie.
-pub const CASE_MODELE: &str = "modele_bulletin";
-
 impl Modele {
     pub const TOUS: [Modele; 2] = [Modele::Simplifie, Modele::Complet];
 

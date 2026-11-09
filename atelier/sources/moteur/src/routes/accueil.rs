@@ -298,8 +298,12 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
     if let Some(r) = o.get("racine").filter(|r| !r.is_empty()) {
         if !std::path::Path::new(r).join(droit::contexte::ENTREPRISE).is_file() {
             return Err(operation(socle::echec::avec(
-                "Ce dossier n'est pas celui d'une compagnie : --racine nomme une compagnie (le chemin que rend la route compagnies). Les routes de l'installation se servent sans --racine. Rien n'est écrit.",
-                socle::echec::APart { chemin: Some(r.clone()), ..socle::echec::APart::default() },
+                "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
+                socle::echec::APart {
+                    chemin: Some(r.clone()),
+                    detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
+                    ..socle::echec::APart::default()
+                },
             )));
         }
     }
@@ -307,7 +311,8 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
     match nom {
         Route::Compagnies => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(liste(&inst))
+            let compagnies: Liste = liste(&inst);
+            en_json(compagnies)
         }
         Route::CompagnieAjouter => {
             let a: ChargeAjouter = charge.lire()?;

@@ -410,7 +410,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let SansCharge {} = charge.lire()?;
             let mut e = coffre_etat(ctx)?;
             e.ecran = Some(ecran_du_coffre(ctx, &mut e));
-            en_json(e.dit(""))
+            let etat: EtatDuCoffre = e.dit("");
+            en_json(etat)
         }
         Route::GoogleEtat => {
             let SansCharge {} = charge.lire()?;
@@ -434,11 +435,18 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(Verifie { phrase, verdict })
         }
-        Route::CoffreOublier => en_json(coffre_oublier(ctx, charge.lire()?, mdp)?.dit("Mot de passe retiré du coffre. ")),
-        Route::MotDePasseChanger => en_json(mot_de_passe_changer(ctx, charge.lire()?, mdp)?.dit("Mot de passe du logiciel posé. ")),
+        Route::CoffreOublier => {
+            let etat: EtatDuCoffre = coffre_oublier(ctx, charge.lire()?, mdp)?.dit("Mot de passe retiré du coffre. ");
+            en_json(etat)
+        }
+        Route::MotDePasseChanger => {
+            let etat: EtatDuCoffre = mot_de_passe_changer(ctx, charge.lire()?, mdp)?.dit("Mot de passe du logiciel posé. ");
+            en_json(etat)
+        }
         Route::MotDePasseRetirer => {
             let SansCharge {} = charge.lire()?;
-            en_json(mot_de_passe_retirer(ctx, mdp)?.dit("Mot de passe du logiciel retiré. "))
+            let etat: EtatDuCoffre = mot_de_passe_retirer(ctx, mdp)?.dit("Mot de passe du logiciel retiré. ");
+            en_json(etat)
         }
         Route::GoogleOublier => {
             let SansCharge {} = charge.lire()?;
@@ -829,7 +837,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
             .map_err(erreur_google)?;
         if a.client_id.is_empty() || a.client_secret.is_empty() {
             return Err(erreur_google(socle::echec::avec(
-                "L'application Google de la compagnie (google.json) est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.",
+                "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.",
                 socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
             )));
         }
@@ -838,8 +846,13 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
     let livre = socle::fichiers::dossier_du_code().join(FICHIER_APPLICATION);
     if !livre.exists() {
         return Err(erreur_google(socle::echec::avec(
-            "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée (posée par « Publier » depuis le secret PUPPETPAIE_GOOGLE_APPLICATION) ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application dans google.json (client_id, client_secret).",
-            socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), fichier: Some(livre.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
+            "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.",
+            socle::echec::APart {
+                chemin: Some(p.to_string_lossy().into_owned()),
+                fichier: Some(livre.to_string_lossy().into_owned()),
+                detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
+                ..socle::echec::APart::default()
+            },
         )));
     }
     let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(erreur_google)?;

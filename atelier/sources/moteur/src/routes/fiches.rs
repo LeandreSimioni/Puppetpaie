@@ -248,7 +248,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
         Route::SauvegardeMaintenant => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(sauvegarde_maintenant(ctx))
+            let faite: SauvegardeFaite = sauvegarde_maintenant(ctx);
+            en_json(faite)
         }
         Route::FichesRelever => {
             let super::SansCharge {} = charge.lire()?;
@@ -260,7 +261,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
-        Route::VerifierFiche => en_json(ecriture::verifier_fiche(charge.lire()?)?),
+        Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(charge.lire()?)?),
         Route::EnregistrerFiche => en_json(ecriture::enregistrer_fiche(ctx, charge.lire()?)?),
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
@@ -781,7 +782,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
     })
 }
 
-/// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`droit::pas::CHAMP`), date du jour ou il commence de valoir
+/// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`taux_pas`), date du jour ou il commence de valoir
 /// `depuis` : avant ce jour, la fiche ne le disait pas (la case vide). `note` dit d'ou il vient.
 pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: droit::fiche::TauxPas, depuis: Jour, note: &str) -> R<()> {
     ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::taux_pas(Some(valeur))], true, Some(depuis), Some(note), &depuis)

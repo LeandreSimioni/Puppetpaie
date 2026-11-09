@@ -1,5 +1,5 @@
 //! Le prelevement a la source : le taux et son identifiant, tels que la DGFiP les donne (les taux recus, dans la fiche du
-//! salarie, `CHAMP`), et la grille de l'article 204 H du CGI quand aucun ne vaut. Ce que le calcul d'un engagement et la
+//! salarie, `taux_pas`, un taux recu par valeur datee du jour ou il commence de valoir), et la grille de l'article 204 H du CGI quand aucun ne vaut. Ce que le calcul d'un engagement et la
 //! DSN lisent.
 
 use std::collections::BTreeSet;
@@ -13,12 +13,6 @@ use socle::date::{jours_du_mois, Jour};
 use socle::num::nombre;
 use socle::fichiers::repr;
 use socle::num::{eur, pct, sub, Decimal, Resultat};
-
-/// LE TAUX RECU APPARTIENT AU SALARIE : chaque taux que la DGFiP transmet (un compte rendu de nature 94) s'ecrit dans
-/// sa fiche, valeur datee du jour ou il commence de valoir (`date_d_effet`) : `{"taux", "type", "identifiant",
-/// "mis_a_disposition", "en_retour_de"?}`, `mis_a_disposition` en AAAAMMJJHHMMSS, l'instant du compte rendu, et
-/// `en_retour_de` (`EN_RETOUR_DE`) le mois de la DSN a laquelle il repond.
-pub const CHAMP: &str = "taux_pas";
 
 /// Un refus du module. `SansGrille` est `BaremeSansGrille` (un bareme sans la grille de l'article 204 H : le prelevement
 /// ne se devine pas, le calcul refuse) ; `Inconnu` est `PasInconnu`.

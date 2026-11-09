@@ -489,21 +489,6 @@ pub fn pas_une_cle(nom_type: &str) -> String {
     format!("{} ne peut pas servir de clé", nature(nom_type))
 }
 
-/// « élément 3 de la liste : <ce qui ne va pas> » (`rang` compte depuis zéro, l'élément depuis un).
-pub fn element(rang: usize, quoi: &str) -> String {
-    format!("élément {} de la liste : {}", rang + 1, quoi)
-}
-
-/// « élément 3 de la liste : une paire (clé, valeur) est attendue, lu : 3 valeurs » : une liste qui se lit en objet.
-pub fn paire_attendue(rang: usize, longueur: usize) -> String {
-    element(rang, &format!("une paire (clé, valeur) est attendue, lu : {} valeur{}", longueur, if longueur > 1 { "s" } else { "" }))
-}
-
-/// « élément 3 de la liste : une paire (clé, valeur) est attendue, lu : un nombre ».
-pub fn pas_une_paire(rang: usize, nom_type: &str) -> String {
-    element(rang, &format!("une paire (clé, valeur) est attendue, lu : {}", nature(nom_type)))
-}
-
 /// Un nombre que l'on voudrait entier et qui ne tient pas : infini, ou hors de ce qu'un entier porte.
 pub fn entier_hors_limites(n: &str) -> String {
     format!("nombre entier hors limites : {}", n)

@@ -366,7 +366,8 @@ fn fautif(c: &champs::Champ, actuel: &Valeur) -> R<bool> {
 
 /// FABRIQUE LES FORMES DECLAREES DEPUIS LES FORMES LISIBLES, dans la saisie `d` de la fiche `nom`, de ce que les cases
 /// `source` disent (a l'ecriture : celles que l'ecran change ; a la verification : toutes). Sans `forcer`, seul ce qui
-/// est vide ou ne respecte pas sa norme se remplit.
+/// est vide ou ne respecte pas sa norme se remplit. Le departement de naissance et les initiales du contrat d'un salarie
+/// ne s'ecrivent que dans une case vide : ils se remplissent quelles que soient les cases `source`.
 pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(&str) -> bool) -> R<()> {
     for c in champs::fiche(nom)? {
         let Some(src) = c.derive_de.as_deref().filter(|s| !s.is_empty() && source(s)) else { continue };
@@ -418,12 +419,13 @@ pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(&
         // caracteres sont le departement de naissance, 99 pour une personne nee a l'etranger (S21.G00.30.001 et .014,
         // `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`). Il ne s'ecrit que dans une case vide : une
         // valeur saisie qui le contredit se dit (`champs::controles_croises`), elle ne se remplace pas.
-        if source("nir") && texte(d, "departement_naissance").is_none() {
+        if texte(d, "departement_naissance").is_none() {
             if let Some(dep) = texte(d, "nir").and_then(champs::departement_du_nir) {
                 d.poser("departement_naissance", Valeur::Texte(dep));
             }
         }
-        if source("nom") && texte(d, "initiales_contrat").is_none() {
+        // Les initiales du contrat se lisent dans le nom declare, lui-meme derive du nom saisi.
+        if texte(d, "initiales_contrat").is_none() {
             let lettres: String = texte(d, "nom").into_iter().flat_map(str::chars).filter(|c| c.is_ascii_uppercase()).take(2).collect();
             if !lettres.is_empty() {
                 d.poser("initiales_contrat", Valeur::Texte(lettres));

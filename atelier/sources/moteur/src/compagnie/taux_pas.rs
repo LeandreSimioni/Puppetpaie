@@ -1,5 +1,5 @@
 //! Les taux de prelevement a la source que la DGFiP a fait connaitre (un compte rendu de nature 94, `suites`) ou que les
-//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`droit::pas::CHAMP`,
+//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`taux_pas`,
 //! `routes::fiches::poser_taux_recu`), et les engagements qu'il touche se recalculent. `droit::pas` les lit.
 
 use droit::fiche::Lue as _;

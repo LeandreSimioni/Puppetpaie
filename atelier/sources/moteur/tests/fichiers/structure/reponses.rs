@@ -832,6 +832,15 @@ impl<'e> Formes<'e> {
                 let Some(n) = self.espace.item(fichier, module, nom)? else {
                     return Err(format!("le type {} est introuvable dans l'espace", nom));
                 };
+                // Un argument qui est lui-meme un generique de l'item englobant (`DonneesDeLaFiche<P>` dans `VueFiche<P>`)
+                // se lit par ce que ce generique vaut la.
+                let args: Vec<(usize, Ty)> = args
+                    .iter()
+                    .map(|a| match a {
+                        Ty::Chemin(s, x) if s.len() == 1 && x.is_empty() && subst.contains_key(&s[0]) => subst[&s[0]].clone(),
+                        _ => (fichier, a.clone()),
+                    })
+                    .collect();
                 let cle = format!("{}|{:?}", n, args.iter().map(|a| format!("{:?}", a)).collect::<Vec<_>>());
                 if let Some(&id) = self.deja.get(&cle) {
                     return Ok(id);
@@ -839,7 +848,7 @@ impl<'e> Formes<'e> {
                 let id = self.poser(Forme::Ouverte, nom);
                 self.deja.insert(cle, id);
                 let it = &self.espace.items[n];
-                let sub: HashMap<String, (usize, Ty)> = it.generiques.iter().cloned().zip(args.iter().map(|a| (fichier, a.clone()))).collect();
+                let sub: HashMap<String, (usize, Ty)> = it.generiques.iter().cloned().zip(args).collect();
                 let f = self.de_l_item(n, &sub)?;
                 self.arene[id] = f;
                 Ok(id)
