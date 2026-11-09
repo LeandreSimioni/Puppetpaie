@@ -2,16 +2,14 @@
 //! dans une `Value` prise ou rendue. Les couches du dessous ne lisent que des formes (`socle::forme`) : ce module ne
 //! leur sert pas, et tombe avec son dernier lecteur.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::path::Path;
 
 use rust_decimal::prelude::*;
 use serde_json::{Map, Value};
 
 use socle::date::{repr_flottant, repr_texte, Jour};
 use socle::echec::{erreur, A_PART, R};
-use socle::fichiers::{attendu, lire_texte, noter_si_besoin, repr, signature};
+use socle::fichiers::{attendu, lire_texte, repr};
 use socle::num::{dec_f64, dec_texte, illisible, Resultat};
 
 // ------------------------------------------------------------ une date
@@ -84,35 +82,6 @@ pub fn separer(message: &str) -> (String, Map<String, Value>) {
 }
 
 // ------------------------------------------------------------ un fichier
-
-type Cache = Mutex<HashMap<PathBuf, ((u128, u64), Arc<Value>)>>;
-
-/// Un fichier JSON lu une fois tant qu'il ne change pas (objet partage : on ne le modifie pas).
-pub fn json_en_cache(chemin: &Path) -> Resultat<Arc<Value>> {
-    json_en_cache_ou(chemin, lire_json)
-}
-
-/// `json_en_cache`, lu par `lire` quand il faut le lire : le refus d'un fichier illisible reste celui de l'appelant (sa
-/// classe, son message), et ne se garde jamais -- seul un JSON lu se garde, sous la signature du fichier (date, taille).
-/// `lire` doit noter sa lecture (`lire_texte`) ; servi du cache, le fichier se note ici (`noter_si_besoin`).
-pub fn json_en_cache_ou<E: From<String>>(chemin: &Path, lire: impl FnOnce(&Path) -> Result<Value, E>) -> Result<Arc<Value>, E> {
-    static CACHE: OnceLock<Cache> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let sig = signature(chemin).map_err(E::from)?;
-    if let Some(s) = sig {
-        if let Some((vue, v)) = cache.lock().unwrap().get(chemin) {
-            if *vue == s {
-                noter_si_besoin(chemin);
-                return Ok(v.clone());
-            }
-        }
-    }
-    let v = Arc::new(lire(chemin)?);
-    if let Some(s) = sig {
-        cache.lock().unwrap().insert(chemin.to_path_buf(), (s, v.clone()));
-    }
-    Ok(v)
-}
 
 /// Le JSON d'un fichier UTF-8, sans cache.
 pub fn lire_json(chemin: &Path) -> Resultat<Value> {

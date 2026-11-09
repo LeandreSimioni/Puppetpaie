@@ -216,16 +216,16 @@ pub struct Demande {
     pub boite_liee: bool,
 }
 
-/// Le plafond mensuel de la Securite sociale du mois `mois` (`AAAA-MM`), tel que le bareme de son annee le dit
-/// (`Contexte::plafond_securite_sociale`) ; aucun quand le logiciel ne livre pas le bareme de cette annee.
-fn plafond_mensuel(ctx: &Contexte, mois: &str) -> R<Option<Decimal>> {
+/// Le plafond mensuel de la Securite sociale du mois `mois` (`AAAA-MM`), tel que le socle livre de son annee le dit
+/// (un plafond national : ni la convention ni la compagnie n'y changent rien) ; aucun quand le logiciel ne livre pas le
+/// bareme de cette annee.
+fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
     let an = socle::mois::Mois::lire(mois).map_err(refus)?.annee();
-    let f = socle::fichiers::dossier_du_code().join("baremes").join(format!("{}.json", an));
-    if !f.exists() {
-        return Ok(None);
+    let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| erreur(Classe::Illisible, m))? else { return Ok(None) };
+    match socle.plafond_securite_sociale {
+        Some(p) => Ok(Some(p.mensuel)),
+        None => Err(erreur(Classe::DefautDuLogiciel, format!("Le barème livré de {} n'a pas le plafond de la Sécurité sociale : le signaler au développeur.", an))),
     }
-    let (mensuel, _) = ctx.plafond_securite_sociale(an).map_err(|m| erreur(Classe::Disque, m))?;
-    Ok(Some(Decimal::from(mensuel)))
 }
 
 /// La regularisation CASC-SVP que demande `d`, calculee sans rien ecrire (l'ecriture des fichiers : `ecrire`).
@@ -370,7 +370,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 fichier: source.clone(),
             });
         }
-        if let Some(plafond) = plafond_mensuel(ctx, m)? {
+        if let Some(plafond) = plafond_mensuel(m)? {
             for (_, nom, b) in &mois_sal {
                 if *b > plafond {
                     avert.push(format!("{}, {} : brut {} au-dessus du plafond mensuel -- la T1 n'est plus égale au brut, base à recalculer.", m, nom, euros(*b)));
