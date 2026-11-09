@@ -26,7 +26,6 @@ use std::path::Path;
 
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::routes::fiches::{maintenant, refus};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -257,7 +256,7 @@ struct SaisieDuMois {
     mois: Mois,
     phrase: String,
     /// Les cartes importees (`import::mois::cartes`).
-    importes: Vec<Value>,
+    importes: Vec<crate::import::mois::CarteImportee>,
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,

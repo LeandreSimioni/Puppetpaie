@@ -180,9 +180,12 @@ fn siret_lu(b: &BulletinLu) -> Option<String> {
 /// Une adresse imprimee : les rangs avant le code postal, puis « 99999 Commune ». Sans rang de code postal, rien
 /// (on ne devine pas ce qui est la rue et ce qui est la ville).
 fn adresse_lue(rangs: &[String]) -> Option<(String, String, String)> {
+    // Un rang « 99999 Commune » : cinq chiffres, un blanc, la commune.
     let i = rangs.iter().position(|r| {
-        let (cp, reste) = r.split_at(r.char_indices().nth(5).map_or(r.len(), |(i, _)| i));
-        cp.len() == 5 && cp.chars().all(|c| c.is_ascii_digit()) && reste.starts_with(' ') && !reste.trim().is_empty()
+        r.char_indices().nth(5).is_some_and(|(i, _)| {
+            let (cp, reste) = r.split_at(i);
+            cp.len() == 5 && cp.chars().all(|c| c.is_ascii_digit()) && reste.starts_with(' ') && !reste.trim().is_empty()
+        })
     })?;
     let rue = rangs[..i].join(", ");
     let (cp, commune) = rangs[i].split_at(5);
@@ -1552,7 +1555,7 @@ fn noter_par_champ(entree: &mut FicheImportee, champs: &Saisie, ls: &[&Lu], chem
     let par: HashMap<&str, &Lu> = identite(ls).into_iter().map(|(cle, _, l)| (cle, l)).collect();
     for (k, v) in champs.cases() {
         // Une forme lisible vient du bulletin de sa forme declaree.
-        let base = match k.strip_suffix("_affichage") {
+        let base = match completer::forme_declaree_de(k) {
             Some(b) => b,
             None => k.as_str(),
         };

@@ -23,6 +23,12 @@ pub(crate) fn vide(v: Option<&Valeur>) -> bool {
     crate::routes::fiches::vide(v)
 }
 
+/// LA FORME DECLAREE D'UNE FORME LISIBLE (`nom_affichage` : `nom`) : la case sans son suffixe d'affichage ; rien pour une
+/// case qui n'est pas une forme lisible.
+pub(crate) fn forme_declaree_de(cle: &str) -> Option<&str> {
+    cle.strip_suffix("affichage").and_then(|b| b.strip_suffix('_'))
+}
+
 /// Ce que l'import ne met jamais dans une fiche qui existe : son etat (`actif` : une fiche archivee l'est exprès), et son
 /// historique.
 const JAMAIS: [&str; 2] = ["actif", "historique"];
@@ -35,7 +41,7 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) 
     let champs = declarations::champs::fiche(nom)?;
     let mut out = Saisie::default();
     for c in &champs {
-        if c.cle.ends_with("_affichage") || JAMAIS.contains(&c.cle.as_str()) {
+        if forme_declaree_de(&c.cle).is_some() || JAMAIS.contains(&c.cle.as_str()) {
             continue;
         }
         let Some(v) = proposees.case(&c.cle) else { continue };

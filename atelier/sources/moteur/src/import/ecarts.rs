@@ -316,11 +316,11 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
         // Les cases que le releve compare, par la table de la fiche.
         let s = Saisie::de_la_fiche("salarie", &f.champs)?;
         let t = |k: &str| s.mot(k);
-        for k in ["nom", "nom_affichage"] {
+        for k in &["nom", "nom_affichage"] {
             pousser(&mut c.noms, t(k));
         }
         pousser(&mut c.noms, t("code_salarie").filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
-        for k in ["prenom", "prenom_affichage"] {
+        for k in &["prenom", "prenom_affichage"] {
             pousser(&mut c.prenoms, t(k));
         }
         pousser(&mut c.nirs, t("nir"));
@@ -328,11 +328,11 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
             pousser(&mut c.nirs, Some(format!("{}{}", n, k)));
         }
         pousser(&mut c.naissances, t("date_naissance"));
-        for k in ["adresse", "adresse_affichage"] {
+        for k in &["adresse", "adresse_affichage"] {
             pousser(&mut c.adresses, t(k));
         }
         pousser(&mut c.codes_postaux, t("code_postal"));
-        for k in ["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
+        for k in &["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
             pousser(&mut c.communes, t(k));
         }
         pousser(&mut c.courriels, t("email"));
