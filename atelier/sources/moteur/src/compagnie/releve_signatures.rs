@@ -25,6 +25,9 @@ pub use envois::releve_signatures::{ReleveSignatures, SignatureRecue};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
+
+/// L'acte d'une demande de signature qui ne dit pas le sien : celui du contrat lui-meme.
+const CONTRAT: &str = "contrat";
 use crate::horloge::{HorlogeFictive, QUI_HORLOGE};
 use envois::simulation_courriels::BoiteQuiRepond;
 
@@ -131,8 +134,11 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
 
     for a in &attendues {
         let code = a.code.clone();
-        let a_mois = a.mois.map(|m| m.to_string()).unwrap_or_default();
         let a_nom = a.qui();
+        let Some(a_mois) = a.mois.map(|m| m.to_string()) else {
+            r.incidents.push(format!("{} : la demande de signature ne dit pas son mois, elle ne se relève pas.", a_nom));
+            continue;
+        };
         let a_salarie = a.salarie.to_string();
         let contrats = a.contrats.clone();
         let retenue = match chercher_reponse(client, a, &expediteur, &mut r.incidents) {
@@ -165,7 +171,11 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         let mut signes: Vec<(String, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
             let envoye = ctx.racine.join("sorties").join(mois_f).join("envoi").join(nom_f);
-            let souche = envoye.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
+            let souche = match envoye.file_stem() {
+                Some(s) => s.to_string_lossy().into_owned(),
+                None => nom_f.to_string(),
+            };
             let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
             let fait = match &mention {
@@ -187,7 +197,10 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
         // Une demande qui ne dit pas son acte est celle du contrat lui-meme.
-        let acte = a.acte.clone().unwrap_or_else(|| "contrat".into());
+        let acte = match &a.acte {
+            Some(acte) => acte.clone(),
+            None => CONTRAT.to_string(),
+        };
         let est_avenant = acte == "avenant";
         let mut notes = 0usize;
         for c in &contrats {
@@ -199,7 +212,7 @@ pub fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, moi
                 quand: quand.clone(),
                 message: ident.clone(),
                 preuve: nom_preuve.clone(),
-                fichier_signe: sien.unwrap_or_default(),
+                fichier_signe: sien,
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
                 acte: acte.clone(),

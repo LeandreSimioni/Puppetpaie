@@ -554,7 +554,8 @@ pub(crate) struct ParCourriel {
     pub(crate) quand: String,
     pub(crate) message: String,
     pub(crate) preuve: String,
-    pub(crate) fichier_signe: String,
+    /// L'exemplaire contresigne ; aucun quand rien ne s'est contresigne.
+    pub(crate) fichier_signe: Option<String>,
     /// La mention posee ; aucune quand la fiche ne dit pas le nom du salarie (rien ne s'est contresigne).
     pub(crate) mention: Option<String>,
     pub(crate) acte: String,
@@ -620,7 +621,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         quand: if quand.is_empty() { maintenant() } else { quand },
         message: courriel.map(|m| m.message.clone()),
         preuve: courriel.map(|m| m.preuve.clone()),
-        fichier_signe: courriel.map(|m| m.fichier_signe.clone()),
+        fichier_signe: courriel.and_then(|m| m.fichier_signe.clone()),
         mention: courriel.and_then(|m| m.mention.clone()),
         acte: courriel.map(|m| m.acte.clone()),
         qui: qui.to_string(),
