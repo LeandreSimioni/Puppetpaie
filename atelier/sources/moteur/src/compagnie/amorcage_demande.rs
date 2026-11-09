@@ -13,13 +13,10 @@ use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use std::path::PathBuf;
 
-use serde_json::Value;
-
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
-use crate::valeur::{valeur_en_texte, vrai};
 
 /// Ce qu'on demande de produire (l'outil de l'atelier).
 pub struct Demande<'a> {
@@ -37,7 +34,8 @@ pub struct Demande<'a> {
 pub struct Ligne {
     pub salarie: String,
     pub libelle: String,
-    pub contrat: String,
+    /// Le numero du contrat qui porte la demande, s'il en a un.
+    pub contrat: Option<String>,
     /// Pourquoi ce salarie ne part pas ; vide : il part.
     pub pourquoi_pas: String,
     indice: usize,
@@ -105,11 +103,13 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
         .last();
     let Some(l) = derniere else { return Ok(None) };
     let quand = l.quand().to_string();
-    let dernier_recu = droit::pas::recus(ctx, cle).map_err(|m| erreur(Classe::Illisible, m))?.last().map(|r| r.mis_a_disposition.portee().unwrap_or_default().to_string()).unwrap_or_default();
-    if chiffres(&dernier_recu) >= chiffres(&quand) {
+    // Un taux recu depuis la demande y a repondu.
+    let recus = droit::pas::recus(ctx, cle).map_err(|m| erreur(Classe::Illisible, m))?;
+    if recus.last().and_then(|r| r.mis_a_disposition.portee()).is_some_and(|d| chiffres(d) >= chiffres(&quand)) {
         return Ok(None);
     }
-    let jour = Jour::lire(quand.get(..10).unwrap_or("")).map_err(|m| erreur(Classe::Illisible, m))?;
+    let le_jour = quand.get(..10).ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
+    let jour = Jour::lire(le_jour).map_err(|m| erreur(Classe::Illisible, m))?;
     let avant = jours_ouvres_apres(jour, 5)?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
@@ -121,10 +121,10 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
 pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R<Vec<Ligne>> {
     use declarations::amorcage as am;
     let ko = |m: String| erreur(Classe::Illisible, m);
-    let cle_de = |p: &Paie| -> R<String> { Ok(p.salarie.id.to_string()) };
+    let cle_de = |p: &Paie| p.salarie.id.to_string();
     let mut cles: Vec<String> = Vec::new();
     for p in paies {
-        let c = cle_de(p)?;
+        let c = cle_de(p);
         if !cles.contains(&c) {
             cles.push(c);
         }
@@ -132,25 +132,25 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
     cles.sort();
     let mut lignes = Vec::new();
     for cle in &cles {
-        let mut besoin: Option<(usize, Value)> = None;
-        for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p).is_ok_and(|c| c == *cle)) {
-            let s = socle::ecriture::en_valeur(&droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(ko)?), Some(&p.engagement.mois)).map_err(ko)?);
-            if s["situation"] == droit::pas::SANS_NIR || s.get("a_demander").is_some_and(vrai) {
+        let mut besoin: Option<(usize, droit::pas::Situation)> = None;
+        for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
+            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(ko)?), Some(&p.engagement.mois)).map_err(ko)?;
+            if s.situation == droit::pas::SANS_NIR || s.a_demander {
                 besoin = Some((i, s));
                 break;
             }
         }
         let Some((i, s)) = besoin else { continue };
         // SANS NIR, LA DGFiP N'A PERSONNE A QUI REPONDRE : la demande ne part pas, et cela se dit.
-        if s["situation"] == droit::pas::SANS_NIR {
-            lignes.push(Ligne { salarie: cle.clone(), libelle: String::new(), contrat: String::new(), pourquoi_pas: "sans NIR dans sa fiche, la DGFiP n'a personne à qui répondre".into(), indice: i });
+        if s.situation == droit::pas::SANS_NIR {
+            lignes.push(Ligne { salarie: cle.clone(), libelle: s.libelle.to_string(), contrat: None, pourquoi_pas: "sans NIR dans sa fiche, la DGFiP n'a personne à qui répondre".into(), indice: i });
             continue;
         }
         let p = &paies[i];
         let mut l = Ligne {
             salarie: cle.clone(),
-            libelle: s.get("libelle").map(valeur_en_texte).unwrap_or_default(),
-            contrat: p.engagement.numero.as_deref().unwrap_or_default().to_string(),
+            libelle: s.libelle.to_string(),
+            contrat: p.engagement.numero.as_deref().map(String::from),
             pourquoi_pas: String::new(),
             indice: i,
         };
@@ -248,7 +248,11 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         "DEMANDES :".into(),
     ];
     for l in &retenus {
-        let contrat = if l.contrat.is_empty() { "?" } else { &l.contrat };
+        let sans_numero = "?";
+        let contrat = match l.contrat.as_deref() {
+            Some(c) => c,
+            None => sans_numero,
+        };
         out.push(format!("  {} {} contrat {} ({})", gauche(&l.salarie, 14), gauche(&l.libelle, 22), contrat, mois));
     }
     if !ecartes.is_empty() {
