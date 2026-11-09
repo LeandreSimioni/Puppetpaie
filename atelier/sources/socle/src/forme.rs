@@ -58,6 +58,42 @@ pub fn lire_fichier<T: DeserializeOwned>(fichier: &Path, phrase: &str) -> Result
     serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, Some(fichier), &e))
 }
 
+/// UNE DONNEE DONT LES VALEURS NE S'AFFICHENT JAMAIS (l'identite d'une vraie compagnie, `moteur::compagnie::essai`) : le
+/// texte JSON `texte` lu en `T`, comme `lire_texte`, jusqu'a sa fin. Son refus ne dit que le chemin de la cle fautive, et
+/// ce qui ne va pas sans la valeur : la cle qui manque, la cle inconnue (son nom), la forme attendue, la ligne et la
+/// colonne d'un texte qui n'est pas du JSON. Le message de serde, qui peut citer la valeur, ne sort pas.
+pub fn lire_texte_sans_valeur<T: DeserializeOwned>(texte: &str, phrase: &str) -> Resultat<T> {
+    let mut d = serde_json::Deserializer::from_str(texte);
+    let t = serde_path_to_error::deserialize(&mut d).map_err(|e| refus_sans_valeur(phrase, &e.path().to_string(), e.inner()))?;
+    d.end().map_err(|e| refus_sans_valeur(phrase, ".", &e))?;
+    Ok(t)
+}
+
+fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> String {
+    let detail = match e.classify() {
+        serde_json::error::Category::Data => {
+            let m = e.to_string();
+            let m = match m.split_once(" at line ") {
+                Some((avant, _)) => avant.to_string(),
+                None => m,
+            };
+            if let Some(r) = m.strip_prefix("unknown field ") {
+                let cle = match r.split_once(',') {
+                    Some((cle, _)) => cle,
+                    None => r,
+                };
+                Some(format!("clé inconnue : {}", cle))
+            } else if let Some(cle) = m.strip_prefix("missing field ") {
+                Some(format!("la clé {} manque", cle))
+            } else {
+                m.split_once(", expected ").map(|(_, attendu)| format!("la valeur n'a pas la forme attendue : {}", attendu))
+            }
+        }
+        _ => Some(format!("ce n'est pas un JSON lisible (ligne {}, colonne {})", e.line(), e.column())),
+    };
+    crate::echec::avec(phrase, APart { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..APart::default() })
+}
+
 /// La longueur, en octets, de l'objet JSON qui ouvre `texte` (ce qu'un refus porte a part, `echec::avec`), s'il en
 /// ouvre un.
 pub fn objet_en_tete(texte: &str) -> Option<usize> {
