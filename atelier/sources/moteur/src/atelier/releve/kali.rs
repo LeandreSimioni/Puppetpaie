@@ -149,12 +149,10 @@ fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)
 
 // ------------------------------------------------------------------ le resume des livraisons lues
 
-/// LE RESUME DES LIVRAISONS LUES (`veille-kali.json`, a cote des sources). Sa cle `_quoi` est celle du fichier depose,
-/// que la veille reprend tel quel.
+/// LE RESUME DES LIVRAISONS LUES (`veille-kali.json`, a cote des sources). Sa note `quoi` dit ce qu'est le fichier.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Cache {
-    #[serde(rename = "_quoi")]
     quoi: String,
     /// Par estampille, ce que la livraison avait de nos conventions.
     livraisons: EnOrdre<LivraisonLue>,
