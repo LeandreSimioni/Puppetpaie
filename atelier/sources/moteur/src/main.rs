@@ -29,12 +29,12 @@ fn main() -> std::process::ExitCode {
         // Les commandes de la fabrique, servies par sa bibliotheque.
         Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&args[1..]),
         // Les routes de l'interface, une par processus (la demande JSON sur l'entree standard).
-        Some("route") => match moteur::service::commande("route", &args[1..]) {
+        Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(code) => std::process::exit(code),
             None => usage(),
         },
         // Le catalogue des routes, tire de leurs fiches.
-        Some("routes") => return std::process::ExitCode::from(moteur::routes::catalogue::commande(&args[1..]).clamp(0, 255) as u8),
+        Some("routes") => return std::process::ExitCode::from(routes::catalogue::commande(&args[1..]).clamp(0, 255) as u8),
         // La fenetre, dans le navigateur du poste : `moteur interface`.
         // La mise a jour : verifier, appliquer, revenir ; publier et la cle, chez l'editeur.
         Some("maj") => {
@@ -48,7 +48,7 @@ fn main() -> std::process::ExitCode {
         Some("essai") => return std::process::ExitCode::from(compagnie::essai::commande(&args[1..]).clamp(0, 255) as u8),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer. L'atelier seulement.
         #[cfg(feature = "atelier")]
-        Some("scenario") => return std::process::ExitCode::from(moteur::scenario::commande(&args[1..]).clamp(0, 255) as u8),
+        Some("scenario") => return std::process::ExitCode::from(routes::scenario::commande(&args[1..]).clamp(0, 255) as u8),
         Some("interface") => return std::process::ExitCode::from(moteur::interface::commande(&args[1..]).clamp(0, 255) as u8),
         // Les commandes de l'editeur que l'on lance par leur nom (`atelier::commandes::lancer`) ; le reste est la ligne de
         // commande du produit et celles de l'editeur qui passent par son cadre (`moteur [--dev] COMMANDE ...`).

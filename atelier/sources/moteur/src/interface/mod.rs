@@ -26,15 +26,15 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use http::{Reponse, Requete};
-use crate::accueil::suppression;
+use routes::accueil::suppression;
 use compagnie::installation::{self, JOURNAL_INTERFACE};
 use compagnie::instance::{self, Instance, Prise};
 use compagnie::poste;
-use crate::etat_garde::{Fil, FileDesEtats};
-use crate::veille::EtatDeLaVeille;
+use routes::etat_garde::{Fil, FileDesEtats};
+use routes::veille::EtatDeLaVeille;
 use veille::Veille;
-use crate::routes::catalogue::Route;
-use crate::routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
+use routes::catalogue::Route;
+use routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
 use socle::echec::Classe;
 use socle::memoire::tenu;
 
@@ -392,7 +392,7 @@ fn logo_en_ligne(logo: &Path) -> Option<String> {
 
 /// L'accueil : les tuiles des compagnies, telles que la route `compagnies` les dit (`routes::accueil::liste`).
 fn page_accueil() -> Result<String, String> {
-    let r = crate::routes::accueil::liste(&installation::base())?;
+    let r = routes::accueil::liste(&installation::base())?;
     let mut tuiles = Vec::new();
     for c in &r.compagnies {
         let medaillon = match c.logo.as_deref().map(Path::new).and_then(logo_en_ligne) {
@@ -559,7 +559,7 @@ impl Fenetre {
             return;
         }
         let f = self.clone();
-        crate::routes::fil_de_routes(move || {
+        routes::fil_de_routes(move || {
             let reelles = match installation::a_tenir_a_jour(&installation::base()) {
                 Ok(r) => r,
                 Err(e) => {
@@ -649,16 +649,16 @@ impl Fenetre {
     fn administrateur_ouvre(&self, racine: &Path) -> bool {
         let inst = installation::base();
         // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
-        if !matches!(crate::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
+        if !matches!(routes::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
         }
         let garde = tenu(&self.administrateur).clone();
-        garde.is_some_and(|m| matches!(crate::gestes::administrateur::mot_de_passe_ouvre(&crate::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
+        garde.is_some_and(|m| matches!(routes::gestes::administrateur::mot_de_passe_ouvre(&routes::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
     }
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(crate::gestes::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
+        if matches!(routes::gestes::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
     }
@@ -706,7 +706,7 @@ impl Fenetre {
             Phase::Ouverte { racine, .. } => Some(racine.clone()),
             _ => None,
         };
-        let enr = crate::scenario::enregistreur_actif();
+        let enr = routes::scenario::enregistreur_actif();
         match geste {
             "etat" => Ok(Atelier::Etat {
                 ok: true,
@@ -734,7 +734,7 @@ impl Fenetre {
                 if let Some(e) = enr {
                     // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
                     // seulement la (`scenario::rejouer`).
-                    use crate::scenario::{Genre, Geste};
+                    use routes::scenario::{Genre, Geste};
                     e.geste(|| Ok(((), Geste { jour: Some(jour.iso()), veille: ouverte.is_some().then_some(true), ..Geste::du_banc(Genre::Jour) })))?;
                 }
                 self.ecrire(&format!("Banc d'essai : le calendrier avance au {}.\n", jour.iso()));
@@ -750,13 +750,13 @@ impl Fenetre {
             }
             "simuler" => {
                 let racine = ouverte.ok_or("Aucune compagnie n'est ouverte.")?;
-                use crate::scenario::{Genre, Geste};
+                use routes::scenario::{Genre, Geste};
                 match enr {
                     Some(e) => e.geste(|| {
-                        crate::scenario::rendre_simulee(&racine)?;
+                        routes::scenario::rendre_simulee(&racine)?;
                         Ok(((), Geste { compagnie: Some(e.compagnie(&racine)?), ..Geste::du_banc(Genre::Simuler) }))
                     })?,
-                    None => crate::scenario::rendre_simulee(&racine)?,
+                    None => routes::scenario::rendre_simulee(&racine)?,
                 }
                 self.ecrire("Banc d'essai : la compagnie devient une fictive aux envois simules.\n");
                 Ok(Atelier::Fait { ok: true })
@@ -778,7 +778,7 @@ impl Fenetre {
             }
         }
         if nom == Route::AdministrateurTableau {
-            let c: crate::routes::accueil::ChargeTableau = match charge.lire() {
+            let c: routes::accueil::ChargeTableau = match charge.lire() {
                 Ok(c) => c,
                 Err(e) => return RouteReponse::de(nom, Err(e)),
             };
@@ -786,14 +786,14 @@ impl Fenetre {
                 return api::route_de_l_installation(nom, charge);
             }
             if tenu(&self.administrateur).is_some() {
-                return match Charge::de_forme(&crate::routes::accueil::ChargeTableau { relever: Some(true), garde: None }) {
+                return match Charge::de_forme(&routes::accueil::ChargeTableau { relever: Some(true), garde: None }) {
                     Ok(c) => api::route_de_l_installation(nom, &c),
                     Err(e) => RouteReponse::de(nom, Err(e)),
                 };
             }
-            let tableau = crate::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
+            let tableau = routes::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
                 let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
-                crate::gestes::administrateur::tableau_de(&inst, par)
+                routes::gestes::administrateur::tableau_de(&inst, par)
             });
             return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));
         }
@@ -900,7 +900,7 @@ impl Fenetre {
             if let Some(texte) = r.chemin.strip_prefix("/api/") {
                 // LE NOM DE LA ROUTE SE LIT ICI, UNE FOIS : un nom qui n'est celui d'aucune route se refuse ; une charge qui
                 // n'est pas un objet aussi.
-                let nom = match crate::routes::enveloppe::route_nommee(texte) {
+                let nom = match routes::enveloppe::route_nommee(texte) {
                     Ok(n) => n,
                     Err(e) => return Reponse::json(200, &RouteReponse::refusee(Refus::de(None, e))),
                 };
@@ -913,9 +913,9 @@ impl Fenetre {
                 // passe (rien a deverrouiller : la page du premier mot de passe le pose par sa route).
                 // Ecrire au developpeur se sert aussi a l'accueil, aucune compagnie ouverte (`routes::filet::sans_compagnie`).
                 // Le catalogue (`routes`) ne porte sur aucune compagnie : l'accueil le lit pour son « Avancé » (`js/avance.js`).
-                let au_developpeur = crate::routes::catalogue::dans(crate::routes::filet::ROUTES, nom).is_some() && !matches!(self.phase(), Phase::Ouverte { .. });
-                let catalogue = crate::routes::catalogue::dans(crate::routes::catalogue::ROUTES, nom).is_some();
-                if crate::routes::catalogue::dans(crate::routes::accueil::ROUTES, nom).is_some() || au_developpeur || catalogue {
+                let au_developpeur = routes::catalogue::dans(routes::filet::ROUTES, nom).is_some() && !matches!(self.phase(), Phase::Ouverte { .. });
+                let catalogue = routes::catalogue::dans(routes::catalogue::ROUTES, nom).is_some();
+                if routes::catalogue::dans(routes::accueil::ROUTES, nom).is_some() || au_developpeur || catalogue {
                     let debut = Instant::now();
                     let rendu = self.route_de_l_installation(nom, &charge);
                     self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
@@ -948,7 +948,7 @@ impl Fenetre {
                             RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
                         } else {
                             match suppression::route(&racine, c, charge.mot_de_passe(), &|r| self.lacher(r)) {
-                                Ok(s) => RouteReponse::de(nom, crate::routes::enveloppe::en_json(s)),
+                                Ok(s) => RouteReponse::de(nom, routes::enveloppe::en_json(s)),
                                 Err(m) => RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, m)),
                             }
                         };
@@ -984,7 +984,7 @@ impl Fenetre {
                     Phase::MotDePasse { racine, premiere } => {
                         // Ce que l'administrateur est pour cette compagnie (la route `administrateur-etat`) : la page le lit,
                         // sans rien decider.
-                        let etat = match crate::routes::coffre::administrateur_etat(&racine) {
+                        let etat = match routes::coffre::administrateur_etat(&racine) {
                             Ok(e) => e,
                             Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase()),
                         };
@@ -1078,13 +1078,13 @@ impl Fenetre {
         if !self.autorise(r) {
             return interdit;
         }
-        let Some(modele) = r.param("modele").and_then(crate::routes::bulletin::modele_de_l_adresse) else {
+        let Some(modele) = r.param("modele").and_then(routes::bulletin::modele_de_l_adresse) else {
             return Reponse::nouvelle(404, "text/plain", Vec::new());
         };
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
         let lire = || -> Result<Vec<u8>, String> {
-            let charge = Charge::de_forme(&crate::routes::bulletin::ChargeModele { modele: modele.cle().to_string() }).map_err(|e| e.phrase())?;
-            let a: crate::routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| x.phrase)?;
+            let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele: modele.cle().to_string() }).map_err(|e| e.phrase())?;
+            let a: routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| x.phrase)?;
             socle::base64::lire(&a.pdf).map_err(|e| format!("L'aperçu du bulletin ne se lit pas : {}.", e))
         };
         match lire() {
@@ -1271,7 +1271,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         }
     }
     let enr = match &dossier {
-        Some(d) => Some(crate::scenario::Enregistreur::demarrer(d, &installation::base(), lectures)?),
+        Some(d) => Some(routes::scenario::Enregistreur::demarrer(d, &installation::base(), lectures)?),
         None => None,
     };
     let dernier = match enr {
@@ -1296,8 +1296,8 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         // LES ALEAS DU BANC sont ceux du rejeu (`temps::aleas`) : la compagnie du banc et son rejeu s'ecrivent pareil, et
         // `scenario::verifier` le controle. Le banc n'est jamais un poste.
         socle::temps::aleas_fixes();
-        use crate::scenario::{Genre, Geste};
-        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(crate::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
+        use routes::scenario::{Genre, Geste};
+        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(routes::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
     }
     Ok(reste)
 }

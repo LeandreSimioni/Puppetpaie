@@ -40,20 +40,20 @@ pub fn scenario(nom: &str) -> PathBuf {
 
 /// Le scenario d'une fictive de reference : `<depot>/atelier/fictives/<nom>` (`scenario::DOSSIER_REFERENCE`).
 pub fn reference(nom: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").join(moteur::scenario::DOSSIER_REFERENCE).join(nom)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").join(routes::scenario::DOSSIER_REFERENCE).join(nom)
 }
 
 /// Rejoue le scenario `nom` dans `dossier` (une installation neuve) ; rend le compte rendu et la racine de la compagnie
 /// qu'il a ajoutee (la premiere). Un ecart avec l'enregistrement fait echouer le test.
-pub fn rejouer(nom: &str, dossier: &Path) -> (moteur::scenario::Rejeu, PathBuf) {
+pub fn rejouer(nom: &str, dossier: &Path) -> (routes::scenario::Rejeu, PathBuf) {
     rejouer_dossier(&scenario(nom), dossier)
 }
 
 /// `rejouer`, pour un scenario pris ailleurs que dans `tests/donnees/scenarios/` (un scenario elague par le test).
-pub fn rejouer_dossier(sc: &Path, dossier: &Path) -> (moteur::scenario::Rejeu, PathBuf) {
+pub fn rejouer_dossier(sc: &Path, dossier: &Path) -> (routes::scenario::Rejeu, PathBuf) {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let nom = sc.display();
-    let r = moteur::scenario::rejouer(sc, &dossier.join("installation"), &moteur::scenario::OptionsRejeu::default())
+    let r = routes::scenario::rejouer(sc, &dossier.join("installation"), &routes::scenario::OptionsRejeu::default())
         .unwrap_or_else(|m| panic!("le scenario {} ne se rejoue pas : {}", nom, m));
     assert!(r.ecarts.is_empty(), "le rejeu de {} s'ecarte de l'enregistrement :\n{}", nom, r.ecarts.join("\n"));
     let racine = r.compagnies.first().map(|(_, p)| p.clone()).unwrap_or_else(|| panic!("le scenario {} n'ajoute aucune compagnie", nom));
@@ -66,7 +66,7 @@ pub fn rejouer_dossier(sc: &Path, dossier: &Path) -> (moteur::scenario::Rejeu, P
 pub fn livrer(sc: &Path, dossier: &Path, jour: &str) -> PathBuf {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let dest = dossier.join("installation").join("fictives").join(sc.file_name().unwrap());
-    moteur::scenario::livrer(sc, &dest, Some(socle::date::Jour::lire(jour).unwrap())).unwrap_or_else(|m| panic!("{} ne se livre pas : {}", sc.display(), m));
+    routes::scenario::livrer(sc, &dest, Some(socle::date::Jour::lire(jour).unwrap())).unwrap_or_else(|m| panic!("{} ne se livre pas : {}", sc.display(), m));
     dest
 }
 
@@ -121,11 +121,11 @@ impl Soir<'_> {
 
 /// REJOUE le scenario `nom` UNE FOIS, et le lit le soir de chacun des `jours` (AAAA-MM-JJ, dans l'ordre) : `lire` recoit
 /// la compagnie telle qu'elle est ce soir-la, puis le rejeu reprend. Un ecart avec l'enregistrement fait echouer le test.
-pub fn rejouer_et_lire(nom: &str, dossier: &Path, jours: &[&str], mut lire: impl FnMut(&Soir)) -> (moteur::scenario::Rejeu, PathBuf) {
+pub fn rejouer_et_lire(nom: &str, dossier: &Path, jours: &[&str], mut lire: impl FnMut(&Soir)) -> (routes::scenario::Rejeu, PathBuf) {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let arrets: Vec<socle::date::Jour> = jours.iter().map(|j| socle::date::Jour::lire(j).unwrap()).collect();
     let mut lus = 0;
-    let r = moteur::scenario::rejouer_et_lire(&scenario(nom), &dossier.join("installation"), &Default::default(), &arrets, &mut |jour, r| {
+    let r = routes::scenario::rejouer_et_lire(&scenario(nom), &dossier.join("installation"), &Default::default(), &arrets, &mut |jour, r| {
         let (_, racine) = r.compagnies.first().unwrap_or_else(|| panic!("le scenario {} n'a pas encore de compagnie le {}", nom, jour.iso()));
         lire(&Soir { jour: jour.iso(), racine });
         lus += 1;

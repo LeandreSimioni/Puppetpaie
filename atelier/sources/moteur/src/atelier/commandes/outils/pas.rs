@@ -56,13 +56,13 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 /// `--amorcer` : l'etat courant pose depuis la derniere DSN deposee de chaque salarie (celles de l'import).
 fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
     let ctx = &cadre.ctx;
-    let export = crate::routes::fiches::pieces_importees(ctx);
+    let export = routes::fiches::pieces_importees(ctx);
     if !export.exists() {
         dire!("Dossier introuvable : {}", export.display());
         return Ok(1);
     }
     let releves = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
-    let chgts = crate::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
+    let chgts = routes::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
     dire!("Amorcage depuis les DSN deposees ({}) :", export.display());
     for c in &chgts {
         dire!("  {}", c);

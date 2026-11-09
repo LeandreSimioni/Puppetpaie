@@ -89,7 +89,7 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
 const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
-    ["config/coffre.bin", crate::routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
+    ["config/coffre.bin", routes::coffre::JETON_GOOGLE, "config/maj-cle-privee.bin", "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -273,9 +273,9 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
-    for (nom, scenario) in crate::scenario::fictives_de_reference(base) {
+    for (nom, scenario) in routes::scenario::fictives_de_reference(base) {
         let dest = base.join(compagnie::installation::DOSSIER_FICTIVES).join(&nom);
-        crate::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
+        routes::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }
     let (_, en_plus, empreinte) = entrees_des_fictives(code)?;
     for (nom, octets) in en_plus {

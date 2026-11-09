@@ -1,7 +1,7 @@
 //! La veille de la fenetre : relever les retours, les signatures et les fiches, puis
 //! sauvegarder, a l'ouverture puis toutes les `minutes`. En arriere-plan, jamais dans une requete ; un tour a la fois.
 //! Elle ne depose rien : elle appelle la route `ouverture`, qui ne connait que la releve et la sauvegarde. Ce qu'elle
-//! dit a la page (son etat, le bandeau) : `crate::veille`.
+//! dit a la page (son etat, le bandeau) : `routes::veille`.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,11 +12,11 @@ use serde::Serialize;
 use socle::memoire::tenu;
 
 use super::api::route;
-use crate::gestes::ouverture::ChargeOuverture;
-use crate::veille::{dit_du_bandeau, EtatDeLaVeille};
-use crate::etat_garde::FileDesEtats;
-use crate::routes::catalogue::Route;
-use crate::routes::enveloppe::{Charge, Refus};
+use routes::gestes::ouverture::ChargeOuverture;
+use routes::veille::{dit_du_bandeau, EtatDeLaVeille};
+use routes::etat_garde::FileDesEtats;
+use routes::catalogue::Route;
+use routes::enveloppe::{Charge, Refus};
 
 pub struct Veille {
     racine: PathBuf,
@@ -64,7 +64,7 @@ impl Veille {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
         let sauvegarde_en_cours = self.sauvegarde_en_cours.load(Ordering::SeqCst);
         let etape = if en_cours || sauvegarde_en_cours {
-            match crate::gestes::ouverture::etape_en_cours(&self.racine) {
+            match routes::gestes::ouverture::etape_en_cours(&self.racine) {
                 Ok(e) => e,
                 Err(e) => Some(e.message),
             }
@@ -76,7 +76,7 @@ impl Veille {
 
     /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).
     pub fn etat(&self) -> EtatDeLaVeille {
-        let (dernier, illisible) = match crate::gestes::ouverture::derniere_ouverture(&self.racine) {
+        let (dernier, illisible) = match routes::gestes::ouverture::derniere_ouverture(&self.racine) {
             Ok(t) => (t, None),
             Err(e) => (None, Some(e.message)),
         };
@@ -153,7 +153,7 @@ impl Veille {
     /// Le premier tour, complet, puis un tour toutes les `minutes` tant que la veille n'est pas arretee.
     pub fn demarrer(self: &Arc<Self>) {
         let v = self.clone();
-        crate::routes::fil_de_routes(move || {
+        routes::fil_de_routes(move || {
             // La mise a jour ne se cherche pas ici, a l'ouverture d'une compagnie : c'est le logiciel qui la cherche pour
             // lui-meme, au lancement (`maj::chercher_en_fond`).
             v.tour(false, true);

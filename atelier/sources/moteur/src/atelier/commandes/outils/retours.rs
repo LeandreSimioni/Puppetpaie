@@ -74,9 +74,9 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
     let r = if dpae {
-        crate::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
+        routes::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
     } else {
-        crate::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
+        routes::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
     };
     for i in &r.incidents {
         dire!("  {}", i);

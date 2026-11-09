@@ -2,7 +2,7 @@
 name = "moteur"
 version = "0.1.0"
 edition = "2021"
-description = "Le moteur de PuppetPaie au-dessus de la compagnie et de l'import : la ligne de commande `moteur`, les routes."
+description = "Le moteur de PuppetPaie au-dessus des routes : la ligne de commande `moteur`, l'interface, l'atelier."
 license = "EUPL-1.2"
 publish = false
 
@@ -22,25 +22,23 @@ path = "src/main.rs"
 required-features = ["atelier"]
 
 [features]
-atelier = ["envois/atelier", "compagnie/atelier"]
+atelier = ["routes/atelier", "envois/atelier", "compagnie/atelier"]
 
 [dependencies]
 # Les deux parties du dessous : le socle (dates, nombres, fichiers, echecs, temps, garde-fou reseau) et le droit
 # (baremes dates, conventions, natures de contrat, regles).
 socle = { path = "../socle" }
 droit = { path = "../droit" }
-engagement = { path = "../engagement", features = ["ecran"] }
+engagement = { path = "../engagement" }
 rust_decimal = { workspace = true }
-serde_json = { workspace = true }
 serde = { workspace = true }
-# Deflate et CRC-32 (zip des exports, gzip du transport), deja lies par la fabrique de PDF.
+# Le gzip des livraisons de la DILA (`atelier::releve::entrepot_dila`), deja lie par la fabrique de PDF.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# Les retours DSN sont du XML : lecture seule, Rust pur (`retours.rs`).
+# Les textes de la DILA sont du XML : lecture seule, Rust pur (`atelier::releve::kali`).
 roxmltree = { workspace = true }
-# L'empreinte d'un fichier du journal (deja liee par la fabrique de PDF).
+# L'empreinte d'un fichier (deja liee par la fabrique de PDF).
 sha2 = { workspace = true }
-# Les motifs du journal des incidents (caviardage, ce qui part chez l'editeur) ;
-# sans les optimisations par defaut, qui pesent sur le binaire.
+# Les motifs des releves de l'atelier ; sans les optimisations par defaut, qui pesent sur le binaire.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Le bulletin : la description part a la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
@@ -50,11 +48,8 @@ envois = { path = "../envois" }
 documents = { path = "../documents" }
 # Les déclarations que fabrique un engagement valide.
 declarations = { path = "../declarations" }
-# La liste nominative du CASC-SVP des mois importes : ecriture seule.
-rust_xlsxwriter = "0.90"
-# Le transport vers net-entreprises et l'Urssaf (`transport.rs`) : HTTP/1.1
-# synchrone, TLS par rustls, racines du systeme (`SSL_CERT_FILE` honore),
-# proxy lu dans l'environnement. Ni gzip (flate2 s'en charge), ni cookies, ni json.
+# Le telechargement des sources de l'atelier (`atelier::sources`) : HTTP/1.1 synchrone, TLS par rustls, racines du
+# systeme (`SSL_CERT_FILE` honore), proxy lu dans l'environnement.
 ureq = { workspace = true }
 # Les aleas du systeme : le jeton de la fenetre (`interface`), la cle d'une publication (`atelier::publier`).
 getrandom = { workspace = true }
@@ -62,15 +57,10 @@ getrandom = { workspace = true }
 compagnie = { path = "../compagnie" }
 # Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
 import = { path = "../import" }
-# Les courriels joués de la démonstration (`simulation_courriels.rs`) : lecture MIME, bibliothèque éprouvée.
+# Les routes : la porte du moteur, et ce qu'elles font.
+routes = { path = "../routes" }
+# Les courriels joués de la démonstration, que la fenetre montre (`interface`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"
-# La messagerie (`courriel.rs`, `envoi.rs`) : SMTP par `lettre` (sans son batisseur de messages : on lui passe nos
-# octets, `send_raw`), TLS par rustls et verificateur de la plate-forme (la racine d'un antivirus installee dans le
-# magasin du systeme passe, comme pour l'Urssaf) ; IMAP ecrit sur un flux rustls, reponses lues par `imap-proto`.
-lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls", "ring", "rustls-platform-verifier"] }
-imap-proto = "0.17"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
 # La publication d'une version (`atelier::publier`) : la signature Ed25519 de l'editeur, et l'archive zip.
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
 zip = { workspace = true }
@@ -79,6 +69,8 @@ zip = { workspace = true }
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 
 [dev-dependencies]
+# Les essais lisent la reponse d'une route telle que la page la recoit : du JSON.
+serde_json = { workspace = true }
 # Le faux Drive des essais (`tests/faux_drive`) publie l'empreinte MD5 de chaque fichier, comme Drive.
 md-5 = { version = "0.10", default-features = false }
 

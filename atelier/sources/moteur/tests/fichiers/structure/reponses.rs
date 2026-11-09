@@ -499,7 +499,7 @@ impl Espace {
         self.fichiers[n].strip_prefix(espace).unwrap_or(&self.fichiers[n]).display().to_string()
     }
 
-    /// Le fichier qu'un chemin de module designe (`crate::routes::mois`, `droit::fiche`), s'il en designe un.
+    /// Le fichier qu'un chemin de module designe (`crate::gestes::depart`, `droit::fiche`), s'il en designe un.
     fn fichier_du_module(&self, fichier: usize, module: &[String]) -> Option<usize> {
         if module.is_empty() {
             return None;
@@ -508,7 +508,7 @@ impl Espace {
             let p = self.fichiers[n].to_string_lossy().replace('\\', "/");
             p.split("/src/").next().unwrap().rsplit('/').next().unwrap().to_string()
         };
-        // Le module du fichier lui-meme (`routes/mois.rs` : routes, mois), pour `self` et `super`.
+        // Le module du fichier lui-meme (`gestes/depart.rs` : gestes, depart), pour `self` et `super`.
         let ici: Vec<String> = {
             let p = self.fichiers[fichier].to_string_lossy().replace('\\', "/");
             let apres = p.split("/src/").nth(1).unwrap_or("").trim_end_matches(".rs").to_string();

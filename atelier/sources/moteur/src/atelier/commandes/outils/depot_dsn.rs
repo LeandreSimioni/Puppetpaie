@@ -10,7 +10,7 @@ use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use crate::commandes::analyse::{Args, Opt, Pos, Spec};
 use crate::commandes::Cadre;
 use compagnie::preuve::Preuve;
-use crate::gestes::depot_acte;
+use routes::gestes::depot_acte;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -40,7 +40,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     };
     refuser_si_pas_redirige(cadre, Organisme::Dsn, "le depot de test")?;
     let designee = match socle::mois::Mois::du_texte(fichier) {
-        Some(m) => crate::routes::depots::designee(&cadre.ctx, &crate::routes::depots::Designation::du_mois(crate::routes::depots::Quoi::Dsn, m))?.0,
+        Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
         None => fichier.to_string(),
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.

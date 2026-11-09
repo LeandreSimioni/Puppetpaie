@@ -284,7 +284,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let relever = || {
         socle::temps::pendant(fin, || {
             let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
-            moteur::gestes::releve::rattacher_simulation(&ctx).unwrap();
+            routes::gestes::releve::rattacher_simulation(&ctx).unwrap();
         })
     };
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
@@ -318,7 +318,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let de_novembre = || outils::journal(&racine).as_array().unwrap().iter().filter(|l| l["fichier"] == json!("DSN_Novembre2026.dsn")).count();
     let ouvrir = |jour: &str| {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap()
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap()
     };
     let avant = de_novembre();
     ouvrir("2026-12-20");
@@ -385,7 +385,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
 
     for jour in ["2026-11-20", "2026-12-16"] {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     let depots = outils::journal(&racine);
     let demandes = |s: &str| {
@@ -428,7 +428,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     outils::reussi(&outils::valider_la_carte(&racine, "2026-11", "FULLER", "2026-11-16"));
     for jour in ["2026-11-20", "2026-12-01"] {
         let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
-        socle::temps::pendant(le, || moteur::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
+        socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     for reel in [false, true] {
         outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "reel": reel}), "2026-12-14"));

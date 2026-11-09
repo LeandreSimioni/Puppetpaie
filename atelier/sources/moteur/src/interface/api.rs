@@ -10,9 +10,9 @@ use std::path::Path;
 use socle::echec::Classe;
 
 use super::veille::Veille;
-use crate::etat_garde::{ACote, FileDesEtats};
-use crate::routes::catalogue::Route;
-use crate::routes::enveloppe::{Charge, Reponse};
+use routes::etat_garde::{ACote, FileDesEtats};
+use routes::catalogue::Route;
+use routes::enveloppe::{Charge, Reponse};
 
 /// Les refus qui ne sont pas des defauts du logiciel : une saisie en cours, un mot de passe mal tape, un mois sans
 /// paie, et ceux que la page traite elle-meme (une fiche refusee, un depot deja fait...). On ne les compte pas en incidents.
@@ -45,7 +45,7 @@ pub fn route(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
     }
     let debut = std::time::Instant::now();
     let r = route_seule(racine, nom, charge);
-    compagnie::diagnostic::noter_route(racine, "fond", nom.nom(), crate::routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
+    compagnie::diagnostic::noter_route(racine, "fond", nom.nom(), routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
     r
 }
 
@@ -63,15 +63,15 @@ thread_local! {
 }
 
 fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
-    let o = crate::routes::enveloppe::Options::de_la_compagnie(racine);
+    let o = routes::enveloppe::Options::de_la_compagnie(racine);
     // LE BANC D'ESSAI (l'atelier seulement) : chaque route que la fenetre sert -- la page, la veille, le fil de fond --
     // passe par l'enregistreur, qui garde celles qu'il enregistre dans le scenario, avec leur charge et leur instant
     // (`scenario::Enregistreur::route`).
     #[cfg(feature = "atelier")]
-    if let Some(e) = crate::scenario::enregistreur_actif() {
-        return e.route(racine, nom, charge, || crate::routes::dans_la_fenetre(&o, nom, charge));
+    if let Some(e) = routes::scenario::enregistreur_actif() {
+        return e.route(racine, nom, charge, || routes::dans_la_fenetre(&o, nom, charge));
     }
-    crate::routes::dans_la_fenetre(&o, nom, charge)
+    routes::dans_la_fenetre(&o, nom, charge)
 }
 
 /// « Un probleme, une idee ? » part en fond : `signalement-envoyer` a enregistre le message et
@@ -79,7 +79,7 @@ fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
 /// qui ne part pas attend sa ligne, et la veille suivante reessaie.
 fn signalements_en_fond(racine: &Path) {
     let r = racine.to_path_buf();
-    crate::routes::fil_de_routes(move || {
+    routes::fil_de_routes(move || {
         if let Some(x) = route(&r, Route::SignalementsPartir, &Charge::vide()).refus() {
             compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
         }
@@ -119,7 +119,7 @@ struct RefusDeLaPage<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     mois_illisible: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    refus: Option<&'a crate::routes::enveloppe::APart>,
+    refus: Option<&'a routes::enveloppe::APart>,
 }
 
 /// La reponse a `/api/<nom>`, dans l'enveloppe des routes.
@@ -142,14 +142,14 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
         };
         compagnie::diagnostic::noter_moteur(&dit);
     } else {
-        compagnie::diagnostic::noter_route(racine, "page", nom.nom(), crate::routes::est_une_ecriture(nom), charge, duree, issue(&rendu));
+        compagnie::diagnostic::noter_route(racine, "page", nom.nom(), routes::est_une_ecriture(nom), charge, duree, issue(&rendu));
     }
     // APRES UNE ECRITURE, les etats de tous les mois se verifient en fond, le mois affiche
     // d'abord : une ecriture d'un mois peut changer les suivants (un contrat en cours, une numerotation, un cumul). Meme
     // refusee, une ecriture a pu toucher un fichier ; un mois deja juste ne coute que son empreinte. La reponse le dit
     // (`ecrit`) : la page oublie alors ce qu'elle a lu.
     if let Some(f) = etats {
-        if crate::routes::est_une_ecriture(nom) {
+        if routes::est_une_ecriture(nom) {
             f.tout_verifier();
         }
     }
@@ -186,34 +186,34 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
 /// UNE ROUTE DE L'INSTALLATION (`routes::accueil` : l'accueil des compagnies), servie sans compagnie : l'installation est
 /// celle du programme.
 pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
-    let o = crate::routes::enveloppe::Options::sans_compagnie();
+    let o = routes::enveloppe::Options::sans_compagnie();
     // LE BANC D'ESSAI (l'atelier seulement) : une compagnie ajoutee entre dans le scenario comme le decor de depart que le
     // rejeu refait (`scenario::rejouer`, le geste `ajouter`).
     #[cfg(feature = "atelier")]
     if nom == Route::CompagnieAjouter {
-        if let Some(e) = crate::scenario::enregistreur_actif() {
+        if let Some(e) = routes::scenario::enregistreur_actif() {
             // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue quand elle vient d'un logiciel
             // precedent, et son dossier.
-            use crate::scenario::{Genre, Geste};
+            use routes::scenario::{Genre, Geste};
             let rendu = e.geste(|| {
-                let a: crate::routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
-                let r = crate::routes::dans_la_fenetre(&o, nom, charge);
-                let ajoutee: crate::routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
+                let a: routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
+                let r = routes::dans_la_fenetre(&o, nom, charge);
+                let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
                 let venue = (a.venue != compagnie::installation::Venue::Neuve).then_some(a.venue);
                 let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
             return match rendu {
                 Ok(r) => r,
-                Err(m) => Reponse::refusee_par(nom, crate::routes::enveloppe::Refus::nouveau(Classe::Refuse, m)),
+                Err(m) => Reponse::refusee_par(nom, routes::enveloppe::Refus::nouveau(Classe::Refuse, m)),
             };
         }
     }
-    let rendu = crate::routes::dans_la_fenetre(&o, nom, charge);
+    let rendu = routes::dans_la_fenetre(&o, nom, charge);
     // Le message ecrit a l'accueil part en fond, comme celui d'une compagnie (`signalements_en_fond`).
     if nom == Route::SignalementEnvoyer && rendu.est_rendue() {
-        crate::routes::fil_de_routes(move || {
-            if let Some(x) = crate::routes::dans_la_fenetre(&crate::routes::enveloppe::Options::sans_compagnie(),Route::SignalementsPartir, &Charge::vide()).refus() {
+        routes::fil_de_routes(move || {
+            if let Some(x) = routes::dans_la_fenetre(&routes::enveloppe::Options::sans_compagnie(),Route::SignalementsPartir, &Charge::vide()).refus() {
                 compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
             }
         });

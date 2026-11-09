@@ -55,7 +55,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     if let Err(e) = refuser_si_pas_redirige(cadre, Organisme::Google, "la restauration depuis le Drive") {
         return refus(Some(socle::echec::Classe::Refuse), &e.message);
     }
-    if !crate::routes::coffre::autorise(&cadre.racine) {
+    if !routes::coffre::autorise(&cadre.racine) {
         return refus(Some(socle::echec::Classe::Google), "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
     }
     let racine_drive = match args.exige("racine-drive") {
@@ -67,7 +67,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Some(d) => PathBuf::from(d),
         None => cadre.racine.clone(),
     };
-    let mut client = match crate::routes::coffre::client_drive(&cadre.racine) {
+    let mut client = match routes::coffre::client_drive(&cadre.racine) {
         Ok(c) => c,
         Err(e) => return refus(e.classe, &e.message),
     };

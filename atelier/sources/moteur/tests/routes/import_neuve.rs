@@ -17,7 +17,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use moteur::accueil::ajouter_venant;
+use routes::accueil::ajouter_venant;
 use compagnie::installation::Venue;
 use serde_json::{json, Value};
 

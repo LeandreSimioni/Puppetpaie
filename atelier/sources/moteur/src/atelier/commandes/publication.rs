@@ -51,7 +51,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
             _ => Err(options_manquantes("Poser les fictives demande le dossier du logiciel et celui où les poser.", "--poser-fictives DOSSIER --logiciel DOSSIER")),
         }
     } else {
-        let racine = crate::routes::ouverture::racine_du_poste();
+        let racine = routes::ouverture::racine_du_poste();
         if drapeau("--cle") {
             generer_cle(&racine, drapeau("--remplacer")).map(|r| {
                 format!(

@@ -1,0 +1,45 @@
+[package]
+name = "routes"
+version = "0.1.0"
+edition = "2021"
+description = "Les routes de PuppetPaie au-dessus de l'import et de la compagnie : la porte (l'enveloppe, le catalogue), chaque route, et ce qu'elles font (les gestes de la compagnie, l'état gardé d'un mois, ce que l'import écrit pour elles, le scénario et l'horloge d'une fictive)."
+license = "EUPL-1.2"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Le binaire de l'ATELIER (`moteur-atelier`, jamais livre) : l'enregistreur du scenario, le Drive d'un faux serveur.
+atelier = ["envois/atelier", "compagnie/atelier"]
+
+[dependencies]
+socle = { path = "../socle" }
+droit = { path = "../droit" }
+engagement = { path = "../engagement", features = ["ecran"] }
+# Les documents que fabrique un engagement valide.
+documents = { path = "../documents" }
+# Les déclarations que fabrique un engagement valide.
+declarations = { path = "../declarations" }
+# Ce qui part et revient, et le journal de ce qui est parti.
+envois = { path = "../envois" }
+# Ce qui garde et fait vivre la compagnie : l'installation, le coffre, la preuve d'un acte reel, la mise a jour.
+compagnie = { path = "../compagnie" }
+# Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
+import = { path = "../import" }
+rust_decimal = { workspace = true }
+# La porte des routes (`enveloppe`) : la charge d'une route se lit, sa reponse s'ecrit.
+serde_json = { workspace = true }
+serde = { workspace = true }
+# Deflate et CRC-32 (le zip du dossier d'un salarie), deja lies par la fabrique de PDF.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# L'empreinte d'un fichier (l'etat garde, la cloture, un incident de l'import).
+sha2 = { workspace = true }
+# Les motifs des incidents de l'import ; sans les optimisations par defaut, qui pesent sur le binaire.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# Les pages d'un PDF du dossier d'un salarie, lues par la fabrique dans le meme processus.
+fabrique-pdf = { path = "../fabrique-pdf" }
+# La liste nominative du CASC-SVP des mois importes : ecriture seule.
+rust_xlsxwriter = "0.90"
+# Les messages de la boite courriel releves pour les fiches (`fiches.rs`) : lecture MIME, bibliothèque éprouvée.
+mailparse = "0.16"

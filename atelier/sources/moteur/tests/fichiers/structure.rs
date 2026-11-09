@@ -7,15 +7,15 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use moteur::routes::catalogue::{catalogue, Acte, Ecran, Place, Route, FICHES};
+use routes::catalogue::{catalogue, Acte, Ecran, Place, Route, FICHES};
 use serde_json::{json, Value};
 
 use crate::bulletins_fictifs::{a_heures, a_repetitions, page_a, pdf};
 use crate::outils::rejeu::{rejouer_dossier, scenario};
 use crate::outils::{dossier_de_test, route, route_avec};
-use moteur::accueil::ajouter_venant;
+use routes::accueil::ajouter_venant;
 use compagnie::installation::Venue;
-use moteur::gestes::administrateur::Poste;
+use routes::gestes::administrateur::Poste;
 use compagnie::demande::VARIABLE_ESSAIS;
 
 /// La longueur d'un geste, en caracteres : une phrase breve.
@@ -111,14 +111,14 @@ fn chaque_route_dit_brievement_ce_qu_elle_fait() {
 /// (`l_exemple_de_chaque_fiche_est_accepte`). Le sens long, qui peut nommer un fichier, est celui du LLM (`sens`, `geste`).
 #[test]
 fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
-    use moteur::routes::affiche::{defaut, COURT};
+    use routes::affiche::{defaut, COURT};
     let mut fautes = Vec::new();
     let mut voir = |ou: String, t: &str, place: usize, court: bool| {
         if let Some(d) = defaut(t, place, court) {
             fautes.push(format!("{} : « {} » : {}", ou, t, d.corriger()));
         }
     };
-    for f in moteur::routes::catalogue::catalogue().iter().map(|f| serde_json::to_value(f.ecrite().unwrap()).unwrap()) {
+    for f in routes::catalogue::catalogue().iter().map(|f| serde_json::to_value(f.ecrite().unwrap()).unwrap()) {
         let f = &f;
         let nom = f["nom"].as_str().unwrap();
         if let Some(b) = f["bouton"].as_str() {
@@ -445,13 +445,13 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
         assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
-        for p in moteur::routes::phrases_rendues(&r["resultat"]) {
-            if let Some(d) = moteur::routes::affiche::defaut(p, usize::MAX, false) {
+        for p in routes::phrases_rendues(&r["resultat"]) {
+            if let Some(d) = routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
             }
         }
         if f.phrase > 0 {
-            let n = moteur::routes::plus_longue_phrase(&r["resultat"]);
+            let n = routes::plus_longue_phrase(&r["resultat"]);
             assert!(n <= f.phrase, "{} : une phrase qu'elle rend (la sienne, ou celle d'une de ses lignes) passe sa place ({}) : {} caractères : {}", f.nom(), f.phrase, n, r);
         }
     }
@@ -477,7 +477,7 @@ fn google_autoriser(c: &Path, exemple: Value) -> Value {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moteur"));
     cmd.args(["route", "--racine", c.to_str().unwrap(), "--date", "2026-11-02"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     crate::outils::bac_a_sable(&mut cmd, c, "2026-11-02");
-    cmd.env(moteur::routes::coffre::VARIABLE_GOOGLE_ESSAIS, &google).env(VARIABLE_ESSAIS, "exemple");
+    cmd.env(routes::coffre::VARIABLE_GOOGLE_ESSAIS, &google).env(VARIABLE_ESSAIS, "exemple");
     let mut p = cmd.spawn().unwrap();
     p.stdin.take().unwrap().write_all(json!({"route": "google-autoriser", "charge": exemple}).to_string().as_bytes()).unwrap();
     let (envoi, recu) = std::sync::mpsc::channel();
@@ -526,11 +526,11 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     let mut charge = exemple;
     charge["administrateur"] = json!(ADMIN);
     if route == Route::AdministrateurDetacher {
-        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, serde_json::from_value(json!({"administrateur": ADMIN})).unwrap(), None, &poste).unwrap();
+        routes::coffre::administrateur(&b, Route::AdministrateurRattacher, serde_json::from_value(json!({"administrateur": ADMIN})).unwrap(), None, &poste).unwrap();
         charge["nouveau"] = json!("propre-essai-1");
         charge["confirmation"] = json!("propre-essai-1");
     }
-    match moteur::routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
+    match routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
         Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
         Err(e) => json!({"ok": false, "erreur": e.message}),
     }
@@ -660,7 +660,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         fenetre.push_str(&std::fs::read_to_string(p).unwrap());
     }
     // Une route se nomme par son nom (la page, `/api/<route>`) ou, dans le moteur, par sa variante (`Route::MoisAOuvrir`).
-    let appelee = |f: &moteur::routes::catalogue::Fiche, t: &str| t.contains(&format!("\"{}\"", f.nom())) || t.contains(&format!("/api/{}", f.nom())) || t.contains(&format!("Route::{:?}", f.route));
+    let appelee = |f: &routes::catalogue::Fiche, t: &str| t.contains(&format!("\"{}\"", f.nom())) || t.contains(&format!("/api/{}", f.nom())) || t.contains(&format!("Route::{:?}", f.route));
     for f in &tout {
         match f.ecran {
             Ecran::Dessine(p) => assert!(
@@ -669,7 +669,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
                 f.nom(), p.nom(), fichiers_de(p).join(", ")
             ),
             Ecran::Auto(p, _) => {
-                assert!(f.charge.iter().all(|c| c.forme != moteur::routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
+                assert!(f.charge.iter().all(|c| c.forme != routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
                 let porte = format!("data-auto=\"{}\"", p.nom());
                 let configuration = p.nom().starts_with("Configuration › ") && html.contains("id=\"config-avance\"");
                 assert!(f.avance, "{} s'affiche sous « Avancé » de sa place : sa fiche est avancée", f.nom());
@@ -799,7 +799,7 @@ const PORTES: [&str; 2] = ["socle", "moteur"];
 /// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
 /// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
 /// `routes::enveloppe` lit la charge d'une route et ecrit sa reponse.
-const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "moteur::routes::enveloppe"];
+const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "routes::enveloppe"];
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis et ses textes vides entre leurs guillemets : le
 /// code seul, a ses lignes.

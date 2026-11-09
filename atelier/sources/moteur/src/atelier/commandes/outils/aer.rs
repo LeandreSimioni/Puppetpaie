@@ -17,7 +17,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let mois = args.texte("mois");
-    let fait = crate::routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
+    let fait = routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
     if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
         match mois {
             Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NATURE_AER_SPECTACLE),

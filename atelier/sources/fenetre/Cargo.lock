@@ -2503,18 +2503,13 @@ dependencies = [
  "flate2",
  "getrandom 0.3.4",
  "icu_normalizer",
- "imap-proto",
  "import",
- "lettre",
  "mailparse",
  "regex",
+ "routes",
  "roxmltree 0.20.0",
  "rust_decimal",
- "rust_xlsxwriter",
- "rustls",
- "rustls-platform-verifier",
  "serde",
- "serde_json",
  "sha2",
  "socle",
  "ureq",
@@ -3224,6 +3219,7 @@ dependencies = [
  "compagnie",
  "fabrique-pdf",
  "moteur",
+ "routes",
  "tauri",
  "tauri-build",
 ]
@@ -3449,6 +3445,29 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "routes"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "flate2",
+ "import",
+ "mailparse",
+ "regex",
+ "rust_decimal",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socle",
 ]
 
 [[package]]

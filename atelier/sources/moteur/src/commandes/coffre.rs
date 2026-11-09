@@ -13,7 +13,7 @@
 //! d'erreur ou sur le terminal, jamais sur la sortie standard d'un programme qui lirait du JSON.
 
 use super::actes::est_refus;
-use crate::gestes::administrateur::maintenant_minutes;
+use routes::gestes::administrateur::maintenant_minutes;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
 use compagnie::coffre::Coffre;

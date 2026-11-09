@@ -169,8 +169,8 @@ fn refus_de_lecture(code: u16) -> Reponse {
         ),
         _ => format!("La demande n'a pas pu être lue (code {}).", code),
     };
-    let refus = crate::routes::enveloppe::Refus::nouveau(socle::echec::Classe::RequeteRefusee, message);
-    Reponse::json(code, &crate::routes::enveloppe::Reponse::refusee(refus))
+    let refus = routes::enveloppe::Refus::nouveau(socle::echec::Classe::RequeteRefusee, message);
+    Reponse::json(code, &routes::enveloppe::Reponse::refusee(refus))
 }
 
 /// LA CONNEXION FINIT sur une erreur du flux : le client parti (la fenetre fermee pendant un releve) ou silencieux trop
@@ -246,6 +246,6 @@ pub fn ecouter(port: u16) -> std::io::Result<(TcpListener, u16)> {
 pub fn servir(ecouteur: TcpListener, traiter: Arc<dyn Fn(Requete) -> Reponse + Send + Sync>) {
     for flux in ecouteur.incoming().flatten() {
         let t = traiter.clone();
-        crate::routes::fil_de_routes(move || servir_connexion(flux, t));
+        routes::fil_de_routes(move || servir_connexion(flux, t));
     }
 }
