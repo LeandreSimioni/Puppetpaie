@@ -681,7 +681,7 @@ impl Identite {
 /// Une seule reponse aux deux : le mot de passe de la boite est pose. Ne lit
 /// jamais ce mot de passe : l'adresse (`compte`), et si un secret existe.
 pub fn boite_liee(ctx: &Contexte) -> R<bool> {
-    if crate::compagnie::bridage::branchement(&ctx.racine).joue() {
+    if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(true);
     }
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
@@ -1608,7 +1608,7 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let urssaf = declarations::urssaf::base().map_err(plain)?;
     let deduit = ctx.entreprise.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp));
     let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.iter().map(|o| OrganismeUrssaf { code: o.code.clone(), nom: o.nom.clone() }).collect();
-    let branchement = crate::compagnie::bridage::branchement(&ctx.racine);
+    let branchement = crate::compagnie::bridage::branchement(&ctx.racine)?;
     let joue = branchement.joue();
 
     Ok(EtatDeLaPage {

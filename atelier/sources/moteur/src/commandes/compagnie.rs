@@ -30,26 +30,34 @@ fn parent_du_logiciel() -> PathBuf {
 /// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
 /// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
 pub fn fixer_le_code() {
-    if std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()).is_some() {
-        return;
-    }
     let valide = |p: &Path| p.join("echeancier-base.json").is_file();
     let mut candidats: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        for a in exe.ancestors().skip(1) {
-            candidats.push(a.join("donnees"));
-            candidats.push(a.join("logiciel").join("donnees"));
+    match std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()) {
+        // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
+        Some(pose) => candidats.push(PathBuf::from(pose)),
+        None => {
+            if let Ok(exe) = std::env::current_exe() {
+                for a in exe.ancestors().skip(1) {
+                    candidats.push(a.join("donnees"));
+                    candidats.push(a.join("logiciel").join("donnees"));
+                }
+            }
+            candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
     }
-    candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
     for c in candidats {
-        if valide(&c) {
-            if let Ok(abs) = c.canonicalize() {
-                // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
-                let abs = abs.to_string_lossy().strip_prefix(r"\\?\").map(PathBuf::from).unwrap_or(abs);
-                std::env::set_var("PUPPETPAIE_CODE", abs);
-                return;
-            }
+        if !valide(&c) {
+            continue;
+        }
+        // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
+        if let Ok(abs) = c.canonicalize() {
+            // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
+            let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
+                Some(sans) => PathBuf::from(sans),
+                None => abs.clone(),
+            };
+            std::env::set_var("PUPPETPAIE_CODE", abs);
+            return;
         }
     }
 }

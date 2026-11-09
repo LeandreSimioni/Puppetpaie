@@ -205,14 +205,20 @@ fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> Result<Vec<PathBuf>,
 }
 
 /// Les compagnies reelles de l'installation (ni fictive, ni copie), avec leur fiche d'accueil.
-fn reelles(inst: &Path) -> Vec<Compagnie> {
-    compagnies::liste_de(inst).into_iter().filter(|c| c.reelle && !compagnies::est_fictive(&c.racine)).collect()
+fn reelles(inst: &Path) -> Result<Vec<Compagnie>, String> {
+    let mut v = Vec::new();
+    for c in compagnies::liste_de(inst)? {
+        if c.reelle && !compagnies::est_fictive(&c.racine)? {
+            v.push(c);
+        }
+    }
+    Ok(v)
 }
 
 /// La fiche d'accueil de la compagnie `racine`, si l'installation la liste.
 fn fiche_de(inst: &Path, racine: &Path) -> Result<Option<Compagnie>, String> {
     let rel = relatif(inst, racine)?;
-    for c in compagnies::liste_de(inst) {
+    for c in compagnies::liste_de(inst)? {
         if relatif(inst, &c.racine)? == rel {
             return Ok(Some(c));
         }
@@ -276,7 +282,7 @@ fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> Result<boo
 pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> Result<EtatAdministrateur, String> {
     let groupe = rattachees(inst)?;
     let compagnies = noms_de(inst, &groupe)?;
-    let fictive = compagnies::est_fictive(racine);
+    let fictive = compagnies::est_fictive(racine)?;
     let rattachee = !fictive && est_rattachee(inst, racine)?;
     // Les autres compagnies que le mot de passe de l'administrateur ouvre : celles du registre, sinon celles qui ont deja
     // un mot de passe (il n'y a pas encore d'administrateur : l'une d'elles le devient).
@@ -285,7 +291,7 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> Result<EtatAdmi
     } else {
         let ici = relatif(inst, racine)?;
         let mut a = Vec::new();
-        for c in reelles(inst) {
+        for c in reelles(inst)? {
             if relatif(inst, &c.racine)? != ici && exigee(poste, &c.racine)? {
                 a.push(c.nom);
             }
@@ -384,7 +390,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     if crate::compagnie::bridage::est_bride_de(inst) {
         return Err("Le logiciel est bridé : il ne gère que des compagnies fictives.".into());
     }
-    if compagnies::est_fictive(racine) {
+    if compagnies::est_fictive(racine)? {
         return Err("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur.".into());
     }
     let Some(rel) = relatif(inst, racine)? else {
@@ -400,7 +406,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     let mut nouvelles: Vec<PathBuf> = Vec::new();
     if groupe.is_empty() {
         let mut candidates: Vec<Compagnie> = Vec::new();
-        for c in reelles(inst) {
+        for c in reelles(inst)? {
             if relatif(inst, &c.racine)?.as_deref() != Some(rel.as_str()) && exigee(poste, &c.racine)? {
                 candidates.push(c);
             }

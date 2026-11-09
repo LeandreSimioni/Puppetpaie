@@ -153,7 +153,7 @@ fn rien_de_change_rien_ne_part_et_les_dossiers_connus_ne_sont_pas_recherches() {
 #[test]
 fn copie_de_developpement_refus_avant_tout() {
     let r = monde("copie");
-    ecrire(&r, "COPIE-DE-DEVELOPPEMENT.json", "{}");
+    ecrire(&r, "COPIE-DE-DEVELOPPEMENT.json", r#"{"copie_de": "prive", "quoi": "copie de developpement"}"#);
     // Sans client donne : le vrai se construit, et refuse une copie de developpement avant tout (pas de reseau, pas d'index).
     let e = sauvegarder(&r, RD, false, None).unwrap_err();
     assert_eq!(e.classe, Some(socle::echec::Classe::CopieDeDeveloppement));

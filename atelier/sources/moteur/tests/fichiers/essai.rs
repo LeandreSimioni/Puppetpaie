@@ -160,7 +160,7 @@ fn une_compagnie_d_essai_montee_se_lit_par_sa_forme() {
     for f in ["salaries.json", "spectacles.json"] {
         std::fs::write(config.join(f), "{}").unwrap();
     }
-    std::fs::write(source.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive fictive-du-test"}).to_string()).unwrap();
+    std::fs::write(source.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive fictive-du-test", "quoi": "livree"}).to_string()).unwrap();
     let d = dossier("se-lit");
     let s = lancer(PAIE, &["essai", "monter", d.to_str().unwrap(), "--depuis", source.to_str().unwrap()], &[("PUPPETPAIE_COMPAGNIE", &identite().to_string())]);
     assert_eq!(s.code, 0, "{}", s.texte);

@@ -72,7 +72,7 @@ fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> R<()> {
 
 /// Pourquoi rien ne part de cette compagnie, ou `None` si elle peut envoyer.
 fn empechement(racine: &Path) -> R<Option<&'static str>> {
-    Ok(if crate::interface::compagnies::est_fictive(racine) {
+    Ok(if crate::interface::compagnies::est_fictive(racine)? {
         Some("compagnie fictive")
     } else if crate::interface::compagnies::est_copie(racine) {
         Some("copie de developpement")

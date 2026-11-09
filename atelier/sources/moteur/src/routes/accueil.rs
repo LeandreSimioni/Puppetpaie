@@ -314,7 +314,7 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
     match nom {
         Route::Compagnies => {
             let super::SansCharge {} = charge.lire()?;
-            let compagnies: Liste = liste(&inst);
+            let compagnies: Liste = liste(&inst).map_err(operation)?;
             en_json(compagnies)
         }
         Route::CompagnieAjouter => {
@@ -372,23 +372,23 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
 }
 
 /// Les compagnies de l'installation, dans l'ordre des tuiles de l'accueil, et ce que l'accueil en dit.
-pub(crate) fn liste(inst: &std::path::Path) -> Liste {
-    let cies: Vec<Tuile> = compagnies::liste_de(inst)
-        .into_iter()
-        .map(|c| Tuile {
+pub(crate) fn liste(inst: &std::path::Path) -> Result<Liste, String> {
+    let mut cies: Vec<Tuile> = Vec::new();
+    for c in compagnies::liste_de(inst)? {
+        cies.push(Tuile {
             chemin: c.racine.to_string_lossy().into_owned(),
-            remise_a_zero: !c.reelle && compagnies::est_fictive_livree(&c.racine),
+            remise_a_zero: !c.reelle && compagnies::est_fictive_livree(&c.racine)?,
             logo: compagnies::logo(&c.racine).map(|p| p.to_string_lossy().into_owned()),
             id: c.id,
             nom: c.nom,
             lieu: c.lieu,
             reelle: c.reelle,
             couleur: c.couleur,
-        })
-        .collect();
-    let a_garder: Vec<suppression::Gardee> = suppression::a_garder(inst).into_iter().map(|c| suppression::Gardee { id: c.id, nom: c.nom }).collect();
+        });
+    }
+    let a_garder: Vec<suppression::Gardee> = suppression::a_garder(inst)?.into_iter().map(|c| suppression::Gardee { id: c.id, nom: c.nom }).collect();
     let reelles = cies.iter().filter(|c| c.reelle).count();
     let phrase = format!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
     let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
-    Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::interface::auteur::auteur() }
+    Ok(Liste { phrase, compagnies: cies, bride: crate::compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: crate::interface::auteur::auteur() })
 }

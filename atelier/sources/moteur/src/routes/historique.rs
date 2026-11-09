@@ -385,7 +385,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
 fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     use crate::compagnie::archivage;
     let mois = charge.mois.to_string();
-    let joue = crate::compagnie::bridage::branchement(&ctx.racine).joue();
+    let joue = crate::compagnie::bridage::branchement(&ctx.racine)?.joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
     let r = archivage::archiver(&ctx.racine, &mois, crate::compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| socle::echec::noter_et(e.classe, e.message))?;

@@ -41,7 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
 pub const VARIABLE: &str = "PUPPETPAIE_COMPAGNIE";
@@ -65,19 +65,8 @@ pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::horloge::FICHIER_HORLOGE];
 
 /// Une compagnie d'essai : son marqueur le dit (`interface::compagnies::copie_de`).
-pub fn est_essai(racine: &Path) -> bool {
-    crate::interface::compagnies::copie_de(racine).is_some_and(|c| c.starts_with(MARQUE_ESSAI))
-}
-
-/// LE MARQUEUR D'UNE COMPAGNIE D'ESSAI (`COPIE-DE-DEVELOPPEMENT.json`) : ce qu'elle copie, depuis quelle fictive, quand,
-/// et ce qu'elle est.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MarqueurDEssai {
-    copie_de: String,
-    depuis: String,
-    quand: String,
-    quoi: String,
+pub fn est_essai(racine: &Path) -> Result<bool, String> {
+    Ok(crate::interface::compagnies::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
 }
 
 /// Ce qu'un refus porte a part : le chemin `p`.
@@ -356,7 +345,7 @@ fn source(depuis: &str) -> Result<PathBuf, String> {
         return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
-    if !crate::interface::compagnies::est_fictive_livree(&d) {
+    if !crate::interface::compagnies::est_fictive_livree(&d)? {
         return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
     }
     Ok(d)
@@ -432,7 +421,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         ));
     }
     let existe = dossier.exists();
-    let deja = existe && est_essai(dossier);
+    let deja = existe && est_essai(dossier)?;
     if existe && !deja {
         let plein = std::fs::read_dir(dossier).map_err(|e| socle::echec::du_disque(dossier, &e))?.next().is_some();
         if plein {
@@ -441,8 +430,10 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
-        let marqueur: MarqueurDEssai = socle::forme::lire_fichier(&dossier.join(MARQUEUR), "Le marqueur de la compagnie d'essai ne se lit pas.")?;
-        (None, marqueur.depuis)
+        let depuis = crate::interface::compagnies::marqueur(dossier)?
+            .and_then(|m| m.depuis)
+            .ok_or_else(|| socle::echec::avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
+        (None, depuis)
     } else {
         let s = source(depuis)?;
         let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| socle::echec::avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
@@ -460,10 +451,11 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
         copier(s, dossier, s)?;
         retirer_les_depots_de_dsn(dossier)?;
         let quand = socle::paris::iso_secondes(socle::temps::secondes());
-        let marqueur = MarqueurDEssai {
+        let marqueur = crate::interface::compagnies::Marqueur {
             copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
-            depuis: nom.clone(),
-            quand,
+            depuis: Some(nom.clone()),
+            ajoutee: None,
+            quand: Some(quand),
             quoi: "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.".to_string(),
         };
         socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;

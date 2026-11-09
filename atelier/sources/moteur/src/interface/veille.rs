@@ -91,11 +91,15 @@ impl Veille {
             Ok(t) => (t, None),
             Err(e) => (None, Some(e.message)),
         };
-        let erreur = match (tenu(&self.erreur).clone(), illisible) {
-            (Some(e), _) | (None, Some(e)) => Some(e),
-            (None, None) => None,
+        // Un marqueur qui ne se lit pas ne dit pas si les envois sont joues : le bandeau les dit vrais, et l'erreur le dit.
+        let (fictive, marqueur) = match crate::compagnie::bridage::branchement(&self.racine) {
+            Ok(b) => (b.joue(), None),
+            Err(e) => (false, Some(socle::echec::phrase_de(&e))),
         };
-        let fictive = crate::compagnie::bridage::branchement(&self.racine).joue();
+        let erreur = match (tenu(&self.erreur).clone(), illisible, marqueur) {
+            (Some(e), _, _) | (None, Some(e), _) | (None, None, Some(e)) => Some(e),
+            (None, None, None) => None,
+        };
         let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape } = self.etape();
         EtatDeLaVeille {
             dit: dit_du_bandeau(dernier.as_ref(), self.prochain_dans(), fictive),

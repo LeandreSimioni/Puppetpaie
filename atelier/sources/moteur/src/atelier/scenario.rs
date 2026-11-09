@@ -81,19 +81,18 @@ fn lit_la_boite_aux_lettres(route: Route) -> bool {
 /// d'essai ») n'est celui d'aucune fictive livree : la livraison des fictives (`compagnie::maj`) ne la prend jamais pour une
 /// des siennes. Refuse hors d'une fictive ajoutee.
 pub fn rendre_simulee(racine: &Path) -> Result<(), String> {
-    if !crate::interface::compagnies::est_ajoutee(racine) {
+    if !crate::interface::compagnies::est_ajoutee(racine)? {
         return Err(format!("{} n'est pas une compagnie ajoutee par le « + » : rien a changer.", racine.display()));
     }
-    let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    socle::ecriture::ecrire_json(
-        &racine.join("COPIE-DE-DEVELOPPEMENT.json"),
-        &json!({
-            "copie_de": format!("{} {} sur le banc d'essai", crate::interface::compagnies::MARQUE_FICTIVE, nom),
-            "quand": socle::paris::maintenant(),
-            "quoi": "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.",
-        }),
-        2,
-    )
+    let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or(format!("{} : un dossier est attendu", racine.display()))?;
+    let marqueur = crate::interface::compagnies::Marqueur {
+        copie_de: format!("{} {} sur le banc d'essai", crate::interface::compagnies::MARQUE_FICTIVE, nom),
+        depuis: None,
+        ajoutee: None,
+        quand: Some(socle::paris::maintenant()),
+        quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
+    };
+    socle::ecriture::ecrire_json(&racine.join(crate::interface::compagnies::MARQUEUR), &marqueur, 2)
 }
 
 /// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas.
@@ -368,7 +367,11 @@ fn rejouer_les_gestes(
         match g.get("geste").and_then(Value::as_str) {
             Some("ajouter") => {
                 let nom = g.get("nom").and_then(Value::as_str).ok_or(format!("geste {} : `ajouter` sans nom", n))?;
-                let venue = crate::interface::compagnies::Venue::lire(g.get("venue").and_then(Value::as_str).unwrap_or(""));
+                // Un geste `ajouter` sans `venue` est le « + » d'une compagnie neuve, le seul chemin d'avant le choix.
+                let venue: crate::interface::compagnies::Venue = match g.get("venue") {
+                    Some(v) => socle::forme::lire(v, "La venue d'un geste `ajouter` est `neuve` ou `logiciel_precedent`.").map_err(|m| format!("geste {} : {}", n, m))?,
+                    None => crate::interface::compagnies::Venue::Neuve,
+                };
                 let c = crate::interface::compagnies::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, m))?;
                 let rel = relatif(inst, &c.racine);
                 if !compagnie.is_empty() && rel != compagnie {
@@ -388,7 +391,8 @@ fn rejouer_les_gestes(
                 let annonce = g.get("annonce").ok_or(format!("geste {} : `annoncer` sans annonce", n))?;
                 let annonce: envois::organismes_simules::Annonce =
                     socle::forme::lire(annonce, "Une annonce porte un taux de prélèvement, un taux AT/MP ou un refus, et rien d'autre.").map_err(|m| format!("geste {} : {}", n, m))?;
-                envois::organismes_simules::annoncer(racine, crate::compagnie::bridage::branchement(racine), &annonce).map_err(|e| format!("geste {} : {}", n, e.message))?;
+                let b = crate::compagnie::bridage::branchement(racine).map_err(|m| format!("geste {} : {}", n, m))?;
+                envois::organismes_simules::annoncer(racine, b, &annonce).map_err(|e| format!("geste {} : {}", n, e.message))?;
             }
             Some("etat") => {
                 let Some(racine) = racines.get(compagnie) else {
@@ -659,15 +663,14 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> Result<(), Stri
         }
         std::fs::copy(&source, &cible).map_err(|e| format!("{} : {}", cible.display(), e))?;
     }
-    socle::ecriture::ecrire_json(
-        &dest.join(crate::interface::compagnies::MARQUEUR),
-        &json!({
-            "copie_de": format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom),
-            "quand": fin.map(heure),
-            "quoi": "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.",
-        }),
-        2,
-    )
+    let marqueur = crate::interface::compagnies::Marqueur {
+        copie_de: format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom),
+        depuis: None,
+        ajoutee: None,
+        quand: fin.map(heure),
+        quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
+    };
+    socle::ecriture::ecrire_json(&dest.join(crate::interface::compagnies::MARQUEUR), &marqueur, 2)
 }
 
 const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lectures] [--jusqu-au AAAA-MM-JJ]\n\
