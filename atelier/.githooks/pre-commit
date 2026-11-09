@@ -9,7 +9,8 @@
 #
 # Le programme : PUPPETPAIE_FABRIQUE s'il nomme un `moteur-atelier`, sinon celui que Cargo a compile (le binaire du
 # nuage, jamais livre : `cargo build --profile essais -p atelier`), dans la cible de l'espace (CARGO_TARGET_DIR, sinon
-# atelier/sources/target) ou dans celle de l'atelier, a cote (`<cible>-atelier`), profils `essais`, `release` ou `debug`.
+# atelier/sources/target) ou dans celle de l'atelier, a cote (`<cible>-atelier`), profils `essais`, `release` ou `debug` ;
+# sinon celui que le depot garde compile (atelier/sources/atelier/bin/linux/moteur-atelier), sans rien compiler.
 # Le premier qui connait la commande juge ; si aucun ne la connait, le commit est refuse : un garde qui n'a pas tourne ne
 # laisse pas passer.
 #
@@ -29,7 +30,8 @@ voulu=$(unix "$PUPPETPAIE_FABRIQUE")
 for p in "$voulu" \
          "$cible/essais/moteur-atelier" "$cible/release/moteur-atelier" "$cible/debug/moteur-atelier" \
          "$cible-atelier/essais/moteur-atelier" "$cible-atelier/release/moteur-atelier" "$cible-atelier/debug/moteur-atelier" \
-         "$cible/essais/moteur-atelier.exe" "$cible/release/moteur-atelier.exe" "$cible/debug/moteur-atelier.exe"; do
+         "$cible/essais/moteur-atelier.exe" "$cible/release/moteur-atelier.exe" "$cible/debug/moteur-atelier.exe" \
+         "$racine/atelier/sources/atelier/bin/linux/moteur-atelier"; do
     [ -n "$p" ] && [ -f "$p" ] || continue
     case "$(basename "$p")" in moteur-atelier | moteur-atelier.exe) ;; *) continue ;; esac
     "$p" verifier-avant-commit --aide >/dev/null 2>&1 || continue

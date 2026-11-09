@@ -1,8 +1,7 @@
 #!/bin/bash
 # Seances Claude dans le nuage seulement : la suite de tests se compile d'avance, en arriere-plan, des l'ouverture
 # du conteneur (6 min a froid) ; la suite livree seulement : celle de l'atelier a sa propre cible et ne se lance que
-# quand on touche a l'atelier (`atelier/AGENTS.md`, « Les tests ») ; de l'atelier, seul son binaire se compile d'avance,
-# pour le garde avant commit. A la fin de la seance, `cargo nextest run` ne
+# quand on touche a l'atelier (`atelier/AGENTS.md`, « Les tests »). A la fin de la seance, `cargo nextest run` ne
 # recompile que ce qui a change (`cargo test` si nextest manque).
 # Le poste de Leandre, une installation ordinaire, n'est pas concerne.
 set -euo pipefail
@@ -12,13 +11,11 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 # On ne developpe que dans le nuage (22/10/2026) : le garde des donnees reelles (`atelier/.githooks/pre-commit`) y juge
-# chaque commit, avec le `moteur-atelier` que la compilation d'avance produit (profil `essais`, dans la cible de
-# l'atelier, a cote de celle de l'espace), apres la suite.
+# chaque commit, avec le `moteur` que la compilation d'avance produit (profil `essais`).
 git -C "$CLAUDE_PROJECT_DIR" config core.hooksPath atelier/.githooks || true
 
 ESPACE="$CLAUDE_PROJECT_DIR/atelier/sources"
 JOURNAL="${TMPDIR:-/tmp}/puppetpaie-compilation-davance.log"
-CIBLE_ATELIER="${CARGO_TARGET_DIR:-$ESPACE/target}-atelier"
 if [ -f "$ESPACE/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
   # cargo-nextest manque dans l'image du conteneur (13/10/2026) : le binaire precompile se telecharge en quelques
   # secondes ; si le reseau le refuse, la suite retombe sur `cargo test`.
@@ -26,10 +23,9 @@ if [ -f "$ESPACE/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
     (curl -LsSf --max-time 120 https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin") 2>/dev/null || true
   fi
   if cargo nextest --version >/dev/null 2>&1; then
-    SUITE="cargo nextest run --cargo-profile essais --no-run"
+    (cd "$ESPACE" && nohup cargo nextest run --cargo-profile essais --no-run >"$JOURNAL" 2>&1 &) || true
   else
-    SUITE="cargo test --profile essais --no-run"
+    (cd "$ESPACE" && nohup cargo test --profile essais --no-run >"$JOURNAL" 2>&1 &) || true
   fi
-  (cd "$ESPACE" && nohup sh -c "$SUITE; cargo build --profile essais -p atelier --target-dir '$CIBLE_ATELIER'" >"$JOURNAL" 2>&1 &) || true
 fi
 exit 0

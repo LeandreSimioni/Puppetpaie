@@ -196,7 +196,10 @@ il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
   outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la
   feature `atelier` de ce qu'il prend, donc il se construit et se teste dans sa propre cible (`<cible>-atelier`,
-  `-p atelier`) ; ce qui est sous `#[cfg(feature = "atelier")]` y compile sans avertissement.
+  `-p atelier`) ; ce qui est sous `#[cfg(feature = "atelier")]` y compile sans avertissement. **Le dépôt le garde
+  compilé** (`atelier/sources/atelier/bin/linux/moteur-atelier`) : le garde avant commit et la publication s'en servent
+  sans rien compiler. Un lot qui change l'atelier le refait (`cargo build --release -p atelier`, puis copier le binaire)
+  dans le même commit.
 
 ## Les règles de fond du logiciel
 
