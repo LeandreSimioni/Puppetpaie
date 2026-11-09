@@ -84,13 +84,12 @@ pub struct Adresses {
     pub compte: String,
 }
 
-impl Default for Adresses {
-    fn default() -> Self {
+impl Adresses {
+    /// Les adresses de Google.
+    pub fn de_google() -> Adresses {
         Adresses { jetons: JETONS.to_string(), compte: USERINFO.to_string() }
     }
-}
 
-impl Adresses {
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
         Adresses { jetons: format!("{}/token", base), compte: format!("{}/userinfo", base) }

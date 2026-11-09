@@ -11,10 +11,11 @@
 //! `verifier_secret_avec` prend de quoi authentifier et de quoi ouvrir la boite : les tests y passent un faux, sans
 //! reseau. `verifier_secret` ouvre les vraies connexions.
 
-use serde_json::{json, Value};
 use socle::echec::Classe;
+use socle::ecran::Pastille;
 
-use crate::compagnie::coffre::{Coffre, CONSULTATION};
+use crate::compagnie::boite::Ouverture;
+use crate::compagnie::coffre::Coffre;
 use droit::contexte::Contexte;
 use socle::echec::erreur;
 use crate::compagnie::releve::mot_de_passe_de_consultation;
@@ -33,19 +34,34 @@ pub const COURRIEL: &str = "courriel";
 pub type Authentifier<'a> = &'a mut dyn FnMut(&Contexte, &str, Option<String>) -> Result<(), Panne>;
 
 /// De quoi ouvrir la boite : `courriel.verifier` (une seule connexion IMAP).
-pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> Result<Value, envois::courriel::ErreurCourriel>;
+pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> Result<Ouverture, envois::courriel::ErreurCourriel>;
 
-/// La route `coffre-verifier`.
-pub fn route(ctx: &Contexte, charge: &Value) -> R<Value> {
-    // Sa pastille : la session s'ouvre, fait ; l'organisme refuse, refuse.
-    let mut v = verifier_secret(ctx, charge.get("service"))?;
-    let ok = v.get("ok").is_some_and(|x| x == true);
-    v["pastille"] = if ok { crate::routes::pastille("fait", "OK") } else { crate::routes::pastille("refuse", "refusé") };
-    Ok(v)
+/// LE VERDICT D'UNE TENTATIVE : le service essaye, si la session s'ouvre, la premiere ligne de ce qu'il a repondu, ce
+/// qu'il faut en faire quand la reponse le dit, et sa pastille (la session s'ouvre, fait ; l'organisme refuse, refuse).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Verdict {
+    pub service: &'static str,
+    pub ok: bool,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conseil: Option<&'static str>,
+    pub pastille: Pastille,
+}
+
+impl Verdict {
+    fn de(service: &'static str, ok: bool, message: String, conseil: Option<&'static str>) -> Verdict {
+        let pastille = if ok { Pastille::de("fait", "OK") } else { Pastille::de("refuse", "refusé") };
+        Verdict { service, ok, message, conseil, pastille }
+    }
+}
+
+/// La route `coffre-verifier` : le secret pose du service `service` ouvre-t-il une session.
+pub fn route(ctx: &Contexte, service: &str) -> R<Verdict> {
+    verifier_secret(ctx, service)
 }
 
 /// Le secret pose ouvre-t-il une session : `verifier_secret_avec`, avec les vraies connexions.
-pub fn verifier_secret(ctx: &Contexte, service: Option<&Value>) -> R<Value> {
+pub fn verifier_secret(ctx: &Contexte, service: &str) -> R<Verdict> {
     verifier_secret_avec(ctx, service, &mut authentifier_pour_de_vrai, &mut |c| crate::compagnie::boite::verifier(&c.racine))
 }
 
@@ -55,17 +71,12 @@ fn authentifier_pour_de_vrai(ctx: &Contexte, service: &str, mdp: Option<String>)
     client.authentifier()
 }
 
-/// Le secret pose d'un service ouvre-t-il une session ? Rend `{service, ok, message, conseil}` ; pour la boite, ce que
-/// `courriel.verifier` dit, puis `service`.
-pub fn verifier_secret_avec(ctx: &Contexte, service: Option<&Value>, authentifier: Authentifier, boite: OuvrirBoite) -> R<Value> {
-    let nom = match service.and_then(Value::as_str) {
-        Some(s @ (NET_ENTREPRISES | URSSAF | COURRIEL)) => s,
-        _ => {
-            let quoi = match service {
-                Some(Value::String(s)) => format!("Service inconnu : « {} ».", s),
-                _ => "La demande ne nomme pas de service.".to_string(),
-            };
-            return Err(erreur(Classe::Refuse, format!("{} Connus : {}, {}, {}.", quoi, NET_ENTREPRISES, URSSAF, COURRIEL)));
+/// Le secret pose d'un service ouvre-t-il une session ? Pour la boite, ce que `courriel.verifier` en dit.
+pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authentifier, boite: OuvrirBoite) -> R<Verdict> {
+    let nom = match [NET_ENTREPRISES, URSSAF, COURRIEL].into_iter().find(|s| *s == service) {
+        Some(s) => s,
+        None => {
+            return Err(erreur(Classe::Refuse, format!("Service inconnu : « {} ». Connus : {}, {}, {}.", service, NET_ENTREPRISES, URSSAF, COURRIEL)));
         }
     };
     let coffre = Coffre::du_poste(&ctx.racine, "");
@@ -74,26 +85,22 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: Option<&Value>, authentifie
     }
     if nom == COURRIEL {
         // La boite : une connexion IMAP, une seule (`courriel.verifier`).
-        let mut verdict = boite(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
-        if let Value::Object(o) = &mut verdict {
-            o.insert("service".into(), json!(nom));
-        }
-        return Ok(verdict);
+        let o = boite(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+        return Ok(Verdict::de(nom, o.ok, o.message, o.conseil));
     }
     let mdp = mot_de_passe_de_consultation(ctx, nom)?;
-    debug_assert!(CONSULTATION == "consultation");
     match authentifier(ctx, nom, mdp) {
-        Ok(()) => Ok(json!({"service": nom, "ok": true, "message": "session ouverte"})),
+        Ok(()) => Ok(Verdict::de(nom, true, "session ouverte".into(), None)),
         Err(p) if p.classe == Classe::Organisme => {
-            let premiere = socle::texte::lignes_du_texte(&p.message).first().copied().unwrap_or("").to_string();
+            let premiere: String = socle::texte::lignes_du_texte(&p.message).first().map(|l| l.to_string()).into_iter().collect();
             let conseil = if premiere.contains("422") {
-                "Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le."
+                Some("Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le.")
             } else if premiere.contains("403") {
-                "Le service répond 403 : le compte est bloqué un temps (trop de tentatives). N'essayez plus, attendez."
+                Some("Le service répond 403 : le compte est bloqué un temps (trop de tentatives). N'essayez plus, attendez.")
             } else {
-                ""
+                None
             };
-            Ok(json!({"service": nom, "ok": false, "message": premiere, "conseil": conseil}))
+            Ok(Verdict::de(nom, false, premiere, conseil))
         }
         Err(autre) => Err(autre.en_echec()),
     }

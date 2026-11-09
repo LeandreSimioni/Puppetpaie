@@ -89,7 +89,7 @@ fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
         envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}
     }
-    if !crate::compagnie::boite::disponible(&ctx.racine) {
+    if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
         return Ok(Err(
             "Aucune boite courriel : les signatures ne peuvent pas etre relevees. Poser le mot de passe d'application de la boite (Configuration > Mots de passe)."
                 .to_string(),

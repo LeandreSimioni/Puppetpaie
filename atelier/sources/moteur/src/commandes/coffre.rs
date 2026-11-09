@@ -14,10 +14,8 @@
 
 use super::actes::{est_refus, maintenant_minutes};
 use super::analyse::{Args, Opt, Pos, Spec};
-use super::rendu::{champ, texte};
 use super::Cadre;
 use crate::compagnie::coffre::Coffre;
-use serde_json::Value;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -66,18 +64,16 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
         }
     }
     dire!();
-    for s in c.etat().map_err(vers)? {
-        let mut marque = if s.get("pose").is_some_and(crate::valeur::vrai) { "pose" } else { "-" };
-        if s.get("dans_environnement").is_some_and(crate::valeur::vrai) {
-            marque = "environnement";
-        }
-        let depuis = match s.get("pose_le") {
-            Some(d) if crate::valeur::vrai(d) => format!("depuis le {}", texte(d)),
-            _ => String::new(),
+    for s in c.services().map_err(vers)? {
+        let marque = match (s.dans_environnement, s.pose) {
+            (true, _) => "environnement",
+            (false, true) => "pose",
+            (false, false) => "-",
         };
-        dire!("  {:<18} {:<14} {}", champ(&s, "service"), marque, depuis);
-        dire!("     {}", champ(&s, "sert_a"));
-        if let Some(Value::String(compte)) = s.get("compte").filter(|v| crate::valeur::vrai(v)) {
+        let depuis: String = s.pose_le.iter().map(|d| format!("depuis le {}", d)).collect();
+        dire!("  {:<18} {:<14} {}", s.service, marque, depuis);
+        dire!("     {}", s.sert_a);
+        if let Some(compte) = &s.compte {
             dire!("     boite : {}", compte);
         }
     }

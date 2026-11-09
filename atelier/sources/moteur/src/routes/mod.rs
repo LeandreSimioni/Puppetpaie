@@ -45,7 +45,7 @@ use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
 use brut::brute;
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, pastille, phrase_en_tete};
+pub(crate) use brut::{en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, phrase_en_tete};
 
 mod brut;
 pub mod enveloppe;

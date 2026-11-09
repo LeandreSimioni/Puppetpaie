@@ -1050,7 +1050,7 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
                 r.incidents.push(refus.phrase.to_string());
                 return Ok(r);
             }
-            if !crate::compagnie::boite::disponible(&ctx.racine) {
+            if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
                 r.incidents.push("Aucune boite courriel : les fiches demandees ne peuvent pas etre relevees.".to_string());
                 return Ok(r);
             }

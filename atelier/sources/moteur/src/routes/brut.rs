@@ -10,7 +10,7 @@ use serde_json::{json, Map, Value};
 use crate::valeur::valeur_en_texte;
 use socle::echec::{erreur, Classe, Echec, R};
 
-use super::{Encart, Pastille};
+use super::Encart;
 
 /// La charge d'une route pas encore branchee, lue en sa forme comme `Charge::lire` : une cle que la forme ne connait
 /// pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle fautive a part ; rien ne
@@ -33,11 +33,6 @@ pub(super) fn brute(rendu: R<Value>) -> R<super::Rendu> {
 /// `Encart::de`, en JSON.
 pub(crate) fn encart(etat: &str, titre: impl Into<String>, phrase: impl Into<String>) -> Value {
     json!(Encart::de(etat, titre, phrase))
-}
-
-/// `Pastille::de`, en JSON.
-pub(crate) fn pastille(etat: &str, mots: &str) -> Value {
-    json!(Pastille::de(etat, mots))
 }
 
 /// La phrase d'une route, en tete de ce qu'elle rend ; une phrase deja posee par la route est remplacee.
