@@ -2,17 +2,19 @@
 //! export comptable), les corrections par mois d'origine, l'archive d'un mois dans le Drive, et la reprise du journal
 //! depuis ce que les retours attestent.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
-use crate::routes::documents::requis;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::ouverture::mois_connus;
+use crate::routes::SansCharge;
 use droit::contexte::Contexte;
-use socle::echec::{Classe, Echec, R};
-use crate::valeur::{valeur_en_texte, vrai};
+use envois::ligne::Mode;
+use envois::reprise_journal::DepotVu;
+use socle::echec::{Classe, R};
 
 const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
 
@@ -92,89 +94,183 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let ctx = porte.ctx;
+    match porte.route {
         Route::Exercices => {
-            let super::SansCharge {} = super::lire_charge(charge)?;
-            super::en_json(exercices_route(ctx)?)
+            let SansCharge {} = charge.lire()?;
+            en_json(exercices_route(ctx)?)
         }
-        Route::Regularisations => regularisations(ctx).map(|v| {
-            let p = format!("Mois qui portent des corrections : {}.", super::nombre(&v["corrections"]));
-            super::phrase_en_tete(v, p)
-        }),
-        Route::Cloture => super::en_json(cloture(ctx, super::lire_charge(charge)?)?),
-        Route::ExportCompta => super::en_json(crate::compagnie::exercice_ecrit::export_compta_route(ctx, super::lire_charge(charge)?)?),
-        Route::Archiver => archiver(ctx, charge),
-        Route::JournalReprise => crate::compagnie::incidents::noter_ceux_des_retours(
-            &ctx.racine,
-            envois::reprise_journal::reprise(
-                ctx,
-                charge.get("ecrire").is_some_and(vrai),
-                &crate::routes::INTERFACE.to_string(),
-                &socle::paris::iso_secondes(socle::temps::secondes()),
-            ),
-        )
-        .map(|r| pastilles_de_la_reprise(socle::ecriture::en_valeur(&r)))
-        .map(|mut v| {
-            // Ce que l'Historique en dit, en tete : le resume replie, l'explication, le nom du logiciel lu.
-            let n = super::nombre(&v["ajoutes"]);
-            let reels = v["ajoutes"].as_array().into_iter().flatten().filter(|d| d["mode"] == "reel" && vrai(&d["accepte"])).count();
-            let s = if n > 1 { "s" } else { "" };
-            v["ecran"] = json!({
-                "resume": format!("{} dépôt{} retrouvé{} dans les retours, absent{} du journal{}", n, s, s, s, if reels > 0 { format!(" — dont {} réel{}", reels, if reels > 1 { "s" } else { "" }) } else { String::new() }),
-                "titre": format!("{} dépôt(s) attestés par les retours, absents du journal", n),
-                "explication": "Le journal des dépôts est né le 11/09/2026 ; ce qui est parti avant ne s'y est pas écrit. Les accusés d'enregistrement reçus des organismes, eux, s'en souviennent. Les reprendre ne dépose rien et n'envoie rien : ça remet au journal ce qui a déjà eu lieu.",
-                "reels": if reels > 0 { json!(format!("{} sont des dépôts réels acceptés.", reels)) } else { Value::Null },
-                "logiciel": "Le nom du logiciel n'est pas une annotation : il est lu dans le certificat de conformité. C'est lui qui distingue le dépôt d'un autre logiciel d'un dépôt PuppetPaie.",
-            });
-            v["ecran"]["bouton"] = json!(format!("Reprendre ces {} dépôt(s)", n));
-            for d in v["ajoutes"].as_array_mut().into_iter().flatten() {
-                let mois = d["mois"].as_str().filter(|m| !m.is_empty()).map(socle::mois::Mois::en_clair).unwrap_or_else(|| "mois inconnu".to_string());
-                d["dit"] = json!(format!("{} — {}", super::quand(&valeur_en_texte(&d["quand"])), mois));
-                let logiciel = d["logiciel"].as_str().filter(|l| !l.is_empty()).unwrap_or("logiciel inconnu").to_string();
-                d["origine_dit"] = json!(format!("déposé par {} · flux {}", logiciel, valeur_en_texte(&d["flux"])));
-            }
-            let p = format!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", super::nombre(&v["trouves"]), super::nombre(&v["ajoutes"]), if v["ecrit"] == json!(true) { "" } else { " (rien n'est écrit)" });
-            super::phrase_en_tete(v, p)
-        }),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::Regularisations => {
+            let SansCharge {} = charge.lire()?;
+            en_json(regularisations(ctx)?)
+        }
+        Route::Cloture => en_json(cloture(ctx, charge.lire()?)?),
+        Route::ExportCompta => en_json(crate::compagnie::exercice_ecrit::export_compta_route(ctx, charge.lire()?)?),
+        Route::Archiver => en_json(archiver(ctx, charge.lire()?)?),
+        Route::JournalReprise => en_json(reprise(ctx, charge.lire()?)?),
+        autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
-/// Par mois d'origine, les corrections que la page montre (`crate::regularisation::corrections_du_mois`) : celles a
-/// porter (`etat` « à porter ») et celles deja portees par la DSN d'un mois suivant (« portée »).
-fn corrections_par_mois(ctx: &Contexte) -> R<Vec<Value>> {
+impl Dite for ExercicesDits {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Regularisations {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for ClotureDite {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Archive {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for RepriseDite {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// La charge de `journal-reprise` : `ecrire` vrai ecrit ce qui se reprend ; absent ou faux, la route le dit seulement.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeReprise {
+    ecrire: Option<bool>,
+}
+
+/// Ce que rend `journal-reprise` : sa phrase, ce que la reprise a trouve, ajoute (ou ajouterait, chaque depot dit pour
+/// l'ecran), deja connu, sans mois, illisible, si elle a ecrit, et ce que l'Historique en dit (`ecran`).
+#[derive(Debug, Serialize)]
+struct RepriseDite {
+    phrase: String,
+    trouves: Vec<DepotVu>,
+    ajoutes: Vec<AjoutDit>,
+    deja: Vec<DepotVu>,
+    sans_mois: Vec<DepotVu>,
+    illisibles: Vec<String>,
+    ecrit: bool,
+    rattaches: i64,
+    ecran: EcranDeLaReprise,
+}
+
+/// Un depot que la reprise remet au journal, tel que l'ecran le dit : quand et pour quel mois (`dit`), qui l'a depose et
+/// son flux (`origine_dit`), sa pastille.
+#[derive(Debug, Serialize)]
+struct AjoutDit {
+    #[serde(flatten)]
+    depot: DepotVu,
+    dit: String,
+    origine_dit: String,
+    pastille: super::Pastille,
+}
+
+/// Ce que l'Historique dit de la reprise : le resume replie, son titre, l'explication, les depots reels, le nom du
+/// logiciel lu, le bouton.
+#[derive(Debug, Serialize)]
+struct EcranDeLaReprise {
+    resume: String,
+    titre: String,
+    explication: &'static str,
+    reels: Option<String>,
+    logiciel: &'static str,
+    bouton: String,
+}
+
+/// `journal-reprise` : la reprise du journal d'apres les retours (`envois::reprise_journal::reprise`), ses incidents
+/// notes, et ce que l'ecran en dit.
+fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
+    let r = crate::compagnie::incidents::noter_ceux_des_retours(
+        &ctx.racine,
+        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), crate::routes::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
+    )?;
+    let n = r.ajoutes.len();
+    let reels = r.ajoutes.iter().filter(|d| d.mode == Mode::Reel && d.accepte).count();
+    let s = if n > 1 { "s" } else { "" };
+    let dont = if reels > 0 { format!(" — dont {} réel{}", reels, if reels > 1 { "s" } else { "" }) } else { String::new() };
+    let ecran = EcranDeLaReprise {
+        resume: format!("{} dépôt{} retrouvé{} dans les retours, absent{} du journal{}", n, s, s, s, dont),
+        titre: format!("{} dépôt(s) attestés par les retours, absents du journal", n),
+        explication: "Le journal des dépôts est né le 11/09/2026 ; ce qui est parti avant ne s'y est pas écrit. Les accusés d'enregistrement reçus des organismes, eux, s'en souviennent. Les reprendre ne dépose rien et n'envoie rien : ça remet au journal ce qui a déjà eu lieu.",
+        reels: (reels > 0).then(|| format!("{} sont des dépôts réels acceptés.", reels)),
+        logiciel: "Le nom du logiciel n'est pas une annotation : il est lu dans le certificat de conformité. C'est lui qui distingue le dépôt d'un autre logiciel d'un dépôt PuppetPaie.",
+        bouton: format!("Reprendre ces {} dépôt(s)", n),
+    };
+    let phrase = format!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", r.trouves.len(), n, if r.ecrit { "" } else { " (rien n'est écrit)" });
+    let ajoutes = r.ajoutes.into_iter().map(ajout_dit).collect();
+    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, illisibles: r.illisibles, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
+}
+
+/// Un depot que la reprise remet, dit : quand il a ete recu et son mois, qui l'a depose ; sa pastille : un depot reel
+/// accepte, fait ; refuse, refuse ; un depot de test, une information.
+fn ajout_dit(d: DepotVu) -> AjoutDit {
+    let mois = match &d.mois {
+        Some(m) => m.libelle(socle::mois::Graphie::Accentuee),
+        None => "mois inconnu".to_string(),
+    };
+    let dit = match &d.quand {
+        Some(q) => format!("{} — {}", super::quand(q), mois),
+        None => mois,
+    };
+    let origine_dit = match &d.logiciel {
+        Some(l) => format!("déposé par {} · flux {}", l, d.flux),
+        None => format!("logiciel inconnu · flux {}", d.flux),
+    };
+    let reel = d.mode == Mode::Reel;
+    let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if d.accepte { "" } else { " — refusé" });
+    let pastille = super::Pastille::de(if !reel { "information" } else if d.accepte { "fait" } else { "refuse" }, &mots);
+    AjoutDit { depot: d, dit, origine_dit, pastille }
+}
+
+/// Ce que rend `regularisations` : sa phrase, et par mois d'origine les corrections que la page montre.
+#[derive(Debug, Serialize)]
+struct Regularisations {
+    phrase: String,
+    corrections: Vec<CorrectionsDuMois>,
+}
+
+/// Les corrections d'un mois d'origine.
+#[derive(Debug, Serialize)]
+struct CorrectionsDuMois {
+    mois: String,
+    corrections: Vec<CorrectionDite>,
+}
+
+/// Une correction, et ou elle en est : portee par une DSN partie, faite ; a porter par la prochaine, a faire.
+#[derive(Debug, Serialize)]
+struct CorrectionDite {
+    #[serde(flatten)]
+    correction: crate::regularisation::Correction,
+    etat: &'static str,
+    pastille: super::Pastille,
+}
+
+/// La route `regularisations` : par mois d'origine, les corrections que la page montre
+/// (`crate::regularisation::corrections_du_mois`) : celles deja portees par la DSN d'un mois suivant, puis celles a porter.
+fn regularisations(ctx: &Contexte) -> R<Regularisations> {
     let mut out = Vec::new();
-    for mois in engagement::stock::mois_saisis(&ctx.racine).unwrap_or_default().into_iter().map(String::from) {
+    for mois in engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from) {
         let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, &mois)?;
-        let mut corrections: Vec<Value> = portees
-            .into_iter()
-            .map(|mut c| {
-                c["etat"] = json!("portée");
-                c
-            })
-            .collect();
-        corrections.extend(a_porter.into_iter().map(|mut c| {
-            c["etat"] = json!("à porter");
-            c
-        }));
+        let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: super::Pastille::de(if fait { "fait" } else { "a_faire" }, etat) };
+        let mut corrections: Vec<CorrectionDite> = portees.into_iter().map(|c| dite(c, "portée", true)).collect();
+        corrections.extend(a_porter.into_iter().map(|c| dite(c, "à porter", false)));
         if !corrections.is_empty() {
-            out.push(json!({"mois": mois, "corrections": corrections}));
+            out.push(CorrectionsDuMois { mois, corrections });
         }
     }
-    Ok(out)
-}
-
-/// La route `regularisations`.
-fn regularisations(ctx: &Contexte) -> R<Value> {
-    let mut corrections = corrections_par_mois(ctx)?;
-    // La pastille de chaque correction : portee par une DSN partie, faite ; a porter par la prochaine, a faire.
-    for c in corrections.iter_mut().flat_map(|m| m.get_mut("corrections").and_then(Value::as_array_mut).into_iter().flatten()) {
-        let mots = c.get("etat").map(valeur_en_texte).unwrap_or_default();
-        c["pastille"] = super::pastille(if c.get("portee_par").is_some_and(vrai) { "fait" } else { "a_faire" }, &mots);
-    }
-    Ok(json!({"corrections": corrections}))
+    Ok(Regularisations { phrase: format!("Mois qui portent des corrections : {}.", out.len()), corrections: out })
 }
 
 /// Ce que rend `cloture` : sa phrase, et l'exercice clos ou rouvert.
@@ -249,7 +345,8 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     for a in annees.iter().rev() {
         let mut mois: Vec<String> = mois_tous.iter().filter(|x| x.starts_with(a.as_str())).cloned().collect();
         mois.sort();
-        let chemin = ctx.racine.join("sorties").join("exercices").join(format!("Compta_{}.csv", a));
+        let fichier = format!("Compta_{}.csv", a);
+        let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
         let mut acceptees = Vec::new();
         for x in &mois {
             if crate::compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(x)?, None)?.partie() {
@@ -257,12 +354,12 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             }
         }
         let export = chemin.exists().then(|| ExportDeLAnnee {
-            fichier: chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            fichier,
             ecrit: crate::compagnie::depart::ecrit_le(&ctx.racine, &chemin).as_str().filter(|e| !e.is_empty()).map(str::to_string),
         });
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
         let note = clos.get(a);
-        let clos_dit = note.map(|c| format!(" · clos le {}", super::quand(&c.le))).unwrap_or_default();
+        let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", super::quand(&c.le))).collect();
         let export_dit = match &export {
             Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", super::quand(e)),
             Some(_) => " · export compta".to_string(),
@@ -285,9 +382,9 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
 
 /// DEPOSER LES DOCUMENTS D'UN MOIS DANS LE DRIVE (`archivage::archiver`) : `PuppetPaie/<mois>` du compte lie. Une
 /// compagnie fictive joue le depot (`archivage::DriveJoue`) : la meme liste, rien ne part.
-fn archiver(ctx: &Contexte, charge: &Value) -> R<Value> {
+fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     use crate::compagnie::archivage;
-    let mois = valeur_en_texte(requis(charge, "mois")?);
+    let mois = charge.mois.to_string();
     let joue = crate::compagnie::bridage::branchement(&ctx.racine).joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
@@ -300,24 +397,32 @@ fn archiver(ctx: &Contexte, charge: &Value) -> R<Value> {
     } else {
         format!("{} fichier(s) déposé(s) dans le Drive, dossier {}.", r.fichiers.len(), ou)
     };
-    Ok(json!({
-        "mois": r.mois,
-        "dossier": dossier,
-        "compte": r.compte,
-        "fichiers": r.fichiers.iter().map(|f| json!({"nom": f.nom, "octets": f.octets, "remplace": f.remplace})).collect::<Vec<_>>(),
-        "phrase": phrase,
-    }))
+    let fichiers = r.fichiers.into_iter().map(|f| FichierDepose { nom: f.nom, octets: f.octets, remplace: f.remplace }).collect();
+    Ok(Archive { phrase, mois: r.mois, dossier, compte: r.compte, fichiers })
 }
 
-/// La pastille de chaque depot que la reprise du journal remet (`ajoutes`) : un depot reel accepte, fait ; refuse,
-/// refuse ; un depot de test, une information.
-fn pastilles_de_la_reprise(mut v: Value) -> Value {
-    for d in v.get_mut("ajoutes").and_then(Value::as_array_mut).into_iter().flatten() {
-        let reel = d.get("mode").and_then(Value::as_str) == Some("reel");
-        let accepte = d.get("accepte").is_some_and(vrai);
-        let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if accepte { "" } else { " — refusé" });
-        d["pastille"] = super::pastille(if !reel { "information" } else if accepte { "fait" } else { "refuse" }, &mots);
-    }
-    v
+/// La charge d'`archiver` : le mois.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeArchiver {
+    mois: socle::mois::Mois,
+}
+
+/// Ce que rend `archiver` : sa phrase, le mois, le dossier du Drive, le compte lie, et chaque fichier depose.
+#[derive(Debug, Serialize)]
+struct Archive {
+    phrase: String,
+    mois: String,
+    dossier: String,
+    compte: Option<String>,
+    fichiers: Vec<FichierDepose>,
+}
+
+/// Un fichier depose dans le Drive : son nom, ses octets, s'il en remplace un.
+#[derive(Debug, Serialize)]
+struct FichierDepose {
+    nom: Option<String>,
+    octets: u64,
+    remplace: bool,
 }
 

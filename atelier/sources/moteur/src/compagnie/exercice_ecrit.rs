@@ -109,6 +109,12 @@ pub(crate) struct ExportComptaRendu {
     avertissements: Vec<String>,
 }
 
+impl crate::routes::enveloppe::Dite for ExportComptaRendu {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
 impl ExportCompta {
     /// Ce que la route rend : un chemin ne rend que son nom ; `dossier`, celui ou il est ecrit.
     pub(crate) fn rendu(self) -> ExportComptaRendu {

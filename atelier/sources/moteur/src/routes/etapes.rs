@@ -1482,7 +1482,7 @@ impl<'a> Moteur<'a> {
             // l'ancienne date vaut-elle (`crate::regularisation::dpae_d_une_date_changee`) ?
             let mut date_changee = None;
             if let Some(avant) = debut_declare(&refaire) {
-                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&avant, &debut);
+                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&avant, &debut)?;
                 if !vaut {
                     dpae_v = None;
                     partie_le = None;
@@ -2301,7 +2301,7 @@ impl<'a> Moteur<'a> {
                 // quand une date d'embauche a change : le reste du temps, rien a dire.
                 let pourquoi = match ancienne {
                     Some(a) => {
-                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&a, &debut);
+                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&a, &debut)?;
                         if vaut {
                             continue;
                         }

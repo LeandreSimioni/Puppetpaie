@@ -222,7 +222,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(filet::ROUTES) => brute(filet::route(o, &ctx, route, c)),
         _ if dans(import::ROUTES) => brute(import::route(o, &ctx, route, c)),
         _ if dans(archives::ROUTES) => brute(archives::route(o, &ctx, route, c)),
-        _ if dans(historique::ROUTES) => brute(historique::route(o, &ctx, route, c)),
+        _ if dans(historique::ROUTES) => historique::route(&porte, charge),
         // L'Historique d'un mois : ses documents, ses envois et leurs retours, lus (lecture seule).
         Route::HistoriqueMois => brute(crate::historique_mois::route(&ctx, c)),
         _ if dans(dossier_salarie::ROUTES) => brute(dossier_salarie::route(o, &ctx, route, c)),

@@ -29,7 +29,6 @@ use socle::date::jour_iso;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::nom_du;
 use socle::mois::Mois;
-use crate::valeur::valeur_en_texte;
 use crate::routes::catalogue::{Ecran, Place};
 
 pub(crate) type R<T> = Result<T, Echec>;
@@ -642,14 +641,6 @@ pub(crate) fn refus(message: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, message)
 }
 
-/// `d[cle]` : `Manque` si elle manque.
-pub(crate) fn requis<'a>(d: &'a Value, cle: &str) -> R<&'a Value> {
-    match d {
-        Value::Object(o) => o.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle))),
-        autre => Err(erreur(Classe::MalFormee, socle::fichiers::attendu("un objet", crate::valeur::nom_type(autre)))),
-    }
-}
-
 /// La boite qui envoie, selon le branchement de la compagnie (`bridage::branchement`) : le simulateur ecrit les messages
 /// sans les envoyer ; le message refuse, avant la preuve et avant toute ligne au journal des depots ; le monde prend la
 /// vraie boite, et sans mot de passe d'application au coffre, il n'y en a pas (`BoiteAbsente`).
@@ -902,11 +893,13 @@ fn declaration_de_la_correction(ctx: &Contexte, mois: &str) -> R<Option<Box<dyn 
     let porteur = crate::regularisation::dsn_qui_porte(ctx, mois)?;
     let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
     let mut porteurs: HashMap<String, String> = HashMap::new();
-    for c in &portees {
-        porteurs.insert(valeur_en_texte(&c["salarie"]), valeur_en_texte(&c["portee_par"]));
+    for c in portees {
+        if let Some(par) = c.portee_par {
+            porteurs.insert(c.salarie, par);
+        }
     }
     for c in &a_porter {
-        porteurs.remove(&valeur_en_texte(&c["salarie"]));
+        porteurs.remove(&c.salarie);
     }
     let de = crate::regularisation::de_mois_en_clair(mois);
     Ok(Some(Box::new(move |cle: &str| {

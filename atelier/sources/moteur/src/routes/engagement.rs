@@ -424,7 +424,7 @@ pub(crate) fn ce_que_le_changement_entraine(ctx: &Contexte, v: &engagement::etat
         match a {
             ARefaire::Avenant { .. } => out.push(UN_AVENANT.to_string()),
             ARefaire::Dpae { debut_declare, .. } => {
-                let (rien_a_refaire, phrase) = crate::regularisation::dpae_d_une_date_changee(&debut_declare, &presente);
+                let (rien_a_refaire, phrase) = crate::regularisation::dpae_d_une_date_changee(&debut_declare, &presente)?;
                 if !rien_a_refaire {
                     out.push(phrase);
                 }

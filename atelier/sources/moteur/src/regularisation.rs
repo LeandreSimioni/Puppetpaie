@@ -5,14 +5,14 @@
 //! version presente de l'engagement valide et celle sur laquelle la DSN est partie
 //! (`produire_regularisations::corrections_dues`).
 
-use std::str::FromStr;
+use serde::Serialize;
+
+use socle::date::Jour;
 use socle::echec::Classe;
 
-use serde_json::{json, Map, Value};
-
 use engagement::calcul::Paie;
+use engagement::numeros::NumeroContrat;
 use droit::contexte::Contexte;
-use crate::valeur::valeur_en_texte;
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::num::{q2, Decimal};
@@ -26,46 +26,89 @@ fn non_regularisable(message: impl Into<String>) -> Echec {
 
 // ------------------------------------------------------------------ le mois d'origine
 
-/// Le resume d'une paie que la page compare : montants, cotisations, activite.
-fn resume(p: &Paie) -> Value {
-    let e = &p.engagement;
-    // Les heures au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.
-    let heures = match e.heures.and_then(|h| socle::num::dec_f64(h).ok()) {
-        Some(h) if !h.is_zero() => h.round_dp(2).normalize().to_string(),
-        _ => "0".to_string(),
-    };
-    json!({
-        "brut": q2(p.brut),
-        "net_a_payer": q2(p.net_a_payer),
-        "net_imposable": q2(p.net_imposable),
-        "cotisations_salariales": q2(p.total_sal),
-        "cotisations_patronales": q2(p.total_pat),
-        "cout_employeur": q2(p.cout_employeur),
-        "cachets": e.cachets,
-        "heures": heures,
-        "jours": e.jours,
-        "remuneration": p.remuneration.iter().map(|l| l.designation()).collect::<Vec<_>>(),
+/// Le resume d'une paie, comme la DSN la declare : ses montants au centime, son activite.
+#[derive(Debug, Serialize)]
+pub(crate) struct Resume {
+    brut: String,
+    net_a_payer: String,
+    net_imposable: String,
+    cotisations_salariales: String,
+    cotisations_patronales: String,
+    cout_employeur: String,
+    cachets: i64,
+    /// Les heures au centieme ; `None` : un engagement qui ne compte pas d'heures.
+    heures: Option<String>,
+    jours: i64,
+    remuneration: Vec<String>,
+}
+
+/// Ce que la correction declare : l'ecart de chaque montant et de l'activite, de la paie declaree a la presente.
+#[derive(Debug, Serialize)]
+pub(crate) struct Ecart {
+    brut: String,
+    net_a_payer: String,
+    net_imposable: String,
+    cotisations_salariales: String,
+    cotisations_patronales: String,
+    cout_employeur: String,
+    cachets: i64,
+    /// `None` : l'une des deux paies ne compte pas d'heures.
+    heures: Option<String>,
+}
+
+/// Les montants d'une paie au centime, dans l'ordre de `Resume`.
+fn montants(p: &Paie) -> [Decimal; 6] {
+    [p.brut, p.net_a_payer, p.net_imposable, p.total_sal, p.total_pat, p.cout_employeur].map(|x| x.round_dp(2))
+}
+
+/// Les heures d'une paie au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.
+fn heures(p: &Paie) -> R<Option<Decimal>> {
+    match p.engagement.heures {
+        Some(h) => Ok(Some(socle::num::dec_f64(h).map_err(|e| erreur(Classe::CalculImpossible, e))?.round_dp(2).normalize())),
+        None => Ok(None),
+    }
+}
+
+fn resume(p: &Paie) -> R<Resume> {
+    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = montants(p).map(q2);
+    Ok(Resume {
+        brut,
+        net_a_payer,
+        net_imposable,
+        cotisations_salariales,
+        cotisations_patronales,
+        cout_employeur,
+        cachets: p.engagement.cachets,
+        heures: heures(p)?.map(|h| h.to_string()),
+        jours: p.engagement.jours,
+        remuneration: p.remuneration.iter().map(|l| l.designation()).collect(),
     })
 }
 
-fn decimal(v: &Value, k: &str) -> R<Decimal> {
-    Decimal::from_str(v[k].as_str().unwrap_or("0")).map_err(|e| erreur(Classe::CalculImpossible, e.to_string()))
-}
-
-/// La difference d'activite (cachets, heures) entre deux paies resumees (`resume`), dans `delta` : la page la montre a
-/// cote de celle des montants, sans la calculer (regle 2).
-fn difference_d_activite(delta: &mut Map<String, Value>, avant: &Value, apres: &Value) -> R<()> {
-    let entier = |v: &Value, k: &str| v[k].as_i64().unwrap_or(0);
-    delta.insert("cachets".into(), json!(entier(apres, "cachets") - entier(avant, "cachets")));
-    let d = decimal(apres, "heures")? - decimal(avant, "heures")?;
-    delta.insert("heures".into(), json!(d.normalize().to_string()));
-    Ok(())
+/// L'ecart de `avant` a `apres` : la page le montre sans le calculer (regle 2).
+fn ecart(avant: &Paie, apres: &Paie) -> R<Ecart> {
+    let (a, b) = (montants(avant), montants(apres));
+    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = std::array::from_fn(|i| (b[i] - a[i]).to_string());
+    let heures = match (heures(avant)?, heures(apres)?) {
+        (Some(x), Some(y)) => Some((y - x).normalize().to_string()),
+        _ => None,
+    };
+    Ok(Ecart {
+        brut,
+        net_a_payer,
+        net_imposable,
+        cotisations_salariales,
+        cotisations_patronales,
+        cout_employeur,
+        cachets: apres.engagement.cachets - avant.engagement.cachets,
+        heures,
+    })
 }
 
 /// Ce que la page dit d'une correction qui change les dates du contrat : les dates declarees, les corrigees, ce que la
 /// DSN suivante en declare (`les_dates_d_un_contrat_declare`), et, quand le contrat court sur d'autres mois, que chacun
 /// se corrige pour lui-meme.
-fn phrase_des_dates(mois: &str, declarees: &Bornes, corrigees: &Bornes) -> R<String> {
+fn phrase_des_dates(mois: &str, declarees: &Bornes, corrigees: &Bornes) -> String {
     let mut quoi = Vec::new();
     if declarees.0 != corrigees.0 {
         quoi.push("la nouvelle date de début avec l'ancienne, dans un bloc « Changements contrat » (S21.G00.41.021, fiche net-entreprises 1952)");
@@ -79,7 +122,7 @@ fn phrase_des_dates(mois: &str, declarees: &Bornes, corrigees: &Bornes) -> R<Str
         bornes_en_clair(declarees),
         quoi.join(", et ")
     );
-    let autres: Vec<String> = mois_des_bornes(corrigees)?.into_iter().chain(mois_des_bornes(declarees)?).filter(|m| m != mois).fold(Vec::new(), |mut v, m| {
+    let autres: Vec<String> = mois_des_bornes(corrigees).into_iter().chain(mois_des_bornes(declarees)).filter(|m| m != mois).fold(Vec::new(), |mut v, m| {
         if !v.contains(&m) {
             v.push(m);
         }
@@ -91,17 +134,16 @@ fn phrase_des_dates(mois: &str, declarees: &Bornes, corrigees: &Bornes) -> R<Str
             autres.iter().map(|m| socle::mois::Mois::en_clair(m)).collect::<Vec<_>>().join(" et ")
         ));
     }
-    Ok(phrase)
+    phrase
 }
 
 /// Les mois (AAAA-MM) que couvrent des bornes ; sans fin, le seul premier mois.
-fn mois_des_bornes(b: &Bornes) -> R<Vec<String>> {
-    let debut = socle::date::Jour::lire(&b.0).map_err(|m| erreur(Classe::Illisible, m))?;
+fn mois_des_bornes(b: &Bornes) -> Vec<String> {
     let fin = match &b.1 {
-        Some(f) => socle::date::Jour::lire(f).map_err(|m| erreur(Classe::Illisible, m))?,
-        None => debut,
+        Some(f) => *f,
+        None => b.0,
     };
-    Ok(socle::mois::Mois::entre(&debut, &fin).iter().map(socle::mois::Mois::to_string).collect())
+    socle::mois::Mois::entre(&b.0, &fin).iter().map(socle::mois::Mois::to_string).collect()
 }
 
 // ------------------------------------------------- modifier la paie d'un mois deja declare
@@ -142,19 +184,18 @@ pub(crate) enum DsnDeposee {
     Corrigee { porteur: String },
 }
 
-/// Les bornes d'un contrat : son premier jour et sa fin (ISO), telles que le moteur les lit.
-pub(crate) type Bornes = (String, Option<String>);
+/// Les bornes d'un contrat : son premier jour et sa fin.
+type Bornes = (Jour, Option<Jour>);
 
 fn bornes(p: &Paie) -> Bornes {
-    (p.engagement.debut.iso(), p.engagement.fin.map(|f| f.iso()))
+    (p.engagement.debut, p.engagement.fin)
 }
 
 /// « du 02/07/2026 au 25/07/2026 ».
-pub(crate) fn bornes_en_clair(b: &Bornes) -> String {
-    let jour = |t: &str| socle::date::Jour::lire(t).map(|j| j.jj_mm_aaaa()).unwrap_or_else(|_| t.to_string());
+fn bornes_en_clair(b: &Bornes) -> String {
     match &b.1 {
-        Some(f) => format!("du {} au {}", jour(&b.0), jour(f)),
-        None => format!("à partir du {}, sans fin", jour(&b.0)),
+        Some(f) => format!("du {} au {}", b.0.jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("à partir du {}, sans fin", b.0.jj_mm_aaaa()),
     }
 }
 
@@ -193,7 +234,7 @@ pub(crate) fn refus_non_declarable(
             continue;
         }
         let nom = cle.to_string();
-        let debut = socle::date::Jour::lire(&engagement::debut_brut(&b_avant)).map(|j| j.jj_mm_aaaa()).unwrap_or_default();
+        let debut = Jour::lire(&engagement::debut_brut(&b_avant)).map_err(|m| erreur(Classe::Illisible, m))?.jj_mm_aaaa();
         let dsn = match departs.de(&cle, &numero).iter().find(|x| x.envoi == engagement::departs::Envoi::Dsn && x.mois.as_deref() == Some(mois)).and_then(|x| x.par.clone()) {
             Some(par) => format!("dans la DSN {}, qui a porté la correction {}", de_mois_en_clair(&par), de_mois_en_clair(mois)),
             None => format!("dans la DSN {}, qui ne se remplace plus", de_mois_en_clair(mois)),
@@ -217,16 +258,16 @@ pub(crate) fn refus_non_declarable(
 /// `atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 3) et ne s'annule pas : une correction est une
 /// nouvelle declaration (fiche net-entreprises 3300, `atelier/reference/sources/net-entreprises-base-connaissances/
 /// net-entreprises-fiche3300-dpae-en-dsn-20261015.txt`, l. 451).
-pub(crate) fn dpae_d_une_date_changee(avant: &str, apres: &str) -> (bool, String) {
-    let jour = |t: &str| socle::date::Jour::lire(t).map(|j| j.jj_mm_aaaa()).unwrap_or_else(|_| t.to_string());
-    if avant < apres {
+pub(crate) fn dpae_d_une_date_changee(avant: &str, apres: &str) -> R<(bool, String)> {
+    let jour = |t: &str| Jour::lire(t).map_err(|m| erreur(Classe::Illisible, m));
+    let (avant, apres) = (jour(avant)?, jour(apres)?);
+    let (a, b) = (avant.jj_mm_aaaa(), apres.jj_mm_aaaa());
+    Ok(if avant < apres {
         (
             true,
             format!(
                 "Embauche reportée du {} au {} : la DPAE déposée pour le {} vaut — elle a précédé l'embauche (code du travail, art. L. 1221-10) et portait sa date prévisible (art. R. 1221-4). Rien à refaire.",
-                jour(avant),
-                jour(apres),
-                jour(avant)
+                a, b, a
             ),
         )
     } else {
@@ -234,21 +275,9 @@ pub(crate) fn dpae_d_une_date_changee(avant: &str, apres: &str) -> (bool, String
             false,
             format!(
                 "Embauche avancée du {} au {} : la DPAE déposée pour le {} ne l'a pas précédée (code du travail, art. L. 1221-10) et porte une autre date d'embauche (art. R. 1221-1, 3°). Une DPAE au {} est à déposer : une DPAE ne se remplace pas (pas d'annule-et-remplace, guide de l'API DPAE de l'Urssaf).",
-                jour(avant),
-                jour(apres),
-                jour(avant),
-                jour(apres)
+                a, b, a, b
             ),
         )
-    }
-}
-
-/// Une paie a zero : ce qu'un contrat ajoute avait de declare (rien).
-fn resume_nul() -> Value {
-    json!({
-        "brut": "0.00", "net_a_payer": "0.00", "net_imposable": "0.00", "cotisations_salariales": "0.00",
-        "cotisations_patronales": "0.00", "cout_employeur": "0.00", "cachets": 0, "heures": "0", "jours": 0,
-        "remuneration": [],
     })
 }
 
@@ -263,57 +292,69 @@ fn nom_de(p: &Paie) -> String {
 /// AVANT, APRES, DIFFERENCE : deux paies ecrites d'un contrat (`avant` : la derniere declaree, `None` pour un contrat
 /// qu'aucune DSN n'a declare ; `apres` : celle de la version presente), resumees comme la DSN les declare, et ce que la
 /// correction en declare.
-fn avant_apres(mois: &str, avant: Option<&Paie>, apres: &Paie) -> R<Value> {
-    let r_avant = avant.map_or_else(resume_nul, resume);
-    let r_apres = resume(apres);
-    let mut delta = Map::new();
-    let mut tout_nul = true;
-    for k in ["brut", "net_a_payer", "net_imposable", "cotisations_salariales", "cotisations_patronales", "cout_employeur"] {
-        let d = decimal(&r_apres, k)? - decimal(&r_avant, k)?;
-        tout_nul &= d.is_zero();
-        delta.insert(k.to_string(), json!(d.to_string()));
-    }
-    difference_d_activite(&mut delta, &r_avant, &r_apres)?;
+fn avant_apres(mois: &str, avant: Option<&Paie>, apres: &Paie) -> R<Correction> {
+    let r_avant = avant.map(resume).transpose()?;
+    let r_apres = resume(apres)?;
+    let ecart = avant.map(|a| ecart(a, apres)).transpose()?;
     let dates = match avant {
-        Some(a) if bornes(a) != bornes(apres) => Some(phrase_des_dates(mois, &bornes(a), &bornes(apres))?),
+        Some(a) if bornes(a) != bornes(apres) => Some(phrase_des_dates(mois, &bornes(a), &bornes(apres))),
         _ => None,
     };
-    let rien_ne_change = tout_nul
-        && dates.is_none()
-        && r_avant["cachets"] == r_apres["cachets"]
-        && r_avant["heures"] == r_apres["heures"]
-        && r_avant["jours"] == r_apres["jours"];
-    let infos_dit = format!(
-        "contrat {}, {} — brut {} → {}, net {} → {}",
-        apres.engagement.numero.as_deref().unwrap_or_default().to_string(),
-        apres.engagement.debut.jj_mm_aaaa(),
-        valeur_en_texte(&r_avant["brut"]),
-        valeur_en_texte(&r_apres["brut"]),
-        valeur_en_texte(&r_avant["net_a_payer"]),
-        valeur_en_texte(&r_apres["net_a_payer"])
-    );
-    Ok(json!({
-        "infos_dit": infos_dit,
-        "portee_dit": "prochaine DSN",
-        "salarie": apres.salarie.id.to_string(),
-        "debut": apres.engagement.debut.iso(),
-        "nom": nom_de(apres),
-        "spectacle": apres.titre()?,
-        "numero": apres.engagement.numero,
-        "avant": r_avant,
-        "apres": r_apres,
-        "delta": delta,
-        "rien_ne_change": rien_ne_change,
-        "dates": dates,
-        "ajout": avant.is_none(),
-    }))
+    let contrat = match &apres.engagement.numero {
+        Some(n) => format!("contrat {}, {}", n, apres.engagement.debut.jj_mm_aaaa()),
+        None => format!("contrat du {}", apres.engagement.debut.jj_mm_aaaa()),
+    };
+    let montants = match &r_avant {
+        Some(a) => format!("brut {} → {}, net {} → {}", a.brut, r_apres.brut, a.net_a_payer, r_apres.net_a_payer),
+        None => format!("ajouté : brut {}, net {}", r_apres.brut, r_apres.net_a_payer),
+    };
+    Ok(Correction {
+        infos_dit: format!("{} — {}", contrat, montants),
+        portee_dit: "prochaine DSN".to_string(),
+        salarie: apres.salarie.id.to_string(),
+        debut: apres.engagement.debut.iso(),
+        nom: nom_de(apres),
+        spectacle: apres.titre()?,
+        numero: apres.engagement.numero.clone(),
+        ajout: avant.is_none(),
+        avant: r_avant,
+        apres: r_apres,
+        delta: ecart,
+        dates,
+        portee_par: None,
+        portee_par_dit: None,
+    })
+}
+
+/// UNE CORRECTION D'UN MOIS DECLARE, telle que la page la montre : le contrat (`infos_dit` : son numero, ses montants
+/// declares et presents), la DSN qui la porte (`portee_dit`), la paie declaree (`avant`, `None` pour un contrat
+/// qu'aucune DSN n'a declare : `ajout`), la presente (`apres`), l'ecart (`delta`), ses dates changees (`dates`) ; deja
+/// portee, le mois de la DSN qui l'a portee (`portee_par`).
+#[derive(Debug, Serialize)]
+pub(crate) struct Correction {
+    infos_dit: String,
+    portee_dit: String,
+    pub(crate) salarie: String,
+    debut: String,
+    nom: String,
+    spectacle: String,
+    numero: Option<NumeroContrat>,
+    avant: Option<Resume>,
+    apres: Resume,
+    delta: Option<Ecart>,
+    dates: Option<String>,
+    ajout: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) portee_par: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    portee_par_dit: Option<String>,
 }
 
 /// Ce que la page montre des corrections de `mois` : celles a porter (la paie presente de chaque contrat dont la DSN
 /// partie ne declare plus la paie, `produire_regularisations::corrections_dues`, comparee a la derniere declaree) et
 /// celles deja portees par la DSN d'un mois suivant (chaque paie declaree par une correction, comparee a celle qu'elle
 /// corrigeait). Vide quand le mois ne se corrige pas ailleurs que dans sa DSN (`se_corrige_ailleurs`).
-pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Value>, Vec<Value>)> {
+pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Correction>, Vec<Correction>)> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok((Vec::new(), Vec::new()));
@@ -332,9 +373,9 @@ pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Value>, 
         for (i, x) in declarees.iter().enumerate() {
             let Some(par) = &x.par else { continue };
             let mut c = avant_apres(mois, i.checked_sub(1).map(|j| &declarees[j].paie), &x.paie)?;
-            c["portee_par"] = json!(par);
-            c["portee_par_dit"] = json!(de_mois_en_clair(par));
-            c["portee_dit"] = json!(format!("portée par la DSN {}", de_mois_en_clair(par)));
+            c.portee_par = Some(par.clone());
+            c.portee_par_dit = Some(de_mois_en_clair(par));
+            c.portee_dit = format!("portée par la DSN {}", de_mois_en_clair(par));
             portees.push(c);
         }
     }
