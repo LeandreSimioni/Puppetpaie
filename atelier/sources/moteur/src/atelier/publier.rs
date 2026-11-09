@@ -100,7 +100,7 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
     let dossier = base(code)?.join(crate::interface::compagnies::DOSSIER_FICTIVES);
     if !dossier.is_dir() {
-        return Err(format!("{} n'existe pas : une archive sans compagnie fictive s'ouvrirait bridee sur un accueil vide", dossier.display()));
+        return Err(format!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
     }
     let mut out = Vec::new();
     let mut n = 0;

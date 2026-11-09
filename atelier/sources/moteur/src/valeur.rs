@@ -2,14 +2,12 @@
 //! dans une `Value` prise ou rendue. Les couches du dessous ne lisent que des formes (`socle::forme`) : ce module ne
 //! leur sert pas, et tombe avec son dernier lecteur.
 
-use std::path::Path;
-
 use rust_decimal::prelude::*;
 use serde_json::{Map, Value};
 
 use socle::date::{repr_flottant, repr_texte, Jour};
 use socle::echec::{erreur, A_PART, R};
-use socle::fichiers::{attendu, lire_texte, repr};
+use socle::fichiers::{attendu, repr};
 use socle::num::{dec_f64, dec_texte, illisible, Resultat};
 
 // ------------------------------------------------------------ une date
@@ -81,13 +79,6 @@ pub fn separer(message: &str) -> (String, Map<String, Value>) {
     (phrase, plus)
 }
 
-// ------------------------------------------------------------ un fichier
-
-/// Le JSON d'un fichier UTF-8, sans cache.
-pub fn lire_json(chemin: &Path) -> Resultat<Value> {
-    let texte = lire_texte(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
-    serde_json::from_str(&texte).map_err(|e| socle::echec::du_disque(&chemin, &e))
-}
 
 // ------------------------------------------------------------ un nombre
 
