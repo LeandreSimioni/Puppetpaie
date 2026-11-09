@@ -202,7 +202,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(metiers::ROUTES) => metiers::route(&porte, charge),
         _ if dans(libelles_courts::ROUTES) => libelles_courts::route(&porte, charge),
         // L'etat d'un mois : l'etat garde, ecrit apres chaque ecriture, lu tel quel (`etat_garde`).
-        _ if dans(crate::etat_garde::ROUTES) => brute(crate::etat_garde::route(o, &ctx, route, c)),
+        _ if dans(crate::etat_garde::ROUTES) => crate::etat_garde::route(o, &porte, charge),
         // Un geste de l'ecran, une route : un module par geste.
         _ if dans(mois::ROUTES) => mois::route(&porte, charge),
         _ if dans(etapes::ROUTES) => etapes::route(&porte, charge),
