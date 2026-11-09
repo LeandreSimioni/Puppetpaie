@@ -23,24 +23,22 @@
 //! LA MISE A JOUR N'EST PAS ICI : le logiciel la cherche pour l'installation (`maj::chercher_en_fond`) et l'indicateur la
 //! dit (`maj::Recherche::etat`).
 
-use std::collections::HashMap;
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
-use crate::valeur::valeur_en_texte;
 use socle::echec::R;
-use crate::valeur::vrai;
 use envois::releve_retours::{Client, Releve};
+use envois::releve_signatures::ReleveDite;
 use crate::compagnie::releve_signatures::{self, ReleveSignatures};
-use socle::echec::Echec;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION};
 use crate::routes::catalogue::Route;
-use crate::routes::fiches::ReleveFiches;
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::routes::fiches::{FicheRecue, ReleveFiches};
 use crate::compagnie::sauvegarde::{self, Sauvegarde};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -122,23 +120,42 @@ impl Default for Options {
     }
 }
 
+/// LA CHARGE DE LA ROUTE `ouverture` : chaque option dite, ou absente. Les interrupteurs disent `false` pour ne pas faire
+/// (sauvegarder, retours, signatures, filet, incidents_editeur) et `true` pour faire autrement (veille, sauvegarde_seule) ;
+/// `jours`, `pas_avant` et `racine_drive` remplacent ce que fait un passage ordinaire (`Options::default`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChargeOuverture {
+    sauvegarder: Option<bool>,
+    retours: Option<bool>,
+    signatures: Option<bool>,
+    filet: Option<bool>,
+    veille: Option<bool>,
+    incidents_editeur: Option<bool>,
+    sauvegarde_seule: Option<bool>,
+    jours: Option<i64>,
+    pas_avant: Option<i64>,
+    racine_drive: Option<String>,
+}
+
 impl Options {
-    /// Les options d'une charge de route : `{"sauvegarder", "retours", "signatures", "filet", "jours", "racine_drive",
-    /// "pas_avant", "veille", "incidents_editeur", "sauvegarde_seule"}`, chacune facultative ; une autre cle est ignoree.
-    pub fn de_la_charge(charge: &Value) -> Options {
+    /// Les options d'une charge de route : un passage ordinaire, et ce que la charge dit autrement.
+    pub fn de_la_charge(c: ChargeOuverture) -> Options {
         let mut o = Options::default();
-        let booleen = |cle: &str, defaut: bool| charge.get(cle).filter(|v| !v.is_null()).map_or(defaut, vrai);
-        o.sauvegarder = booleen("sauvegarder", o.sauvegarder);
-        o.retours = booleen("retours", o.retours);
-        o.signatures = booleen("signatures", o.signatures);
-        o.filet = booleen("filet", o.filet);
-        o.veille = booleen("veille", o.veille);
-        o.incidents_editeur = booleen("incidents_editeur", o.incidents_editeur);
-        o.sauvegarde_seule = booleen("sauvegarde_seule", o.sauvegarde_seule);
-        let entier = |cle: &str, defaut: i64| charge.get(cle).and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))).unwrap_or(defaut);
-        o.jours = entier("jours", o.jours);
-        o.pas_avant = entier("pas_avant", o.pas_avant);
-        if let Some(r) = charge.get("racine_drive").filter(|v| vrai(v)).map(valeur_en_texte) {
+        o.sauvegarder = c.sauvegarder != Some(false);
+        o.retours = c.retours != Some(false);
+        o.signatures = c.signatures != Some(false);
+        o.filet = c.filet != Some(false);
+        o.incidents_editeur = c.incidents_editeur != Some(false);
+        o.veille = c.veille == Some(true);
+        o.sauvegarde_seule = c.sauvegarde_seule == Some(true);
+        if let Some(j) = c.jours {
+            o.jours = j;
+        }
+        if let Some(p) = c.pas_avant {
+            o.pas_avant = p;
+        }
+        if let Some(r) = c.racine_drive {
             o.racine_drive = r;
         }
         o
@@ -211,89 +228,172 @@ impl Ouverture {
         format!("{} retour(s), dont {} nouveau(x), {} archive(s).", releve.trouves.len(), releve.nouveaux.len(), releve.archives.len())
     }
 
-    /// Ce que la page et `moteur route` lisent du passage, avec
-    /// le detail des fichiers deposes et des retours archives.
-    pub fn en_json(&self) -> Value {
-        let sauvegarde = self.sauvegarde.as_ref().map(|s| {
-            json!({
-                "resume": s.resume(),
-                "deposes": s.deposes.iter().map(|f| f.relatif.clone()).collect::<Vec<_>>(),
-                "identiques": s.identiques,
-                "octets": s.octets_deposes,
-                "deposes_detail": s.deposes.iter().map(|f| json!({"relatif": f.relatif, "etat": f.etat.texte(), "octets": f.octets})).collect::<Vec<_>>(),
-                "exclus": s.exclus,
-                "hors_ligne": s.hors_ligne,
-                "souci": s.persistant,
-            })
+    /// Ce que la page et `moteur route` lisent du passage, avec le detail des fichiers deposes et des retours archives :
+    /// la phrase du passage, et une ligne par chose faite ou trouvee (ce que l'horloge a joue, ce qui manque, les
+    /// incidents).
+    pub fn dite(self) -> OuvertureDite {
+        let retours_resume = self.releve.as_ref().map(Ouverture::resume_retours);
+        let phrase = match &retours_resume {
+            Some(r) => format!("Ouverture du {} : {}", self.quand, r),
+            None => format!("Ouverture du {}.", self.quand),
+        };
+        let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
+        let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
+            resume: s.resume(),
+            deposes: s.deposes.iter().map(|f| f.relatif.clone()).collect(),
+            identiques: s.identiques,
+            octets: s.octets_deposes,
+            deposes_detail: s.deposes.iter().map(|f| FichierDepose { relatif: f.relatif.clone(), etat: f.etat.texte(), octets: f.octets }).collect(),
+            exclus: s.exclus,
+            hors_ligne: s.hors_ligne,
+            souci: s.persistant.clone(),
         });
-        let retours = self.releve.as_ref().map(|r| {
-            json!({
-                "resume": Ouverture::resume_retours(r),
-                "trouves": r.trouves.len(),
-                "nouveaux": r.nouveaux.len(),
-                "archives": r.archives.iter().map(|a| json!(a.chemin.to_string_lossy())).collect::<Vec<_>>(),
-                "archives_detail": r.archives.iter().map(|a| json!({
-                    "chemin": a.chemin.to_string_lossy(),
-                    "fichier": a.chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                    "nature": a.retour.nature,
-                    "libelle": envois::retours::libelle_nature(&a.retour.nature),
-                })).collect::<Vec<_>>(),
-                "rattaches": r.rattaches,
-            })
+        let retours = self.releve.as_ref().map(|r| RetoursDits {
+            resume: Ouverture::resume_retours(r),
+            trouves: r.trouves.len(),
+            nouveaux: r.nouveaux.len(),
+            archives: r.archives.iter().map(|a| a.chemin.to_string_lossy().into_owned()).collect(),
+            archives_detail: r
+                .archives
+                .iter()
+                .map(|a| RetourArchiveDit {
+                    chemin: a.chemin.to_string_lossy().into_owned(),
+                    fichier: a.chemin.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    nature: a.retour.nature.clone(),
+                    libelle: envois::retours::libelle_nature(&a.retour.nature),
+                })
+                .collect(),
+            rattaches: r.rattaches,
         });
-        let retours_dpae = self.releve_dpae.as_ref().map(|r| {
-            json!({
-                "resume": Ouverture::resume_retours(r),
-                "trouves": r.trouves.len(),
-                "nouveaux": r.nouveaux.len(),
-                "archives": r.archives.iter().map(|a| json!(a.chemin.to_string_lossy())).collect::<Vec<_>>(),
-                "rattaches": r.rattaches,
-            })
+        let retours_dpae = self.releve_dpae.as_ref().map(|r| RetoursDpaeDits {
+            resume: Ouverture::resume_retours(r),
+            trouves: r.trouves.len(),
+            nouveaux: r.nouveaux.len(),
+            archives: r.archives.iter().map(|a| a.chemin.to_string_lossy().into_owned()).collect(),
+            rattaches: r.rattaches,
         });
-        let fiches = self.fiches.as_ref().map(|f| json!({"resume": f.resume(), "attendues": f.attendues, "recues": f.recues, "incidents": f.incidents}));
-        json!({
-            "quand": self.quand,
-            "secondes": self.secondes,
-            "sauvegarde": sauvegarde,
-            "retours": retours,
-            "signatures": self.signatures.clone().map(ReleveSignatures::dite),
-            "incidents": self.incidents,
-            "manquants": self.manquants,
-            "retours_dpae": retours_dpae,
-            "fiches": fiches,
-            "a_poser": self.a_poser,
-            "horloge": self.horloge,
-            "hors_ligne": self.hors_ligne,
-            "injoignables": self.injoignables,
-            "tout_va_bien": self.tout_va_bien(),
-            "retenue": self.retenue,
-        })
+        let fiches = self.fiches.as_ref().map(|f| FichesDites { resume: f.resume(), attendues: f.attendues, recues: f.recues.clone(), incidents: f.incidents.clone() });
+        let tout_va_bien = self.tout_va_bien();
+        OuvertureDite {
+            phrase,
+            quand: self.quand,
+            secondes: self.secondes,
+            sauvegarde,
+            retours,
+            signatures: self.signatures.map(ReleveSignatures::dite),
+            incidents: self.incidents,
+            manquants: self.manquants,
+            retours_dpae,
+            fiches,
+            a_poser: self.a_poser,
+            horloge: self.horloge,
+            hors_ligne: self.hors_ligne,
+            injoignables: self.injoignables,
+            tout_va_bien,
+            retenue: self.retenue,
+            phrases,
+        }
     }
+}
+
+/// CE QUE REND LA ROUTE `ouverture` (`Ouverture::dite`) : la phrase du passage, ce que chaque releve a fait, et ses lignes
+/// (`phrases`).
+#[derive(Debug, Serialize)]
+pub struct OuvertureDite {
+    pub phrase: String,
+    pub quand: String,
+    pub secondes: f64,
+    pub sauvegarde: Option<SauvegardeDite>,
+    pub retours: Option<RetoursDits>,
+    pub signatures: Option<ReleveDite>,
+    pub incidents: Vec<String>,
+    pub manquants: Vec<String>,
+    pub retours_dpae: Option<RetoursDpaeDits>,
+    pub fiches: Option<FichesDites>,
+    pub a_poser: Vec<String>,
+    pub horloge: Vec<String>,
+    pub hors_ligne: bool,
+    pub injoignables: Vec<String>,
+    pub tout_va_bien: bool,
+    /// `pas_avant` a retenu ce passage : rien n'a ete fait.
+    pub retenue: bool,
+    pub phrases: Vec<String>,
+}
+
+impl Dite for OuvertureDite {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// La sauvegarde d'un passage : sa ligne, ce qui est parti, ce qui reste en souci (`sauvegarde::souci`).
+#[derive(Debug, Serialize)]
+pub struct SauvegardeDite {
+    pub resume: String,
+    pub deposes: Vec<String>,
+    pub identiques: usize,
+    pub octets: u64,
+    pub deposes_detail: Vec<FichierDepose>,
+    pub exclus: usize,
+    pub hors_ligne: bool,
+    pub souci: Option<String>,
+}
+
+/// Un fichier parti au Drive : son chemin dans le dossier de la compagnie, neuf ou modifie, son poids.
+#[derive(Debug, Serialize)]
+pub struct FichierDepose {
+    pub relatif: String,
+    pub etat: &'static str,
+    pub octets: u64,
+}
+
+/// Les retours DSN d'un passage : sa ligne, combien, ce qui s'est archive et rattache.
+#[derive(Debug, Serialize)]
+pub struct RetoursDits {
+    pub resume: String,
+    pub trouves: usize,
+    pub nouveaux: usize,
+    pub archives: Vec<String>,
+    pub archives_detail: Vec<RetourArchiveDit>,
+    pub rattaches: i64,
+}
+
+/// Un retour archive : ou, sa nature et son libelle.
+#[derive(Debug, Serialize)]
+pub struct RetourArchiveDit {
+    pub chemin: String,
+    pub fichier: Option<String>,
+    pub nature: String,
+    pub libelle: String,
+}
+
+/// Les retours DPAE d'un passage.
+#[derive(Debug, Serialize)]
+pub struct RetoursDpaeDits {
+    pub resume: String,
+    pub trouves: usize,
+    pub nouveaux: usize,
+    pub archives: Vec<String>,
+    pub rattaches: i64,
+}
+
+/// Les fiches de salarie revenues a un passage.
+#[derive(Debug, Serialize)]
+pub struct FichesDites {
+    pub resume: String,
+    pub attendues: usize,
+    pub recues: Vec<FicheRecue>,
+    pub incidents: Vec<String>,
 }
 
 // ------------------------------------------------------------------ la route
 
-/// Une route de ce module.
-///
-/// - `ouverture` : `{"sauvegarder"?, "retours"?, "signatures"?, "filet"?, "jours"?, "racine_drive"?, "pas_avant"?, "veille"?,
-///   "incidents_editeur"?}` -> `Ouverture::en_json`. **Hors d'une compagnie fictive, elle va au
-///   reseau.** Elle ne rend jamais d'erreur : une panne est une phrase de `incidents`.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
-        Route::Ouverture => {
-            let mut v = ouverture(ctx, &Options::de_la_charge(charge), Clients::default(), None).en_json();
-            // Ce que le passage a fait et trouve, une ligne par chose : ce que l'horloge a joue, ce qui
-            // manque, les incidents.
-            let texte = |x: &Value| x.as_str().map(String::from).unwrap_or_else(|| crate::routes::mot(x));
-            let mut lignes: Vec<Value> = Vec::new();
-            for k in ["horloge", "manquants", "incidents"] {
-                lignes.extend(v[k].as_array().into_iter().flatten().map(|x| json!(texte(x))));
-            }
-            let p = format!("Ouverture du {} : {}", crate::routes::mot(&v["quand"]), crate::routes::mot(&v["retours"]["resume"]));
-            v["phrases"] = Value::Array(lignes);
-            Ok(crate::routes::phrase_en_tete(v, p))
-        }
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+/// La route `ouverture` (`ChargeOuverture` -> `OuvertureDite`). **Hors d'une compagnie fictive, elle va au reseau.** Elle
+/// ne refuse que sa charge mal formee : une panne est une phrase de `incidents`.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
+        Route::Ouverture => en_json(ouverture(porte.ctx, &Options::de_la_charge(charge.lire()?), Clients::default(), None).dite()),
+        autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
@@ -310,19 +410,30 @@ fn chemin_etape(racine: &Path) -> std::path::PathBuf {
     racine.join(socle::fichiers::CONFIG).join(ETAPE)
 }
 
+/// L'etape d'un passage en cours (`config/.ouverture-etape.json`) : ce qu'il fait, depuis quand.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Etape {
+    etape: String,
+    depuis: String,
+}
+
 fn dire_l_etape(ctx: &Contexte, etape: &str) {
-    let _ = socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &json!({"etape": etape, "depuis": quand_maintenant()}), 1);
+    let _ = socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: quand_maintenant() }, 1);
 }
 
 fn finir_les_etapes(ctx: &Contexte) {
     let _ = std::fs::remove_file(chemin_etape(&ctx.racine));
 }
 
-/// L'etape qu'un passage en cours a ecrite, ou `None`.
-pub fn etape_en_cours(racine: &Path) -> Option<String> {
-    let o = std::fs::read(chemin_etape(racine)).ok()?;
-    let v: Value = serde_json::from_slice(&o).ok()?;
-    v.get("etape").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
+/// L'etape qu'un passage en cours a ecrite, ou `None` quand aucun n'en a ecrit.
+pub fn etape_en_cours(racine: &Path) -> R<Option<String>> {
+    let p = chemin_etape(racine);
+    if !p.exists() {
+        return Ok(None);
+    }
+    let e: Etape = socle::forme::lire_fichier(&p, "L'étape du passage en cours ne se lit pas.")?;
+    Ok(Some(e.etape))
 }
 
 // ------------------------------------------------------------------ la trace
@@ -331,23 +442,56 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
     ctx.racine.join(socle::fichiers::CONFIG).join(TRACE)
 }
 
-/// `derniere_ouverture` : la trace, ou `{}` si elle est absente ou ne se lit pas (JSON invalide, octets invalides, fichier
-/// illisible).
-pub fn derniere_ouverture(racine: &std::path::Path) -> Value {
-    let p = racine.join(socle::fichiers::CONFIG).join(TRACE);
-    if !p.exists() {
-        return json!({});
-    }
-    std::fs::read(&p)
-        .ok()
-        .and_then(|o| String::from_utf8(o).ok())
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .unwrap_or_else(|| json!({}))
+/// LA TRACE DE LA DERNIERE OUVERTURE (`config/.ouverture.json`), que le bandeau de la fenetre lit : quand, combien de
+/// temps, la ligne de chaque releve qui a eu lieu, ce qui n'a pas repondu, ce qui manque et ce qui est a poser. Aucun
+/// secret n'y figure, par construction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Trace {
+    pub quand: String,
+    pub secondes: f64,
+    /// La ligne de la sauvegarde, quand elle a eu lieu.
+    pub sauvegarde: Option<String>,
+    /// Ce qui persiste de la sauvegarde (`sauvegarde::souci`).
+    pub sauvegarde_souci: Option<String>,
+    /// La ligne des retours, quand la releve a joint net-entreprises.
+    pub retours: Option<String>,
+    pub hors_ligne: bool,
+    pub injoignables: Vec<String>,
+    pub nouveaux: usize,
+    /// La ligne des signatures, quand la releve a eu lieu.
+    pub signatures: Option<String>,
+    /// La ligne des fiches de salarie, quand la releve a eu lieu.
+    pub fiches: Option<String>,
+    pub signatures_recues: Vec<SignatureNotee>,
+    pub incidents: Vec<String>,
+    pub manquants: Vec<String>,
+    pub a_poser: Vec<String>,
+    pub horloge: Vec<String>,
 }
 
-/// La trace de la derniere ouverture. Aucun secret n'y figure, par construction. Une ecriture qui
-/// echoue est passee sous silence.
-fn noter_ouverture(ctx: &Contexte, r: &Ouverture) {
+/// Un contrat revenu signe, tel que la trace le note.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignatureNotee {
+    pub nom: String,
+    pub quand: String,
+    pub renvoye: bool,
+    pub phrase: String,
+}
+
+/// `derniere_ouverture` : la trace, ou `None` quand aucune ouverture ne l'a encore ecrite. Une trace qui ne se lit pas se
+/// refuse.
+pub fn derniere_ouverture(racine: &std::path::Path) -> R<Option<Trace>> {
+    let p = racine.join(socle::fichiers::CONFIG).join(TRACE);
+    if !p.exists() {
+        return Ok(None);
+    }
+    Ok(Some(socle::forme::lire_fichier(&p, "La trace de la dernière ouverture ne se lit pas.")?))
+}
+
+/// La trace de la derniere ouverture. Une ecriture qui echoue est passee sous silence : la trace n'est qu'un compte rendu.
+fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) {
     let p = chemin_trace(ctx);
     if let Some(dossier) = p.parent() {
         let _ = std::fs::create_dir_all(dossier);
@@ -357,8 +501,14 @@ fn noter_ouverture(ctx: &Contexte, r: &Ouverture) {
     let tests: Vec<String> = if est_copie(&ctx.racine) {
         Vec::new()
     } else {
-        // Un journal illisible ne doit pas empecher la trace (l'ouverture n'echoue jamais).
-        envois::journal::lu(&ctx.racine).map(|j| etats::flux_de_test(&j.lignes)).unwrap_or_default()
+        // Un journal illisible n'empeche pas la trace (l'ouverture n'echoue jamais) : il est un incident.
+        match envois::journal::lu(&ctx.racine) {
+            Ok(j) => etats::flux_de_test(&j.lignes),
+            Err(e) => {
+                r.incidents.push(format!("Journal : {}", e));
+                Vec::new()
+            }
+        }
     };
     let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_deref() == Some(t.as_str()))).count() };
     let (trouves, nouveaux) = match &r.releve {
@@ -368,37 +518,49 @@ fn noter_ouverture(ctx: &Contexte, r: &Ouverture) {
     // La ligne des retours dit ce que la releve a fait, si ELLE a joint net-entreprises -- le Drive qui ne repond pas ne
     // la tait pas ; une releve sans reseau, elle, n'a rien vu, et « aucun retour » serait faux.
     let releve_passee = r.releve.as_ref().is_some_and(|rel| !rel.incidents.iter().any(|i| sauvegarde::hors_ligne(i)));
-    let retours = if releve_passee {
+    let retours = releve_passee.then(|| {
         if trouves > 0 {
             format!("{} retour(s), dont {} nouveau(x).", trouves, nouveaux)
         } else {
             "Aucun retour sur la période.".to_string()
         }
-    } else {
-        String::new()
+    });
+    let sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
+    let trace = Trace {
+        quand: r.quand.clone(),
+        secondes: r.secondes,
+        sauvegarde: r.sauvegarde.as_ref().map(Sauvegarde::resume),
+        sauvegarde_souci,
+        retours,
+        hors_ligne: r.hors_ligne,
+        injoignables: r.injoignables.clone(),
+        nouveaux,
+        signatures: r.signatures.as_ref().map(ReleveSignatures::resume),
+        fiches: r.fiches.as_ref().map(ReleveFiches::resume),
+        signatures_recues: r
+            .signatures
+            .iter()
+            .flat_map(|s| &s.recues)
+            .map(|x| SignatureNotee { nom: x.nom.clone(), quand: x.quand.clone(), renvoye: x.renvoye, phrase: format!("contrat signé par {}", x.nom) })
+            .collect(),
+        incidents: r.incidents.clone(),
+        // Les phrases du coffre ne repartent pas : `a_poser` les dit.
+        manquants: r.manquants.iter().filter(|m| !r.phrases_coffre.contains(m)).cloned().collect(),
+        a_poser: r.a_poser.clone(),
+        horloge: r.horloge.clone(),
     };
-    let mut trace = Map::new();
-    trace.insert("quand".into(), json!(r.quand));
-    trace.insert("secondes".into(), json!(r.secondes));
-    trace.insert("sauvegarde".into(), json!(r.sauvegarde.as_ref().map(Sauvegarde::resume).unwrap_or_default()));
-    trace.insert("sauvegarde_souci".into(), json!(sauvegarde::souci(&ctx.racine).unwrap_or_default()));
-    trace.insert("retours".into(), json!(retours));
-    trace.insert("hors_ligne".into(), json!(r.hors_ligne));
-    trace.insert("injoignables".into(), json!(r.injoignables));
-    trace.insert("nouveaux".into(), json!(nouveaux));
-    trace.insert("signatures".into(), json!(r.signatures.as_ref().map(ReleveSignatures::resume).unwrap_or_default()));
-    trace.insert("fiches".into(), json!(r.fiches.as_ref().map(ReleveFiches::resume).unwrap_or_default()));
-    trace.insert(
-        "signatures_recues".into(),
-        json!(r.signatures.as_ref().map(|s| s.recues.iter().map(|x| json!({"nom": x.nom, "quand": x.quand, "renvoye": x.renvoye, "phrase": format!("contrat signé par {}", x.nom)})).collect::<Vec<_>>()).unwrap_or_default()),
-    );
-    trace.insert("incidents".into(), json!(r.incidents));
-    // Les phrases du coffre ne repartent pas : `a_poser` les dit.
-    let manquants: Vec<&String> = r.manquants.iter().filter(|m| !r.phrases_coffre.contains(m)).collect();
-    trace.insert("manquants".into(), json!(manquants));
-    trace.insert("a_poser".into(), json!(r.a_poser));
-    trace.insert("horloge".into(), json!(r.horloge));
-    let _ = socle::ecriture::ecrire_json(&p, &Value::Object(trace), 1);
+    let _ = socle::ecriture::ecrire_json(&p, &trace, 1);
+}
+
+/// Ce qui persiste de la sauvegarde (`sauvegarde::souci`) ; un index qui ne se lit pas est un incident du passage.
+fn souci_de_la_sauvegarde(ctx: &Contexte, r: &mut Ouverture) -> Option<String> {
+    match sauvegarde::souci(&ctx.racine) {
+        Ok(s) => s,
+        Err(e) => {
+            r.incidents.push(format!("Sauvegarde : {}", e));
+            None
+        }
+    }
 }
 
 // ------------------------------------------------------------------ la version qui calcule
@@ -413,18 +575,26 @@ const VERSION_DU_CALCUL: &str = ".version-du-calcul.json";
 /// rectificatif ; puis plus rien jusqu'a la version suivante. La marque ne s'ecrit qu'apres un passage entier : un
 /// passage interrompu se refait.
 fn passer_la_version(ctx: &Contexte) -> R<()> {
-    let code = socle::fichiers::dossier_du_code().parent().map(Path::to_path_buf).unwrap_or_default();
-    let marque = format!("{}+{}", crate::compagnie::maj::courante(&code), engagement::empreinte::MOTEUR);
+    let marque = VersionDuCalcul { version: format!("{}+{}", crate::compagnie::maj::courante(&crate::compagnie::maj::dossier_installe()?)?, engagement::empreinte::MOTEUR) };
     let p = ctx.racine.join(socle::fichiers::CONFIG).join(VERSION_DU_CALCUL);
-    let lue = std::fs::read(&p).ok().and_then(|o| serde_json::from_slice::<Value>(&o).ok());
-    if lue.as_ref().and_then(|v| v.get("version")).and_then(Value::as_str) == Some(marque.as_str()) {
-        return Ok(());
+    if p.exists() {
+        let lue: VersionDuCalcul = socle::forme::lire_fichier(&p, "La version qui a passé sur les mois finis ne se lit pas.")?;
+        if lue.version == marque.version {
+            return Ok(());
+        }
     }
     dire_l_etape(ctx, "Nouvelle version : relecture des mois finis…");
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     engagement::etats::corriger_les_mois_finis(ctx, &departs)?;
-    socle::ecriture::ecrire_json(&p, &json!({"version": marque}), 1).map_err(|m| socle::echec::erreur(socle::echec::Classe::Disque, m))?;
+    socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| socle::echec::erreur(socle::echec::Classe::Disque, m))?;
     Ok(())
+}
+
+/// La version qui a passe sur les mois finis (`config/.version-du-calcul.json`) : le numero et la marque du code.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VersionDuCalcul {
+    version: String,
 }
 
 // ------------------------------------------------------------------ outils
@@ -440,28 +610,18 @@ fn quand_maintenant() -> String {
     format!("{}/{}/{} {}:{}", &iso[8..10], &iso[5..7], &iso[0..4], &iso[11..13], &iso[14..16])
 }
 
-/// L'heure locale naive d'une trace `quand` : `JJ/MM/AAAA HH:MM` (ce que l'ouverture ecrit) ou `AAAA-MM-JJ HH:MM`
-/// (l'autre forme que `age_de_la_derniere` lit).
-fn naif_de_quand(quand: &str) -> Option<i64> {
-    let c: Vec<char> = quand.chars().collect();
-    let tranche = |a: usize, b: usize| -> String { c.get(a..b).map(|s| s.iter().collect()).unwrap_or_default() };
-    let iso = if c.len() == 16 && c[2] == '/' && c[5] == '/' {
-        format!("{}-{}-{}T{}", tranche(6, 10), tranche(3, 5), tranche(0, 2), tranche(11, 16))
-    } else if c.len() == 16 && c[4] == '-' && c[7] == '-' {
-        format!("{}T{}", tranche(0, 10), tranche(11, 16))
-    } else {
-        return None;
-    };
-    socle::paris::naif_de_iso(&iso)
-}
-
-/// `pas_avant` : l'age, en secondes, de la derniere ouverture, ou `None` si la trace n'en dit rien de lisible.
-///
-/// Les deux formes de `quand` se lisent, et l'option fait ce que son nom et son aide disent.
-fn age_de_la_derniere(precedente: &Value) -> Option<i64> {
-    let quand = precedente.get("quand").filter(|v| vrai(v)).map(valeur_en_texte)?;
-    let avant = naif_de_quand(&quand)?;
-    Some(socle::paris::maintenant_naif() - avant)
+/// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace (`JJ/MM/AAAA HH:MM`, ce
+/// que `quand_maintenant` ecrit). Un `quand` qui ne se lit pas se refuse.
+fn age_de_la_derniere(precedente: &Trace) -> R<i64> {
+    let c: Vec<char> = precedente.quand.chars().collect();
+    let illisible = || socle::echec::Echec::from(format!("La trace de la dernière ouverture ne dit pas son heure : « {} ».", precedente.quand));
+    if c.len() != 16 || c[2] != '/' || c[5] != '/' {
+        return Err(illisible());
+    }
+    let tranche = |a: usize, b: usize| -> String { c[a..b].iter().collect() };
+    let iso = format!("{}-{}-{}T{}", tranche(6, 10), tranche(3, 5), tranche(0, 2), tranche(11, 16));
+    let avant = socle::paris::naif_de_iso(&iso).ok_or_else(illisible)?;
+    Ok(socle::paris::maintenant_naif() - avant)
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
@@ -498,37 +658,25 @@ fn clore(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Instant) {
 /// La seconde moitie de la veille : la trace du premier appel, mise a jour par la sauvegarde (qui est faite en dernier) sans
 /// rien effacer de ce que le premier a ecrit. Le resultat est celui d'une seule ouverture : la sauvegarde, la duree totale,
 /// « hors ligne » si l'un des deux l'a vu (et alors plus de ligne « retours », comme la trace d'une seule ouverture), les
-/// incidents et les manques a la suite des premiers. Une trace qui manque ou ne se lit pas : la trace ordinaire de ce passage.
-fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Instant, precedente: &Value) {
+/// incidents et les manques a la suite des premiers. Sans trace d'avant : la trace ordinaire de ce passage.
+fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Instant, precedente: Option<Trace>) {
     finir_les_etapes(ctx);
-    let Some(avant) = precedente.as_object().filter(|m| !m.is_empty()) else {
+    let Some(mut trace) = precedente else {
         return clore(ctx, r, debut);
     };
-    let etait_hors_ligne = avant.get("hors_ligne").is_some_and(vrai);
     trier_hors_ligne(r);
     let ma_duree = (socle::temps::duree(debut).as_secs_f64() * 10.0).round() / 10.0;
     r.secondes = ma_duree;
-    let mut trace = avant.clone();
-    let liste = |cle: &str| -> Vec<Value> { avant.get(cle).and_then(Value::as_array).cloned().unwrap_or_default() };
-    trace.insert("sauvegarde".into(), json!(r.sauvegarde.as_ref().map(Sauvegarde::resume).unwrap_or_default()));
-    trace.insert("sauvegarde_souci".into(), json!(sauvegarde::souci(&ctx.racine).unwrap_or_default()));
-    let deja = avant.get("secondes").and_then(Value::as_f64).unwrap_or(0.0);
-    trace.insert("secondes".into(), json!(((deja + ma_duree) * 10.0).round() / 10.0));
-    trace.insert("hors_ligne".into(), json!(etait_hors_ligne || r.hors_ligne));
+    trace.sauvegarde = r.sauvegarde.as_ref().map(Sauvegarde::resume);
+    trace.sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
+    trace.secondes = ((trace.secondes + ma_duree) * 10.0).round() / 10.0;
+    trace.hors_ligne = trace.hors_ligne || r.hors_ligne;
     // La sauvegarde qui ne passe pas ne tait plus la ligne des retours : la releve, elle, est passee.
-    let mut injoignables = liste("injoignables");
-    injoignables.extend(r.injoignables.iter().map(|i| json!(i)));
-    trace.insert("injoignables".into(), Value::Array(injoignables));
-    let mut incidents = liste("incidents");
-    incidents.extend(r.incidents.iter().map(|i| json!(i)));
-    trace.insert("incidents".into(), Value::Array(incidents));
-    let mut a_poser = liste("a_poser");
-    a_poser.extend(r.a_poser.iter().map(|i| json!(i)));
-    trace.insert("a_poser".into(), Value::Array(a_poser));
-    let mut manquants = liste("manquants");
-    manquants.extend(r.manquants.iter().filter(|m| !r.phrases_coffre.contains(m)).map(|m| json!(m)));
-    trace.insert("manquants".into(), Value::Array(manquants));
-    let _ = socle::ecriture::ecrire_json(&chemin_trace(ctx), &Value::Object(trace), 1);
+    trace.injoignables.extend(r.injoignables.iter().cloned());
+    trace.incidents.extend(r.incidents.iter().cloned());
+    trace.a_poser.extend(r.a_poser.iter().cloned());
+    trace.manquants.extend(r.manquants.iter().filter(|m| !r.phrases_coffre.contains(m)).cloned());
+    let _ = socle::ecriture::ecrire_json(&chemin_trace(ctx), &trace, 1);
 }
 
 // ------------------------------------------------------------------ l'ouverture
@@ -559,19 +707,27 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let mut signatures = opt.signatures;
     // La trace d'avant ce passage : `pas_avant` la lit, la seconde moitie de la
     // veille la complete.
-    let precedente = derniere_ouverture(&ctx.racine);
+    let precedente = match derniere_ouverture(&ctx.racine) {
+        Ok(p) => p,
+        Err(e) => {
+            r.incidents.push(format!("Trace de l'ouverture : {}", e.message));
+            None
+        }
+    };
 
     if opt.sauvegarde_seule {
-        return sauvegarder_seulement(ctx, opt, clients, r, debut, &precedente);
+        return sauvegarder_seulement(ctx, opt, clients, r, debut, precedente);
     }
 
-    if opt.pas_avant > 0 {
-        if let Some(age) = age_de_la_derniere(&precedente) {
-            if age < opt.pas_avant * 60 {
+    if let (true, Some(p)) = (opt.pas_avant > 0, &precedente) {
+        match age_de_la_derniere(p) {
+            Ok(age) if age < opt.pas_avant * 60 => {
                 r.incidents.push(format!("Ouverture deja faite il y a {} minute(s) : rien a refaire.", age.div_euclid(60)));
                 r.retenue = true;
                 return r;
             }
+            Ok(_) => {}
+            Err(e) => r.incidents.push(e.message),
         }
     }
 
@@ -669,7 +825,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     // copie de developpement (ses refus sont ceux qu'on provoque pour essayer), mais depuis une compagnie fictive. Et les
     // reponses de l'editeur aux signalements de ce poste. Pas pendant les tests (`PUPPETPAIE_INCIDENTS` pose : le journal est
     // celui d'un bac a sable). C'est fait avant de rendre la main.
-    let bac_a_sable = std::env::var("PUPPETPAIE_INCIDENTS").is_ok_and(|v| !v.is_empty());
+    let bac_a_sable = matches!(std::env::var("PUPPETPAIE_INCIDENTS"), Ok(v) if !v.is_empty());
     if opt.filet && opt.incidents_editeur && !bac_a_sable && (!copie || crate::interface::compagnies::est_fictive(&ctx.racine)) {
         dire_l_etape(ctx, "Serveur de l'éditeur : incidents, messages et réponses…");
         let _ = crate::compagnie::incidents::envoyer(&ctx.racine);
@@ -696,7 +852,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
 /// `sauvegarde_seule` : la seconde moitie de la veille. La copie de developpement et la compagnie fictive ne sauvegardent pas
 /// (rien a faire, la trace n'est pas touchee) ; sinon la sauvegarde, en dernier, et la trace du premier appel completee.
-fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut r: Ouverture, debut: std::time::Instant, precedente: &Value) -> Ouverture {
+fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut r: Ouverture, debut: std::time::Instant, precedente: Option<Trace>) -> Ouverture {
     let ne_sauvegarde_pas = !opt.sauvegarder || est_copie(&ctx.racine) || crate::compagnie::bridage::branchement(&ctx.racine).joue();
     if ne_sauvegarde_pas {
         return r;
@@ -800,20 +956,29 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         r.manque_coffre(
             "Compte Google non lie : la sauvegarde ne peut pas partir. Lier le Drive : Configuration > Mots de passe, ou la route google-autoriser.",
         );
-    } else if opt.veille && sauvegarde::rien_n_a_bouge(&ctx.racine, &opt.racine_drive) {
-        // rien de neuf sur le disque : on n'appelle pas
-    } else {
-        dire_l_etape(ctx, "Google Drive : sauvegarde du dossier…");
-        let drive: Option<&mut dyn Drive> = match clients.drive.as_mut() {
-            Some(d) => Some(&mut **d),
-            None => None,
-        };
-        match sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
-            // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
-            // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
-            // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.
-            Ok(s) => r.sauvegarde = Some(s),
-            Err(e) => r.incidents.push(format!("Sauvegarde : {}", e)),
+        return;
+    }
+    if opt.veille {
+        match sauvegarde::rien_n_a_bouge(&ctx.racine, &opt.racine_drive) {
+            // rien de neuf sur le disque : on n'appelle pas
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(e) => {
+                r.incidents.push(format!("Sauvegarde : {}", e));
+                return;
+            }
         }
+    }
+    dire_l_etape(ctx, "Google Drive : sauvegarde du dossier…");
+    let drive: Option<&mut dyn Drive> = match clients.drive.as_mut() {
+        Some(d) => Some(&mut **d),
+        None => None,
+    };
+    match sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
+        // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
+        // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
+        // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.
+        Ok(s) => r.sauvegarde = Some(s),
+        Err(e) => r.incidents.push(format!("Sauvegarde : {}", e)),
     }
 }

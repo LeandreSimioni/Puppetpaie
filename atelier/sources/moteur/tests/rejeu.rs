@@ -472,7 +472,7 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
         assert!(etats.contains(&"fait") && etats.iter().all(|x| *x == "fait" || *x == "rien"), "{} : {}", mois, e["phrase"]);
     }
     let exercices = outils::lire(&racine, "config/exercices.json");
-    assert_eq!(exercices["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
+    assert_eq!(exercices["clos"]["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
 
     // LE RELEVE, compare a l'oracle : chaque paie (brut, net, cout, et son PAS : taux, type, prelevement), chaque DSN
     // (chaque individu : contrat, taux et type de PAS, montant preleve ; chaque versement), chaque depot.

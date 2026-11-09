@@ -111,8 +111,8 @@ pub fn question(racine: &Path) -> Result<Value, String> {
     if g == Genre::Reelle {
         v["conservation"] = json!(CONSERVATION);
         let liee = racine.join(socle::fichiers::CONFIG).join(crate::routes::coffre::FICHIER_JETON).is_file();
-        let derniere = crate::compagnie::sauvegarde::derniere(racine).quand;
-        let phrase = match derniere.as_str().filter(|q| !q.is_empty()) {
+        let derniere = crate::compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
+        let phrase = match &derniere {
             Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", crate::routes::quand(q)),
             None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),
         };

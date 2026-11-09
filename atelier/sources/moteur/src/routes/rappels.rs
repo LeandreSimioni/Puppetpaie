@@ -759,7 +759,7 @@ fn annuelles(st: &Etat, base: &EcheancierBase) -> R<Vec<Echeance>> {
 
 /// L'export compta de l'annee passee : du des janvier, tant que l'annee n'est pas close et que l'export n'est pas a jour.
 fn export_compta(st: &Etat, annee: i32) -> R<Option<Echeance>> {
-    if annee != st.aujourdhui.an - 1 || crate::compagnie::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, &annee.to_string()) {
+    if annee != st.aujourdhui.an - 1 || crate::compagnie::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, &annee.to_string())? {
         return Ok(None);
     }
     let mut r = Echeance::nouveau(
@@ -780,7 +780,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     let cle = e.cle.as_str();
     let precedente = annee - 1;
     // La cloture d'une annee dont aucun mois n'est dans PuppetPaie (tenue ailleurs) ne concerne pas ce dossier.
-    if e.fait_par == FaitPar::ExerciceClos && mois_de_l_annee(ctx, &precedente.to_string()).is_empty() {
+    if e.fait_par == FaitPar::ExerciceClos && mois_de_l_annee(ctx, &precedente.to_string())?.is_empty() {
         return Ok(None);
     }
     // Une revue des spectacles sans spectacle n'a rien a revoir.
@@ -1022,10 +1022,10 @@ pub(crate) fn exercice_clos(ctx: &Contexte, annee: &str) -> R<Option<crate::comp
 }
 
 /// Les mois de l'annee connus du dossier.
-pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: &str) -> Vec<String> {
-    let mut v: Vec<String> = super::ouverture::mois_connus(&ctx.racine).into_iter().map(|m| m.0).filter(|m| m.starts_with(annee)).collect();
+pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: &str) -> R<Vec<String>> {
+    let mut v: Vec<String> = super::ouverture::mois_connus(&ctx.racine)?.into_iter().map(|m| m.0).filter(|m| m.starts_with(annee)).collect();
     v.sort();
-    v
+    Ok(v)
 }
 
 /// `spectacles_a_revoir` : les spectacles actifs, tant que la revue de l'annee
@@ -1105,7 +1105,7 @@ fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
     let dossier = st.racine().join("sorties").join(mois);
-    if !crate::compagnie::depart::mois_ecrit(st.racine(), mois) || !dossier.is_dir() {
+    if !crate::compagnie::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }
     let disque = |e: std::io::Error| erreur(Classe::du_disque(&e), socle::echec::du_disque(&dossier, &e));

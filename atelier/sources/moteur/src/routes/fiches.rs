@@ -247,7 +247,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
         Route::SauvegardeMaintenant => {
             let super::SansCharge {} = charge.lire()?;
-            let faite: SauvegardeFaite = sauvegarde_maintenant(ctx);
+            let faite: SauvegardeFaite = sauvegarde_maintenant(ctx)?;
             en_json(faite)
         }
         Route::FichesRelever => {
@@ -280,7 +280,7 @@ struct FicheActivee {
 #[derive(Debug, serde::Serialize)]
 struct SauvegardeFaite {
     phrase: String,
-    sauvegarde: crate::compagnie::sauvegarde::Derniere,
+    sauvegarde: Option<crate::compagnie::sauvegarde::Derniere>,
     erreur: Option<String>,
 }
 
@@ -320,18 +320,18 @@ impl Dite for Permanents {
 }
 
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`compagnie::ouverture`).
-fn sauvegarde_maintenant(ctx: &Contexte) -> SauvegardeFaite {
+fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     use crate::compagnie::ouverture::{ouverture, Clients, Options};
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
     let r = ouverture(ctx, &opt, Clients::default(), None);
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
-    let s = crate::compagnie::sauvegarde::derniere(&ctx.racine);
-    let phrase = match (erreurs.is_empty(), s.quand.as_str().filter(|q| !q.is_empty())) {
+    let s = crate::compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, message: e.message })?;
+    let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),
-        (true, Some(q)) => format!("Dernière sauvegarde : {}, {} fichiers.", q, s.fichiers),
+        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", d.quand, d.fichiers),
     };
-    SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) }
+    Ok(SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) })
 }
 
 // ------------------------------------------------------------------ l'effectif

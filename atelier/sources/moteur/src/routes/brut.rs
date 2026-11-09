@@ -3,8 +3,6 @@
 //! tirent d'une valeur. Une route branchee n'en prend rien : elle lit sa charge en sa forme (`Charge::lire`) et rend la
 //! sienne (`enveloppe::Dite`). Ce module s'efface avec le dernier module qui s'en sert.
 
-use std::path::Path;
-
 use serde_json::{json, Map, Value};
 
 use crate::valeur::valeur_en_texte;
@@ -70,11 +68,4 @@ pub(crate) fn jour_en_clair(v: &Value) -> String {
 /// Le nom d'un salarie tel qu'un ecran le montre (`ChampsSalarie::nomme`), vide pour une fiche sans nom.
 pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie) -> String {
     sal.nomme().unwrap_or_default()
-}
-
-/// Un fichier lu en UTF-8 : un refus du disque sous sa classe (`FichierAbsent`, `Disque`), un texte qui n'est pas de
-/// l'UTF-8 `Illisible`.
-pub(crate) fn lire_texte(p: &Path) -> R<String> {
-    let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(p, &e)))?;
-    String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&p, &e)))
 }

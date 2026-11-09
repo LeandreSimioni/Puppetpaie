@@ -166,13 +166,13 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     }
     let empreinte = hex(toute);
     let mut en_plus = Vec::new();
-    let mut posees = serde_json::Map::new();
+    let mut posees = std::collections::BTreeMap::new();
     for (nom, h) in par_fictive {
         let e = hex(h);
-        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{{\"empreinte\": \"{}\"}}\n", e).into_bytes()));
-        posees.insert(nom, json!(e));
+        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&crate::compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
+        posees.insert(nom, e);
     }
-    let l = serde_json::to_vec_pretty(&json!({"empreinte": empreinte, "posees": posees})).map_err(|e| e.to_string())?;
+    let l = socle::ecriture::json_indente(&crate::compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
     en_plus.push((format!("{}/{}", racine, LIVRAISON), l));
     Ok((entrees, en_plus, empreinte))
 }
@@ -343,14 +343,30 @@ pub(crate) fn exiger_editeur(racine: &Path, quoi: &str) -> R<()> {
 /// Chez l'editeur : la paire de cles qui signe les archives. La privee, scellee par la cle maitresse du coffre (refuse
 /// sans mot de passe du logiciel : elle serait perdue avec le poste) ; la publique, rendue, a reporter dans `CLE_PUBLIQUE`.
 /// Une cle qui existe deja n'est jamais remplacee sans `remplacer`.
-pub fn generer_cle(racine: &Path, remplacer: bool) -> R<Value> {
+/// La cle de signature posee : ou, sa cle publique, et si le code porte deja celle-ci (`CLE_PUBLIQUE`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClePosee {
+    pub chemin: String,
+    pub cle_publique: String,
+    pub correspond: bool,
+}
+
+/// La cle de GitHub fabriquee : le fichier de la graine (secrete), celui de la cle publique, et la cle publique.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CleDeGithub {
+    pub graine: String,
+    pub publique: String,
+    pub cle_publique: String,
+}
+
+pub fn generer_cle(racine: &Path, remplacer: bool) -> R<ClePosee> {
     exiger_editeur(racine, "la cle de signature")?;
     generer_cle_au_poste(&Coffre::du_poste(racine, ""), remplacer)
 }
 
 /// `generer_cle`, le poste donne (`coffre` : la compagnie et la cle de ce poste). Le reglage de l'installation (« ce poste
 /// est celui de l'editeur ») se regarde dans `generer_cle` ; ici, seule une copie est refusee.
-pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<Value> {
+pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<ClePosee> {
     let racine = coffre.racine.as_path();
     if crate::interface::compagnies::est_copie(racine) {
         return Err("Copie de developpement : la cle de signature ne part jamais d'ici.".into());
@@ -368,7 +384,7 @@ pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<Value> {
     let publique = socle::base64::ecrire(k.verifying_key().as_bytes());
     let scelle = coffre.proteger_par_le_coffre(&graine, DESCRIPTION_CLE).map_err(|e| e.message)?;
     ecrire_cle(&chemin, &scelle)?;
-    Ok(json!({"chemin": chemin.display().to_string(), "cle_publique": publique, "correspond": publique == CLE_PUBLIQUE}))
+    Ok(ClePosee { chemin: chemin.display().to_string(), correspond: publique == CLE_PUBLIQUE, cle_publique: publique })
 }
 
 /// Chez l'editeur : les archives signees et `derniere.json` dans le depot (un dossier).
@@ -391,17 +407,14 @@ pub fn publier(racine: &Path, depot: Option<&str>, notes: &str, calcul: &str, ex
 /// signees ni nommees, rendues sous `installations`. Le moteur livre n'y passe que par `publier` (la cle du poste, `CLE_PUBLIQUE`) ;
 /// les essais de bout en bout y passent une cle d'essai (`tests/fichiers/mise_a_jour.rs`).
 pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
-    let version = courante(c);
-    if version == "0.0.0" {
-        return Err(format!("pas de fichier VERSION dans {}", c.display()));
-    }
+    let version = courante(c)?;
     let depot = d.display().to_string();
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
         let avant = derniere_lue(&lire_depot(&depot, DERNIERE)?)?;
         let av = avant.version.as_str();
-        if !plus_recente(&version, av) {
+        if !plus_recente(&version, av)? {
             return Err(format!(
                 "le depot est deja en {} ; augmenter VERSION (aujourd'hui {}, le fichier s'ecrit AAAA.MM.JJ : {}) avant de publier",
                 version_lue(av),
@@ -431,7 +444,7 @@ pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, note
             return Err("la cle privee de ce poste ne correspond pas a la cle publique du code : refaire `moteur maj --cle` et reporter la cle publique".into());
         }
         let nom = nom_d_archive(&version, systeme);
-        let systemes = if systeme == TOUT_SYSTEME { presents.iter().map(|s| s.to_string()).collect() } else { Vec::new() };
+        let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
         archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: condensat(&octets), signature, systemes });
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
@@ -498,7 +511,7 @@ impl Publication {
 /// secret `PUPPETPAIE_CLE_SIGNATURE` de l'environnement `publication`, puis efface ; elle ne passe jamais a l'ecran ni
 /// dans un journal. La cle PUBLIQUE (pas secrete) va dans `cle-github-publique.txt` et dans ce qui est rendu : elle se
 /// reporte dans `CLE_PUBLIQUE_GITHUB`. Refuse si la graine d'une cle precedente est encore la (rien n'est ecrase).
-pub fn generer_cle_github(dossier: &Path) -> R<Value> {
+pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     let fichier = dossier.join("cle-github-graine.txt");
     let fichier_publique = dossier.join("cle-github-publique.txt");
     if fichier.exists() {
@@ -522,7 +535,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<Value> {
     f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| e.to_string())?;
     graine.fill(0);
     std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| e.to_string())?;
-    Ok(json!({"graine": fichier.display().to_string(), "publique": fichier_publique.display().to_string(), "cle_publique": publique}))
+    Ok(CleDeGithub { graine: fichier.display().to_string(), publique: fichier_publique.display().to_string(), cle_publique: publique })
 }
 
 /// `publier_signe` depuis une graine en base64 (celle du secret de GitHub), verifiee contre `cle_publique` : refuse si

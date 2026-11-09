@@ -48,7 +48,11 @@ impl Veille {
     }
 
     fn derniere(&self) -> Value {
-        crate::compagnie::ouverture::derniere_ouverture(&self.racine)
+        match crate::compagnie::ouverture::derniere_ouverture(&self.racine) {
+            Ok(Some(t)) => json!(t),
+            Ok(None) => json!({}),
+            Err(e) => json!({"erreur": e.message}),
+        }
     }
 
     /// Ou en est le passage, sans rien lancer (`veille-etape`) : une lecture de drapeaux et d'un petit fichier, que la page
@@ -57,7 +61,14 @@ impl Veille {
     pub fn etape(&self) -> Value {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
         let sauvegarde = self.sauvegarde_en_cours.load(Ordering::SeqCst);
-        let etape = if en_cours || sauvegarde { crate::compagnie::ouverture::etape_en_cours(&self.racine) } else { None };
+        let etape = if en_cours || sauvegarde {
+            match crate::compagnie::ouverture::etape_en_cours(&self.racine) {
+                Ok(e) => e,
+                Err(e) => Some(e.message),
+            }
+        } else {
+            None
+        };
         json!({"en_cours": en_cours, "sauvegarde_en_cours": sauvegarde, "etape": etape})
     }
 
@@ -75,7 +86,10 @@ impl Veille {
             "prochain_dans": prochain,
             "dernier": dernier,
             "erreur": self.erreur.lock().map(|e| e.clone()).unwrap_or_default(),
-            "sauvegarde": crate::compagnie::sauvegarde::derniere(&self.racine).en_json(),
+            "sauvegarde": match crate::compagnie::sauvegarde::derniere(&self.racine) {
+                Ok(d) => json!(d),
+                Err(e) => json!({"erreur": e.message}),
+            },
             "coffre": coffre.get("services").cloned().unwrap_or_else(|| json!([])),
             "mot_de_passe_pose": coffre.get("mot_de_passe_pose").cloned().unwrap_or(Value::Bool(false)),
         })

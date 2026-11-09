@@ -811,7 +811,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             Ok(true)
         }),
         Geste::Export { annee } => pas(d, quoi, quand, |ctx| {
-            if !Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &annee.to_string()) {
+            if !Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &annee.to_string())? {
                 return Ok(false);
             }
             crate::compagnie::exercice_ecrit::export_compta(ctx, &annee.to_string(), 1, 12, true)?;
@@ -990,7 +990,7 @@ fn annee_finie(d: &HorlogeFictive, annee: i32) -> R<bool> {
     if !engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.iter().any(|m| m.annee() == annee) {
         return Ok(true);
     }
-    Ok(Moteur::nouveau(&ctx).exercice_clos(&a)? && crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a))
+    Ok(Moteur::nouveau(&ctx).exercice_clos(&a)? && crate::compagnie::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a)?)
 }
 
 // ------------------------------------------------------------------ les routes

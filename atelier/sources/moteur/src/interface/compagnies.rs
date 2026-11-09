@@ -78,6 +78,11 @@ pub const DOSSIER_FICTIVES: &str = "fictives";
 /// Le marqueur d'une compagnie fictive : `COPIE-DE-DEVELOPPEMENT.json`, dont `copie_de` commence par ceci.
 pub const MARQUE_FICTIVE: &str = "compagnie fictive";
 
+/// Ce que le marqueur d'une copie dit qu'elle copie (`copie_de`), s'il le dit.
+pub fn copie_de(racine: &Path) -> Option<String> {
+    lire(&racine.join(MARQUEUR)).and_then(|i| i.get("copie_de").filter(|v| crate::valeur::vrai(v)).map(crate::valeur::valeur_en_texte))
+}
+
 /// Une COMPAGNIE FICTIVE : son marqueur le dit (ses envois sont joues, rien n'en part).
 pub fn est_fictive(racine: &Path) -> bool {
     lire(&racine.join(MARQUEUR))

@@ -22,7 +22,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
-use serde_json::{json, Map, Value};
 
 use envois::drive::{Client, Drive, ErreurGoogle};
 
@@ -164,17 +163,6 @@ impl Sauvegarde {
         }
         format!("Sauvegarde : {} fichier(s) envoye(s), {}, {} inchange(s){}.", self.deposes.len(), lisible(self.octets_deposes), self.identiques, reporte)
     }
-
-    /// Ce que `commandes_ouverture._en_json` en lit : `resume`, `deposes` (les chemins relatifs),
-    /// `identiques`, `octets`.
-    pub fn en_json(&self) -> Value {
-        json!({
-            "resume": self.resume(),
-            "deposes": self.deposes.iter().map(|f| f.relatif.clone()).collect::<Vec<_>>(),
-            "identiques": self.identiques,
-            "octets": self.octets_deposes,
-        })
-    }
 }
 
 /// « 1 dossier reporte », « 2 fichiers reportes », « 1 dossier et 2 fichiers reportes ».
@@ -226,52 +214,58 @@ fn depuis_quand(depuis: i64, maintenant: i64) -> String {
     }
 }
 
-/// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive.
-fn naif(quand: &str) -> Option<i64> {
-    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1))
+/// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive ; une heure qui ne se lit pas abime l'index.
+fn naif(quand: &str) -> Result<i64, ErreurGoogle> {
+    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::APart { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
-fn phrase_persistante(index: &Map<String, Value>, maintenant: i64) -> Option<String> {
-    let echecs = index.get("echecs").and_then(Value::as_object).filter(|e| !e.is_empty())?;
+fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<String>, ErreurGoogle> {
+    let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
-    let tous: Vec<(&String, i64, &str, bool)> = echecs
-        .iter()
-        .map(|(cle, e)| {
-            let depuis = e.get("depuis").and_then(Value::as_str).and_then(naif).unwrap_or(maintenant);
-            let passages = e.get("passages").and_then(Value::as_i64).unwrap_or(1);
-            let cause = e.get("cause").and_then(Value::as_str).unwrap_or(GOOGLE_REFUSE);
-            (cle, depuis, cause, passages >= PASSAGES_QUI_DURENT || maintenant - depuis >= UNE_JOURNEE)
-        })
-        .collect();
-    let complete = index.get("derniere_complete").and_then(Value::as_str).and_then(naif);
+    let mut tous: Vec<(&String, i64, &str, bool)> = Vec::new();
+    for (cle, e) in echecs {
+        let depuis = naif(&e.depuis)?;
+        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant - depuis >= UNE_JOURNEE));
+    }
+    let complete = match &index.derniere_complete {
+        Some(c) => Some(naif(c)?),
+        None => None,
+    };
     let durent: Vec<_> = tous.iter().filter(|t| t.3).collect();
-    let (retenus, depuis, par_l_item): (Vec<_>, i64, bool) = if !durent.is_empty() {
-        let depuis = durent.iter().map(|t| t.1).min().unwrap_or(maintenant);
-        (durent, depuis, true)
+    let (retenus, par_l_item): (Vec<_>, bool) = if !durent.is_empty() {
+        (durent, true)
     } else {
         match complete.filter(|c| maintenant - c >= UNE_JOURNEE) {
-            Some(c) => (tous.iter().collect(), c, false),
-            None => return None,
+            Some(_) => (tous.iter().collect(), false),
+            None => return Ok(None),
         }
     };
     let nd = retenus.iter().filter(|t| t.0.ends_with('/')).count();
     let nf = retenus.len() - nd;
-    // La cause du plus ancien.
-    let cause = retenus.iter().min_by_key(|t| t.1).map(|t| t.2).unwrap_or(GOOGLE_REFUSE);
+    // Le plus ancien : sa cause, et depuis quand (le plus ancien qui dure, ou la derniere sauvegarde complete).
+    let Some(ancien) = retenus.iter().min_by_key(|t| t.1) else { return Ok(None) };
+    let depuis = match (par_l_item, complete) {
+        (false, Some(c)) => c,
+        _ => ancien.1,
+    };
     let quand = depuis_quand(depuis, maintenant);
-    Some(if par_l_item {
-        format!("Sauvegarde : {} {} ({}) ; le logiciel réessaie.", ce_qui_manque(nd, nf), quand, cause)
+    Ok(Some(if par_l_item {
+        format!("Sauvegarde : {} {} ({}) ; le logiciel réessaie.", ce_qui_manque(nd, nf), quand, ancien.2)
     } else {
-        format!("Sauvegarde : {} ({}), pas de sauvegarde complète {} ; le logiciel réessaie.", ce_qui_manque(nd, nf), cause, quand)
-    })
+        format!("Sauvegarde : {} ({}), pas de sauvegarde complète {} ; le logiciel réessaie.", ce_qui_manque(nd, nf), ancien.2, quand)
+    }))
 }
 
 /// `souci` : ce qui persiste de la sauvegarde, dit en clair (« Sauvegarde : un dossier n'a pas pu être envoyé depuis hier
-/// (Google indisponible) ; le logiciel réessaie. »), ou `None` si tout est passe, ou si ce n'est que passager. SANS RESEAU :
-/// lu dans l'index. La trace de l'ouverture le porte (`sauvegarde_souci`), la fenetre le montre a la place de la sauvegarde.
-pub fn souci(racine: &Path) -> Option<String> {
-    phrase_persistante(&lire_index(racine), socle::paris::maintenant_naif())
+/// (Google indisponible) ; le logiciel réessaie. »), ou `None` si tout est passe, ou si ce n'est que passager, ou si
+/// aucune sauvegarde n'est partie. SANS RESEAU : lu dans l'index. La trace de l'ouverture le porte (`sauvegarde_souci`),
+/// la fenetre le montre a la place de la sauvegarde.
+pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
+    match lire_index(racine)? {
+        Some(index) => phrase_persistante(&index, socle::paris::maintenant_naif()),
+        None => Ok(None),
+    }
 }
 
 fn lisible(octets: u64) -> String {
@@ -287,7 +281,8 @@ fn lisible(octets: u64) -> String {
 // ---------------------------------------------------------------- l'inventaire
 
 /// La taille et la date de modification (secondes entieres) d'un fichier (`inventaire`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Etat {
     pub octets: u64,
     pub mtime: i64,
@@ -296,8 +291,8 @@ pub struct Etat {
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
 /// (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie.
 pub(crate) fn ecarte(relatif: &Path) -> bool {
-    let nom = relatif.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if NOMS_EXCLUS.contains(&nom.as_str()) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s)) {
+    let exclu = |nom: &str| NOMS_EXCLUS.contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s));
+    if relatif.file_name().is_some_and(|n| exclu(&n.to_string_lossy())) {
         return true;
     }
     relatif.components().any(|c| DOSSIERS_EXCLUS.contains(&c.as_os_str().to_string_lossy().as_ref()))
@@ -318,30 +313,38 @@ pub fn empreinte(chemin: &Path) -> std::io::Result<String> {
     Ok(h.finalize().iter().map(|b| format!("{:02x}", b)).collect())
 }
 
-/// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un
-/// dossier lien n'est pas suivi ; un dossier illisible est passe sans bruit (comme `rglob`).
-fn parcourir(racine: &Path, dossier: &Path, sortie: &mut Vec<PathBuf>) {
-    let Ok(entrees) = std::fs::read_dir(dossier) else { return };
-    for e in entrees.flatten() {
+/// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas
+/// suivi. Un dossier qui disparait pendant le parcours (`engagements/avant/` ne garde que les dernieres copies) n'a plus
+/// rien a sauver ; un dossier qui ne se lit pas arrete l'inventaire.
+fn parcourir(racine: &Path, dossier: &Path, sortie: &mut Vec<PathBuf>) -> Result<(), ErreurGoogle> {
+    let entrees = match std::fs::read_dir(dossier) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(ErreurGoogle::fichier(&e, dossier)),
+    };
+    for e in entrees {
+        let e = e.map_err(|x| ErreurGoogle::fichier(&x, dossier))?;
         let chemin = e.path();
-        match e.file_type() {
-            Ok(t) if t.is_dir() => parcourir(racine, &chemin, sortie),
-            Ok(_) => {
-                if let Ok(rel) = chemin.strip_prefix(racine) {
-                    sortie.push(rel.to_path_buf());
-                }
-            }
-            Err(_) => {}
+        let genre = match e.file_type() {
+            Ok(t) => t,
+            Err(x) if x.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(x) => return Err(ErreurGoogle::fichier(&x, &chemin)),
+        };
+        if genre.is_dir() {
+            parcourir(racine, &chemin, sortie)?;
+        } else if let Ok(rel) = chemin.strip_prefix(racine) {
+            sortie.push(rel.to_path_buf());
         }
     }
+    Ok(())
 }
 
 /// `inventaire` : les fichiers triés par chemin (composante par
 /// composante, pas en texte : `a/x` passe avant `a b/x`), et le nombre d'ecartes. Ne lit aucun
-/// contenu.
-pub fn inventaire(racine: &Path) -> (Vec<(String, Etat)>, usize) {
+/// contenu. Un fichier qui disparait entre le parcours et sa lecture n'est plus a sauver.
+pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurGoogle> {
     let mut chemins = Vec::new();
-    parcourir(racine, racine, &mut chemins);
+    parcourir(racine, racine, &mut chemins)?;
     chemins.sort();
     let (mut trouves, mut ecartes) = (Vec::new(), 0);
     for rel in chemins {
@@ -353,11 +356,15 @@ pub fn inventaire(racine: &Path) -> (Vec<(String, Etat)>, usize) {
             ecartes += 1;
             continue;
         }
-        let Ok(m) = std::fs::metadata(&complet) else { continue };
+        let m = match std::fs::metadata(&complet) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(ErreurGoogle::fichier(&e, &complet)),
+        };
         let relatif = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
         trouves.push((relatif, Etat { octets: m.len(), mtime: socle::paris::mtime(&m) as i64 }));
     }
-    (trouves, ecartes)
+    Ok((trouves, ecartes))
 }
 
 // --------------------------------------------------------------------- l'index
@@ -368,16 +375,46 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
     racine.join(socle::fichiers::CONFIG).join(INDEX)
 }
 
-/// `{}` si le fichier manque ou ne se lit pas comme du JSON.
-fn lire_index(racine: &Path) -> Map<String, Value> {
-    let Ok(octets) = std::fs::read(chemin_index(racine)) else { return Map::new() };
-    match serde_json::from_slice::<Value>(&octets) {
-        Ok(Value::Object(o)) => o,
-        _ => Map::new(),
-    }
+/// L'INDEX DE LA SAUVEGARDE (`config/.sauvegarde.json`) : quand le dernier passage s'est fait, vers quelle racine du
+/// Drive, les identifiants des dossiers Drive (par chemin `racine/sauvegarde/…`), l'etat de chaque fichier passe ; et, s'il
+/// reste un echec, la derniere sauvegarde complete et ce qui reste en echec (`souci`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Index {
+    pub quand: String,
+    pub racine_drive: String,
+    pub dossiers: BTreeMap<String, String>,
+    pub fichiers: BTreeMap<String, Etat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derniere_complete: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub echecs: Option<BTreeMap<String, EchecIndexe>>,
 }
 
-pub(crate) fn ecrire_index(racine: &Path, index: &Value) -> Result<(), ErreurGoogle> {
+/// Ce qui reste en echec d'un passage a l'autre : depuis quand, combien de passages, la cause en clair (`cause_de`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EchecIndexe {
+    pub depuis: String,
+    pub passages: i64,
+    pub cause: String,
+}
+
+/// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
+fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
+    ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part))
+}
+
+/// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
+fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
+    let p = chemin_index(racine);
+    if !p.exists() {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::nouvelle(Classe::Illisible, m))
+}
+
+pub(crate) fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
     socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, e))
 }
 
@@ -388,58 +425,30 @@ pub(crate) fn ecrire_index(racine: &Path, index: &Value) -> Result<(), ErreurGoo
 /// `racine_drive` compte : un index ecrit pour une autre racine
 /// du Drive (`--racine-drive`) laisserait la veille croire que tout est sauvegarde la ou on l'attend. Un index d'une autre
 /// racine (ou qui n'en dit aucune) donne non.
-pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> bool {
-    let index = lire_index(racine);
-    if index.get("racine_drive").and_then(Value::as_str) != Some(racine_drive) {
-        return false;
+pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> Result<bool, ErreurGoogle> {
+    let Some(index) = lire_index(racine)? else { return Ok(false) };
+    if index.racine_drive != racine_drive || index.fichiers.is_empty() {
+        return Ok(false);
     }
-    let Some(Value::Object(connus)) = index.get("fichiers") else { return false };
-    if connus.is_empty() {
-        return false;
+    let connus = &index.fichiers;
+    let (presents, _) = inventaire(racine)?;
+    if presents.len() != connus.len() {
+        return Ok(false);
     }
-    let (presents, _) = inventaire(racine);
-    if presents.len() != connus.len() || presents.iter().any(|(r, _)| !connus.contains_key(r)) {
-        return false;
-    }
-    presents.iter().all(|(relatif, etat)| {
-        let ancien = &connus[relatif];
-        egal(ancien.get("octets"), etat.octets as f64) && egal(ancien.get("mtime"), etat.mtime as f64)
-    })
+    Ok(presents.iter().all(|(relatif, etat)| connus.get(relatif) == Some(etat)))
 }
 
-/// Un nombre JSON egal a `x`, entier ou flottant (`5` et `5.0`).
-fn egal(v: Option<&Value>, x: f64) -> bool {
-    v.and_then(Value::as_f64).is_some_and(|a| a == x)
-}
-
-/// Ce que dit l'index du dernier passage (`derniere`) : quand, combien. Pour l'affichage.
+/// Ce que dit l'index du dernier passage (`derniere`) : quand, combien, vers quelle racine du Drive. Pour l'affichage.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Derniere {
-    /// Tel que l'index le porte (un texte, en pratique).
-    pub quand: Value,
+    pub quand: String,
     pub fichiers: usize,
-    /// La racine du Drive, vide si l'index n'en dit pas.
-    pub racine_drive: Value,
+    pub racine_drive: String,
 }
 
-impl Derniere {
-    /// `{"quand", "fichiers", "racine_drive"}`.
-    pub fn en_json(&self) -> Value {
-        json!({"quand": self.quand, "fichiers": self.fichiers, "racine_drive": self.racine_drive})
-    }
-}
-
-pub fn derniere(racine: &Path) -> Derniere {
-    let index = lire_index(racine);
-    let brut = |c: &str| index.get(c).cloned().unwrap_or_else(|| json!(""));
-    // Le nombre de fichiers de l'index.
-    let fichiers = match index.get("fichiers") {
-        Some(Value::Object(o)) => o.len(),
-        Some(Value::Array(a)) => a.len(),
-        Some(Value::String(t)) => t.chars().count(),
-        _ => 0,
-    };
-    Derniere { quand: brut("quand"), fichiers, racine_drive: brut("racine_drive") }
+/// Le dernier passage, ou `None` si aucune sauvegarde n'est encore partie.
+pub fn derniere(racine: &Path) -> Result<Option<Derniere>, ErreurGoogle> {
+    Ok(lire_index(racine)?.map(|i| Derniere { fichiers: i.fichiers.len(), quand: i.quand, racine_drive: i.racine_drive }))
 }
 
 // ---------------------------------------------------------------- le passage
@@ -458,11 +467,11 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             &mut propre
         }
     };
-    let (presents, ecartes) = inventaire(racine);
-    let index = lire_index(racine);
-    let mut dossiers: Map<String, Value> = match index.get("dossiers") {
-        Some(Value::Object(o)) if !tout => o.clone(),
-        _ => Map::new(),
+    let (presents, ecartes) = inventaire(racine)?;
+    let index = lire_index(racine)?;
+    let mut dossiers: BTreeMap<String, String> = match &index {
+        Some(i) if !tout => i.dossiers.clone(),
+        _ => BTreeMap::new(),
     };
 
     let mut resultat = Sauvegarde {
@@ -491,7 +500,10 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     // Par dossier : un seul listage Drive sert a tous les fichiers qu'il porte.
     let mut par_dossier: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (relatif, _) in &presents {
-        let parent = relatif.rfind('/').map(|i| &relatif[..i]).unwrap_or(".");
+        let parent = match relatif.rfind('/') {
+            Some(i) => &relatif[..i],
+            None => ".",
+        };
         par_dossier.entry(parent.to_string()).or_default().push(relatif.clone());
     }
 
@@ -507,12 +519,11 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             continue;
         }
         let essai: Result<(String, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
-            let connu = dossiers.get(&cle).and_then(Value::as_str).filter(|p| !p.is_empty()).map(str::to_string);
-            let parent = match connu {
-                Some(p) => p,
+            let parent = match dossiers.get(&cle) {
+                Some(p) => p.clone(),
                 None => client.chemin(&segments)?,
             };
-            dossiers.insert(cle.clone(), json!(parent));
+            dossiers.insert(cle.clone(), parent.clone());
             // Meme avec `tout`, on liste : c'est `lister` qui dit ce qui existe, donc ce qui se REMPLACE (aucune
             // recherche par fichier). `tout` ne sert qu'a ne pas comparer les empreintes.
             let deja = client.lister(&parent)?;
@@ -526,7 +537,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                     // rien de ce qui reste n'entre a l'index, et le prochain passage reprendra tout.
                     resultat.hors_ligne = true;
                     en_echec.extend(par_dossier.values().flatten().cloned());
-                    dossiers.shift_remove(&cle);
+                    dossiers.remove(&cle);
                     break;
                 }
                 // Un dossier qui resiste ne doit pas emporter les autres : la sauvegarde est
@@ -535,7 +546,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 let cause = cause_de(&e);
                 indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
                 resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: cause.into() });
-                dossiers.shift_remove(&cle);
+                dossiers.remove(&cle);
                 en_echec.extend(fichiers.iter().cloned());
                 continue;
             }
@@ -550,7 +561,10 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 continue;
             }
             let chemin = racine.join(relatif);
-            let nom = relatif.rsplit('/').next().unwrap_or(relatif);
+            let nom = match relatif.rfind('/') {
+                Some(i) => &relatif[i + 1..],
+                None => relatif.as_str(),
+            };
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
                 let locale = empreinte(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
                 // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer).
@@ -594,50 +608,46 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     }
 
     // L'index n'est ecrit qu'a la fin, et seulement pour ce qui est passe.
-    let mut fichiers = Map::new();
-    for (r, e) in &presents {
-        if !en_echec.contains(r) {
-            fichiers.insert(r.clone(), json!({"octets": e.octets, "mtime": e.mtime}));
-        }
-    }
+    let fichiers: BTreeMap<String, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
     let maintenant = socle::temps::secondes();
     let quand = socle::paris::iso_minutes(maintenant).replacen('T', " ", 1);
-    let mut nouvel_index = Map::new();
-    nouvel_index.insert("quand".into(), json!(quand));
-    nouvel_index.insert("racine_drive".into(), json!(racine_drive));
-    nouvel_index.insert("dossiers".into(), Value::Object(dossiers));
-    nouvel_index.insert("fichiers".into(), Value::Object(fichiers));
     // CE QUI RESTE EN ECHEC, D'UN PASSAGE A L'AUTRE : de quoi dire ce qui persiste (`souci`). Un passage hors ligne ne compte
     // pas (il n'a rien essaye) : il garde les echecs tels quels. Un passage sans rien de reporte les efface. Les deux cles ne
     // s'ecrivent que s'il y a un echec : l'index d'une sauvegarde complete reste celui d'avant.
-    let anciens = index.get("echecs").and_then(Value::as_object).cloned().unwrap_or_default();
-    let echecs = if resultat.hors_ligne {
+    let anciens: BTreeMap<String, EchecIndexe> = index.as_ref().and_then(|i| i.echecs.clone()).into_iter().flatten().collect();
+    let echecs: BTreeMap<String, EchecIndexe> = if resultat.hors_ligne {
         anciens.clone()
     } else {
-        let mut e = Map::new();
-        for r in &resultat.reportes {
-            let cle = r.cle();
-            let avant = anciens.get(&cle);
-            let passages = avant.and_then(|a| a.get("passages")).and_then(Value::as_i64).unwrap_or(0) + 1;
-            let depuis = avant.and_then(|a| a.get("depuis")).and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| quand.clone());
-            e.insert(cle, json!({"depuis": depuis, "passages": passages, "cause": r.cause}));
-        }
-        e
+        resultat
+            .reportes
+            .iter()
+            .map(|r| {
+                let cle = r.cle();
+                let e = match anciens.get(&cle) {
+                    Some(a) => EchecIndexe { depuis: a.depuis.clone(), passages: a.passages + 1, cause: r.cause.clone() },
+                    None => EchecIndexe { depuis: quand.clone(), passages: 1, cause: r.cause.clone() },
+                };
+                (cle, e)
+            })
+            .collect()
     };
-    if !echecs.is_empty() {
-        // La derniere sauvegarde complete : celle que l'index d'avant disait deja, sinon le passage d'avant s'il etait complet.
-        let complete = match index.get("derniere_complete") {
-            Some(c) => Some(c.clone()),
-            None if anciens.is_empty() => index.get("quand").filter(|q| q.as_str().is_some_and(|s| !s.is_empty())).cloned(),
-            None => None,
-        };
-        if let Some(c) = complete {
-            nouvel_index.insert("derniere_complete".into(), c);
-        }
-        nouvel_index.insert("echecs".into(), Value::Object(echecs));
-    }
-    resultat.persistant = phrase_persistante(&nouvel_index, socle::paris::maintenant_naif());
-    ecrire_index(racine, &Value::Object(nouvel_index))?;
+    // La derniere sauvegarde complete : celle que l'index d'avant disait deja, sinon le passage d'avant s'il etait complet.
+    let derniere_complete = match &index {
+        _ if echecs.is_empty() => None,
+        Some(Index { derniere_complete: Some(c), .. }) => Some(c.clone()),
+        Some(i) if anciens.is_empty() && !i.quand.is_empty() => Some(i.quand.clone()),
+        _ => None,
+    };
+    let nouvel_index = Index {
+        quand,
+        racine_drive: racine_drive.to_string(),
+        dossiers,
+        fichiers,
+        derniere_complete,
+        echecs: (!echecs.is_empty()).then_some(echecs),
+    };
+    resultat.persistant = phrase_persistante(&nouvel_index, socle::paris::maintenant_naif())?;
+    ecrire_index(racine, &nouvel_index)?;
     resultat.secondes = (socle::temps::duree(debut).as_secs_f64() * 10.0).round() / 10.0;
     Ok(resultat)
 }

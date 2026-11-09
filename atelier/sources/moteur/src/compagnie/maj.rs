@@ -69,7 +69,6 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::atelier::publier::{generer_cle, generer_cle_github, marquer_les_fictives, poser_les_fictives, publier, publier_depuis_l_environnement};
@@ -172,16 +171,27 @@ pub fn nom_d_installation(version: &str, systeme: &str) -> String {
     format!("puppetpaie-{}-{}-installation.zip", version, systeme)
 }
 
-pub fn courante(code: &Path) -> String {
-    std::fs::read_to_string(code.join("VERSION")).map(|v| v.trim().to_string()).unwrap_or_else(|_| "0.0.0".into())
+/// La version d'un logiciel : son fichier `VERSION`. Un logiciel qui ne la dit pas se refuse.
+pub fn courante(code: &Path) -> R<String> {
+    let p = code.join("VERSION");
+    socle::fichiers::lire_texte(&p).map(|v| v.trim().to_string()).map_err(|e| socle::echec::du_disque(&p, &e))
 }
 
-fn cle_de_version(v: &str) -> Vec<u64> {
-    v.trim().split('.').map(|x| x.parse().unwrap_or(0)).collect()
+/// Le dossier du logiciel (`logiciel/`) qui porte ce programme : le parent du dossier du code.
+pub fn dossier_installe() -> R<PathBuf> {
+    let code = socle::fichiers::dossier_du_code();
+    code.parent().map(Path::to_path_buf).ok_or_else(|| socle::echec::avec("Le dossier du logiciel ne se trouve pas.", socle::echec::APart { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() }))
 }
 
-pub fn plus_recente(candidate: &str, reference: &str) -> bool {
-    cle_de_version(candidate) > cle_de_version(reference)
+/// Les nombres d'une version (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`), de gauche a droite. Une version qui n'en est pas une se
+/// refuse.
+fn cle_de_version(v: &str) -> R<Vec<u64>> {
+    v.trim().split('.').map(|x| x.parse::<u64>().map_err(|_| socle::echec::avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", socle::echec::APart { detail: Some(v.to_string()), ..Default::default() }))).collect()
+}
+
+/// `candidate` est-elle plus recente que `reference` ?
+pub fn plus_recente(candidate: &str, reference: &str) -> R<bool> {
+    Ok(cle_de_version(candidate)? > cle_de_version(reference)?)
 }
 
 /// LA VERSION TELLE QU'UN HUMAIN LA LIT : `JJ.MM.AAAA`, l'annee en tete embrouille.
@@ -207,19 +217,13 @@ pub fn version_lue(v: &str) -> String {
 /// qu'elle ne connait pas refuse) ; `None` s'il n'existe pas. `phrase` est celle du refus, qui dit quoi corriger ; le
 /// chemin du fichier va a part.
 fn lire_forme<T: serde::de::DeserializeOwned>(p: &Path, phrase: &str) -> R<Option<T>> {
-    let texte = match std::fs::read_to_string(p) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(socle::echec::du_disque(p, &e)),
-    };
-    socle::forme::lire_texte(&texte, phrase).map(Some).map_err(|e| {
-        let (dite, mut plus) = crate::valeur::separer(&e);
-        plus.insert("chemin".into(), json!(p.to_string_lossy()));
-        socle::echec::avec(dite, Value::Object(plus))
-    })
+    if !p.exists() {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(p, phrase).map(Some)
 }
 
-pub(crate) fn ecrire_json(p: &Path, v: &Value) -> R<()> {
+pub(crate) fn ecrire_json<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
     socle::ecriture::ecrire_json(p, v, 1)
 }
 
@@ -247,25 +251,29 @@ fn logiciel_de(inst: &Path) -> PathBuf {
 const REGLAGE: &str = "reglage.json";
 
 /// `maj/reglage.json`, pose a la main : le depot d'ou l'installation recoit, et si ce poste est celui de l'editeur.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reglage {
-    #[serde(default)]
     depot: Option<String>,
-    #[serde(default)]
-    editeur: bool,
+    editeur: Option<bool>,
 }
 
 /// Le reglage de l'installation, `maj/reglage.json` : (depot pose, editeur), ou rien de pose s'il n'existe pas.
 /// `editeur` ne sert qu'a autoriser la publication : le poste de l'editeur recoit comme les autres.
 pub fn reglage(inst: &Path) -> R<(Option<String>, bool)> {
-    let r: Reglage = lire_forme(&dossier_maj(inst).join(REGLAGE), "Le réglage de la mise à jour ne se lit pas : il ne dit que le dépôt d'où l'installation reçoit, et si ce poste est celui de l'éditeur.")?.unwrap_or_default();
-    Ok((r.depot.filter(|s| !s.is_empty()), r.editeur))
+    let r: Option<Reglage> = lire_forme(&dossier_maj(inst).join(REGLAGE), "Le réglage de la mise à jour ne se lit pas : il ne dit que le dépôt d'où l'installation reçoit, et si ce poste est celui de l'éditeur.")?;
+    Ok(match r {
+        Some(r) => (r.depot.filter(|s| !s.is_empty()), r.editeur == Some(true)),
+        None => (None, false),
+    })
 }
 
-/// Le depot d'ou l'installation recoit : celui qui est pose, sinon `DEPOT_PAR_DEFAUT`.
+/// Le depot d'ou l'installation recoit : celui qui est pose, sinon celui du depot public (`DEPOT_PAR_DEFAUT`).
 pub fn depot(pose: Option<String>) -> String {
-    pose.unwrap_or_else(|| DEPOT_PAR_DEFAUT.to_string())
+    match pose {
+        Some(d) => d,
+        None => DEPOT_PAR_DEFAUT.to_string(),
+    }
 }
 
 /// LA VERSION PRETE (`maj/prete.json`, que `telecharger` ecrit) : sa version, quand elle a ete prise et par quelles
@@ -318,7 +326,10 @@ type Echec = (&'static str, String);
 fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Echec> {
     const LIMITE: u64 = 512 * 1024 * 1024;
     let lire_tout = |lecteur: &mut dyn Read, attendus: Option<u64>| -> std::io::Result<Vec<u8>> {
-        let mut o = Vec::with_capacity(attendus.unwrap_or(0).min(LIMITE) as usize);
+        let mut o = Vec::new();
+        if let Some(n) = attendus {
+            o.reserve(n.min(LIMITE) as usize);
+        }
         let mut tampon = vec![0u8; 64 * 1024];
         suivre(0, attendus);
         loop {
@@ -349,8 +360,8 @@ fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -
     let p = Path::new(depot).join(nom);
     let dit = |e: std::io::Error| (INTROUVABLE, socle::echec::du_disque(&p, &e));
     let mut f = std::fs::File::open(&p).map_err(dit)?;
-    let attendus = f.metadata().ok().map(|m| m.len());
-    lire_tout(&mut f, attendus).map_err(dit)
+    let attendus = f.metadata().map_err(dit)?.len();
+    lire_tout(&mut f, Some(attendus)).map_err(dit)
 }
 
 /// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `atelier::publier::publier_signe` et que lit chaque installation, une
@@ -367,11 +378,11 @@ pub struct Publiee {
     pub exigee: String,
     pub archives: Archives,
     pub fictives: FictivesPubliees,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub archive: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
 }
 
@@ -379,13 +390,13 @@ pub struct Publiee {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Archives {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub windows: Option<ArchivePubliee>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub linux: Option<ArchivePubliee>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mac: Option<ArchivePubliee>,
-    #[serde(rename = "tout-systeme", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "tout-systeme", skip_serializing_if = "Option::is_none")]
     pub tout_systeme: Option<ArchivePubliee>,
 }
 
@@ -397,8 +408,8 @@ pub struct ArchivePubliee {
     pub archive: String,
     pub sha256: String,
     pub signature: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub systemes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub systemes: Option<Vec<String>>,
 }
 
 /// Les fictives, signees comme une archive, et l'empreinte de leur contenu.
@@ -468,7 +479,7 @@ const PUBLIEE_ILLISIBLE: &str = "La version publiée ne se lit pas : la mise à 
 
 /// La version publiee (`derniere.json`) qui ne se lit pas : la phrase en mots, la cle a part.
 fn publiee_illisible(cle: &str, detail: impl std::fmt::Display) -> String {
-    socle::echec::avec(PUBLIEE_ILLISIBLE, json!({"fichier": DERNIERE, "cle": cle, "detail": detail.to_string()}))
+    socle::echec::avec(PUBLIEE_ILLISIBLE, socle::echec::APart { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
 }
 
 /// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`), puis ce qu'elle ne dit pas d'elle-meme : une version, au
@@ -488,10 +499,12 @@ pub(crate) fn derniere_lue(octets: &[u8]) -> R<Publiee> {
                 return Err(publiee_illisible(&format!("archives.{}.{}", systeme, k), ""));
             }
         }
-        if (systeme == TOUT_SYSTEME) == a.systemes.is_empty() {
+        // Celle de tous les systemes dit ceux qu'elle porte (au moins un) ; celle d'un systeme n'en dit aucun.
+        let dit_ses_systemes = a.systemes.as_ref().is_some_and(|s| !s.is_empty());
+        if (systeme == TOUT_SYSTEME) != dit_ses_systemes {
             return Err(publiee_illisible(&format!("archives.{}.systemes", systeme), ""));
         }
-        if let Some(x) = a.systemes.iter().find(|x| !SYSTEMES.contains(&x.as_str())) {
+        if let Some(x) = a.systemes.iter().flatten().find(|x| !SYSTEMES.contains(&x.as_str())) {
             return Err(publiee_illisible(&format!("archives.{}.systemes", systeme), x));
         }
     }
@@ -521,8 +534,10 @@ pub fn cles_de_l_editeur() -> Vec<&'static str> {
     // `PUPPETPAIE_ATELIER_CLE_MAJ` (une cle publique Ed25519 en base64) : la mise a jour et le dossier portable s'y
     // jouent de bout en bout par `moteur route`. Le binaire livre n'en porte rien (`tests/atelier.rs`).
     #[cfg(feature = "atelier")]
-    if let Some(c) = std::env::var("PUPPETPAIE_ATELIER_CLE_MAJ").ok().filter(|c| !c.trim().is_empty()) {
-        v.push(Box::leak(c.trim().to_string().into_boxed_str()));
+    if let Ok(c) = std::env::var("PUPPETPAIE_ATELIER_CLE_MAJ") {
+        if !c.trim().is_empty() {
+            v.push(Box::leak(c.trim().to_string().into_boxed_str()));
+        }
     }
     v
 }
@@ -532,26 +547,32 @@ pub fn signee_par_l_une(octets: &[u8], signature: &str, cles: &[&str]) -> bool {
     cles.iter().any(|c| signature_valide(octets, signature, c))
 }
 
+/// La signature `signature` des `octets` est-elle celle de `cle_publique` ? Une cle ou une signature qui ne se lit pas,
+/// une signature d'une autre cle ou d'autres octets : non.
 pub fn signature_valide(octets: &[u8], signature: &str, cle_publique: &str) -> bool {
-    let (Ok(cle), Ok(sig)) = (b64(cle_publique), b64(signature)) else { return false };
-    let (Ok(cle), Ok(sig)) = (<[u8; 32]>::try_from(cle.as_slice()), <[u8; 64]>::try_from(sig.as_slice())) else { return false };
-    let Ok(v) = ed25519_dalek::VerifyingKey::from_bytes(&cle) else { return false };
-    v.verify_strict(octets, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok()
+    matches!(verifier_la_signature(octets, signature, cle_publique), Ok(()))
+}
+
+/// `signature_valide`, la raison du non dite.
+fn verifier_la_signature(octets: &[u8], signature: &str, cle_publique: &str) -> R<()> {
+    let cle = <[u8; 32]>::try_from(b64(cle_publique)?.as_slice()).map_err(|e| e.to_string())?;
+    let sig = <[u8; 64]>::try_from(b64(signature)?.as_slice()).map_err(|e| e.to_string())?;
+    let v = ed25519_dalek::VerifyingKey::from_bytes(&cle).map_err(|e| e.to_string())?;
+    v.verify_strict(octets, &ed25519_dalek::Signature::from_bytes(&sig)).map_err(|e| e.to_string())
 }
 
 /// Les compagnies de l'installation : la compagnie du poste (`prive/`), les autres (`compagnies/*`), les fictives ; pas
 /// une copie de developpement.
-pub fn compagnies_de(inst: &Path) -> Vec<PathBuf> {
+pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     let mut v = vec![inst.join("prive")];
-    for groupe in ["compagnies", crate::interface::compagnies::DOSSIER_FICTIVES] {
-        if let Ok(it) = std::fs::read_dir(inst.join(groupe)) {
-            let mut autres: Vec<PathBuf> = it.flatten().map(|e| e.path()).collect();
-            autres.sort();
-            v.extend(autres);
-        }
+    let groupes: [&str; 2] = ["compagnies", crate::interface::compagnies::DOSSIER_FICTIVES];
+    for groupe in groupes {
+        let mut autres: Vec<PathBuf> = socle::fichiers::lister(&inst.join(groupe))?.into_iter().flatten().collect();
+        autres.sort();
+        v.extend(autres);
     }
     v.retain(|r| !crate::interface::compagnies::est_cache(r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::interface::compagnies::est_copie(r) || crate::interface::compagnies::est_fictive(r)));
-    v
+    Ok(v)
 }
 
 /// L'ARCHIVE DE MISE A JOUR (`archiver` : le contenu de `logiciel/` a sa racine, le contrat de la tete de ce fichier),
@@ -600,12 +621,17 @@ fn deballer_ce_qui(octets: &[u8], neuf: &Path, garder: &dyn Fn(&str) -> bool) ->
     Ok(())
 }
 
+/// Ce qu'un refus porte a part : le chemin `p`.
+fn a_part_chemin(p: &Path) -> socle::echec::APart {
+    socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
+}
+
 /// Le nouveau code demarre-t-il, et lit-il NOS donnees ? Son programme, sur la racine de cette compagnie.
 fn controler(neuf: &Path, racine: &Path) -> R<()> {
     // La fenetre sert aussi les routes (`puppetpaie route`) : c'est elle qu'on livre, pas la ligne de commande.
     let exe = programme(neuf, "puppetpaie");
     if !exe.is_file() {
-        return Err(socle::echec::avec("Le programme de ce système manque dans l'archive.", json!({"chemin": exe.to_string_lossy()})));
+        return Err(socle::echec::avec("Le programme de ce système manque dans l'archive.", a_part_chemin(&exe)));
     }
     let mut c = std::process::Command::new(&exe);
     c.args(["route", "--racine"])
@@ -625,12 +651,43 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
         let _ = e.write_all(br#"{"route": "configuration", "charge": {}}"#);
     }
     let s = p.wait_with_output().map_err(|e| e.to_string())?;
-    let rep: Option<Value> = String::from_utf8_lossy(&s.stdout).lines().rev().find_map(|l| serde_json::from_str(l).ok());
-    match rep {
-        Some(r) if r.get("ok").and_then(Value::as_bool) == Some(true) => Ok(()),
-        Some(r) => Err(format!("il ne lit pas la configuration : {}", r.pointer("/refus/phrase").map(|e| e.to_string()).unwrap_or_default())),
-        None => Err(String::from_utf8_lossy(&s.stderr).trim().chars().rev().take(800).collect::<String>().chars().rev().collect()),
+    let sortie = String::from_utf8_lossy(&s.stdout);
+    let erreurs = || -> String { String::from_utf8_lossy(&s.stderr).trim().chars().rev().take(800).collect::<String>().chars().rev().collect() };
+    // La reponse de `moteur route` est sa derniere ligne (`routes::enveloppe::Reponse`).
+    let Some(ligne) = sortie.lines().rev().find(|l| !l.trim().is_empty()) else { return Err(erreurs()) };
+    let rep: ReponseDuNeuf = socle::forme::lire_texte(ligne, "La réponse du nouveau programme ne se lit pas.").map_err(|e| format!("{} {}", e, erreurs()))?;
+    match (rep.ok, rep.refus) {
+        (true, _) => Ok(()),
+        (false, Some(r)) => Err(format!("il ne lit pas la configuration : {}", r.phrase)),
+        (false, None) => Err("il ne lit pas la configuration".to_string()),
     }
+}
+
+/// La reponse d'une route du nouveau programme (`routes::enveloppe::Reponse`), ce que `controler` en lit : l'issue, et la
+/// phrase d'un refus ; ce qu'elle rend d'autre n'est pas lu.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReponseDuNeuf {
+    ok: bool,
+    #[allow(dead_code)]
+    ecrit: bool,
+    #[allow(dead_code)]
+    resultat: Option<serde::de::IgnoredAny>,
+    refus: Option<RefusDuNeuf>,
+}
+
+/// Le refus d'une route du nouveau programme : sa phrase ; sa classe, ce qu'il faut corriger et ce qu'il porte a part ne
+/// sont pas lus.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RefusDuNeuf {
+    #[allow(dead_code)]
+    classe: Option<serde::de::IgnoredAny>,
+    phrase: String,
+    #[allow(dead_code)]
+    corriger: Option<serde::de::IgnoredAny>,
+    #[allow(dead_code)]
+    a_part: Option<serde::de::IgnoredAny>,
 }
 
 /// UNE ARCHIVE SIGNEE, recue et verifiee : son entree de `derniere.json` (`archive`, `sha256`, `signature`) lue au depot,
@@ -642,12 +699,20 @@ fn archive_verifiee(depot: &str, (nom, attendu, signature): (&str, &str, &str), 
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = condensat(&octets);
     if sha != attendu {
-        return Err((ALTEREE, socle::echec::avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", json!({"fichier": nom, "condensat": sha, "attendu": attendu}))));
+        return Err((ALTEREE, socle::echec::avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", Alteree { fichier: nom, condensat: &sha, attendu })));
     }
     if !signee_par_l_une(&octets, signature, cles) {
         return Err((SIGNATURE_REFUSEE, format!("la signature de {} n'est pas celle de l'editeur", nom)));
     }
     Ok(octets)
+}
+
+/// Ce que le refus d'une archive alteree porte a part : le fichier, son condensat, celui qu'annonce `derniere.json`.
+#[derive(Serialize)]
+struct Alteree<'a> {
+    fichier: &'a str,
+    condensat: &'a str,
+    attendu: &'a str,
 }
 
 /// LES SYSTEMES D'UNE INSTALLATION : celui de ce programme, puis ceux dont la fenetre est posee dans `logiciel/`
@@ -665,7 +730,7 @@ pub fn systemes_poses(code: &Path) -> Vec<&'static str> {
 /// Vide : la version est publiee sans l'un d'eux (« Publier » choisit Windows seul, Windows et Linux, ou les trois),
 /// l'installation ne telecharge rien.
 fn jeux_a_essayer<'a>(d: &'a Publiee, systemes: &[&'static str]) -> Vec<Vec<(&'static str, &'a ArchivePubliee)>> {
-    let porte = |a: &ArchivePubliee| systemes.iter().all(|s| a.systemes.iter().any(|x| x == s));
+    let porte = |a: &ArchivePubliee| systemes.iter().all(|s| a.systemes.iter().flatten().any(|x| x == s));
     let siens: Option<Vec<(&'static str, &ArchivePubliee)>> = systemes.iter().map(|s| d.archives.de(s).map(|a| (*s, a))).collect();
     let tous = d.archives.de(TOUT_SYSTEME).filter(|a| porte(a)).map(|a| vec![(TOUT_SYSTEME, a)]);
     let v: Vec<_> = if systemes.len() > 1 { [tous, siens] } else { [siens, tous] }.into_iter().flatten().collect();
@@ -682,7 +747,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     let systemes = systemes_poses(&logiciel_de(inst));
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
-        return Err((INTROUVABLE, socle::echec::avec(format!("La version publiée n'a pas d'archive pour ce système ({}).", systemes.join(", ")), json!({"fichier": "derniere.json"}))));
+        return Err((INTROUVABLE, socle::echec::avec(format!("La version publiée n'a pas d'archive pour ce système ({}).", systemes.join(", ")), socle::echec::APart { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
     }
     let mut manquees = Vec::new();
     let mut mot = INTROUVABLE;
@@ -714,8 +779,9 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     for (_, octets) in &prises {
         deballer(octets, &neuf).map_err(au_controle)?;
     }
-    if courante(&neuf) != version {
-        return Err(au_controle(format!("l'archive dit {}, derniere.json dit {}", version_lue(&courante(&neuf)), version_lue(version))));
+    let dite = courante(&neuf).map_err(au_controle)?;
+    if dite != version {
+        return Err(au_controle(format!("l'archive dit {}, derniere.json dit {}", version_lue(&dite), version_lue(version))));
     }
     // Le programme de chaque systeme doit y etre, meme sans compagnie a controler.
     if let Some(s) = systemes.iter().find(|s| !programme_de(&neuf, s, "puppetpaie").is_file()) {
@@ -723,7 +789,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
         return Err(au_controle(format!("le programme de {} manque dans l'archive ({})", s, programme_de(Path::new(""), s, "puppetpaie").display())));
     }
     // Le programme neuf lit la configuration de chaque compagnie de l'installation (sans compagnie, il n'y a rien a lire).
-    for racine in compagnies_de(inst) {
+    for racine in compagnies_de(inst).map_err(au_controle)? {
         if let Err(p) = controler(&neuf, &racine) {
             let _ = std::fs::remove_dir_all(&cible);
             return Err(au_controle(format!("le nouveau code ne demarre pas sur {} : {}", racine.display(), p)));
@@ -743,7 +809,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
 
 /// LA SEULE ECRITURE DE `prete.json` (`Prete`).
 fn ecrire_prete(maj: &Path, p: &Prete) -> R<()> {
-    ecrire_json(&maj.join(PRETE), &serde_json::to_value(p).map_err(|e| e.to_string())?)
+    ecrire_json(&maj.join(PRETE), p)
 }
 
 /// Le nom d'un systeme tel qu'on le lit.
@@ -773,13 +839,13 @@ fn depot_de_la_version(depot: &str, version: &str) -> String {
 /// (`systeme_du_fichier`) vont dans `logiciel/`. `portable` pose aussi `PORTABLE.json` (`coffre::MARQUEUR_PORTABLE`).
 /// La mise a jour tient ensuite tous ces systemes a jour (`systemes_poses`). Ce que le telechargement recoit se dit
 /// sur la sortie d'erreur (l'installeur Windows le montre ; la sortie standard reste la reponse de la route).
-pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Value> {
+pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<PortableComplete> {
     let rien = "Rien n'est posé.";
     let code = logiciel_de(inst);
-    let version = courante(&code);
-    if version == "0.0.0" {
-        return Err(socle::echec::avec(format!("Ce dossier n'est pas une installation de PuppetPaie. {}", rien), json!({"chemin": inst.to_string_lossy()})));
+    if !code.join("VERSION").is_file() {
+        return Err(socle::echec::avec(format!("Ce dossier n'est pas une installation de PuppetPaie. {}", rien), a_part_chemin(inst)));
     }
+    let version = courante(&code)?;
     if a_installer(inst)?.is_some() {
         return Err(format!("Une mise à jour attend le redémarrage : redémarrez PuppetPaie, puis recommencez. {}", rien));
     }
@@ -814,14 +880,14 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Va
                 if quart.is_some() && quart != dit.get() {
                     dit.set(quart);
                     let mo = |o: u64| format!("{:.1}", o as f64 / 1_048_576.0).replace('.', ",");
-                    eprintln!("{} : {} Mo reçus sur {} Mo", qui, mo(recus), mo(attendus.unwrap_or(0)));
+                    if let Some(a) = attendus {
+                        eprintln!("{} : {} Mo reçus sur {} Mo", qui, mo(recus), mo(a));
+                    }
                 }
             };
             let octets = archive_verifiee(&depot, a.signee(), cles, &suivre).map_err(|(mot, e)| if mot == HORS_LIGNE { hors_ligne(&e) } else { format!("{} : {}. {}", qui, e, rien) })?;
-            let dite = zip::ZipArchive::new(std::io::Cursor::new(&octets[..]))
-                .ok()
-                .and_then(|mut z| z.by_name("VERSION").ok().and_then(|mut f| { let mut t = String::new(); f.read_to_string(&mut t).ok().map(|_| t.trim().to_string()) }));
-            if dite.as_deref() != Some(version.as_str()) {
+            let dite = version_de_l_archive(&octets).map_err(|e| format!("{} : {}. {}", qui, e, rien))?;
+            if dite != version {
                 return Err(format!("{} : l'archive n'est pas de la version {}. {}", qui, version_lue(&version), rien));
             }
             recues.push((octets, systemes));
@@ -848,29 +914,66 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Va
     if inst.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
         phrase.push_str(" Le dossier est portable.");
     }
-    Ok(json!({
-        "ajoutes": ajoutes, "absents": absents, "version": version,
-        "portable": inst.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file(), "phrase": phrase,
-    }))
+    Ok(PortableComplete { ajoutes, absents, version, portable: inst.join(crate::compagnie::coffre::MARQUEUR_PORTABLE).is_file(), phrase })
+}
+
+/// CE QUE REND `portable-completer` (`completer_le_portable`) : les systemes ajoutes, ceux que la version ne publie pas, la
+/// version, si le dossier est portable, et la phrase.
+#[derive(Debug, Serialize)]
+pub struct PortableComplete {
+    pub ajoutes: Vec<&'static str>,
+    pub absents: Vec<&'static str>,
+    pub version: String,
+    pub portable: bool,
+    pub phrase: String,
+}
+
+impl crate::routes::enveloppe::Dite for PortableComplete {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// La version que porte une archive de mise a jour (son fichier `VERSION`) : une archive qui ne la dit pas se refuse.
+fn version_de_l_archive(octets: &[u8]) -> R<String> {
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(octets)).map_err(|e| format!("archive illisible : {}", e))?;
+    let mut f = z.by_name("VERSION").map_err(|e| format!("l'archive ne dit pas sa version : {}", e))?;
+    let mut t = String::new();
+    f.read_to_string(&mut t).map_err(|e| format!("l'archive ne dit pas sa version : {}", e))?;
+    Ok(t.trim().to_string())
 }
 
 /// LES FICTIVES PRETES : la livraison telechargee et verifiee (`preparer_les_fictives`), qui attend le prochain lancement
 /// dans `maj/fictives-pretes/fictives/` ; `poser_les_fictives_pretes` la met en place.
 const FICTIVES_PRETES: &str = "fictives-pretes";
 
-fn lire_valeur(p: &Path) -> Option<Value> {
-    serde_json::from_slice(&std::fs::read(p).ok()?).ok()
+/// LA LIVRAISON DE FICTIVES (`fictives/.livraison.json`, que l'archive des fictives porte et que la pose recrit) : son
+/// empreinte, et celle de chaque fictive qu'elle a posee, par nom. Une pose restee en partie (un dossier qui ne s'est pas
+/// deplace) sur un poste qui n'avait aucune livraison ne retient pas d'empreinte : la suivante se retelecharge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Livraison {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub empreinte: Option<String>,
+    pub posees: std::collections::BTreeMap<String, String>,
+}
+
+/// LA MARQUE D'UNE FICTIVE LIVREE (`fictives/<nom>/.livree.json`) : l'empreinte de son contenu a la livraison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Livree {
+    pub empreinte: String,
 }
 
 /// Ce qu'un dossier `fictives/` retient de sa livraison (`LIVRAISON`), ou `None` (une installation qui n'a recu
-/// aucune livraison, ou posee par l'installeur Windows, qui ne la porte pas).
-fn livraison_retenue(fictives: &Path) -> Option<Value> {
-    lire_valeur(&fictives.join(LIVRAISON)).filter(|v| v.get("empreinte").and_then(Value::as_str).is_some_and(|e| !e.is_empty()))
+/// aucune livraison, ou posee par l'installeur Windows, qui ne la porte pas). Une livraison qui ne se lit pas se refuse.
+fn livraison_retenue(fictives: &Path) -> R<Option<Livraison>> {
+    lire_forme(&fictives.join(LIVRAISON), "La livraison des compagnies fictives ne se lit pas.")
 }
 
 /// L'empreinte de la livraison de fictives que retient un dossier `fictives/`, ou `None`.
-pub fn empreinte_retenue(fictives: &Path) -> Option<String> {
-    livraison_retenue(fictives).and_then(|v| v["empreinte"].as_str().map(String::from))
+pub fn empreinte_retenue(fictives: &Path) -> R<Option<String>> {
+    Ok(livraison_retenue(fictives)?.and_then(|l| l.empreinte))
 }
 
 fn dossier_des_fictives(inst: &Path) -> PathBuf {
@@ -915,19 +1018,22 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
     let maj = dossier_maj(inst);
     let pretes = maj.join(FICTIVES_PRETES);
     let vise = pretes.join(crate::interface::compagnies::DOSSIER_FICTIVES);
-    if empreinte_retenue(&dossier_des_fictives(inst)).as_deref() == Some(empreinte) || empreinte_retenue(&vise).as_deref() == Some(empreinte) {
-        return None;
-    }
     if inst.join(".git").exists() {
         return None;
     }
     let court = &empreinte[..empreinte.len().min(12)];
+    let deja = || -> R<bool> { Ok(empreinte_retenue(&dossier_des_fictives(inst))?.as_deref() == Some(empreinte) || empreinte_retenue(&vise)?.as_deref() == Some(empreinte)) };
+    match deja() {
+        Ok(true) => return None,
+        Ok(false) => {}
+        Err(e) => return Some(format!("Compagnies fictives {} non preparees : {}", court, e)),
+    }
     let essai = || -> R<()> {
         let octets = archive_verifiee(depot, f.signee(), cles, &|_, _| {}).map_err(|(_, e)| e)?;
         let part = maj.join(format!("{}.part", FICTIVES_PRETES));
         let _ = std::fs::remove_dir_all(&part);
         deballer_les_fictives(&octets, &part)?;
-        if empreinte_retenue(&part.join(crate::interface::compagnies::DOSSIER_FICTIVES)).as_deref() != Some(empreinte) {
+        if empreinte_retenue(&part.join(crate::interface::compagnies::DOSSIER_FICTIVES))?.as_deref() != Some(empreinte) {
             let _ = std::fs::remove_dir_all(&part);
             return Err("l'archive des fictives ne dit pas l'empreinte annoncee".into());
         }
@@ -945,8 +1051,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
 /// exactement ce que porte chaque fictive livree (`fictives/<nom>/COPIE-DE-DEVELOPPEMENT.json`). Une fictive copiee et
 /// renommee sur le poste dit encore le nom de celle qu'elle copie : ce n'est pas le sien.
 fn marquee_comme_livree(dossier: &Path, nom: &str) -> bool {
-    lire_valeur(&dossier.join("COPIE-DE-DEVELOPPEMENT.json")).and_then(|v| v.get("copie_de").and_then(Value::as_str).map(String::from))
-        == Some(format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom))
+    crate::interface::compagnies::copie_de(dossier) == Some(format!("{} {}", crate::interface::compagnies::MARQUE_FICTIVE, nom))
 }
 
 /// AU LANCEMENT, avant toute fenetre (`interface::preparer_l_installation`) : la livraison de fictives prete se pose.
@@ -965,20 +1070,31 @@ fn marquee_comme_livree(dossier: &Path, nom: &str) -> bool {
 pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     let pretes = dossier_maj(inst).join(FICTIVES_PRETES);
     let neuves = pretes.join(crate::interface::compagnies::DOSSIER_FICTIVES);
-    let nouvelle = livraison_retenue(&neuves)?;
     let poste = dossier_des_fictives(inst);
-    let ancienne = livraison_retenue(&poste);
+    let (nouvelle, ancienne) = match (livraison_retenue(&neuves), livraison_retenue(&poste)) {
+        (Ok(None), _) => return None,
+        (Ok(Some(n)), Ok(a)) => (n, a),
+        (Err(e), _) | (_, Err(e)) => return Some(format!("Compagnies fictives non posees : {}", e)),
+    };
+    let Some(empreinte) = nouvelle.empreinte.clone() else {
+        return Some("Compagnies fictives non posees : la livraison prete ne dit pas son empreinte.".to_string());
+    };
     let origines = poste.join(".origine");
     let avant = dossier_maj(inst).join("fictives-avant");
     let _ = std::fs::remove_dir_all(&avant);
     let _ = std::fs::create_dir_all(&poste);
-    let empreinte_de = |v: &Value, nom: &str| v["posees"].get(nom).and_then(Value::as_str).map(String::from);
-    let a_la_livraison = |nom: &str| -> bool {
+    let empreinte_de = |a: &Livraison, nom: &str| a.posees.get(nom).cloned();
+    // Un dossier est a la livraison si sa marque dit l'empreinte retenue ; une marque qui ne se lit pas se dit, et le
+    // dossier reste tel quel.
+    let a_la_livraison = |nom: &str| -> R<bool> {
         let d = poste.join(nom);
-        match &ancienne {
-            Some(a) => empreinte_de(a, nom).is_some_and(|e| lire_valeur(&d.join(LIVREE)).and_then(|m| m["empreinte"].as_str().map(String::from)) == Some(e)),
+        Ok(match &ancienne {
+            Some(a) => {
+                let marque: Option<Livree> = lire_forme(&d.join(LIVREE), "La marque d'une fictive livrée ne se lit pas.")?;
+                empreinte_de(a, nom).is_some() && marque.map(|m| m.empreinte) == empreinte_de(a, nom)
+            }
             None => marquee_comme_livree(&d, nom),
-        }
+        })
     };
     let ecarter = |nom: &str| -> R<()> {
         let d = poste.join(nom);
@@ -989,56 +1105,85 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
         let _ = std::fs::remove_dir_all(origines.join(nom));
         Ok(())
     };
-    let mut posees = serde_json::Map::new();
+    let mut posees = std::collections::BTreeMap::new();
     let mut dit = Vec::new();
     let mut manque = false;
-    let noms_neufs: Vec<String> = nouvelle["posees"].as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+    let noms_neufs: Vec<String> = nouvelle.posees.keys().cloned().collect();
     for nom in &noms_neufs {
         let d = poste.join(nom);
-        if d.exists() && !a_la_livraison(nom) {
-            dit.push(format!("{} non posee : un dossier de ce nom, que la livraison n'a pas pose, reste tel quel", nom));
-            continue;
+        if d.exists() {
+            match a_la_livraison(nom) {
+                Ok(true) => {}
+                Ok(false) => {
+                    dit.push(format!("{} non posee : un dossier de ce nom, que la livraison n'a pas pose, reste tel quel", nom));
+                    continue;
+                }
+                Err(e) => {
+                    dit.push(format!("{} non posee : {}", nom, e));
+                    continue;
+                }
+            }
         }
         let pose = ecarter(nom).and_then(|_| std::fs::rename(neuves.join(nom), &d).map_err(|e| socle::echec::du_disque(&d, &e)));
         match pose {
             Ok(()) => {
-                posees.insert(nom.clone(), nouvelle["posees"][nom].clone());
+                if let Some(e) = nouvelle.posees.get(nom) {
+                    posees.insert(nom.clone(), e.clone());
+                }
             }
             Err(e) => {
                 manque = true;
                 dit.push(format!("{} non remplacee ({})", nom, e));
                 if let Some(e) = ancienne.as_ref().and_then(|a| empreinte_de(a, nom)) {
-                    posees.insert(nom.clone(), json!(e));
+                    posees.insert(nom.clone(), e);
                 }
             }
         }
     }
     // Celles que l'ancienne livraison avait posees et que la nouvelle ne porte plus : retirees, si elles sont a elle.
-    let anciennes: Vec<String> = ancienne.as_ref().and_then(|a| a["posees"].as_object()).map(|o| o.keys().cloned().collect()).unwrap_or_default();
+    let anciennes: Vec<String> = ancienne.iter().flat_map(|a| a.posees.keys().cloned()).collect();
     for nom in anciennes.iter().filter(|n| !noms_neufs.contains(n)) {
-        if !poste.join(nom).exists() || !a_la_livraison(nom) {
+        if !poste.join(nom).exists() {
             continue;
+        }
+        match a_la_livraison(nom) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(e) => {
+                dit.push(format!("{} non retiree : {}", nom, e));
+                continue;
+            }
         }
         if let Err(e) = ecarter(nom) {
             manque = true;
             dit.push(format!("{} non retiree ({})", nom, e));
             if let Some(e) = ancienne.as_ref().and_then(|a| empreinte_de(a, nom)) {
-                posees.insert(nom.clone(), json!(e));
+                posees.insert(nom.clone(), e);
             }
         } else {
             dit.push(format!("{} retiree", nom));
         }
     }
     // Les fichiers de `fictives/` livres a la racine (`LISEZ-MOI.md`).
-    for e in std::fs::read_dir(&neuves).into_iter().flatten().flatten() {
-        let nom = e.file_name().to_string_lossy().into_owned();
-        if e.file_type().is_ok_and(|t| t.is_file()) && nom != LIVRAISON {
-            let _ = std::fs::copy(e.path(), poste.join(&nom));
+    match std::fs::read_dir(&neuves) {
+        Ok(entrees) => {
+            for e in entrees {
+                let copie = e.and_then(|e| {
+                    let nom = e.file_name().to_string_lossy().into_owned();
+                    if e.file_type()?.is_file() && nom != LIVRAISON {
+                        std::fs::copy(e.path(), poste.join(&nom))?;
+                    }
+                    Ok(())
+                });
+                if let Err(e) = copie {
+                    dit.push(format!("un fichier de la livraison n'est pas copie ({})", e));
+                }
+            }
         }
+        Err(e) => dit.push(format!("les fichiers de la livraison ne se lisent pas ({})", e)),
     }
-    let empreinte = nouvelle["empreinte"].as_str().unwrap_or_default().to_string();
-    let retenue = if manque { ancienne.as_ref().and_then(|a| a["empreinte"].as_str().map(String::from)).unwrap_or_default() } else { empreinte.clone() };
-    let _ = ecrire_json(&poste.join(LIVRAISON), &json!({"empreinte": retenue, "posees": posees}));
+    let retenue = if manque { ancienne.as_ref().and_then(|a| a.empreinte.clone()) } else { Some(empreinte.clone()) };
+    let _ = ecrire_json(&poste.join(LIVRAISON), &Livraison { empreinte: retenue, posees: posees.clone() });
     let _ = std::fs::remove_dir_all(&avant);
     let _ = std::fs::remove_dir_all(&pretes);
     Some(format!(
@@ -1078,11 +1223,15 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
         suivi.poser(Etape::Recherche, None, |_| {});
     }
     let c = logiciel_de(inst);
-    let cour = version_lue(&courante(&c));
     let echec = |mot: &'static str, version: Option<&str>, phrase: String| {
         suivi.poser(Etape::Echec, version, |p| p.mot = mot.to_string());
         phrase
     };
+    let courante_ici = match courante(&c) {
+        Ok(v) => v,
+        Err(e) => return echec(INTROUVABLE, None, format!("version installee illisible ({})", e)),
+    };
+    let cour = version_lue(&courante_ici);
     let depot = match reglage(inst) {
         Ok((d, _)) => self::depot(d),
         Err(e) if calme => return format!("version {} ({} ; nouvel essai au tour suivant)", cour, e),
@@ -1100,9 +1249,13 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
         }
     }
     let v = d.version.clone();
-    if !plus_recente(&v, &courante(&c)) {
-        suivi.poser(Etape::AJour, Some(&courante(&c)), |p| p.sans_ce_systeme = None);
-        return format!("version {}, a jour", cour);
+    match plus_recente(&v, &courante_ici) {
+        Ok(true) => {}
+        Ok(false) => {
+            suivi.poser(Etape::AJour, Some(&courante_ici), |p| p.sans_ce_systeme = None);
+            return format!("version {}, a jour", cour);
+        }
+        Err(e) => return echec(ILLISIBLE, None, format!("version {} ({})", cour, e)),
     }
     let lue = version_lue(&v);
     // Publiee sans l'un des systemes de l'installation : rien a telecharger, la version en place reste (une tout-systeme
@@ -1110,7 +1263,7 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
     // installation, il n'y a pas de mise a jour.
     let systemes = systemes_poses(&c);
     if jeux_a_essayer(&d, &systemes).is_empty() {
-        suivi.poser(Etape::AJour, Some(&courante(&c)), |p| p.sans_ce_systeme = Some(v.clone()));
+        suivi.poser(Etape::AJour, Some(&courante_ici), |p| p.sans_ce_systeme = Some(v.clone()));
         return format!("version {} -- la {} est publiee sans l'un de ses systemes ({}) : cette installation garde sa version", cour, lue, systemes.join(", "));
     }
     // Un `prete.json` qui ne se lit pas se remplace : le telechargement qui suit le recrit.
@@ -1258,7 +1411,7 @@ impl Recherche {
 
     /// Passe a `etape` (ce qui tient a l'etape d'avant s'efface, sauf la version si `version` n'en dit pas), puis `plus`.
     fn poser(&self, etape: Etape, version: Option<&str>, plus: impl FnOnce(&mut Point)) {
-        let mut p = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut p = self.tenu();
         if p.etape != etape {
             let garde = version.map(String::from).or_else(|| if etape == Etape::AJour { None } else { p.version.take() });
             let installee = std::mem::take(&mut p.installee);
@@ -1280,16 +1433,16 @@ impl Recherche {
 
     /// Ce que la version en place, installee juste avant ce lancement, change d'un calcul de paie (`dire_l_installation`).
     fn installee(&self, phrase: String) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).installee = phrase;
+        self.tenu().installee = phrase;
     }
 
     pub fn etape(&self) -> Etape {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).etape
+        self.tenu().etape
     }
 
     /// La recherche a echoue faute de reseau (`HORS_LIGNE`) : c'est le seul echec qu'un nouvel essai peut lever.
     fn hors_ligne(&self) -> bool {
-        let p = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let p = self.tenu();
         p.etape == Etape::Echec && p.mot == HORS_LIGNE
     }
 
@@ -1300,13 +1453,10 @@ impl Recherche {
     /// `exigee` (la version prete est indispensable avant de declarer : la phrase, ou `null`), `installee` (ce que la
     /// version en place, installee juste avant ce lancement, change d'un calcul de paie : la phrase, ou `null`).
     /// Tout se dit positivement, par ce qui est vrai (« Logiciel a jour » plutot qu'« Aucune mise a jour »).
-    pub fn etat(&self) -> Value {
-        let p = self.0.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn etat(&self) -> EtatDeLaRecherche {
+        let p = self.tenu();
         let lue = p.version.as_deref().map(version_lue);
-        let nommee = |t: &str| match &lue {
-            Some(v) => format!("PuppetPaie {} {}", v, t),
-            None => String::new(),
-        };
+        let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
         let mo = |o: u64| format!("{:.1}", o as f64 / 1_048_576.0).replace('.', ",");
         let essai = p.nouvel_essai.map(|t| {
             let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
@@ -1316,16 +1466,16 @@ impl Recherche {
                 _ => format!("nouvel essai dans {} min", s.div_ceil(60)),
             }
         });
-        let (texte, detail, barre, progression): (&str, String, bool, Option<f64>) = match p.etape {
-            Etape::Aucune => ("", String::new(), false, None),
-            Etape::Recherche => ("Recherche de mise à jour…", String::new(), false, None),
+        let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<f64>) = match p.etape {
+            Etape::Aucune => ("", None, false, None),
+            Etape::Recherche => ("Recherche de mise à jour…", None, false, None),
             Etape::AJour => (
                 "Logiciel à jour",
-                match (&lue, &p.sans_ce_systeme) {
+                Some(match (&lue, &p.sans_ce_systeme) {
                     (Some(c), Some(v)) => format!("PuppetPaie {} est la dernière version pour ce système ; la {} est publiée pour les autres.", c, version_lue(v)),
                     (Some(c), None) => format!("PuppetPaie {} est la dernière version.", c),
                     (None, _) => "Cette version est la dernière.".into(),
-                },
+                }),
                 false,
                 None,
             ),
@@ -1351,12 +1501,12 @@ impl Recherche {
             ),
             Etape::Echec => (
                 "",
-                match (&lue, &essai) {
+                Some(match (&lue, &essai) {
                     (Some(v), Some(e)) => format!("Cette version reste en service ; PuppetPaie {} se prépare dès que le réseau revient : {}.", v, e),
                     (None, Some(e)) => format!("Cette version reste en service ; la recherche reprend dès que le réseau revient : {}.", e),
                     (Some(v), None) => format!("Cette version reste en service ; PuppetPaie {} se prépare de nouveau au prochain lancement.", v),
                     (None, None) => "Cette version reste en service ; la recherche reprend au prochain lancement.".into(),
-                },
+                }),
                 false,
                 None,
             ),
@@ -1372,23 +1522,47 @@ impl Recherche {
         } else {
             None
         };
-        json!({
-            "etape": p.etape.nom(),
-            "texte": texte,
-            "detail": detail,
-            "barre": barre,
-            "progression": progression,
-            "en_cours": en_cours,
-            "relire_ms": relire_ms,
-            "redemarrer": p.etape == Etape::Prete,
-            "version": lue,
+        EtatDeLaRecherche {
+            etape: p.etape.nom(),
+            texte,
+            detail,
+            barre,
+            progression,
+            en_cours,
+            relire_ms,
+            redemarrer: p.etape == Etape::Prete,
+            version: lue,
             // Une version prete EXIGEE : les depots reels la refusent tant qu'elle n'est pas installee
             // (`depot_acte::exigee_en_attente`, qui lit le meme `prete.json`). La phrase se lit sans survol.
-            "exigee": (p.etape == Etape::Prete && !p.exigee.is_empty())
+            exigee: (p.etape == Etape::Prete && !p.exigee.is_empty())
                 .then(|| format!("Elle est indispensable avant de déclarer ({}) : aucun dépôt réel ne part tant qu'elle n'est pas installée.", p.exigee)),
-            "installee": (!p.installee.is_empty()).then(|| p.installee.clone()),
-        })
+            installee: (!p.installee.is_empty()).then(|| p.installee.clone()),
+        }
     }
+
+    /// Le point de la recherche, tenu. Un fil tombe en le tenant ne le rend pas faux : le point est repris tel quel.
+    fn tenu(&self) -> std::sync::MutexGuard<'_, Point> {
+        match self.0.lock() {
+            Ok(p) => p,
+            Err(empoisonne) => empoisonne.into_inner(),
+        }
+    }
+}
+
+/// CE QUE L'INDICATEUR DE MISE A JOUR MONTRE (`Recherche::etat`).
+#[derive(Debug, Clone, Serialize)]
+pub struct EtatDeLaRecherche {
+    pub etape: &'static str,
+    pub texte: String,
+    pub detail: Option<String>,
+    pub barre: bool,
+    pub progression: Option<f64>,
+    pub en_cours: bool,
+    pub relire_ms: Option<u64>,
+    pub redemarrer: bool,
+    pub version: Option<String>,
+    pub exigee: Option<String>,
+    pub installee: Option<String>,
 }
 
 /// « Elle change un calcul de paie : … », la phrase `calcul` de « Publier » terminee par un point.
@@ -1437,7 +1611,7 @@ const APPLIQUEE: &str = "appliquee.json";
 
 /// LA SEULE ECRITURE D'`appliquee.json` (`Appliquee`).
 fn ecrire_appliquee(chemin: &Path, a: &Appliquee) -> R<()> {
-    ecrire_json(chemin, &serde_json::to_value(a).map_err(|e| e.to_string())?)
+    ecrire_json(chemin, a)
 }
 
 /// Le geste « Redemarrer pour mettre a jour » : la version prete part au relais (comme au lancement, `au_lancement`) ; a
@@ -1458,7 +1632,10 @@ pub fn redemarrer_pour_mettre_a_jour(inst: &Path, suivi: &Recherche) -> R<String
 
 /// La version prete et plus recente que celle en place : celle qui s'installe au lancement suivant ; ou `None`.
 pub fn a_installer(inst: &Path) -> R<Option<String>> {
-    Ok(prete(inst)?.map(|p| p.version).filter(|v| plus_recente(v, &courante(&logiciel_de(inst)))))
+    match prete(inst)? {
+        Some(p) if plus_recente(&p.version, &courante(&logiciel_de(inst))?)? => Ok(Some(p.version)),
+        Some(_) | None => Ok(None),
+    }
 }
 
 fn deplacer(de: &Path, vers: &Path) -> std::io::Result<()> {
@@ -1478,38 +1655,49 @@ fn copier(de: &Path, vers: &Path) -> std::io::Result<u64> {
 }
 
 /// La bascule : `logiciel/` -> `logiciel/.avant/`, la version prete a sa place ; tout revient si ca casse.
-pub fn appliquer(inst: &Path) -> R<Value> {
+pub fn appliquer(inst: &Path) -> R<Basculee> {
     appliquer_depuis(&dossier_maj(inst), &logiciel_de(inst))
+}
+
+/// Ce qu'une bascule a fait : la version en place, ou la precedente est gardee, quand.
+#[derive(Debug, Clone, Serialize)]
+pub struct Basculee {
+    pub version: String,
+    pub avant: String,
+    pub quand: String,
 }
 
 /// `appliquer`, le dossier de la version prete et le logiciel donnes : `<installation>/maj/`, ou, pour le relais lance avec
 /// `--racine`, le `maj/` de la compagnie ou la version prete est rangee.
-fn appliquer_depuis(maj: &Path, code: &Path) -> R<Value> {
-    let inst = code.parent().map(Path::to_path_buf).unwrap_or_default();
+fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
+    let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| socle::echec::avec("Le logiciel n'est dans aucune installation.", a_part_chemin(code)))?;
     let d = prete_dans(maj)?.ok_or("aucune version prete a appliquer")?;
     let version = d.version.clone();
     let neuf = maj.join(&version).join("logiciel");
     let avant = code.join(".avant");
     let _ = std::fs::remove_dir_all(&avant);
     std::fs::create_dir_all(&avant).map_err(|e| e.to_string())?;
-    let entrees = |d: &Path| -> R<Vec<PathBuf>> {
-        Ok(std::fs::read_dir(d)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| !NE_PAS_TOUCHER.iter().any(|n| p.file_name().is_some_and(|f| f == *n)))
-            .collect())
+    // Les entrees d'un dossier, par nom, sauf ce que la bascule ne touche pas.
+    let entrees = |d: &Path| -> R<Vec<std::ffi::OsString>> {
+        let mut v = Vec::new();
+        for e in std::fs::read_dir(d).map_err(|e| socle::echec::du_disque(d, &e))? {
+            let nom = e.map_err(|e| socle::echec::du_disque(d, &e))?.file_name();
+            if !NE_PAS_TOUCHER.iter().any(|n| nom == *n) {
+                v.push(nom);
+            }
+        }
+        Ok(v)
     };
     let mut deplaces: Vec<std::ffi::OsString> = Vec::new();
     let mut arrives: Vec<std::ffi::OsString> = Vec::new();
     let mut faire = || -> R<()> {
-        for p in entrees(code)? {
-            let nom = p.file_name().unwrap_or_default().to_os_string();
+        for nom in entrees(code)? {
+            let p = code.join(&nom);
             deplacer(&p, &avant.join(&nom)).map_err(|e| socle::echec::du_disque(&p, &e))?;
             deplaces.push(nom);
         }
-        for p in entrees(&neuf)? {
-            let nom = p.file_name().unwrap_or_default().to_os_string();
+        for nom in entrees(&neuf)? {
+            let p = neuf.join(&nom);
             deplacer(&p, &code.join(&nom)).map_err(|e| socle::echec::du_disque(&p, &e))?;
             arrives.push(nom);
         }
@@ -1542,36 +1730,38 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Value> {
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand: quand.clone(), notes: d.notes, calcul: d.calcul, vue: false })?;
     let _ = std::fs::remove_file(maj.join(PRETE));
     let _ = std::fs::remove_dir_all(maj.join(&version));
-    Ok(json!({"version": version, "avant": avant.display().to_string(), "quand": quand}))
+    Ok(Basculee { version, avant: avant.display().to_string(), quand })
 }
 
-/// Reprendre la version d'avant, gardee dans `.avant/`. Une seule marche arriere.
-pub fn revenir(inst: &Path) -> R<Value> {
+/// Reprendre la version d'avant, gardee dans `.avant/`. Une seule marche arriere. Rend la version reprise.
+pub fn revenir(inst: &Path) -> R<String> {
     let code = &logiciel_de(inst);
     let avant = code.join(".avant");
     if !avant.join("donnees").is_dir() {
-        return Err(socle::echec::avec("Cette installation n'a pas de version d'avant où revenir.", json!({"chemin": avant.to_string_lossy()})));
+        return Err(socle::echec::avec("Cette installation n'a pas de version d'avant où revenir.", a_part_chemin(&avant)));
     }
-    let version_avant = courante(&avant);
+    let version_avant = courante(&avant)?;
     // Ce qui part est DEPLACE dans `.apres/`, puis efface si possible : sous Windows, le programme qui lance `maj
     // --revenir` (`puppetpaie.exe`) ne peut pas s'effacer pendant qu'il tourne, mais il peut se deplacer.
     let apres = code.join(".apres");
     let _ = std::fs::remove_dir_all(&apres);
     std::fs::create_dir_all(&apres).map_err(|e| e.to_string())?;
-    for e in std::fs::read_dir(code).map_err(|e| e.to_string())?.flatten() {
+    for e in std::fs::read_dir(code).map_err(|e| socle::echec::du_disque(code, &e))? {
+        let e = e.map_err(|e| socle::echec::du_disque(code, &e))?;
         let p = e.path();
-        if NE_PAS_TOUCHER.iter().any(|n| p.file_name().is_some_and(|f| f == *n)) {
+        if NE_PAS_TOUCHER.iter().any(|n| e.file_name() == *n) {
             continue;
         }
         deplacer(&p, &apres.join(e.file_name())).map_err(|e| socle::echec::du_disque(&p, &e))?;
     }
-    for e in std::fs::read_dir(&avant).map_err(|e| e.to_string())?.flatten() {
+    for e in std::fs::read_dir(&avant).map_err(|e| socle::echec::du_disque(&avant, &e))? {
+        let e = e.map_err(|e| socle::echec::du_disque(&avant, &e))?;
         deplacer(&e.path(), &code.join(e.file_name())).map_err(|e| e.to_string())?;
     }
     let _ = std::fs::remove_dir(&avant);
     let _ = std::fs::remove_dir_all(&apres);
     let _ = std::fs::remove_file(dossier_maj(inst).join(APPLIQUEE));
-    Ok(json!({"version": version_avant}))
+    Ok(version_avant)
 }
 
 /// Ce qu'une installation retient de la livraison de fictives qu'elle a : `fictives/.livraison.json`,
@@ -1655,7 +1845,7 @@ pub fn chercher_tant_qu_il_tourne(inst: &Path, cles: &[&str], suivi: &Recherche,
                 let Some(a) = attentes.get(n).or(attentes.last()).copied() else { return };
                 n += 1;
                 calme = false;
-                suivi.0.lock().unwrap_or_else(|e| e.into_inner()).nouvel_essai = Some(std::time::Instant::now() + a);
+                suivi.tenu().nouvel_essai = Some(std::time::Instant::now() + a);
                 a
             }
             _ => return,
@@ -1682,7 +1872,7 @@ pub fn lancer_relais(inst: &Path, version: &str) -> R<bool> {
     let neuf = maj.join(version).join("logiciel");
     let source = programme(&neuf, "puppetpaie");
     if !source.is_file() {
-        return Err(socle::echec::avec(format!("Le programme de la fenêtre manque dans la version {}.", version), json!({"chemin": source.to_string_lossy()})));
+        return Err(socle::echec::avec(format!("Le programme de la fenêtre manque dans la version {}.", version), a_part_chemin(&source)));
     }
     let relais = maj.join(format!("relais-{}{}", version, if cfg!(windows) { ".exe" } else { "" }));
     std::fs::copy(&source, &relais).map_err(|e| e.to_string())?;
@@ -1757,14 +1947,29 @@ pub fn relais(args: &[String]) -> i32 {
         (None, Some(r)) => dossier_maj(&r),
         _ => return 2,
     };
-    let inst = code.parent().map(Path::to_path_buf).unwrap_or_default();
-    let pid = valeur("--attendre").and_then(|p| p.to_str().and_then(|p| p.parse::<u32>().ok())).unwrap_or(0);
-    if !attendre_fin(pid, &inst) {
-        noter(&inst, "Mise a jour non appliquee : le programme qui l'a lancee ne s'est pas arrete.");
-    } else {
+    let Some(inst) = code.parent().map(Path::to_path_buf) else { return 2 };
+    let pid = valeur("--attendre").and_then(|p| p.to_str().map(str::parse::<u32>));
+    let attendu = match pid {
+        Some(Ok(p)) => {
+            let parti = attendre_fin(p, &inst);
+            if !parti {
+                noter(&inst, "Mise a jour non appliquee : le programme qui l'a lancee ne s'est pas arrete.");
+            }
+            parti
+        }
+        Some(Err(e)) => {
+            noter(&inst, &format!("Mise a jour non appliquee : le numero du programme a attendre ne se lit pas ({}).", e));
+            false
+        }
+        None => {
+            noter(&inst, "Mise a jour non appliquee : le relais ne dit pas quel programme attendre.");
+            false
+        }
+    };
+    if attendu {
         let journal = |t: &str| noter(&inst, t);
         match appliquer_depuis(&maj, &code) {
-            Ok(r) => journal(&format!("Mise a jour appliquee : PuppetPaie {} (la precedente est gardee dans .avant/).", version_lue(r["version"].as_str().unwrap_or("?")))),
+            Ok(r) => journal(&format!("Mise a jour appliquee : PuppetPaie {} (la precedente est gardee dans .avant/).", version_lue(&r.version))),
             Err(e) => journal(&format!("Mise a jour non appliquee : {}", e)),
         }
     }
@@ -1784,33 +1989,35 @@ pub fn commande(args: &[String]) -> i32 {
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).filter(|v| !v.starts_with("--")).cloned();
     // Les gestes de la publication par GitHub : ni compagnie ni coffre.
     let github = if drapeau("--cle-github") {
-        let dossier = valeur("--cle-github").map(PathBuf::from).unwrap_or_else(|| dossier_maj(&installation()));
+        // Sans dossier dit, la graine va dans `maj/` de l'installation.
+        let dossier = match valeur("--cle-github") {
+            Some(d) => PathBuf::from(d),
+            None => dossier_maj(&installation()),
+        };
         Some(generer_cle_github(&dossier).map(|r| {
             format!(
                 "Cle de GitHub fabriquee.\nLa GRAINE (secrete) est dans : {}\n  l'ouvrir, copier tout son contenu dans le secret PUPPETPAIE_CLE_SIGNATURE de l'environnement \
                  « publication » du depot public, puis EFFACER ce fichier.\nLa cle publique (pas secrete), aussi dans {} :\n  {}\n  a reporter dans moteur/src/compagnie/maj.rs, CLE_PUBLIQUE_GITHUB.",
-                r["graine"].as_str().unwrap_or(""),
-                r["publique"].as_str().unwrap_or(""),
-                r["cle_publique"].as_str().unwrap_or("")
+                r.graine, r.publique, r.cle_publique
             )
         }))
     } else if drapeau("--publier-github") {
         match (valeur("--logiciel"), valeur("--sortie")) {
             (Some(l), Some(s)) => Some(
-                publier_depuis_l_environnement(Path::new(&l), Path::new(&s), &valeur("--notes").unwrap_or_default(), &valeur("--calcul").unwrap_or_default(), &valeur("--exigee").unwrap_or_default())
+                publier_depuis_l_environnement(Path::new(&l), Path::new(&s), &phrase_publiee(valeur("--notes")), &phrase_publiee(valeur("--calcul")), &phrase_publiee(valeur("--exigee")))
                     .map(|r| format!("Signee : {} ({}) dans {}", r.manifeste.version, r.dire_les_archives(), r.dossier.display())),
             ),
-            _ => Some(Err(socle::echec::avec("La publication demande le dossier du logiciel et celui où écrire.", json!({"options": "--logiciel DOSSIER --sortie DOSSIER"})))),
+            _ => Some(Err(options_manquantes("La publication demande le dossier du logiciel et celui où écrire.", "--logiciel DOSSIER --sortie DOSSIER"))),
         }
     } else if drapeau("--marquer-fictives") {
         Some(match valeur("--logiciel") {
             Some(l) => marquer_les_fictives(Path::new(&l)).map(|e| format!("Fictives marquees : livraison {}.", e)),
-            None => Err(socle::echec::avec("Marquer les fictives demande le dossier du logiciel.", json!({"options": "--logiciel DOSSIER"}))),
+            None => Err(options_manquantes("Marquer les fictives demande le dossier du logiciel.", "--logiciel DOSSIER")),
         })
     } else if drapeau("--poser-fictives") {
         Some(match (valeur("--logiciel"), valeur("--poser-fictives")) {
             (Some(l), Some(d)) => poser_les_fictives(Path::new(&l), Path::new(&d)).map(|e| format!("Fictives posees dans {} : livraison {}.", d, e)),
-            _ => Err(socle::echec::avec("Poser les fictives demande le dossier du logiciel et celui où les poser.", json!({"options": "--poser-fictives DOSSIER --logiciel DOSSIER"}))),
+            _ => Err(options_manquantes("Poser les fictives demande le dossier du logiciel et celui où les poser.", "--poser-fictives DOSSIER --logiciel DOSSIER")),
         })
     } else {
         None
@@ -1832,26 +2039,25 @@ pub fn commande(args: &[String]) -> i32 {
         generer_cle(&racine, drapeau("--remplacer")).map(|r| {
             format!(
                 "Cle privee ecrite (scellee par le coffre : le mot de passe du logiciel l'ouvre sur un autre poste) : {}\nCle publique, a reporter dans moteur/src/compagnie/maj.rs, CLE_PUBLIQUE :\n  {}{}",
-                r["chemin"].as_str().unwrap_or(""),
-                r["cle_publique"].as_str().unwrap_or(""),
-                if r["correspond"] == json!(true) { "" } else { "\n  (le code porte une autre cle publique : tant qu'elle n'est pas reportee, `publier` refuse)" }
+                r.chemin,
+                r.cle_publique,
+                if r.correspond { "" } else { "\n  (le code porte une autre cle publique : tant qu'elle n'est pas reportee, `publier` refuse)" }
             )
         })
     } else if drapeau("--publier") {
-        publier(&racine, valeur("--publier").as_deref(), &valeur("--notes").unwrap_or_default(), &valeur("--calcul").unwrap_or_default(), &valeur("--exigee").unwrap_or_default())
+        publier(&racine, valeur("--publier").as_deref(), &phrase_publiee(valeur("--notes")), &phrase_publiee(valeur("--calcul")), &phrase_publiee(valeur("--exigee")))
             .map(|r| format!("Publiee : {} ({}) dans {}", version_lue(&r.manifeste.version), r.dire_les_archives(), r.dossier.display()))
     } else if drapeau("--appliquer") {
         if crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
             Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into())
         } else {
-            appliquer(&installation())
-                .map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(r["version"].as_str().unwrap_or("")), r["avant"].as_str().unwrap_or("")))
+            appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant))
         }
     } else if drapeau("--revenir") {
         if crate::interface::instance::ouverte(&installation(), crate::interface::instance::Plage::DU_POSTE) {
             Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into())
         } else {
-            revenir(&installation()).map(|r| format!("Retour a la version {}", version_lue(r["version"].as_str().unwrap_or(""))))
+            revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v)))
         }
     } else {
         Ok(verifier(!drapeau("--sans-telecharger")))
@@ -1866,6 +2072,17 @@ pub fn commande(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// Une phrase de « Publier » (`notes`, `calcul`, `exigee`) telle que `derniere.json` l'ecrit : la phrase dite, ou rien. La
+/// forme publiee porte toujours sa cle, vide quand l'editeur ne dit rien ; elle ne change plus.
+fn phrase_publiee(dite: Option<String>) -> String {
+    dite.into_iter().collect()
+}
+
+/// Le refus d'une commande a qui manquent des options : la phrase, et les options a part.
+fn options_manquantes(phrase: &str, options: &str) -> String {
+    socle::echec::avec(phrase, socle::echec::APart { detail: Some(options.to_string()), ..Default::default() })
 }
 
 #[cfg(test)]
@@ -1936,7 +2153,7 @@ mod tests {
             std::fs::write(neuf.join("EDITION.json"), "{\"edition\": \"bride\"}").unwrap();
             poser_la_prete(&racine);
             appliquer(&racine).unwrap();
-            assert_eq!(courante(&code), "2026.11.01");
+            assert_eq!(courante(&code).unwrap(), "2026.11.01");
             assert_eq!(std::fs::read_to_string(code.join("EDITION.json")).ok().as_deref(), avant);
             let _ = std::fs::remove_dir_all(&base);
         }
@@ -1959,11 +2176,11 @@ mod tests {
         let r = appliquer(&racine);
         ECHOUER_SUR.with(|e| *e.borrow_mut() = None);
         assert!(r.unwrap_err().starts_with("la bascule a echoue"));
-        assert_eq!(courante(&code), "2026.10.09");
+        assert_eq!(courante(&code).unwrap(), "2026.10.09");
         assert_eq!(std::fs::read_to_string(code.join("donnees").join("a.json")).unwrap(), "2026.10.09");
         assert_eq!(std::fs::read_to_string(code.join("interface").join("index.html")).unwrap(), "2026.10.09");
         assert!(code.join("EDITION.json").is_file());
-        assert_eq!(courante(&neuf), "2026.11.01");
+        assert_eq!(courante(&neuf).unwrap(), "2026.11.01");
         assert_eq!(std::fs::read_to_string(neuf.join("donnees").join("a.json")).unwrap(), "2026.11.01");
         assert!(neuf.join("interface").join("index.html").is_file());
         assert!(prete(&racine).unwrap().is_some(), "la version reste prete, pour le prochain demarrage");
@@ -2034,7 +2251,7 @@ mod tests {
         assert!(!signature_valide(&altere, &sig, &publique));
         let neuf = base.join("maj-neuve").join("logiciel");
         deballer(&octets, &neuf).unwrap();
-        assert_eq!(courante(&neuf), "2026.10.09");
+        assert_eq!(courante(&neuf).unwrap(), "2026.10.09");
         assert!(neuf.join("donnees").join("a.json").is_file());
         assert!(!neuf.join("target").exists());
         // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.

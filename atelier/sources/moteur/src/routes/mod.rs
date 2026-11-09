@@ -45,7 +45,7 @@ use enveloppe::{Charge, Demande, Porte, Refus, Rendu, Reponse};
 use brut::brute;
 
 pub use enveloppe::{phrases_rendues, plus_longue_phrase};
-pub(crate) use brut::{en_json, encart, jour_en_clair, lire_charge, lire_texte, mot, nom_a_l_ecran, nombre, pastille, phrase_en_tete};
+pub(crate) use brut::{en_json, encart, jour_en_clair, lire_charge, mot, nom_a_l_ecran, nombre, pastille, phrase_en_tete};
 
 mod brut;
 pub mod enveloppe;
@@ -233,7 +233,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         // L'ouverture du logiciel et la veille : sauvegarder, relever les retours, les signatures et les fiches, sans
         // jamais echouer. ATTENTION : hors d'une compagnie fictive, cette route va au reseau (net-entreprises, Urssaf,
         // boite courriel, Drive, serveur des incidents).
-        _ if dans(crate::compagnie::ouverture::ROUTES) => brute(crate::compagnie::ouverture::route(o, &ctx, route, c)),
+        _ if dans(crate::compagnie::ouverture::ROUTES) => crate::compagnie::ouverture::route(&porte, charge),
         // Le banc : l'horloge de la compagnie fictive (rattraper ce qui etait du, ce que le bandeau « pendant votre
         // absence » lit ; `horloge::HorlogeFictive`).
         Route::HorlogeRattraper => crate::horloge::route(&ctx, charge),

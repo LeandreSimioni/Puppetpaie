@@ -338,7 +338,7 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
 fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     let lus = crate::compagnie::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
-    let mois_tous: Vec<String> = mois_connus(&ctx.racine).into_iter().map(|(m, _)| m).collect();
+    let mois_tous: Vec<String> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
     let mut annees: BTreeSet<String> = mois_tous.iter().map(|m| m.chars().take(4).collect()).collect();
     annees.extend(clos.keys().cloned());
     let mut out = Vec::new();
@@ -353,10 +353,10 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
                 acceptees.push(x.clone());
             }
         }
-        let export = chemin.exists().then(|| ExportDeLAnnee {
-            fichier,
-            ecrit: crate::compagnie::depart::ecrit_le(&ctx.racine, &chemin).as_str().filter(|e| !e.is_empty()).map(str::to_string),
-        });
+        let export = match chemin.exists() {
+            true => Some(ExportDeLAnnee { fichier, ecrit: crate::compagnie::depart::ecrit_le(&ctx.racine, &chemin)? }),
+            false => None,
+        };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
         let note = clos.get(a);
         let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", super::quand(&c.le))).collect();

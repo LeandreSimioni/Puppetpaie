@@ -428,7 +428,7 @@ struct BulletinRepris {
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
 fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
-    let noms = crate::routes::ouverture::mois_connus(&ctx.racine).into_iter().filter(|(m, _)| m == mois).flat_map(|(_, n)| n);
+    let noms = crate::routes::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.ends_with(".zip")) {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
     }

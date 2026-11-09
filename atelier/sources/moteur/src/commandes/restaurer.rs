@@ -53,9 +53,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let reste = restauration::a_faire(&crate::compagnie::coffre::Coffre::du_poste(&cible, ""));
     let code = if r.incidents.is_empty() { 0 } else { 1 };
     if json {
-        let mut v = r.en_json();
-        v["a_faire"] = serde_json::json!(reste);
-        dire!("{}", serde_json::json!({"ok": code == 0, "resultat": v}));
+        dire!("{}", serde_json::json!({"ok": code == 0, "resultat": r.dite(reste)}));
         return code;
     }
     for f in &r.redescendus {
