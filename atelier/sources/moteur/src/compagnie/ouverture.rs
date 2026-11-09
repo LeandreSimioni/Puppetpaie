@@ -933,7 +933,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…");
             let fin = socle::paris::maintenant_naif();
-            match crate::compagnie::releve::relever_retours(ctx, fin - opt.jours * 86_400, fin, false, "production", client_dsn, "") {
+            match crate::compagnie::releve::relever_retours(ctx, fin - opt.jours * 86_400, fin, false, "production", client_dsn, None) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -970,8 +970,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
             let rel = match client_dpae {
-                Some(c) => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), "dpae"),
-                None => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, ""),
+                Some(c) => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
+                None => crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             };
             match rel {
                 Ok(rel) => {

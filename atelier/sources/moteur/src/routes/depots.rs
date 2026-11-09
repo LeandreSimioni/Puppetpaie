@@ -221,9 +221,6 @@ pub(crate) struct ChargeSuivre {
     pub(crate) mois: Option<Mois>,
 }
 
-/// Le flux que `envois::releve_retours` lit comme « tout flux ».
-const TOUT_FLUX: &str = "";
-
 /// CE QUE LA BOITE DU DEPOT DIT, autour de ce que le fichier declare (`A`, l'apercu d'une DSN ou d'une DPAE) : sa
 /// phrase, son titre, ses encarts, et les phrases pour `moteur route --texte`.
 #[derive(Debug, Serialize)]
@@ -852,13 +849,9 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee();
     let releve = if dpae {
-        let de = match &flux {
-            Some(f) => f.as_str(),
-            None => TOUT_FLUX,
-        };
-        crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, de)
+        crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
     } else {
-        crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, "")
+        crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
     };
     let incident = match releve {
         Ok(r) => releve_retours::incidents_en_phrase(&r),
@@ -911,13 +904,9 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                let de = match &flux {
-                    Some(f) => f.as_str(),
-                    None => TOUT_FLUX,
-                };
-                crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, de)
+                crate::compagnie::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
             }
-            Quoi::Dsn => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, ""),
+            Quoi::Dsn => crate::compagnie::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
         };
         incident = match releve {
             Ok(rel) => releve_retours::incidents_en_phrase(&rel),
