@@ -470,7 +470,8 @@ fn phrase_du_mois(debut: Option<String>, etapes: &[Etape]) -> String {
 
 /// Ou en est un engagement, ligne par ligne. Une ligne qui ne le concerne pas (la DPAE d'un contrat qui a commence un
 /// mois d'avant, la signature d'un salarie au mois) est faite pour lui. `dsn` : la classe de son etablissement
-/// (`groupes_dsn`).
+/// (`groupes_dsn`) ; aucune pour une carte qui ne nomme pas encore son salarie, dans une compagnie de plusieurs
+/// etablissements (sa DSN est a completer).
 /// Le point d'un engagement auquel il manque un fait, sur chacune de ses lignes.
 const A_COMPLETER: &str = "a_completer";
 
@@ -487,11 +488,11 @@ struct Point {
     dpae: &'static str,
     contrat: &'static str,
     documents: &'static str,
-    dsn: usize,
+    dsn: Option<usize>,
 }
 
 impl Point {
-    fn de(p: &Vue, dsn: usize) -> Point {
+    fn de(p: &Vue, dsn: Option<usize>) -> Point {
         let embauche = p.contrat.premier_mois();
         // UN CONTRAT COMMENCE AVANT LE LOGICIEL (`engagement::stock::commence_avant_le_logiciel`) : sa DPAE et son contrat
         // se sont faits ailleurs ; ici, rien a declarer ni a signer.
@@ -566,14 +567,14 @@ impl Point {
 
     /// Sa vague : ce qui reste a faire de notre cote. Une DPAE partie l'est, revenue refusee ou non ; un contrat parti
     /// l'est, signe ou non.
-    fn vague(&self) -> (bool, &'static str, &'static str, usize) {
+    fn vague(&self) -> (bool, &'static str, &'static str, Option<usize>) {
         let contrat = if matches!(self.contrat, "a_envoyer" | "a_refaire") { self.contrat } else { "parti" };
         (self.dpae == "a_faire", contrat, self.documents, self.dsn)
     }
 
     /// Combien de ses lignes sont faites de notre cote : l'ordre des colonnes, la plus avancee en G.
     fn avance(&self, dsn_fait: &[bool]) -> usize {
-        [!matches!(self.dpae, "a_faire" | A_COMPLETER | A_VALIDER), matches!(self.contrat, "fait" | "en_attente" | RIEN_A_SIGNER), self.documents == "fait", dsn_fait.get(self.dsn) == Some(&true)]
+        [!matches!(self.dpae, "a_faire" | A_COMPLETER | A_VALIDER), matches!(self.contrat, "fait" | "en_attente" | RIEN_A_SIGNER), self.documents == "fait", self.dsn.is_some_and(|k| dsn_fait.get(k) == Some(&true))]
             .iter()
             .filter(|x| **x)
             .count()
@@ -583,22 +584,22 @@ impl Point {
 /// Une colonne : son nom, la classe DSN de ses etablissements, et ses engagements (rangs dans `etat_par_engagement`).
 struct Colonne {
     nom: String,
-    dsn: usize,
+    dsn: Option<usize>,
     membres: Vec<usize>,
 }
 
 /// LES COLONNES DU MOIS. Les engagements d'une meme vague font une colonne ; la plus avancee est G. Une DPAE revenue
 /// refusee ne reste pas dans G, qui dit ce qui est fait : elle sort a cote. Un etablissement sans engagement du mois
-/// dont la DSN diverge a sa colonne. `dsn_fait` : par classe DSN, si elle est faite.
+/// dont la DSN diverge a sa colonne. `dsn_fait` : par classe DSN (`groupes_dsn`, une au moins), si elle est faite.
 fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
-    let mut vagues: Vec<((bool, &'static str, &'static str, usize), Vec<usize>)> = Vec::new();
+    let mut vagues: Vec<((bool, &'static str, &'static str, Option<usize>), Vec<usize>)> = Vec::new();
     for (i, p) in points.iter().enumerate() {
         match vagues.iter_mut().find(|(v, _)| *v == p.vague()) {
             Some((_, m)) => m.push(i),
             None => vagues.push((p.vague(), vec![i])),
         }
     }
-    let mut cols: Vec<(usize, Vec<usize>)> = vagues.into_iter().map(|(v, m)| (v.3, m)).collect();
+    let mut cols: Vec<(Option<usize>, Vec<usize>)> = vagues.into_iter().map(|(v, m)| (v.3, m)).collect();
     cols.sort_by_key(|(_, m)| std::cmp::Reverse(points[m[0]].avance(dsn_fait)));
     if let Some((dsn, g)) = cols.first_mut() {
         let (refusees, reste): (Vec<usize>, Vec<usize>) = g.iter().partition(|i| points[**i].dpae == "refuse");
@@ -609,12 +610,9 @@ fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
         }
     }
     for c in 0..dsn_fait.len() {
-        if !cols.iter().any(|(d, _)| *d == c) {
-            cols.push((c, Vec::new()));
+        if !cols.iter().any(|(d, _)| *d == Some(c)) {
+            cols.push((Some(c), Vec::new()));
         }
-    }
-    if cols.is_empty() {
-        cols.push((0, Vec::new()));
     }
     const COTE: &str = "ABCDEFHIJKLMNOPQRSTUVWXYZ";
     cols.into_iter()
@@ -634,8 +632,8 @@ fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
 
 /// Une ligne en cases : les colonnes voisines au meme point (`point`) se fondent. Chaque case : son point, ses
 /// engagements, ses colonnes, et la classe DSN de sa premiere colonne.
-fn cases_de_la_ligne(cols: &[Colonne], point: impl Fn(&Colonne) -> String) -> Vec<(String, Vec<usize>, Vec<String>, usize)> {
-    let mut out: Vec<(String, Vec<usize>, Vec<String>, usize)> = Vec::new();
+fn cases_de_la_ligne(cols: &[Colonne], point: impl Fn(&Colonne) -> String) -> Vec<(String, Vec<usize>, Vec<String>, Option<usize>)> {
+    let mut out: Vec<(String, Vec<usize>, Vec<String>, Option<usize>)> = Vec::new();
     for c in cols {
         let p = point(c);
         match out.last_mut() {
@@ -2054,13 +2052,20 @@ impl<'a> Moteur<'a> {
 
         // --- Les colonnes : chaque engagement a son point, la DSN celui de son etablissement.
         let classes = self.groupes_dsn(le_mois)?;
-        // Un engagement dont l'etablissement n'est d'aucune classe (une carte qui ne nomme pas son salarie) va avec le
-        // principal, la premiere.
-        let classe_de = |p: &Vue| -> usize {
-            let classe = p.etablissement.as_deref().and_then(|nic| classes.iter().position(|(nics, _)| nics.iter().any(|n| n == nic)));
-            if let Some(k) = classe { k } else { 0 }
+        // La classe d'un engagement : celle de son etablissement. Une compagnie d'un seul etablissement n'a que lui. Une
+        // carte qui ne nomme pas encore son salarie, dans une compagnie de plusieurs etablissements, n'en a pas : sa DSN
+        // est a completer. Un etablissement qui n'est pas de la compagnie se refuse.
+        let classe_de = |p: &Vue| -> R<Option<usize>> {
+            match (p.etablissement.as_deref(), classes.len()) {
+                (_, 1) => Ok(Some(0)),
+                (None, _) => Ok(None),
+                (Some(nic), _) => match classes.iter().position(|(nics, _)| nics.iter().any(|n| n == nic)) {
+                    Some(k) => Ok(Some(k)),
+                    None => Err(erreur(Classe::Illisible, format!("L'établissement {} d'un engagement de {} n'est pas un établissement de la compagnie : corrigez la fiche du salarié.", nic, le_mois.libelle(socle::mois::Graphie::Accentuee)))),
+                },
+            }
         };
-        let points: Vec<Point> = paies.iter().map(|l| Point::de(&l.vue, classe_de(&l.vue))).collect();
+        let points: Vec<Point> = paies.iter().map(|l| Ok(Point::de(&l.vue, classe_de(&l.vue)?))).collect::<R<Vec<Point>>>()?;
         let dsn_fait: Vec<bool> = classes.iter().map(|(_, g)| g.etat == EtatCase::Fait).collect();
         let cols = colonnes(&points, &dsn_fait);
         let de = |m: &[usize]| -> Vec<&Vue> { m.iter().map(|i| &paies[*i].vue).collect() };
@@ -2136,8 +2141,15 @@ impl<'a> Moteur<'a> {
             contrats.push(g.sous(&noms));
         }
 
-        // --- DSN : par etablissement (`groupes_dsn`), chaque colonne sous la DSN de ses etablissements.
-        let dsn: Vec<Groupe> = cases_de_la_ligne(&cols, |c| c.dsn.to_string()).into_iter().map(|(_, _, noms, k)| classes[k].1.clone().sous(&noms)).collect();
+        // --- DSN : par etablissement (`groupes_dsn`), chaque colonne sous la DSN de ses etablissements ; celle des cartes
+        // qui ne nomment pas encore leur salarie est a completer.
+        let dsn: Vec<Groupe> = cases_de_la_ligne(&cols, |c| format!("{:?}", c.dsn))
+            .into_iter()
+            .map(|(_, m, noms, k)| match k {
+                Some(k) => classes[k].1.clone().sous(&noms),
+                None => a_completer(m.len()).sous(&noms),
+            })
+            .collect();
 
         // --- Documents : par salarie du mois, des que son engagement est valide, sans echeance : ils partent quand on veut.
         let mut documents = Vec::new();
@@ -2476,7 +2488,8 @@ fn carre(cle: QuelleEtape, nom: impl Into<String>, etat: EtatCase, phrase: Strin
 /// geste qu'ouvre un clic, et le titre de sa boite. Le contrat ou l'avenant parti et pas revenu se note signe d'un clic
 /// (`contrat-recu`).
 fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
-    let pt = Point::de(p, 0);
+    // Les carres ne lisent pas la classe DSN du point (la DSN n'a pas de carre).
+    let pt = Point::de(p, None);
     // A COMPLETER, OU A VALIDER : rien n'est parti de lui ; chaque carre qui l'attend dit ce qui reste, sans geste.
     if p.a_completer.is_some() || !p.valide() {
         let attend = |cle: QuelleEtape, nom: &str, point: &str| match (point, p.a_completer.as_deref()) {

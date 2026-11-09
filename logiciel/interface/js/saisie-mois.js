@@ -351,7 +351,7 @@ function peindreCarte(div) {
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
   // Un contrat sur plusieurs mois porte sa pastille à côté du nom.
   poserChevrons(div, ligne.contrat, ligne.debut, ligne.fin);
-  const net = div._total ? euros(div._total.net_paye) : "";
+  const net = div._total ? netPaye(div._total.net_paye) : "";
   const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit].filter(Boolean).join(" · ");
   cible.innerHTML = `
     <div class="carte-quand" title="${echapper(dates.map(jjmmaaaa).join(", "))}">
@@ -408,6 +408,11 @@ function boiteFrise(ligne) {
     <div class="actions"><button class="secondaire" onclick="fermerBoite()">Fermer</button></div>`);
 }
 
+/** Un net payé : vide tant que le prélèvement à la source ne l'est pas (la paie n'est pas encore validée). */
+function netPaye(v) {
+  return v == null ? "—" : euros(v);
+}
+
 /** Les trois nombres du bloc. Une case en cours de frappe ne se repeint pas :
  *  l'aperçu revient 350 ms après la dernière touche, et il écraserait le
  *  montant qu'on est justement en train de viser. */
@@ -418,7 +423,7 @@ function peindreChiffres(div, total) {
     // Le net (ce qu'on vire) et le coût employeur (ce que la compagnie sort), tels que le moteur les somme pour la
     // carte (`blocs` de l'aperçu). Le brut reste dans l'aperçu.
     net.innerHTML = total
-      ? `Net <b>${echapper(euros(total.net_paye))}</b>
+      ? `Net <b>${echapper(netPaye(total.net_paye))}</b>
          <span class="e-cout">Coût employeur <b>${echapper(euros(total.cout_employeur))}</b></span>`
       : `<span class="discret">${aideDe("net_attend")}</span>`;
   }
@@ -489,14 +494,14 @@ function vueApercu(a) {
   if (!groupes.length) return phrase;
   return `
     <div class="mois-chiffres">
-      <div><span>Net à virer</span><b>${euros(a.total_net)}</b></div>
+      <div><span>Net à virer</span><b>${netPaye(a.total_net)}</b></div>
       <div><span>Coût employeur</span><b>${euros(a.total_cout)}</b></div>
     </div>
     <ul class="mois-salaries">${groupes.map((g) => `
       <li title="${echapper(g.survol_dit)}">
         <span>${echapper(g.nom)}
           <span class="discret">· ${echapper(g.engagements_dit)}</span></span>
-        <b>${euros(g.net_paye)}</b>
+        <b>${netPaye(g.net_paye)}</b>
       </li>`).join("")}
     </ul>${phrase}`;
 }

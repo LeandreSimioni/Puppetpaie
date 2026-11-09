@@ -1631,7 +1631,8 @@ pub(crate) struct VuePaie {
     lieu: Option<String>,
     brut: Decimal,
     net_a_payer: Decimal,
-    net_paye: Decimal,
+    /// Le net paye, connu quand le prelevement a la source l'est (`Paie::pas`, a la validation) ; vide avant.
+    net_paye: Option<Decimal>,
     net_imposable: Decimal,
     cout_employeur: Decimal,
     avertissements: Vec<String>,
@@ -1690,11 +1691,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     };
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
-    // encore validee n'en a pas (`Paie::pas`), et son net paye est son net a payer.
-    let net_paye = match &p.pas {
-        Some(v) => q2(p.net_a_payer - v.prelevement),
-        None => q2(p.net_a_payer),
-    };
+    // encore validee n'en a pas (`Paie::pas`) : son net paye n'est pas encore connu.
+    let net_paye = p.pas.as_ref().map(|v| q2(p.net_a_payer - v.prelevement));
     // CE QUE LE MOTEUR A COMPRIS DE LA CARTE, en une ligne : son bulletin (ou qu'il n'y en a pas), son contrat, ses
     // bornes (et la periode de paie d'un contrat a cheval), ce qu'elle paye, le metier, le brut.
     let resolu_dit = {
@@ -1875,16 +1873,22 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
 /// Les trois nombres d'une carte (un engagement) ou d'un salarie (la colonne « Le mois »).
 #[derive(Debug, Clone, Serialize)]
 struct Trois {
-    net_paye: Decimal,
+    /// Vide tant que le net paye d'une de ces paies ne l'est (`VuePaie::net_paye`).
+    net_paye: Option<Decimal>,
     brut: Decimal,
     cout_employeur: Decimal,
     engagements: usize,
 }
 
+/// Le net paye de `vues` : leur somme, quand chacun est connu ; vide sinon.
+fn net_paye_de<'a>(vues: impl Iterator<Item = &'a VuePaie>) -> Option<Decimal> {
+    vues.map(|v| v.net_paye).sum::<Option<Decimal>>().map(q2)
+}
+
 impl Trois {
     fn de(vues: &[&VuePaie]) -> Trois {
         let somme = |f: fn(&VuePaie) -> Decimal| q2(vues.iter().map(|v| f(v)).fold(Decimal::new(0, 2), |t, x| t + x));
-        Trois { net_paye: somme(|v| v.net_paye), brut: somme(|v| v.brut), cout_employeur: somme(|v| v.cout_employeur), engagements: vues.len() }
+        Trois { net_paye: net_paye_de(vues.iter().copied()), brut: somme(|v| v.brut), cout_employeur: somme(|v| v.cout_employeur), engagements: vues.len() }
     }
 }
 
@@ -1959,7 +1963,8 @@ struct Calcul {
     libelle: String,
     paies: Vec<PaieVue>,
     total_cout: Decimal,
-    total_net: Decimal,
+    /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
+    total_net: Option<Decimal>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,
@@ -1975,7 +1980,8 @@ struct Apercu {
     libelle: String,
     paies: Vec<PaieDeLApercu>,
     total_cout: Decimal,
-    total_net: Decimal,
+    /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
+    total_net: Option<Decimal>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,
@@ -2203,7 +2209,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
         }
     }
     let total_cout = q2(vues.iter().fold(Decimal::new(0, 2), |t, v| t + v.cout_employeur));
-    let total_net = q2(vues.iter().fold(Decimal::new(0, 2), |t, v| t + v.net_paye));
+    let total_net = net_paye_de(vues.iter());
     // LES TROIS NOMBRES, sommes ici : par carte (une carte, un engagement) et par salarie (la colonne « Le mois »).
     let blocs = vues.iter().map(|v| Some(Trois::de(&[v]))).collect();
     let mut salaries: Vec<(String, String, Vec<&VuePaie>)> = Vec::new();
