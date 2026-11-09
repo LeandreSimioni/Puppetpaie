@@ -23,7 +23,7 @@ const JEUX: [(&str, &str, &str, &[&str]); 2] = [
 
 const DOSSIER_DES_SOURCES: &str = "dgfip-frais-de-mission";
 
-const USAGE: &str = "usage : moteur releve-missions <sources> <donnees>
+const USAGE: &str = "usage : moteur-atelier releve-missions <sources> <donnees>
 
 Releve chez data.economie.gouv.fr les indemnites journalieres de mission a l'etranger et les taux de chancellerie de la
 DGFiP, les relit comme le moteur, les depose datees dans <sources>/dgfip-frais-de-mission/ et remplace les tables livrees
@@ -35,7 +35,7 @@ pub fn commande(args: &[String]) -> i32 {
         eprintln!("{}", USAGE);
         return 2;
     }
-    match relever(Path::new(&args[0]), Path::new(&args[1]), &|url| crate::atelier::sources::telecharger(url, 120).map(|(o, _)| o)) {
+    match relever(Path::new(&args[0]), Path::new(&args[1]), &|url| crate::sources::telecharger(url, 120).map(|(o, _)| o)) {
         Ok(t) => {
             println!("{}", t);
             0

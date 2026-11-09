@@ -1,0 +1,54 @@
+[package]
+name = "atelier"
+version = "0.1.0"
+edition = "2021"
+description = "L'atelier de PuppetPaie, au-dessus du moteur et que rien ne prend : le binaire du nuage `moteur-atelier` (jamais livre), les releves des textes, les referentiels, les tables Unicode, le garde avant commit, le guet, les bulletins fictifs, les outils sur une compagnie."
+license = "EUPL-1.2"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Le binaire du nuage, jamais livre : la ligne de commande du moteur, plus celles de l'atelier.
+[[bin]]
+name = "moteur-atelier"
+path = "src/main.rs"
+
+[dependencies]
+socle = { path = "../socle" }
+droit = { path = "../droit" }
+engagement = { path = "../engagement" }
+documents = { path = "../documents" }
+declarations = { path = "../declarations" }
+import = { path = "../import" }
+# La feature `atelier` de ce que l'atelier prend : la redirection vers de faux serveurs locaux et le refus de tout acte
+# reel (`envois`, `compagnie`), l'enregistreur du scenario et le Drive d'un faux serveur (`routes`), le banc de la fenetre
+# (`moteur`). Elle ne s'allume que dans la cible de l'atelier : rien de l'espace ne prend `atelier`, et il est hors de
+# `default-members`.
+envois = { path = "../envois", features = ["atelier"] }
+compagnie = { path = "../compagnie", features = ["atelier"] }
+routes = { path = "../routes", features = ["atelier"] }
+moteur = { path = "../moteur", features = ["atelier"] }
+# Les bulletins fictifs et les releves des cahiers en PDF.
+fabrique-pdf = { path = "../fabrique-pdf" }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+# L'empreinte d'une source (`sources`).
+sha2 = { workspace = true }
+# Le gzip des livraisons de la DILA (`releve::entrepot_dila`), deja lie par la fabrique de PDF.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Les textes de la DILA sont du XML : lecture seule, Rust pur (`releve::kali`).
+roxmltree = { workspace = true }
+# Les motifs des releves ; sans les optimisations par defaut, qui pesent sur le binaire.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# Le telechargement des sources (`sources`, `releve::entrepot_dila`) : HTTP/1.1 synchrone, TLS par rustls, racines du
+# systeme (`SSL_CERT_FILE` honore), proxy lu dans l'environnement.
+ureq = { workspace = true }
+# Les archives de l'Urssaf (`extraire::urssaf`).
+zip = { workspace = true }
+# La forme composee (NFC) des releves (`extraire/`) : la normalisation d'ICU4X, avec ses seules donnees compilees.
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
+
+[dev-dependencies]
+# Les essais lisent les referentiels livres et ecrivent de fausses fiches : du JSON.
+serde_json = { workspace = true }

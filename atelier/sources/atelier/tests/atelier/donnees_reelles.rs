@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-use moteur::atelier::verifier_avant_commit::{ce_qui_part, nirs_non_inventes, EXEMPLES_DES_TEXTES};
+use atelier::verifier_avant_commit::{ce_qui_part, nirs_non_inventes, EXEMPLES_DES_TEXTES};
 
 /// En deux morceaux, pour que ce fichier ne porte pas lui-même ce qu'il refuse.
 const NOM_REEL: &str = concat!("ueu", "eue");

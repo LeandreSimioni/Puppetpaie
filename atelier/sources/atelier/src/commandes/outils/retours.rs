@@ -8,9 +8,9 @@
 //! compagnie fictive (`commandes::actes::refuser_si_pas_redirige`).
 
 
-use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
-use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::Cadre;
+use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
+use moteur::commandes::analyse::{Args, Opt, Spec};
+use moteur::commandes::Cadre;
 use socle::date::Jour;
 use socle::echec::Echec;
 

@@ -56,8 +56,8 @@ use std::time::Instant;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::atelier::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
-use crate::atelier::EnOrdre;
+use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
+use crate::EnOrdre;
 use socle::date::Jour;
 
 mod difflib;
@@ -77,9 +77,9 @@ pub const ANTERIEUR: &str = "xml-anterieur";
 /// L'entrepot des textes suivis, a cote des releves.
 pub const ENTREPOT: &str = "legi-entrepot";
 
-const USAGE: &str = "usage : moteur releve-codes moissonner <sources> [--reconstruire]
-       moteur releve-codes rapport <sources> [code]
-       moteur releve-codes comparer <sources>
+const USAGE: &str = "usage : moteur-atelier releve-codes moissonner <sources> [--reconstruire]
+       moteur-atelier releve-codes rapport <sources> [code]
+       moteur-atelier releve-codes comparer <sources>
 
 Les articles de loi dont la paie a besoin, releves dans la base LEGI de la DILA (open data). <sources> est le dossier des
 sources du depot (atelier/reference/sources) ; chaque texte y ecrit dans le sien. `moissonner` tient `legi-entrepot/` a

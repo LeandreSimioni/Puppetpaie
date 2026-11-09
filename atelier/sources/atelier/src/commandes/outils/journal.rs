@@ -3,8 +3,8 @@
 //! logiciel ou un autre poste. Sans `--ecrire`, l'outil DIT ce qu'il ferait. Rien ne part, aucun reseau. La reprise des
 //! DSN est la route `journal-reprise`.
 
-use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::Cadre;
+use moteur::commandes::analyse::{Args, Opt, Spec};
+use moteur::commandes::Cadre;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec { commande: "journal", positionnels: &[], options: &[Opt::drapeau("dpae"), Opt::drapeau("ecrire")] };

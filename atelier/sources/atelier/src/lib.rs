@@ -1,26 +1,26 @@
-//! L'ATELIER : les outils de l'editeur et des seances, a cote du produit. Le releve des textes (LEGI, KALI, la veille
-//! des sources), les referentiels extraits des textes deposes, les tables Unicode generees, le garde avant commit, le
-//! guet du contexte, la publication des versions (la cle de l'editeur), et leurs commandes (`commandes`). Le scenario
-//! d'une compagnie fictive, que le logiciel livre rejoue, n'en est pas : il est au niveau des routes (`scenario`).
+//! L'ATELIER : tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier` (jamais livre), au-dessus
+//! du moteur, et que rien ne prend. Le releve des textes (LEGI, KALI, la veille des sources), les referentiels extraits
+//! des textes deposes, les tables Unicode generees, le garde avant commit, le guet du contexte, la fabrique des
+//! bulletins fictifs, les outils sur une compagnie (`commandes::outils` : les taux de PAS, les AER, la reprise des DPAE,
+//! l'enquete des retours, le depot de test a un ordre), la redirection vers de faux serveurs locaux, et leurs commandes
+//! (`commandes`). Le scenario d'une compagnie fictive, que le logiciel livre rejoue, n'en est pas : il est au niveau des
+//! routes (`scenario`) ; la publication par GitHub non plus : elle est dans le moteur (`moteur::publication`).
 //!
-//! Seuls la redirection vers de faux serveurs locaux, les bulletins fictifs et les outils sur une compagnie
-//! (`commandes::outils` : les taux de PAS, les AER, la reprise des DPAE, l'enquete des retours, le depot de test a un
-//! ordre) n'existent que dans le binaire de l'atelier (`--features atelier`, jamais livre).
+//! L'atelier allume la feature `atelier` de ce qu'il prend (`Cargo.toml`) : la redirection, le refus de tout acte reel.
 
+#[macro_use]
+extern crate socle;
+
+pub mod bulletins_fictifs;
 pub mod commandes;
 pub mod extraire;
+pub mod fabriquer_bulletins;
 pub mod generer_tables;
 pub mod guet;
+pub mod redirection;
 pub mod releve;
 pub mod sources;
 pub mod verifier_avant_commit;
-
-#[cfg(feature = "atelier")]
-pub mod bulletins_fictifs;
-#[cfg(feature = "atelier")]
-pub mod fabriquer_bulletins;
-#[cfg(feature = "atelier")]
-pub mod redirection;
 
 /// UN OBJET DONT L'ORDRE COMPTE (un referentiel ecrit dans l'ordre de son texte depose, un resume dans l'ordre ou il
 /// s'est lu) : ses paires `(cle, valeur)`, lues (`socle::forme::en_ordre`, une cle repetee refuse) et ecrites

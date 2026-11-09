@@ -1,19 +1,19 @@
 //! CE QUE LE MOTEUR LIVRE ET COMPILE EST CE QUE LES TEXTES DEPOSES DONNENT. Chaque referentiel de `logiciel/donnees/`
-//! releve par `moteur extraire` (`src/atelier/extraire/`) est ce que son texte depose dans `atelier/reference/` donne, a
+//! releve par `moteur-atelier extraire` (`src/extraire/`) est ce que son texte depose dans `atelier/reference/` donne, a
 //! l'octet, hors la `note` (la date du releve et la commande) ; les tables Unicode du moteur (`socle/src/tables_nfkc.rs`,
-//! `socle/src/nfkd_ascii.rs`, `envois/src/tables_retours.rs`, `envois/src/tables_journal.rs`) sont celles que `moteur
-//! generer-tables` (`src/atelier/generer_tables.rs`) ecrit depuis `atelier/reference/sources/` (`unicode/`, `python/`,
+//! `socle/src/nfkd_ascii.rs`, `envois/src/tables_retours.rs`, `envois/src/tables_journal.rs`) sont celles que
+//! `moteur-atelier generer-tables` (`src/generer_tables.rs`) ecrit depuis `atelier/reference/sources/` (`unicode/`, `python/`,
 //! `w3c/` : chaque `LISEZ-MOI.md` dit ce qu'on en lit). Un texte qui change sans que ce qui en vient suive, ou un
 //! referentiel edite a la main, fait echouer le test.
 //!
 //! Le cahier technique 2026.1 en PDF (382 pages) ne se relit pas : ses releves lisent ses transcriptions, dont l'empreinte
-//! est verifiee contre celle du PDF depose. Pour regenerer les tables : `moteur generer-tables atelier/reference/sources
-//! atelier/sources` (ou `PUPPETPAIE_REECRIRE_ORACLES=1` sur ce test), puis lire le `git diff`.
+//! est verifiee contre celle du PDF depose. Pour regenerer les tables : `moteur-atelier generer-tables
+//! atelier/reference/sources atelier/sources` (ou `PUPPETPAIE_REECRIRE_ORACLES=1` sur ce test), puis lire le `git diff`.
 
 use std::path::{Path, PathBuf};
 
-use moteur::atelier::extraire::{self, Releve};
-use moteur::atelier::generer_tables::{generer, FICHIERS};
+use atelier::extraire::{self, Releve};
+use atelier::generer_tables::{generer, FICHIERS};
 use serde_json::Value;
 use socle::date::Jour;
 
@@ -104,5 +104,5 @@ fn chaque_referentiel_livre_et_chaque_table_sont_ce_que_les_textes_deposes_donne
             }
         }
     }
-    assert!(ecarts.is_empty(), "{:?} ne sont pas ce que les textes deposes donnent : moteur generer-tables atelier/reference/sources atelier/sources", ecarts);
+    assert!(ecarts.is_empty(), "{:?} ne sont pas ce que les textes deposes donnent : moteur-atelier generer-tables atelier/reference/sources atelier/sources", ecarts);
 }

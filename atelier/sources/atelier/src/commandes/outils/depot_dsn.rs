@@ -6,9 +6,9 @@
 //! designerait (`depots::designee`).
 
 
-use crate::commandes::actes::{refuser_si_pas_redirige, Organisme};
-use crate::commandes::analyse::{Args, Opt, Pos, Spec};
-use crate::commandes::Cadre;
+use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
+use moteur::commandes::analyse::{Args, Opt, Pos, Spec};
+use moteur::commandes::Cadre;
 use compagnie::preuve::Preuve;
 use routes::gestes::depot_acte;
 use socle::echec::Echec;

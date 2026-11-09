@@ -465,7 +465,7 @@ pub fn generer(sources: &Path) -> Result<Vec<(&'static str, String)>, String> {
 /// `moteur generer-tables SOURCES SRC`.
 pub fn commande(args: &[String]) -> i32 {
     let [sources, espace] = args else {
-        eprintln!("usage : moteur generer-tables SOURCES ESPACE   (SOURCES : atelier/reference/sources ; ESPACE : atelier/sources)");
+        eprintln!("usage : moteur-atelier generer-tables SOURCES ESPACE   (SOURCES : atelier/reference/sources ; ESPACE : atelier/sources)");
         return 2;
     };
     match generer(Path::new(sources)) {

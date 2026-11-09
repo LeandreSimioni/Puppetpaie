@@ -24,19 +24,19 @@ use std::time::Instant;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::atelier::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
-use crate::atelier::sources::Manifeste;
-use crate::atelier::EnOrdre;
+use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
+use crate::sources::Manifeste;
+use crate::EnOrdre;
 use socle::date::Jour;
 
 type R<T> = Result<T, String>;
 
-pub const BASE: &str = crate::atelier::releve::kali::INDEX;
+pub const BASE: &str = crate::releve::kali::INDEX;
 pub const DOSSIER: &str = "kali-entrepot";
 
-const USAGE: &str = "usage : moteur releve-conventions mettre-a-jour <sources> [--reconstruire]
-       moteur releve-conventions article <sources> <IDCC> <numero> [...]
-       moteur releve-conventions chercher <sources> <IDCC> <mot>
+const USAGE: &str = "usage : moteur-atelier releve-conventions mettre-a-jour <sources> [--reconstruire]
+       moteur-atelier releve-conventions article <sources> <IDCC> <numero> [...]
+       moteur-atelier releve-conventions chercher <sources> <IDCC> <mot>
 
 Le texte complet des conventions collectives suivies (celles que cite logiciel/donnees/sources.json), tenu a jour dans
 <sources>/kali-entrepot/ depuis la base KALI de la DILA (open data). `mettre-a-jour` n'applique que les livraisons
@@ -327,7 +327,7 @@ pub fn charger(racine: &Path) -> R<EntrepotKali> {
     let dossier = racine.join(DOSSIER);
     if !dila::existe(&dossier) {
         return Err(format!(
-            "Pas d'entrepot KALI dans {} : lancer d'abord `moteur releve-conventions mettre-a-jour`.",
+            "Pas d'entrepot KALI dans {} : lancer d'abord `moteur-atelier releve-conventions mettre-a-jour`.",
             racine.display()
         ));
     }
@@ -434,7 +434,7 @@ pub fn commande(args: &[String]) -> i32 {
     match args[0].as_str() {
         "mettre-a-jour" => {
             compagnie::installation::fixer_le_code();
-            let r = crate::atelier::sources::manifeste(&socle::fichiers::dossier_du_code()).and_then(|m| {
+            let r = crate::sources::manifeste(&socle::fichiers::dossier_du_code()).and_then(|m| {
                 let jour = droit::contexte::aujourdhui_sans_note()?;
                 mettre_a_jour(racine, args.iter().any(|a| a == "--reconstruire"), &m, &dila::Reseau, &jour).map(|_| String::new())
             });

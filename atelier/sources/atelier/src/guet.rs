@@ -40,7 +40,7 @@ const PAS: Duration = Duration::from_secs(30);
 /// Un sous-agent dont le transcript n'a pas bouge depuis ce temps est fini ou bloque.
 const IMMOBILE: Duration = Duration::from_secs(1200);
 
-const AIDE: &str = "usage : moteur guet [--seuil N] [--commits] [--transcript CHEMIN.jsonl]\n\
+const AIDE: &str = "usage : moteur-atelier guet [--seuil N] [--commits] [--transcript CHEMIN.jsonl]\n\
     \x20 sort quand le sous-agent passe le seuil (300 000 par defaut), quand l'orchestrateur passe 300 000,\n\
     \x20 au prochain commit sur HEAD (--commits), ou apres 20 minutes sans que le transcript du sous-agent bouge.\n\
     \x20 --transcript : le transcript du sous-agent (par defaut : le plus recent).";

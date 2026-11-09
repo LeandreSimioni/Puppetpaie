@@ -36,7 +36,7 @@ use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::atelier::EnOrdre;
+use crate::EnOrdre;
 
 pub const ARTICLES: &str = "articles.jsonl.gz";
 pub const ETAT: &str = "etat.json";
@@ -182,7 +182,7 @@ pub struct Reseau;
 
 fn agent(delai_global: Option<u64>, url: &str) -> R<ureq::Agent> {
     let mut c = ureq::Agent::config_builder()
-        .user_agent(crate::atelier::sources::AGENT)
+        .user_agent(crate::sources::AGENT)
         .timeout_connect(Some(std::time::Duration::from_secs(120)))
         .timeout_recv_response(Some(std::time::Duration::from_secs(600)));
     if let Some(s) = delai_global {

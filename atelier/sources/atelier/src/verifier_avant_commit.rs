@@ -508,7 +508,7 @@ pub fn rapport(trouvailles: &[Trouvaille]) -> String {
     s
 }
 
-const USAGE: &str = "usage : moteur verifier-avant-commit [--indexes]\n\
+const USAGE: &str = "usage : moteur-atelier verifier-avant-commit [--indexes]\n\
 \x20 cherche les donnees personnelles dans ce que git emporterait (hors de prive/) :\n\
 \x20 NIR, IBAN, BIC, et les vraies valeurs de prive/config/ s'il est la.\n\
 \x20 --indexes   ce que l'index porte (le crochet atelier/.githooks/pre-commit)\n\

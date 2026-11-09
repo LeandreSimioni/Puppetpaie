@@ -1,4 +1,4 @@
-//! Le garde avant commit (`moteur verifier-avant-commit`, `src/atelier/verifier_avant_commit.rs`), sur un faux dépôt Git monté dans
+//! Le garde avant commit (`moteur-atelier verifier-avant-commit`, `src/verifier_avant_commit.rs`), sur un faux dépôt Git monté dans
 //! le dossier de test, avec un faux `prive/config/` : des valeurs inventées (le NIR porte la marque d'invention, l'IBAN et
 //! le SIRET se composent à la volée pour que ce fichier n'en porte aucun). Jamais le vrai `prive/`.
 //!
@@ -83,7 +83,7 @@ fn ecrire(depot: &Path, rel: &str, contenu: &str) {
 }
 
 fn garde(depot: &Path, args: &[&str]) -> Sortie {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_moteur"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_moteur-atelier"));
     environnement(&mut c, depot);
     let s = c.arg("verifier-avant-commit").args(args).output().unwrap();
     Sortie { code: s.status.code().unwrap_or(-1), out: String::from_utf8_lossy(&s.stdout).into_owned() }

@@ -4,8 +4,8 @@
 //! jamais ; ici l'editeur le force. On ne touche jamais aux chiffres du PDF : on remplit le cadre de l'employeur, et une
 //! attestation qui ne dit pas ce que la paie dit ne se signe pas sans `--forcer` (code du travail, art. L. 5429-1).
 
-use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::Cadre;
+use moteur::commandes::analyse::{Args, Opt, Spec};
+use moteur::commandes::Cadre;
 use envois::retours::NATURE_AER_SPECTACLE;
 use socle::echec::Echec;
 

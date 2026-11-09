@@ -89,6 +89,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "atelier"
+version = "0.1.0"
+dependencies = [
+ "compagnie",
+ "declarations",
+ "documents",
+ "droit",
+ "engagement",
+ "envois",
+ "fabrique-pdf",
+ "flate2",
+ "icu_normalizer",
+ "import",
+ "moteur",
+ "regex",
+ "routes",
+ "roxmltree 0.20.0",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socle",
+ "ureq",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1182,19 +1209,16 @@ dependencies = [
  "fabrique-pdf",
  "flate2",
  "getrandom 0.3.4",
- "icu_normalizer",
  "import",
  "mailparse",
  "md-5",
  "regex",
  "routes",
- "roxmltree 0.20.0",
  "rust_decimal",
  "serde",
  "serde_json",
  "sha2",
  "socle",
- "ureq",
  "zip 2.4.2",
 ]
 

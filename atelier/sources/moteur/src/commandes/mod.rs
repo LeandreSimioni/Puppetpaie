@@ -1,7 +1,7 @@
 //! La ligne de commande de ce qui n'est pas un geste de l'ecran, `moteur COMMANDE ...` : le coffre (la seance, et les
 //! secrets tapes sans echo, que l'entree standard ne porte jamais), la restauration d'un poste neuf depuis le Drive, et
-//! l'enquete des depots (`depots`). Les commandes de l'editeur (`atelier::commandes`) passent par le meme cadre : `main`
-//! les donne a `executer`. Un geste de l'ecran se fait par sa route : `moteur routes` les dit, `moteur route` en sert une
+//! l'enquete des depots (`depots`). `ligne_de_commande` aiguille toute la ligne de commande du moteur ; le binaire de
+//! l'atelier (`moteur-atelier`, la crate `atelier`) la reprend et y donne ses commandes, qui passent par le meme cadre. Un geste de l'ecran se fait par sa route : `moteur routes` les dit, `moteur route` en sert une
 //! (`--texte` : ses phrases).
 //!
 //! Une commande = un module, qui declare ses options (`analyse::Spec`) et rend un code de sortie ; sa sortie est un
@@ -99,15 +99,15 @@ pub struct Commande {
     pub executer: Executer,
 }
 
-/// Les commandes du produit, puis `de_l_editeur` (`atelier::commandes::commandes`), dans cet ordre.
-fn commandes(de_l_editeur: Vec<Commande>) -> Vec<Commande> {
+/// Les commandes du produit, puis `de_l_atelier` (celles de `moteur-atelier`, aucune dans `moteur`), dans cet ordre.
+fn commandes(de_l_atelier: Vec<Commande>) -> Vec<Commande> {
     let mut v = vec![
         Commande { nom: "coffre", aide: "les mots de passe des organismes, scelles sur le disque (ce qui est pose)", cachee: false, spec: &coffre::SPEC, executer: coffre::executer },
         // L'enquete de l'editeur sur le poste d'une compagnie : elle marche, elle ne figure pas dans l'aide.
         Commande { nom: "depots", aide: "lister les depots vus par net-entreprises (enquete)", cachee: true, spec: &depots::SPEC, executer: depots::executer },
         Commande { nom: "restaurer", aide: "redescendre le dossier prive du Drive (poste neuf, ordinateur perdu)", cachee: false, spec: &restaurer::SPEC, executer: restaurer::executer },
     ];
-    v.extend(de_l_editeur);
+    v.extend(de_l_atelier);
     v
 }
 
@@ -122,15 +122,46 @@ fn aide(table: &[Commande]) -> String {
     t
 }
 
-/// `moteur [--dev] COMMANDE ...`, parmi les commandes du produit et `de_l_editeur`. Rend le code de sortie.
-pub fn executer(args: &[String], de_l_editeur: Vec<Commande>) -> i32 {
+/// LA LIGNE DE COMMANDE DU MOTEUR (`args`, sans le nom du programme) : la fabrique de PDF, les routes, leur catalogue, la
+/// mise a jour et la publication par GitHub, la compagnie d'essai, la fenetre, puis les commandes du produit et
+/// `de_l_atelier` (`executer`). Son code de sortie ; `None` quand il faut dire l'usage.
+pub fn ligne_de_commande(args: &[String], de_l_atelier: Vec<Commande>) -> Option<std::process::ExitCode> {
+    ::compagnie::incidents::brancher_l_engagement();
+    let code = |c: i32| std::process::ExitCode::from(c.clamp(0, 255) as u8);
+    Some(match args.first().map(String::as_str) {
+        // Les commandes de la fabrique, servies par sa bibliotheque.
+        Some("pdf") => fabrique_pdf::ligne_de_commande::executer(&args[1..]),
+        // Les routes de l'interface, une par processus (la demande JSON sur l'entree standard).
+        Some("route") => match routes::service::commande("route", &args[1..]) {
+            Some(c) => std::process::exit(c),
+            None => return None,
+        },
+        // Le catalogue des routes, tire de leurs fiches.
+        Some("routes") => code(routes::catalogue::commande(&args[1..])),
+        // La mise a jour : verifier, appliquer, revenir ; et la publication par GitHub.
+        Some("maj") => code(match crate::publication::commande(&args[1..]) {
+            Some(c) => c,
+            None => maj::commande(&args[1..]),
+        }),
+        // La compagnie d'essai : un vrai depot de TEST sans `prive/`, l'identite lue dans `PUPPETPAIE_COMPAGNIE`.
+        Some("essai") => code(::compagnie::essai::commande(&args[1..])),
+        // La fenetre, dans le navigateur du poste : `moteur interface`.
+        Some("interface") => code(crate::interface::commande(&args[1..])),
+        // Le reste : les commandes du produit et celles de l'atelier, par leur cadre (`moteur [--dev] COMMANDE ...`).
+        Some(_) => code(executer(args, de_l_atelier)),
+        None => return None,
+    })
+}
+
+/// `moteur [--dev] COMMANDE ...`, parmi les commandes du produit et `de_l_atelier`. Rend le code de sortie.
+fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
     let mut args = args;
     let mut dev = false;
     if args.first().map(String::as_str) == Some("--dev") {
         dev = true;
         args = &args[1..];
     }
-    let table = commandes(de_l_editeur);
+    let table = commandes(de_l_atelier);
     let Some(nom) = args.first().map(String::as_str) else {
         eprintln!("{}", aide(&table));
         return 2;

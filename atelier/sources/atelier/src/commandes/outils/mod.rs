@@ -36,7 +36,7 @@ pub(crate) fn nom(p: &std::path::Path) -> String {
 }
 
 /// La valeur de l'option `nom`, que sa `Spec` pose par defaut : l'analyse l'a toujours ecrite.
-pub(crate) fn avec_defaut<'a>(args: &'a crate::commandes::analyse::Args, nom: &str) -> Result<&'a str, socle::echec::Echec> {
+pub(crate) fn avec_defaut<'a>(args: &'a moteur::commandes::analyse::Args, nom: &str) -> Result<&'a str, socle::echec::Echec> {
     args.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Illisible), message: format!("--{} n'a pas de valeur : sa `Spec` lui en donne une par defaut.", nom) })
 }
 

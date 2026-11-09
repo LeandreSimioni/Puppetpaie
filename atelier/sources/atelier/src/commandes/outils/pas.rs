@@ -4,8 +4,8 @@
 //! ecrits, jamais deposes ici).
 
 use super::dit;
-use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::Cadre;
+use moteur::commandes::analyse::{Args, Opt, Spec};
+use moteur::commandes::Cadre;
 use compagnie::taux_pas::ko;
 use socle::echec::Echec;
 

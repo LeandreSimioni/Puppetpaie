@@ -2493,26 +2493,18 @@ name = "moteur"
 version = "0.1.0"
 dependencies = [
  "compagnie",
- "declarations",
  "documents",
  "droit",
  "ed25519-dalek",
  "engagement",
  "envois",
  "fabrique-pdf",
- "flate2",
  "getrandom 0.3.4",
- "icu_normalizer",
- "import",
  "mailparse",
- "regex",
  "routes",
- "roxmltree 0.20.0",
- "rust_decimal",
  "serde",
  "sha2",
  "socle",
- "ureq",
  "zip 2.4.2",
 ]
 

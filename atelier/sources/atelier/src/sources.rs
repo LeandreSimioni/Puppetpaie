@@ -22,8 +22,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::atelier::releve::kali::{self, Evenement, Rapport, Suivi};
-use crate::atelier::EnOrdre;
+use crate::releve::kali::{self, Evenement, Rapport, Suivi};
+use crate::EnOrdre;
 use socle::date::Jour;
 
 pub const MANIFESTE: &str = "sources.json";

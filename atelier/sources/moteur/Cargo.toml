@@ -2,7 +2,7 @@
 name = "moteur"
 version = "0.1.0"
 edition = "2021"
-description = "Le moteur de PuppetPaie au-dessus des routes : la ligne de commande `moteur`, l'interface, l'atelier."
+description = "Le moteur de PuppetPaie au-dessus des routes : la ligne de commande `moteur`, l'interface, la publication par GitHub."
 license = "EUPL-1.2"
 publish = false
 
@@ -13,16 +13,10 @@ path = "src/lib.rs"
 name = "moteur"
 path = "src/main.rs"
 
-# Le binaire de l'ATELIER : le meme code, construit avec `--features atelier`, pour les essais seulement,
-# jamais livre. Il peut etre pointe vers de faux serveurs locaux et refuse tout acte reel. La construction ordinaire
-# (`cargo build --release`) ne le fait pas : elle donne `moteur` seul, sans une ligne de la redirection.
-[[bin]]
-name = "moteur-atelier"
-path = "src/main.rs"
-required-features = ["atelier"]
-
 [features]
-atelier = ["routes/atelier", "envois/atelier", "compagnie/atelier"]
+# Le binaire de l'ATELIER (`moteur-atelier`, la crate `atelier`, jamais livre) : le banc de la fenetre, et les
+# garde-fous des commandes qu'il redirige vers de faux serveurs locaux.
+atelier = ["routes/atelier"]
 
 [dependencies]
 # Les deux parties du dessous : le socle (dates, nombres, fichiers, echecs, temps, garde-fou reseau) et le droit
@@ -30,47 +24,38 @@ atelier = ["routes/atelier", "envois/atelier", "compagnie/atelier"]
 socle = { path = "../socle" }
 droit = { path = "../droit" }
 engagement = { path = "../engagement" }
-rust_decimal = { workspace = true }
 serde = { workspace = true }
-# Le gzip des livraisons de la DILA (`atelier::releve::entrepot_dila`), deja lie par la fabrique de PDF.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# Les textes de la DILA sont du XML : lecture seule, Rust pur (`atelier::releve::kali`).
-roxmltree = { workspace = true }
 # L'empreinte d'un fichier (deja liee par la fabrique de PDF).
 sha2 = { workspace = true }
-# Les motifs des releves de l'atelier ; sans les optimisations par defaut, qui pesent sur le binaire.
-regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Le bulletin : la description part a la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
 # Ce qui part et revient, et le journal de ce qui est parti.
 envois = { path = "../envois" }
 # Les documents que fabrique un engagement valide.
 documents = { path = "../documents" }
-# Les déclarations que fabrique un engagement valide.
-declarations = { path = "../declarations" }
-# Le telechargement des sources de l'atelier (`atelier::sources`) : HTTP/1.1 synchrone, TLS par rustls, racines du
-# systeme (`SSL_CERT_FILE` honore), proxy lu dans l'environnement.
-ureq = { workspace = true }
-# Les aleas du systeme : le jeton de la fenetre (`interface`), la cle d'une publication (`atelier::publier`).
+# Les aleas du systeme : le jeton de la fenetre (`interface`), la graine de la cle de GitHub (`publication`).
 getrandom = { workspace = true }
 # Ce qui garde et fait vivre la compagnie : l'installation, le coffre, la preuve d'un acte reel, la mise a jour.
 compagnie = { path = "../compagnie" }
-# Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
-import = { path = "../import" }
 # Les routes : la porte du moteur, et ce qu'elles font.
 routes = { path = "../routes" }
 # Les courriels joués de la démonstration, que la fenetre montre (`interface`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"
-# La publication d'une version (`atelier::publier`) : la signature Ed25519 de l'editeur, et l'archive zip.
+# La publication par GitHub (`publication`) : la signature Ed25519 de l'editeur, et l'archive zip.
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
 zip = { workspace = true }
-# La forme composee (NFC) des releves de l'atelier (`extraire/`, `unicodedata.normalize("NFC")` de l'ancien Python) : la
-# normalisation d'ICU4X, deja liee (`lettre` -> `idna`), avec ses seules donnees compilees.
-icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 
 [dev-dependencies]
 # Les essais lisent la reponse d'une route telle que la page la recoit : du JSON.
 serde_json = { workspace = true }
 # Le faux Drive des essais (`tests/faux_drive`) publie l'empreinte MD5 de chaque fichier, comme Drive.
 md-5 = { version = "0.10", default-features = false }
-
+# Les montants qu'un essai compare.
+rust_decimal = { workspace = true }
+# Les gardes de structure (`tests/fichiers/structure.rs`, `sources.rs`) cherchent des motifs dans les sources.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# Le verrou des sources (`tests/fichiers/sources.rs`) lit les livraisons gzip de LEGI.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Les essais des declarations et de l'import passent par les routes et lisent ce qu'elles ecrivent.
+declarations = { path = "../declarations" }
+import = { path = "../import" }

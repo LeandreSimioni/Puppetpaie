@@ -71,11 +71,11 @@ impl Releve {
     }
 }
 
-const USAGE: &str = "usage : moteur extraire naf <structure.xlsx> <correspondances.xlsx> <sortie.json> [--remplacer]\n\
-\x20       moteur extraire usages <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-usages.txt | dsn-tableau-des-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
-\x20       moteur extraire formats <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-formats.txt | dsn-tableaux-categories-controles-datatypes-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
-\x20       moteur extraire urssaf <urssaf-table-des-urssaf-AAAAMMJJ.csv> <urssaf-liste-des-sites-et-des-activites.csv> <insee-cog-2015-departements.zip> <sortie.json> [--remplacer]\n\
-\x20       moteur extraire transcrire <dsn-cahier-technique-V.pdf> <usages.txt> <formats.txt> [--remplacer]\n\
+const USAGE: &str = "usage : moteur-atelier extraire naf <structure.xlsx> <correspondances.xlsx> <sortie.json> [--remplacer]\n\
+\x20       moteur-atelier extraireusages <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-usages.txt | dsn-tableau-des-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
+\x20       moteur-atelier extraireformats <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-formats.txt | dsn-tableaux-categories-controles-datatypes-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
+\x20       moteur-atelier extraireurssaf <urssaf-table-des-urssaf-AAAAMMJJ.csv> <urssaf-liste-des-sites-et-des-activites.csv> <insee-cog-2015-departements.zip> <sortie.json> [--remplacer]\n\
+\x20       moteur-atelier extrairetranscrire <dsn-cahier-technique-V.pdf> <usages.txt> <formats.txt> [--remplacer]\n\
 La sortie se nomme toujours ; un fichier deja la ne se remplace qu'avec --remplacer.";
 
 /// `moteur extraire ...` : rend le code de sortie (2 : la commande est mal formee, 1 : le releve refuse, 0 : ecrit).
@@ -104,7 +104,7 @@ pub fn commande(args: &[String]) -> i32 {
     };
     if pos.len() != attendus + 1 {
         eprintln!(
-            "moteur extraire {} attend {} chemins, la sortie en dernier : rien n'est ecrit.\n{}",
+            "moteur-atelier extraire {} attend {} chemins, la sortie en dernier : rien n'est ecrit.\n{}",
             pos[0], attendus, USAGE
         );
         return 2;
@@ -148,7 +148,7 @@ fn verifier_la_sortie(sources: &[PathBuf], sortie: &Path, remplacer: bool) -> Re
     for s in sources {
         if !s.is_file() {
             return Err(format!(
-                "{} absent : `moteur sources` dit d'ou chaque texte se releve. Rien n'est ecrit.",
+                "{} absent : `moteur-atelier sources` dit d'ou chaque texte se releve. Rien n'est ecrit.",
                 s.display()
             ));
         }
@@ -249,7 +249,7 @@ pub(crate) fn en_transcription(source: &Path) -> bool {
 /// `moteur extraire transcrire <cahier.pdf> <usages.txt> <formats.txt>` : les deux transcriptions du cahier.
 fn transcrire(args: &[&str], remplacer: bool) -> i32 {
     let [pdf, usages_txt, formats_txt] = args else {
-        eprintln!("moteur extraire transcrire attend le cahier en PDF puis les deux sorties : rien n'est ecrit.\n{}", USAGE);
+        eprintln!("moteur-atelier extraire transcrire attend le cahier en PDF puis les deux sorties : rien n'est ecrit.\n{}", USAGE);
         return 2;
     };
     let (pdf, sorties) = (PathBuf::from(pdf), [PathBuf::from(usages_txt), PathBuf::from(formats_txt)]);
@@ -293,7 +293,7 @@ pub(crate) fn nom_de(chemin: &Path) -> String {
     }
 }
 
-pub(crate) use crate::atelier::EnOrdre;
+pub(crate) use crate::EnOrdre;
 
 /// Une ligne d'un tableau releve, case par case : `None` pour une case vide.
 pub(crate) type Rang = Vec<Option<String>>;

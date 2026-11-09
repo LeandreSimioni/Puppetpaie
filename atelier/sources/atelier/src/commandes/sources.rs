@@ -10,11 +10,11 @@
 //! resume des livraisons KALI (`veille-kali.json`), et avec `--relever`, la nouvelle version d'une source a cote de
 //! l'ancienne et le XML des textes KALI touches (`kali/`).
 
-use crate::atelier::sources::{EnLigne, EtatSource};
+use crate::sources::{EnLigne, EtatSource};
 
-use crate::commandes::analyse::{Args, Opt, Spec};
-use crate::commandes::rendu::rendre;
-use crate::commandes::Cadre;
+use moteur::commandes::analyse::{Args, Opt, Spec};
+use moteur::commandes::rendu::rendre;
+use moteur::commandes::Cadre;
 
 pub static SPEC: Spec = Spec {
     commande: "sources",
@@ -24,7 +24,7 @@ pub static SPEC: Spec = Spec {
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let code = cadre.ctx.code.clone();
-    let manifeste = match crate::atelier::sources::manifeste(&code) {
+    let manifeste = match crate::sources::manifeste(&code) {
         Ok(m) => m,
         Err(m) => {
             eprintln!("{}", m);
@@ -37,11 +37,11 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     // Les copies sont les textes du logiciel, pas ceux d'une compagnie : elles vivent dans l'installation.
     let installation = compagnie::maj::installation();
     let liste = if verifier {
-        let mut tele = |u: &str| crate::atelier::sources::telecharger(u, 30);
-        let mut kali = |u: &str| crate::atelier::sources::telecharger(u, 60).map(|(o, _)| o);
-        crate::atelier::sources::verifier(&installation, &manifeste, &cadre.ctx.aujourdhui, &[], relever, &mut tele, &mut kali)
+        let mut tele = |u: &str| crate::sources::telecharger(u, 30);
+        let mut kali = |u: &str| crate::sources::telecharger(u, 60).map(|(o, _)| o);
+        crate::sources::verifier(&installation, &manifeste, &cadre.ctx.aujourdhui, &[], relever, &mut tele, &mut kali)
     } else {
-        crate::atelier::sources::etats(&installation, &manifeste, &cadre.ctx.aujourdhui)
+        crate::sources::etats(&installation, &manifeste, &cadre.ctx.aujourdhui)
     };
     let liste = match liste {
         Ok(l) => l,
@@ -68,8 +68,8 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         let copie = match (e.copie_conforme, e.copie_presente, e.transcription_presente, &e.transcription) {
             (Some(true), _, _, _) => "copie conforme".to_string(),
             (_, true, _, _) => "COPIE DIFFERENTE du manifeste".to_string(),
-            (_, _, Some(true), Some(t)) => format!("original hors du depot public, transcription : {}/{}", crate::atelier::sources::COPIES, t),
-            _ => format!("copie absente ({}/{})", crate::atelier::sources::COPIES, e.fichier),
+            (_, _, Some(true), Some(t)) => format!("original hors du depot public, transcription : {}/{}", crate::sources::COPIES, t),
+            _ => format!("copie absente ({}/{})", crate::sources::COPIES, e.fichier),
         };
         dire!("   {} ; nourrit : {}", copie, if e.nourrit.is_empty() { "rien (verification)".to_string() } else { e.nourrit.join(", ") });
         if let Some(en_ligne) = e.en_ligne {

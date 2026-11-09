@@ -1,12 +1,13 @@
 //! Les PDF FICTIFS de bulletins, communs aux tests (`bulletin_lu`, `routes::import`). La fabrique elle-meme (les
 //! gabarits CoolPaie (A) et sPAIEctacle (B), le PDF) est celle de l'outil d'atelier `moteur-atelier fabriquer-bulletins` :
-//! `src/atelier/bulletins_fictifs.rs`, inclus ici tel quel (un seul code). Ici, les exemples des tests, et les pages que seuls
+//! `atelier/src/bulletins_fictifs.rs`, inclus ici tel quel (un seul code, qui ne prend qu'a `fabrique_pdf` et `std` : la
+//! crate `atelier` n'est pas prise). Ici, les exemples des tests, et les pages que seuls
 //! les tests fabriquent (le certificat Congés Spectacles, l'AEM, un PDF en traces) : noms, adresses,
 //! NIR, Siret, numeros d'objet, titres et montants inventes ; rien de `prive/`, aucun des PDF reels de `import/`.
 
 #![allow(dead_code)]
 
-#[path = "../../src/atelier/bulletins_fictifs.rs"]
+#[path = "../../../atelier/src/bulletins_fictifs.rs"]
 mod fabrique;
 pub use fabrique::*;
 use fabrique_pdf::forme::Bloc;

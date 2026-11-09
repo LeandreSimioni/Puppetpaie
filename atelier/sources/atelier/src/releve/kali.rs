@@ -32,7 +32,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 
-use crate::atelier::EnOrdre;
+use crate::EnOrdre;
 
 pub const INDEX: &str = "https://echanges.dila.gouv.fr/OPENDATA/KALI/";
 pub const CACHE: &str = "veille-kali.json";
@@ -47,7 +47,7 @@ pub type Telecharger<'a> = dyn FnMut(&str) -> R<Vec<u8>> + 'a;
 /// Les estampilles `AAAAMMJJ-HHMMSS` de l'index, sans doublon, dans l'ordre (`entrepot_dila::livraisons`, que l'entrepot KALI
 /// lit aussi).
 pub fn livraisons(index_html: &str) -> Vec<String> {
-    crate::atelier::releve::entrepot_dila::livraisons(index_html, "KALI")
+    crate::releve::entrepot_dila::livraisons(index_html, "KALI")
 }
 
 /// Le jour d'une estampille (`AAAAMMJJ...`, que l'index ecrit) : `AAAA-MM-JJ`.
@@ -65,7 +65,7 @@ fn huit(estampille: &str) -> String {
 /// Les fichiers d'une archive `.tar.gz` : (nom, octets). Le format tar se lit dans `entrepot_dila::LecteurTar`, sans
 /// dependance (le meme lecteur fait defiler l'archive globale de LEGI en flux).
 pub fn fichiers_tar_gz(octets: &[u8]) -> R<Vec<(String, Vec<u8>)>> {
-    let mut tar = crate::atelier::releve::entrepot_dila::archive(octets);
+    let mut tar = crate::releve::entrepot_dila::archive(octets);
     let mut out = Vec::new();
     while let Some(m) = tar.suivant()? {
         if m.fichier {
