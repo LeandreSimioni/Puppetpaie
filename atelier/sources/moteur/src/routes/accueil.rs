@@ -348,10 +348,10 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
         Route::AdministrateurTableau => {
             let c: ChargeTableau = charge.lire()?;
             let tableau = match c.garde {
-                Some(true) => administrateur::tableau_garde(&inst),
-                Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true)),
+                Some(true) => administrateur::tableau_garde(&inst)?,
+                Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true))?,
             };
-            Ok(Rendu::brut(administrateur::tableau_dit(tableau)))
+            en_json(tableau)
         }
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
@@ -360,7 +360,7 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
-            administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from)).map(Rendu::brut)
+            en_json(administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?)
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }

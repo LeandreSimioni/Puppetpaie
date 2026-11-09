@@ -511,7 +511,7 @@ pub struct Obligation {
     #[serde(skip_serializing_if = "Option::is_none")]
     depart: Option<DepartDit>,
     pub butoir: Option<String>,
-    butoir_heure: Option<String>,
+    pub butoir_heure: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dans_les_temps: Option<bool>,
     pub etat: &'static str,

@@ -361,20 +361,14 @@ struct EtatDeLOuverture {
 
 /// LE TABLEAU D'UNE COMPAGNIE tel que l'administrateur l'ecrit (`config/.tableau.json`,
 /// `administrateur::tableau_compagnie`) : son jour, ses declarations, l'empreinte de la compagnie qu'il a lue.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TableauEcrit {
-    le: String,
-    declarations: Vec<Value>,
-    empreinte: String,
-}
+use crate::compagnie::administrateur::TableauCompagnie;
 
 /// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne).
 #[derive(Clone)]
 enum Garde {
     Mois(Arc<EtatDuMois>),
     Ouverture(Arc<EtatDeLOuverture>),
-    Tableau(Arc<Value>),
+    Tableau(Arc<TableauCompagnie>),
 }
 
 impl Garde {
@@ -552,8 +546,8 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
     let f = ctx.racine.join(crate::compagnie::administrateur::TABLEAU);
     if f.is_file() {
         let empreinte = empreinte(&ctx.racine, Cle::Ouverture, &ctx.aujourdhui);
-        match socle::forme::lire_fichier::<TableauEcrit>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
-            Ok(t) if t.empreinte == empreinte => return Ok(Garde::Tableau(Arc::new(socle::ecriture::en_valeur(&t)))),
+        match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
+            Ok(t) if t.empreinte == empreinte => return Ok(Garde::Tableau(Arc::new(t))),
             Ok(_) => {}
             Err(m) => noter("le tableau gardé ne se lit pas, il se refait", &m),
         }
@@ -992,7 +986,13 @@ impl FileDesEtats {
                 Vec::new()
             }
         };
-        let tableau = crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&self.racine), &self.racine);
+        let tableau = match crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&self.racine), &self.racine) {
+            Ok(t) => t,
+            Err(m) => {
+                noter("le registre de l'administrateur ne se lit pas", &m);
+                false
+            }
+        };
         {
             let mut e = self.verrou();
             let mut premiers: Vec<Mois> = Vec::new();
@@ -1034,7 +1034,7 @@ impl FileDesEtats {
     }
 
     /// LE TABLEAU DE CETTE COMPAGNIE, frais : refait par le fil (devant), ou le garde s'il est juste.
-    pub fn tableau(&self) -> R<Value> {
+    pub fn tableau(&self) -> R<TableauCompagnie> {
         match self.attendre(Cle::Tableau)? {
             Garde::Tableau(t) => Ok(t.as_ref().clone()),
             _ => Err(Garde::defaut("le tableau")),

@@ -406,7 +406,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffreEtat => {
             let SansCharge {} = charge.lire()?;
             let mut e = coffre_etat(ctx)?;
-            e.ecran = Some(ecran_du_coffre(ctx, &mut e));
+            e.ecran = Some(ecran_du_coffre(ctx, &mut e)?);
             let etat: EtatDuCoffre = e.dit("");
             en_json(etat)
         }
@@ -452,7 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;
-            let etat = administrateur_etat(&ctx.racine);
+            let etat = administrateur_etat(&ctx.racine)?;
             en_json(EtatAdministrateurDit { phrase: format!("Mot de passe de la compagnie : {}.", etat.pastille.mots), etat })
         }
         Route::AdministrateurRattacher | Route::AdministrateurDetacher => en_json(administrateur(&ctx.racine, porte.route, charge.lire()?, mdp, &Poste::de_ce_poste())?),
@@ -463,9 +463,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 // ------------------------------------------------------------------ l'administrateur
 
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
-pub(crate) fn administrateur_etat(racine: &Path) -> crate::compagnie::administrateur::EtatAdministrateur {
+pub(crate) fn administrateur_etat(racine: &Path) -> R<crate::compagnie::administrateur::EtatAdministrateur> {
     let inst = crate::compagnie::administrateur::installation_de(racine);
-    crate::compagnie::administrateur::etat(&inst, racine, &Poste::de_ce_poste())
+    crate::compagnie::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
 }
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
@@ -495,7 +495,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         };
         let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(refus)?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
-        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste) });
+        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? });
     }
     let lignes = ["Le NOUVEAU mot de passe de cette compagnie, à elle seule.".to_string(), "La frappe ne s'affiche pas.".to_string()];
     let nouveau = secret_a_poser(charge.nouveau, "PuppetPaie : son propre mot de passe", &lignes)?;
@@ -505,7 +505,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         None => nouveau.clone(),
     };
     adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(refus)?;
-    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste) })
+    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? })
 }
 
 /// Des noms en une liste : « A », « A et B », « A, B et C ».
@@ -743,7 +743,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
     let inst = crate::compagnie::administrateur::installation_de(&ctx.racine);
-    if crate::compagnie::administrateur::est_rattachee(&inst, &ctx.racine) {
+    if crate::compagnie::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
@@ -756,7 +756,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    if crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine) {
+    if crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
@@ -1201,9 +1201,9 @@ struct EcranDuCoffre {
 /// d'un poste sans cle, la ligne du mot de passe du logiciel et celle de l'administrateur, les notes des comptes Urssaf
 /// et courriel, a quoi servent le compte Google et le filet, et ce que demandent les confirmations. La page n'en ecrit
 /// rien ; chaque service porte aussi ce que sa confirmation d'oubli demande (`oublier`).
-fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
+fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
     let fictive = crate::compagnie::bridage::branchement(&ctx.racine).joue();
-    let adm = (!fictive).then(|| administrateur_etat(&ctx.racine));
+    let adm = if fictive { None } else { Some(administrateur_etat(&ctx.racine)?) };
     let (en_liste, rattachee, peut_rattacher) = match &adm {
         Some(a) => (a.autres_dit.clone(), a.rattachee, a.peut_rattacher),
         None => (String::new(), false, false),
@@ -1219,7 +1219,7 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
         None
     };
     let demande = "demandé à l'ouverture et à chaque dépôt réel, envoi ou signature";
-    EcranDuCoffre {
+    Ok(EcranDuCoffre {
         intro: "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. La page ne voit jamais un mot de passe, seulement s'il est posé.",
         encart,
         logiciel: LigneDuLogiciel {
@@ -1248,5 +1248,5 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
         google_ouvert: "La fenêtre Google est ouverte dans votre navigateur : choisissez le compte, acceptez, puis revenez ici ; cette ligne se met à jour toute seule. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.",
         google_oublier: "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.",
         diagnostic: "ce qui casse part chez l'éditeur, avec de quoi le reproduire (ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an le nombre de paies faites ; les noms, NIR, adresses et coordonnées des salariés n'en partent pas",
-    }
+    })
 }

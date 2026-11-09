@@ -45,11 +45,6 @@ pub(crate) fn phrase_en_tete(v: Value, phrase: impl Into<String>) -> Value {
     Value::Object(m)
 }
 
-/// Le nombre d'elements d'une liste rendue (0 : pas une liste).
-pub(crate) fn nombre(v: &Value) -> usize {
-    v.as_array().map_or(0, Vec::len)
-}
-
 /// Une valeur rendue, en mots dans une phrase : rien pour une valeur absente (jamais « None »).
 pub(crate) fn mot(v: &Value) -> String {
     if v.is_null() { String::new() } else { valeur_en_texte(v) }
