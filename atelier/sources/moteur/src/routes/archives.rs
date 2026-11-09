@@ -552,15 +552,9 @@ pub(crate) struct EtatExporte {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum EtatRendu {
-    #[serde(serialize_with = "casc_ecrite")]
     Casc(crate::import::casc::Regularisation),
     Livre(documents::etats_paie::LivreDePaie),
     Tableau(documents::tableaux_export::Tableau),
-}
-
-/// La regularisation CASC-SVP telle que son module l'ecrit (`import::casc::vers_json`).
-fn casc_ecrite<S: serde::Serializer>(r: &crate::import::casc::Regularisation, s: S) -> Result<S::Ok, S::Error> {
-    crate::import::casc::vers_json(r).serialize(s)
 }
 
 /// CE QUE L'ECRAN DIT D'UN ETAT EXPORTE : ses donnees personnelles, ses totaux partiels, et pour la regularisation
@@ -624,7 +618,7 @@ pub(crate) enum Exporte {
     Tableau(documents::tableaux_export::Tableau),
 }
 
-/// `exporter`, avant la mise en JSON ; sans `format`, le CSV.
+/// `exporter`, avant la mise en JSON.
 pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     use documents::etats_paie::Demande;
     let etat = c.etat.clone();

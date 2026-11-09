@@ -630,8 +630,8 @@ Ce que le moteur écrit, d'après la norme déposée (`atelier/reference/norme-d
   contrat − 1), où `places_par_contrat` = max(3, 2 + contributions de branche
   déclarées) : 3 en 3090, 4 en 1285 (`dsn.rs` : `places_par_contrat`,
   `bloc_contrat_fctu`, `bases_et_cotisations`).
-- `S21.G00.40.043` est le taux AT/MP notifié à l'établissement (`taux_atmp`
-  du barème, que la fiche entreprise porte ; refus s'il manque). Il
+- `S21.G00.40.043` est le taux AT/MP notifié à l'établissement (`taux_atmp`,
+  lu dans la configuration ; refus s'il manque). Il
   n'a aucun lien avec le bloc 54.
 - `S21.G00.54.002` est un **montant** en euros (p. 258). Le moteur écrit un
   bloc 54 par ligne du bulletin qui porte `dsn_autres_bruts`, le type `10` pour
@@ -904,13 +904,13 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 
 Les taux de **droit commun** — Urssaf, Agirc-Arrco, chômage, CSG, plafond, SMIC, et les taux de la **branche** du
 spectacle — sont les mêmes pour tout le monde ; ce qui est **propre à une entreprise** tient en un nombre : son taux
-AT/MP notifié. Les premiers sont livrés, le second seul s'écrit dans la compagnie : une compagnie qui installe
-PuppetPaie ne relève pas elle-même les taux nationaux.
+AT/MP notifié, lu dans sa configuration. Les premiers sont livrés : une compagnie qui installe PuppetPaie ne relève pas
+elle-même les taux nationaux.
 
 ```
 logiciel/donnees/baremes/2026.json      le socle : droit commun + tout le spectacle
   └─ section `par_convention`           la couche de SA convention, choisie par l'IDCC
-config/baremes/2026.json                ce qui est propre à la compagnie, 2 Ko
+config/baremes/2026.json                la surcouche de la compagnie, ce qu'elle corrige du socle
 config/effectifs.json                   son effectif, écrit par le moteur depuis
                                         les retours de nature 118 (envois/src/releve_retours.rs)
 ```
@@ -975,10 +975,9 @@ dangereux dans les deux sens — une surcouche prise pour un barème complet pai
 un barème complet pris pour une surcouche hériterait de taux qu'il a de
 bonnes raisons de ne pas avoir.
 
-**Le taux AT/MP ne s'écrit qu'une fois**, dans la configuration : la fiche entreprise (`taux_atmp`, datée comme toute
-la configuration, une notification reçue s'y écrivant à sa date d'effet) pour le siège, la ligne de chaque autre
-établissement (`etablissements[].taux_atmp`) ; `droit::contexte` le pose sur la pile, la surcouche ne le porte pas et
-le moteur ne l'écrit jamais. Les rubriques du socle
+**Le taux AT/MP se lit dans la configuration** : la fiche entreprise (`taux_atmp`, datée comme toute la configuration)
+pour le siège, la ligne de chaque autre établissement (`etablissements[].taux_atmp`) ; `droit::contexte` le pose sur la
+pile, la surcouche ne le porte pas. Les rubriques du socle
 portent leur **facteur** (`_facteur_atmp`) — 0,70 pour un artiste, dont les taux Urssaf sont abattus de 30 % (arrêté
 du 24/01/1975), 1 pour tout le monde d'autre — et `droit::bareme::bareme_atmp` fait la multiplication.
 

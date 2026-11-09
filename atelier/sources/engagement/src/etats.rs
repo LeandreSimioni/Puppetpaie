@@ -1723,7 +1723,7 @@ mod tests_rupture {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),
             numero: Some("X1.26.01".into()),
-            lignes: Some(vec![socle::forme::lire_texte(&texte, crate::saisie::CARTE_ILLISIBLE).unwrap()]),
+            lignes: Some(vec![socle::forme::lire_texte(&texte, "ligne").unwrap()]),
             ..Default::default()
         };
         let saisie = |carte: crate::saisie::Carte| stock::Saisie { carte, ..Default::default() };

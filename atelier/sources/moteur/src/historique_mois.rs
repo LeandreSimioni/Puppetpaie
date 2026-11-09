@@ -487,6 +487,14 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 
 // ------------------------------------------------------------------ les retours, lus
 
+/// Le refus d'un dossier des retours qui ne se lit pas : la phrase en mots, le dossier et l'erreur a part.
+fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
+    socle::echec::avec(
+        "Le dossier des retours ne se lit pas.",
+        socle::echec::APart { chemin: Some(dossier.display().to_string()), detail: Some(e.to_string()), ..Default::default() },
+    )
+}
+
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
 /// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
@@ -503,11 +511,11 @@ fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, natur
     let lus = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("le dossier des retours ne se lit pas ({:?})", e.kind())),
+        Err(e) => return Err(retours_illisibles(&dossier, e)),
     };
     let mut noms: Vec<String> = Vec::new();
     for e in lus {
-        let n = e.map_err(|x| format!("le dossier des retours ne se lit pas ({:?})", x.kind()))?.file_name().to_string_lossy().into_owned();
+        let n = e.map_err(|x| retours_illisibles(&dossier, x))?.file_name().to_string_lossy().into_owned();
         let radical = match n.rsplit_once('.') {
             Some((r, _)) => r,
             None => n.as_str(),

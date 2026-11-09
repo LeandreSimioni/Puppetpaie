@@ -569,7 +569,7 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
     let (racine, jour) = la_fictive_tient_son_annee_et_se_livre("fictive-fil-de-fer", 2, &["01", "02", "03", "04", "05", "06", "09", "12"]);
     // LES MOIS IMPORTES SE LISENT (le bug du joueur L9 : le FCAP-SVP de 2025 refusait « aucune paie validée ») : la
     // tranche A de 2025 est celle des paies importees de septembre a decembre, et l'annee se dit partielle.
-    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": "2025"}), jour)).clone();
+    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": "2025", "format": "csv"}), jour)).clone();
     let ligne = &fcap["sections"][0]["lignes"][0];
     assert_eq!(ligne["mois"], json!(4), "{}", fcap);
     assert!(ligne["regle"].as_str().is_some_and(|r| r.contains("partielle")), "{}", fcap);
@@ -592,7 +592,7 @@ fn la_fictive_de_l_hotel_de_bourgogne_tient_son_annee_et_se_livre() {
     // LES MOIS IMPORTES NE DEMANDENT PAS L'EFFECTIF D'AVANT EUX (le bug : l'export comptable de toutes les annees
     // refusait « effectif de la compagnie non connu », des 2025) : 2025, paye par l'ancien logiciel, lit ses taux sur ses pieces,
     // et le FNAS de la CCNEAC n'a pas a dire l'effectif de 2024 (`bareme::EntrepriseLue::taux_lus`).
-    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": "2025", "apercu": true}), jour);
+    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": "2025", "format": "csv", "apercu": true}), jour);
     assert_eq!(balance["ok"], json!(true), "{}", balance);
     // LES MEMES PIECES REIMPORTEES N'ANNONCENT RIEN (le bug : chaque reimport annoncait 24 contrats, les mois des deux CDI
     // sans terme, et 3 paies de decembre « completees ») : le contrat d'un permanent s'atteste mois par mois, et la paie

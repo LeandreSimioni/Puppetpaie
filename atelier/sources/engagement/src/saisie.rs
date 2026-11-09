@@ -1,7 +1,6 @@
 //! LA CARTE D'UN ENGAGEMENT : ce que la personne tape pour un mois, et ce que l'engagement dit de ce mois (sa vue,
 //! `stock::Objet::vue`). Une seule forme, declaree ici : la charge d'une route qui ecrit ou calcule une carte, la vue que
-//! l'ecran ouvre et que le calcul lit, chacune lue par `socle::forme` (`CARTE_ILLISIBLE`) ; une cle inconnue refuse en se
-//! nommant.
+//! l'ecran ouvre et que le calcul lit, chacune lue par `socle::forme` ; une cle inconnue refuse en se nommant.
 //!
 //! Chaque champ appartient a un groupe (`Groupe`) : ce que tous les mois de l'engagement partagent, ses termes, les faits
 //! d'un mois, sa fin, ce que la vue deduit, ce que la vue dit de lui. Le stock compose et ecrit les cartes par leurs
@@ -288,9 +287,6 @@ impl<'de> Deserialize<'de> for Champ {
         Champ::TOUS.iter().copied().find(|c| c.nom() == nom).ok_or_else(|| serde::de::Error::custom(format!("« {} » n'est pas un champ d'une carte", nom)))
     }
 }
-
-/// La phrase du refus d'une carte qui n'a pas sa forme : la charge d'une route se lit par elle (`socle::forme::lire`).
-pub const CARTE_ILLISIBLE: &str = "La carte d'un engagement ne se lit pas.";
 
 impl Carte {
     /// La carte des seuls champs des groupes `g`.

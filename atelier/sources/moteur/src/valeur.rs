@@ -167,18 +167,6 @@ pub fn flottant(v: &Value) -> Resultat<f64> {
     }
 }
 
-/// `socle::texte::euros` d'une valeur (`12.8`, `"12,80"`) ; rien pour une valeur absente, le texte tel quel s'il n'est
-/// pas un nombre.
-pub fn euros_de(v: &Value) -> String {
-    let x = match v {
-        Value::Null => return String::new(),
-        Value::String(s) => s.trim().replace(',', ".").parse().ok(),
-        Value::Number(_) => dec(v).ok(),
-        _ => None,
-    };
-    x.map_or_else(|| valeur_en_texte(v), socle::texte::euros)
-}
-
 // ------------------------------------------------------------ une valeur
 
 /// Une valeur est-elle vraie ? Faux : `null`, `false`, zero, un texte, une liste ou un objet vides.
@@ -268,12 +256,6 @@ pub fn valeur_en_texte(v: &Value) -> String {
         Value::String(s) => s.clone(),
         autre => valeur_ecrite(autre),
     }
-}
-
-/// `{}`, a rendre par reference.
-pub fn objet_vide() -> &'static Value {
-    static V: OnceLock<Value> = OnceLock::new();
-    V.get_or_init(|| Value::Object(Map::new()))
 }
 
 /// `v.get(k)`.

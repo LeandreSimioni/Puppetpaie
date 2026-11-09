@@ -630,7 +630,8 @@ pub fn route(o: &HashMap<String, String>, porte: &Porte, charge: &Charge) -> R<R
         Route::EtatDuMois => du_mois(&porte.ctx.racine, &crate::routes::etapes::les_deux_etats(porte.ctx, mois)?.1),
         Route::Mois => {
             let etat = refaire(o, porte.ctx, Cle::Mois(mois))?.du_mois()?;
-            en_json(etat.ecran(&porte.ctx.racine, false))
+            let ecran: EcranDuMois = etat.ecran(&porte.ctx.racine, false);
+            en_json(ecran)
         }
         autre => Err(route_inconnue(autre.nom())),
     }
