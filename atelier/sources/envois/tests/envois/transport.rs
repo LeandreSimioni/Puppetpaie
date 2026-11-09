@@ -6,7 +6,6 @@
 use std::io::Write;
 
 use envois::transport::{authentifier, depot, Authentification, Identite};
-use serde_json::json;
 
 use crate::outils::{serveur, Recu, Requete};
 
@@ -41,7 +40,7 @@ fn faux() -> (String, Recu) {
 }
 
 fn declarant() -> Identite {
-    Identite { siret: "12345678901234".into(), nom: "DUPONT".into(), prenom: "Jean Pierre".into() }
+    Identite { siret: Some("12345678901234".into()), nom: Some("DUPONT".into()), prenom: Some("Jean Pierre".into()) }
 }
 
 fn auth<'a>(url: &'a str, declarant: &'a Identite, motdepasse: Option<&'a str>) -> Authentification<'a> {
@@ -53,7 +52,7 @@ fn l_authentification_envoie_les_identifiants_du_guide_et_rend_le_jeton() {
     let (base, recu) = faux();
     let (url, d) = (format!("{}/auth", base), declarant());
     let r = authentifier(&auth(&url, &d, Some("a&b<c>d"))).unwrap();
-    assert_eq!(r["jeton"], json!("JETON-123"));
+    assert_eq!(r.jeton, "JETON-123");
     let v = &recu.lock().unwrap()[0];
     assert_eq!((v.methode.as_str(), en_tete(v, "content-type")), ("POST", Some("application/xml")));
     // Le mot de passe s'echappe : un `<` ou un `&` ne casse pas le XML du guide.
@@ -71,7 +70,7 @@ fn un_mot_de_passe_absent_ou_un_declarant_incomplet_ne_partent_pas() {
     for mdp in [None, Some("")] {
         assert!(authentifier(&auth(&url, &d, mdp)).is_err());
     }
-    let incomplet = Identite { siret: "1".into(), ..Identite::default() };
+    let incomplet = Identite { siret: Some("1".into()), ..Identite::default() };
     assert!(authentifier(&auth(&url, &incomplet, Some("secret"))).is_err());
     assert!(recu.lock().unwrap().is_empty(), "rien n'est parti");
 }
@@ -84,7 +83,8 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
         let url = format!("{}{}", base, chemin);
         let r = authentifier(&auth(&url, &d, Some("Tres-Secret-42")));
         let tout = match r {
-            Ok(v) | Err(v) => v.to_string(),
+            Ok(s) => format!("{:?}", s),
+            Err(e) => format!("{:?}", e),
         };
         assert!(!tout.contains("Tres-Secret-42"), "{} : {}", chemin, tout);
     }

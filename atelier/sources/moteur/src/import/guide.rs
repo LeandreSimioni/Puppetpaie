@@ -114,8 +114,8 @@ pub fn guide() -> Guide {
 /// LA COMPAGNIE COMMENCE PAR L'IMPORT : elle est venue par « d'un logiciel precedent » (`compagnies::Venue`) et rien
 /// n'en est encore repris (aucun contrat ni aucune paie importes, `engagement::importe`). La page s'ouvre alors sur le
 /// guide (`routes::ouverture::etat`).
-pub fn commencer_par_l_import(racine: &Path) -> bool {
-    crate::interface::compagnies::vient_d_un_logiciel_precedent(racine)
-        && engagement::importe::contrats_lus(racine).map_or(true, |c| c.is_empty())
-        && engagement::importe::paies_lues(racine).map_or(true, |p| p.is_empty())
+pub fn commencer_par_l_import(racine: &Path) -> Result<bool, String> {
+    Ok(crate::interface::compagnies::venue(racine)? == Some(crate::interface::compagnies::Venue::LogicielPrecedent)
+        && engagement::importe::contrats_lus(racine)?.is_empty()
+        && engagement::importe::paies_lues(racine)?.is_empty())
 }

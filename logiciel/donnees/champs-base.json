@@ -486,10 +486,10 @@
    "note": "LE CONTACT DE LA MEDECINE DU TRAVAIL INTERNE. Norme DSN 2027 (cahier technique 2027.1.1, `norme-dsn/texte-2027/bloc-S20.G00.07.txt` l. 46-65 et 81, CCH-11 de S20.G00.07.004) : si la declaration porte en S21.G00.11.025 l'identifiant de SPST « MT01 - MEDECINE INTERNE ETABLISSEMENT », un bloc « Contact chez le declare » de type « 17 - Contact au sein du service de medecine du travail interne a l'etablissement » (le medecin du travail ou une personne sous sa responsabilite, pour la transmission des arrets de travail, L315-4 CSS) doit obligatoirement etre present ; dans le cas contraire, il est interdit. La norme 2026 n'a ni l'identifiant de SPST ni le type 17. `si` et `exige_si` : le code du service de sante au travail vaut MT999, la medecine interne de la DPAE (norme DPAE v5.3, l. 496-497), que `dsn::spst_ecrit` ecrit MT01. `dsn.rs` (`contact_sante_travail`) l'ecrit, `demarrage::manques` le demande.",
    "cle": "contact_sante_travail",
    "champs": [
-    {"cle": "nom_prenom_affichage", "libelle": "Nom et prénom", "forme": "affichage", "aide": "En une seule case, comme la DSN l'écrit.", "exemple": "Paul Durand"},
+    {"cle": "nom_prenom_affichage", "libelle": "Nom et prénom", "forme": "affichage", "ecran": true, "aide": "En une seule case, comme la DSN l'écrit.", "exemple": "Paul Durand"},
     {"cle": "nom_prenom", "libelle": "Nom et prénom déclarés", "forme": "officiel", "derive_de": "nom_prenom_affichage", "ecran": false, "exige_par": ["dsn"]},
-    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "exemple": "0102030405", "exige_par": ["dsn"]},
-    {"cle": "email", "libelle": "Courriel", "forme": "email", "exemple": "medecin@compagnie.fr", "exige_par": ["dsn"]}
+    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "ecran": true, "exemple": "0102030405", "exige_par": ["dsn"]},
+    {"cle": "email", "libelle": "Courriel", "forme": "email", "ecran": true, "exemple": "medecin@compagnie.fr", "exige_par": ["dsn"]}
    ],
    "libelle": "Qui répond pour la médecine du travail interne",
    "forme": "structure",
@@ -729,12 +729,12 @@
    "note": "LA PREVOYANCE DES PERMANENTS (19/09/2026). Rien a saisir dans le cas\nordinaire : le taux est celui de la convention collective (catalogue de\nbranche, moteur/prevoyance-conventionnelle-base.json), il est\nobligatoire, et le moteur l'applique sans demander. Ce champ ne sert\nqu'a DIRE CE QU'ON A EN PLUS -- une extension facultative, un contrat\nd'entreprise plus favorable. Une compagnie qui ne le remplit pas est\ncorrectement couverte ; une compagnie qui y ecrit moins que la branche\nest refusee.",
    "cle": "prevoyance_permanents",
    "champs": [
-    {"cle": "regime", "libelle": "Régime", "forme": "choix", "choix": ["", "contrat"], "libelles": {"": "Celui de la convention (le cas ordinaire)", "contrat": "Un contrat d'entreprise plus favorable"}, "aide": "Le cas ordinaire : celui de la convention, que le logiciel applique seul. Un contrat d'entreprise ne se choisit que s'il a été réellement souscrit, et plus favorable."},
-    {"cle": "taux.t1_non_cadre", "libelle": "Taux non-cadres (%)", "forme": "montant", "aide": "Seulement pour un contrat d'entreprise : son taux sur la tranche A, pour les non-cadres."},
-    {"cle": "taux.t1_cadre", "libelle": "Taux cadres (%)", "forme": "montant", "aide": "Seulement pour un contrat d'entreprise : son taux sur la tranche A, pour les cadres (au moins 1,50 %)."},
-    {"cle": "taux.part_patronale", "libelle": "Part employeur (%)", "forme": "montant", "aide": "Seulement pour un contrat d'entreprise. 100 % pour les cadres, obligatoirement."},
-    {"cle": "extension_t2", "libelle": "Extension sur la tranche 2", "forme": "choix", "choix": ["", "tous", "cadres"], "libelles": {"": "Aucune (le cas ordinaire)", "tous": "Pour tous les permanents", "cadres": "Pour les cadres seulement"}, "aide": "Seulement si elle a été souscrite auprès de l'organisme."},
-    {"cle": "adhesion", "libelle": "Organisme et numéro d'adhésion", "forme": "texte", "aide": "Pour mémoire : il ne part dans aucun calcul."}
+    {"cle": "regime", "libelle": "Régime", "forme": "choix", "ecran": true, "choix": ["", "contrat"], "libelles": {"": "Celui de la convention (le cas ordinaire)", "contrat": "Un contrat d'entreprise plus favorable"}, "aide": "Le cas ordinaire : celui de la convention, que le logiciel applique seul. Un contrat d'entreprise ne se choisit que s'il a été réellement souscrit, et plus favorable."},
+    {"cle": "taux.t1_non_cadre", "libelle": "Taux non-cadres (%)", "forme": "montant", "ecran": true, "aide": "Seulement pour un contrat d'entreprise : son taux sur la tranche A, pour les non-cadres."},
+    {"cle": "taux.t1_cadre", "libelle": "Taux cadres (%)", "forme": "montant", "ecran": true, "aide": "Seulement pour un contrat d'entreprise : son taux sur la tranche A, pour les cadres (au moins 1,50 %)."},
+    {"cle": "taux.part_patronale", "libelle": "Part employeur (%)", "forme": "montant", "ecran": true, "aide": "Seulement pour un contrat d'entreprise. 100 % pour les cadres, obligatoirement."},
+    {"cle": "extension_t2", "libelle": "Extension sur la tranche 2", "forme": "choix", "ecran": true, "choix": ["", "tous", "cadres"], "libelles": {"": "Aucune (le cas ordinaire)", "tous": "Pour tous les permanents", "cadres": "Pour les cadres seulement"}, "aide": "Seulement si elle a été souscrite auprès de l'organisme."},
+    {"cle": "adhesion", "libelle": "Organisme et numéro d'adhésion", "forme": "texte", "ecran": true, "aide": "Pour mémoire : il ne part dans aucun calcul."}
    ],
    "libelle": "Prévoyance des permanents",
    "forme": "structure",
@@ -888,8 +888,8 @@
    "note": "LA PART PATRONALE DE LA SANTE DES PERMANENTS, quand la convention fixe\nle taux (la CCNEAC, XII.2.1.10) : au moins la moitie, davantage si\nl'entreprise l'a decide.",
    "cle": "sante_permanents",
    "champs": [
-    {"cle": "taux_contrat", "libelle": "Taux du contrat (% du plafond mensuel)", "forme": "montant", "aide": "Seulement pour une convention sans régime de santé (production audiovisuelle 2642) : le taux de votre contrat, pour le salarié seul. Il est sur votre contrat ou votre appel de cotisation."},
-    {"cle": "part_patronale", "libelle": "Part employeur (%)", "forme": "montant", "aide": "Au moins 50 %, comme le dit votre contrat de complémentaire santé."}
+    {"cle": "taux_contrat", "libelle": "Taux du contrat (% du plafond mensuel)", "forme": "montant", "ecran": true, "aide": "Seulement pour une convention sans régime de santé (production audiovisuelle 2642) : le taux de votre contrat, pour le salarié seul. Il est sur votre contrat ou votre appel de cotisation."},
+    {"cle": "part_patronale", "libelle": "Part employeur (%)", "forme": "montant", "ecran": true, "aide": "Au moins 50 %, comme le dit votre contrat de complémentaire santé."}
    ],
    "libelle": "Santé des permanents",
    "forme": "structure",
@@ -952,10 +952,10 @@
    "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010). Cela depend de sa TVA, que le moteur ne connait pas : la fiche le dit, et une\nfiche muette fait refuser la DSN de decembre (`assujettissement.rs`). La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679A`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
    "cle": "taxe_sur_les_salaires",
    "champs": [
-    {"cle": "tva", "libelle": "La compagnie et la TVA", "forme": "choix", "choix": ["assujettie", "exoneree"], "libelles": {"": "— à dire —", "assujettie": "Assujettie à la TVA", "exoneree": "Exonérée de TVA (ou hors de son champ)"}, "aide": "Assujettie : elle facture la TVA sur ses ventes (billetterie, cessions…) et la déclare. Exonérée : elle ne facture pas de TVA, ou ses activités n'y entrent pas — c'est le cas de beaucoup d'associations."},
-    {"cle": "part_tva", "libelle": "Part de vos recettes de l'an dernier soumise à la TVA (%)", "forme": "montant", "aide": "Vos recettes soumises à la TVA, divisées par toutes vos recettes et produits de l'année, subventions et dons compris. Votre comptable la connaît. À 90 % ou plus, pas de taxe sur les salaires."},
-    {"cle": "sous_franchise", "libelle": "Vos recettes de l'an dernier", "forme": "booleen", "boutons": true, "choix": ["true", "false"], "libelles": {"": "— à dire —", "true": "Sous les deux plafonds", "false": "Au-dessus d'un des plafonds"}, "aide": "Sous les deux plafonds de la franchise en base de TVA (les spectacles vendus, et les recettes en tout, subventions comprises), la compagnie ne doit pas la taxe sur les salaires."},
-    {"cle": "association_1679A", "libelle": "Association loi 1901, syndicat ou mutuelle ?", "forme": "booleen", "choix": ["true"], "libelles": {"": "Non", "true": "Oui (abattement de l'article 1679 A)"}, "aide": "Une association loi 1901, une fondation reconnue d'utilité publique, un syndicat, une mutuelle de moins de trente salariés : l'abattement de l'article 1679 A s'applique à la taxe due."}
+    {"cle": "tva", "libelle": "La compagnie et la TVA", "forme": "choix", "ecran": true, "choix": ["assujettie", "exoneree"], "libelles": {"": "— à dire —", "assujettie": "Assujettie à la TVA", "exoneree": "Exonérée de TVA (ou hors de son champ)"}, "aide": "Assujettie : elle facture la TVA sur ses ventes (billetterie, cessions…) et la déclare. Exonérée : elle ne facture pas de TVA, ou ses activités n'y entrent pas — c'est le cas de beaucoup d'associations."},
+    {"cle": "part_tva", "libelle": "Part de vos recettes de l'an dernier soumise à la TVA (%)", "forme": "montant", "ecran": true, "aide": "Vos recettes soumises à la TVA, divisées par toutes vos recettes et produits de l'année, subventions et dons compris. Votre comptable la connaît. À 90 % ou plus, pas de taxe sur les salaires."},
+    {"cle": "sous_franchise", "libelle": "Vos recettes de l'an dernier", "forme": "booleen", "ecran": true, "boutons": true, "choix": ["true", "false"], "libelles": {"": "— à dire —", "true": "Sous les deux plafonds", "false": "Au-dessus d'un des plafonds"}, "aide": "Sous les deux plafonds de la franchise en base de TVA (les spectacles vendus, et les recettes en tout, subventions comprises), la compagnie ne doit pas la taxe sur les salaires."},
+    {"cle": "association_1679A", "libelle": "Association loi 1901, syndicat ou mutuelle ?", "forme": "booleen", "ecran": true, "choix": ["true"], "libelles": {"": "Non", "true": "Oui (abattement de l'article 1679 A)"}, "aide": "Une association loi 1901, une fondation reconnue d'utilité publique, un syndicat, une mutuelle de moins de trente salariés : l'abattement de l'article 1679 A s'applique à la taxe due."}
    ],
    "libelle": "Taxe sur les salaires",
    "forme": "structure",
@@ -1034,26 +1034,58 @@
    "ecran": true
   },
   {
+   "note": "LE CODE RISQUE ET LE TAUX AT/MP DU SIEGE, une case datee comme toute la configuration (`moteur::routes::atmp`) : chaque ligne vaut a partir de sa date (`depuis`, celle de la notification) et dit d'ou elle vient (`provenance`) : l'import (les DSN reprises), la notification recue de la CARSAT (avec `notification`), le taux collectif de l'arrete pour un risque « TC » (inscrit a l'ouverture), la saisie (« Inscrire le taux d'une notification », qui avertit quand elle change un taux recu). L'ecran la dessine a part (le taux en vigueur, celui d'avant, celui a venir). Le seul lecteur de la paie : `droit::bareme::taux_atmp_de_l_annee`.",
+   "cle": "taux_atmp",
+   "libelle": "Accidents du travail (AT/MP)",
+   "forme": "structure",
+   "aide": "",
+   "champs": [
+    {"cle": "code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": false},
+    {"cle": "valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": false},
+    {"cle": "depuis", "libelle": "À partir du", "forme": "date", "ecran": false},
+    {"cle": "provenance", "libelle": "D'où vient le taux", "forme": "choix", "choix": ["saisie", "import", "notification", "arrete"], "ecran": false},
+    {"cle": "notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
+    {"cle": "notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
+    {"cle": "notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false}
+   ],
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si_permanents": false,
+   "si": null,
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "booleen_defaut": true,
+   "ecran": false
+  },
+  {
    "note": "LES AUTRES ETABLISSEMENTS que le siege (celui du `nic` ci-dessus) : chacun son SIRET, son adresse, sa date d'ouverture, son code risque et son taux AT/MP (`taux_atmp`, D. 242-6-1 du code de la securite sociale : le taux est determine par etablissement). Chacun a sa DSN (S21.G00.11) ; un engagement dit le sien (`engagement::Engagement::etablissement`). La liste se date a chaque ouverture, modification et fermeture (`moteur::routes::etablissements`).",
    "cle": "etablissements",
    "ligne": "établissement",
    "champs": [
-    {"cle": "libelle", "libelle": "Nom", "forme": "texte", "aide": "Atelier, salle…"},
-    {"cle": "siret", "libelle": "SIRET", "forme": "texte"},
+    {"cle": "libelle", "libelle": "Nom", "forme": "texte", "ecran": true, "aide": "Atelier, salle…"},
+    {"cle": "siret", "libelle": "SIRET", "forme": "texte", "ecran": true},
     {"cle": "nic", "libelle": "NIC", "forme": "chiffres", "derive_de": "siret", "ecran": false},
-    {"cle": "adresse_affichage", "libelle": "Adresse", "forme": "texte"},
+    {"cle": "adresse_affichage", "libelle": "Adresse", "forme": "texte", "ecran": true},
     {"cle": "adresse", "libelle": "Adresse déclarée", "forme": "officiel", "derive_de": "adresse_affichage", "aide": "32 caractères au plus, ce que la DPAE écrit.", "ecran": false},
-    {"cle": "complement_adresse_affichage", "libelle": "Complément d'adresse", "forme": "texte", "aide": "Bâtiment, étage… Vide sinon."},
+    {"cle": "complement_adresse_affichage", "libelle": "Complément d'adresse", "forme": "texte", "ecran": true, "aide": "Bâtiment, étage… Vide sinon."},
     {"cle": "complement_adresse", "libelle": "Complément d'adresse déclaré", "forme": "officiel", "derive_de": "complement_adresse_affichage", "aide": "32 caractères au plus, ce que la DPAE écrit.", "ecran": false},
-    {"cle": "code_postal", "libelle": "Code postal", "forme": "texte", "aide": "5 caractères."},
-    {"cle": "commune_affichage", "libelle": "Commune", "forme": "texte"},
+    {"cle": "code_postal", "libelle": "Code postal", "forme": "texte", "ecran": true, "aide": "5 caractères."},
+    {"cle": "commune_affichage", "libelle": "Commune", "forme": "texte", "ecran": true},
     {"cle": "commune", "libelle": "Commune déclarée", "forme": "officiel", "derive_de": "commune_affichage", "aide": "27 caractères au plus, ce que la DPAE écrit.", "ecran": false},
-    {"cle": "ouverture", "libelle": "Ouvert le", "forme": "date"},
-    {"cle": "taux_atmp.code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp"},
-    {"cle": "taux_atmp.valeur", "libelle": "Taux AT/MP (%)", "forme": "montant"},
-    {"cle": "taux_atmp.annee", "libelle": "Année du taux AT/MP", "forme": "chiffres", "aide": "Celle de la date d'effet du taux (D. 242-6-15) : l'écran la pose.", "ecran": false},
-    {"cle": "versement_mobilite.taux", "libelle": "Versement mobilité (%)", "forme": "montant", "aide": "0 si aucun", "si_configuration": "versement_mobilite_des_etablissements"},
-    {"cle": "versement_mobilite.code_insee", "libelle": "Code INSEE de la commune", "forme": "texte", "si_configuration": "versement_mobilite_des_etablissements"}
+    {"cle": "ouverture", "libelle": "Ouvert le", "forme": "date", "ecran": true},
+    {"cle": "taux_atmp.code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": true},
+    {"cle": "taux_atmp.valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": true},
+    {"cle": "taux_atmp.depuis", "libelle": "Taux AT/MP à partir du", "forme": "date", "aide": "La date de la notification de la CARSAT.", "ecran": true},
+    {"cle": "taux_atmp.provenance", "libelle": "D'où vient le taux", "forme": "choix", "choix": ["saisie", "import", "notification", "arrete"], "ecran": false},
+    {"cle": "taux_atmp.notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
+    {"cle": "taux_atmp.notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
+    {"cle": "taux_atmp.notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false},
+    {"cle": "versement_mobilite.taux", "libelle": "Versement mobilité (%)", "forme": "montant", "ecran": true, "aide": "0 si aucun", "si_configuration": "versement_mobilite_des_etablissements"},
+    {"cle": "versement_mobilite.code_insee", "libelle": "Code INSEE de la commune", "forme": "texte", "ecran": true, "si_configuration": "versement_mobilite_des_etablissements"}
    ],
    "libelle": "Autres établissements",
    "forme": "structure",
@@ -1074,13 +1106,13 @@
   {
    "cle": "signataire",
    "champs": [
-    {"cle": "prenom_affichage", "libelle": "Prénom", "forme": "affichage", "exemple": "Claire"},
-    {"cle": "nom_affichage", "libelle": "Nom", "forme": "affichage", "exemple": "Martin"},
+    {"cle": "prenom_affichage", "libelle": "Prénom", "forme": "affichage", "ecran": true, "exemple": "Claire"},
+    {"cle": "nom_affichage", "libelle": "Nom", "forme": "affichage", "ecran": true, "exemple": "Martin"},
     {"cle": "prenom", "libelle": "Prénom déclaré", "forme": "officiel", "derive_de": "prenom_affichage", "ecran": false, "exige_par": ["dsn", "contrat"]},
     {"cle": "nom", "libelle": "Nom déclaré", "forme": "officiel", "derive_de": "nom_affichage", "ecran": false, "exige_par": ["dsn", "contrat"]},
-    {"cle": "fonction", "libelle": "Fonction", "forme": "texte", "aide": "Président, présidente, gérant, directrice… Le contrat l'imprime sous la signature.", "exemple": "Présidente", "exige_par": ["contrat"]},
-    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit."},
-    {"cle": "email", "libelle": "Courriel", "forme": "email", "exemple": "presidence@compagnie.fr"}
+    {"cle": "fonction", "libelle": "Fonction", "forme": "texte", "ecran": true, "aide": "Président, présidente, gérant, directrice… Le contrat l'imprime sous la signature.", "exemple": "Présidente", "exige_par": ["contrat"]},
+    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "ecran": true, "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit."},
+    {"cle": "email", "libelle": "Courriel", "forme": "email", "ecran": true, "exemple": "presidence@compagnie.fr"}
    ],
    "libelle": "Qui signe",
    "forme": "structure",
@@ -1101,11 +1133,11 @@
   {
    "cle": "declarant_dsn",
    "champs": [
-    {"cle": "civilite", "libelle": "Civilité", "forme": "choix", "choix": ["01", "02"], "libelles": {"01": "Monsieur", "02": "Madame"}, "aide": "Celle de la personne que les organismes contactent : 01 monsieur, 02 madame (S10.G00.02.001). Elle s'écrit dans chaque DSN.", "exemple": "02", "exige_par": ["dsn"]},
-    {"cle": "nom_prenom_affichage", "libelle": "Nom et prénom", "forme": "affichage", "aide": "En une seule case, comme la DSN l'écrit.", "exemple": "Claire Martin"},
+    {"cle": "civilite", "libelle": "Civilité", "forme": "choix", "ecran": true, "choix": ["01", "02"], "libelles": {"01": "Monsieur", "02": "Madame"}, "aide": "Celle de la personne que les organismes contactent : 01 monsieur, 02 madame (S10.G00.02.001). Elle s'écrit dans chaque DSN.", "exemple": "02", "exige_par": ["dsn"]},
+    {"cle": "nom_prenom_affichage", "libelle": "Nom et prénom", "forme": "affichage", "ecran": true, "aide": "En une seule case, comme la DSN l'écrit.", "exemple": "Claire Martin"},
     {"cle": "nom_prenom", "libelle": "Nom et prénom déclarés", "forme": "officiel", "derive_de": "nom_prenom_affichage", "ecran": false, "exige_par": ["dsn"]},
-    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit.", "exige_par": ["dsn"]},
-    {"cle": "email", "libelle": "Courriel", "forme": "email", "exemple": "paie@compagnie.fr", "exige_par": ["dsn"]},
+    {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "ecran": true, "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit.", "exige_par": ["dsn"]},
+    {"cle": "email", "libelle": "Courriel", "forme": "email", "ecran": true, "exemple": "paie@compagnie.fr", "exige_par": ["dsn"]},
     {"cle": "qualite", "libelle": "Qualité", "forme": "chiffres", "aide": "S20.G00.07.004 : le moteur l'écrit seul (`dsn::type_du_contact`).", "ecran": false}
    ],
    "libelle": "Qui les organismes contactent",
@@ -1176,8 +1208,8 @@
   {
    "cle": "banque",
    "champs": [
-    {"cle": "iban", "libelle": "IBAN", "forme": "texte", "aide": "Sur le relevé d'identité bancaire (RIB) : 27 caractères commençant par FR pour un compte en France, de 15 à 34 ailleurs. Les espaces ne comptent pas.", "exige_par": ["dsn"]},
-    {"cle": "bic", "libelle": "BIC", "forme": "texte", "aide": "Sur le même RIB, 8 ou 11 caractères.", "exemple": "AGRIFRPPXXX", "exige_par": ["dsn"]}
+    {"cle": "iban", "libelle": "IBAN", "forme": "texte", "ecran": true, "aide": "Sur le relevé d'identité bancaire (RIB) : 27 caractères commençant par FR pour un compte en France, de 15 à 34 ailleurs. Les espaces ne comptent pas.", "exige_par": ["dsn"]},
+    {"cle": "bic", "libelle": "BIC", "forme": "texte", "ecran": true, "aide": "Sur le même RIB, 8 ou 11 caractères.", "exemple": "AGRIFRPPXXX", "exige_par": ["dsn"]}
    ],
    "libelle": "Compte bancaire",
    "forme": "structure",
@@ -1783,8 +1815,8 @@
    "note": "LE COMPTE OU LE SALAIRE EST VIRE : l'IBAN, controle par sa cle (ISO 13616, MOD 97-10 : atelier/reference/sources/iban/), et le BIC, facultatif (reglement (UE) 260/2012, art. 5, 7). Il ne part dans aucune declaration.",
    "cle": "banque",
    "champs": [
-    {"cle": "iban", "libelle": "IBAN", "forme": "texte", "aide": "Sur le relevé d'identité bancaire (RIB) : 27 caractères commençant par FR pour un compte en France, de 15 à 34 ailleurs. Les espaces ne comptent pas."},
-    {"cle": "bic", "libelle": "BIC", "forme": "texte", "aide": "Sur le même RIB, 8 ou 11 caractères.", "exemple": "AGRIFRPPXXX"}
+    {"cle": "iban", "libelle": "IBAN", "forme": "texte", "ecran": true, "aide": "Sur le relevé d'identité bancaire (RIB) : 27 caractères commençant par FR pour un compte en France, de 15 à 34 ailleurs. Les espaces ne comptent pas."},
+    {"cle": "bic", "libelle": "BIC", "forme": "texte", "ecran": true, "aide": "Sur le même RIB, 8 ou 11 caractères.", "exemple": "AGRIFRPPXXX"}
    ],
    "libelle": "Compte bancaire",
    "forme": "structure",
@@ -2376,13 +2408,13 @@
    "note": "LES CONGES A LA REPRISE. Le compteur se\nderive des mois produits ; pour un permanent deja la avant PuppetPaie,\nil partait de zero. Ce qui vient d'avant se lit sur le DERNIER\nBULLETIN de l'ancien logiciel, et se saisit une fois.",
    "cle": "conges_reprise",
    "champs": [
-    {"cle": "date", "libelle": "PuppetPaie compte à partir du", "forme": "date", "aide": "Le premier jour du premier mois produit par PuppetPaie"},
-    {"cle": "report", "libelle": "Jours qui restent de la période passée", "forme": "texte", "aide": "Les jours de congés acquis sur la période de référence passée et pas encore pris. Le dernier bulletin de l'ancien logiciel les écrit souvent « N-1 », « reliquat » ou « solde N-1 »."},
-    {"cle": "acquis_report", "libelle": "Jours acquis sur la période passée, en tout", "forme": "texte", "aide": "Souvent 30, pour une période entière : il sert à payer un jour au dixième. Sur le bulletin : « acquis N-1 »."},
-    {"cle": "remuneration_report", "libelle": "Brut gagné pendant la période passée (€)", "forme": "texte", "aide": "Le brut de toute la période de référence passée, qui sert à calculer le dixième. Sur le bulletin : « base N-1 », ou dans votre ancien logiciel."},
-    {"cle": "acquis", "libelle": "Jours acquis depuis le début de la période en cours", "forme": "texte", "aide": "Les jours acquis sur la période en cours, avant cette date. Sur le bulletin : « acquis N »."},
-    {"cle": "pris", "libelle": "Jours déjà pris sur la période en cours", "forme": "texte", "aide": "Les jours pris sur ceux de la période en cours, avant cette date. Sur le bulletin : « pris N »."},
-    {"cle": "remuneration_periode", "libelle": "Brut gagné depuis le début de la période en cours (€)", "forme": "texte", "aide": "Le brut versé sur la période en cours, avant cette date. Sur le bulletin : « base N »."}
+    {"cle": "date", "libelle": "PuppetPaie compte à partir du", "forme": "date", "ecran": true, "aide": "Le premier jour du premier mois produit par PuppetPaie"},
+    {"cle": "report", "libelle": "Jours qui restent de la période passée", "forme": "texte", "ecran": true, "aide": "Les jours de congés acquis sur la période de référence passée et pas encore pris. Le dernier bulletin de l'ancien logiciel les écrit souvent « N-1 », « reliquat » ou « solde N-1 »."},
+    {"cle": "acquis_report", "libelle": "Jours acquis sur la période passée, en tout", "forme": "texte", "ecran": true, "aide": "Souvent 30, pour une période entière : il sert à payer un jour au dixième. Sur le bulletin : « acquis N-1 »."},
+    {"cle": "remuneration_report", "libelle": "Brut gagné pendant la période passée (€)", "forme": "texte", "ecran": true, "aide": "Le brut de toute la période de référence passée, qui sert à calculer le dixième. Sur le bulletin : « base N-1 », ou dans votre ancien logiciel."},
+    {"cle": "acquis", "libelle": "Jours acquis depuis le début de la période en cours", "forme": "texte", "ecran": true, "aide": "Les jours acquis sur la période en cours, avant cette date. Sur le bulletin : « acquis N »."},
+    {"cle": "pris", "libelle": "Jours déjà pris sur la période en cours", "forme": "texte", "ecran": true, "aide": "Les jours pris sur ceux de la période en cours, avant cette date. Sur le bulletin : « pris N »."},
+    {"cle": "remuneration_periode", "libelle": "Brut gagné depuis le début de la période en cours (€)", "forme": "texte", "ecran": true, "aide": "Le brut versé sur la période en cours, avant cette date. Sur le bulletin : « base N »."}
    ],
    "libelle": "Congés payés à la reprise",
    "forme": "structure",
@@ -2484,11 +2516,11 @@
    "forme": "structure",
    "aide": "",
    "champs": [
-    {"cle": "taux", "libelle": "Taux", "forme": "texte"},
-    {"cle": "type", "libelle": "Type", "forme": "texte"},
-    {"cle": "identifiant", "libelle": "Identifiant", "forme": "texte"},
-    {"cle": "mis_a_disposition", "libelle": "Mis à disposition", "forme": "texte"},
-    {"cle": "en_retour_de", "libelle": "En retour de la DSN du mois", "forme": "texte"}
+    {"cle": "taux", "libelle": "Taux", "forme": "texte", "ecran": true},
+    {"cle": "type", "libelle": "Type", "forme": "texte", "ecran": true},
+    {"cle": "identifiant", "libelle": "Identifiant", "forme": "texte", "ecran": true},
+    {"cle": "mis_a_disposition", "libelle": "Mis à disposition", "forme": "texte", "ecran": true},
+    {"cle": "en_retour_de", "libelle": "En retour de la DSN du mois", "forme": "texte", "ecran": true}
    ],
    "longueur": null,
    "exemple": "",

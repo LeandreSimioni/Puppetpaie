@@ -29,13 +29,14 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use regex::Regex;
-use serde_json::{json, Value};
+use serde::Serialize;
 
 use crate::import::caviardage::{self, Connus};
 use crate::compagnie::incidents;
+use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use engagement::ecarts::{Comparaison, Grandeur};
-use documents::valeur::{valeur_en_texte, vrai};
+use socle::echec::{Echec, R};
 
 /// L'endroit, dans le journal des incidents.
 pub const OU: &str = "ecarts_import";
@@ -45,7 +46,55 @@ pub const OU: &str = "ecarts_import";
 pub struct Rapport {
     pub genre: String,
     pub resume: String,
-    pub detail: Value,
+    pub detail: Detail,
+}
+
+/// LE DETAIL D'UN RAPPORT : un ecart de calcul (une cotisation, une grandeur, un logiciel, et chaque paie), une paie qui
+/// ne se compare pas (sa raison), des lignes de cotisation que la table ne rattache a rien.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Detail {
+    Ecart {
+        cotisation: String,
+        libelles: Vec<String>,
+        grandeur: &'static str,
+        logiciel: String,
+        idcc: Option<String>,
+        annexe: Option<String>,
+        organisation_patronale: Option<String>,
+        cas: Vec<Cas>,
+    },
+    NonComparee {
+        raison: String,
+        idcc: Option<String>,
+        annexe: Option<String>,
+        cas: Vec<Cas>,
+    },
+    NonRattachees {
+        logiciel: String,
+        libelles: Vec<String>,
+        idcc: Option<String>,
+    },
+}
+
+/// Une paie d'un rapport : son mois, ce qui la range (le logiciel d'une paie non comparee ; la nature, le statut, la
+/// qualite de cadre, d'ou vient le taux AT/MP), et pour un ecart, notre taux, le leur et l'ecart relatif.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Cas {
+    mois: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logiciel: Option<String>,
+    nature: String,
+    statut: Option<String>,
+    cadre: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    taux_atmp: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notre_taux: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leur_taux: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ecart_relatif: Option<String>,
 }
 
 fn montant() -> &'static Regex {
@@ -70,13 +119,12 @@ impl Propre<'_> {
         t
     }
 
-    fn json(&mut self, v: &Value) -> Value {
-        match v {
-            Value::String(s) => Value::String(self.texte(s)),
-            Value::Array(a) => Value::Array(a.iter().map(|x| self.json(x)).collect()),
-            Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), self.json(x))).collect()),
-            autre => autre.clone(),
-        }
+    fn textes(&mut self, l: &[String]) -> Vec<String> {
+        l.iter().map(|x| self.texte(x)).collect()
+    }
+
+    fn option(&mut self, x: &Option<String>) -> Option<String> {
+        x.as_ref().map(|t| self.texte(t))
     }
 }
 
@@ -85,49 +133,70 @@ fn registre(racine: &Path) -> PathBuf {
     racine.join(envois::journal::JOURNAL).join("ecarts-import.json")
 }
 
-fn comparees(racine: &Path) -> BTreeSet<String> {
-    documents::valeur::lire_json(&registre(racine)).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+/// Les empreintes des paies deja comparees ; aucune tant que le registre n'existe pas.
+fn comparees(racine: &Path) -> R<BTreeSet<String>> {
+    let p = registre(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(BTreeSet::new());
+    }
+    let lues: Vec<String> = socle::forme::lire_fichier(&p, "Le registre des paies importées comparées ne se lit pas : le signaler au développeur.")?;
+    Ok(lues.into_iter().collect())
 }
 
 /// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, et les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
 /// refusee se compare de nouveau la fois suivante).
-pub fn rapports(ctx: &Contexte) -> (Vec<Rapport>, Vec<String>) {
-    let importes = engagement::importe::tous(&ctx.racine).unwrap_or_default();
-    let deja = comparees(&ctx.racine);
+pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<String>)> {
+    let importes = engagement::importe::tous(&ctx.racine).map_err(Echec::from)?;
+    let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
     let faites: Vec<String> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
-    (rapports_de(ctx, &comparaisons), faites)
+    Ok((rapports_de(ctx, &comparaisons)?, faites))
 }
 
-fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> Vec<Rapport> {
+fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
     let e = &ctx.entreprise;
     let (idcc, annexe, organisation) =
         (e.idcc.remplie().map(String::from), e.annexe_convention.dite().map(|a| a.as_str().to_string()), e.organisation_patronale.remplie().map(String::from));
     let mut connus = Connus::default();
-    ajouter_les_fiches(ctx, &mut connus);
+    ajouter_les_fiches(ctx, &mut connus)?;
     let mut propre = Propre { connus: &connus, vus: Default::default() };
-    let logiciel = |c: &Comparaison| c.logiciel.clone().unwrap_or_else(|| "autre".into());
-    let cas = |c: &Comparaison| json!({"mois": c.mois, "nature": c.nature, "statut": c.statut, "cadre": c.cadre, "taux_atmp": c.taux_atmp});
+    // Le logiciel que le lecteur a reconnu au bulletin ; un autre se dit « autre ».
+    let logiciel = |c: &Comparaison| match &c.logiciel {
+        Some(l) => l.clone(),
+        None => "autre".to_string(),
+    };
+    let nombre = |t: Option<socle::num::Decimal>| t.map(socle::num::nombre);
+    let cas = |c: &Comparaison, p: &mut Propre| Cas {
+        mois: p.texte(&c.mois),
+        logiciel: None,
+        nature: p.texte(&c.nature),
+        statut: p.option(&c.statut),
+        cadre: c.cadre,
+        taux_atmp: c.taux_atmp,
+        notre_taux: None,
+        leur_taux: None,
+        ecart_relatif: None,
+    };
 
-    let mut ecarts: BTreeMap<(String, Grandeur, String), (Vec<String>, Vec<Value>)> = BTreeMap::new();
-    let mut refus: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut ecarts: BTreeMap<(String, Grandeur, String), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
+    let mut refus: BTreeMap<String, Vec<Cas>> = BTreeMap::new();
     let mut seules: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for c in comparaisons {
         match &c.ecarts {
-            Err(raison) => refus.entry(montant().replace_all(&propre.texte(raison), "<MONTANT>").into_owned()).or_default().push(json!({"mois": c.mois, "logiciel": c.logiciel, "nature": c.nature, "statut": c.statut, "cadre": c.cadre})),
+            Err(raison) => {
+                let raison = montant().replace_all(&propre.texte(raison), "<MONTANT>").into_owned();
+                let x = Cas { logiciel: propre.option(&c.logiciel), taux_atmp: None, ..cas(c, &mut propre) };
+                refus.entry(raison).or_default().push(x);
+            }
             Ok(liste) => {
                 for e in liste {
+                    let x = Cas { notre_taux: nombre(e.notre_taux), leur_taux: nombre(e.leur_taux), ecart_relatif: nombre(e.ecart_relatif), ..cas(c, &mut propre) };
                     let (libelles, v) = ecarts.entry((e.cotisation.clone(), e.grandeur, logiciel(c))).or_default();
                     for l in &e.libelles {
                         if !libelles.contains(l) {
                             libelles.push(l.clone());
                         }
-                    }
-                    let mut x = cas(c);
-                    let d = |t: Option<socle::num::Decimal>| t.map_or(Value::Null, |t| json!(socle::num::nombre(t)));
-                    for (k, t) in [("notre_taux", e.notre_taux), ("leur_taux", e.leur_taux), ("ecart_relatif", e.ecart_relatif)] {
-                        x[k] = d(t);
                     }
                     v.push(x);
                 }
@@ -150,71 +219,83 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> Vec<Rapport> {
             logiciel,
             cas.len()
         );
-        let detail = json!({
-            "cotisation": cotisation, "libelles": libelles, "grandeur": grandeur.code(), "logiciel": logiciel,
-            "idcc": idcc, "annexe": annexe, "organisation_patronale": organisation, "cas": cas,
-        });
-        sortie.push(Rapport { genre: format!("{} · {} · {}", cotisation, grandeur.code(), logiciel), resume, detail });
+        let genre = format!("{} · {} · {}", cotisation, grandeur.code(), logiciel);
+        let detail = Detail::Ecart {
+            cotisation: propre.texte(&cotisation),
+            libelles: propre.textes(&libelles),
+            grandeur: grandeur.code(),
+            logiciel: propre.texte(&logiciel),
+            idcc: idcc.clone(),
+            annexe: annexe.clone(),
+            organisation_patronale: propre.option(&organisation),
+            cas,
+        };
+        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
     }
     for (raison, cas) in refus {
         let resume = format!("Paie importée non comparée : {} ; {} paie(s).", raison, cas.len());
         let genre: String = format!("non comparée : {}", raison).chars().take(120).collect();
-        sortie.push(Rapport { genre, resume, detail: json!({"raison": raison, "idcc": idcc, "annexe": annexe, "cas": cas}) });
+        let detail = Detail::NonComparee { raison: propre.texte(&raison), idcc: idcc.clone(), annexe: annexe.clone(), cas };
+        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
     }
     for (logiciel, libelles) in seules {
         let resume = format!("Lignes de cotisation non comparées (bulletin {}) : la table de lecture ne les rattache à aucune cotisation : {}.", logiciel, libelles.join(" ; "));
-        sortie.push(Rapport { genre: format!("cotisation non rattachée · {}", logiciel), resume, detail: json!({"logiciel": logiciel, "libelles": libelles, "idcc": idcc}) });
+        let genre = format!("cotisation non rattachée · {}", logiciel);
+        let detail = Detail::NonRattachees { logiciel: propre.texte(&logiciel), libelles: propre.textes(&libelles), idcc: idcc.clone() };
+        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
     }
-    sortie.into_iter().map(|r| Rapport { genre: propre.texte(&r.genre), resume: propre.texte(&r.resume), detail: propre.json(&r.detail) }).collect()
+    Ok(sortie)
 }
 
-/// A la fin d'un import : les rapports notes, puis l'envoi ordinaire. Ne leve jamais et ne dit rien a l'ecran : rend le
-/// nombre de rapports notes.
-pub fn rapporter(ctx: &Contexte) -> usize {
-    let notes = noter(ctx);
+/// A la fin d'un import : les rapports notes, puis l'envoi ordinaire. Ne dit rien a l'ecran : rend le nombre de rapports
+/// notes.
+pub fn rapporter(ctx: &Contexte) -> R<usize> {
+    let notes = noter(ctx)?;
     if notes > 0 {
         incidents::envoyer(&ctx.racine);
     }
-    notes
+    Ok(notes)
 }
 
 /// Les paies importees pas encore comparees se comparent, leurs rapports se notent au journal des incidents (sauf ceux
 /// qui y sont deja), et le registre retient celles qui ne sont plus a comparer. A l'ouverture de la compagnie comme a
 /// la fin d'un import : une paie qu'une configuration incomplete empechait de calculer (l'effectif de l'entreprise...)
-/// se compare des que la compagnie est complete. Ne leve jamais ; rend le nombre de rapports notes.
-pub fn noter(ctx: &Contexte) -> usize {
+/// se compare des que la compagnie est complete. Rend le nombre de rapports notes ; un incident qui ne s'ecrit pas ne se
+/// compte pas.
+pub fn noter(ctx: &Contexte) -> R<usize> {
     let racine = &ctx.racine;
-    if !engagement::importe::tous(racine).is_ok_and(|v| !v.is_empty()) {
-        return 0;
+    if engagement::importe::tous(racine).map_err(Echec::from)?.is_empty() {
+        return Ok(0);
     }
-    let (rapports, faites) = rapports(ctx);
-    let deja = incidents::lire(racine, Some(incidents::LOGICIEL), false).unwrap_or_default();
+    let (rapports, faites) = rapports(ctx)?;
+    let deja = incidents::lire(racine, Some(incidents::LOGICIEL), false)?;
     let mut notes = 0;
     for r in rapports {
-        let empreinte = json!(incidents::empreinte(incidents::LOGICIEL, OU, &r.genre));
-        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes, le rapport se reconnait a la
-        // signature de ce qu'il dit en entier.
-        let signature = json!(socle::fichiers::sha256_hex(format!("{}|{}", r.resume, r.detail).as_bytes())[..16].to_string());
-        if deja.iter().any(|l| l.get("empreinte") == Some(&empreinte) && l.pointer("/detail/signature") == Some(&signature)) {
+        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes et ne relit pas un detail, le
+        // rapport se reconnait a la signature de ce qu'il dit en entier, que son genre porte (et donc son empreinte).
+        let signature = socle::fichiers::sha256_hex(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes())[..16].to_string();
+        let genre = format!("{} · {}", r.genre, signature);
+        let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
+        if deja.iter().any(|l| l.empreinte == empreinte) {
             continue;
         }
-        let mut detail = r.detail;
-        detail["signature"] = signature;
-        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &r.genre, detail, sans_contexte: true, ..Default::default() };
-        if incidents::noter(racine, &note).is_some() {
-            notes += 1;
+        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &genre, detail: &r.detail, trace: None, sans_contexte: true };
+        match incidents::noter(racine, &note) {
+            Ok(Some(_)) => notes += 1,
+            Ok(None) => {}
+            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
         }
     }
     if !faites.is_empty() {
-        let mut toutes = comparees(racine);
+        let mut toutes = comparees(racine)?;
         toutes.extend(faites);
-        let _ = socle::ecriture::ecrire_json(&registre(racine), &json!(toutes), 0);
+        socle::ecriture::ecrire_json(&registre(racine), &toutes, 0)?;
     }
-    notes
+    Ok(notes)
 }
 
 /// Ce que les fiches de la compagnie disent de ses salaries, ajoute aux valeurs connues ; la compagnie, protegee.
-fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) {
+fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
     let pousser = |v: &mut Vec<String>, x: Option<String>| {
         if let Some(x) = x.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
             if !v.contains(&x) {
@@ -223,13 +304,14 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) {
         }
     };
     for (_, f) in &ctx.salaries {
-        // Les cases que le releve compare se nomment (`ParCase`).
-        let t = |k: &str| droit::fiche::case_en(&f.champs, k, serde_json::value::Serializer).and_then(Result::ok).filter(|v| vrai(v)).map(|v| valeur_en_texte(&v));
-        for k in ["nom", "nom_affichage"] {
+        // Les cases que le releve compare, par la table de la fiche.
+        let s = Saisie::de_la_fiche("salarie", &f.champs)?;
+        let t = |k: &str| s.mot(k);
+        for k in &["nom", "nom_affichage"] {
             pousser(&mut c.noms, t(k));
         }
         pousser(&mut c.noms, t("code_salarie").filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
-        for k in ["prenom", "prenom_affichage"] {
+        for k in &["prenom", "prenom_affichage"] {
             pousser(&mut c.prenoms, t(k));
         }
         pousser(&mut c.nirs, t("nir"));
@@ -237,11 +319,11 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) {
             pousser(&mut c.nirs, Some(format!("{}{}", n, k)));
         }
         pousser(&mut c.naissances, t("date_naissance"));
-        for k in ["adresse", "adresse_affichage"] {
+        for k in &["adresse", "adresse_affichage"] {
             pousser(&mut c.adresses, t(k));
         }
         pousser(&mut c.codes_postaux, t("code_postal"));
-        for k in ["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
+        for k in &["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
             pousser(&mut c.communes, t(k));
         }
         pousser(&mut c.courriels, t("email"));
@@ -251,4 +333,5 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) {
     for k in [e.raison_sociale.remplie(), e.nom_affichage.remplie(), e.adresse.remplie(), e.adresse_affichage.remplie(), e.complement_adresse.remplie(), e.complement_adresse_affichage.remplie(), e.code_postal.remplie(), e.commune.remplie(), e.commune_affichage.remplie()] {
         pousser(&mut c.entreprise, k.map(String::from));
     }
+    Ok(())
 }

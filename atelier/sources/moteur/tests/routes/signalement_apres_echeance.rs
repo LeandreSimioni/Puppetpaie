@@ -9,7 +9,7 @@
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dossier_de_test, ecrire, lire, reussi, route};
+use crate::outils::{dossier_de_test, ecrire, reussi, route};
 
 #[test]
 fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
@@ -31,7 +31,7 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
     // Cinquante salaries et plus depuis cinq ans (CSS L. 130-1, II), et la fiche le dit : la DSN est due le 5. La surcouche dit ce que le
     // bareme exige a cet effectif (`seuils_effectif` du socle 2026).
     ecrire(&c, "config/effectifs.json", &json!({"annees": (2021..=2025).map(|a| (a.to_string(), json!({"A01": {"valeur": 60}}))).collect::<serde_json::Map<String, Value>>()}));
-    let mut bareme = lire(&c, "config/baremes/2026.json");
+    let mut bareme = json!({"annee": 2026, "socle": 2026});
     let surcouche = json!({
         "versement_mobilite": "aucun",
         "cotisations_dsn": {"049": {"taux": 0.35, "base": "brut_x115"}},
@@ -62,7 +62,7 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
     ));
     let horloge = |jour: &str| -> Vec<String> {
         let r = route(&c, "horloge-rattraper", json!({"aujourdhui": jour}), jour);
-        reussi(&r).as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect()
+        reussi(&r)["phrases"].as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect()
     };
     let le_5 = horloge("2026-02-05");
     assert!(le_5.iter().any(|p| p.contains("DSN de janvier 2026 déposée") && !p.contains("non joué")), "{:?}", le_5);

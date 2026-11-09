@@ -7,7 +7,7 @@
 //! transport est ailleurs (`transport`).
 
 use declarations::dsn_lue::DsnLue;
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use socle::texte::{ascii_nfkd, strip};
 
 type Resultat<T> = Result<T, Echec>;
@@ -33,13 +33,13 @@ pub const INDICATEUR_TEST: &str = "TST";
 pub const LONGUEUR_DPAE: i64 = 990;
 
 #[track_caller]
-fn refus(classe: &'static str, message: impl Into<String>) -> Echec {
+fn refus(classe: Classe, message: impl Into<String>) -> Echec {
     socle::echec::noter_et(Some(classe), message)
 }
 
 #[track_caller]
 fn depot_refuse(message: impl Into<String>) -> Echec {
-    refus("DepotRefuse", message)
+    refus(Classe::DepotRefuse, message)
 }
 
 // ------------------------------------------------ la bascule en test, en memoire
@@ -121,18 +121,22 @@ fn nettoye(s: &str) -> &str {
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
 pub fn verifier(a: &DsnLue, reel: bool, mois_confirme: Option<&str>, presence_prouvee: bool) -> Resultat<()> {
-    let nature_envoi = a.nature_envoi.as_deref().unwrap_or("");
-    if reel && nature_envoi != NATURE_REEL {
+    let nature_envoi = a.nature_envoi.as_deref();
+    if reel && nature_envoi != Some(NATURE_REEL) {
+        let porte = match nature_envoi {
+            Some(n) => format!("porte {}='{}'", RUB_NATURE, n),
+            None => format!("ne porte pas {}", RUB_NATURE),
+        };
         return Err(depot_refuse(format!(
-            "Le fichier porte {}='{}' (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
-            RUB_NATURE, nature_envoi
+            "Le fichier {} (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
+            porte
         )));
     }
-    if !reel && nature_envoi != NATURE_REEL {
+    if !reel && nature_envoi != Some(NATURE_REEL) {
         return Ok(());
     }
     if reel {
-        let attendu = a.confirmation_attendue();
+        let attendu = a.confirmation_attendue().map_err(depot_refuse)?;
         if let Some(m) = mois_confirme.filter(|m| !m.is_empty()) {
             if nettoye(m) != attendu {
                 return Err(depot_refuse(format!(
@@ -176,11 +180,11 @@ pub fn est_reel(octets: &[u8]) -> bool {
 /// flux s'ajoute a la fin).
 pub fn basculer_dpae(octets: &[u8], longueur: i64) -> Resultat<Vec<u8>> {
     if longueur == 0 {
-        return Err(refus("ZeroDivisionError", "integer modulo by zero"));
+        return Err(refus(Classe::CalculImpossible,"integer modulo by zero"));
     }
     let n = octets.len() as i64;
     if n % longueur != 0 {
-        return Err(refus("ValueError", "flux DPAE de longueur inattendue"));
+        return Err(refus(Classe::Illisible,"flux DPAE de longueur inattendue"));
     }
     let mut sortie = octets.to_vec();
     let (a, b) = (INDICATEUR.0 as i64, INDICATEUR.1 as i64);
@@ -205,7 +209,7 @@ pub fn identifiants(declarant: &crate::transport::Identite, arobase: bool) -> Re
             manquants.join(", ")
         ));
     }
-    for (c, v) in [("nom", declarant.nom.as_str()), ("prenom", declarant.prenom.as_str())] {
+    for (c, v) in [("nom", &declarant.nom), ("prenom", &declarant.prenom)].into_iter().filter_map(|(c, v)| v.as_deref().map(|v| (c, v))) {
         if v != ascii_nfkd(v) {
             soucis.push(format!(
                 "Le {} du declarant (« {} ») porte un accent. La DUE MtoM les refuse : corriger config/entreprise.json.",

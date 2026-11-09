@@ -1,9 +1,8 @@
 //! Les taux de prelevement a la source que la DGFiP a fait connaitre (un compte rendu de nature 94, `suites`) ou que les
-//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`droit::pas::CHAMP`,
+//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`taux_pas`,
 //! `routes::fiches::poser_taux_recu`), et les engagements qu'il touche se recalculent. `droit::pas` les lit.
 
 use droit::fiche::Lue as _;
-use serde_json::{json, Value};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
@@ -13,34 +12,44 @@ pub(crate) fn ko(m: String) -> Echec {
     Echec { classe: None, message: m }
 }
 
-/// Ecrit des taux recus ; rend les changements lisibles (`CLE : ...`). Un releve :
-/// `{"salarie", "taux", "type", "identifiant", "mis_a_disposition", "en_retour_de"?}` (AAAAMMJJHHMMSS ; le mois de la DSN
-/// a laquelle repond son compte rendu, `droit::pas::EN_RETOUR_DE`), ecrit a sa date d'effet (`droit::pas::date_d_effet`).
-/// Un taux deja recu (meme
-/// identifiant, meme taux, meme instant) ne s'ecrit pas deux fois.
-pub fn enregistrer(ctx: &Contexte, releves: &[Value], source: &str) -> Result<Vec<String>, Echec> {
+/// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --
+/// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
+/// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct TauxRecu {
+    #[serde(skip)]
+    pub(crate) salarie: String,
+    pub(crate) taux: Option<String>,
+    #[serde(rename = "type")]
+    pub(crate) type_taux: Option<String>,
+    pub(crate) identifiant: String,
+    pub(crate) mis_a_disposition: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) en_retour_de: Option<String>,
+}
+
+/// Ecrit des taux recus ; rend les changements lisibles (`CLE : ...`). Chacun s'ecrit a sa date d'effet
+/// (`droit::pas::date_d_effet`). Un taux deja recu (meme identifiant, meme taux, meme instant) ne s'ecrit pas deux fois.
+pub(crate) fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result<Vec<String>, Echec> {
     let mut changements = Vec::new();
     let mut ecrits: Vec<(String, droit::fiche::TauxPas)> = Vec::new();
     for r in releves {
-        let cle = r.get("salarie").and_then(Value::as_str).unwrap_or("").to_string();
-        let get = |k: &str| r.get(k).cloned().unwrap_or(Value::Null);
-        let mut valeur = json!({"taux": get("taux"), "type": get("type"), "identifiant": get("identifiant"), "mis_a_disposition": get("mis_a_disposition")});
-        let en_retour_de = r.get(droit::pas::EN_RETOUR_DE).and_then(Value::as_str).filter(|m| !m.is_empty());
-        if let Some(m) = en_retour_de {
-            valeur[droit::pas::EN_RETOUR_DE] = json!(m);
-        }
-        let lu: droit::fiche::TauxPas = droit::fiche::lire_champs(&valeur, "Le taux de PAS reçu").map_err(ko)?;
+        let cle = r.salarie.clone();
+        let lu: droit::fiche::TauxPas = droit::fiche::lire_champs(r, "Le taux de PAS reçu").map_err(ko)?;
         let Some(mad) = droit::pas::mise_a_disposition(&lu) else {
-            return Err(ko(format!("{} : un taux de PAS recu sans sa date de mise a disposition ne s'ecrit pas ({}).", cle, valeur)));
+            return Err(ko(format!("{} : un taux de PAS recu sans sa date de mise a disposition ne s'ecrit pas ({}).", cle, r.mis_a_disposition)));
         };
-        let depuis = droit::pas::date_d_effet(mad, en_retour_de).map_err(ko)?;
+        let depuis = droit::pas::date_d_effet(mad, r.en_retour_de.as_deref()).map_err(ko)?;
         let deja = droit::pas::recus(ctx, &cle).map_err(ko)?.into_iter().chain(ecrits.iter().filter(|(c, _)| *c == cle).map(|(_, v)| v.clone())).any(|v| v == lu);
         if deja {
             continue;
         }
-        crate::routes::fiches::poser_taux_recu(ctx, &cle, valeur.clone(), depuis, source)?;
-        let t = |k: &str| crate::commandes::rendu::champ(&valeur, k);
-        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, t("taux"), t("type"), t("identifiant"), mad.jj_mm_aaaa()));
+        crate::routes::fiches::poser_taux_recu(ctx, &cle, lu.clone(), depuis, source)?;
+        let dit = |o: &Option<String>| match o {
+            Some(t) => t.clone(),
+            None => "non dit".to_string(),
+        };
+        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, dit(&r.taux), dit(&r.type_taux), r.identifiant, mad.jj_mm_aaaa()));
         ecrits.push((cle, lu));
     }
     if !changements.is_empty() {
@@ -80,15 +89,15 @@ fn instant_du_jour(j: Jour) -> String {
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
-pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<Value>, Echec> {
+pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<TauxRecu>, Echec> {
     let par_nir: std::collections::HashMap<String, String> = ctx
         .salaries
         .iter()
         .filter_map(|(cle, s)| s.nir.dite().filter(|n| !n.is_empty()).map(|n| (n.to_string(), cle.to_string())))
         .collect();
-    let fichiers = declarations::dsn_lue::fichiers(dossier);
+    let fichiers = declarations::dsn_lue::fichiers(dossier)?;
     // salarie -> mois -> releve (dans l'ordre d'insertion des salaries, mois tries).
-    let mut trouve: Vec<(String, std::collections::BTreeMap<socle::mois::Mois, Value>)> = Vec::new();
+    let mut trouve: Vec<(String, std::collections::BTreeMap<socle::mois::Mois, TauxRecu>)> = Vec::new();
     for f in fichiers {
         let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
         let Some(mois) = d.mois else { continue };
@@ -98,12 +107,14 @@ pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -
             let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, par_nir.get(&v.nir)) else {
                 continue;
             };
-            let rel = json!({
-                "taux": v.taux_pas.map(|t| t.to_string()),
-                "type": v.type_pas,
-                "identifiant": id,
-                "mis_a_disposition": instant_du_jour(j),
-            });
+            let rel = TauxRecu {
+                salarie: cle.clone(),
+                taux: v.taux_pas.map(|t| t.to_string()),
+                type_taux: v.type_pas.clone(),
+                identifiant: id.to_string(),
+                mis_a_disposition: instant_du_jour(j),
+                en_retour_de: None,
+            };
             match trouve.iter_mut().find(|(k, _)| k == cle) {
                 Some((_, mm)) => {
                     mm.insert(mois, rel);
@@ -112,12 +123,5 @@ pub(crate) fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -
             }
         }
     }
-    let mut releves = Vec::new();
-    for (cle, mm) in trouve {
-        if let Some(Value::Object(mut r)) = mm.into_values().next_back() {
-            r.insert("salarie".into(), json!(cle));
-            releves.push(Value::Object(r));
-        }
-    }
-    Ok(releves)
+    Ok(trouve.into_iter().filter_map(|(_, mm)| mm.into_values().next_back()).collect())
 }

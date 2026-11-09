@@ -22,6 +22,7 @@ pub mod incident;
 pub mod mois;
 pub mod nature;
 pub mod parametrage;
+pub mod proposee;
 pub mod releve;
 pub mod reponse;
 pub mod tri;

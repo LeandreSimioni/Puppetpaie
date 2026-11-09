@@ -32,11 +32,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
-use serde_json::{json, Map, Value};
 
 use crate::compagnie::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, ErreurGoogle};
-use crate::compagnie::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, DOSSIER_DRIVE};
+use crate::compagnie::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
 
 /// Un fichier redescendu.
 #[derive(Debug, Clone, PartialEq)]
@@ -73,19 +72,36 @@ impl Restauration {
         t
     }
 
-    pub fn en_json(&self) -> Value {
-        json!({
-            "resume": self.resume(),
-            "cible": self.cible.display().to_string(),
-            "racine_drive": self.racine_drive,
-            "redescendus": self.redescendus.iter().map(|f| f.relatif.clone()).collect::<Vec<_>>(),
-            "deja_la": self.deja_la,
-            "octets": self.octets,
-            "ecartes": self.ecartes,
-            "incidents": self.incidents,
-            "hors_ligne": self.hors_ligne,
-        })
+    /// Ce que `moteur restaurer --json` rend : le compte rendu, et ce qu'il reste a faire a la main (`a_faire`).
+    pub fn dite(&self, a_faire: Vec<String>) -> RestaurationDite {
+        RestaurationDite {
+            resume: self.resume(),
+            cible: self.cible.display().to_string(),
+            racine_drive: self.racine_drive.clone(),
+            redescendus: self.redescendus.iter().map(|f| f.relatif.clone()).collect(),
+            deja_la: self.deja_la,
+            octets: self.octets,
+            ecartes: self.ecartes,
+            incidents: self.incidents.clone(),
+            hors_ligne: self.hors_ligne,
+            a_faire,
+        }
     }
+}
+
+/// Le compte rendu d'une restauration, tel que `moteur restaurer --json` l'ecrit (`Restauration::dite`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RestaurationDite {
+    pub resume: String,
+    pub cible: String,
+    pub racine_drive: String,
+    pub redescendus: Vec<String>,
+    pub deja_la: usize,
+    pub octets: u64,
+    pub ecartes: usize,
+    pub incidents: Vec<String>,
+    pub hors_ligne: bool,
+    pub a_faire: Vec<String>,
 }
 
 fn lisible(octets: u64) -> String {
@@ -128,7 +144,7 @@ fn le_dossier(client: &mut dyn Drive, parent: &str, nom: &str, chemin: &str) -> 
         0 => Ok(None),
         1 => Ok(trouves.into_iter().next()),
         n => Err(ErreurGoogle::nouvelle(
-            "SauvegardeAmbigue",
+            socle::echec::Classe::SauvegardeAmbigue,
             format!("{} dossiers « {} » dans le Drive : la restauration ne choisit pas. Les reunir a la main dans le Drive, puis relancer.", n, chemin),
         )),
     }
@@ -155,11 +171,11 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     // 1. L'inventaire du Drive, sans rien y creer.
     let absente = || {
         ErreurGoogle::nouvelle(
-            "SauvegardeAbsente",
+            socle::echec::Classe::SauvegardeAbsente,
             format!(
                 "Pas de sauvegarde dans le Drive{} : le dossier {}/{} est introuvable. Le compte relie est-il celui de la \
                  compagnie ? Seuls les dossiers crees par PuppetPaie, avec la meme application Google, sont visibles.",
-                compte.as_deref().map(|c| format!(" de {}", c)).unwrap_or_default(),
+                compte.as_deref().map(|c| format!(" de {}", c)).into_iter().collect::<String>(),
                 racine_drive,
                 DOSSIER_DRIVE
             ),
@@ -194,26 +210,28 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             let relatif = joindre(&nom);
             if !nom_sur(&nom) {
                 resultat.incidents.push(format!("{}/ : ce nom ne peut pas etre un nom de dossier ici, rien n'en est redescendu.", relatif));
-            } else if ids.len() > 1 {
-                resultat.incidents.push(format!(
-                    "{}/ : {} dossiers de ce nom dans le Drive, rien n'en est redescendu (la restauration ne choisit pas : les reunir a la main dans le Drive, puis relancer).",
-                    relatif,
-                    ids.len()
-                ));
             } else {
-                a_voir.push((relatif, ids.into_iter().next().unwrap_or_default()));
+                match ids.as_slice() {
+                    [seul] => a_voir.push((relatif, seul.clone())),
+                    _ => resultat.incidents.push(format!(
+                        "{}/ : {} dossiers de ce nom dans le Drive, rien n'en est redescendu (la restauration ne choisit pas : les reunir a la main dans le Drive, puis relancer).",
+                        relatif,
+                        ids.len()
+                    )),
+                }
             }
         }
     }
 
     // 2. Le dossier local : ce que la sauvegarde y porterait doit deja etre la copie du Drive.
-    let (presents, _) = inventaire(cible);
+    let (presents, _) = inventaire(cible)?;
     let mut deja: BTreeSet<String> = BTreeSet::new();
     let mut ecarts: Vec<String> = Vec::new();
     for (relatif, _) in &presents {
-        let locale = empreinte(&cible.join(relatif)).ok();
+        let chemin = cible.join(relatif);
+        let locale = empreinte(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
         match distants.get(relatif) {
-            Some(d) if d.md5.is_some() && d.md5 == locale => {
+            Some(d) if d.md5.as_deref() == Some(locale.as_str()) => {
                 deja.insert(relatif.clone());
             }
             Some(_) => ecarts.push(format!("{} (differe de la copie du Drive)", relatif)),
@@ -226,7 +244,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             liste.push(format!("  ... et {} autre(s)", ecarts.len() - 10));
         }
         return Err(ErreurGoogle::nouvelle(
-            "DossierNonVide",
+            socle::echec::Classe::DossierNonVide,
             format!(
                 "{} n'est pas vide : {} fichier(s) que la sauvegarde porterait y sont deja, et ne sont pas la copie du Drive :\n{}\n\
                  Rien n'a ete redescendu, rien n'a ete efface. Restaurer dans un dossier vide (le jeton Google peut y etre), ou \
@@ -286,31 +304,33 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     }
 
     // 4. L'index, comme la sauvegarde l'ecrit, pour ce qui est verifie seulement.
-    let (presents, _) = inventaire(cible);
-    let mut fichiers = Map::new();
-    let mut index_dossiers = Map::new();
+    let (presents, _) = inventaire(cible)?;
+    let mut fichiers = BTreeMap::new();
+    let mut index_dossiers = BTreeMap::new();
     for (relatif, etat) in &presents {
         if !verifies.contains(relatif) {
             continue;
         }
-        fichiers.insert(relatif.clone(), json!({"octets": etat.octets, "mtime": etat.mtime}));
+        fichiers.insert(relatif.clone(), *etat);
         if let Some(d) = distants.get(relatif) {
             let mut cle = format!("{}/{}", racine_drive, DOSSIER_DRIVE);
             if !d.dossier.is_empty() {
                 cle = format!("{}/{}", cle, d.dossier);
             }
             if let Some(id) = dossiers.get(&d.dossier) {
-                index_dossiers.insert(cle, json!(id));
+                index_dossiers.insert(cle, id.clone());
             }
         }
     }
     let maintenant = socle::temps::secondes();
-    let index = json!({
-        "quand": socle::paris::iso_minutes(maintenant).replacen('T', " ", 1),
-        "racine_drive": racine_drive,
-        "dossiers": Value::Object(index_dossiers),
-        "fichiers": Value::Object(fichiers),
-    });
+    let index = Index {
+        quand: socle::paris::iso_minutes(maintenant).replacen('T', " ", 1),
+        racine_drive: racine_drive.to_string(),
+        dossiers: index_dossiers,
+        fichiers,
+        derniere_complete: None,
+        echecs: None,
+    };
     ecrire_index(cible, &index)?;
     Ok(resultat)
 }
@@ -356,20 +376,18 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         );
         lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
     } else {
-        match (coffre.ouverture_exigee(), coffre.etat()) {
-            (Err(e), _) | (_, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.message)),
-            (Ok(avec_mot_de_passe), Ok(etat)) => {
-                let ici = coffre.ouvre_a_ce_poste().unwrap_or(false);
+        match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.message)),
+            (Ok(avec_mot_de_passe), Ok(etat), Ok(ici)) => {
                 let poses: Vec<String> = etat
                     .iter()
-                    .filter(|f| f["pose"] == json!(true))
-                    .map(|f| {
-                        let le = f["pose_le"].as_str().unwrap_or("");
-                        let nom = f["service"].as_str().unwrap_or("");
-                        if le.is_empty() { nom.to_string() } else { format!("{} (pose le {})", nom, le) }
+                    .filter(|f| f.pose)
+                    .map(|f| match &f.pose_le {
+                        Some(le) => format!("{} (pose le {})", f.service, le),
+                        None => f.service.to_string(),
                     })
                     .collect();
-                let manquants: Vec<&str> = etat.iter().filter(|f| f["pose"] != json!(true)).filter_map(|f| f["service"].as_str()).collect();
+                let manquants: Vec<&str> = etat.iter().filter(|f| !f.pose).map(|f| f.service).collect();
                 let porte = if poses.is_empty() { "aucun mot de passe d'organisme".to_string() } else { poses.join(", ") };
                 if ici {
                     lignes.push(format!("Le coffre est revenu et la cle de ce poste l'ouvre. Il porte : {}.", porte));

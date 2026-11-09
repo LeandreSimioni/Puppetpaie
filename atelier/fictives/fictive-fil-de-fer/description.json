@@ -73,8 +73,10 @@
    "salarie": "1",
    "emploi": "MARIONNETTISTE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
+   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -85,6 +87,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -98,8 +101,10 @@
    "salarie": "2",
    "emploi": "REGISSEUR GENERAL",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
+   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -110,6 +115,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Heures",
@@ -123,8 +129,10 @@
    "salarie": "3",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
+   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -135,6 +143,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -148,8 +157,10 @@
    "salarie": "1",
    "emploi": "MARIONNETTISTE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-03",
    "fin": "2025-10-19",
+   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-03",
@@ -164,6 +175,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -184,8 +196,10 @@
    "salarie": "2",
    "emploi": "REGISSEUR GENERAL",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-10-03",
    "fin": "2025-10-19",
+   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-03",
@@ -200,6 +214,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Heures",
@@ -220,8 +235,10 @@
    "salarie": "3",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-10-17",
    "fin": "2025-10-19",
+   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-17",
@@ -232,6 +249,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -245,8 +263,10 @@
    "salarie": "5",
    "emploi": "TECHNICIEN SON",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-10-17",
    "fin": "2025-10-19",
+   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-17",
@@ -257,6 +277,7 @@
     "numero": "256Z00931107",
     "titre": "Le Grand Fil"
    },
+   "analytique": "Le Grand Fil",
    "lignes": [
     {
      "libelle": "Heures",
@@ -270,8 +291,10 @@
    "salarie": "1",
    "emploi": "MARIONNETTISTE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-23",
+   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-07",
@@ -286,6 +309,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -306,8 +330,10 @@
    "salarie": "2",
    "emploi": "REGISSEUR GENERAL",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-23",
+   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-07",
@@ -322,6 +348,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Heures",
@@ -342,8 +369,10 @@
    "salarie": "4",
    "emploi": "MUSICIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-11-21",
    "fin": "2025-11-23",
+   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-21",
@@ -354,6 +383,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -367,8 +397,10 @@
    "salarie": "5",
    "emploi": "TECHNICIEN SON",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-09",
+   "regle_le": "2025-11-09",
    "dates": [
     [
      "2025-11-07",
@@ -379,6 +411,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Heures",
@@ -392,8 +425,10 @@
    "salarie": "1",
    "emploi": "MARIONNETTISTE",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-20",
+   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-05",
@@ -408,6 +443,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -428,8 +464,10 @@
    "salarie": "2",
    "emploi": "REGISSEUR GENERAL",
    "statut": "technicien",
+   "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-20",
+   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-05",
@@ -444,6 +482,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Heures",
@@ -464,8 +503,10 @@
    "salarie": "3",
    "emploi": "COMEDIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
+   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-19",
@@ -476,6 +517,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Cachets isolés",
@@ -489,8 +531,10 @@
    "salarie": "4",
    "emploi": "MUSICIEN",
    "statut": "artiste",
+   "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
+   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-19",
@@ -501,6 +545,7 @@
     "numero": "256Z00931108",
     "titre": "Mademoiselle Poussiere"
    },
+   "analytique": "Mademoiselle Poussiere",
    "lignes": [
     {
      "libelle": "Cachets isolés",

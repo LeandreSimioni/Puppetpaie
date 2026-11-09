@@ -5,8 +5,8 @@
  * que pour Claude : le calcul est du code Rust teste et cale au centime,
  * et deux calculateurs, c'est deux resultats le jour ou l'un derive.
  *
- * Les erreurs metier arrivent avec un `type` : c'est sur lui qu'on branche,
- * jamais sur le texte du message.
+ * Un refus du moteur arrive avec sa `classe` : c'est sur elle qu'on branche,
+ * jamais sur le texte de sa phrase.
  */
 "use strict";
 
@@ -74,10 +74,11 @@ let LU = null;            // { mois, lectures, perime } : la dernière lecture `
 let LU_EN_COURS = null;   // { mois, promesse, perimeAdmis } : celle qui est en route
 let LU_GENERATION = 0;
 
-/** Une réponse du moteur, telle que `appelerMoteur` la rend : son résultat, ou son refus levé. */
+/** Une réponse du moteur (l'enveloppe des routes) : son résultat, ou son refus levé, qu'on garde entier (`detail` : sa
+ *  `classe`, sa `phrase`, ce qu'il porte `a_part`). */
 function lireReponse(d) {
   if (!d) throw new Error(PHRASES_FENETRE.lecture_absente);
-  if (!d.ok) { const e = new Error(d.erreur.message); e.detail = d.erreur; throw e; }
+  if (!d.ok) { const e = new Error(d.refus.phrase); e.detail = d.refus; throw e; }
   return d.resultat;
 }
 
@@ -298,17 +299,13 @@ async function appelerMoteur(route, charge = {}) {
   let d;
   try { d = JSON.parse(texte); } catch (e) {
     const vide = new Error(`${PHRASES_FENETRE.illisible} (${r.status}, ${route})`);
-    vide.detail = { type: "ReponseIllisible", message: vide.message };
+    vide.detail = { phrase: vide.message };
     throw vide;
   }
   // Une route qui a écrit (même refusée) : ce qui a été lu part.
   if (d.ecrit) oublierLeMois();
-  if (!d.ok) {
-    const erreur = typeof d.erreur === "object" && d.erreur ? d.erreur : { message: String(d.erreur || "Refusé.") };
-    if (erreur.type === "EnvoiBride") montrerEnvoiRefuse(erreur.message);
-    const e = new Error(erreur.message); e.detail = erreur; throw e;
-  }
-  return d.resultat;
+  if (!d.ok && d.refus.classe === "EnvoiBride") montrerEnvoiRefuse(d.refus.phrase);
+  return lireReponse(d);
 }
 
 /* L'ENVOI REFUSÉ D'UNE FICTIVE AJOUTÉE : le moteur refuse tout
@@ -464,7 +461,7 @@ async function fenetre(geste, ...args) {
   const f = window.pywebview && window.pywebview.api;
   if (!f || !f[geste]) throw new Error("geste inconnu — " + geste);
   const r = await f[geste](...args);
-  if (!r || !r.ok) throw new Error((r && r.erreur) || "Refusé.");
+  if (!r || !r.ok) throw new Error((r && r.refus && r.refus.phrase) || "Refusé.");
   return r;
 }
 

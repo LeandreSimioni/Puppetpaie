@@ -15,27 +15,25 @@
 //!   que dit sa piece archivee (`lire_piece` : bilans harmonises, NEOReS, organismes complementaires, certificats DPAE,
 //!   AER). Le format de l'AGIRC-ARRCO, que personne ne publie, garde son statut et sa piece telle quelle.
 //!
+//! Ce que les pieces et le journal ne disent pas reste vide : une phrase ne dit que ce qui est la.
+//!
 //! Lecture seule : rien ne s'ecrit, rien ne part.
 
-use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use envois::etats;
 use envois::journal::Ligne;
-use documents::valeur::valeur_en_texte;
-use socle::echec::erreur;
-use documents::valeur::vrai;
-use envois::retours;
-use socle::echec::Echec;
+use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
+use socle::echec::{erreur, Classe, R};
+use socle::ecran::Pastille;
+use socle::mois::Mois;
 
-use crate::routes::catalogue::{Acte, Fiche, Refus, MOIS};
-use crate::routes::catalogue::Route;
-use crate::routes::catalogue::{Ecran, Place};
-
-type R<T> = Result<T, Echec>;
+use crate::routes::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
+use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
+use crate::routes::etapes::ChargeMois;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
@@ -47,12 +45,23 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     charge: &[MOIS],
     exemple: r#"{"mois":"2026-11"}"#,
     rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
-    refus: &[Refus { classe: "ErreurOperation", corriger: "le mois, AAAA-MM" }],
+    refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le journal des envois ou une liste des bulletins repris, que la phrase dit illisible" }],
     acte: Acte::Lit,
     avance: false,
     phrase: 0,
     ecran: ECRAN,
 }];
+
+/// La route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
+        Route::HistoriqueMois => {
+            let ChargeMois { mois } = charge.lire()?;
+            en_json(historique(porte.ctx, mois)?)
+        }
+        autre => Err(route_inconnue(autre.nom())),
+    }
+}
 
 // ------------------------------------------------------------------ les tables
 
@@ -97,32 +106,79 @@ const NATURES: [(&str, &str, &str); 29] = [
     ("124", "l'Urssaf", "neores"),
 ];
 
-/// Ce que dit le statut d'un retour : guide v6.8, §3.4.4 « Reponse du service » (`flux.retour.statut`).
-fn phrase_du_statut(statut: &str) -> &'static str {
+/// Ce que dit le statut d'un retour : guide v6.8, §3.4.4 « Reponse du service » (`flux.retour.statut`) ; un autre statut
+/// ne se traduit pas.
+fn phrase_du_statut(statut: &str) -> Option<&'static str> {
     match statut {
-        "OK" => "le traitement s'est terminé normalement",
-        "KO" => "au moins une anomalie bloquante a empêché la poursuite du traitement",
-        "ANO" => "des anomalies non bloquantes sont survenues, le traitement est allé à son terme",
-        "EN COURS" => "la déclaration est en cours de distribution vers l'organisme",
-        _ => "",
+        "OK" => Some("le traitement s'est terminé normalement"),
+        "KO" => Some("au moins une anomalie bloquante a empêché la poursuite du traitement"),
+        "ANO" => Some("des anomalies non bloquantes sont survenues, le traitement est allé à son terme"),
+        "EN COURS" => Some("la déclaration est en cours de distribution vers l'organisme"),
+        _ => None,
     }
 }
 
-/// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`).
-fn nature_dsn(nature: &str, type_: &str) -> String {
+/// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
+/// une nature que la table ne nomme pas, ou qui n'est pas dite, est une DSN.
+fn nature_dsn(nature: Option<&str>, type_: Option<&str>) -> String {
     let n = match nature {
-        "01" => "DSN mensuelle",
-        "04" => "Signalement arrêt de travail",
-        "05" => "Signalement reprise suite à arrêt de travail",
-        "07" => "Signalement fin du contrat de travail unique",
-        "08" => "Demande de taux de prélèvement à la source",
-        "09" => "DSN de substitution",
+        Some("01") => "DSN mensuelle",
+        Some("04") => "Signalement arrêt de travail",
+        Some("05") => "Signalement reprise suite à arrêt de travail",
+        Some("07") => "Signalement fin du contrat de travail unique",
+        Some("08") => "Demande de taux de prélèvement à la source",
+        Some("09") => "DSN de substitution",
         _ => "DSN",
     };
     match type_ {
-        "03" | "05" => format!("{} (annule et remplace)", n),
-        "04" => format!("{} (annulation)", n),
+        Some("03" | "05") => format!("{} (annule et remplace)", n),
+        Some("04") => format!("{} (annulation)", n),
         _ => n.to_string(),
+    }
+}
+
+// ------------------------------------------------------------------ ce qui se dit, s'il est la
+
+/// Un texte des formes du journal et des retours (`envois`), ou une zone a blanc s'ecrit vide : dit, ou absent.
+fn dit(t: &str) -> Option<&str> {
+    Some(t).filter(|x| !x.trim().is_empty())
+}
+
+/// Un texte facultatif d'un compte rendu, dit s'il porte quelque chose.
+fn lu(t: &Option<String>) -> Option<&str> {
+    t.as_deref().and_then(dit)
+}
+
+/// Un morceau de phrase qui ne se dit que si sa valeur l'est : `avant`, la valeur, `apres` ; rien sinon.
+fn morceau(avant: &str, v: Option<&str>, apres: &str) -> String {
+    v.into_iter().map(|x| format!("{}{}{}", avant, x, apres)).collect()
+}
+
+/// Les valeurs dites, jointes par `sep` ; aucune si aucune n'est dite.
+fn joint<'a>(v: impl IntoIterator<Item = Option<&'a str>>, sep: &str) -> Option<String> {
+    let dites: Vec<&str> = v.into_iter().flatten().filter(|x| !x.trim().is_empty()).collect();
+    (!dites.is_empty()).then(|| dites.join(sep))
+}
+
+/// Le pluriel d'un compte : `un` pour un, `plusieurs` sinon.
+fn plur(n: usize, un: &'static str, plusieurs: &'static str) -> &'static str {
+    if n > 1 { plusieurs } else { un }
+}
+
+/// Le chemin d'une piece, relatif a la compagnie (que la fenetre ouvre) ; une piece hors de la compagnie, par son chemin
+/// entier.
+fn relatif(racine: &Path, p: &Path) -> String {
+    if !p.starts_with(racine) {
+        return p.to_string_lossy().replace('\\', "/");
+    }
+    p.components().skip(racine.components().count()).map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")
+}
+
+/// Le nom d'un salarie que porte `cle` : celui de sa fiche, s'il la dit ; sinon la cle elle-meme.
+fn qui_de_la_cle(ctx: &Contexte, cle: &str) -> String {
+    match ctx.salaries.get(cle).map(|s| documents::tableaux_export::qui_souple(s)).filter(|q| !q.is_empty()) {
+        Some(q) => q,
+        None => cle.to_string(),
     }
 }
 
@@ -130,23 +186,120 @@ fn nature_dsn(nature: &str, type_: &str) -> String {
 /// `crate::routes::contrats::contrat_recu` et `releve_signatures`), sinon celui de sa fiche (`detail.salarie` est sa cle),
 /// sinon la cle elle-meme.
 fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &str) -> String {
-    if !nom.is_empty() {
-        return nom.to_string();
+    match dit(nom) {
+        Some(n) => n.to_string(),
+        None => qui_de_la_cle(ctx, cle),
     }
-    let cle = cle.to_string();
-    let fiche = ctx.salarie_brut(&cle).map(|b| b.au(&ctx.lue_au));
-    let f = |k: &str| fiche.as_ref().and_then(|x| droit::fiche::case_en(x, k, serde_json::value::Serializer).and_then(Result::ok)).filter(vrai).map(|v| valeur_en_texte(&v)).unwrap_or_default();
-    let prenom = if f("prenom_affichage").is_empty() { f("prenom") } else { f("prenom_affichage") };
-    let nom = [f("nom"), prenom].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" ");
-    if nom.is_empty() { cle } else { nom }
 }
+
+// ------------------------------------------------------------------ ce que la route rend
+
+/// L'Historique d'un mois.
+#[derive(Debug, Serialize)]
+struct Historique {
+    phrase: String,
+    mois: Mois,
+    documents: Vec<Document>,
+    envois: Vec<Envoi>,
+}
+
+impl Dite for Historique {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// Un document du mois : son nom lisible, sa sorte, le salarie qu'il sert (s'il est dit), son chemin, et le fichier que
+/// `piece-partie` refait quand le journal le dit parti et qu'il manque.
+#[derive(Debug, Serialize)]
+struct Document {
+    nom: String,
+    sorte: &'static str,
+    salarie: Option<String>,
+    chemin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fichier: Option<String>,
+}
+
+/// Un envoi du mois (une ligne du journal), et ce qui en est revenu.
+#[derive(Debug, Serialize)]
+struct Envoi {
+    quoi: &'static str,
+    acte: String,
+    mode: &'static str,
+    quand: String,
+    fichier: Option<String>,
+    flux: Option<String>,
+    destinataire: Option<String>,
+    identite: String,
+    accepte: bool,
+    resume: String,
+    attend_retour: bool,
+    retours: Vec<RetourLu>,
+}
+
+/// Un retour sous son envoi : son titre, quand, ce qu'il dit, sa pastille, sa piece ; pour un retour d'organisme, ce que
+/// sa piece en dit (`organisme`).
+#[derive(Debug, Serialize)]
+struct RetourLu {
+    titre: String,
+    quand: Option<String>,
+    phrases: Vec<String>,
+    pastille: Option<Pastille>,
+    piece: Option<String>,
+    #[serde(flatten)]
+    organisme: Option<RetourDOrganisme>,
+}
+
+/// Ce qu'un retour d'organisme dit : en titre, sa nature, quand, l'organisme, son statut et le verdict de sa piece, ses
+/// anomalies, et si la piece s'est traduite.
+#[derive(Debug, Serialize)]
+struct RetourDOrganisme {
+    titre_dit: String,
+    nature_dit: Option<String>,
+    quand_dit: Option<String>,
+    nature: String,
+    libelle: String,
+    organisme: Option<String>,
+    statut: Option<String>,
+    verdict: Option<String>,
+    anomalies: Vec<Anomalie>,
+    traduite: bool,
+}
+
+/// Une anomalie d'un retour, telle que la page l'affiche : ce qu'elle dit, et ce qui est dit d'elle.
+#[derive(Debug, Serialize)]
+struct Anomalie {
+    code: Option<String>,
+    categorie: Option<String>,
+    message: Option<String>,
+    rubrique: Option<String>,
+    ligne: Option<String>,
+    nombre: Option<String>,
+    salarie: Option<String>,
+}
+
+impl Anomalie {
+    fn du_rapport(a: &AnomalieDuRapport) -> Anomalie {
+        let o = |t: &str| dit(t).map(String::from);
+        Anomalie { code: o(&a.code), categorie: o(&a.categorie), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
+    }
+
+    fn du_message(message: &str) -> Anomalie {
+        Anomalie { code: None, categorie: None, message: dit(message).map(String::from), rubrique: None, ligne: None, nombre: None, salarie: None }
+    }
+}
+
+// ------------------------------------------------------------------ les envois
 
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
-fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> Value {
-    let piece = match r.avenant {
-        None => format!("Contrat n° {}", r.numero_dit()),
-        Some(a) => format!("Avenant n° {} au contrat n° {}", a, r.numero_dit()),
+fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> RetourLu {
+    let piece = match (r.avenant, r.numero_dit()) {
+        (None, Some(n)) => format!("Contrat n° {}", n),
+        (None, None) => "Contrat sans numéro".to_string(),
+        (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),
+        (Some(a), None) => format!("Avenant n° {} au contrat sans numéro", a),
     };
     let quand = etats::quand_lisible(&r.quand);
     let (titre, phrase) = if !r.recu {
@@ -156,18 +309,24 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     } else {
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
-    let signe = ligne.mois().and_then(|m| envois::etats::chemin_piece(&ctx.racine, m, r.fichier_signe.as_deref().unwrap_or("")));
-    json!({
-        "titre": format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)), "quand": r.quand, "phrases": [phrase],
-        "pastille": crate::routes::pastille(if !r.recu { "information" } else { "fait" }, "signé"),
-        "piece": signe.and_then(|p| p.strip_prefix(&ctx.racine).ok().map(|x| x.to_string_lossy().replace('\\', "/"))),
-    })
+    let signe = match (ligne.mois(), r.fichier_signe.as_deref()) {
+        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
+        _ => None,
+    };
+    RetourLu {
+        titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
+        quand: Some(r.quand.clone()),
+        phrases: vec![phrase],
+        pastille: Some(Pastille::de(if !r.recu { "information" } else { "fait" }, "signé")),
+        piece: signe.map(|p| relatif(&ctx.racine, &p)),
+        organisme: None,
+    }
 }
 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
 fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
-        Ligne::Dsn(e) => nature_dsn(e.detail.nature.as_deref().unwrap_or(""), e.detail.type_declaration.as_deref().unwrap_or("")),
+        Ligne::Dsn(e) => nature_dsn(e.detail.nature.as_deref(), e.detail.type_declaration.as_deref()),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
@@ -207,21 +366,20 @@ const SORTES: [(&str, &[&str]); 8] = [
     ("AEM", &["AEM_"]),
 ];
 
+/// La sorte d'un document dont le nom ne commence comme aucune autre : elle se range apres elles.
+const AUTRES: &str = "Autres pièces";
+
 /// CE QUE LA PERSONNE LIT d'une demande de taux de prelevement a la source (le signalement d'amorcage,
 /// `amorcage_demande::produire` : `Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`, et sa note
 /// `Amorcage<motif>_<AAAAMMJJ>_recapitulatif.txt`) : pour qui, et quel jour. Un autre nom se lit tel quel.
 fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
-    let jour = |t: &str| socle::date::Jour::lire(&format!("{}-{}-{}", t.get(..4).unwrap_or(""), t.get(4..6).unwrap_or(""), t.get(6..8).unwrap_or(""))).ok().map(|j| j.jj_mm_aaaa());
+    let jour = |t: &str| socle::date::lire_aaaammjj(t).map(|j| j.jj_mm_aaaa());
     let Some(reste) = nom.strip_prefix("Amorcage").and_then(|r| r.get(3..)) else { return nom.to_string() };
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
     }
     if let Some((cle, j)) = reste.strip_suffix(".dsn").and_then(|s| s.rsplit_once('_')).and_then(|(c, t)| jour(t).map(|j| (c, j))) {
-        let qui = ctx.salaries.get(cle).map(|s| {
-            let prenom = if s.prenom_affichage.texte().is_empty() { s.prenom.texte() } else { s.prenom_affichage.texte() };
-            format!("{} {}", s.nom.texte(), prenom).trim().to_string()
-        });
-        return format!("Taux de {}, demandé le {}", qui.filter(|q| !q.is_empty()).unwrap_or_else(|| cle.to_string()), j);
+        return format!("Taux de {}, demandé le {}", qui_de_la_cle(ctx, cle), j);
     }
     nom.to_string()
 }
@@ -231,65 +389,67 @@ fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
 /// figure pas : la piece s'ouvre depuis « Les documents ».
 fn identite(ctx: &Contexte, l: &Ligne) -> String {
     let mut morceaux: Vec<String> = Vec::new();
-    let fichier = l.fichier().unwrap_or_default();
-    let lisible = nom_lisible(ctx, fichier);
-    if lisible != fichier {
-        morceaux.push(lisible);
+    if let Some(fichier) = l.fichier() {
+        let lisible = nom_lisible(ctx, fichier);
+        if lisible != fichier {
+            morceaux.push(lisible);
+        }
     }
-    if !l.flux().is_empty() {
-        morceaux.push(format!("numéro de dépôt {}", l.flux()));
+    if let Some(f) = dit(l.flux()) {
+        morceaux.push(format!("numéro de dépôt {}", f));
     }
-    match l.destinataire() {
-        "" => {}
-        "net-entreprises" => morceaux.push("sur net-entreprises".into()),
-        "urssaf" => morceaux.push("à l'Urssaf".into()),
-        autre => morceaux.push(format!("à {}", autre)),
+    match dit(l.destinataire()) {
+        None => {}
+        Some("net-entreprises") => morceaux.push("sur net-entreprises".into()),
+        Some("urssaf") => morceaux.push("à l'Urssaf".into()),
+        Some(autre) => morceaux.push(format!("à {}", autre)),
     }
     morceaux.join(" · ")
 }
 
+/// La sorte d'un document, par le debut de son nom (`SORTES`, sinon `AUTRES`).
 pub(crate) fn sorte_de(nom: &str) -> &'static str {
-    SORTES.iter().find(|(_, p)| p.iter().any(|x| nom.starts_with(x))).map(|(s, _)| *s).unwrap_or("Autres pièces")
+    match SORTES.iter().find(|(_, p)| p.iter().any(|x| nom.starts_with(x))) {
+        Some((s, _)) => s,
+        None => AUTRES,
+    }
 }
 
 /// Les documents du mois : les fichiers de `sorties/<mois>/` (`mois_connus`, la liste de l'Historique) et les PDF de
 /// `sorties/<mois>/envoi/` (`pieces_de_l_envoi`). Une archive `.zip` n'est que l'emballage
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
-fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Value>> {
-    let noms = crate::routes::ouverture::mois_connus(&ctx.racine).into_iter().find(|(m, _)| m == mois).map(|(_, n)| n).unwrap_or_default();
-    let mut out: Vec<Value> = Vec::new();
-    for nom in noms.iter().filter(|n| !n.ends_with(".zip")) {
-        out.push(json!({"nom": nom, "sorte": sorte_de(nom), "salarie": "", "chemin": format!("sorties/{}/{}", mois, nom)}));
+fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
+    let mut out: Vec<Document> = Vec::new();
+    let noms = crate::routes::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| m == mois).flat_map(|(_, n)| n);
+    for nom in noms.filter(|n| !n.ends_with(".zip")) {
+        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
     }
     for d in crate::routes::archives::pieces_de_l_envoi(ctx, mois)? {
-        out.push(json!({"nom": d.nom, "sorte": sorte_de(&d.nom), "salarie": d.salarie, "chemin": format!("sorties/{}/envoi/{}", mois, d.nom)}));
+        out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: format!("sorties/{}/envoi/{}", mois, d.nom), fichier: None, nom: d.nom });
     }
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
     for nom in pieces_du_journal(lignes) {
-        if out.iter().any(|d| d["nom"] == json!(nom)) {
+        if out.iter().any(|d| d.nom == nom) {
             continue;
         }
         let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.starts_with(p));
         let chemin = if dans_l_envoi { format!("sorties/{}/envoi/{}", mois, nom) } else { format!("sorties/{}/{}", mois, nom) };
-        out.push(json!({"nom": nom, "sorte": sorte_de(&nom), "salarie": "", "chemin": chemin, "fichier": nom}));
+        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
-    for b in crate::import::mois::bulletins_repris(&ctx.racine, mois) {
-        let cle = valeur_en_texte(&b["salarie"]);
-        let qui = ctx.salaries.get(cle.as_str()).map(|s| {
-            let prenom = if s.prenom_affichage.texte().is_empty() { s.prenom.texte() } else { s.prenom_affichage.texte() };
-            format!("{} {}", s.nom.texte(), prenom).trim().to_string()
-        });
-        let nom = format!("Bulletin de {} (ancien logiciel)", qui.filter(|q| !q.is_empty()).unwrap_or(cle.clone()));
-        out.push(json!({"nom": nom, "sorte": "Bulletins de paie", "salarie": cle, "chemin": b["chemin"]}));
+    for b in crate::import::mois::bulletins_repris(&ctx.racine, mois)? {
+        let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
+        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
-        let lisible = nom_lisible(ctx, d["nom"].as_str().unwrap_or(""));
-        d["nom"] = json!(lisible);
+        d.nom = nom_lisible(ctx, &d.nom);
     }
-    let rang = |v: &Value| SORTES.iter().position(|(s, _)| v["sorte"] == json!(s)).unwrap_or(SORTES.len());
-    out.sort_by_key(|v| rang(v));
+    // Dans l'ordre des sortes, les autres pieces a la fin.
+    out.sort_by_key(|d| {
+        let rang = SORTES.iter().position(|(s, _)| *s == d.sorte);
+        (rang.is_none(), rang)
+    });
     Ok(out)
 }
 
@@ -303,7 +463,9 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
         }
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
-        noter(l.fichier().unwrap_or_default());
+        if let Some(f) = l.fichier() {
+            noter(f);
+        }
         match l {
             Ligne::ContratSignature(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
             Ligne::ContratContresigne(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
@@ -316,181 +478,226 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 
 // ------------------------------------------------------------------ les retours, lus
 
-/// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`transport::archiver`),
-/// celle de sa publication d'abord, sinon la premiere de sa nature pour ce flux (`etats::archive_du_retour`).
-fn piece_du_retour(racine: &Path, canal: &str, flux: &str, nature: &str, publication: &str) -> Option<PathBuf> {
-    let mut dossier = racine.join(envois::retours::RETOURS);
-    if !canal.is_empty() {
-        dossier = dossier.join(canal);
-    }
-    let flux: String = if flux.is_empty() { "sansflux".into() } else { flux.chars().take(24).collect() };
-    let suffixe = format!("_nature{}_{}", nature, flux);
-    let mut noms: Vec<String> = std::fs::read_dir(&dossier)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| {
-            let radical = n.rsplit_once('.').map_or(n.as_str(), |(r, _)| r);
-            radical.ends_with(&suffixe)
-        })
-        .collect();
-    noms.sort();
-    let p: String = publication.chars().take(14).collect();
-    let horo = if p.len() == 14 { format!("{}-{}", &p[..8], &p[8..]) } else { String::new() };
-    let choisi = noms.iter().find(|n| !horo.is_empty() && n.starts_with(&horo)).or(noms.first())?;
-    Some(dossier.join(choisi))
+/// Le refus d'un dossier des retours qui ne se lit pas : la phrase en mots, le dossier et l'erreur a part.
+fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
+    socle::echec::avec(
+        "Le dossier des retours ne se lit pas.",
+        socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+    )
 }
 
-/// Ce qu'on lit d'une piece, en phrases : `(titre, phrases, anomalies, traduite)`.
+/// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
+/// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
+/// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<&str>) -> Result<Option<PathBuf>, String> {
+    let mut dossier = racine.join(envois::retours::RETOURS);
+    if let Some(c) = canal {
+        dossier = dossier.join(c);
+    }
+    let flux: String = match flux {
+        Some(f) => f.chars().take(24).collect(),
+        None => "sansflux".into(),
+    };
+    let suffixe = format!("_nature{}_{}", nature, flux);
+    let lus = match std::fs::read_dir(&dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(retours_illisibles(&dossier, e)),
+    };
+    let mut noms: Vec<String> = Vec::new();
+    for e in lus {
+        let n = e.map_err(|x| retours_illisibles(&dossier, x))?.file_name().to_string_lossy().into_owned();
+        let radical = match n.rsplit_once('.') {
+            Some((r, _)) => r,
+            None => n.as_str(),
+        };
+        if radical.ends_with(&suffixe) {
+            noms.push(n);
+        }
+    }
+    noms.sort();
+    let horo = publication.map(|p| p.chars().take(14).collect::<String>()).filter(|p| p.len() == 14).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    let choisi = match horo {
+        Some(h) => noms.iter().find(|n| n.starts_with(&h)).or(noms.first()),
+        None => noms.first(),
+    };
+    Ok(choisi.map(|c| dossier.join(c)))
+}
+
+/// Ce qu'on lit d'une piece, en phrases.
 struct Lecture {
     titre: String,
-    /// L'organisme que la piece nomme (NEOReS : `RO.B002.R005` ; OC : le producteur du compte rendu), sinon `""`.
-    organisme: String,
+    /// L'organisme que la piece nomme (NEOReS : `RO.B002.R005` ; OC : le producteur du compte rendu), s'il le dit.
+    organisme: Option<String>,
     phrases: Vec<String>,
-    anomalies: Vec<Value>,
+    anomalies: Vec<Anomalie>,
     traduite: bool,
-    /// Ce que la piece dit d'elle-meme (un rapport harmonise : `OK`, `ANO`, `KO`), sinon `""`.
-    verdict: String,
+    /// Ce que la piece dit d'elle-meme (un rapport harmonise : `OK`, `ANO`, `KO`), si elle le dit.
+    verdict: Option<&'static str>,
 }
 
-fn verdict_en_mots(etat: &str) -> &'static str {
+impl Lecture {
+    fn nouvelle(titre: impl Into<String>) -> Lecture {
+        Lecture { titre: titre.into(), organisme: None, phrases: Vec::new(), anomalies: Vec::new(), traduite: true, verdict: None }
+    }
+}
+
+fn verdict_en_mots(etat: &str) -> Option<&'static str> {
     match etat {
-        "OK" => "conforme",
-        "KO" => "refusée",
-        "ANO" => "acceptée avec des anomalies",
-        _ => "",
+        "OK" => Some("conforme"),
+        "KO" => Some("refusée"),
+        "ANO" => Some("acceptée avec des anomalies"),
+        _ => None,
     }
 }
 
 /// Une piece lue : le certificat DPAE (nature 41 du canal DPAE, `dpae::lire_certificat`), un rapport au format
 /// harmonise (`retours::lire_rapport`), une archive d'AER (`retours::aer_spectacle`), un PDF. Autre chose ne se
-/// traduit pas : son format est dit, et la piece s'ouvre telle quelle.
-fn lire_piece(o: &[u8], canal: &str, nature: &str, format: &str) -> Lecture {
-    let mut l = Lecture { titre: String::new(), organisme: String::new(), phrases: Vec::new(), anomalies: Vec::new(), traduite: true, verdict: String::new() };
-    if canal == "dpae" && nature == "41" {
+/// traduit pas : son format est dit, ce qui l'empeche de se lire aussi, et la piece s'ouvre telle quelle.
+fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>) -> Lecture {
+    if canal == Some("dpae") && nature == "41" {
         let texte: String = o.iter().map(|&b| b as char).collect();
         let lignes = declarations::dpae::lire_certificat(&texte);
         if !lignes.is_empty() {
-            l.titre = "Certificat de conformité des DPAE".into();
+            let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
             for x in &lignes {
-                let t = |k: &str| x.get(k).filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default();
-                let qui = [t("nom"), t("prenom")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" ");
-                let etat = if vrai(&x["enregistree"]) {
-                    let dossier = t("dossier");
-                    if dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée, dossier {}", dossier) }
-                } else if vrai(&x["deja_existante"]) {
+                let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
+                let etat = if x.enregistree {
+                    format!("enregistrée{}", morceau(", dossier ", dit(&x.dossier), ""))
+                } else if x.deja_existante {
                     "déjà enregistrée auparavant".to_string()
                 } else {
-                    format!("refusée : {}", [t("code"), t("libelle")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" — "))
+                    format!("refusée{}", morceau(" : ", joint([dit(&x.code), dit(&x.libelle)], " — ").as_deref(), ""))
                 };
-                l.phrases.push(format!("{}{} : {}.", qui, if t("embauche").is_empty() { String::new() } else { format!(" (embauche du {})", t("embauche")) }, etat));
+                l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", dit(&x.embauche), ")"), etat));
             }
             return l;
         }
     }
     if o.starts_with(b"%PDF") {
-        l.titre = "Pièce PDF".into();
+        let mut l = Lecture::nouvelle("Pièce PDF");
         l.phrases.push("Un document PDF : il s'ouvre tel quel.".into());
         return l;
     }
     if o.starts_with(b"PK") {
-        let aer = retours::aer_spectacle(o).unwrap_or_default();
-        l.titre = "Archive d'attestations employeur (AER)".into();
-        if aer.is_empty() {
-            let n = retours::membres_du_zip(o).len();
-            l.phrases.push(format!("Une archive de {} fichier{}.", n, if n > 1 { "s" } else { "" }));
-        } else {
-            l.phrases.push(format!("{} attestation{} employeur rematérialisée{} :", aer.len(), if aer.len() > 1 { "s" } else { "" }, if aer.len() > 1 { "s" } else { "" }));
-            for a in &aer {
-                l.phrases.push(format!("{}{}", a.qui, if a.periode.is_empty() { String::new() } else { format!(" (période {})", a.periode) }));
+        let mut l = Lecture::nouvelle("Archive d'attestations employeur (AER)");
+        match retours::aer_spectacle(o) {
+            Ok(aer) if !aer.is_empty() => {
+                let n = aer.len();
+                l.phrases.push(format!("{} attestation{} employeur rematérialisée{} :", n, plur(n, "", "s"), plur(n, "", "s")));
+                for a in &aer {
+                    l.phrases.push(format!("{}{}", a.qui, morceau(" (période ", a.periode.as_deref(), ")")));
+                }
+                l.phrases.push("Chaque AER se range aussi parmi les documents du mois, prête à partir au salarié.".into());
             }
-            l.phrases.push("Chaque AER se range aussi parmi les documents du mois, prête à partir au salarié.".into());
+            Ok(_) => match retours::membres_du_zip(o) {
+                Ok(m) => l.phrases.push(format!("Une archive de {} fichier{}, sans attestation.", m.len(), plur(m.len(), "", "s"))),
+                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
+            },
+            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
         }
         return l;
     }
-    if let Some(r) = retours::lire_rapport(o) {
-        let type_ = valeur_en_texte(&r["type"]);
-        l.titre = if vrai(&r["libelle"]) { valeur_en_texte(&r["libelle"]) } else if type_.is_empty() { "Compte rendu".into() } else { format!("Rapport {}", type_) };
-        if vrai(&r["message"]) {
-            l.phrases.push(valeur_en_texte(&r["message"]));
-        }
-        if r["essai_reel"] == json!("01") {
-            l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
-        }
-        let etat = valeur_en_texte(&r["etat_envoi"]);
-        let envoi = match etat.as_str() {
-            "OK" => "accepté",
-            "KO" => "refusé",
-            "ANO" => "accepté avec des anomalies",
-            _ => "",
-        };
-        if !envoi.is_empty() {
-            l.phrases.push(format!("L'envoi est {} ({}).", envoi, etat));
-        }
-        for d in r["declarations"].as_array().into_iter().flatten() {
-            let e = valeur_en_texte(&d["etat"]);
-            let mois = valeur_en_texte(&d["mois"]);
-            let ordre = valeur_en_texte(&d["ordre"]);
-            l.phrases.push(format!(
-                "{}{}{} : {}.",
-                nature_dsn(&valeur_en_texte(&d["nature"]), &valeur_en_texte(&d["type"])),
-                if mois.is_empty() { String::new() } else { format!(" de {}", mois) },
-                if ordre.is_empty() { String::new() } else { format!(", ordre {}", ordre) },
-                if verdict_en_mots(&e).is_empty() { if e.is_empty() { "sans état".to_string() } else { e.clone() } } else { format!("{} ({})", verdict_en_mots(&e), e) }
-            ));
-        }
-        for i in r["informations"].as_array().into_iter().flatten() {
-            let donnees: Vec<String> = i["donnees"].as_array().into_iter().flatten().map(|d| format!("{} : {}", valeur_en_texte(&d["nom"]), valeur_en_texte(&d["valeur"]))).collect();
-            let t = valeur_en_texte(&i["type"]);
-            let quoi = match t.as_str() {
-                "atmp" => "Information : taux accident du travail et maladie professionnelle".to_string(),
-                "bmcc" => "Information : bonus-malus de la contribution chômage".to_string(),
-                "" => "Information".to_string(),
-                autre => format!("Information ({})", autre),
-            };
-            l.phrases.push(if donnees.is_empty() { format!("{}.", quoi) } else { format!("{} — {}.", quoi, donnees.join(" ; ")) });
-        }
-        if nature == retours::NATURE_TAUX_PAS {
-            let n = retours::nombre_de_taux_pas(o);
-            l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", n, if n > 1 { "s" } else { "" }));
-        }
-        l.anomalies = r["anomalies"].as_array().cloned().unwrap_or_default();
-        // LE VERDICT EST CELUI DE LA PIECE : France Travail publie son compte rendu « cinéma, spectacle »
-        // (nature 45) toujours au statut ANOBLOQUANTE, même quand il ne relève rien (guide « De la DSN à l'attestation
-        // employeur », v3.2, p. 10, dépose dans `net-entreprises-base-connaissances/`). Ce que dit la piece passe devant.
-        let etats: Vec<String> = std::iter::once(valeur_en_texte(&r["etat_envoi"]))
-            .chain(r["declarations"].as_array().into_iter().flatten().map(|d| valeur_en_texte(&d["etat"])))
-            .filter(|e| !e.is_empty())
-            .collect();
-        l.verdict = if etats.iter().any(|e| e == "KO") {
-            "KO".into()
-        } else if etats.iter().any(|e| e == "ANO") || !l.anomalies.is_empty() {
-            "ANO".into()
-        } else if etats.iter().any(|e| e == "OK") {
-            "OK".into()
-        } else {
-            String::new()
-        };
-        return l;
+    // Un format qui ne se lit pas n'est pas celui de la piece : le suivant s'essaie, et ce qui l'empeche se dit a la fin.
+    let mut pas_lus: Vec<String> = Vec::new();
+    match retours::lire_rapport(o) {
+        Ok(Some(rapport)) => return rapport_lu(&rapport, o, nature),
+        Ok(None) => {}
+        Err(m) => pas_lus.push(m.message),
     }
-    if let Some(crm) = retours::lire_neores(o) {
-        lire_neores(&crm, &mut l);
-        return l;
+    match retours::lire_neores(o) {
+        Ok(Some(crm)) => return neores_lu(&crm),
+        Ok(None) => {}
+        Err(m) => pas_lus.push(m.message),
     }
-    if let Some(crm) = retours::lire_crm_oc(o) {
-        lire_crm_oc(&crm, &mut l);
-        return l;
+    match retours::lire_crm_oc(o) {
+        Ok(Some(crm)) => return crm_oc_lu(&crm),
+        Ok(None) => {}
+        Err(m) => pas_lus.push(m.message),
     }
+    let mut l = Lecture::nouvelle("Compte rendu");
     l.traduite = false;
-    l.titre = "Compte rendu".into();
     l.phrases.push(match format {
         // Le format temporaire de l'AGIRC-ARRCO (guide v6.8, « Documents de reference », [7] : `Schéma XSD RC V07.xsd`,
         // `accuseReceptionDSNDTO.xsd`, `notificationCcmdDSNDTO.xsd`) n'est publie ni avec le guide, ni sur net-entreprises,
         // ni sur agirc-arrco.fr (releve du 20/10/2026 : `atelier/reference/sources/gip-mds-api-dsn/LISEZ-MOI.md`).
-        "agirc-arrco" => "Ce compte rendu de l'AGIRC-ARRCO est dans un format que l'AGIRC-ARRCO ne publie pas : ce logiciel ne peut donc pas le traduire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
+        Some("agirc-arrco") => "Ce compte rendu de l'AGIRC-ARRCO est dans un format que l'AGIRC-ARRCO ne publie pas : ce logiciel ne peut donc pas le traduire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
         _ => "Cette pièce n'a pas la forme que son format annonce : ce logiciel ne sait pas la lire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
     });
+    l.phrases.extend(pas_lus);
+    l
+}
+
+/// Un rapport au format harmonise (`retours::lire_rapport`), dit en phrases : son titre, son message, l'envoi, chaque
+/// declaration, les informations, les taux communiques (nature 114), les anomalies, et le verdict de la piece.
+fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
+    let titre = match (lu(&rapport.libelle), lu(&rapport.type_rapport)) {
+        (Some(libelle), _) => libelle.to_string(),
+        (None, Some(t)) => format!("Rapport {}", t),
+        (None, None) => "Compte rendu".into(),
+    };
+    let mut l = Lecture::nouvelle(titre);
+    if let Some(m) = &rapport.message {
+        l.phrases.push(m.clone());
+    }
+    if rapport.essai_reel.as_deref() == Some(retours::ESSAI_TEST) {
+        l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
+    }
+    let etat = lu(&rapport.etat_envoi);
+    let envoi = match etat {
+        Some("OK") => Some("accepté"),
+        Some("KO") => Some("refusé"),
+        Some("ANO") => Some("accepté avec des anomalies"),
+        _ => None,
+    };
+    if let (Some(envoi), Some(etat)) = (envoi, etat) {
+        l.phrases.push(format!("L'envoi est {} ({}).", envoi, etat));
+    }
+    for d in &rapport.declarations {
+        let e = dit(&d.etat);
+        let verdict = match (e.and_then(verdict_en_mots), e) {
+            (Some(mots), Some(e)) => format!("{} ({})", mots, e),
+            (None, Some(e)) => e.to_string(),
+            (_, None) => "sans état".to_string(),
+        };
+        l.phrases.push(format!(
+            "{}{}{} : {}.",
+            nature_dsn(dit(&d.nature), dit(&d.type_declaration)),
+            morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
+            morceau(", ordre ", dit(&d.ordre), ""),
+            verdict
+        ));
+    }
+    for i in &rapport.informations {
+        let quoi = match dit(&i.type_information) {
+            Some("atmp") => "Information : taux accident du travail et maladie professionnelle".to_string(),
+            Some("bmcc") => "Information : bonus-malus de la contribution chômage".to_string(),
+            None => "Information".to_string(),
+            Some(autre) => format!("Information ({})", autre),
+        };
+        let donnees: Vec<String> = i.donnees.iter().map(|d| format!("{} : {}", d.nom, d.valeur)).collect();
+        l.phrases.push(if donnees.is_empty() { format!("{}.", quoi) } else { format!("{} — {}.", quoi, donnees.join(" ; ")) });
+    }
+    if nature == retours::NATURE_TAUX_PAS {
+        match retours::taux_pas_d_octets(o) {
+            Ok(t) => l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", t.releves.len(), plur(t.releves.len(), "", "s"))),
+            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.message)),
+        }
+    }
+    l.anomalies = rapport.anomalies.iter().map(Anomalie::du_rapport).collect();
+    // LE VERDICT EST CELUI DE LA PIECE : France Travail publie son compte rendu « cinéma, spectacle »
+    // (nature 45) toujours au statut ANOBLOQUANTE, même quand il ne relève rien (guide « De la DSN à l'attestation
+    // employeur », v3.2, p. 10, dépose dans `net-entreprises-base-connaissances/`). Ce que dit la piece passe devant.
+    let etats: Vec<&str> = etat.into_iter().chain(rapport.declarations.iter().filter_map(|d| dit(&d.etat))).collect();
+    l.verdict = if etats.contains(&"KO") {
+        Some("KO")
+    } else if etats.contains(&"ANO") || !l.anomalies.is_empty() {
+        Some("ANO")
+    } else if etats.contains(&"OK") {
+        Some("OK")
+    } else {
+        None
+    };
     l
 }
 
@@ -508,18 +715,10 @@ fn date_oc(d: &str) -> String {
     d.to_string()
 }
 
-fn non_vides(v: &[String], sep: &str) -> String {
-    v.iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(sep)
-}
-
 /// La premiere lettre en capitale.
 fn majuscule(t: &str) -> String {
     let mut c = t.chars();
-    c.next().map(|p| p.to_uppercase().chain(c).collect()).unwrap_or_default()
-}
-
-fn s(v: &Value) -> String {
-    v.as_str().unwrap_or("").to_string()
+    c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
 }
 
 /// Un compte rendu NEOReS (`retours::lire_neores`, d'apres le cahier technique NEOReS 2026.1.2 et 2027.1.0,
@@ -527,192 +726,214 @@ fn s(v: &Value) -> String {
 /// action attendue (en anomalie : le code du traitement, son libelle, les rubriques et les salaries en jeu ; en phrase :
 /// le controle, l'action attendue, ce que vaut l'absence de correction), les parametres a prendre en paie, les ecarts
 /// d'identite, les informations.
-fn lire_neores(crm: &Value, l: &mut Lecture) {
-    l.titre = if s(&crm["libelle"]).is_empty() { "Compte rendu NEOReS".into() } else { s(&crm["libelle"]) };
-    l.organisme = s(&crm["organisme"]);
-    let pourquoi = s(&crm["declencheur_libelle"]);
-    if !pourquoi.is_empty() {
-        let p = majuscule(&pourquoi);
-        l.phrases.push(format!("{}{}.", p, if s(&crm["code"]).is_empty() { String::new() } else { format!(" (compte rendu {})", s(&crm["code"])) }));
+fn neores_lu(crm: &Neores) -> Lecture {
+    let mut l = Lecture::nouvelle(match lu(&crm.libelle) {
+        Some(t) => t.to_string(),
+        None => "Compte rendu NEOReS".to_string(),
+    });
+    l.organisme = lu(&crm.organisme).map(String::from);
+    if let Some(pourquoi) = crm.declencheur_libelle.and_then(dit) {
+        l.phrases.push(format!("{}{}.", majuscule(pourquoi), morceau(" (compte rendu ", lu(&crm.code), ")")));
     }
-    if crm["remplace"] == json!(true) {
+    if crm.remplace {
         l.phrases.push("Ce compte rendu annule et remplace un compte rendu précédent de l'organisme.".into());
     }
-    if crm["essai_reel"] == json!("01") {
+    if crm.essai_reel.as_deref() == Some("01") {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
-    let (debut, fin) = (s(&crm["debut"]), s(&crm["fin"]));
-    if !debut.is_empty() {
-        l.phrases.push(if fin.is_empty() || fin == debut { format!("Période : {}.", date_lisible(&debut)) } else { format!("Période : du {} au {}.", date_lisible(&debut), date_lisible(&fin)) });
+    if let Some(debut) = lu(&crm.debut) {
+        l.phrases.push(match lu(&crm.fin).filter(|f| *f != debut) {
+            None => format!("Période : {}.", date_lisible(debut)),
+            Some(fin) => format!("Période : du {} au {}.", date_lisible(debut), date_lisible(fin)),
+        });
     }
-    let metier = s(&crm["metier"]);
-    match s(&crm["conformite"]).as_str() {
-        "OK" => l.phrases.push(format!("Aucun écart constaté sur les données analysées{}.", if metier.is_empty() { String::new() } else { format!(" ({})", metier) })),
-        "ANO" => l.phrases.push(format!("Des écarts ont été constatés sur les données analysées{} : chacun appelle une correction dans la paie, au plus tard dans la DSN suivante.", if metier.is_empty() { String::new() } else { format!(" ({})", metier) })),
+    let metier = morceau(" (", lu(&crm.metier), ")");
+    match lu(&crm.conformite) {
+        Some("OK") => l.phrases.push(format!("Aucun écart constaté sur les données analysées{}.", metier)),
+        Some("ANO") => l.phrases.push(format!("Des écarts ont été constatés sur les données analysées{} : chacun appelle une correction dans la paie, au plus tard dans la DSN suivante.", metier)),
         _ => {}
     }
-    for a in crm["actions"].as_array().into_iter().flatten() {
+    for a in &crm.actions {
         let mut rubriques: Vec<String> = Vec::new();
         let mut salaries: Vec<String> = Vec::new();
         let mut precisions: Vec<String> = Vec::new();
-        for d in a["details"].as_array().into_iter().flatten() {
-            if !s(&d["atypie"]).is_empty() {
-                precisions.push(s(&d["atypie"]).trim_end_matches('.').to_string());
+        for d in &a.details {
+            if let Some(atypie) = lu(&d.atypie) {
+                precisions.push(atypie.trim_end_matches('.').to_string());
             }
-            for i in d["individus"].as_array().into_iter().flatten() {
-                let qui = non_vides(&[s(&i["nom"]), s(&i["prenom"])], " ");
-                let contrat = s(&i["contrat"]);
-                let q = if contrat.is_empty() { qui } else { format!("{} (contrat {})", qui, contrat) };
-                if !q.is_empty() && !salaries.contains(&q) {
+            for i in &d.individus {
+                let qui = joint([lu(&i.nom), lu(&i.prenom)], " ");
+                let q = match (qui, lu(&i.contrat)) {
+                    (Some(q), Some(c)) => Some(format!("{} (contrat {})", q, c)),
+                    (Some(q), None) => Some(q),
+                    (None, Some(c)) => Some(format!("(contrat {})", c)),
+                    (None, None) => None,
+                };
+                if let Some(q) = q.filter(|q| !salaries.contains(q)) {
                     salaries.push(q);
                 }
             }
-            for x in d["donnees"].as_array().into_iter().flatten() {
-                let r = s(&x["rubrique"]);
-                if !r.is_empty() && !rubriques.contains(&r) {
-                    rubriques.push(r.clone());
+            for x in &d.donnees {
+                let r = lu(&x.rubrique);
+                if let Some(r) = r.filter(|r| !rubriques.iter().any(|x| x == r)) {
+                    rubriques.push(r.to_string());
                 }
                 let mut v = Vec::new();
-                if !s(&x["declaree"]).is_empty() {
-                    v.push(format!("déclaré « {} »", s(&x["declaree"])));
+                if let Some(t) = lu(&x.declaree) {
+                    v.push(format!("déclaré « {} »", t));
                 }
-                if !s(&x["attendue"]).is_empty() {
-                    v.push(format!("attendu « {} »", s(&x["attendue"])));
+                if let Some(t) = lu(&x.attendue) {
+                    v.push(format!("attendu « {} »", t));
                 }
-                let acceptees: Vec<String> = x["acceptees"].as_array().into_iter().flatten().map(s).collect();
-                if !acceptees.is_empty() {
-                    v.push(format!("valeurs acceptées : {}", acceptees.join(", ")));
+                if !x.acceptees.is_empty() {
+                    v.push(format!("valeurs acceptées : {}", x.acceptees.join(", ")));
                 }
-                if !s(&x["resultat"]).is_empty() {
-                    v.push(s(&x["resultat"]));
+                if let Some(t) = x.resultat.and_then(dit) {
+                    v.push(t.to_string());
                 }
-                if !v.is_empty() && !r.is_empty() {
+                if let (false, Some(r)) = (v.is_empty(), r) {
                     precisions.push(format!("{} : {}", r, v.join(", ")));
                 }
             }
-            if !s(&d["substituable"]).is_empty() {
-                precisions.push(s(&d["substituable"]));
+            if let Some(t) = d.substituable.and_then(dit) {
+                precisions.push(t.to_string());
             }
         }
-        let message = non_vides(&[s(&a["libelle"]), s(&a["resultat"])], " — ");
+        let message = joint([lu(&a.libelle), a.resultat.and_then(dit)], " — ");
         // Un ecart a corriger (types 01 a 03, ou un resultat de controle) se range parmi les anomalies ; un parametre a
         // prendre (04, 05) n'en est pas une : il se dit en phrase, avec sa valeur (`RO.B008`, plus bas).
-        let parametre = matches!(s(&a["type_code"]).as_str(), "04" | "05") && s(&a["resultat"]).is_empty();
+        let parametre = matches!(lu(&a.type_code), Some("04" | "05")) && a.resultat.and_then(dit).is_none();
         if !parametre {
-            l.anomalies.push(json!({
-                "code": s(&a["code"]), "categorie": s(&a["type"]), "message": message, "rubrique": rubriques.join(", "),
-                "ligne": "", "nombre": s(&a["individus"]), "salarie": salaries.join(", "),
-            }));
-        } else if !message.is_empty() {
-            l.phrases.push(format!("{} : {}.", majuscule(&s(&a["type"])), message));
+            l.anomalies.push(Anomalie {
+                code: lu(&a.code).map(String::from),
+                categorie: a.type_action.map(String::from),
+                message: message.clone(),
+                rubrique: joint(rubriques.iter().map(|r| Some(r.as_str())), ", "),
+                ligne: None,
+                nombre: lu(&a.individus).map(String::from),
+                salarie: joint(salaries.iter().map(|s| Some(s.as_str())), ", "),
+            });
+        } else if let Some(m) = &message {
+            l.phrases.push(format!("{}{}.", morceau("", a.type_action.map(majuscule).as_deref(), " : "), m));
         }
-        let code = s(&a["code"]);
-        let tete = if code.is_empty() { String::new() } else { format!("{} — ", code) };
-        if !s(&a["controle"]).is_empty() {
-            l.phrases.push(format!("{}Contrôle : {}", tete, s(&a["controle"])));
+        let tete = morceau("", lu(&a.code), " — ");
+        if let Some(c) = lu(&a.controle) {
+            l.phrases.push(format!("{}Contrôle : {}", tete, c));
         }
         if !precisions.is_empty() {
             l.phrases.push(format!("{}Détail : {}.", tete, precisions.join(" ; ")));
         }
-        if !s(&a["action"]).is_empty() {
-            l.phrases.push(format!("{}Action attendue : {}", tete, s(&a["action"])));
+        if let Some(t) = lu(&a.action) {
+            l.phrases.push(format!("{}Action attendue : {}", tete, t));
         }
-        for (k, quoi) in [("consequences", "Sans correction"), ("substituable", "Substitution"), ("rappel", "Avant correction par l'organisme"), ("exception", "Cas d'exception"), ("reference", "Référence"), ("aide", "Aide")] {
-            if !s(&a[k]).is_empty() {
-                l.phrases.push(format!("{}{} : {}", tete, quoi, s(&a[k])));
+        for (v, quoi) in [
+            (lu(&a.consequences), "Sans correction"),
+            (a.substituable.and_then(dit), "Substitution"),
+            (lu(&a.rappel), "Avant correction par l'organisme"),
+            (lu(&a.exception), "Cas d'exception"),
+            (lu(&a.reference), "Référence"),
+            (lu(&a.aide), "Aide"),
+        ] {
+            if let Some(v) = v {
+                l.phrases.push(format!("{}{} : {}", tete, quoi, v));
             }
         }
     }
-    for p in crm["parametres"].as_array().into_iter().flatten() {
-        let quoi = if s(&p["libelle"]).is_empty() { format!("Paramètre {}", s(&p["type"])) } else { format!("{} ({})", s(&p["libelle"]), s(&p["type"])) };
-        let q = majuscule(&quoi);
-        let periode = match (s(&p["effet"]), s(&p["fin"])) {
-            (e, f) if !e.is_empty() && !f.is_empty() => format!(", du {} au {}", date_lisible(&e), date_lisible(&f)),
-            (e, _) if !e.is_empty() => format!(", à partir du {}", date_lisible(&e)),
-            _ => String::new(),
+    for p in &crm.parametres {
+        let quoi = match p.libelle.and_then(dit) {
+            Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
+            None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
         };
-        let rub = if s(&p["rubrique"]).is_empty() { String::new() } else { format!(", rubrique {}", s(&p["rubrique"])) };
-        let calcul = if s(&p["calcule_le"]).is_empty() { String::new() } else { format!(" (calculé le {})", date_lisible(&s(&p["calcule_le"]))) };
-        l.phrases.push(format!("{} : {}{}{}{}.", q, s(&p["valeur"]), periode, rub, calcul));
+        let periode = match (lu(&p.effet), lu(&p.fin)) {
+            (Some(e), Some(f)) => format!(", du {} au {}", date_lisible(e), date_lisible(f)),
+            (Some(e), None) => format!(", à partir du {}", date_lisible(e)),
+            (None, _) => String::new(),
+        };
+        let calcul = morceau(" (calculé le ", lu(&p.calcule_le).map(date_lisible).as_deref(), ")");
+        l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
-    if crm["parametres"].as_array().is_some_and(|p| p.iter().any(|x| s(&x["type"]).starts_with('A'))) {
+    if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {
         l.phrases.push("Ces effectifs sont repris d'eux-mêmes dans config/effectifs.json à chaque relevé des retours : ce sont eux qui décident des seuils de cotisation.".into());
     }
-    for i in crm["identites"].as_array().into_iter().flatten() {
-        let declare = non_vides(&[s(&i["nom_declare"]), s(&i["prenom_declare"])], " ");
-        let reference = non_vides(&[s(&i["nom_reference"]), s(&i["prenom_reference"])], " ");
+    for i in &crm.identites {
+        let declare = joint([lu(&i.nom_declare), lu(&i.prenom_declare)], " ");
+        let reference = joint([lu(&i.nom_reference), lu(&i.prenom_reference)], " ");
+        fn differe<'a>(reference: &'a Option<String>, declare: &Option<String>) -> Option<&'a str> {
+            lu(reference).filter(|r| Some(*r) != lu(declare))
+        }
         let mut ecarts = Vec::new();
-        if !s(&i["nom_reference"]).is_empty() && s(&i["nom_reference"]) != s(&i["nom_declare"]) {
-            ecarts.push(format!("nom de référence « {} »", s(&i["nom_reference"])));
+        if let Some(r) = differe(&i.nom_reference, &i.nom_declare) {
+            ecarts.push(format!("nom de référence « {} »", r));
         }
-        if !s(&i["prenom_reference"]).is_empty() && s(&i["prenom_reference"]) != s(&i["prenom_declare"]) {
-            ecarts.push(format!("prénom de référence « {} »", s(&i["prenom_reference"])));
+        if let Some(r) = differe(&i.prenom_reference, &i.prenom_declare) {
+            ecarts.push(format!("prénom de référence « {} »", r));
         }
-        if !s(&i["naissance_reference"]).is_empty() && s(&i["naissance_reference"]) != s(&i["naissance_declaree"]) {
-            ecarts.push(format!("née ou né le {} selon le répertoire (déclaré : {})", date_lisible(&s(&i["naissance_reference"])), date_lisible(&s(&i["naissance_declaree"]))));
+        if let Some(r) = differe(&i.naissance_reference, &i.naissance_declaree) {
+            ecarts.push(format!("née ou né le {} selon le répertoire{}", date_lisible(r), morceau(" (déclaré : ", lu(&i.naissance_declaree).map(date_lisible).as_deref(), ")")));
         }
-        if !s(&i["nir_reference"]).is_empty() && s(&i["nir_reference"]) != s(&i["nir_declare"]) {
-            ecarts.push(format!("NIR de référence {} (déclaré : {})", s(&i["nir_reference"]), s(&i["nir_declare"])));
+        if let Some(r) = differe(&i.nir_reference, &i.nir_declare) {
+            ecarts.push(format!("NIR de référence {}{}", r, morceau(" (déclaré : ", lu(&i.nir_declare), ")")));
         }
+        let qui = morceau(" : ", declare.or(reference).as_deref(), "");
+        let quoi = if ecarts.is_empty() { "à vérifier".to_string() } else { ecarts.join(", ") };
+        l.phrases.push(format!("Identité en écart avec le répertoire national (SNGI){} — {}. La fiche du salarié est à corriger avec l'identité de référence.", qui, quoi));
+    }
+    for i in &crm.informations {
+        let qui: Vec<String> = i.individus.iter().filter_map(|x| joint([lu(&x.nom), lu(&x.prenom)], " ")).collect();
+        let qui = (!qui.is_empty()).then(|| qui.join(", "));
         l.phrases.push(format!(
-            "Identité en écart avec le répertoire national (SNGI) : {} — {}. La fiche du salarié est à corriger avec l'identité de référence.",
-            if declare.is_empty() { reference } else { declare },
-            if ecarts.is_empty() { "à vérifier".to_string() } else { ecarts.join(", ") }
+            "Information{}{}{}{}{}.",
+            morceau(" ", lu(&i.code), ""),
+            morceau(" : ", joint([lu(&i.libelle), lu(&i.information)], " — ").as_deref(), ""),
+            morceau(", n° ", lu(&i.numero), ""),
+            morceau(" (", qui.as_deref(), ")"),
+            morceau(" — ", lu(&i.aide), "")
         ));
     }
-    for i in crm["informations"].as_array().into_iter().flatten() {
-        let qui: Vec<String> = i["individus"].as_array().into_iter().flatten().map(|x| non_vides(&[s(&x["nom"]), s(&x["prenom"])], " ")).filter(|x| !x.is_empty()).collect();
-        let numero = if s(&i["numero"]).is_empty() { String::new() } else { format!(", n° {}", s(&i["numero"])) };
-        l.phrases.push(format!(
-            "Information{} : {}{}{}{}.",
-            if s(&i["code"]).is_empty() { String::new() } else { format!(" {}", s(&i["code"])) },
-            non_vides(&[s(&i["libelle"]), s(&i["information"])], " — "),
-            numero,
-            if qui.is_empty() { String::new() } else { format!(" ({})", qui.join(", ")) },
-            if s(&i["aide"]).is_empty() { String::new() } else { format!(" — {}", s(&i["aide"])) }
-        ));
-    }
+    l
 }
 
 /// Un compte rendu d'organisme complementaire (`retours::lire_crm_oc`, d'apres la specification et le schema CRM DSN
 /// OC P3 V1.1.4, `atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-*`), dit en phrases : l'organisme
 /// qui l'a produit, le code retour global, son complement, les mandats SEPA a creer, le contact ; chaque retour metier en
 /// anomalie (code, libelle, valeurs, rubrique, salarie).
-fn lire_crm_oc(crm: &Value, l: &mut Lecture) {
-    l.titre = match s(&crm["type_crm"]).as_str() {
-        "2" => "Compte rendu de traitement (CRT)".into(),
-        "3" => "Compte rendu complet (CRC)".into(),
-        _ => "Compte rendu de l'organisme complémentaire".into(),
-    };
-    if crm["essai_reel"] == json!("01") {
+fn crm_oc_lu(crm: &CrmOc) -> Lecture {
+    let mut l = Lecture::nouvelle(match lu(&crm.type_crm) {
+        Some("2") => "Compte rendu de traitement (CRT)",
+        Some("3") => "Compte rendu complet (CRC)",
+        _ => "Compte rendu de l'organisme complémentaire",
+    });
+    if crm.essai_reel.as_deref() == Some("01") {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
-    for d in crm["declarations"].as_array().into_iter().flatten() {
-        let producteur = s(&d["producteur"]);
-        if !producteur.is_empty() {
-            l.organisme = producteur.clone();
+    for d in &crm.declarations {
+        if let Some(p) = lu(&d.producteur) {
+            l.organisme = Some(p.to_string());
         }
-        let organisme = non_vides(&[producteur, s(&d["code_producteur"])], ", code ");
-        let mois = s(&d["mois"]);
+        let organisme = joint([lu(&d.producteur), lu(&d.code_producteur)], ", code ");
+        let retour = match (d.retour_global.and_then(dit), lu(&d.code_retour)) {
+            (Some(g), _) => g.to_string(),
+            (None, Some(c)) => format!("code retour {}", c),
+            (None, None) => "sans code retour".to_string(),
+        };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(&s(&d["nature"]), &s(&d["type"])),
-            if mois.is_empty() { String::new() } else { format!(" de {}", mois) },
-            if organisme.is_empty() { String::new() } else { format!(", vue par {}", organisme) },
-            if s(&d["retour_global"]).is_empty() { format!("code retour {}", s(&d["code_retour"])) } else { s(&d["retour_global"]) }
+            nature_dsn(lu(&d.nature), lu(&d.type_declaration)),
+            morceau(" de ", lu(&d.mois), ""),
+            morceau(", vue par ", organisme.as_deref(), ""),
+            retour
         ));
-        if !s(&d["complement"]).is_empty() {
-            l.phrases.push(s(&d["complement"]));
+        if let Some(c) = lu(&d.complement) {
+            l.phrases.push(c.to_string());
         }
-        let compte = |k: &str, un: &str, plusieurs: &str| -> Option<String> {
-            let n = s(&d[k]);
-            (!n.is_empty() && n != "0").then(|| format!("{} {}", n, if n == "1" { un } else { plusieurs }))
+        let compte = |n: &Option<String>, un: &str, plusieurs: &str| -> Option<String> {
+            lu(n).filter(|n| *n != "0").map(|n| format!("{} {}", n, if n == "1" { un } else { plusieurs }))
         };
         let comptes: Vec<String> = [
-            compte("erreurs", "erreur", "erreurs"),
-            compte("critiques", "erreur critique", "erreurs critiques"),
-            compte("affiliations", "affiliation à prendre en compte", "affiliations à prendre en compte"),
-            compte("radiations", "radiation prise en compte", "radiations prises en compte"),
+            compte(&d.erreurs, "erreur", "erreurs"),
+            compte(&d.critiques, "erreur critique", "erreurs critiques"),
+            compte(&d.affiliations, "affiliation à prendre en compte", "affiliations à prendre en compte"),
+            compte(&d.radiations, "radiation prise en compte", "radiations prises en compte"),
         ]
         .into_iter()
         .flatten()
@@ -720,161 +941,216 @@ fn lire_crm_oc(crm: &Value, l: &mut Lecture) {
         if !comptes.is_empty() {
             l.phrases.push(format!("{}.", comptes.join(", ")));
         }
-        for m in d["mandats"].as_array().into_iter().flatten() {
-            let ou = if m["net_entreprises"] == json!(true) {
-                "à créer sur net-entreprises (module Mandat)".to_string()
-            } else if s(&m["url"]).is_empty() {
-                "à créer auprès de l'organisme".to_string()
-            } else {
-                format!("à créer sur le site de l'organisme : {}", s(&m["url"]))
+        for m in &d.mandats {
+            let ou = match (m.net_entreprises, lu(&m.url)) {
+                (true, _) => "à créer sur net-entreprises (module Mandat)".to_string(),
+                (false, None) => "à créer auprès de l'organisme".to_string(),
+                (false, Some(u)) => format!("à créer sur le site de l'organisme : {}", u),
             };
-            l.phrases.push(format!("Pas de mandat de prélèvement SEPA pour le compte {} : {}.", s(&m["iban"]), ou));
+            l.phrases.push(format!("Pas de mandat de prélèvement SEPA{} : {}.", morceau(" pour le compte ", lu(&m.iban), ""), ou));
         }
-        let contact = non_vides(&[s(&d["contact"]), s(&d["courriel"]), s(&d["telephone"])], ", ");
-        if !contact.is_empty() {
+        if let Some(contact) = joint([lu(&d.contact), lu(&d.courriel), lu(&d.telephone)], ", ") {
             l.phrases.push(format!("Contact chez l'organisme : {}.", contact));
         }
-        for r in d["retours"].as_array().into_iter().flatten() {
-            let code = s(&r["code"]);
-            let genre = match code.chars().next() {
-                Some('E') => "erreur",
-                Some('I') => "information",
-                _ => "",
+        for r in &d.retours {
+            let genre = match lu(&r.code).and_then(|c| c.chars().next()) {
+                Some('E') => Some("erreur"),
+                Some('I') => Some("information"),
+                _ => None,
             };
-            let mut message = vec![s(&r["libelle"])];
-            if !s(&r["description"]).is_empty() {
-                message.push(s(&r["description"]));
+            let mut message: Vec<String> = lu(&r.libelle).into_iter().chain(lu(&r.description)).map(String::from).collect();
+            if let Some(v) = joint([lu(&r.valeur), lu(&r.libelle_valeur).map(|x| format!("({})", x)).as_deref()], " ") {
+                message.push(format!("déclaré « {} »", v));
             }
-            let valeur = non_vides(&[s(&r["valeur"]), if s(&r["libelle_valeur"]).is_empty() { String::new() } else { format!("({})", s(&r["libelle_valeur"])) }], " ");
-            if !valeur.is_empty() {
-                message.push(format!("déclaré « {} »", valeur));
+            if let Some(c) = joint([lu(&r.corrigee), lu(&r.libelle_corrigee).map(|x| format!("({})", x)).as_deref()], " ") {
+                message.push(format!("{} « {} »", if genre == Some("information") { "pris en compte" } else { "attendu" }, c));
             }
-            let corrigee = non_vides(&[s(&r["corrigee"]), if s(&r["libelle_corrigee"]).is_empty() { String::new() } else { format!("({})", s(&r["libelle_corrigee"])) }], " ");
-            if !corrigee.is_empty() {
-                message.push(format!("{} « {} »", if genre == "information" { "pris en compte" } else { "attendu" }, corrigee));
+            if let Some(e) = lu(&r.date_evenement) {
+                message.push(format!("événement du {}", date_oc(e)));
             }
-            if !s(&r["date_evenement"]).is_empty() {
-                message.push(format!("événement du {}", date_oc(&s(&r["date_evenement"]))));
-            }
-            let categorie = non_vides(&[genre.to_string(), s(&r["criticite"])], ", ");
-            let rubrique = non_vides(&[s(&r["rubrique"]), if s(&r["libelle_rubrique"]).is_empty() { String::new() } else { format!("({})", s(&r["libelle_rubrique"])) }], " ");
-            l.anomalies.push(json!({
-                "code": code, "categorie": categorie, "message": non_vides(&message, " — "), "rubrique": rubrique,
-                "ligne": "", "nombre": s(&r["nombre"]), "salarie": s(&r["salarie"]),
-            }));
+            l.anomalies.push(Anomalie {
+                code: lu(&r.code).map(String::from),
+                categorie: joint([genre, r.criticite.and_then(dit)], ", "),
+                message: joint(message.iter().map(|m| Some(m.as_str())), " — "),
+                rubrique: joint([lu(&r.rubrique), lu(&r.libelle_rubrique).map(|x| format!("({})", x)).as_deref()], " "),
+                ligne: None,
+                nombre: lu(&r.nombre).map(String::from),
+                salarie: lu(&r.salarie).map(String::from),
+            });
         }
     }
+    l
+}
+
+/// La piece archivee d'un retour : aucune, illisible (le disque le dit), ou lue.
+enum PieceDuRetour {
+    Aucune,
+    Illisible(String),
+    Lue(PathBuf, Lecture),
 }
 
 /// Un retour d'une ligne du journal, lu.
-fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> Value {
-    let canal = if ligne.acte() == envois::journal::Acte::Dpae { "dpae" } else { "" };
+fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> RetourLu {
+    let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
     let nature = r.nature.clone();
-    let statut = r.statut.clone().unwrap_or_default();
-    let publication = r.publication.clone().unwrap_or_default();
-    let flux = ligne.flux().to_string();
-    let (organisme, format) = if canal == "dpae" {
-        ("l'Urssaf (DPAE)", "")
-    } else {
-        NATURES.iter().find(|(c, _, _)| *c == nature).map(|(_, o, f)| (*o, *f)).unwrap_or(("", ""))
+    let statut = r.statut.as_deref().and_then(dit);
+    let publication = r.publication.as_deref().and_then(dit);
+    let flux = dit(ligne.flux());
+    let (organisme, format) = match canal {
+        Some(_) => (Some("l'Urssaf (DPAE)"), None),
+        None => match NATURES.iter().find(|(c, _, _)| *c == nature) {
+            Some((_, o, f)) => (Some(*o), Some(*f)),
+            None => (None, None),
+        },
     };
-    let libelle = Some(r.libelle.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| retours::libelle_nature(&nature));
-    let piece = if flux.is_empty() && publication.is_empty() { None } else { piece_du_retour(racine, canal, &flux, &nature, &publication) };
+    let libelle = match dit(&r.libelle) {
+        Some(l) => l.to_string(),
+        None => retours::libelle_nature(&nature),
+    };
+    let piece = match (flux, publication) {
+        (None, None) => PieceDuRetour::Aucune,
+        _ => match piece_du_retour(racine, canal, flux, &nature, publication) {
+            Ok(None) => PieceDuRetour::Aucune,
+            Ok(Some(p)) => match std::fs::read(&p) {
+                Ok(o) => {
+                    let l = lire_piece(&o, canal, &nature, format);
+                    PieceDuRetour::Lue(p, l)
+                }
+                Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),
+            },
+            Err(m) => PieceDuRetour::Illisible(m),
+        },
+    };
     let mut phrases: Vec<String> = Vec::new();
-    let lecture = piece.as_ref().and_then(|p| std::fs::read(p).ok()).map(|o| lire_piece(&o, canal, &nature, format));
-    let lu_verdict = lecture.as_ref().map(|l| l.verdict.clone()).unwrap_or_default();
-    let s = phrase_du_statut(&statut);
-    if !lu_verdict.is_empty() && !statut.is_empty() && lu_verdict != statut {
-        phrases.push(format!(
-            "Publié au statut {}, mais la pièce dit : {} ({}).",
-            statut,
-            if lu_verdict == "OK" && lecture.as_ref().is_some_and(|l| l.anomalies.is_empty()) { "aucune anomalie" } else { phrase_du_statut(&lu_verdict) },
-            lu_verdict
-        ));
-    } else if !s.is_empty() {
-        phrases.push(format!("Statut {} : {}.", statut, s));
-    }
-    let (titre, anomalies, traduite, lu_organisme) = match lecture {
-        Some(l) => {
-            phrases.extend(l.phrases);
-            (l.titre, l.anomalies, l.traduite, l.organisme)
+    let lu_verdict = match &piece {
+        PieceDuRetour::Lue(_, l) => l.verdict,
+        _ => None,
+    };
+    match (lu_verdict, statut) {
+        (Some(v), Some(s)) if v != s => {
+            let sans_anomalie = matches!(&piece, PieceDuRetour::Lue(_, l) if l.anomalies.is_empty());
+            let dit_la_piece = match (v, phrase_du_statut(v)) {
+                ("OK", _) if sans_anomalie => "aucune anomalie",
+                (_, Some(p)) => p,
+                (autre, None) => autre,
+            };
+            phrases.push(format!("Publié au statut {}, mais la pièce dit : {} ({}).", s, dit_la_piece, v));
         }
-        None => {
-            // Sans piece : ce que le releve en a lu quand il l'a rattachee (`journal.rattacher_retours`), et rien d'autre.
-            if format == "aucun" {
+        (_, Some(s)) => {
+            if let Some(p) = phrase_du_statut(s) {
+                phrases.push(format!("Statut {} : {}.", s, p));
+            }
+        }
+        (_, None) => {}
+    }
+    let (titre, anomalies, traduite, lu_organisme, chemin) = match piece {
+        PieceDuRetour::Lue(p, l) => {
+            phrases.extend(l.phrases);
+            (Some(l.titre), l.anomalies, l.traduite, l.organisme, Some(p))
+        }
+        sans => {
+            // Sans piece lue : ce que le releve en a lu quand il l'a rattachee (`journal.rattacher_retours`), et rien d'autre.
+            if let PieceDuRetour::Illisible(m) = &sans {
+                phrases.push(format!("La pièce de ce retour ne se lit pas sur ce poste : {} ; ce qui est dit ici vient du relevé.", m));
+            } else if format == Some("aucun") {
                 phrases.push("Un accusé de réception, sans document : son statut dit tout.".into());
-            } else if statut == "fictive" || statut == "demonstration" {
+            } else if matches!(statut, Some("fictive" | "demonstration")) {
                 // Le retour d'un depot joue par une compagnie fictive (`crate::compagnie::releve::rattacher_simulation`) : le
                 // bilan est joue sans piece ; seule l'AER (nature 46) a la sienne, fabriquee (`aer_fictive`).
                 phrases.push("Compagnie fictive : ce retour est joué par le logiciel, sans pièce d'organisme.".into());
             } else {
                 phrases.push("La pièce de ce retour n'est pas archivée sur ce poste : ce qui est dit ici vient du relevé.".into());
             }
-            let anomalies: Vec<Value> = r
-                .anomalies()
-                .iter()
-                .map(|a| json!({"code": "", "categorie": "", "message": a, "rubrique": "", "ligne": "", "nombre": "", "salarie": "", "ligne_dit": null}))
-                .collect();
-            for d in r.personnes() {
+            let anomalies: Vec<Anomalie> = r.anomalies().into_iter().flatten().map(|a| Anomalie::du_message(a)).collect();
+            for d in r.personnes().into_iter().flatten() {
                 let etat = if d.enregistree { "enregistrée".to_string() } else if d.deja_existante { "déjà enregistrée auparavant".into() } else { format!("refusée : {}", d.libelle) };
-                phrases.push(format!("{} {} : {}.", d.nom, d.prenom, etat));
+                phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }
-            (String::new(), anomalies, piece.is_some(), String::new())
+            (None, anomalies, false, None, None)
         }
     };
     // L'organisme que la piece nomme passe devant celui de la nature (« l'organisme complementaire » : lequel).
-    let organisme = if lu_organisme.is_empty() { organisme.to_string() } else { lu_organisme };
-    let verdict = if lu_verdict.is_empty() { r.verdict().to_string() } else { lu_verdict };
+    let organisme = lu_organisme.or(organisme.map(String::from));
+    let verdict = lu_verdict.or(r.verdict()).map(String::from);
     // Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut), le reste une information.
-    let lu = if verdict.is_empty() { statut.clone() } else { verdict.clone() };
-    let pastille = (!lu.is_empty()).then(|| {
-        crate::routes::pastille(match lu.as_str() { "OK" => "fait", "KO" => "refuse", "ANO" => "a_faire", _ => "information" }, &lu)
-    });
-    let titre_dit = if !titre.is_empty() { titre.clone() } else if !libelle.is_empty() { libelle.clone() } else { format!("retour de nature {}", nature) };
-    let nature_dit = if nature.is_empty() { String::new() } else { format!("Nature {} : {}", nature, libelle) };
-    json!({
-        "titre_dit": titre_dit, "nature_dit": nature_dit, "quand_dit": crate::routes::quand(&quand_publication(&publication)),
-        "nature": nature, "libelle": libelle, "organisme": organisme, "statut": statut, "verdict": verdict, "pastille": pastille,
-        "quand": quand_publication(&publication), "titre": titre, "phrases": phrases, "anomalies": anomalies, "traduite": traduite,
-        "piece": piece.and_then(|p| p.strip_prefix(racine).ok().map(|x| x.to_string_lossy().replace('\\', "/"))),
-    })
+    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(match lu { "OK" => "fait", "KO" => "refuse", "ANO" => "a_faire", _ => "information" }, lu));
+    let titre_dit = match (titre.as_deref().and_then(dit), dit(&libelle)) {
+        (Some(t), _) => t.to_string(),
+        (None, Some(l)) => l.to_string(),
+        (None, None) => format!("retour de nature {}", nature),
+    };
+    let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
+    let quand = publication.map(quand_publication);
+    RetourLu {
+        titre: titre_dit.clone(),
+        quand: quand.clone(),
+        phrases,
+        pastille,
+        piece: chemin.map(|p| relatif(racine, &p)),
+        organisme: Some(RetourDOrganisme {
+            titre_dit,
+            nature_dit,
+            quand_dit: quand.as_deref().map(crate::routes::quand),
+            nature,
+            libelle,
+            organisme,
+            statut: statut.map(String::from),
+            verdict,
+            anomalies,
+            traduite,
+        }),
+    }
 }
 
 // ------------------------------------------------------------------ la route
 
 /// `historique-mois {mois}`.
-pub fn route(ctx: &Contexte, charge: &Value) -> R<Value> {
-    let mois = charge.get("mois").and_then(Value::as_str).unwrap_or("");
-    let b = mois.as_bytes();
-    if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
-        return Err(erreur("ErreurOperation", format!("Mois illisible : {}.", mois)));
-    }
+fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
+    let mois = le_mois.to_string();
     // Les lignes du mois ; un signalement porte le mois de son evenement.
-    let le_mois = socle::mois::Mois::lire(mois)?;
-    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur("OSError", m))?;
+    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur(Classe::Disque, m))?;
     let recus = etats::contrats_recus(&lignes);
     let avenants = etats::avenants_par_contrat(&lignes);
     let mut envois = Vec::new();
     for l in lignes.iter() {
         // Ce qui est revenu, sur la ligne de chaque envoi : un contrat signe, une fiche remplie (ou la demande abandonnee),
         // un retour d'organisme.
-        let mut retours: Vec<Value> = match l {
+        let mut retours: Vec<RetourLu> = match l {
             Ligne::ContratSignature(e) => e.retours.iter().map(|r| revenu_lu(ctx, l, r)).collect(),
-            Ligne::FicheDemande(e) => e.retours.iter().map(|r| json!({"titre": if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }, "quand": r.quand})).collect(),
+            Ligne::FicheDemande(e) => e
+                .retours
+                .iter()
+                .map(|r| RetourLu {
+                    titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
+                    quand: Some(r.quand.clone()),
+                    phrases: Vec::new(),
+                    pastille: None,
+                    piece: None,
+                    organisme: None,
+                })
+                .collect(),
             _ => l.retours_organisme().iter().map(|r| retour_lu(&ctx.racine, l, r)).collect(),
         };
-        retours.sort_by(|a, b| valeur_en_texte(&a["quand"]).cmp(&valeur_en_texte(&b["quand"])));
+        retours.sort_by(|a, b| a.quand.cmp(&b.quand));
         // Un depot attend ses retours par son flux (`journal.rattacher_retours`).
-        let resume = etats::resume(Some(l), &recus, &avenants);
-        envois.push(json!({
-            "quoi": l.acte().nom(), "acte": acte(ctx, l), "mode": l.mode().nom(), "quand": l.quand(), "fichier": l.fichier().unwrap_or_default(), "flux": l.flux(),
-            "destinataire": l.destinataire(), "identite": identite(ctx, l), "accepte": l.accepte(), "resume": resume,
-            "attend_retour": !l.flux().is_empty(), "retours": retours,
-        }));
+        envois.push(Envoi {
+            quoi: l.acte().nom(),
+            acte: acte(ctx, l),
+            mode: l.mode().nom(),
+            quand: l.quand().to_string(),
+            fichier: l.fichier().map(String::from),
+            flux: dit(l.flux()).map(String::from),
+            destinataire: dit(l.destinataire()).map(String::from),
+            identite: identite(ctx, l),
+            accepte: l.accepte(),
+            resume: etats::resume(Some(l), &recus, &avenants),
+            attend_retour: dit(l.flux()).is_some(),
+            retours,
+        });
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
-    envois.sort_by(|a, b| (valeur_en_texte(&b["quand"]), b["mode"] == json!("reel")).cmp(&(valeur_en_texte(&a["quand"]), a["mode"] == json!("reel"))));
-    let documents = documents(ctx, mois, &lignes)?;
-    let phrase = format!("Historique de {} : {} documents, {} envois.", socle::mois::Mois::en_clair(mois), documents.len(), envois.len());
-    Ok(json!({"phrase": phrase, "mois": mois, "documents": documents, "envois": envois}))
+    envois.sort_by(|a, b| (&b.quand, b.mode == "reel").cmp(&(&a.quand, a.mode == "reel")));
+    let documents = documents(ctx, &mois, &lignes)?;
+    let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
+    Ok(Historique { phrase, mois: le_mois, documents, envois })
 }

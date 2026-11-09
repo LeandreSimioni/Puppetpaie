@@ -80,7 +80,7 @@ pub struct Version {
     pub salarie: IdSalarie,
     pub numero: NumeroContrat,
     pub version: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
 }
 
@@ -106,7 +106,7 @@ pub struct Envoi<D, R> {
     /// La reponse de l'organisme archivee, relative a la compagnie.
     pub trace: Option<String>,
     pub detail: D,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub versions: Option<Vec<Version>>,
 }
 
@@ -275,14 +275,14 @@ impl Ligne {
         self.dsn().and_then(|e| e.detail.etablissement.as_deref()).filter(|n| !n.is_empty())
     }
 
-    /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; vide si la ligne ne la dit pas.
-    pub fn nature_dsn(&self) -> &str {
-        self.dsn().and_then(|e| e.detail.nature.as_deref()).unwrap_or("")
+    /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
+    pub fn nature_dsn(&self) -> Option<&str> {
+        self.dsn().and_then(|e| e.detail.nature.as_deref())
     }
 
     /// Une DSN de signalement (arret, reprise, fin de contrat, amorcage).
     pub fn signalement(&self) -> bool {
-        declarations::norme::SIGNALEMENTS.contains(&self.nature_dsn())
+        self.nature_dsn().is_some_and(|n| declarations::norme::SIGNALEMENTS.contains(&n))
     }
 }
 
@@ -293,14 +293,14 @@ impl Ligne {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ouverture {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flux: Option<String>,
     pub empreinte: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compte_rendu: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contournement: Option<String>,
 }
 
@@ -310,46 +310,45 @@ pub struct Ouverture {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDsn {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preuve: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub erreur: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reconstruit: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub logiciel: Option<String>,
-    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_declaration: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fraction: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub versements: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub salaries: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contrats: Option<String>,
     /// Ce qui a ete preleve sur la grille, et non sur le taux du salarie.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pas_bareme: Option<usize>,
     pub repetition: Option<Ouverture>,
     pub ordre_test: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub etablissement: Option<String>,
     /// Le jour de l'evenement qu'un signalement declare (`AAAA-MM-JJ` : le dernier jour travaille d'un arret, la fin d'un
     /// contrat...) ; la ligne porte le mois de ce jour.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evenement: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub etat_envoi: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub etat_declaration: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict_connu: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pieces: Option<Vec<String>>,
 }
 
@@ -369,16 +368,13 @@ pub struct EmbaucheDeclaree {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDpae {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preuve: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub erreur: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reconstruit: bool,
     pub repetition: Option<Ouverture>,
-    #[serde(default)]
     pub embauches: Vec<EmbaucheDeclaree>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub certificat: bool,
 }
 
@@ -409,8 +405,12 @@ impl PersonneCertifiee {
         } else if self.deja_existante {
             Pastille::de("information", "déjà existante")
         } else {
-            let mots = [&self.libelle, &self.code].into_iter().find(|t| !t.is_empty()).cloned().unwrap_or_else(|| "refusée".into());
-            Pastille::de("refuse", &mots)
+            // Ni libelle ni code : le compte rendu dit seulement qu'elle est refusee.
+            let mots = match [&self.libelle, &self.code].into_iter().find(|t| !t.is_empty()) {
+                Some(m) => m.as_str(),
+                None => "refusée",
+            };
+            Pastille::de("refuse", mots)
         }
     }
 }
@@ -422,7 +422,7 @@ impl PersonneCertifiee {
 pub struct Verdict {
     pub verdict: String,
     pub anomalies: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
 }
 
@@ -432,11 +432,11 @@ pub struct Verdict {
 #[serde(deny_unknown_fields)]
 pub struct RetourOrganisme {
     pub nature: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub anomalies: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
     pub libelle: String,
     pub statut: Option<String>,
@@ -444,20 +444,20 @@ pub struct RetourOrganisme {
 }
 
 impl RetourOrganisme {
-    pub fn verdict(&self) -> &str {
-        self.verdict.as_deref().unwrap_or("")
+    pub fn verdict(&self) -> Option<&str> {
+        self.verdict.as_deref()
     }
 
     pub fn ko(&self) -> bool {
-        self.verdict() == "KO"
+        self.verdict() == Some("KO")
     }
 
-    pub fn anomalies(&self) -> &[String] {
-        self.anomalies.as_deref().unwrap_or(&[])
+    pub fn anomalies(&self) -> Option<&[String]> {
+        self.anomalies.as_deref()
     }
 
-    pub fn personnes(&self) -> &[PersonneCertifiee] {
-        self.dpae.as_deref().unwrap_or(&[])
+    pub fn personnes(&self) -> Option<&[PersonneCertifiee]> {
+        self.dpae.as_deref()
     }
 
     /// Le meme compte rendu (sa nature et sa publication).
@@ -516,15 +516,14 @@ pub struct Servi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub main_propre: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub durees_ms: Option<Durees>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub echec_a: Option<String>,
 }
 
@@ -541,31 +540,30 @@ pub struct ContratParti {
     pub fichier: String,
     pub spectacle: Option<String>,
     pub mois: Mois,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remplace: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub effet: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modifie: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modifications: Option<Vec<ArticleModifie>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub clauses: Option<BTreeMap<String, Option<String>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ailleurs: bool,
 }
 
@@ -575,9 +573,9 @@ impl ContratParti {
         self.acte.as_deref() == Some("avenant")
     }
 
-    /// Le numero du contrat, tel qu'il sert de cle : son texte, ou `""`.
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    /// Le numero du contrat, tel qu'il sert de cle ; `None` si la ligne ne le dit pas.
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 }
 
@@ -591,11 +589,10 @@ pub struct ArticleModifie {
     pub article: String,
     pub avant: Vec<String>,
     pub apres: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocs: Vec<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub jour: Option<String>,
 }
 
@@ -612,17 +609,16 @@ impl ArticleModifie {
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub main_propre: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub echec_a: Option<String>,
 }
 
@@ -637,32 +633,32 @@ pub struct RetourContrat {
     pub recu: bool,
     pub numero: Option<NumeroContrat>,
     pub nom: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub origine: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     pub quand: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preuve: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier_signe: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mention: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<String>,
     pub qui: String,
     pub reponse: String,
 }
 
 impl RetourContrat {
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 
     /// Une reponse « Je signe » relevee par courriel.
@@ -694,15 +690,15 @@ pub struct ContratAttendu {
     pub debut: String,
     pub fin: Option<String>,
     pub numero: Option<NumeroContrat>,
-    pub spectacle: String,
+    pub spectacle: Option<String>,
     pub fichier: String,
     pub avenant: Option<i64>,
     pub mois: Mois,
 }
 
 impl ContratAttendu {
-    pub fn numero_dit(&self) -> &str {
-        self.numero.as_deref().unwrap_or("")
+    pub fn numero_dit(&self) -> Option<&str> {
+        self.numero.as_deref()
     }
 }
 
@@ -735,11 +731,10 @@ pub struct DetailCasc {
     pub mois: Vec<String>,
     pub total: String,
     pub expediteur: String,
-    #[serde(default)]
     pub eml: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub echec_a: Option<String>,
 }
 
@@ -759,9 +754,9 @@ pub struct DetailDossier {
     pub categories: Vec<String>,
     pub salaries: Vec<DossierServi>,
     pub expediteur: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub echec_a: Option<String>,
 }
 
@@ -772,9 +767,9 @@ pub struct DetailFiche {
     pub code: String,
     pub adresse: String,
     pub prenom: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<String>,
 }
 
@@ -784,19 +779,18 @@ pub struct DetailFiche {
 #[serde(deny_unknown_fields)]
 pub struct RetourFiche {
     pub code: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandon: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub salarie: Option<IdSalarie>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub illisible: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub erreurs: Option<usize>,
     pub quand: String,
     pub qui: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub de: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub reponse: String,
 }

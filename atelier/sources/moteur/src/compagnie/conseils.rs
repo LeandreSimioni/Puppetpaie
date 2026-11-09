@@ -14,8 +14,9 @@
 //! - les conseils sur l'historique (`conseils-salarie`, `conseils-resume`) : ce que la compagnie a reellement fait pour
 //!   un salarie, sur la fenetre de ses droits (depuis la date anniversaire que porte sa fiche, sinon 12 mois glissants).
 //!
-//! Le texte, ses chiffres dates et sa source vivent dans `donnees/conseils.json` : un conseil s'ajoute sans toucher au
-//! moteur. Ici, seulement les conditions et les valeurs qu'elles fournissent. Ce qui est sur se chiffre : les heures
+//! Le texte, ses chiffres dates et sa source vivent dans `donnees/conseils.json` (sa forme : `Banque`) : un conseil
+//! s'ajoute sans toucher au moteur, tant qu'il ne lit que les valeurs livrees que la forme d'un gabarit connait
+//! (`Livree`). Ici, seulement les conditions et les valeurs qu'elles fournissent. Ce qui est sur se chiffre : les heures
 //! comptees chez nous, leur part des 507, ce que les conseils auraient change en heures et en jours d'allocation (annexe
 //! X ou VIII, art. 30). JAMAIS d'euros d'allocation : on ne connait pas les autres employeurs. Le seul cas de
 //! certitude : nos contrats font a eux seuls au moins 507 heures sur la fenetre ; alors ses droits sont ouverts, et le
@@ -24,20 +25,19 @@
 //! Le salarie se nomme par son seul prenom (`{prenom}`), jamais par un pronom qui le genre.
 
 use droit::fiche::Lue as _;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use droit::source::Source;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::{self, Constantes, Declare, Fenetre};
+use droit::forme_bareme::Pile;
 use socle::date::Jour;
-use documents::valeur::{en_texte, json_en_cache, vrai};
 use droit::emplois;
-use socle::fichiers::dossier_du_code;
 use droit::minima::Par;
 
 use socle::num::{div, Decimal, Resultat};
@@ -46,6 +46,7 @@ use socle::echec::Echec;
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
 use crate::routes::catalogue::{Ecran, Place};
+use crate::routes::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 
 type R<T> = Result<T, Echec>;
 
@@ -92,47 +93,364 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
+// ---------------------------------------------------------------- la banque
+
+/// Le refus d'une banque qui ne se lit pas.
+const ILLISIBLE: &str = "La banque des conseils ne se lit pas : le signaler au développeur.";
+
+/// LA BANQUE DES CONSEILS, `donnees/conseils.json`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Banque {
+    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
+    quoi: Option<String>,
+    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
+    note: Option<String>,
+    /// Le titre lisible de chaque texte depose qu'une source cite, par son chemin.
+    documents: BTreeMap<String, String>,
+    annexes: Annexes,
+    fenetres: Fenetres,
+    /// L'ordre dans lequel les conditions de saisie se demandent : la premiere qui parle donne le conseil de la carte.
+    ordre_saisie: Vec<Quand>,
+    conseils: Vec<Conseil>,
+}
+
+/// Ce que l'article 30 des annexes dit d'un mois travaille pendant l'indemnisation, par annexe.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Annexes {
+    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
+    quoi: Option<String>,
+    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
+    note: Option<String>,
+    #[serde(rename = "X")]
+    x: Art30,
+    #[serde(rename = "VIII")]
+    viii: Art30Techniciens,
+}
+
+/// Les constantes de l'article 30 pour une annexe.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Art30 {
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    heures_par_jour: Decimal,
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    coefficient: Decimal,
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    jours_sans_allocation: Decimal,
+}
+
+/// L'article 30 de l'annexe VIII, et les heures retenues par mois d'un technicien pour ses 507 heures (208, 250 avec
+/// plusieurs employeurs).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Art30Techniciens {
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    heures_par_jour: Decimal,
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    coefficient: Decimal,
+    #[serde(deserialize_with = "socle::forme::decimal")]
+    jours_sans_allocation: Decimal,
+    heures_retenues_par_mois: i64,
+    heures_retenues_plusieurs_employeurs: i64,
+}
+
+/// La phrase de la fenetre des droits que la phrase nomme : `{debut}` et `{fin}`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Fenetres {
+    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
+    quoi: Option<String>,
+    anniversaire: String,
+    glissante: String,
+}
+
+/// QUAND UN CONSEIL PARLE : toujours (le conseil du jour), quand un fait de la saisie l'appelle, ou sur l'historique d'un
+/// salarie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+enum Quand {
+    #[serde(rename = "toujours")]
+    Toujours,
+    #[serde(rename = "saisie:technicien-plus-de-208-heures")]
+    TechnicienPlusDe208Heures,
+    #[serde(rename = "saisie:plus-de-28-cachets")]
+    PlusDe28Cachets,
+    #[serde(rename = "saisie:mois-sature")]
+    MoisSature,
+    #[serde(rename = "saisie:507-assurees")]
+    HeuresAssurees,
+    #[serde(rename = "saisie:repetition-en-cachet")]
+    RepetitionEnCachet,
+    #[serde(rename = "saisie:heures-pour-la-meme-somme")]
+    HeuresPourLaMemeSomme,
+    #[serde(rename = "saisie:enseignement")]
+    Enseignement,
+    #[serde(rename = "saisie:suspension")]
+    Suspension,
+    #[serde(rename = "saisie:cachets-et-heures")]
+    CachetsEtHeures,
+    #[serde(rename = "historique:droits-ouverts")]
+    DroitsOuverts,
+    #[serde(rename = "historique:intense")]
+    Intense,
+    #[serde(rename = "historique:heures-comptees")]
+    HeuresComptees,
+    #[serde(rename = "historique:gain-des-conseils")]
+    GainDesConseils,
+    #[serde(rename = "historique:cachets-perdus")]
+    CachetsPerdus,
+    #[serde(rename = "historique:enseignement-perdu")]
+    EnseignementPerdu,
+    #[serde(rename = "historique:resume")]
+    Resume,
+}
+
+/// UN CONSEIL DE LA BANQUE : son texte et son detail (des gabarits), ses sources, et ce qui le range (`domaine`,
+/// `public`, `ciblage`, `certitude`, pour qui l'ecrit).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Conseil {
+    id: String,
+    quand: Quand,
+    texte: Gabarit,
+    detail: Option<Gabarit>,
+    source: Vec<Source>,
+    #[allow(dead_code)] // pour qui ecrit la banque
+    domaine: String,
+    #[allow(dead_code)] // pour qui ecrit la banque
+    public: String,
+    #[allow(dead_code)] // pour qui ecrit la banque
+    ciblage: String,
+    #[allow(dead_code)] // pour qui ecrit la banque
+    certitude: String,
+}
+
+/// La banque, lue en sa forme une fois par contenu.
+fn banque() -> Resultat<Arc<Banque>> {
+    static CACHE: OnceLock<socle::fichiers::FormeGardee<Banque>> = OnceLock::new();
+    socle::fichiers::forme_en_cache(&CACHE, "conseils.json", ILLISIBLE, Ok)
+}
+
+impl Banque {
+    /// La reference lisible d'une source : le titre du document, l'article. Un texte que la banque cite sans titre est
+    /// une banque mal ecrite.
+    fn reference_de(&self, s: &Source) -> Resultat<String> {
+        let titre = self.documents.get(s.fichier.texte()).ok_or_else(|| {
+            socle::echec::avec(ILLISIBLE, socle::echec::APart { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
+        })?;
+        Ok(match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {
+            (None, _) => titre.clone(),
+            (Some(a), Some(_)) => format!("{}, art. {}", titre, a),
+            (Some(a), None) => format!("{}, {}", titre, a),
+        })
+    }
+
+    /// L'article 30 d'une annexe.
+    fn art30(&self, annexe: Annexe) -> Art30 {
+        match annexe {
+            Annexe::X => Art30 { heures_par_jour: self.annexes.x.heures_par_jour, coefficient: self.annexes.x.coefficient, jours_sans_allocation: self.annexes.x.jours_sans_allocation },
+            Annexe::Viii => Art30 { heures_par_jour: self.annexes.viii.heures_par_jour, coefficient: self.annexes.viii.coefficient, jours_sans_allocation: self.annexes.viii.jours_sans_allocation },
+        }
+    }
+}
+
+/// L'annexe du regime des intermittents dont releve un salarie : X (artistes), VIII (techniciens).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Annexe {
+    X,
+    Viii,
+}
+
+impl Annexe {
+    /// Son nom, tel qu'une source le porte (`droit::source::Source::annexe`).
+    fn nom(self) -> &'static str {
+        match self {
+            Annexe::X => "X",
+            Annexe::Viii => "VIII",
+        }
+    }
+}
+
 /// Les deux annexes : X (artistes), VIII (techniciens).
 const LES_DEUX: [&str; 2] = ["X", "VIII"];
 
 /// Les annexes dont parle un conseil sur ce salarie : la sienne, lue de son metier ; les deux quand son metier ne la
 /// dit pas (rien ne se devine : la regle citee vaut alors pour l'une ou l'autre).
-fn annexes_en_jeu(annexe: Option<&'static str>) -> Vec<&'static str> {
-    annexe.map_or(LES_DEUX.to_vec(), |a| vec![a])
+fn annexes_en_jeu(annexe: Option<Annexe>) -> Vec<&'static str> {
+    match annexe {
+        Some(a) => vec![a.nom()],
+        None => LES_DEUX.to_vec(),
+    }
 }
 
 /// L'option de la fiche Entreprise : absente vaut NON.
-pub fn actifs(entreprise: &droit::fiche::ChampsEntreprise) -> bool {
+fn actifs(entreprise: &droit::fiche::ChampsEntreprise) -> bool {
     entreprise.conseils.oui()
-}
-
-/// La banque, `donnees/conseils.json`.
-pub fn banque() -> Resultat<Arc<Value>> {
-    json_en_cache(&dossier_du_code().join("conseils.json"))
-}
-
-fn conseils_de(b: &Value) -> &[Value] {
-    b.get("conseils").and_then(Value::as_array).map_or(&[][..], |a| &a[..])
-}
-
-fn texte(v: &Value, k: &str) -> String {
-    v.get(k).map(en_texte).unwrap_or_default()
-}
-
-fn suspendu(c: &Value) -> bool {
-    c.get("suspendu").map_or(false, vrai)
 }
 
 // ---------------------------------------------------------------- gabarits
 
-/// Une valeur que fournit une condition : son texte, et le nombre qu'elle dit (pour accorder le mot qui suit).
-#[derive(Debug, Clone)]
-pub struct Valeur {
-    pub texte: String,
-    pub nombre: Option<Decimal>,
+/// UN GABARIT : le texte d'un conseil, en morceaux. Dans le fichier, une phrase ou `{annee}` (l'annee du bareme lu, celle
+/// du jour), `{bareme:chemin}` et `{minima:chemin}` (une valeur livree, `Livree`, puis ses operations `*n` ou `/n` et ses
+/// decimales apres la virgule finale), `{variable}` (une valeur que la condition fournit), `{variable|singulier|pluriel}`
+/// (le nombre et le mot accorde), `{variable?singulier|pluriel}` (le mot seul). Un gabarit qui ne se lit pas refuse la
+/// banque ; un gabarit dont une valeur manque tait le conseil.
+struct Gabarit(Vec<Morceau>);
+
+enum Morceau {
+    Texte(String),
+    Annee,
+    Donnee(Donnee),
+    Variable { nom: String, mots: Option<(String, String)>, avec_nombre: bool },
 }
 
-pub type Valeurs = BTreeMap<String, Valeur>;
+/// Une valeur livree, ses operations et ses decimales.
+struct Donnee {
+    valeur: Livree,
+    operations: Vec<Operation>,
+    decimales: Option<u32>,
+}
+
+enum Operation {
+    Fois(Decimal),
+    DivisePar(Decimal),
+}
+
+/// LES VALEURS LIVREES QU'UN GABARIT LIT, chacune un acces a sa forme : le socle livre de l'annee
+/// (`droit::forme_bareme::Pile`) ou les minima conventionnels (`droit::minima::Table`).
+enum Livree {
+    /// `bareme:abattement_csg`
+    AbattementCsg,
+    /// `bareme:plafond_securite_sociale/mensuel`
+    PlafondMensuel,
+    /// `bareme:plafond_securite_sociale/horaire`
+    PlafondHoraire,
+    /// `bareme:deduction_forfaitaire/plafond_annuel`
+    PlafondDeduction,
+    /// `bareme:deduction_forfaitaire/taux/<taux>`
+    TauxDeduction(String),
+    /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
+    TauxPatronal(String),
+    /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
+    CachetDeRepetition { idcc: String, annexe: String },
+}
+
+impl<'de> Deserialize<'de> for Gabarit {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Gabarit, D::Error> {
+        lire_gabarit(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+    }
+}
+
+fn lire_gabarit(t: &str) -> Result<Gabarit, String> {
+    let mut morceaux = Vec::new();
+    let mut reste = t;
+    while let Some(i) = reste.find('{') {
+        if i > 0 {
+            morceaux.push(Morceau::Texte(reste[..i].to_string()));
+        }
+        let apres = &reste[i + 1..];
+        let j = apres.find('}').ok_or_else(|| format!("une accolade s'ouvre sans se fermer avant : {}", apres))?;
+        morceaux.push(lire_morceau(&apres[..j])?);
+        reste = &apres[j + 1..];
+    }
+    if !reste.is_empty() {
+        morceaux.push(Morceau::Texte(reste.to_string()));
+    }
+    Ok(Gabarit(morceaux))
+}
+
+fn lire_morceau(dedans: &str) -> Result<Morceau, String> {
+    if dedans == "annee" {
+        return Ok(Morceau::Annee);
+    }
+    if let Some(expr) = dedans.strip_prefix("bareme:") {
+        return lire_donnee(expr, true).map(Morceau::Donnee);
+    }
+    if let Some(expr) = dedans.strip_prefix("minima:") {
+        return lire_donnee(expr, false).map(Morceau::Donnee);
+    }
+    // {var|singulier|pluriel} : le nombre et le mot ; {var?singulier|pluriel} : le mot seul.
+    let (nom, mots, avec_nombre) = match (dedans.find('|'), dedans.find('?')) {
+        (_, Some(q)) => (&dedans[..q], Some(&dedans[q + 1..]), false),
+        (Some(p), None) => (&dedans[..p], Some(&dedans[p + 1..]), true),
+        (None, None) => (dedans, None, true),
+    };
+    let mots = match mots {
+        Some(m) => Some(m.split_once('|').map(|(s, p)| (s.to_string(), p.to_string())).ok_or_else(|| format!("{} : le singulier et le pluriel s'écrivent séparés par une barre verticale", dedans))?),
+        None => None,
+    };
+    Ok(Morceau::Variable { nom: nom.to_string(), mots, avec_nombre })
+}
+
+/// `chemin*n/m,2` : la valeur au chemin, puis les operations (elles commencent au premier « * » : un « / » avant lui
+/// separe le chemin), avec ses decimales apres la virgule finale.
+fn lire_donnee(expr: &str, bareme: bool) -> Result<Donnee, String> {
+    let (expr, decimales) = match expr.rsplit_once(',') {
+        Some((e, d)) => (e, Some(d.parse::<u32>().map_err(|e| format!("{} : les décimales s'écrivent en chiffres ({})", d, e))?)),
+        None => (expr, None),
+    };
+    let (chemin, ops) = match expr.find('*') {
+        Some(i) => expr.split_at(i),
+        None => (expr, ""),
+    };
+    let mut operations = Vec::new();
+    let mut reste = ops;
+    while let Some(op) = reste.chars().next() {
+        let suite = &reste[op.len_utf8()..];
+        let fin = match suite.find(['*', '/']) {
+            Some(n) => n,
+            None => suite.len(),
+        };
+        let n: Decimal = suite[..fin].parse().map_err(|e| format!("{} : un nombre attendu après « {} » ({})", &suite[..fin], op, e))?;
+        operations.push(match op {
+            '*' => Operation::Fois(n),
+            '/' if !n.is_zero() => Operation::DivisePar(n),
+            _ => return Err(format!("{} : une valeur se multiplie ou se divise par un nombre non nul", ops)),
+        });
+        reste = &suite[fin..];
+    }
+    Ok(Donnee { valeur: lire_livree(chemin, bareme)?, operations, decimales })
+}
+
+fn lire_livree(chemin: &str, bareme: bool) -> Result<Livree, String> {
+    let segments: Vec<&str> = chemin.split('/').collect();
+    let inconnue = || format!("{} : une valeur livrée que la banque des conseils ne sait pas lire", chemin);
+    Ok(match (bareme, segments.as_slice()) {
+        (true, ["abattement_csg"]) => Livree::AbattementCsg,
+        (true, ["plafond_securite_sociale", "mensuel"]) => Livree::PlafondMensuel,
+        (true, ["plafond_securite_sociale", "horaire"]) => Livree::PlafondHoraire,
+        (true, ["deduction_forfaitaire", "plafond_annuel"]) => Livree::PlafondDeduction,
+        (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(taux.to_string()),
+        (true, ["rubriques_bulletin", id, "taux_pat"]) => match id.strip_prefix("id=") {
+            Some(id) => Livree::TauxPatronal(id.to_string()),
+            None => return Err(inconnue()),
+        },
+        (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => Livree::CachetDeRepetition { idcc: idcc.to_string(), annexe: annexe.to_string() },
+        _ => return Err(inconnue()),
+    })
+}
+
+impl Donnee {
+    fn calculer(&self, mut x: Decimal) -> Decimal {
+        for op in &self.operations {
+            x = match op {
+                Operation::Fois(n) => x * n,
+                Operation::DivisePar(n) => div(x, *n),
+            };
+        }
+        x
+    }
+}
+
+/// Une valeur que fournit une condition : son texte, et le nombre qu'elle dit (pour accorder le mot qui suit).
+#[derive(Debug, Clone)]
+struct Valeur {
+    texte: String,
+    nombre: Option<Decimal>,
+}
+
+type Valeurs = BTreeMap<String, Valeur>;
 
 fn val_texte(t: impl Into<String>) -> Valeur {
     Valeur { texte: t.into(), nombre: None }
@@ -148,7 +466,7 @@ fn val_entier(n: i64) -> Valeur {
 
 /// Un nombre en francais : milliers separes par une espace insecable, virgule decimale ; `decimales` fixe, sinon les
 /// zeros de queue tombent (1,3 ; 4 005 ; 15,5).
-pub fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
+fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
     let x = match decimales {
         Some(d) => x.round_dp_with_strategy(d, rust_decimal::RoundingStrategy::MidpointAwayFromZero),
         None => x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero).normalize(),
@@ -178,152 +496,137 @@ pub fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
     }
 }
 
-/// Une valeur des donnees livrees : `chemin` separe par « / », « id=x » choisit dans une liste, un entier indexe.
-fn suivre<'a>(racine: &'a Value, chemin: &str) -> Option<&'a Value> {
-    let mut v = racine;
-    for seg in chemin.split('/') {
-        v = if let Some(id) = seg.strip_prefix("id=") {
-            v.as_array()?.iter().find(|x| x.get("id").and_then(Value::as_str) == Some(id))?
-        } else if let (Some(a), Ok(i)) = (v.as_array(), seg.parse::<usize>()) {
-            a.get(i)?
-        } else {
-            v.get(seg)?
-        };
-    }
-    Some(v)
-}
-
-/// `{bareme:chemin*n/m,2}` : la valeur lue au chemin, puis les operations (elles commencent au premier « * » : un
-/// « / » avant lui separe le chemin), avec ses decimales apres la virgule finale.
-fn donnee(source: &Value, expr: &str) -> Option<String> {
-    let (expr, decimales) = match expr.rsplit_once(',') {
-        Some((e, d)) if !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()) => (e, d.parse().ok()),
-        _ => (expr, None),
-    };
-    let (chemin, ops) = expr.split_at(expr.find('*').unwrap_or(expr.len()));
-    let mut x = documents::valeur::dec(suivre(source, chemin)?).ok()?;
-    let mut reste = ops;
-    while let Some(op) = reste.chars().next() {
-        let suite = &reste[1..];
-        let n_fin = suite.find(['*', '/']).unwrap_or(suite.len());
-        let n: Decimal = suite[..n_fin].parse().ok()?;
-        x = match op {
-            '*' => x * n,
-            '/' if !n.is_zero() => div(x, n),
-            _ => return None,
-        };
-        reste = &suite[n_fin..];
-    }
-    Some(nombre_fr(x, decimales))
-}
-
-/// Les donnees que les gabarits lisent : le bareme de l'annee, les minima.
-pub struct Donnees {
-    pub annee: i32,
-    bareme: Option<Arc<Value>>,
-    minima: Option<Arc<Value>>,
+/// Les donnees que les gabarits lisent : le socle livre de l'annee (lu au 1er janvier, a la premiere valeur qu'un
+/// gabarit lui demande), les minima.
+struct Donnees {
+    annee: i32,
+    bareme: OnceCell<Option<Pile>>,
 }
 
 impl Donnees {
-    pub fn de_l_annee(code: &Path, annee: i32) -> Donnees {
-        Donnees {
-            annee,
-            bareme: json_en_cache(&code.join("baremes").join(format!("{}.json", annee))).ok(),
-            minima: json_en_cache(&code.join("minima-conventionnels.json")).ok(),
+    fn de_l_annee(annee: i32) -> Donnees {
+        Donnees { annee, bareme: OnceCell::new() }
+    }
+
+    /// Le socle livre de l'annee ; `None` : il n'est pas livre.
+    fn bareme(&self) -> Resultat<Option<&Pile>> {
+        if let Some(b) = self.bareme.get() {
+            return Ok(b.as_ref());
         }
+        let lu = droit::contexte::socle_livre_lu(self.annee)?;
+        Ok(self.bareme.get_or_init(|| lu).as_ref())
+    }
+
+    /// La valeur livree ; `None` : la donnee ne la porte pas.
+    fn valeur(&self, l: &Livree) -> Resultat<Option<Decimal>> {
+        let b = match l {
+            Livree::CachetDeRepetition { idcc, annexe } => {
+                let t = droit::minima::table()?;
+                let a = t.conventions.get(idcc).and_then(|c| c.annexes.as_ref()).and_then(|a| a.get(annexe));
+                return Ok(a.and_then(|a| a.repetition.as_ref()).and_then(|r| r.cachet).map(|n| n.0));
+            }
+            _ => match self.bareme()? {
+                Some(b) => b,
+                None => return Ok(None),
+            },
+        };
+        Ok(match l {
+            Livree::AbattementCsg => Some(b.abattement_csg),
+            Livree::PlafondMensuel => b.plafond_securite_sociale.as_ref().map(|p| p.mensuel),
+            Livree::PlafondHoraire => b.plafond_securite_sociale.as_ref().map(|p| p.horaire),
+            Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel),
+            Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.0),
+            Livree::TauxPatronal(id) => match b.rubrique(id).and_then(|r| r.taux_pat) {
+                Some(t) => Some(socle::num::dec_f64(t.0)?),
+                None => None,
+            },
+            Livree::CachetDeRepetition { .. } => None,
+        })
     }
 }
 
 /// Le texte d'un conseil, gabarits resolus ; `None` quand l'un d'eux ne se resout pas (le conseil se tait).
-pub fn rendre(gabarit: &str, d: &Donnees, vals: &Valeurs) -> Option<String> {
+fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> Resultat<Option<String>> {
     let mut out = String::new();
-    let mut reste = gabarit;
-    while let Some(i) = reste.find('{') {
-        out.push_str(&reste[..i]);
-        let apres = &reste[i + 1..];
-        let j = apres.find('}')?;
-        let dedans = &apres[..j];
-        out.push_str(&resoudre(dedans, d, vals)?);
-        reste = &apres[j + 1..];
+    for m in &g.0 {
+        match m {
+            Morceau::Texte(t) => out.push_str(t),
+            Morceau::Annee => match d.bareme()? {
+                Some(_) => out.push_str(&d.annee.to_string()),
+                None => return Ok(None),
+            },
+            Morceau::Donnee(x) => match d.valeur(&x.valeur)? {
+                Some(v) => out.push_str(&nombre_fr(x.calculer(v), x.decimales)),
+                None => return Ok(None),
+            },
+            Morceau::Variable { nom, mots, avec_nombre } => {
+                let Some(v) = vals.get(nom) else { return Ok(None) };
+                match mots {
+                    None => out.push_str(&v.texte),
+                    Some((sing, plur)) => {
+                        let mot = if matches!(v.nombre, Some(n) if n >= Decimal::from(2)) { plur } else { sing };
+                        if *avec_nombre {
+                            out.push_str(&format!("{} {}", v.texte, mot));
+                        } else {
+                            out.push_str(mot);
+                        }
+                    }
+                }
+            }
+        }
     }
-    out.push_str(reste);
-    Some(out)
+    Ok(Some(out))
 }
 
-fn resoudre(dedans: &str, d: &Donnees, vals: &Valeurs) -> Option<String> {
-    if dedans == "annee" {
-        return d.bareme.as_ref().map(|_| d.annee.to_string());
+/// LE CONSEIL RENDU POUR L'ECRAN : son identifiant, son texte (la phrase courte d'un conseil de saisie), son detail
+/// quand la banque en a un, sa reference (celle de chaque source citee).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ConseilVu {
+    id: String,
+    texte: String,
+    reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+/// Le conseil rendu ; rien si l'un de ses gabarits ne se resout pas. Une source tiree d'une annexe (`annexe` : « X » ou
+/// « VIII ») n'est citee que si cette annexe est en jeu (`annexes` : celles des salaries dont le conseil parle) ; une
+/// source sans annexe l'est toujours.
+fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[&str]) -> Resultat<Option<ConseilVu>> {
+    let mut references = Vec::new();
+    for s in &c.source {
+        let d_une_autre_annexe = matches!(s.annexe.as_deref(), Some(a) if !annexes.contains(&a));
+        if !d_une_autre_annexe {
+            references.push(b.reference_de(s)?);
+        }
     }
-    if let Some(expr) = dedans.strip_prefix("bareme:") {
-        return donnee(d.bareme.as_deref()?, expr);
-    }
-    if let Some(expr) = dedans.strip_prefix("minima:") {
-        return donnee(d.minima.as_deref()?, expr);
-    }
-    // {var|singulier|pluriel} : le nombre et le mot ; {var?singulier|pluriel} : le mot seul.
-    let (nom, mots, avec_nombre) = match (dedans.find('|'), dedans.find('?')) {
-        (_, Some(q)) => (&dedans[..q], Some(&dedans[q + 1..]), false),
-        (Some(p), None) => (&dedans[..p], Some(&dedans[p + 1..]), true),
-        (None, None) => (dedans, None, true),
+    let Some(texte) = rendre(&c.texte, d, vals)? else { return Ok(None) };
+    let detail = match &c.detail {
+        Some(g) => match rendre(g, d, vals)? {
+            Some(t) => Some(t),
+            None => return Ok(None),
+        },
+        None => None,
     };
-    let v = vals.get(nom)?;
-    let Some(mots) = mots else { return Some(v.texte.clone()) };
-    let (sing, plur) = mots.split_once('|')?;
-    let pluriel = v.nombre.map_or(false, |n| n >= Decimal::from(2));
-    let mot = if pluriel { plur } else { sing };
-    Some(if avec_nombre { format!("{} {}", v.texte, mot) } else { mot.to_string() })
+    Ok(Some(ConseilVu { id: c.id.clone(), texte, reference: references.join(" ; "), detail }))
 }
 
-/// La reference lisible d'une source : le titre du document, l'article.
-fn reference_de(b: &Value, s: &Source) -> String {
-    let titre = b.get("documents").and_then(|d| d.get(s.fichier.texte())).map(en_texte).unwrap_or_else(|| s.fichier.fichier().to_string());
-    match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {
-        (None, _) => titre,
-        (Some(a), Some(_)) => format!("{}, art. {}", titre, a),
-        (Some(a), None) => format!("{}, {}", titre, a),
+/// Le premier conseil de la banque pour cette condition (`quand`), rendu avec ces valeurs : un conseil dont un gabarit
+/// ne se resout pas cede la place au suivant ; rien s'il n'en reste aucun.
+fn conseil(b: &Banque, d: &Donnees, quand: Quand, vals: &Valeurs, annexes: &[&str]) -> Resultat<Option<ConseilVu>> {
+    for c in b.conseils.iter().filter(|c| c.quand == quand) {
+        if let Some(v) = vue(b, c, d, vals, annexes)? {
+            return Ok(Some(v));
+        }
     }
-}
-
-/// Les sources d'un conseil (`droit::source::Source`) ; une banque dont une source ne se lit pas n'en a aucune.
-fn sources_de(c: &Value) -> Vec<Source> {
-    c.get("source").map_or(Ok(Vec::new()), |s| socle::forme::lire(s, "La banque des conseils ne se lit pas : le signaler au développeur.")).unwrap_or_default()
-}
-
-/// Le conseil rendu pour l'ecran : son identifiant, son texte (la phrase courte d'un conseil de saisie), son detail
-/// quand la banque en a un, sa reference (celle de chaque source) ; rien si l'un de ses gabarits ne se resout pas. Une
-/// source tiree d'une annexe (`annexe` : « X » ou « VIII ») n'est citee que si cette annexe est en jeu (`annexes` :
-/// celles des salaries dont le conseil parle) ; une source sans annexe l'est toujours.
-fn vue(b: &Value, c: &Value, d: &Donnees, vals: &Valeurs, annexes: &[&str]) -> Option<Value> {
-    let references: Vec<String> = sources_de(c)
-        .iter()
-        .filter(|s| s.annexe.as_deref().map_or(true, |a| annexes.contains(&a)))
-        .map(|s| reference_de(b, s))
-        .collect();
-    let mut v = json!({
-        "id": texte(c, "id"),
-        "texte": rendre(&texte(c, "texte"), d, vals)?,
-        "reference": references.join(" ; "),
-    });
-    if c.get("detail").is_some() {
-        v["detail"] = Value::String(rendre(&texte(c, "detail"), d, vals)?);
-    }
-    Some(v)
-}
-
-/// Le premier conseil de la banque pour cette condition (`quand`), rendu avec ces valeurs : un conseil suspendu, ou
-/// dont un gabarit ne se resout pas, cede la place au suivant ; rien s'il n'en reste aucun.
-fn conseil(b: &Value, d: &Donnees, quand: &str, vals: &Valeurs, annexes: &[&str]) -> Option<Value> {
-    conseils_de(b)
-        .iter()
-        .filter(|c| texte(c, "quand") == quand && !suspendu(c))
-        .find_map(|c| vue(b, c, d, vals, annexes))
+    Ok(None)
 }
 
 /// Le prenom du salarie, tel que sa fiche l'affiche (`prenom_affichage`, sinon `prenom`, en capitales initiales s'il
 /// est tout en majuscules) ; sans prenom, son nom, sinon sa cle.
-pub fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
     fn lu<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
-        Some(c.texte().trim().to_string()).filter(|s| !s.is_empty())
+        c.portee().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
     }
     if let Some(p) = lu(&sal.prenom_affichage) {
         return p;
@@ -369,56 +672,48 @@ fn pas(n: usize) -> usize {
 }
 
 /// Les conseils generaux affichables cette annee, dans l'ordre de la banque, deja rendus.
-fn generaux(b: &Value, d: &Donnees) -> Vec<Value> {
-    conseils_de(b)
-        .iter()
-        .filter(|c| texte(c, "quand") == "toujours" && !suspendu(c))
-        .filter_map(|c| vue(b, c, d, &Valeurs::new(), &LES_DEUX))
-        .collect()
+fn generaux(b: &Banque, d: &Donnees) -> Resultat<Vec<ConseilVu>> {
+    let mut out = Vec::new();
+    for c in b.conseils.iter().filter(|c| c.quand == Quand::Toujours) {
+        if let Some(v) = vue(b, c, d, &Valeurs::new(), &LES_DEUX)? {
+            out.push(v);
+        }
+    }
+    Ok(out)
 }
 
-/// `conseil-du-jour` : `{"conseil": {...}, "rang", "total"}`, ou `{"conseil": null}` quand l'option est decochee.
-/// Charge : `decalage` (0 par defaut : « un autre » l'augmente d'un).
-pub fn du_jour(ctx: &Contexte, decalage: i64) -> Resultat<Value> {
+/// Le conseil du jour, decale de `decalage` (« un autre » l'augmente d'un) ; rien quand l'option est decochee.
+fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> Resultat<Option<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
-        return Ok(json!({ "conseil": null }));
+        return Ok(None);
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(&ctx.code, jour.an);
-    let liste = generaux(&b, &d);
+    let d = Donnees::de_l_annee(jour.an);
+    let liste = generaux(&b, &d)?;
     let n = liste.len();
     if n == 0 {
-        return Ok(json!({ "conseil": null }));
+        return Ok(None);
     }
-    let s = pas(n) as i128;
-    let rang = ((jour.ordinal() as i128) * s + decalage as i128).rem_euclid(n as i128) as usize;
-    Ok(json!({ "conseil": liste[rang], "rang": rang, "total": n }))
+    let rang_du_jour = (jour.ordinal() as i128) * (pas(n) as i128);
+    let rang = match decalage {
+        Some(x) => rang_du_jour + x as i128,
+        None => rang_du_jour,
+    };
+    Ok(liste.into_iter().nth(rang.rem_euclid(n as i128) as usize))
 }
 
 // ------------------------------------------------------- les faits d'une paie
 
 /// L'annexe du salarie de cette paie, lue du metier de sa fiche : X pour un artiste, VIII pour un technicien ; rien
 /// sinon (rien ne se devine).
-fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> Resultat<Option<&'static str>> {
-    let Some(m) = emplois::metier(sal.code_emploi_ft.texte())? else { return Ok(None) };
+fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> Resultat<Option<Annexe>> {
+    let Some(code) = sal.code_emploi_ft.portee() else { return Ok(None) };
+    let Some(m) = emplois::metier(code)? else { return Ok(None) };
     Ok(Some(match m.statut() {
-        droit::fiche::Statut::Artiste => "X",
-        droit::fiche::Statut::Technicien => "VIII",
+        droit::fiche::Statut::Artiste => Annexe::X,
+        droit::fiche::Statut::Technicien => Annexe::Viii,
     }))
-}
-
-/// Les constantes de l'article 30 pour une annexe (`conseils.json`, `annexes`).
-struct Art30 {
-    heures_par_jour: Decimal,
-    coefficient: Decimal,
-    jours_sans_allocation: Decimal,
-}
-
-fn art30(b: &Value, annexe: &str) -> Option<Art30> {
-    let a = b.get("annexes")?.get(annexe)?;
-    let n = |k: &str| a.get(k).and_then(|v| documents::valeur::dec(v).ok());
-    Some(Art30 { heures_par_jour: n("heures_par_jour")?, coefficient: n("coefficient")?, jours_sans_allocation: n("jours_sans_allocation")? })
 }
 
 /// Les jours d'allocation qu'un nombre d'heures retire un mois indemnise (art. 30 : heures / heures par jour x
@@ -463,7 +758,9 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> Resultat
         if l.code != "repetition" || l.heures_annexes.is_zero() {
             continue;
         }
-        let dates: BTreeSet<String> = s.map_or(&[][..], |s| s.dates()).iter().map(|j| j.jour().to_string()).filter(|j| !j.is_empty()).collect();
+        // Une ligne sans saisie n'a pas de dates connues.
+        let Some(s) = s else { continue };
+        let dates: BTreeSet<String> = s.dates().iter().map(|j| j.jour().to_string()).filter(|j| !j.is_empty()).collect();
         if dates.is_empty() {
             continue;
         }
@@ -520,7 +817,7 @@ fn gain_heures(ctx: &Contexte, p: &Paie, seuil: Decimal) -> Resultat<Option<Gain
         if gain < seuil.max(Decimal::ONE) {
             continue;
         }
-        if meilleur.as_ref().map_or(true, |g| gain > g.gain) {
+        if !matches!(&meilleur, Some(g) if gain <= g.gain) {
             meilleur = Some(GainHeures { heures: l.heures_annexes, montant: l.montant, minimum: m.montant, heures_max, gain });
         }
     }
@@ -538,16 +835,17 @@ struct Declares<'a> {
 
 impl<'a> Declares<'a> {
     fn tous(&mut self) -> Resultat<&[Declare]> {
-        if self.lus.is_none() {
-            self.lus = Some(engagement::cumul::lire_engagements(self.ctx, Some(self.paies), self.departs)?);
-        }
-        Ok(self.lus.as_deref().unwrap_or(&[]))
+        let lus = match self.lus.take() {
+            Some(l) => l,
+            None => engagement::cumul::lire_engagements(self.ctx, Some(self.paies), self.departs)?,
+        };
+        Ok(self.lus.insert(lus))
     }
 }
 
 /// La phrase de la fenetre (`conseils.json`, `fenetres`).
-fn phrase_fenetre(b: &Value, f: &cumul::Position, anniversaire: bool) -> String {
-    let g = b.get("fenetres").and_then(|x| x.get(if anniversaire { "anniversaire" } else { "glissante" })).map(en_texte).unwrap_or_default();
+fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String {
+    let g = if anniversaire { &b.fenetres.anniversaire } else { &b.fenetres.glissante };
     g.replace("{debut}", &f.debut.jj_mm_aaaa()).replace("{fin}", &f.fin.jj_mm_aaaa())
 }
 
@@ -564,15 +862,14 @@ fn position(ctx: &Contexte, cle: &str, engs: &[Declare], a_la_date: Jour) -> Res
 /// LES CONSEILS DE SAISIE : pour chaque paie de l'apercu, le premier conseil (dans l'ordre `ordre_saisie`) qu'un fait
 /// de la saisie appelle, ou rien. Rien du tout quand l'option est decochee. Un permanent (paye au mois), un mois sans
 /// paie, une paie dont le metier ne dit pas l'annexe : rien.
-pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>> {
+pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<ConseilVu>>> {
     let mut out = vec![None; paies.len()];
     if !actifs(&ctx.entreprise) {
         return Ok(out);
     }
     let b = banque()?;
-    let d = Donnees::de_l_annee(&ctx.code, ctx.aujourdhui.an);
+    let d = Donnees::de_l_annee(ctx.aujourdhui.an);
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let ordre: Vec<String> = b.get("ordre_saisie").and_then(Value::as_array).map(|a| a.iter().map(en_texte).collect()).unwrap_or_default();
     // Le mois de chaque salarie, chez nous : ses heures (cachets a 12 h) et ses cachets, toutes ses paies de l'ecran.
     let mut du_mois: HashMap<String, (i64, i64)> = HashMap::new();
     for p in paies {
@@ -581,7 +878,10 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
             continue;
         }
         let x = du_mois.entry(p.salarie.id.to_string()).or_insert((0, 0));
-        x.0 += e.heures.unwrap_or(0.0).round_ties_even() as i64 + e.cachets * c.heures_par_cachet;
+        if let Some(h) = e.heures {
+            x.0 += h.round_ties_even() as i64;
+        }
+        x.0 += e.cachets * c.heures_par_cachet;
         x.1 += e.cachets;
     }
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
@@ -593,9 +893,10 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
             continue;
         }
         let Some(annexe) = annexe_de(&p.salarie)? else { continue };
-        let Some(a30) = art30(&b, annexe) else { continue };
+        let a30 = b.art30(annexe);
         let cle = p.salarie.id.to_string();
-        let (heures_mois, cachets_mois) = du_mois.get(&cle).copied().unwrap_or((0, 0));
+        // Chaque paie comptee ici l'a ete au mois de son salarie, juste avant.
+        let Some(&(heures_mois, cachets_mois)) = du_mois.get(&cle) else { continue };
         let qui = prenom(&p.salarie, p.salarie.id.as_str());
         let mois = socle::mois::Mois::en_clair(&e.mois);
         let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
@@ -611,7 +912,7 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
         let seuil_mois = a30.jours_sans_allocation * a30.heures_par_jour;
         let sature = Decimal::from(heures_mois) >= seuil_mois;
         // Les deux conseils « plus d'heures », et ce qui les remplace quand nos contrats assurent les 507 heures.
-        let rep = if annexe == "X" { gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))? } else { None };
+        let rep = if annexe == Annexe::X { gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))? } else { None };
         let hrs = gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?;
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
@@ -625,33 +926,30 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
         } else {
             None
         };
-        for id in &ordre {
-            let vals: Option<Valeurs> = match id.as_str() {
-                "saisie:technicien-plus-de-208-heures" => {
-                    let a = b.get("annexes").and_then(|x| x.get("VIII"));
-                    let plafond = a.and_then(|x| x.get("heures_retenues_par_mois")).and_then(Value::as_i64);
-                    let majore = a.and_then(|x| x.get("heures_retenues_plusieurs_employeurs")).and_then(Value::as_i64);
-                    match (annexe, plafond, majore) {
-                        ("VIII", Some(pl), Some(mj)) if heures_mois > pl => Some(base(vec![
+        for &quand in &b.ordre_saisie {
+            let vals: Option<Valeurs> = match quand {
+                Quand::TechnicienPlusDe208Heures => {
+                    let t = &b.annexes.viii;
+                    (annexe == Annexe::Viii && heures_mois > t.heures_retenues_par_mois).then(|| {
+                        base(vec![
                             ("heures", val_entier(heures_mois)),
-                            ("plafond", val_entier(pl)),
-                            ("plafond_majore", val_entier(mj)),
-                        ])),
-                        _ => None,
-                    }
+                            ("plafond", val_entier(t.heures_retenues_par_mois)),
+                            ("plafond_majore", val_entier(t.heures_retenues_plusieurs_employeurs)),
+                        ])
+                    })
                 }
-                "saisie:mois-sature" if sature => Some(base(vec![
+                Quand::MoisSature if sature => Some(base(vec![
                     ("heures", val_entier(heures_mois)),
                     ("seuil", val_nombre(seuil_mois)),
                     ("jours", val_nombre(a30.jours_sans_allocation)),
                     ("heures_par_jour", val_nombre(a30.heures_par_jour)),
                 ])),
-                "saisie:plus-de-28-cachets" if annexe == "X" && cachets_mois > c.cachets_par_mois => Some(base(vec![
+                Quand::PlusDe28Cachets if annexe == Annexe::X && cachets_mois > c.cachets_par_mois => Some(base(vec![
                     ("cachets", val_entier(cachets_mois)),
                     ("plafond", val_entier(c.cachets_par_mois)),
                     ("perdus", val_entier(cachets_mois - c.cachets_par_mois)),
                 ])),
-                "saisie:507-assurees" => assure.as_ref().map(|(h, fenetre)| {
+                Quand::HeuresAssurees => assure.as_ref().map(|(h, fenetre)| {
                     base(vec![
                         ("heures", val_entier(*h)),
                         ("fenetre", val_texte(fenetre.clone())),
@@ -659,7 +957,7 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
                         ("coefficient", val_nombre(a30.coefficient)),
                     ])
                 }),
-                "saisie:repetition-en-cachet" if assure.is_none() && !sature => rep.as_ref().map(|g| {
+                Quand::RepetitionEnCachet if assure.is_none() && !sature => rep.as_ref().map(|g| {
                     let mut v = vec![
                         ("heures_avant", val_nombre(g.heures_avant)),
                         ("nb_jours", val_entier(g.jours)),
@@ -670,7 +968,7 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
                     avec_jours(&mut v, jours_bruts(g.gain, &a30));
                     base(v)
                 }),
-                "saisie:heures-pour-la-meme-somme" if assure.is_none() && !sature => hrs.as_ref().map(|g| {
+                Quand::HeuresPourLaMemeSomme if assure.is_none() && !sature => hrs.as_ref().map(|g| {
                     let mut v = vec![
                         ("heures", val_nombre(g.heures)),
                         ("montant", val_texte(nombre_fr(g.montant, Some(2)))),
@@ -682,7 +980,7 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
                     avec_jours(&mut v, jours_bruts(g.gain, &a30));
                     base(v)
                 }),
-                "saisie:enseignement" => {
+                Quand::Enseignement => {
                     let mut trouve = None;
                     for l in &p.remuneration {
                         let r = droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au)?;
@@ -696,12 +994,12 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
                     }
                     trouve
                 }
-                "saisie:suspension" if !e.suspensions.is_empty() => Some(base(vec![])),
-                "saisie:cachets-et-heures" if annexe == "X" && e.cachets > 0 && e.heures.unwrap_or(0.0) > 0.0 => Some(base(vec![])),
+                Quand::Suspension if !e.suspensions.is_empty() => Some(base(vec![])),
+                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h > 0.0) => Some(base(vec![])),
                 _ => None,
             };
             if let Some(v) = vals {
-                if let Some(x) = conseil(&b, &d, id, &v, &[annexe]) {
+                if let Some(x) = conseil(&b, &d, quand, &v, &[annexe.nom()])? {
                     out[i] = Some(x);
                     break;
                 }
@@ -715,14 +1013,14 @@ pub fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> Resultat<Vec<Option<Value>>>
 
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
-/// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois qui ne se lit pas est laisse de cote.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, annexe: &str, departs: &engagement::departs::Departs) -> Resultat<(Decimal, Decimal)> {
+/// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> Resultat<(Decimal, Decimal)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let (debut, fin, _) = f;
     let mut gain = Decimal::ZERO;
     let mut jours = Decimal::ZERO;
     for mois in socle::mois::Mois::entre(debut, fin).iter().map(socle::mois::Mois::to_string) {
-        let Ok(Some((_, paies))) = engagement::etats::validees_du_mois(ctx, &mois, departs) else { continue };
+        let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, &mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
             if p.salarie.id.to_string() != cle || e.sans_paie() || e.nat()?.mensuelle() {
@@ -732,11 +1030,15 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
             if fp < *debut || fp > *fin {
                 continue;
             }
-            let g = match (annexe == "X").then(|| gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))).transpose()?.flatten() {
-                Some(r) => r.gain,
-                None => gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?.map_or(Decimal::ZERO, |h| h.gain),
+            let repetition = match annexe {
+                Annexe::X => gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))?,
+                Annexe::Viii => None,
             };
-            if g > Decimal::ZERO {
+            let g = match repetition {
+                Some(r) => Some(r.gain),
+                None => gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?.map(|h| h.gain),
+            };
+            if let Some(g) = g.filter(|g| *g > Decimal::ZERO) {
                 gain += g;
                 jours += jours_bruts(g, a30);
             }
@@ -745,15 +1047,16 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
     Ok((gain, jours))
 }
 
-/// `conseils-salarie` : ce que la compagnie a fait pour ce salarie, sur la fenetre de ses droits. Charge : `salarie`.
-pub fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<Value>> {
+/// `conseils-salarie` : ce que la compagnie a fait pour ce salarie, sur la fenetre de ses droits. Un salarie qu'aucune
+/// fiche ne porte n'en a pas.
+fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
     let Some(fiche) = ctx.salaries.get(cle) else { return Ok(Vec::new()) };
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(&ctx.code, jour.an);
+    let d = Donnees::de_l_annee(jour.an);
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
@@ -764,7 +1067,7 @@ pub fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<Value>> {
     let qui = prenom(fiche, cle);
     let fenetre = phrase_fenetre(&b, &pos, anniv);
     let annexe = annexe_de(fiche)?;
-    let a30 = annexe.and_then(|a| art30(&b, a));
+    let a30 = annexe.map(|a| b.art30(a));
     let heures = pos.heures_ouverture()?;
     let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
         let mut v = Valeurs::new();
@@ -777,23 +1080,15 @@ pub fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<Value>> {
         v
     };
     let en_jeu = annexes_en_jeu(annexe);
-    let mut out = Vec::new();
-    let mut pousser = |quand: &str, v: Valeurs| {
-        if let Some(x) = conseil(&b, &d, quand, &v, &en_jeu) {
-            out.push(x);
-        }
-    };
+    let mut a_dire: Vec<(Quand, Valeurs)> = Vec::new();
     if heures >= c.seuil_heures {
-        pousser("historique:droits-ouverts", base(vec![("heures", val_entier(heures))]));
+        a_dire.push((Quand::DroitsOuverts, base(vec![("heures", val_entier(heures))])));
         if let Some(a) = &a30 {
-            pousser(
-                "historique:intense",
-                base(vec![("heures_par_jour", val_nombre(a.heures_par_jour)), ("coefficient", val_nombre(a.coefficient))]),
-            );
+            a_dire.push((Quand::Intense, base(vec![("heures_par_jour", val_nombre(a.heures_par_jour)), ("coefficient", val_nombre(a.coefficient))])));
         }
     } else {
         let pct = (Decimal::from(heures * 100) / Decimal::from(c.seuil_heures)).round();
-        pousser("historique:heures-comptees", base(vec![("heures", val_entier(heures)), ("pourcentage", val_nombre(pct))]));
+        a_dire.push((Quand::HeuresComptees, base(vec![("heures", val_entier(heures)), ("pourcentage", val_nombre(pct))])));
         if let (Some(a), Some(ax)) = (&a30, annexe) {
             let f: Fenetre = (pos.debut, pos.fin, pos.libelle_fenetre.clone());
             let (gain, jours) = gains_sur_la_fenetre(ctx, cle, &f, a, ax, &departs)?;
@@ -801,34 +1096,39 @@ pub fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<Value>> {
                 let pct = (gain * Decimal::from(100) / Decimal::from(c.seuil_heures)).round_dp(1).normalize();
                 let mut v = vec![("gain", val_nombre(gain)), ("pourcentage", val_nombre(pct))];
                 avec_jours(&mut v, jours);
-                pousser("historique:gain-des-conseils", base(v));
+                a_dire.push((Quand::GainDesConseils, base(v)));
             }
         }
     }
     // Le plafond de 28 cachets est de l'annexe X (art. 3 §1) : rien a dire d'un technicien.
-    let par_mois = pos.cachets_par_mois();
-    for m in pos.mois_plafonnes().into_iter().filter(|_| annexe != Some("VIII")) {
-        let n = par_mois.get(&m).copied().unwrap_or(0);
-        pousser(
-            "historique:cachets-perdus",
-            base(vec![
-                ("mois", val_texte(socle::mois::Mois::en_clair(&m))),
-                ("cachets", val_entier(n)),
-                ("plafond", val_entier(c.cachets_par_mois)),
-                ("perdus", val_entier(n - c.cachets_par_mois)),
-            ]),
-        );
+    if annexe != Some(Annexe::Viii) {
+        let par_mois = pos.cachets_par_mois();
+        for m in pos.mois_plafonnes() {
+            // Un mois plafonne est un mois de `cachets_par_mois`.
+            let Some(&n) = par_mois.get(&m) else { continue };
+            a_dire.push((
+                Quand::CachetsPerdus,
+                base(vec![
+                    ("mois", val_texte(socle::mois::Mois::en_clair(&m))),
+                    ("cachets", val_entier(n)),
+                    ("plafond", val_entier(c.cachets_par_mois)),
+                    ("perdus", val_entier(n - c.cachets_par_mois)),
+                ]),
+            ));
+        }
     }
     let perdu = pos.enseignement_perdu()?;
     if perdu > 0 {
-        pousser(
-            "historique:enseignement-perdu",
-            base(vec![
-                ("heures", val_entier(pos.heures_enseignement())),
-                ("plafond", val_entier(pos.plafond_enseignement()?)),
-                ("perdus", val_entier(perdu)),
-            ]),
-        );
+        a_dire.push((
+            Quand::EnseignementPerdu,
+            base(vec![("heures", val_entier(pos.heures_enseignement())), ("plafond", val_entier(pos.plafond_enseignement()?)), ("perdus", val_entier(perdu))]),
+        ));
+    }
+    let mut out = Vec::new();
+    for (quand, v) in a_dire {
+        if let Some(x) = conseil(&b, &d, quand, &v, &en_jeu)? {
+            out.push(x);
+        }
     }
     Ok(out)
 }
@@ -837,25 +1137,30 @@ pub fn du_salarie(ctx: &Contexte, cle: &str) -> Resultat<Vec<Value>> {
 /// leurs droits, la meme que leur fiche (`position`) : les 12 mois avant leur date anniversaire si la fiche la porte,
 /// sinon les 12 derniers mois. La phrase dit l'une, l'autre, ou les deux quand la liste les mele : la banque essaie
 /// `historique-resume-melange`, puis `historique-resume-anniversaire`, puis `historique-resume`, et le premier dont
-/// les deux groupes de noms sont la parle. `{"conseils": [...]}`, vide quand il n'y en a pas.
-pub fn resume(ctx: &Contexte) -> Resultat<Vec<Value>> {
+/// les deux groupes de noms sont la parle. Vide quand il n'y en a pas.
+fn resume(ctx: &Contexte) -> Resultat<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(&ctx.code, jour.an);
+    let d = Donnees::de_l_annee(jour.an);
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
     let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
-    // Les salaries par leur prenom ; deux du meme prenom, par leur prenom et leur nom (sinon on ne saurait lequel).
+    // Les salaries par leur prenom (sans fiche, par leur cle) ; deux du meme prenom, par leur prenom et leur nom (sinon
+    // on ne saurait lequel).
     let mut fiches = Vec::new();
     for cle in cles {
         let (p, anniv) = position(ctx, cle, &engs, jour)?;
         if p.heures_ouverture()? >= c.seuil_heures {
-            let fiche = ctx.salaries.get(cle).map(|f| f.champs.clone()).unwrap_or_default();
-            fiches.push((prenom(&fiche, cle), fiche, anniv));
+            let fiche = ctx.salaries.get(cle).map(|f| &f.champs);
+            let nom = match fiche {
+                Some(f) => prenom(f, cle),
+                None => cle.to_string(),
+            };
+            fiches.push((nom, fiche, anniv));
         }
     }
     if fiches.is_empty() {
@@ -865,7 +1170,11 @@ pub fn resume(ctx: &Contexte) -> Resultat<Vec<Value>> {
     // quand la liste les mele.
     let mut en_jeu: Vec<&str> = Vec::new();
     for (_, fiche, _) in &fiches {
-        for a in annexes_en_jeu(annexe_de(fiche)?) {
+        let annexe = match fiche {
+            Some(f) => annexe_de(f)?,
+            None => None,
+        };
+        for a in annexes_en_jeu(annexe) {
             if !en_jeu.contains(&a) {
                 en_jeu.push(a);
             }
@@ -874,11 +1183,11 @@ pub fn resume(ctx: &Contexte) -> Resultat<Vec<Value>> {
     let noms: Vec<(String, bool)> = fiches
         .iter()
         .map(|(p, fiche, anniv)| {
-            let n = if fiches.iter().filter(|(q, _, _)| q == p).count() > 1 {
-                let nom = Some(fiche.nom_affichage.texte().to_string()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| fiche.nom.texte().to_string());
-                if nom.trim().is_empty() { p.clone() } else { format!("{} {}", p, nom.trim()) }
-            } else {
-                p.clone()
+            let homonyme = fiches.iter().filter(|(q, _, _)| q == p).count() > 1;
+            let nom = fiche.and_then(|f| f.nom_affichage.remplie().or(f.nom.portee())).map(str::trim);
+            let n = match (homonyme, nom) {
+                (true, Some(nom)) => format!("{} {}", p, nom),
+                _ => p.clone(),
             };
             (n, *anniv)
         })
@@ -894,7 +1203,7 @@ pub fn resume(ctx: &Contexte) -> Resultat<Vec<Value>> {
             v.insert(format!("noms_{}", groupe), val_texte(et(&qui)));
         }
     }
-    Ok(conseil(&b, &d, "historique:resume", &v, &en_jeu).into_iter().collect())
+    Ok(conseil(&b, &d, Quand::Resume, &v, &en_jeu)?.into_iter().collect())
 }
 
 /// « Anastasia », « Anastasia et Valentin », « Anastasia, Fanchon et Valentin ».
@@ -908,24 +1217,77 @@ fn et(noms: &[String]) -> String {
 
 // ------------------------------------------------------------------ routes
 
-/// L'aiguillage des trois routes de lecture. La phrase : le texte du conseil, ou ceux de la liste un par un (`phrases`).
-pub fn route(ctx: &Contexte, route: Route, charge: &Value) -> R<Value> {
-    let liste = |conseils: Vec<Value>| {
-        let lignes: Vec<Value> = conseils.iter().map(|c| c["texte"].clone()).collect();
-        json!({ "phrase": format!("Conseils : {}.", conseils.len()), "phrases": lignes, "conseils": conseils })
-    };
-    match route {
+/// La charge de `conseil-du-jour` : le decalage d'« un autre » ; sans lui, le conseil du jour.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeConseilDuJour {
+    decalage: Option<i64>,
+}
+
+/// La charge de `conseils-salarie` : la cle du salarie.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeConseilsSalarie {
+    salarie: String,
+}
+
+/// Ce que rend `conseil-du-jour` : le conseil, ou rien quand l'option est decochee ; sa phrase est son texte.
+#[derive(Serialize)]
+struct ConseilDuJour {
+    phrase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conseil: Option<ConseilVu>,
+}
+
+/// Ce que rendent `conseils-salarie` et `conseils-resume` : les conseils, et le texte de chacun, une phrase par conseil.
+#[derive(Serialize)]
+struct Conseils {
+    phrase: String,
+    phrases: Vec<String>,
+    conseils: Vec<ConseilVu>,
+}
+
+impl Dite for ConseilDuJour {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Conseils {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Conseils {
+    fn de(conseils: Vec<ConseilVu>) -> Conseils {
+        Conseils { phrase: format!("Conseils : {}.", conseils.len()), phrases: conseils.iter().map(|c| c.texte.clone()).collect(), conseils }
+    }
+}
+
+/// L'aiguillage des trois routes de lecture.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    let ctx = porte.ctx;
+    match porte.route {
         Route::ConseilDuJour => {
-            let decalage = charge.get("decalage").and_then(Value::as_i64).unwrap_or(0);
-            let v = du_jour(ctx, decalage)?;
-            let p = v["conseil"]["texte"].as_str().map(String::from).unwrap_or_else(|| "Pas de conseil aujourd'hui.".to_string());
-            Ok(crate::routes::phrase_en_tete(v, p))
+            let ChargeConseilDuJour { decalage } = charge.lire()?;
+            let conseil = du_jour(ctx, decalage)?;
+            let phrase = match &conseil {
+                Some(c) => c.texte.clone(),
+                None => "Pas de conseil aujourd'hui.".to_string(),
+            };
+            en_json(ConseilDuJour { phrase, conseil })
         }
         Route::ConseilsSalarie => {
-            let cle = charge.get("salarie").map(en_texte).unwrap_or_default();
-            Ok(liste(du_salarie(ctx, &cle)?))
+            let ChargeConseilsSalarie { salarie } = charge.lire()?;
+            let rendus: Conseils = Conseils::de(du_salarie(ctx, &salarie)?);
+            en_json(rendus)
         }
-        Route::ConseilsResume => Ok(liste(resume(ctx)?)),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+        Route::ConseilsResume => {
+            let crate::routes::SansCharge {} = charge.lire()?;
+            let rendus: Conseils = Conseils::de(resume(ctx)?);
+            en_json(rendus)
+        }
+        autre => Err(route_inconnue(autre.nom())),
     }
 }

@@ -20,9 +20,14 @@ pub fn est_locale(adresse: &str) -> bool {
 }
 
 /// La base d'une variable de redirection, sans barre finale ; `None` si elle n'est pas posee (ou vide). Une valeur qui
-/// n'est pas locale rend `ADRESSE_REFUSEE`, qui n'aboutit nulle part.
+/// n'est pas locale (ou pas en Unicode) rend `ADRESSE_REFUSEE`, qui n'aboutit nulle part.
 pub fn base(variable: &str) -> Option<String> {
-    let v = std::env::var(variable).ok()?;
+    let refusee = || Some(ADRESSE_REFUSEE.trim_end_matches('/').to_string());
+    let v = match std::env::var(variable) {
+        Ok(v) => v,
+        Err(std::env::VarError::NotPresent) => return None,
+        Err(std::env::VarError::NotUnicode(_)) => return refusee(),
+    };
     let v = v.trim().trim_end_matches('/').to_string();
     if v.is_empty() {
         return None;

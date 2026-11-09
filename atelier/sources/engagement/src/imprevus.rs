@@ -96,7 +96,7 @@ pub struct ArretSaisi {
     pub reprises: Vec<RepriseNotee>,
     pub saisi_le: String,
     pub qui: String,
-    pub note: String,
+    pub note: Option<String>,
 }
 
 /// UN AVIS DE PROLONGATION SAISI : quand (le jour du moteur, l'heure de la saisie, qui), la fin et la fin de
@@ -140,7 +140,7 @@ pub struct SuspensionSaisie {
     pub fin: String,
     pub saisi_le: String,
     pub qui: String,
-    pub note: String,
+    pub note: Option<String>,
 }
 
 /// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue.

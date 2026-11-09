@@ -33,7 +33,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+use crate::atelier::EnOrdre;
 
 pub const ARTICLES: &str = "articles.jsonl.gz";
 pub const ETAT: &str = "etat.json";
@@ -56,63 +59,74 @@ pub fn parties(cle: &str) -> Vec<&str> {
     cle.split(SEP).collect()
 }
 
-/// Des articles sous une cle, et l'etat de lecture.
-///
-/// `articles` : cle -> `{"id", "debut", ...}` ; l'ordre est celui d'insertion (l'ordre du fichier au
-/// chargement, puis les cles neuves a la fin ; une cle remplacee garde sa place) -- c'est lui qui range les articles d'un
-/// `releve.json`. `etat` : `{"global", "lues", "changes", "construit_le", "mis_a_jour_le"}`.
-pub struct Entrepot {
-    pub dossier: PathBuf,
-    pub articles: Map<String, Value>,
-    pub etat: Map<String, Value>,
+/// UN ARTICLE RANGE : sa forme (celle de sa ligne dans `articles.jsonl.gz`) porte sa cle, en parties.
+pub trait Article: Serialize + DeserializeOwned {
+    fn cle(&self) -> &[String];
 }
 
-impl Entrepot {
-    pub fn nouveau(dossier: &Path) -> Entrepot {
-        let mut etat = Map::new();
-        etat.insert("global".into(), json!(""));
-        etat.insert("lues".into(), json!([]));
-        etat.insert("changes".into(), json!([]));
-        Entrepot { dossier: dossier.to_path_buf(), articles: Map::new(), etat }
+/// L'ETAT DE LECTURE d'un entrepot (`etat.json`) : les livraisons deja appliquees, et le jour de la derniere sauvegarde.
+/// Sa forme s'ecrit cles triees : ses champs (et ceux de ce qu'il porte) se declarent dans l'ordre alphabetique.
+pub trait Etat: Serialize + DeserializeOwned {
+    fn lues(&self) -> &[String];
+    fn lues_mut(&mut self) -> &mut Vec<String>;
+    fn dater(&mut self, aujourdhui: &str);
+}
+
+/// Des articles sous une cle, et l'etat de lecture.
+///
+/// `articles` : cle (`cle`, de ses parties) -> article ; l'ordre est celui d'insertion (l'ordre du fichier au
+/// chargement, puis les cles neuves a la fin ; une cle remplacee garde sa place) -- c'est lui qui range les articles d'un
+/// `releve.json`.
+pub struct Entrepot<A, E> {
+    pub dossier: PathBuf,
+    pub articles: EnOrdre<A>,
+    pub etat: E,
+}
+
+/// L'entrepot de `dossier` existe-t-il (ses deux fichiers) ?
+pub fn existe(dossier: &Path) -> bool {
+    dossier.join(ARTICLES).exists() && dossier.join(ETAT).exists()
+}
+
+impl<A: Article, E: Etat> Entrepot<A, E> {
+    /// Un entrepot neuf, sans article, de l'etat `etat`.
+    pub fn neuf(dossier: &Path, etat: E) -> Entrepot<A, E> {
+        Entrepot { dossier: dossier.to_path_buf(), articles: EnOrdre::new(), etat }
     }
 
-    pub fn existe(&self) -> bool {
-        self.dossier.join(ARTICLES).exists() && self.dossier.join(ETAT).exists()
-    }
-
-    pub fn charger(mut self) -> R<Entrepot> {
-        let p = self.dossier.join(ARTICLES);
+    /// L'entrepot de `dossier`, lu : chaque ligne en sa forme `A`, l'etat en sa forme `E`.
+    pub fn charger(dossier: &Path) -> R<Entrepot<A, E>> {
+        let p = dossier.join(ARTICLES);
         let f = std::fs::File::open(&p).map_err(|e| format!("{} : {}", p.display(), e))?;
         let lecteur = BufReader::new(flate2::read::MultiGzDecoder::new(BufReader::new(f)));
+        let mut articles = EnOrdre::new();
         for (n, ligne) in lecteur.split(b'\n').enumerate() {
             let ligne = ligne.map_err(|e| format!("{} : {}", p.display(), e))?;
             if ligne.is_empty() {
                 continue;
             }
-            let mut a: Map<String, Value> = match serde_json::from_slice(&ligne) {
-                Ok(Value::Object(m)) => m,
-                Ok(_) => return Err(format!("{}, ligne {} : pas un objet", p.display(), n + 1)),
-                Err(e) => return Err(format!("{}, ligne {} illisible : {}", p.display(), n + 1, e)),
-            };
-            // `a.pop("cle")` : l'article garde l'ordre de ses autres champs.
-            let parts: Vec<String> = match a.shift_remove("cle") {
-                Some(Value::Array(v)) => v.iter().map(|x| x.as_str().unwrap_or_default().to_string()).collect(),
-                _ => return Err(format!("{}, ligne {} : pas de « cle »", p.display(), n + 1)),
-            };
-            let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
-            self.articles.insert(cle(&refs), Value::Object(a));
+            let ou = format!("{}, ligne {}", p.display(), n + 1);
+            let texte = String::from_utf8(ligne).map_err(|e| format!("{} : pas de l'UTF-8 ({})", ou, e))?;
+            let a: A = socle::forme::lire_texte(&texte, &format!("{} ne se lit pas.", ou))?;
+            let k = cle_de(a.cle());
+            articles.poser(k, a);
         }
-        let pe = self.dossier.join(ETAT);
-        let t = std::fs::read_to_string(&pe).map_err(|e| format!("{} : {}", pe.display(), e))?;
-        self.etat = match serde_json::from_str(&t) {
-            Ok(Value::Object(m)) => m,
-            Ok(_) => return Err(format!("{} n'est pas un objet JSON", pe.display())),
-            Err(e) => return Err(format!("{} illisible : {}", pe.display(), e)),
-        };
-        Ok(self)
+        let pe = dossier.join(ETAT);
+        let etat: E = socle::forme::lire_fichier(&pe, &format!("{} ne se lit pas.", pe.display()))?;
+        Ok(Entrepot { dossier: dossier.to_path_buf(), articles, etat })
     }
 
-    /// Ecrit les deux fichiers ; `aujourdhui` (AAAA-MM-JJ) devient `mis_a_jour_le`.
+    /// Les livraisons deja appliquees.
+    pub fn lues(&self) -> HashSet<String> {
+        self.etat.lues().iter().cloned().collect()
+    }
+
+    /// La livraison `nom` est appliquee.
+    pub fn noter_lue(&mut self, nom: &str) {
+        self.etat.lues_mut().push(nom.to_string());
+    }
+
+    /// Ecrit les deux fichiers ; `aujourdhui` (AAAA-MM-JJ) devient le jour de la mise a jour.
     pub fn sauver(&mut self, aujourdhui: &str) -> R<()> {
         std::fs::create_dir_all(&self.dossier).map_err(|e| format!("{} : {}", self.dossier.display(), e))?;
         let tmp = self.dossier.join(format!("{}.tmp", ARTICLES));
@@ -125,10 +139,11 @@ impl Entrepot {
                 .operating_system(255)
                 .write(BufWriter::new(f), flate2::Compression::best());
             // Trie : deux sauvegardes du meme contenu donnent le meme fichier, et Git ne voit changer que ce qui a change.
-            let mut cles: Vec<&String> = self.articles.keys().collect();
-            cles.sort_by(|a, b| parties(a).cmp(&parties(b)));
-            for k in cles {
-                let ligne = ligne_triee(&self.articles[k.as_str()], &parties(k));
+            let mut tries: Vec<&A> = self.articles.0.iter().map(|(_, a)| a).collect();
+            tries.sort_by(|a, b| a.cle().cmp(b.cle()));
+            for a in tries {
+                // L'article (sa cle comprise) sur une ligne, cles triees, sans echappement des accents.
+                let ligne = socle::ecriture::json_trie(a);
                 g.write_all(ligne.as_bytes()).and_then(|_| g.write_all(b"\n")).map_err(|e| format!("{} : {}", tmp.display(), e))?;
             }
             let mut w = g.finish().map_err(|e| format!("{} : {}", tmp.display(), e))?;
@@ -136,70 +151,16 @@ impl Entrepot {
         }
         let fin = self.dossier.join(ARTICLES);
         std::fs::rename(&tmp, &fin).map_err(|e| format!("{} : {}", fin.display(), e))?;
-        self.etat.insert("mis_a_jour_le".into(), json!(aujourdhui));
+        self.etat.dater(aujourdhui);
         let p = self.dossier.join(ETAT);
-        let texte = socle::ecriture::json_indente(&trie(&Value::Object(self.etat.clone())), 1);
+        let texte = socle::ecriture::json_indente(&self.etat, 1);
         std::fs::write(&p, texte).map_err(|e| format!("{} : {}", p.display(), e))
     }
-
-    /// Les livraisons deja appliquees.
-    pub fn lues(&self) -> HashSet<String> {
-        liste(&self.etat, "lues").into_iter().collect()
-    }
-
-    /// `etat["lues"].append(nom)`.
-    pub fn noter_lue(&mut self, nom: &str) {
-        let v = self.etat.entry("lues").or_insert_with(|| json!([]));
-        if !v.is_array() {
-            *v = json!([]);
-        }
-        if let Some(a) = v.as_array_mut() {
-            a.push(json!(nom));
-        }
-    }
 }
 
-/// Les chaines d'une liste de l'etat.
-pub fn liste(etat: &Map<String, Value>, cle: &str) -> Vec<String> {
-    etat.get(cle).and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
-}
-
-/// L'article et sa `cle` (une liste) en JSON sur une ligne, cles triees, sans echappement des accents.
-fn ligne_triee(article: &Value, cle: &[&str]) -> String {
-    let mut entrees: Vec<(&str, Value)> = Vec::new();
-    if let Some(o) = article.as_object() {
-        for (k, v) in o {
-            if k != "cle" {
-                entrees.push((k.as_str(), v.clone()));
-            }
-        }
-    }
-    entrees.push(("cle", json!(cle)));
-    entrees.sort_by(|a, b| a.0.cmp(b.0));
-    let mut s = String::from("{");
-    for (i, (k, v)) in entrees.iter().enumerate() {
-        if i > 0 {
-            s.push_str(", ");
-        }
-        s.push_str(&socle::ecriture::json_trie(&json!(k)));
-        s.push_str(": ");
-        s.push_str(&socle::ecriture::json_trie(v));
-    }
-    s.push('}');
-    s
-}
-
-/// Les cles de chaque objet triees (`sort_keys=True`), recursivement.
-pub fn trie(v: &Value) -> Value {
-    match v {
-        Value::Object(o) => {
-            let mut cles: Vec<&String> = o.keys().collect();
-            cles.sort();
-            Value::Object(cles.into_iter().map(|k| (k.clone(), trie(&o[k.as_str()]))).collect())
-        }
-        Value::Array(a) => Value::Array(a.iter().map(trie).collect()),
-        autre => autre.clone(),
-    }
+/// La cle de table d'un article, de ses parties.
+pub fn cle_de(parties: &[String]) -> String {
+    parties.join(&SEP.to_string())
 }
 
 // ------------------------------------------------------------------ le reseau
@@ -296,7 +257,9 @@ pub fn en_ordre(source: &dyn Source, urls: &[String], fils: usize, mut rendre: i
                     break;
                 }
                 let r = telecharger(source, &urls[i]);
-                if tx.send((i, r)).is_err() {
+                // Le receveur parti, c'est l'arret : on ne rend plus rien.
+                if let Err(arrete) = tx.send((i, r)) {
+                    drop(arrete);
                     break;
                 }
             });
@@ -361,7 +324,7 @@ pub fn archive(octets: &[u8]) -> LecteurTar<BufReader<flate2::read::MultiGzDecod
 }
 
 fn champ(b: &[u8]) -> String {
-    let fin = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+    let fin = b.iter().take_while(|&&c| c != 0).count();
     String::from_utf8_lossy(&b[..fin]).into_owned()
 }
 
@@ -517,7 +480,14 @@ pub fn unescape_html(t: &str) -> String {
         if let Some(num) = s.strip_prefix('#') {
             let num = num.trim_end_matches(';');
             let n = if let Some(h) = num.strip_prefix(['x', 'X']) { u64::from_str_radix(h, 16) } else { num.parse::<u64>() };
-            return reference_numerique(n.unwrap_or(u64::MAX));
+            // Des chiffres seulement (le motif) : un nombre qui ne se lit pas est trop grand pour un point de code.
+            return match n {
+                Ok(n) => reference_numerique(n),
+                Err(e) => match e.kind() {
+                    std::num::IntErrorKind::PosOverflow => "\u{fffd}".into(),
+                    _ => c[0].to_string(),
+                },
+            };
         }
         // Le nom entier, puis le plus long debut qui en est un : `&ampx` rend `&x`.
         if let Some(r) = entite(s) {
@@ -562,7 +532,11 @@ fn reference_numerique(n: u64) -> String {
         n if n > 0x10ffff => "\u{fffd}".into(),
         0x1..=0x8 | 0xb | 0xe..=0x1f | 0x7f..=0x9f | 0xfdd0..=0xfdef => String::new(),
         n if (n & 0xfffe) == 0xfffe => String::new(),
-        n => char::from_u32(n as u32).map(String::from).unwrap_or_default(),
+        // Les substituts et ce qui passe U+10FFFF sont rendus plus haut : tout autre nombre est un caractere.
+        n => match char::from_u32(n as u32) {
+            Some(c) => c.to_string(),
+            None => "\u{fffd}".into(),
+        },
     }
 }
 
@@ -571,23 +545,6 @@ pub fn premiers_caracteres(s: &str, n: usize) -> &str {
     match s.char_indices().nth(n) {
         Some((i, _)) => &s[..i],
         None => s,
-    }
-}
-
-/// Une valeur lue dans un JSON, en texte.
-pub fn texte(v: &Value) -> String {
-    documents::valeur::valeur_en_texte(v)
-}
-
-/// Une valeur presente et non vide (ni `null`, `false`, `0`, `""`, `[]`, `{}`).
-pub fn vrai(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64() != Some(0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
     }
 }
 

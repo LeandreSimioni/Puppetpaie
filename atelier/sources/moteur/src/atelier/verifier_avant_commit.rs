@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use regex::Regex;
-use serde_json::Value;
 
 type R<T> = Result<T, String>;
 
@@ -137,11 +136,6 @@ pub const EXEMPLES_DES_TEXTES: [(&str, &str); 12] = [
 /// Les motifs génériques (une forme), par opposition aux valeurs réelles lues.
 const GENERIQUES: [&str; 3] = ["NIR", "IBAN", "BIC"];
 
-/// Ce que la compagnie déclare d'elle-même, dans `prive/config/entreprise.json`.
-const CLES_ENTREPRISE: [&str; 5] = ["siret", "siren", "urssaf_compte", "congesspectacles_adherent", "affiliation_france_travail"];
-/// Ce qui désigne un salarié, dans chaque fiche de `prive/config/salaries.json`.
-const CLES_SALARIE: [&str; 4] = ["nir", "num_conges_spectacles", "email", "adresse"];
-
 /// Une valeur trouvée : où, et ce que c'est. Jamais la valeur elle-même.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Trouvaille {
@@ -211,7 +205,7 @@ pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
 /// Un numéro de document dans une adresse web (l'Unédic en a de treize chiffres, EUR-Lex en met dans ses requêtes)
 /// n'est pas un NIR.
 fn dans_une_url(o: &[u8], i: usize) -> bool {
-    let debut = o[..i].iter().rposition(|b| b" \t\n\"'(<".contains(b)).map_or(0, |p| p + 1);
+    let debut = i - o[..i].iter().rev().take_while(|b| !b" \t\n\"'(<".contains(b)).count();
     o[debut..].starts_with(b"http://") || o[debut..].starts_with(b"https://")
 }
 
@@ -233,20 +227,10 @@ fn generiques() -> Vec<Motif> {
         .collect()
 }
 
-/// Une valeur JSON en texte (un nombre en chiffres, une chaîne telle quelle), si elle est
-/// présente et non vide (ni nulle, ni vide, ni zéro, ni `false`).
-fn valeur_vraie_en_texte(v: &Value) -> Option<String> {
-    match v {
-        Value::Null | Value::Bool(false) => None,
-        Value::Bool(true) => Some("True".into()),
-        Value::String(s) if s.is_empty() => None,
-        Value::String(s) => Some(s.clone()),
-        Value::Number(n) if n.as_f64() == Some(0.0) => None,
-        Value::Number(n) => Some(n.to_string()),
-        Value::Array(a) if a.is_empty() => None,
-        Value::Object(o) if o.is_empty() => None,
-        autre => Some(autre.to_string()),
-    }
+/// Les valeurs qu'un champ d'une fiche datee a portees, a quelque date que ce soit, dans l'ordre ecrit : celles qui
+/// disent quelque chose (ni nulles, ni vides).
+fn portees<T: AsRef<str>>(liste: &Option<Vec<droit::fiche::Datee<T>>>) -> Vec<String> {
+    liste.iter().flatten().filter_map(|d| d.valeur.as_ref()).map(|v| v.as_ref().to_string()).filter(|v| !v.is_empty()).collect()
 }
 
 /// Un fichier de `prive/config/`, lu par sa forme (`droit::fiche::lire_fichier`) : `None` s'il n'y est pas ; une erreur
@@ -257,10 +241,6 @@ fn lire_config<T: serde::de::DeserializeOwned>(cfg: &Path, nom: &str) -> R<Optio
         return Ok(None);
     }
     droit::fiche::lire_fichier(&p, &format!("prive/config/{}", nom)).map(Some)
-}
-
-fn objet<'a>(v: &'a Value, quoi: &str) -> R<&'a serde_json::Map<String, Value>> {
-    v.as_object().ok_or_else(|| format!("{} n'est pas un objet JSON", quoi))
 }
 
 /// Les valeurs à ne jamais publier, lues hors du dépôt (`<racine>/prive/config/`), dans l'ordre où on les lit, une fois
@@ -282,35 +262,39 @@ fn valeurs_reelles(racine: &Path) -> R<Vec<(String, String)>> {
     if !cfg.is_dir() {
         return Ok(Vec::new());
     }
-    use crate::routes::fiches::{portees, valeurs_portees};
     if let Some(ent) = lire_config::<droit::fiche::FicheEntrepriseDatee>(&cfg, "entreprise.json")? {
-        // Toute valeur qu'une fiche datee a portee, a quelque date que ce soit (`routes::fiches::portees`).
-        let ent = portees(&ent);
-        for cle in CLES_ENTREPRISE {
-            for v in valeurs_portees(&ent, cle).filter_map(valeur_vraie_en_texte) {
+        // Toute valeur que la fiche a portee, a quelque date que ce soit (`portees`).
+        let cles = [
+            ("siret", portees(&ent.siret)),
+            ("siren", portees(&ent.siren)),
+            ("urssaf_compte", portees(&ent.urssaf_compte)),
+            ("congesspectacles_adherent", portees(&ent.congesspectacles_adherent)),
+            ("affiliation_france_travail", portees(&ent.affiliation_france_travail)),
+        ];
+        for (cle, valeurs) in cles {
+            for v in valeurs {
                 poser(v, cle.to_string());
             }
         }
-        for banque in valeurs_portees(&ent, "banque").filter(|b| valeur_vraie_en_texte(b).is_some()) {
-            let banque = objet(banque, "prive/config/entreprise.json : banque")?;
-            for cle in ["iban", "bic"] {
-                if let Some(v) = banque.get(cle).and_then(valeur_vraie_en_texte) {
-                    poser(v, format!("banque.{}", cle));
+        for banque in ent.banque.iter().flatten().filter_map(|d| d.valeur.as_ref()) {
+            for (cle, v) in [("iban", &banque.iban), ("bic", &banque.bic)] {
+                if let Some(v) = v.as_ref().filter(|v| !v.is_empty()) {
+                    poser(v.clone(), format!("banque.{}", cle));
                 }
             }
         }
     }
     if let Some(sal) = lire_config::<droit::fiche::Salaries>(&cfg, "salaries.json")? {
         for s in sal.fiches.values() {
-            let s = portees(s);
-            for cle in CLES_SALARIE {
-                for v in valeurs_portees(&s, cle).filter_map(valeur_vraie_en_texte) {
+            let cles = [("nir", portees(&s.nir)), ("num_conges_spectacles", portees(&s.num_conges_spectacles)), ("email", portees(&s.email)), ("adresse", portees(&s.adresse))];
+            for (cle, valeurs) in cles {
+                for v in valeurs {
                     poser(v, format!("salarie.{}", cle));
                 }
             }
             // Le nom seul est trop courant pour être un motif ; le nom ET le prénom collés le sont beaucoup moins.
-            for nom in valeurs_portees(&s, "nom").filter_map(valeur_vraie_en_texte) {
-                for prenom in valeurs_portees(&s, "prenom").filter_map(valeur_vraie_en_texte) {
+            for nom in portees(&s.nom) {
+                for prenom in portees(&s.prenom) {
                     poser(format!("{} {}", nom, prenom), "salarie (identite)".to_string());
                 }
             }
@@ -471,13 +455,21 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], trouvailles: &mut Vec<Tro
     }
 }
 
+/// Le contenu d'un fichier que git nomme : rien s'il n'est plus sur le disque (effacé, il ne partira pas tel quel).
+fn contenu(p: &Path) -> R<Option<Vec<u8>>> {
+    match std::fs::read(p) {
+        Ok(o) => Ok(Some(o)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(p, &e)),
+    }
+}
+
 /// Le garde, sur le dépôt de `racine` : ce qui partirait (`indexes` : ce que l'index porte), et les valeurs de
 /// `<racine>/prive/config/`.
 pub fn verifier(racine: &Path, indexes: bool) -> R<Vec<Trouvaille>> {
     let motifs = motifs(racine)?;
     let noms = ce_qui_part(racine, indexes)?;
-    let contenus: Vec<Option<Vec<u8>>> =
-        if indexes { contenus_indexes(racine, &noms)? } else { noms.iter().map(|n| std::fs::read(racine.join(n)).ok()).collect() };
+    let contenus: Vec<Option<Vec<u8>>> = if indexes { contenus_indexes(racine, &noms)? } else { noms.iter().map(|n| contenu(&racine.join(n))).collect::<R<_>>()? };
     let mut trouvailles = Vec::new();
     for (nom, o) in noms.iter().zip(contenus) {
         if let Some(o) = o {

@@ -24,10 +24,23 @@ use socle::echec::R;
 use socle::paris::maintenant;
 
 /// La fin du nom de l'exemplaire contresigne d'un contrat (le contrat parti, `<souche>` ; contresigne, `<souche>_signe.pdf`) :
-/// la piece jointe du courriel qui le renvoie au signataire.
-pub const SUFFIXE_CONTRESIGNE: &str = "_signe.pdf";
+/// la piece jointe du courriel qui le renvoie au signataire. Ses lecteurs passent par `nom_contresigne` et
+/// `souche_contresignee`.
+const SUFFIXE_CONTRESIGNE: &str = "signe.pdf";
+
+/// Le nom de l'exemplaire contresigne du contrat de souche `souche`.
+pub fn nom_contresigne(souche: &str) -> String {
+    format!("{}_{}", souche, SUFFIXE_CONTRESIGNE)
+}
+
+/// La souche du contrat dont `nom` est l'exemplaire contresigne ; aucune si `nom` n'en est pas un.
+pub fn souche_contresignee(nom: &str) -> Option<&str> {
+    nom.strip_suffix(SUFFIXE_CONTRESIGNE)?.strip_suffix('_')
+}
 
 const SUJET_CONTRESIGNE: &str = "Ton contrat signé - {spectacle}";
+/// Le contrat d'un permanent ne porte pas de spectacle.
+const SUJET_CONTRESIGNE_SANS_SPECTACLE: &str = "Ton contrat signé";
 const SUJET_CONTRESIGNE_PLURIEL: &str = "Tes contrats signés - {mois} {annee}";
 const CORPS_CONTRESIGNE: &str = "Bonjour {prenom},\n\nNous avons bien reçu ta signature le {quand}. Ci-joint {quoi}, signé des deux parties : c'est l'exemplaire à conserver.\n\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
@@ -84,10 +97,11 @@ impl ReleveSignatures {
                     .iter()
                     .map(|c| {
                         n += 1;
-                        let numero = c.numero_dit().to_string();
-                        match c.avenant {
-                            Some(a) => format!("avenant {} au {}", a, numero),
-                            None => numero,
+                        match (c.avenant, c.numero_dit()) {
+                            (Some(a), Some(n)) => format!("avenant {} au {}", a, n),
+                            (Some(a), None) => format!("avenant {} au contrat sans numéro", a),
+                            (None, Some(n)) => n.to_string(),
+                            (None, None) => "contrat sans numéro".to_string(),
                         }
                     })
                     .collect();
@@ -131,7 +145,9 @@ pub struct Reponse {
 /// la boite de la compagnie. Ce qui ecarte une reponse se dit dans `incidents`. `Err` : la boite ne repond pas (une erreur
 /// de transport ne se corrige pas en essayant le code suivant).
 pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &str, incidents: &mut Vec<String>) -> Result<Option<Reponse>, ()> {
-    let (code, a_nom, a_adresse) = (a.code.clone(), a.nom.clone(), a.adresse.clone());
+    // Une demande partie sans adresse (remise en main propre) n'attend pas de reponse par courriel.
+    let Some(a_adresse) = a.adresse.clone() else { return Ok(None) };
+    let (code, a_nom) = (a.code.clone(), a.qui());
     let envoyes = identifiants_de(a);
     let identifiants = match client.rechercher(&format!("\"{}\"", code), 10) {
         Ok(i) => i,
@@ -153,8 +169,14 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         };
         // Un bloc d'en-tetes rompu se recoupe, et le message se lit quand meme.
         let lu = lecture::recouper_les_entetes(&brut);
-        let Ok(m) = mailparse::parse_mail(&lu) else { continue };
-        if envoyes.contains(&lecture::identifiant_de(&m)) {
+        let m = match mailparse::parse_mail(&lu) {
+            Ok(m) => m,
+            Err(e) => {
+                incidents.push(format!("Lecture du message {} : {}", ident, e));
+                continue;
+            }
+        };
+        if lecture::identifiant_de(&m).is_some_and(|i| envoyes.contains(&i)) {
             continue; // notre propre demande, par son en-tete
         }
         let texte = lecture::texte_propre(&m);
@@ -164,7 +186,10 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         if texte.contains("bouton « Je signe »") {
             continue; // notre demande elle-meme (envoyee avant que son identifiant soit note)
         }
-        let de = lecture::adresse_de(&m);
+        let Some(de) = lecture::adresse_de(&m) else {
+            incidents.push(format!("{} : une reponse portant {} ne dit pas d'ou elle vient ; elle n'est pas retenue.", a_nom, code));
+            continue;
+        };
         if de == expediteur && de != a_adresse {
             continue; // un autre de nos envois (le contresigne)
         }
@@ -204,38 +229,51 @@ pub struct Contresigne<'a> {
 pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contresigne, qui: &str) -> R<()> {
     let a = c.a;
     let nb = c.contrats.len();
-    let mut spectacles: Vec<String> = Vec::new();
+    let mut spectacles: Vec<Option<&str>> = Vec::new();
     for x in c.contrats {
-        if !spectacles.contains(&x.spectacle) {
-            spectacles.push(x.spectacle.clone());
+        if !spectacles.contains(&x.spectacle.as_deref()) {
+            spectacles.push(x.spectacle.as_deref());
         }
     }
-    let avenant_de = |x: &ContratAttendu| x.avenant.filter(|v| *v != 0).or(a.avenant).map(|v| v.to_string()).unwrap_or_default();
-    let numeros: Vec<String> = c.contrats.iter().map(avenant_de).collect();
+    // Le numero de l'avenant : celui du contrat, sinon celui de la demande.
+    let numero = c.contrats.first().and_then(|x| x.avenant.filter(|v| *v != 0).or(a.avenant));
+    let avenant_signe = if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" };
     let (sujet, quoi) = if c.est_avenant {
         (
-            format!("{} - {}", if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" }, spectacles[0]),
-            if nb == 1 { format!("l'avenant n° {} à ton contrat", numeros[0]) } else { format!("tes {} avenants (un document chacun)", nb) },
+            match spectacles[0] {
+                Some(s) => format!("{} - {}", avenant_signe, s),
+                None => avenant_signe.to_string(),
+            },
+            match (nb, numero) {
+                (1, Some(n)) => format!("l'avenant n° {} à ton contrat", n),
+                (1, None) => "l'avenant à ton contrat".to_string(),
+                _ => format!("tes {} avenants (un document chacun)", nb),
+            },
         )
     } else {
         (
             if nb == 1 || spectacles.len() == 1 {
-                envoi::formater(SUJET_CONTRESIGNE, &[("spectacle", spectacles[0].clone())])
+                match spectacles[0] {
+                    Some(s) => envoi::formater(SUJET_CONTRESIGNE, &[("spectacle", s.to_string())]),
+                    None => SUJET_CONTRESIGNE_SANS_SPECTACLE.to_string(),
+                }
             } else {
                 envoi::formater(SUJET_CONTRESIGNE_PLURIEL, &[("mois", c.nom_mois.to_string()), ("annee", c.an.to_string())])
             },
             if nb == 1 { "ton contrat d'engagement".to_string() } else { format!("tes {} contrats d'engagement (un par page)", nb) },
         )
     };
+    let prenom = a.prenom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("prenom")))?;
+    let nom = a.nom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("nom")))?;
     let message = Message {
         cle: a.salarie.to_string(),
-        nom: a.nom.clone(),
+        nom: nom.clone(),
         destinataire: c.de.to_string(),
         sujet,
         corps: envoi::formater(
             CORPS_CONTRESIGNE,
             &[
-                ("prenom", a.prenom.clone()),
+                ("prenom", prenom),
                 ("quand", c.quand_lisible.to_string()),
                 ("quoi", quoi),
                 ("signataire", c.signataire.to_string()),
@@ -247,7 +285,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     };
     envoi::envoyer(&[message], c.expediteur, client, None, None).map_err(|e| socle::echec::Echec::from(e.to_string()))?;
     let noms_signes: Vec<String> = c.signes.iter().map(|p| socle::fichiers::nom_du(p)).collect();
-    let detail = DetailContresigne { salarie: a.salarie.clone(), nom: a.nom.clone(), code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
+    let detail = DetailContresigne { salarie: a.salarie.clone(), nom, code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
     let mut e = Envoi::nouveau(Mode::Reel, qui, true, c.de, "contrat contresigne renvoye au salarie", detail);
     e.mois = a.mois;
     journal::noter(racine, Ligne::ContratContresigne(e), Some(&c.signes[0]), &maintenant()).map(|_| ()).map_err(socle::echec::Echec::from)

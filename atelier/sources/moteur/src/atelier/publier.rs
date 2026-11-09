@@ -15,7 +15,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::compagnie::coffre::Coffre;
@@ -49,21 +49,40 @@ pub fn signer(octets: &[u8], privee: &[u8]) -> R<String> {
     Ok(socle::base64::ecrire(&ed25519_dalek::SigningKey::from_bytes(&k).sign(octets).to_bytes()))
 }
 
-/// Les fichiers de `logiciel/` pour l'archive, dans l'ordre des noms (meme contenu, meme condensat).
-fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) {
-    let mut v: Vec<_> = std::fs::read_dir(code.join(rel)).map(|it| it.flatten().collect()).unwrap_or_default();
+/// Les entrees du dossier `dossier`, dans l'ordre des noms.
+fn entrees(dossier: &Path) -> R<Vec<std::fs::DirEntry>> {
+    let mut v = Vec::new();
+    for e in std::fs::read_dir(dossier).map_err(|e| socle::echec::du_disque(dossier, &e))? {
+        v.push(e.map_err(|e| socle::echec::du_disque(dossier, &e))?);
+    }
     v.sort_by_key(|e| e.file_name());
-    for e in v {
+    Ok(v)
+}
+
+/// L'entree `e` est-elle un dossier ?
+fn est_un_dossier(e: &std::fs::DirEntry) -> R<bool> {
+    Ok(e.file_type().map_err(|x| socle::echec::du_disque(&e.path(), &x))?.is_dir())
+}
+
+/// Le dossier qui porte `logiciel/` (`code`) : les fictives livrees y sont, a cote de lui.
+fn base(code: &Path) -> R<&Path> {
+    code.parent().ok_or_else(|| format!("{} n'a pas de dossier parent : les fictives livrees ne s'y trouvent pas", code.display()))
+}
+
+/// Les fichiers de `logiciel/` pour l'archive, dans l'ordre des noms (meme contenu, meme condensat).
+fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
+    for e in entrees(&code.join(rel))? {
         let nom = e.file_name().to_string_lossy().into_owned();
         let r = rel.join(&nom);
-        if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if est_un_dossier(&e)? {
             if !EXCLUS.contains(&nom.as_str()) {
-                fichiers(code, &r, out);
+                fichiers(code, &r, out)?;
             }
         } else if !nom.ends_with(".pyc") && !nom.ends_with(".pyo") && !(rel == Path::new("") && PROPRES_A_L_INSTALLATION.contains(&nom.as_str())) {
             out.push(r);
         }
     }
+    Ok(())
 }
 
 /// Ce qu'une compagnie fictive porte sur un poste sans que ce soit la compagnie livree : ses secrets et son jeton (une
@@ -79,27 +98,28 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 6] =
 /// d'une remise a zero en cours) n'en est pas. Sans aucune fictive, une archive decompressee ouvrirait un accueil vide
 /// (le logiciel y est bride) : refus.
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
-    let dossier = code.parent().unwrap_or(code).join(crate::interface::compagnies::DOSSIER_FICTIVES);
-    let mut v: Vec<_> = std::fs::read_dir(&dossier).map(|it| it.flatten().collect()).unwrap_or_default();
-    v.sort_by_key(|e| e.file_name());
+    let dossier = base(code)?.join(crate::interface::compagnies::DOSSIER_FICTIVES);
+    if !dossier.is_dir() {
+        return Err(format!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
+    }
     let mut out = Vec::new();
     let mut n = 0;
-    for e in v {
+    for e in entrees(&dossier)? {
         let nom = e.file_name().to_string_lossy().into_owned();
         if nom.starts_with('.') || EXCLUS.contains(&nom.as_str()) {
             continue;
         }
-        if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !est_un_dossier(&e)? {
             out.push(PathBuf::from(&nom));
             continue;
         }
         // Une fictive AJOUTEE sur le poste porte les donnees qu'on y a mises : elle ne se livre jamais.
-        if !crate::interface::compagnies::est_fictive_livree(&e.path()) {
+        if !crate::interface::compagnies::est_fictive_livree(&e.path())? {
             continue;
         }
         n += 1;
         let mut dans = Vec::new();
-        fichiers(&e.path(), Path::new(""), &mut dans);
+        fichiers(&e.path(), Path::new(""), &mut dans)?;
         for r in dans {
             let rs = r.to_string_lossy().replace('\\', "/");
             if !HORS_D_UNE_FICTIVE_LIVREE.contains(&rs.as_str()) {
@@ -128,7 +148,7 @@ fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>>
         return Err(format!("« {} » n'est pas un systeme", systeme));
     }
     let mut liste = Vec::new();
-    fichiers(code, Path::new(""), &mut liste);
+    fichiers(code, Path::new(""), &mut liste)?;
     let mut out = Vec::new();
     for rel in liste {
         let nom = rel.to_string_lossy().replace('\\', "/");
@@ -149,7 +169,7 @@ fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>>
 /// ni de la compression ni des dates, et deux publications aux memes fictives ont la meme.
 fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, String)> {
     let racine = crate::interface::compagnies::DOSSIER_FICTIVES;
-    let dossier = code.parent().unwrap_or(code).join(racine);
+    let dossier = base(code)?.join(racine);
     let hex = |h: Sha256| h.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
     let mut entrees = Vec::new();
     let mut toute = Sha256::new();
@@ -166,13 +186,13 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     }
     let empreinte = hex(toute);
     let mut en_plus = Vec::new();
-    let mut posees = serde_json::Map::new();
+    let mut posees = std::collections::BTreeMap::new();
     for (nom, h) in par_fictive {
         let e = hex(h);
-        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{{\"empreinte\": \"{}\"}}\n", e).into_bytes()));
-        posees.insert(nom, json!(e));
+        en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&crate::compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
+        posees.insert(nom, e);
     }
-    let l = serde_json::to_vec_pretty(&json!({"empreinte": empreinte, "posees": posees})).map_err(|e| e.to_string())?;
+    let l = socle::ecriture::json_indente(&crate::compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
     en_plus.push((format!("{}/{}", racine, LIVRAISON), l));
     Ok((entrees, en_plus, empreinte))
 }
@@ -250,7 +270,7 @@ pub fn nom_des_fictives(version: &str) -> String {
 /// jusqu'au jour de la publication (`scenario::livrer`), dans `fictives/<nom>` -- ce qu'une compagnie bien tenue a fait
 /// avant ce jour ; la suite est au visiteur. Un rejeu qui s'ecarte arrete la publication.
 pub fn marquer_les_fictives(code: &Path) -> R<String> {
-    let base = code.parent().unwrap_or(code);
+    let base = base(code)?;
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
@@ -287,13 +307,22 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<String> {
     Ok(empreinte)
 }
 
-/// Le scelle d'une cle au format `FORMAT_CLE`, ou None.
-fn scelle_par_le_coffre(octets: &[u8]) -> Option<Vec<u8>> {
-    let v: Value = serde_json::from_slice(octets).ok()?;
-    if v.get("format").and_then(Value::as_str) != Some(FORMAT_CLE) {
-        return None;
+/// CE QUE PORTE `maj-cle-privee.bin` : son format (`FORMAT_CLE`) et la graine scellee par le coffre, en base64.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CleScellee {
+    format: String,
+    scelle: String,
+}
+
+/// Le scelle d'une cle au format `FORMAT_CLE` ; tout autre contenu refuse.
+fn scelle_par_le_coffre(chemin: &Path) -> R<Vec<u8>> {
+    const AUTRE: &str = "config/maj-cle-privee.bin n'est pas une cle scellee par le coffre : elle ne s'ouvre pas (`moteur maj --cle --remplacer` en fait une autre)";
+    let cle: CleScellee = socle::forme::lire_fichier(chemin, AUTRE)?;
+    if cle.format != FORMAT_CLE {
+        return Err(AUTRE.to_string());
     }
-    b64(v.get("scelle")?.as_str()?).ok()
+    b64(&cle.scelle).map_err(|e| format!("{} ({})", AUTRE, e))
 }
 
 /// La compagnie de `racine` porte-t-elle une cle de signature (scellee par son coffre) ? Ne lit que la presence du
@@ -302,12 +331,10 @@ pub fn cle_de_signature_posee(racine: &Path) -> bool {
     racine.join(socle::fichiers::CONFIG).join(FICHIER_CLE_PRIVEE).is_file()
 }
 
-/// Ecrit la cle scellee par le coffre : un `.part` renomme, jamais un fichier coupe en route sous le vrai nom.
+/// Ecrit la cle scellee par le coffre, d'un coup (`socle::ecriture::ecrire_json`) : jamais un fichier coupe en route
+/// sous le vrai nom.
 fn ecrire_cle(chemin: &Path, scelle: &[u8]) -> R<()> {
-    let texte = serde_json::to_string_pretty(&json!({"format": FORMAT_CLE, "scelle": socle::base64::ecrire(scelle)})).map_err(|e| e.to_string())?;
-    let part = chemin.with_extension("bin.part");
-    std::fs::write(&part, texte + "\n").map_err(|e| e.to_string())?;
-    std::fs::rename(&part, chemin).map_err(|e| e.to_string())
+    socle::ecriture::ecrire_json(chemin, &CleScellee { format: FORMAT_CLE.to_string(), scelle: socle::base64::ecrire(scelle) }, 2)
 }
 
 /// La graine de la cle privee, ouverte par ce qui ouvre le coffre. Un fichier qui n'est pas au format `FORMAT_CLE` est
@@ -317,10 +344,7 @@ fn cle_privee(coffre: &Coffre) -> R<Option<Vec<u8>>> {
     if !p.exists() {
         return Ok(None);
     }
-    let o = std::fs::read(&p).map_err(|e| e.to_string())?;
-    let scelle = scelle_par_le_coffre(&o).ok_or(
-        "config/maj-cle-privee.bin n'est pas une cle scellee par le coffre : elle ne s'ouvre pas (`moteur maj --cle --remplacer` en fait une autre)",
-    )?;
+    let scelle = scelle_par_le_coffre(&p)?;
     coffre.deproteger_par_le_coffre(&scelle, DESCRIPTION_CLE).map(Some).map_err(|e| e.message)
 }
 
@@ -343,14 +367,30 @@ pub(crate) fn exiger_editeur(racine: &Path, quoi: &str) -> R<()> {
 /// Chez l'editeur : la paire de cles qui signe les archives. La privee, scellee par la cle maitresse du coffre (refuse
 /// sans mot de passe du logiciel : elle serait perdue avec le poste) ; la publique, rendue, a reporter dans `CLE_PUBLIQUE`.
 /// Une cle qui existe deja n'est jamais remplacee sans `remplacer`.
-pub fn generer_cle(racine: &Path, remplacer: bool) -> R<Value> {
+/// La cle de signature posee : ou, sa cle publique, et si le code porte deja celle-ci (`CLE_PUBLIQUE`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClePosee {
+    pub chemin: String,
+    pub cle_publique: String,
+    pub correspond: bool,
+}
+
+/// La cle de GitHub fabriquee : le fichier de la graine (secrete), celui de la cle publique, et la cle publique.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CleDeGithub {
+    pub graine: String,
+    pub publique: String,
+    pub cle_publique: String,
+}
+
+pub fn generer_cle(racine: &Path, remplacer: bool) -> R<ClePosee> {
     exiger_editeur(racine, "la cle de signature")?;
     generer_cle_au_poste(&Coffre::du_poste(racine, ""), remplacer)
 }
 
 /// `generer_cle`, le poste donne (`coffre` : la compagnie et la cle de ce poste). Le reglage de l'installation (« ce poste
 /// est celui de l'editeur ») se regarde dans `generer_cle` ; ici, seule une copie est refusee.
-pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<Value> {
+pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<ClePosee> {
     let racine = coffre.racine.as_path();
     if crate::interface::compagnies::est_copie(racine) {
         return Err("Copie de developpement : la cle de signature ne part jamais d'ici.".into());
@@ -368,7 +408,7 @@ pub fn generer_cle_au_poste(coffre: &Coffre, remplacer: bool) -> R<Value> {
     let publique = socle::base64::ecrire(k.verifying_key().as_bytes());
     let scelle = coffre.proteger_par_le_coffre(&graine, DESCRIPTION_CLE).map_err(|e| e.message)?;
     ecrire_cle(&chemin, &scelle)?;
-    Ok(json!({"chemin": chemin.display().to_string(), "cle_publique": publique, "correspond": publique == CLE_PUBLIQUE}))
+    Ok(ClePosee { chemin: chemin.display().to_string(), correspond: publique == CLE_PUBLIQUE, cle_publique: publique })
 }
 
 /// Chez l'editeur : les archives signees et `derniere.json` dans le depot (un dossier).
@@ -391,17 +431,14 @@ pub fn publier(racine: &Path, depot: Option<&str>, notes: &str, calcul: &str, ex
 /// signees ni nommees, rendues sous `installations`. Le moteur livre n'y passe que par `publier` (la cle du poste, `CLE_PUBLIQUE`) ;
 /// les essais de bout en bout y passent une cle d'essai (`tests/fichiers/mise_a_jour.rs`).
 pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
-    let version = courante(c);
-    if version == "0.0.0" {
-        return Err(format!("pas de fichier VERSION dans {}", c.display()));
-    }
+    let version = courante(c)?;
     let depot = d.display().to_string();
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
         let avant = derniere_lue(&lire_depot(&depot, DERNIERE)?)?;
         let av = avant.version.as_str();
-        if !plus_recente(&version, av) {
+        if !plus_recente(&version, av)? {
             return Err(format!(
                 "le depot est deja en {} ; augmenter VERSION (aujourd'hui {}, le fichier s'ecrit AAAA.MM.JJ : {}) avant de publier",
                 version_lue(av),
@@ -431,7 +468,7 @@ pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, note
             return Err("la cle privee de ce poste ne correspond pas a la cle publique du code : refaire `moteur maj --cle` et reporter la cle publique".into());
         }
         let nom = nom_d_archive(&version, systeme);
-        let systemes = if systeme == TOUT_SYSTEME { presents.iter().map(|s| s.to_string()).collect() } else { Vec::new() };
+        let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
         archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: condensat(&octets), signature, systemes });
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
@@ -474,7 +511,7 @@ pub fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, note
         sha256: windows.as_ref().map(|w| w.sha256.clone()),
         signature: windows.map(|w| w.signature),
     };
-    ecrire_json(&d.join(DERNIERE), &serde_json::to_value(&manifeste).map_err(|e| e.to_string())?)?;
+    ecrire_json(&d.join(DERNIERE), &manifeste)?;
     Ok(Publication { manifeste, tailles, dossier: d.to_path_buf() })
 }
 
@@ -498,7 +535,7 @@ impl Publication {
 /// secret `PUPPETPAIE_CLE_SIGNATURE` de l'environnement `publication`, puis efface ; elle ne passe jamais a l'ecran ni
 /// dans un journal. La cle PUBLIQUE (pas secrete) va dans `cle-github-publique.txt` et dans ce qui est rendu : elle se
 /// reporte dans `CLE_PUBLIQUE_GITHUB`. Refuse si la graine d'une cle precedente est encore la (rien n'est ecrase).
-pub fn generer_cle_github(dossier: &Path) -> R<Value> {
+pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     let fichier = dossier.join("cle-github-graine.txt");
     let fichier_publique = dossier.join("cle-github-publique.txt");
     if fichier.exists() {
@@ -522,7 +559,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<Value> {
     f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| e.to_string())?;
     graine.fill(0);
     std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| e.to_string())?;
-    Ok(json!({"graine": fichier.display().to_string(), "publique": fichier_publique.display().to_string(), "cle_publique": publique}))
+    Ok(CleDeGithub { graine: fichier.display().to_string(), publique: fichier_publique.display().to_string(), cle_publique: publique })
 }
 
 /// `publier_signe` depuis une graine en base64 (celle du secret de GitHub), verifiee contre `cle_publique` : refuse si
@@ -531,7 +568,11 @@ pub fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_
     if cle_publique.is_empty() {
         return Err("la cle publique de GitHub n'est pas reportee dans le code (moteur/src/compagnie/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie".into());
     }
-    let graine = b64(graine_b64.trim()).ok().filter(|g| g.len() == 32).ok_or_else(|| format!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE))?;
+    // Le refus ne dit pas pourquoi la base64 ne se lit pas : il ne porte rien de la graine.
+    let graine = match b64(graine_b64.trim()) {
+        Ok(g) if g.len() == 32 => g,
+        _ => return Err(format!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE)),
+    };
     publier_signe(logiciel, sortie, &graine, cle_publique, notes, calcul, exigee).map_err(|e| {
         if e.starts_with("la cle privee de ce poste") {
             format!("la graine de {} n'est pas celle de CLE_PUBLIQUE_GITHUB : rien n'est publie", VARIABLE_GRAINE)
@@ -547,7 +588,12 @@ pub fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_
 /// plus recente est refusee (`publier_signe`). Ni le reglage « editeur » ni le coffre n'y jouent : le secret n'existe
 /// que dans le travail approuve par l'editeur.
 pub fn publier_depuis_l_environnement(logiciel: &Path, sortie: &Path, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
-    let g = std::env::var(VARIABLE_GRAINE).ok().filter(|g| !g.trim().is_empty()).ok_or_else(|| format!("{} absente : rien n'est publie", VARIABLE_GRAINE))?;
+    // Le refus ne dit rien de la valeur : c'est la graine.
+    let g = match std::env::var(VARIABLE_GRAINE) {
+        Ok(g) if !g.trim().is_empty() => g,
+        Ok(_) | Err(std::env::VarError::NotPresent) => return Err(format!("{} absente : rien n'est publie", VARIABLE_GRAINE)),
+        Err(std::env::VarError::NotUnicode(_)) => return Err(format!("{} n'est pas du texte : rien n'est publie", VARIABLE_GRAINE)),
+    };
     publier_par_graine(logiciel, sortie, &g, CLE_PUBLIQUE_GITHUB, notes, calcul, exigee)
 }
 

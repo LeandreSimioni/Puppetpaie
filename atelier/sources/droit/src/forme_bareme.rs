@@ -270,7 +270,8 @@ forme! {
         pub tarifs_conventionnels: Option<Tarifs>,
         pub contributions_dsn: Option<Vec<ContributionDsn>>,
         pub secteurs: Option<Secteurs>,
-        // Le taux AT/MP de la surcouche de la compagnie (`Surcouche`), ou ce que le moteur en dit.
+        // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee (`contexte::Contexte::taux_atmp_de`), ou ce que le
+        // moteur en dit.
         #[serde(skip)]
         pub taux_atmp: Option<TauxAtmp>,
         // Ce que le moteur pose sur la pile : l'etablissement du salarie (`bareme::surcharger`). La compagnie, la pile la
@@ -303,15 +304,6 @@ impl VersementMobiliteEcrit {
     pub fn est_vide(&self) -> bool {
         matches!(self, VersementMobiliteEcrit::Dit(s) if s.is_empty())
     }
-}
-
-/// La date et l'effet d'une notification du taux AT/MP qu'un retour a posee (`moteur::routes::atmp::poser_notifie`).
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationAtmp {
-    pub le: String,
-    pub calcul: String,
-    pub effet: String,
 }
 
 forme! {
@@ -442,8 +434,7 @@ forme! {
         /// La cle de son assiette dans les bases du calcul (`brut`, `brut_x115`, `t1_journaliere`…).
         pub base: Option<String>,
         /// Les deux parts, en pourcent ; absente ou nulle : pas de part de ce cote.
-        #[serde(default, deserialize_with = "datee::valeur")]
-        pub taux_pat: Option<f64>,
+        pub taux_pat: Option<TauxDate>,
         pub taux_sal: Option<f64>,
         /// Une part patronale qui se compose de plusieurs taux, chacun arrondi au centime (`composants`, ou
         /// `composants_pat`) ; la part salariale de meme (`composants_sal`).
@@ -728,7 +719,6 @@ forme! {
 forme! {
     pub struct RisquesAtmp {
         pub arrete: String,
-        pub par_defaut: Option<String>,
         pub codes: Vec<RisqueAtmp>,
     }
 }
@@ -854,7 +844,7 @@ impl Effet {
     /// Ce que la pile porte a sa place, `None` si elle ne le porte pas.
     pub fn lu(&self, pile: &Pile) -> Option<Lu> {
         let cotisation = |l: &[CotisationDsn], code: &str| l.iter().find(|c| c.code81.as_deref() == Some(code)).and_then(|c| c.taux).map(|t| Lu::Taux(t.0));
-        let rubrique = |l: &[Rubrique], id: &str| l.iter().find(|r| r.id == id).and_then(|r| r.taux_pat).map(Lu::Taux);
+        let rubrique = |l: &[Rubrique], id: &str| l.iter().find(|r| r.id == id).and_then(|r| r.taux_pat).map(|t| Lu::Taux(t.0));
         match self {
             Effet::TauxDsn { section: Section::Corps, code81, .. } => cotisation(&pile.cotisations_dsn, code81),
             Effet::TauxDsn { section: Section::Statut(s), code81, .. } => cotisation(pile.par_statut.get(s)?.cotisations_dsn.as_deref()?, code81),
@@ -1030,14 +1020,14 @@ forme! {
 }
 
 forme! {
-    /// LA SURCOUCHE DE LA COMPAGNIE (`config/baremes/<an>.json`) : le socle qu'elle reprend, son taux AT/MP, son versement
-    /// mobilite, et ce qu'elle decide au-dela d'un seuil d'effectif (`seuils_effectif`) : les rubriques et les cotisations
-    /// qu'elle change, par leur `id` ou leur code (`code81` ou `code81:affectation`).
+    /// LA SURCOUCHE DE LA COMPAGNIE (`config/baremes/<an>.json`) : le socle qu'elle reprend, son versement mobilite, et ce
+    /// qu'elle decide au-dela d'un seuil d'effectif (`seuils_effectif`) : les rubriques et les cotisations qu'elle change,
+    /// par leur `id` ou leur code (`code81` ou `code81:affectation`). Le moteur la lit, il ne l'ecrit pas ; le taux AT/MP
+    /// est dans la fiche entreprise (`fiche::ChampsEntreprise::taux_atmp`).
     pub struct Surcouche {
         pub annee: i32,
         pub socle: i32,
         pub quoi: Option<String>,
-        pub taux_atmp: Option<TauxAtmpEcrit>,
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
@@ -1122,10 +1112,10 @@ pub enum ChampDuSecteur {
 }
 
 impl ChampDuSecteur {
-    /// Ce que la fiche y dit, vide si rien.
-    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> String {
+    /// Ce que la fiche y dit.
+    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> Option<&'static str> {
         match self {
-            ChampDuSecteur::Secteur2121 => fiche.secteur_2121.code().to_string(),
+            ChampDuSecteur::Secteur2121 => fiche.secteur_2121.code(),
         }
     }
 }
@@ -1165,115 +1155,16 @@ forme! {
     }
 }
 
-/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT : la surcouche de l'annee (`moteur::routes::atmp`), ce que le
-/// moteur en reprend d'une annee d'avant (`bareme::taux_atmp_reporte`) ou en dit quand il manque.
+/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE PERIODE : la ligne de sa case de la configuration
+/// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`) : son taux, son code, sa date, d'ou elle vient ; ce qui manque.
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
     pub valeur: Option<Decimal>,
     pub code_risque: Option<String>,
-    pub provenance: Option<String>,
-    pub pose_a_la_creation: Option<bool>,
-    pub notification: Option<NotificationAtmp>,
+    pub depuis: Option<socle::date::Jour>,
+    pub provenance: Option<crate::fiche::ProvenanceAtmp>,
+    pub notification: Option<crate::fiche::NotificationAtmp>,
     pub manque: Option<String>,
-    pub reporte_de: Option<i32>,
-    pub alsace_moselle: Option<bool>,
-    pub etablissement_neuf: Option<bool>,
-}
-
-/// LE TAUX AT/MP TEL QUE LA SURCOUCHE DE L'ANNEE L'ECRIT (`moteur::routes::atmp`), ou que le moteur le reprend d'une
-/// annee d'avant (`bareme::taux_atmp_reporte`) : sa valeur, ou la liste datee de ses valeurs quand une notification le
-/// change en cours d'annee.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TauxAtmpEcrit {
-    pub valeur: Option<ValeurAtmp>,
-    pub code_risque: Option<String>,
-    #[serde(rename = "note")]
-    pub provenance: Option<String>,
-    pub pose_a_la_creation: Option<bool>,
-    pub notification: Option<NotificationAtmp>,
-    pub manque: Option<String>,
-    pub reporte_de: Option<i32>,
-    pub alsace_moselle: Option<bool>,
-    pub etablissement_neuf: Option<bool>,
-}
-
-/// Le taux AT/MP ecrit : un nombre, ou ses valeurs datees `[{depuis, valeur}]`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum ValeurAtmp {
-    Seule(socle::forme::Nombre),
-    Datee(Vec<TauxAtmpDate>),
-}
-
-/// Une valeur datee du taux AT/MP : sa date d'effet.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TauxAtmpDate {
-    pub depuis: String,
-    pub valeur: socle::forme::Nombre,
-}
-
-impl ValeurAtmp {
-    /// Les valeurs, de la plus ancienne a la plus recente : `(depuis, valeur)`, sans date pour un nombre seul.
-    pub fn valeurs(&self) -> Vec<(Option<&str>, Decimal)> {
-        match self {
-            ValeurAtmp::Seule(n) => vec![(None, n.0)],
-            ValeurAtmp::Datee(l) => {
-                let mut v: Vec<(Option<&str>, Decimal)> = l.iter().map(|e| (Some(e.depuis.as_str()), e.valeur.0)).collect();
-                v.sort_by(|a, b| a.0.cmp(&b.0));
-                v
-            }
-        }
-    }
-
-    /// LE TAUX EN VIGUEUR CE JOUR-LA, ramene dans l'annee pour l'ecran : la valeur dont le `depuis` est le plus recent au
-    /// plus tard ce jour ; avant la premiere, la premiere.
-    pub fn au(&self, jour: &socle::date::Jour) -> Option<Decimal> {
-        let v = self.valeurs();
-        let iso = jour.iso();
-        v.iter().rev().find(|(d, _)| d.is_none_or(|d| d <= iso.as_str())).or(v.first()).map(|(_, x)| *x)
-    }
-
-    /// LE TAUX QUE LA PAIE DE CE JOUR APPLIQUE, et le `depuis` de la valeur retenue : avant la premiere date d'effet, il
-    /// n'y en a pas (il ne se devine pas).
-    pub fn en_vigueur(&self, jour: &socle::date::Jour) -> socle::num::Resultat<(Decimal, Option<socle::date::Jour>)> {
-        let mut retenue = None;
-        for (d, x) in self.valeurs() {
-            let depuis = d.map(socle::date::Jour::lire).transpose()?;
-            if depuis.is_none_or(|j| j <= *jour) {
-                retenue = Some((x, depuis));
-            }
-        }
-        retenue.ok_or_else(|| format!("Le taux AT/MP de la compagnie n'a aucune valeur au {} : sa première date d'effet est postérieure.", jour.jj_mm_aaaa()))
-    }
-}
-
-impl TauxAtmpEcrit {
-    /// Le taux tel que la paie de `jour` le lit (`ValeurAtmp::en_vigueur`), et le `depuis` de la valeur retenue.
-    pub fn au_jour(&self, jour: &socle::date::Jour) -> socle::num::Resultat<(TauxAtmp, Option<socle::date::Jour>)> {
-        let (valeur, depuis) = match &self.valeur {
-            Some(v) => {
-                let (x, d) = v.en_vigueur(jour)?;
-                (Some(x), d)
-            }
-            None => (None, None),
-        };
-        Ok((
-            TauxAtmp {
-                valeur,
-                code_risque: self.code_risque.clone(),
-                provenance: self.provenance.clone(),
-                pose_a_la_creation: self.pose_a_la_creation,
-                notification: self.notification.clone(),
-                manque: self.manque.clone(),
-                reporte_de: self.reporte_de,
-                alsace_moselle: self.alsace_moselle,
-                etablissement_neuf: self.etablissement_neuf,
-            },
-            depuis,
-        ))
-    }
 }
 
 /// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas

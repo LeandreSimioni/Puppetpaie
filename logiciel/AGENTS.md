@@ -24,6 +24,6 @@ ne calcule rien de tête et n'invente aucune valeur.
 - Un acte réel (dépôt réel, envoi, signature) : le programme ouvre lui-même une boîte où la personne tape le mot de passe
   du logiciel. Tu ne vois ni ne tapes jamais un mot de passe, ne poses aucune variable de mot de passe, n'ouvres pas le
   coffre. Un essai (`reel: false`) se fait sans demander.
-- Un refus dit quoi corriger : dis-le à la personne, n'invente pas de valeur. Ce qui n'est pas une phrase (un chemin, une clé, un fichier, un détail) vient à côté de `erreur`, dans la réponse (`chemin`, `cle`, `fichier`, `detail`).
+- Un refus dit quoi corriger : dis-le à la personne, n'invente pas de valeur. Le refus est `refus` dans la réponse : sa `classe`, sa `phrase`, ce que la fiche dit de corriger (`corriger`) ; ce qui n'est pas une phrase (un chemin, une clé, un fichier, un détail) vient à part (`a_part` : `chemin`, `cle`, `fichier`, `detail`).
 - Écrire au développeur : la route `signalement-envoyer`, avec ou sans `--racine` (le champ `ecran` dit ce que tu as tenté).
 - Les fichiers `prive/config/*.bin` (et ceux d'une compagnie, `config/*.bin`) ne se lisent jamais.

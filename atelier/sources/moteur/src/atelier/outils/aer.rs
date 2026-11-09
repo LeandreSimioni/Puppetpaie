@@ -12,18 +12,17 @@ use socle::echec::Echec;
 pub static SPEC: Spec = Spec { commande: "aer", positionnels: &[], options: &[Opt::valeur("mois"), Opt::drapeau("forcer")] };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    faire(cadre, args).unwrap_or_else(|e| super::refus(&e))
-}
-
-fn nom(p: &std::path::Path) -> String {
-    p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    super::code(faire(cadre, args))
 }
 
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let mois = args.texte("mois");
     let fait = crate::routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
     if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
-        dire!("Aucune attestation{} dans les retours de nature {}.", mois.map(|m| format!(" pour {}", m)).unwrap_or_default(), NATURE_AER_SPECTACLE);
+        match mois {
+            Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NATURE_AER_SPECTACLE),
+            None => dire!("Aucune attestation dans les retours de nature {}.", NATURE_AER_SPECTACLE),
+        }
         return Ok(2);
     }
     for (periode, cle, chemin) in &fait.ecrits {
@@ -32,7 +31,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     if !fait.a_ranger.is_empty() {
         dire!("\n{} attestation(s) non rattachee(s) a une fiche (le nom et le prenom ne se trouvent pas) :", fait.a_ranger.len());
         for (qui, chemin) in &fait.a_ranger {
-            dire!("   {}  ({})", qui, nom(chemin));
+            dire!("   {}  ({})", qui, super::nom(chemin));
         }
     }
     if !fait.refusees.is_empty() {

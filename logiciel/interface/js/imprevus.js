@@ -845,8 +845,9 @@ function boiteSignalerArret(a, nature) {
     const rendre = occupe(document.getElementById("si-ok"), "Écriture…");
     let r;
     try {
-      r = await api("arret-signaler", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille, nature,
-                                        remplace: remplace ? remplace.value.trim() : "" });
+      // Un signalement qui ne remplace rien ne dit pas `remplace`.
+      const remplaceDit = remplace && remplace.value.trim() ? { remplace: remplace.value.trim() } : {};
+      r = await api("arret-signaler", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille, nature, ...remplaceDit });
     } catch (e) { rendre(); dire(e.message, "erreur"); return; }
     fermerBoite();
     // Les avis du signalement suivent le message, sur la même ligne.
@@ -941,8 +942,8 @@ function boiteSignalerFin(mois, f) {
     const rendre = occupe(document.getElementById("fi-ok"), "Écriture…");
     let r;
     try {
-      r = await api("fin-contrat-signaler", { mois, salarie: f.salarie,
-                                              remplace: document.getElementById("fi-remplace").value.trim() });
+      const remplace = document.getElementById("fi-remplace").value.trim();
+      r = await api("fin-contrat-signaler", { mois, salarie: f.salarie, ...(remplace ? { remplace } : {}) });
     } catch (e) { rendre(); dire(e.message, "erreur"); return; }
     fermerBoite();
     dire(r.phrase);

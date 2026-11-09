@@ -12,9 +12,8 @@
 use std::path::{Path, PathBuf};
 
 use socle::date::Jour;
-use socle::fichiers::dossier_du_code;
 
-const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
+use crate::interface::compagnies::MARQUEUR;
 const FICHIER_MODE: &str = ".mode-developpeur.json";
 const NOM_DEV: &str = "prive-dev";
 
@@ -22,7 +21,7 @@ const NOM_DEV: &str = "prive-dev";
 /// code absolu et sans `..`.
 fn parent_du_logiciel() -> PathBuf {
     // `<...>/logiciel/donnees` -> `<...>/logiciel` -> `<...>`
-    dossier_du_code().parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default()
+    crate::interface::compagnies::dessus(&crate::interface::compagnies::logiciel())
 }
 
 /// Le dossier `donnees/` (le code livre : baremes, echeancier...) : `PUPPETPAIE_CODE` si elle est posee, sinon celui que
@@ -30,26 +29,34 @@ fn parent_du_logiciel() -> PathBuf {
 /// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
 /// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
 pub fn fixer_le_code() {
-    if std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()).is_some() {
-        return;
-    }
     let valide = |p: &Path| p.join("echeancier-base.json").is_file();
     let mut candidats: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        for a in exe.ancestors().skip(1) {
-            candidats.push(a.join("donnees"));
-            candidats.push(a.join("logiciel").join("donnees"));
+    match std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()) {
+        // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
+        Some(pose) => candidats.push(PathBuf::from(pose)),
+        None => {
+            if let Ok(exe) = std::env::current_exe() {
+                for a in exe.ancestors().skip(1) {
+                    candidats.push(a.join("donnees"));
+                    candidats.push(a.join("logiciel").join("donnees"));
+                }
+            }
+            candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
     }
-    candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
     for c in candidats {
-        if valide(&c) {
-            if let Ok(abs) = c.canonicalize() {
-                // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
-                let abs = abs.to_string_lossy().strip_prefix(r"\\?\").map(PathBuf::from).unwrap_or(abs);
-                std::env::set_var("PUPPETPAIE_CODE", abs);
-                return;
-            }
+        if !valide(&c) {
+            continue;
+        }
+        // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
+        if let Ok(abs) = c.canonicalize() {
+            // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
+            let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
+                Some(sans) => PathBuf::from(sans),
+                None => abs.clone(),
+            };
+            std::env::set_var("PUPPETPAIE_CODE", abs);
+            return;
         }
     }
 }
@@ -67,18 +74,26 @@ fn chemin_mode() -> PathBuf {
     }
 }
 
-/// `compagnies.mode_actif`.
-pub fn mode_actif() -> bool {
-    std::fs::read_to_string(chemin_mode())
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get("actif").map(documents::valeur::vrai))
-        .unwrap_or(false)
+/// `.mode-developpeur.json` : le mode developpeur de ce poste, allume ou non.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModeDeveloppeur {
+    actif: bool,
 }
 
-/// `compagnies.copie_faite`.
-pub fn copie_faite() -> bool {
-    std::fs::read_to_string(dossier_dev().join(MARQUEUR)).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).is_some()
+/// Le mode developpeur est-il allume ? Sans `.mode-developpeur.json`, il est eteint.
+pub fn mode_actif() -> Result<bool, String> {
+    let p = chemin_mode();
+    if !p.is_file() {
+        return Ok(false);
+    }
+    let m: ModeDeveloppeur = socle::forme::lire_fichier(&p, "Le mode développeur (.mode-developpeur.json) ne se lit pas : il dit {\"actif\": true} ou {\"actif\": false}.")?;
+    Ok(m.actif)
+}
+
+/// La copie de developpement est-elle faite ? Son marqueur le dit, dans sa forme (`interface::compagnies::Marqueur`).
+pub fn copie_faite() -> Result<bool, String> {
+    Ok(crate::interface::compagnies::marqueur(&dossier_dev())?.is_some())
 }
 
 /// Le jour de Paris, aujourd'hui.
@@ -98,11 +113,17 @@ pub fn poser_le_jour() -> Jour {
 /// La racine de la compagnie de cette commande. `dev` : la copie de developpement, ou la phrase du refus.
 pub fn racine(dev: bool) -> Result<PathBuf, String> {
     if dev {
-        if !mode_actif() {
-            return Err(socle::echec::avec("Le mode développeur est éteint sur ce poste : la copie de développement ne s'y ouvre pas.", serde_json::json!({"commande": "moteur dev activer"})));
+        if !mode_actif()? {
+            return Err(socle::echec::avec(
+                "Le mode développeur est éteint sur ce poste : la copie de développement ne s'y ouvre pas.",
+                socle::echec::APart { chemin: Some(chemin_mode().to_string_lossy().into_owned()), detail: Some("{\"actif\": true} l'allume".to_string()), ..Default::default() },
+            ));
         }
-        if !copie_faite() {
-            return Err(socle::echec::avec("Ce poste n'a pas de copie de développement.", serde_json::json!({"commande": "moteur dev copier"})));
+        if !copie_faite()? {
+            return Err(socle::echec::avec(
+                "Ce poste n'a pas de copie de développement.",
+                socle::echec::APart { chemin: Some(dossier_dev().join(MARQUEUR).to_string_lossy().into_owned()), ..Default::default() },
+            ));
         }
         let d = dossier_dev();
         std::env::set_var("PUPPETPAIE_DONNEES", &d);

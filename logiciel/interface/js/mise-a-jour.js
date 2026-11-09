@@ -88,7 +88,7 @@
       return;
     }
     bouton.disabled = false;
-    refus.textContent = (r && r.erreur) || "";
+    refus.textContent = (r && r.refus && r.refus.phrase) || "";
   }
 
   /* Dans la page d'une compagnie, l'état arrive avec l'ouverture (

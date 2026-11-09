@@ -123,13 +123,13 @@ async function lancer(banc, { jour, moteur, depot } = {}) {
  * envois simulés joue ce qui était dû (DPAE, mois, DSN, documents), les retours des dépôts joués reviennent. */
 async function jour(banc, j) {
   const r = await appeler(lireEtat(path.resolve(banc)), "/atelier/jour", { jour: j });
-  if (!r.ok) throw new Error(r.erreur);
+  if (!r.ok) throw new Error(r.refus.phrase);
   return r;
 }
 
 async function simuler(banc) {
   const r = await appeler(lireEtat(path.resolve(banc)), "/atelier/simuler", {});
-  if (!r.ok) throw new Error(r.erreur);
+  if (!r.ok) throw new Error(r.refus.phrase);
   return r;
 }
 

@@ -7,21 +7,19 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe};
 use socle::echec::Echec;
 use socle::echec::R;
-use crate::valeur::lire_json;
 use socle::verrou::Verrou;
-use socle::echec::Refus;
 use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
 
 fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
-    erreur("OSError", socle::echec::du_disque(&chemin, &e))
+    erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
 }
 
 fn valeur(m: String) -> Echec {
-    erreur("ValueError", m)
+    erreur(Classe::Illisible, m)
 }
 
 /// La suite des numeros de chaque annee, sous la racine de la compagnie.
@@ -42,9 +40,9 @@ pub type Compteurs = BTreeMap<String, CompteursDeLAnnee>;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompteursDeLAnnee {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bulletin: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub certificat_cs: Option<i64>,
 }
 
@@ -71,8 +69,7 @@ pub fn compteurs(racine: &std::path::Path) -> R<Compteurs> {
     if !p.exists() {
         return Ok(Compteurs::new());
     }
-    let v = lire_json(&p).map_err(valeur)?;
-    socle::forme::lire_en_phrase(&v, |cle, _| {
+    socle::forme::lire_fichier_en_phrase(&p, |cle, _| {
         format!("Les compteurs de numéros de la compagnie (config/compteurs.json) ne se lisent pas{} : le fichier se corrige à la main.", if cle.is_empty() { String::new() } else { format!(" ({})", cle) })
     })
     .map_err(valeur)
@@ -90,9 +87,9 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
     let maintenant = socle::paris::iso_secondes(socle::temps::secondes()).replace('T', " ");
     let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
-    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur("OSError", m))? {
+    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
         Ok(v) => Ok(v),
-        Err(v) => Err(erreur("CompteursVerrouilles", v.message())),
+        Err(v) => Err(erreur(Classe::CompteursVerrouilles, v.message())),
     }
 }
 
@@ -102,19 +99,19 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
 /// Les numeros de contrat (FA1.26.13) et de bulletin (17/2026) que les paies porteraient (`engagement::numeros::numeroter`), en
 /// memoire : l'apercu n'ecrit rien. Un engagement qui PORTE DEJA son numero de contrat le garde (`engagement::numeros`),
 /// une paie partie son numero de bulletin (`engagement::etats::numeros_des_documents`).
-pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> Result<(), Refus> {
+pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     numeroter_en_attente(ctx, paies, annee, &mut HashMap::new(), departs)
 }
 
 /// La meme, avec les numeros de bulletin deja RESERVES par un appel precedent du meme processus : `annee -> dernier
 /// numero`, sinon a la suite du compteur de l'annee (`config/compteurs.json`) et des bulletins importes de l'annee
 /// (`engagement::numeros::dernier_bulletin_importe`).
-pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, attente: &mut HashMap<i32, i64>, departs: &engagement::departs::Departs) -> Result<(), Refus> {
+pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, attente: &mut HashMap<i32, i64>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     let n_bull = match attente.get(&annee) {
         Some(v) => v + 1,
         None => {
-            let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.bulletin).unwrap_or(0);
-            lu.max(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?) + 1
+            let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.bulletin);
+            lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?, i64::max) + 1
         }
     };
     let n_bull = engagement::numeros::numeroter(ctx, paies, annee, n_bull, departs)?;
@@ -138,9 +135,13 @@ impl Reserves {
         if let Some(v) = self.valeurs.get(&(annee, suite)) {
             return Ok(v + 1);
         }
-        let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite)).unwrap_or(0);
-        let importe = if suite == Suite::Bulletin { engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)? } else { 0 };
-        Ok(lu.max(importe) + 1)
+        let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite));
+        let importe = match suite {
+            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)?),
+            Suite::CertificatCs => None,
+        };
+        // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
+        Ok(lu.into_iter().chain(importe).fold(0, i64::max) + 1)
     }
 
     /// Reserve, sans ecrire.
@@ -172,8 +173,7 @@ impl Reserves {
         for k in &self.ordre {
             c.entry(k.0.to_string()).or_default().poser(k.1, self.valeurs[k]);
         }
-        let v = serde_json::to_value(&c).map_err(|e| valeur(e.to_string()))?;
-        std::fs::write(&p, json_indente(&v, 2)).map_err(|e| os(&p, e))
+        std::fs::write(&p, json_indente(&c, 2)).map_err(|e| os(&p, e))
     }
 }
 
@@ -184,7 +184,7 @@ impl Reserves {
 /// validation (`engagement::numeros`), chaque bulletin sous le sien (ecrit dans la paie a son depart, ou celui que le
 /// compteur propose). `reserves` : les numeros de bulletin qu'un envoi propose, que la route d'envoi ecrit plus loin. Un
 /// mois sans engagement valide n'a rien.
-pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Refus> {
+pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Echec> {
     let Some((data, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else {
         return Ok((engagement::saisie::VueDuMois::vide(socle::mois::Mois::lire(mois)?), Vec::new()));
     };

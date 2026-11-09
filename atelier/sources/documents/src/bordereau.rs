@@ -161,27 +161,33 @@ fn enregistrements(texte: &str) -> Vec<Vec<String>> {
 fn lire(chemin: &Path) -> Resultat<Table> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     let texte = String::from_utf8(octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
-    let texte = texte.strip_prefix('\u{feff}').unwrap_or(&texte);
+    // Le BOM d'un fichier enregistre par un tableur n'est pas une donnee.
+    let texte = match texte.strip_prefix('\u{feff}') {
+        Some(t) => t,
+        None => texte.as_str(),
+    };
+    let fautive = |detail: &str| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel ne se lit pas : le signaler au développeur.", "colonne", detail);
     let mut recs = enregistrements(texte).into_iter();
-    let entete = recs.next().unwrap_or_default();
-    let col = |nom: &str| entete.iter().position(|c| c == nom);
-    let (c_code, c_effet, c_fin, c_fmt) = (col("Code"), col("Date d'effet"), col("Date de fin"), col("Format"));
-    let (c_pl, c_dep, c_lib) = (col("Taux plafonné"), col("Taux déplafonné"), col("Libellé"));
+    let entete = recs.next().ok_or_else(|| fautive("la table est vide"))?;
+    let col = |nom: &str| entete.iter().position(|c| c == nom).ok_or_else(|| fautive(nom));
+    let (c_code, c_effet, c_fin, c_fmt) = (col("Code")?, col("Date d'effet")?, col("Date de fin")?, col("Format")?);
+    let (c_pl, c_dep, c_lib) = (col("Taux plafonné")?, col("Taux déplafonné")?, col("Libellé")?);
     let mut table = Table::new();
     for r in recs {
-        let v = |c: Option<usize>| c.and_then(|i| r.get(i)).map(String::as_str).unwrap_or("");
-        let code = v(c_code).trim().trim_matches('\'').to_string();
+        // Chaque enregistrement a les colonnes de l'en-tete ; une case vide est un texte vide.
+        let v = |c: usize| r.get(c).map(String::as_str).ok_or_else(|| fautive(&entete[c]));
+        let code = v(c_code)?.trim().trim_matches('\'').to_string();
         if code.is_empty() {
             continue;
         }
-        let Some(effet) = date_table(v(c_effet))? else { continue };
+        let Some(effet) = date_table(v(c_effet)?)? else { continue };
         let ligne = Ligne {
             effet,
-            fin: date_table(v(c_fin))?,
-            format: v(c_fmt).trim().to_string(),
-            plafonne: taux(v(c_pl))?,
-            deplafonne: taux(v(c_dep))?,
-            libelle: v(c_lib).to_string(),
+            fin: date_table(v(c_fin)?)?,
+            format: v(c_fmt)?.trim().to_string(),
+            plafonne: taux(v(c_pl)?)?,
+            deplafonne: taux(v(c_dep)?)?,
+            libelle: v(c_lib)?.to_string(),
         };
         table.entry(code).or_default().push(ligne);
     }
@@ -215,15 +221,12 @@ fn table() -> Resultat<Arc<Table>> {
 fn ligne_de_table<'a>(t: &'a Table, code: &str, jour: &Jour) -> Option<&'a Ligne> {
     let mut meilleure: Option<&Ligne> = None;
     for l in t.get(code)?.iter().filter(|l| l.effet <= *jour) {
-        let mieux = match meilleure {
-            None => true,
-            Some(m) => (l.effet, l.fin.is_none()) > (m.effet, m.fin.is_none()),
-        };
-        if mieux {
+        if meilleure.is_none_or(|m| (l.effet, l.fin.is_none()) > (m.effet, m.fin.is_none())) {
             meilleure = Some(l);
         }
     }
-    meilleure.filter(|l| l.fin.map_or(true, |f| *jour < f))
+    // Une ligne sans date de fin reste ouverte.
+    meilleure.filter(|l| l.fin.is_none_or(|f| *jour < f))
 }
 
 /// L'arrondi a l'euro des montants et des assiettes declares aux organismes de securite sociale (CSS L. 133-10,

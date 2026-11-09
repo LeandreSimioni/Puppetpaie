@@ -484,31 +484,6 @@ pub fn trop_courte(quoi: &str) -> String {
     format!("liste trop courte : {}", quoi)
 }
 
-/// « une liste ne peut pas servir de clé » : une valeur cherchée dans une table, ou rangée parmi des clés.
-pub fn pas_une_cle(nom_type: &str) -> String {
-    format!("{} ne peut pas servir de clé", nature(nom_type))
-}
-
-/// « comparaison impossible : un texte et un nombre entier » : deux valeurs à ranger qui ne se comparent pas.
-pub fn incomparables(type_a: &str, type_b: &str) -> String {
-    format!("comparaison impossible : {} et {}", nature(type_a), nature(type_b))
-}
-
-/// « élément 3 de la liste : <ce qui ne va pas> » (`rang` compte depuis zéro, l'élément depuis un).
-pub fn element(rang: usize, quoi: &str) -> String {
-    format!("élément {} de la liste : {}", rang + 1, quoi)
-}
-
-/// « élément 3 de la liste : une paire (clé, valeur) est attendue, lu : 3 valeurs » : une liste qui se lit en objet.
-pub fn paire_attendue(rang: usize, longueur: usize) -> String {
-    element(rang, &format!("une paire (clé, valeur) est attendue, lu : {} valeur{}", longueur, if longueur > 1 { "s" } else { "" }))
-}
-
-/// « élément 3 de la liste : une paire (clé, valeur) est attendue, lu : un nombre ».
-pub fn pas_une_paire(rang: usize, nom_type: &str) -> String {
-    element(rang, &format!("une paire (clé, valeur) est attendue, lu : {}", nature(nom_type)))
-}
-
 /// Un nombre que l'on voudrait entier et qui ne tient pas : infini, ou hors de ce qu'un entier porte.
 pub fn entier_hors_limites(n: &str) -> String {
     format!("nombre entier hors limites : {}", n)
@@ -560,25 +535,6 @@ pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
         }
     }
     dossier_du_code().join("modeles").join(nom)
-}
-
-/// Un fichier texte UTF-8 ; le refus porte la classe de l'erreur de lecture (`FileNotFoundError`, `PermissionError`,
-/// `IsADirectoryError`, `OSError`, `UnicodeDecodeError`).
-pub fn lire_texte_echec(p: &Path) -> Result<String, crate::echec::Echec> {
-    use crate::echec::erreur;
-    let octets = std::fs::read(p).map_err(|e| {
-        let classe = if p.is_dir() {
-            "IsADirectoryError"
-        } else {
-            match e.kind() {
-                std::io::ErrorKind::NotFound => "FileNotFoundError",
-                std::io::ErrorKind::PermissionDenied => "PermissionError",
-                _ => "OSError",
-            }
-        };
-        erreur(classe, panne_fichier(&e, p))
-    })?;
-    String::from_utf8(octets).map_err(|e| erreur("UnicodeDecodeError", crate::echec::du_disque(&p, &e)))
 }
 
 /// Le nom d'un chemin, ou son texte entier s'il n'en a pas.

@@ -340,7 +340,7 @@ function casesMoisPasse(vue, contrats, avecNom) {
   const premier = (new Date(an, mo - 1, 1).getDay() + 6) % 7;
   const plage = new Map(), joue = new Map();
   contrats.forEach((c) => {
-    const libelle = (avecNom ? c.nom.split(" ")[0] + " · " : "") + c.titre;
+    const libelle = (avecNom ? c.nom.split(" ")[0] + " · " : "") + (c.titre || "");
     (c.dates || []).forEach((iso) => joue.set(iso, (joue.get(iso) || []).concat(libelle)));
     for (let j = 1; j <= nb; j++) {
       const iso = `${vue}-${String(j).padStart(2, "0")}`;
@@ -361,7 +361,7 @@ function casesMoisPasse(vue, contrats, avecNom) {
 /** Une ligne de la liste des contrats d'un mois passé. */
 function ligneContratPasse(c, avecNom) {
   return `<div class="c-passe" title="${echapper(c.numero_objet)}">
-      <span>${echapper((avecNom ? c.nom.split(" ")[0] + " · " : "") + c.titre)}</span>
+      <span>${echapper((avecNom ? c.nom.split(" ")[0] + " · " : "") + (c.titre || ""))}</span>
       <span class="discret">${echapper(c.dit)}</span>
     </div>`;
 }

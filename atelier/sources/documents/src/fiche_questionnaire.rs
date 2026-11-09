@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
@@ -21,7 +21,8 @@ use socle::date::Jour;
 pub const ALPHABET_CODE: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /// Un code a six signes derriere son prefixe (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la personne).
-pub fn code_au_hasard(prefixe: &str) -> String {
+/// Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
+pub fn code_au_hasard(prefixe: &str) -> Result<String, String> {
     let alphabet = ALPHABET_CODE.as_bytes();
     let limite = 256 - 256 % alphabet.len();
     let mut code = String::from(prefixe);
@@ -29,21 +30,16 @@ pub fn code_au_hasard(prefixe: &str) -> String {
     // `socle::temps::aleas` est une suite fixe, que chaque tirage fait avancer).
     while code.len() < prefixe.len() + 6 {
         let mut b = [0u8; 32];
-        if socle::temps::aleas(&mut b).is_err() {
-            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(7);
-            for (i, x) in b.iter_mut().enumerate() {
-                *x = (t >> (i % 24)) as u8;
-            }
-        }
+        socle::temps::aleas(&mut b)?;
         for x in b.iter().filter(|x| (**x as usize) < limite).take(prefixe.len() + 6 - code.len()) {
             code.push(alphabet[*x as usize % alphabet.len()] as char);
         }
     }
-    code
+    Ok(code)
 }
 
 /// `code_fiche` : `FIC-` puis six signes tires au hasard dans `ALPHABET_CODE`.
-pub fn code_fiche() -> String {
+pub fn code_fiche() -> Result<String, String> {
     code_au_hasard("FIC-")
 }
 
@@ -314,166 +310,210 @@ pub fn date_lue(texte: &str) -> Option<String> {
 
 /// (code ISO, codification UE) d'un pays de la liste nomme en francais, ou de son code a deux lettres ;
 /// `None` pour ce que la liste ne connait pas.
-pub fn pays_lu(texte: &str) -> Option<(String, Option<&'static str>)> {
+pub fn pays_lu(texte: &str) -> Result<Option<(String, Option<&'static str>)>, String> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
     let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
-        return socle::pays::du_code(&t).ok().flatten().map(lu);
+        return Ok(socle::pays::du_code(&t)?.map(lu));
     }
-    let cherche = |n: &str| socle::pays::du_nom(n).ok().flatten().map(lu);
-    cherche(&t).or_else(|| cherche(&t.replace(' ', "-")))
+    match socle::pays::du_nom(&t)? {
+        Some(p) => Ok(Some(lu(p))),
+        None => Ok(socle::pays::du_nom(&t.replace(' ', "-"))?.map(lu)),
+    }
 }
 
-/// `fiche_depuis_reponses` : (donnees de fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Les cles se posent
-/// dans l'ordre du fichier de la fiche.
-pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> (Map<String, Value>, Vec<String>) {
-    let mut d: Map<String, Value> = Map::new();
+/// CE QUE LES REPONSES DISENT DE LA FICHE DU SALARIE : chaque case lue, dans l'ordre du fichier de la fiche ; une case
+/// que les reponses ne disent pas, ou pas lisiblement, ne s'ecrit pas.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FicheLue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prenom_affichage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nom_affichage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lieu_naissance_affichage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adresse_affichage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commune_affichage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_conges_spectacles: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_naissance: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anniversaire_droits: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_postal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nir_cle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sexe: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pays_naissance: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_nationalite_dsn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pays_nationalite: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pays_nationalite_hors_liste: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banque: Option<BanqueLue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub departement_naissance: Option<String>,
+}
+
+/// Le compte bancaire que les reponses donnent : l'IBAN et le BIC, chacun s'il est lisible.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BanqueLue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iban: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bic: Option<String>,
+}
+
+/// `fiche_depuis_reponses` : (les cases lues de la fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Une liste
+/// livree (les pays) qui ne se lit pas refuse.
+pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> Result<(FicheLue, Vec<String>), String> {
+    let mut d = FicheLue::default();
     let mut illisible: Vec<String> = Vec::new();
-    let reponse = |cle: &str| rep.get(cle).map(String::as_str).unwrap_or("");
-    let poser = |d: &mut Map<String, Value>, cle: &str, valeur: &str| {
-        if !valeur.is_empty() {
-            d.insert(cle.to_string(), json!(valeur));
-        }
-    };
-    poser(&mut d, "prenom_affichage", strip(reponse("prenom")));
-    poser(&mut d, "nom_affichage", strip(reponse("nom")));
-    poser(&mut d, "lieu_naissance_affichage", strip(reponse("lieu")));
-    poser(&mut d, "adresse_affichage", strip(reponse("adresse")));
-    poser(&mut d, "commune_affichage", strip(reponse("commune")));
-    poser(&mut d, "num_conges_spectacles", &reponse("conges").replace(' ', ""));
+    // Une reponse dite : une question sans reponse, ou a la reponse vide, ne dit rien.
+    let reponse = |cle: &str| rep.get(cle).map(String::as_str).filter(|r| !r.is_empty());
+    let dite = |t: &str| Some(t.to_string()).filter(|t| !t.is_empty());
+    d.prenom_affichage = reponse("prenom").and_then(|r| dite(strip(r)));
+    d.nom_affichage = reponse("nom").and_then(|r| dite(strip(r)));
+    d.lieu_naissance_affichage = reponse("lieu").and_then(|r| dite(strip(r)));
+    d.adresse_affichage = reponse("adresse").and_then(|r| dite(strip(r)));
+    d.commune_affichage = reponse("commune").and_then(|r| dite(strip(r)));
+    d.num_conges_spectacles = reponse("conges").and_then(|r| dite(&r.replace(' ', "")));
     for (q, cle) in [("naissance", "date_naissance"), ("anniversaire", "anniversaire_droits")] {
-        if !reponse(q).is_empty() {
-            let v = date_lue(reponse(q));
-            if let Some(v) = &v {
-                poser(&mut d, cle, v);
-            }
+        if let Some(r) = reponse(q) {
+            let v = date_lue(r).filter(|v| !v.is_empty());
             if v.is_none() {
-                illisible.push(format!("{} : « {} »", cle.replace('_', " "), reponse(q)));
+                illisible.push(format!("{} : « {} »", cle.replace('_', " "), r));
+            }
+            match q {
+                "naissance" => d.date_naissance = v,
+                _ => d.anniversaire_droits = v,
             }
         }
     }
-    if !reponse("code_postal").is_empty() {
-        let cp: String = reponse("code_postal").chars().filter(|c| !espace(*c)).collect();
+    if let Some(r) = reponse("code_postal") {
+        let cp: String = r.chars().filter(|c| !espace(*c)).collect();
         if cp.chars().count() == 5 && cp.chars().all(chiffre) {
-            d.insert("code_postal".into(), json!(cp));
+            d.code_postal = Some(cp);
         } else {
-            illisible.push(format!("code postal : « {} »", reponse("code_postal")));
+            illisible.push(format!("code postal : « {} »", r));
         }
     }
-    if !reponse("nir").is_empty() {
-        let n: Vec<char> = reponse("nir").chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
+    if let Some(r) = reponse("nir") {
+        let n: Vec<char> = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
         let tout_chiffres = n.iter().all(|c| chiffre(*c));
         if tout_chiffres && n.len() == 15 {
-            d.insert("nir".into(), json!(n[..13].iter().collect::<String>()));
-            d.insert("nir_cle".into(), json!(n[13..].iter().collect::<String>()));
+            d.nir = Some(n[..13].iter().collect::<String>());
+            d.nir_cle = Some(n[13..].iter().collect::<String>());
         } else if tout_chiffres && n.len() == 13 {
-            d.insert("nir".into(), json!(n.iter().collect::<String>()));
+            d.nir = Some(n.iter().collect::<String>());
         } else {
-            illisible.push(format!("numéro de sécurité sociale : « {} »", reponse("nir")));
+            illisible.push(format!("numéro de sécurité sociale : « {} »", r));
         }
     }
-    if !reponse("sexe").is_empty() && !d.get("nir").is_some_and(crate::valeur::vrai) {
-        let s = sans_accents(reponse("sexe"));
+    if let Some(r) = reponse("sexe").filter(|_| d.nir.is_none()) {
+        let s = sans_accents(r);
         match s.chars().next() {
-            Some('f') => {
-                d.insert("sexe".into(), json!("2"));
-            }
-            Some('h') | Some('m') => {
-                d.insert("sexe".into(), json!("1"));
-            }
-            _ => illisible.push(format!("sexe : « {} »", reponse("sexe"))),
+            Some('f') => d.sexe = Some("2".into()),
+            Some('h') | Some('m') => d.sexe = Some("1".into()),
+            _ => illisible.push(format!("sexe : « {} »", r)),
         }
     }
-    if !reponse("pays").is_empty() {
+    if let Some(r) = reponse("pays") {
         // Le pays de naissance se lit aussi dans la table « Pays » de la DSN (`pays::naissance_du_nom`) : le
         // Kosovo, l'URSS, que le COG n'a pas.
-        let lu = pays_lu(reponse("pays"))
-            .map(|(code, _)| code)
-            .or_else(|| {
-                let t = sans_accents(reponse("pays")).replace('\u{2019}', "'");
+        let lu = match pays_lu(r)? {
+            Some((code, _)) => Some(code),
+            None => {
+                let t = sans_accents(r).replace('\u{2019}', "'");
                 if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
-                    socle::pays::de_la_table_dsn(&t).ok().flatten().map(|p| p.code)
+                    socle::pays::de_la_table_dsn(&t)?.map(|p| p.code)
                 } else {
-                    socle::pays::naissance_du_nom(&t).ok().flatten()
+                    socle::pays::naissance_du_nom(&t)?
                 }
-            });
-        match lu {
-            Some(code) => {
-                d.insert("pays_naissance".into(), json!(code));
             }
-            None => illisible.push(format!("pays de naissance : « {} »", reponse("pays"))),
+        };
+        match lu {
+            Some(code) => d.pays_naissance = Some(code),
+            None => illisible.push(format!("pays de naissance : « {} »", r)),
         }
     }
     // LA NATIONALITE : le pays se garde (`pays_nationalite`), la codification UE s'en deduit.
-    if !reponse("nationalite").is_empty() {
-        let t = sans_accents(reponse("nationalite"));
-        let pays = NATIONALITES
-            .iter()
-            .find(|(n, _)| *n == t)
-            .map(|(_, c)| c.to_string())
-            .or_else(|| pays_lu(&t).and_then(|(c, r)| r.map(|_| c)));
+    if let Some(r) = reponse("nationalite") {
+        let t = sans_accents(r);
+        let pays = match NATIONALITES.iter().find(|(n, _)| *n == t) {
+            Some((_, c)) => Some(c.to_string()),
+            None => pays_lu(&t)?.and_then(|(c, ue)| ue.map(|_| c)),
+        };
         match pays {
             Some(pays) => {
                 // La codification se lit dans la liste (un territoire suit son pays de rattachement), `pays.rs`.
-                match socle::pays::du_code(&pays).ok().flatten() {
+                match socle::pays::du_code(&pays)? {
                     Some(p) => {
-                        d.insert("code_nationalite_dsn".into(), json!(socle::pays::codification(&p)));
-                        d.insert("pays_nationalite".into(), json!(p.code));
+                        d.code_nationalite_dsn = Some(socle::pays::codification(&p).to_string());
+                        d.pays_nationalite = Some(p.code);
                     }
-                    None => illisible.push(format!("nationalité : « {} »", reponse("nationalite"))),
+                    None => illisible.push(format!("nationalité : « {} »", r)),
                 }
             }
             None => match NATIONALITES_HORS_LISTE.iter().find(|(n, _)| *n == t) {
                 // Un pays hors de la liste se garde dans sa case ; la zone reste a choisir (la fiche le dit).
-                Some((_, nom)) => {
-                    d.insert("pays_nationalite_hors_liste".into(), json!(nom));
-                }
-                None => illisible.push(format!("nationalité : « {} »", reponse("nationalite"))),
+                Some((_, nom)) => d.pays_nationalite_hors_liste = Some(nom.to_string()),
+                None => illisible.push(format!("nationalité : « {} »", r)),
             },
         }
     }
     // LE COMPTE BANCAIRE : l'IBAN compact (sans blancs, en majuscules) ; un IBAN dont la forme ou la cle est fausse ne
     // s'ecrit pas, il se dit a completer avec sa raison (`socle::iban::faute_iban`) ; le BIC de meme (`faute_bic`).
-    let mut banque = Map::new();
+    let mut banque = BanqueLue::default();
     for (q, cle, faute) in [("iban", "IBAN", socle::iban::faute_iban as fn(&str) -> Option<String>), ("bic", "BIC", socle::iban::faute_bic)] {
-        let brut = strip(reponse(q));
-        if brut.is_empty() {
-            continue;
-        }
+        let Some(brut) = reponse(q).map(strip).filter(|b| !b.is_empty()) else { continue };
         match faute(brut) {
             None => {
-                banque.insert(q.to_string(), json!(socle::iban::iban_compact(brut)));
+                let compact = Some(socle::iban::iban_compact(brut));
+                match q {
+                    "iban" => banque.iban = compact,
+                    _ => banque.bic = compact,
+                }
             }
             Some(f) => illisible.push(format!("{} : « {} » ({})", cle, brut, f)),
         }
     }
-    if !banque.is_empty() {
-        d.insert("banque".into(), Value::Object(banque));
+    if banque != BanqueLue::default() {
+        d.banque = Some(banque);
     }
-    for (cle, valeur) in naissance_depuis_nir(d.get("nir")) {
-        if !d.contains_key(cle) {
-            d.insert(cle.to_string(), json!(valeur));
+    // Ce que le NIR ecrit de la naissance complete ce que les reponses ne disent pas.
+    if let Some((departement, pays)) = d.nir.as_deref().and_then(naissance_depuis_nir) {
+        d.departement_naissance = Some(departement);
+        if d.pays_naissance.is_none() {
+            d.pays_naissance = pays;
         }
     }
-    (d, illisible)
+    Ok((d, illisible))
 }
 
-/// Le departement et le pays de naissance que le NIR ECRIT (les 6e et 7e
-/// signes ; 99 pour une naissance a l'etranger). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
+/// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
+/// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
-fn naissance_depuis_nir(nir: Option<&Value>) -> Vec<(&'static str, String)> {
-    let nir = nir.filter(|v| crate::valeur::vrai(v)).map(crate::valeur::valeur_en_texte).unwrap_or_default();
-    let c: Vec<char> = strip(&nir).chars().collect();
+fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<String>)> {
+    let c: Vec<char> = strip(nir).chars().collect();
     if c.len() != 13 || !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
-        return Vec::new();
+        return None;
     }
     let dep: String = c[5..7].iter().collect();
     if dep == "20" {
-        return Vec::new();
+        return None;
     }
-    let mut v = vec![("departement_naissance", dep.clone())];
-    if dep != "99" {
-        v.push(("pays_naissance", "FR".to_string()));
-    }
-    v
+    let pays = (dep != "99").then(|| "FR".to_string());
+    Some((dep, pays))
 }

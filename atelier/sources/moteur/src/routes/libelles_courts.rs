@@ -3,17 +3,16 @@
 //! a validee (`documents::libelles_courts`). L'export la lit ; sans elle, il se refuse et renvoie ici. Une route rend ce
 //! qui depasse, une autre enregistre ; l'ecran (une boite des Exports) et le LLM font la meme chose.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use documents::libelles_courts::{self as lc, Depasse, FormatBorne, Quoi};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
-use crate::routes::{en_json, lire_charge};
+use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
 const FORMAT: Champ = Champ {
     nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte,
@@ -51,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"format":"ximport","libelles":[]}"#,
         rend: "ce que rend libelles-courts, après l'enregistrement, et sa phrase ; une liste vide : rien n'est écrit, libelles vide",
         refus: &[
-            Refus { classe: "ErreurOperation", corriger: "la valeur que la phrase nomme : vide, trop longue, ou d'un libellé qui ne dépasse pas ; rien n'est écrit" },
+            Refus { classe: socle::echec::Classe::Refuse, corriger: "la valeur que la phrase nomme : vide, trop longue, ou d'un libellé qui ne dépasse pas ; rien n'est écrit" },
             FORME,
         ],
         acte: Acte::Ecrit,
@@ -61,20 +60,25 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Une route de ce module : sa charge lue en sa forme, sa reponse une structure.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
-    match nom {
-        Route::LibellesCourts => en_json(libelles_courts(ctx, lire_charge(charge)?)?),
-        Route::LibellesCourtsEnregistrer => en_json(enregistrer(ctx, lire_charge(charge)?)?),
-        autre => Err(Echec::from(format!("route inconnue : {}", autre))),
+/// Une route de ce module, branchee sur l'enveloppe.
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
+    match porte.route {
+        Route::LibellesCourts => en_json(libelles_courts(porte.ctx, charge.lire()?)?),
+        Route::LibellesCourtsEnregistrer => en_json(enregistrer(porte.ctx, charge.lire()?)?),
+        autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
-/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il manque.
+impl Dite for Libelles {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
-    #[serde(default)]
     format: Option<String>,
 }
 
@@ -82,7 +86,6 @@ struct ChargeLire {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEnregistrer {
-    #[serde(default)]
     format: Option<String>,
     libelles: Vec<Valide>,
 }
@@ -99,8 +102,8 @@ struct Valide {
 /// Ce que rend la page des libelles courts.
 #[derive(Debug, Serialize)]
 struct Libelles {
-    format: String,
-    nom: String,
+    format: Option<String>,
+    nom: Option<&'static str>,
     libelles: Vec<Ligne>,
     phrase: String,
 }
@@ -142,15 +145,16 @@ fn zone(d: &Depasse) -> String {
 
 /// LIRE : ce qui depasse, sa proposition, sa valeur validee.
 fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
-    let format = format_de(ctx, c.format)?;
-    let Some(borne) = format.as_deref().and_then(FormatBorne::de) else {
-        let phrase = match &format {
-            Some(f) => format!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f),
-            None => "Aucun logiciel du comptable retenu : rien à raccourcir.".to_string(),
-        };
-        return Ok(Libelles { format: format.unwrap_or_default(), nom: String::new(), libelles: Vec::new(), phrase });
+    let (format, borne) = match format_de(ctx, c.format)? {
+        None => return Ok(Libelles { format: None, nom: None, libelles: Vec::new(), phrase: "Aucun logiciel du comptable retenu : rien à raccourcir.".to_string() }),
+        Some(f) => match FormatBorne::de(&f) {
+            Some(b) => (f, b),
+            None => {
+                let phrase = format!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f);
+                return Ok(Libelles { format: Some(f), nom: None, libelles: Vec::new(), phrase });
+            }
+        },
     };
-    let format = format.unwrap_or_default();
     let libelles: Vec<Ligne> = depasses(ctx, &format)?
         .into_iter()
         .map(|d| Ligne { quoi: d.quoi, zone: zone(&d), propose: lc::proposer(&d.long, d.largeur), cle: d.cle, long: d.long, largeur: d.largeur, court: d.court })
@@ -163,24 +167,26 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
     } else {
         format!("{} : {} libellés trop longs, {} sans valeur courte. Garder ou changer chaque proposition, puis enregistrer.", borne.nom(), libelles.len(), reste)
     };
-    Ok(Libelles { format, nom: borne.nom().to_string(), libelles, phrase })
+    Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles, phrase })
 }
 
 /// Le refus d'une valeur : sa phrase, et sa cle a part (il se dit seul, sans ce qui manque pour demarrer).
 fn faute(phrase: String, cle: &str) -> Echec {
-    erreur("ErreurOperation", socle::echec::avec(phrase, serde_json::json!({"cle": cle})))
+    erreur(socle::echec::Classe::Refuse, socle::echec::cle(phrase, cle))
 }
 
 /// ENREGISTRER : chaque valeur se verifie (un libelle qui depasse, une valeur non vide qui tient) ; une seule faute et
 /// rien ne s'ecrit.
 fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
-    let format = format_de(ctx, c.format)?.unwrap_or_default();
+    let Some(format) = format_de(ctx, c.format)? else {
+        return Err(erreur(socle::echec::Classe::Refuse, "Aucun logiciel du comptable retenu : aucun libellé court ne s'enregistre. Le choisir dans les Exports."));
+    };
     let Some(borne) = FormatBorne::de(&format) else {
         return Err(faute(format!("Le format « {} » ne borne pas ses libellés : il n'a pas de libellé court.", format), &format));
     };
     if c.libelles.is_empty() {
         let phrase = format!("Aucun libellé court à enregistrer pour {} : rien n'est écrit.", borne.nom());
-        return Ok(Libelles { format, nom: borne.nom().to_string(), libelles: Vec::new(), phrase });
+        return Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles: Vec::new(), phrase });
     }
     let trop: Vec<Depasse> = depasses(ctx, &format)?;
     let mut fichier = lc::lire(&ctx.racine)?;
@@ -203,8 +209,8 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
         }
         courts.poser(v.quoi, v.cle.clone(), court);
     }
-    if fichier.quoi.is_empty() {
-        fichier.quoi = "Les libellés courts que la compagnie a validés, par format du logiciel du comptable (Exports, « Libellés courts »).".to_string();
+    if fichier.quoi.is_none() {
+        fichier.quoi = Some("Les libellés courts que la compagnie a validés, par format du logiciel du comptable (Exports, « Libellés courts »).".to_string());
     }
     lc::ecrire(&ctx.racine, &fichier)?;
     let mut r = libelles_courts(ctx, ChargeLire { format: Some(format) })?;

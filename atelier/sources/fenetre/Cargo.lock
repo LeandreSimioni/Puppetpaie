@@ -737,7 +737,6 @@ dependencies = [
  "flate2",
  "rust_decimal",
  "serde",
- "serde_json",
  "socle",
 ]
 
@@ -922,8 +921,6 @@ dependencies = [
  "rust_decimal",
  "rust_xlsxwriter",
  "serde",
- "serde_json",
- "sha2",
  "socle",
 ]
 
@@ -1083,7 +1080,6 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "serde",
- "serde_json",
  "sha2",
  "socle",
  "ureq",

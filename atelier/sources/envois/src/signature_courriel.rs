@@ -24,11 +24,23 @@ use crate::envoi::Message;
 /// Les formules qui closent nos modeles : ce qui les suit est la signature.
 const FORMULES: [&str; 2] = ["Bien à toi,", "Bien cordialement,"];
 
+/// Les balises retirees avec ce qu'elles contiennent.
+const BALISES_ET_CONTENU: [&str; 12] = ["script", "style", "iframe", "object", "embed", "form", "noscript", "template", "head", "title", "svg", "math"];
+
+/// Les balises retirees, leur contenu garde.
+const BALISES_SEULES: [&str; 10] = ["html", "body", "meta", "link", "base", "input", "button", "textarea", "select", "option"];
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Signature {
     /// Le nom affiche devant l'adresse (vide : l'adresse seule).
-    pub nom: String,
-    /// La signature en HTML, nettoyee (vide : la signature des modeles).
+    pub nom: Option<String>,
+    /// La signature posee (vide : la signature des modeles).
+    pub corps: Option<CorpsDeSignature>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CorpsDeSignature {
+    /// La signature en HTML, nettoyee.
     pub html: String,
     /// La meme en texte, pour les messageries sans HTML.
     pub texte: String,
@@ -36,17 +48,20 @@ pub struct Signature {
 
 /// La signature d'une fiche Entreprise. `Err` : elle est posee mais trop lourde.
 pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Result<Option<Signature>, String> {
-    let nom = ent.courriel_nom.texte().trim().to_string();
-    let brut = ent.courriel_signature.texte().trim().to_string();
-    if nom.is_empty() && brut.is_empty() {
+    let nom = ent.courriel_nom.portee().map(|n| nom_sur(n.trim()));
+    let brut = ent.courriel_signature.portee().map(str::trim);
+    if nom.is_none() && brut.is_none() {
         return Ok(None);
     }
-    if let Some(m) = trop_lourde(&brut) {
-        return Err(format!("Rien n'est parti : {}. Allegez-la dans la fiche Entreprise.", m));
+    let mut corps = None;
+    if let Some(brut) = brut {
+        if let Some(m) = trop_lourde(brut) {
+            return Err(format!("Rien n'est parti : {}. Allegez-la dans la fiche Entreprise.", m));
+        }
+        let html = nettoyer(brut);
+        corps = Some(CorpsDeSignature { texte: en_texte(&html), html });
     }
-    let html = nettoyer(&brut);
-    let texte = en_texte(&html);
-    Ok(Some(Signature { nom: nom_sur(&nom), html, texte }))
+    Ok(Some(Signature { nom, corps }))
 }
 
 /// La signature de la compagnie de `racine` (`config/entreprise.json`).
@@ -74,11 +89,11 @@ fn re(motif: &str) -> Regex {
 pub fn nettoyer(html: &str) -> String {
     let mut h = html.to_string();
     h = re(r"(?s)<!--.*?-->").replace_all(&h, "").into_owned();
-    for balise in ["script", "style", "iframe", "object", "embed", "form", "noscript", "template", "head", "title", "svg", "math"] {
+    for balise in BALISES_ET_CONTENU {
         h = re(&format!(r"(?is)<{b}\b[^>]*>.*?</{b}\s*>", b = balise)).replace_all(&h, "").into_owned();
         h = re(&format!(r"(?is)</?{b}\b[^>]*>", b = balise)).replace_all(&h, "").into_owned();
     }
-    for balise in ["html", "body", "meta", "link", "base", "input", "button", "textarea", "select", "option"] {
+    for balise in BALISES_SEULES {
         h = re(&format!(r"(?is)</?{b}\b[^>]*>", b = balise)).replace_all(&h, "").into_owned();
     }
     h = re(r#"(?is)\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)"#).replace_all(&h, "").into_owned();
@@ -96,12 +111,12 @@ pub fn en_texte(html: &str) -> String {
     let mut lignes: Vec<String> = Vec::new();
     for l in t.split('\n') {
         let l = l.split_whitespace().collect::<Vec<_>>().join(" ");
-        if l.is_empty() && lignes.last().map_or(true, |d: &String| d.is_empty()) {
+        if l.is_empty() && lignes.last().is_none_or(|d: &String| d.is_empty()) {
             continue;
         }
         lignes.push(l);
     }
-    while lignes.last().map_or(false, |l| l.is_empty()) {
+    while lignes.last().is_some_and(|l| l.is_empty()) {
         lignes.pop();
     }
     lignes.join("\n")
@@ -117,8 +132,9 @@ fn decoder_entites(t: &str) -> String {
     o = num
         .replace_all(&o, |c: &regex::Captures| {
             let v = &c[1];
-            let n = if let Some(h) = v.strip_prefix('x').or_else(|| v.strip_prefix('X')) { u32::from_str_radix(h, 16).ok() } else { v.parse().ok() };
-            n.and_then(char::from_u32).map(String::from).unwrap_or_default()
+            let n = if let Some(h) = v.strip_prefix('x').or_else(|| v.strip_prefix('X')) { u32::from_str_radix(h, 16) } else { v.parse::<u32>() };
+            // Une entite qui ne nomme aucun caractere (hors d'Unicode, ou trop longue pour un code) s'efface.
+            n.into_iter().filter_map(char::from_u32).collect::<String>()
         })
         .into_owned();
     // `&amp;` en dernier : `&amp;lt;` reste `&lt;`.
@@ -136,12 +152,12 @@ fn tete_du_texte(corps: &str) -> String {
 }
 
 /// Le bloc HTML de la signature.
-fn bloc(s: &Signature) -> String {
+fn bloc(s: &CorpsDeSignature) -> String {
     format!("<div class=\"signature\">{}</div>", s.html)
 }
 
 /// Le HTML du message, la signature a la place de celle du modele.
-fn html_signe(html: &str, s: &Signature) -> String {
+fn html_signe(html: &str, s: &CorpsDeSignature) -> String {
     // « Bien a toi,<br>Prenom<br>Compagnie</p> » : la formule reste, la suite part.
     for f in FORMULES {
         let cle = format!("{}<br>", f);
@@ -174,9 +190,9 @@ fn html_signe(html: &str, s: &Signature) -> String {
 /// Le message signe. Sans signature HTML posee (le nom affiche seul), il reste tel quel.
 pub fn signer(message: &Message, s: &Signature) -> Message {
     let mut m = message.clone();
-    if s.html.is_empty() {
+    let Some(s) = &s.corps else {
         return m;
-    }
+    };
     let tete = tete_du_texte(&m.corps);
     m.corps = format!("{}{}\n", tete, s.texte);
     m.html = if m.html.is_empty() {

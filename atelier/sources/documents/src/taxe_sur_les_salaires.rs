@@ -19,8 +19,7 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: &str = "taxe_sur_les_salaires";
 /// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
 /// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
 pub fn assiette_taxe_sur_les_salaires(p: &Paie, abattement: Decimal) -> Decimal {
-    let csg = p.bases.get("csg").copied().unwrap_or(Decimal::ZERO);
-    eur(add(sub(csg, eur(mul(p.brut, abattement))), p.brut))
+    eur(add(sub(p.base_csg, eur(mul(p.brut, abattement))), p.brut))
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle
@@ -107,9 +106,9 @@ decembre ne se fait pas.",
             pourquoi
         ),
     };
-    let part_taxee = match fiche.map_or("", |f| f.tva.code()) {
-        "exoneree" => Decimal::ONE_HUNDRED,
-        "assujettie" => {
+    let part_taxee = match fiche.and_then(|f| f.tva.code()) {
+        Some("exoneree") => Decimal::ONE_HUNDRED,
+        Some("assujettie") => {
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
@@ -144,7 +143,7 @@ des impôts, art. 231)",
             }
             sub(Decimal::ONE_HUNDRED, part)
         }
-        "" => {
+        None => {
             return manque(
                 champs,
                 "dire si la compagnie est assujettie a la TVA ou exoneree".to_string(),
@@ -152,7 +151,7 @@ des impôts, art. 231)",
 sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
             )
         }
-        autre => {
+        Some(autre) => {
             return manque(
                 champs,
                 format!("`tva` vaut « {} » ; il vaut « assujettie » ou « exoneree »", autre),
@@ -246,13 +245,13 @@ pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(De
 
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme
 /// de `annee` (`bar`, `None` s'il n'y en a pas). Un bareme sans plafonds ne fait pas refuser : la question se pose sans
-/// montants, et le dit.
-pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> QuestionFranchise {
+/// montants, et le dit ; une date d'entree en vigueur qui ne se lit pas refuse.
+pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> Resultat<QuestionFranchise> {
     let avant = annee - 1;
     let pf = bar.and_then(|b| b.taxe_sur_les_salaires.as_ref()).map(|t| &t.plafonds_franchise);
     let lus = plafonds_franchise(bar);
     let Some((services, total)) = lus else {
-        return QuestionFranchise {
+        return Ok(QuestionFranchise {
             aide: format!(
                 "Le barème {} du logiciel ne porte pas les plafonds de la franchise en base de TVA (code général des impôts, \
 art. 293 B) : ils se lisent dans cet article, pour le chiffre d'affaires de {}. Sous ces plafonds, la compagnie ne doit pas la taxe sur les salaires.",
@@ -261,15 +260,20 @@ art. 293 B) : ils se lisent dans cet article, pour le chiffre d'affaires de {}. 
             sous: "Sous les deux plafonds".to_string(),
             dessus: "Au-dessus d'un des plafonds".to_string(),
             plafonds: None,
-        };
+        });
     };
-    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03).
-    let depuis = pf
-        .and_then(|pf| socle::date::Jour::lire(&pf.en_vigueur_depuis).ok())
-        .filter(|j| j.an == annee && (j.mois, j.jour) != (1, 1))
-        .map(|j| format!(", en vigueur depuis le {}", j.jj_mm_aaaa()))
-        .unwrap_or_default();
-    QuestionFranchise {
+    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03) ; une date du bareme qui ne se
+    // lit pas est un bareme fautif.
+    let vigueur = match pf {
+        Some(pf) => Some(socle::date::Jour::lire(&pf.en_vigueur_depuis)?),
+        None => None,
+    };
+    let depuis = if let Some(j) = vigueur.filter(|j| j.an == annee && (j.mois, j.jour) != (1, 1)) {
+        format!(", en vigueur depuis le {}", j.jj_mm_aaaa())
+    } else {
+        String::new()
+    };
+    Ok(QuestionFranchise {
         aide: format!(
             "Les deux plafonds se comparent aux recettes de l'année civile {avant} (du 1er janvier au 31 décembre), pour \
 les salaires de {annee}. Sous les deux, la compagnie ne doit pas la taxe sur les salaires ; au-dessus d'un seul, elle la \
@@ -297,7 +301,7 @@ art. 231 et 293 B{depuis}.",
             euros(total)
         ),
         plafonds: Some((services, total)),
-    }
+    })
 }
 
 /// Ce que la DSN de decembre lit : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en

@@ -934,7 +934,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
         return format!("la paie {} a changé", socle::texte::de(&socle::mois::Mois::en_clair(m)));
     }
     // La configuration de la compagnie : une valeur datee de ses fiches qui s'applique, ou son bareme de l'annee
-    // (`config/baremes/<annee>.json` : le taux AT/MP, qui vaut pour toute l'annee).
+    // (`config/baremes/<annee>.json` : ses choix de bareme, qui valent pour toute l'annee).
     let config_avant = &avant.empreinte.configuration;
     let config_nouvelle = apres.empreinte.configuration.iter().filter(|r| !config_avant.contains(r)).max().cloned();
     let annee_du_bareme = changees.iter().find_map(|k| {
@@ -1723,7 +1723,7 @@ mod tests_rupture {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),
             numero: Some("X1.26.01".into()),
-            lignes: Some(vec![socle::forme::lire_texte(&texte, crate::saisie::CARTE_ILLISIBLE).unwrap()]),
+            lignes: Some(vec![socle::forme::lire_texte(&texte, "ligne").unwrap()]),
             ..Default::default()
         };
         let saisie = |carte: crate::saisie::Carte| stock::Saisie { carte, ..Default::default() };

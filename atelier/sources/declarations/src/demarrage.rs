@@ -1,4 +1,3 @@
-
 //! POUR DEMARRER : ce qu'une compagnie neuve peut remplir d'avance, d'un coup.
 //!
 //! Une compagnie neuve ne decouvre pas ce qui lui manque un refus apres l'autre (le taux AT/MP, l'effectif, la medecine
@@ -10,11 +9,13 @@
 //! lit aussi (`champs::refus_des_manques`) : un champ qu'on y marque sans qu'un acte le lise serait un faux manque.
 
 use droit::fiche::Lue as _;
-use serde_json::{json, Value};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
+use socle::date::Jour;
 use socle::echec::Echec;
+use socle::num::Resultat;
 
 type R<T> = Result<T, Echec>;
 
@@ -28,21 +29,118 @@ const TITRE_A_COMPLETER: &str = "A COMPLETER";
 /// Où une ligne mène : ce que l'écran en dit (`ou`), et l'onglet de la Configuration qu'elle ouvre (`onglet`).
 const ENTREPRISE: (&str, &str) = ("Configuration › Entreprise", "entreprise");
 
-/// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
-fn champ(cle: &str) -> (String, String) {
-    match crate::champs::champ("entreprise", cle).ok().flatten() {
-        Some(c) => (c.libelle, c.aide),
-        None => (cle.to_string(), String::new()),
+/// UNE LIGNE DE « POUR DEMARRER » : la case a remplir (`case`, son chemin dans la fiche, que l'ecran dessine ; `champ`, la
+/// racine de ce chemin ; aucune pour ce qui ne se remplit pas dans une fiche), ou elle vit (`ou`, `onglet`), ou la
+/// compagnie trouve la valeur (`trouver`). Elle dit ce qu'elle bloque (`bloque`), ou, quand rien ne se refuse sans elle,
+/// ce qu'elle sert (`utile`) et ce qui se passe sinon (`sinon`). Celle d'un salarie ou d'un spectacle dit aussi qui
+/// (`qui`), sous le nom duquel elle se range ; une structure dit ses cases (`cases`) ; une valeur que le moteur propose
+/// se dit (`propose`). `route` y ajoute sa phrase entiere (`phrase`) et ce qu'elle sert (`pour`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Manque {
+    pub cle: String,
+    pub libelle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bloque: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub utile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sinon: Option<String>,
+    pub ou: String,
+    pub onglet: String,
+    pub champ: Option<String>,
+    pub case: Option<String>,
+    pub trouver: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cases: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salarie: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spectacle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qui: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub propose: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pour: Option<String>,
+}
+
+impl Manque {
+    /// Une ligne qui bloque `bloque`, sur la case `champ` (aucune : ce qui ne se remplit pas dans une fiche).
+    fn bloquante(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Manque {
+        Manque {
+            cle: cle.to_string(),
+            libelle,
+            bloque: Some(bloque.to_string()),
+            utile: None,
+            sinon: None,
+            ou: ou.0.to_string(),
+            onglet: ou.1.to_string(),
+            champ: champ.map(String::from),
+            case: champ.map(String::from),
+            trouver,
+            cases: None,
+            salarie: None,
+            spectacle: None,
+            qui: None,
+            propose: None,
+            phrase: None,
+            pour: None,
+        }
+    }
+
+    /// Une ligne utile a `utile`, sans laquelle `sinon`.
+    pub fn utile(cle: String, libelle: String, utile: String, sinon: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Manque {
+        Manque { bloque: None, utile: Some(utile), sinon: Some(sinon.to_string()), ..Manque::bloquante(&cle, libelle, "", ou, champ, trouver) }
     }
 }
 
-fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Value {
-    let mut l = json!({ "cle": cle, "libelle": libelle, "bloque": bloque, "ou": ou.0, "onglet": ou.1, "champ": champ, "case": champ, "trouver": trouver });
-    // UNE STRUCTURE DIT SES CASES (leur nom, leur forme, leurs valeurs), d'apres la table qui les decrit.
-    if let Some(c) = champ.and_then(|k| crate::champs::champ("entreprise", k).ok().flatten()).filter(|c| !c.champs.is_empty()) {
-        l["cases"] = json!(crate::champs::cases_dites(&c));
+/// CE QUE LE MOTEUR A POSE DE LUI-MEME (`poses`), ou ce qui se dit en information a la place d'une ligne : son libelle,
+/// d'ou il vient (`texte`), ou il se change.
+#[derive(Debug, Clone, Serialize)]
+pub struct Pose {
+    pub cle: String,
+    pub libelle: String,
+    pub texte: String,
+    pub ou: String,
+    pub onglet: String,
+    pub champ: Option<String>,
+}
+
+/// `pour-demarrer` : sa phrase, chaque ligne et chaque pose en phrase entiere (`phrases`), son titre et sa note, les
+/// lignes (`manques`) et ce que le moteur a pose (`poses`).
+#[derive(Debug, Clone, Serialize)]
+pub struct PourDemarrer {
+    pub phrase: String,
+    pub phrases: Vec<String>,
+    pub titre: String,
+    pub note: String,
+    pub manques: Vec<Manque>,
+    pub poses: Vec<Pose>,
+}
+
+/// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
+fn champ_entreprise(cle: &str) -> Resultat<crate::champs::Champ> {
+    crate::champs::champ("entreprise", cle)
+        .map_err(|e| e.message)?
+        .ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
+}
+
+/// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
+fn champ(cle: &str) -> Resultat<(String, String)> {
+    let c = champ_entreprise(cle)?;
+    Ok((c.libelle, c.aide))
+}
+
+/// Une ligne qui bloque, sur une case de la fiche entreprise ou sans case ; une structure dit ses cases (leur nom, leur
+/// forme, leurs valeurs), d'apres la table qui les decrit.
+fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Resultat<Manque> {
+    let mut l = Manque::bloquante(cle, libelle, bloque, ou, champ, trouver);
+    if let Some(k) = champ {
+        l.cases = champ_entreprise(k)?.champs.as_deref().map(crate::champs::cases_dites);
     }
-    l
+    Ok(l)
 }
 
 /// LA LICENCE D'ENTREPRENEUR DE SPECTACLES est-elle exigee de la compagnie `ent` ? « Est entrepreneur de spectacles
@@ -59,80 +157,95 @@ fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Opt
 /// - dans une convention ou la case se montre (`si` : 1790, 3252), la compagnie engage pour un spectacle
 ///   (`spectacle` : un spectacle configure pour « Pour demarrer », un contrat de spectacle pour la DSN). Un lieu en 1790
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
-pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> bool {
-    crate::champs::champ("entreprise", "licence_spectacle")
-        .ok()
-        .flatten()
-        .is_some_and(|c| c.exige(ent) || (spectacle && crate::champs::condition_remplie(&c.si, ent)))
+pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> Resultat<bool> {
+    let c = champ_entreprise("licence_spectacle")?;
+    let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(|e| e.message)?;
+    Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
 
 /// La compagnie emploie-t-elle des intermittents ? Un spectacle actif le dit : un CDDU se rattache a un spectacle.
 fn a_des_spectacles(ctx: &Contexte) -> bool {
-    std::fs::read(ctx.racine.join(droit::contexte::SPECTACLES))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .and_then(|v| v.as_object().map(|o| o.iter().any(|(k, s)| k != droit::fiche::NOTE_DU_FICHIER && s.get("actif") != Some(&json!(false)))))
-        .unwrap_or(false)
+    ctx.spectacles.values().any(|s| !s.archivee())
 }
 
 /// Les spectacles (leur cle) que porte un engagement actif, ni importe, dont la nature declare le numero d'objet.
-fn spectacles_declares(ctx: &Contexte) -> socle::num::Resultat<Vec<droit::contexte::IdSpectacle>> {
+fn spectacles_declares(ctx: &Contexte) -> Resultat<Vec<droit::contexte::IdSpectacle>> {
     let mut out: Vec<droit::contexte::IdSpectacle> = Vec::new();
-    for o in engagement::stock::objets(&ctx.racine).unwrap_or_default() {
+    for o in engagement::stock::objets(&ctx.racine)? {
         if o.est_non_actif() || o.importe_seul() {
             continue;
         }
         let nature = o.carte().nature.as_deref();
         let Some(sp) = o.carte().spectacle.as_deref().filter(|s| !s.trim().is_empty()) else { continue };
         let cle = ctx.spectacle(sp)?.cle;
-        if nature.is_some_and(|n| droit::natures::nature(n).is_ok_and(|n| n.ecrit("S21.G00.40.050"))) && !out.contains(&cle) {
+        let declare = nature.map(droit::natures::nature).transpose()?.is_some_and(|n| n.ecrit("S21.G00.40.050"));
+        if declare && !out.contains(&cle) {
             out.push(cle);
         }
     }
     Ok(out)
 }
 
-/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere. Un magasin illisible ne dit rien ici :
-/// la paie le refusera elle-meme.
-fn une_suspension_non_remuneree(ctx: &Contexte) -> bool {
-    engagement::imprevus::tous(&ctx.racine).unwrap_or_default().iter().any(|imp| {
-        engagement::imprevus::est_une_suspension(imp)
-            && engagement::imprevus::motif_de_suspension(imp.motif()).ok().flatten().is_some_and(|m| !m.remunere)
-    })
+/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere.
+fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<bool> {
+    for imp in engagement::imprevus::tous(&ctx.racine)? {
+        if engagement::imprevus::est_une_suspension(&imp) && engagement::imprevus::motif_de_suspension(imp.motif())?.is_some_and(|m| !m.remunere) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// La fiche typee `fiche` de la fiche `nom`, dans la forme d'une saisie, pour dire ce qui lui manque.
+fn saisie<F: Serialize + ?Sized>(nom: &str, fiche: &F) -> Resultat<crate::champs::Saisie> {
+    crate::champs::Saisie::de_la_fiche(nom, fiche).map_err(|e| e.message)
+}
+
+/// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
+/// dit qui (`salarie` : sa cle et son nom).
+fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>) -> Manque {
+    let racine = match m.ecran.split_once('.') {
+        Some((r, _)) => r.to_string(),
+        None => m.ecran.clone(),
+    };
+    let (bloque, utile, sinon) = match m.sert {
+        crate::champs::Sert::Exigee(actes) => (crate::champs::actes_en_clair(&actes), None, None),
+        crate::champs::Sert::Utile { gestes, sinon } => (None, crate::champs::actes_en_clair(&gestes), sinon),
+    };
+    Manque {
+        cle: match salarie {
+            Some((s, _)) => format!("{}.{}", m.ecran, s),
+            None => m.ecran.clone(),
+        },
+        libelle: m.libelle,
+        bloque,
+        utile,
+        sinon,
+        ou,
+        onglet: onglet.to_string(),
+        champ: Some(racine),
+        case: Some(m.ecran),
+        trouver: m.aide,
+        cases: m.cases,
+        salarie: salarie.map(|(s, _)| s.to_string()),
+        spectacle: None,
+        qui: salarie.map(|(_, n)| n.to_string()),
+        propose: None,
+        phrase: None,
+        pour: None,
+    }
 }
 
 /// Tout ce qui manque a la compagnie pour ses premiers actes. Vide : rien ne manque. Une ligne dit ce qu'elle bloque
 /// (`bloque`), ou, quand rien ne se refuse sans elle, ce qu'elle sert (`utile`) et ce qui se passe sinon (`sinon`).
-pub fn manques(ctx: &Contexte) -> socle::num::Resultat<Vec<Value>> {
+pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     let ent = &ctx.entreprise;
-    let mut out: Vec<Value> = Vec::new();
+    let mut out: Vec<Manque> = Vec::new();
     let intermittents = a_des_spectacles(ctx);
     // CE QUE LES ACTES EXIGENT DES FICHES (`exige_par` de `champs-base.json`, que chaque acte lit aussi :
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
-    // Une ligne dit la case a remplir (`case`, son chemin dans la fiche, que l'ecran dessine) ; celle d'un salarie dit
-    // aussi qui (`qui`), sous le nom duquel elle se range.
-    let ligne = |m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>| {
-        let racine = m.ecran.split('.').next().unwrap_or(&m.ecran).to_string();
-        let mut l = json!({ "cle": m.ecran, "case": m.ecran, "libelle": m.libelle, "ou": ou, "onglet": onglet, "champ": racine, "trouver": m.aide });
-        if m.actes.is_empty() {
-            l["utile"] = json!(crate::champs::actes_en_clair(&m.utile));
-            l["sinon"] = json!(m.sinon);
-        } else {
-            l["bloque"] = json!(crate::champs::actes_en_clair(&m.actes));
-        }
-        // UNE STRUCTURE DIT SES CASES (leur nom, leur forme, leurs valeurs), d'apres la table qui les decrit.
-        if !m.cases.is_empty() {
-            l["cases"] = json!(m.cases);
-        }
-        if let Some((s, nom)) = salarie {
-            l["salarie"] = json!(s);
-            l["qui"] = json!(nom);
-            l["cle"] = json!(format!("{}.{}", m.ecran, s));
-        }
-        l
-    };
-    for m in crate::champs::manquants("entreprise", ent).unwrap_or_default() {
+    for m in crate::champs::manquants("entreprise", &saisie("entreprise", ent)?).map_err(|e| e.message)? {
         if m.cle == documents::conges_spectacles::CLE_ADHERENT && !intermittents {
             continue;
         }
@@ -140,8 +253,11 @@ pub fn manques(ctx: &Contexte) -> socle::num::Resultat<Vec<Value>> {
     }
     for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee()) {
         let cle = cle.as_str();
-        let nom = s.nomme().unwrap_or_else(|| cle.to_string());
-        for m in crate::champs::manquants("salarie", &s.champs).unwrap_or_default() {
+        let nom = match s.nomme() {
+            Some(n) => n,
+            None => cle.to_string(),
+        };
+        for m in crate::champs::manquants("salarie", &saisie("salarie", &s.champs)?).map_err(|e| e.message)? {
             out.push(ligne(m, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -149,12 +265,15 @@ pub fn manques(ctx: &Contexte) -> socle::num::Resultat<Vec<Value>> {
     // sa nature dans `contrats-base.json`) le porte : rien de remplissable s'il n'y a pas a le remplir.
     for cle in spectacles_declares(ctx)? {
         let Some(sp) = ctx.spectacles.get(&cle) else { continue };
-        let titre = sp.titre.remplie().map(str::to_string).unwrap_or_else(|| cle.to_string());
-        for m in crate::champs::manquants("spectacle", sp).unwrap_or_default() {
+        let titre = match sp.titre.remplie() {
+            Some(t) => t.to_string(),
+            None => cle.to_string(),
+        };
+        for m in crate::champs::manquants("spectacle", &saisie("spectacle", sp)?).map_err(|e| e.message)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
-            l["spectacle"] = json!(cle);
-            l["qui"] = json!(titre);
-            l["cle"] = json!(format!("{}.{}", l["case"].as_str().unwrap_or(""), cle));
+            l.cle = format!("{}.{}", l.cle, cle);
+            l.spectacle = Some(cle.to_string());
+            l.qui = Some(titre.clone());
             out.push(l);
         }
     }
@@ -166,35 +285,39 @@ pub fn manques(ctx: &Contexte) -> socle::num::Resultat<Vec<Value>> {
         if !lu(sp.titre.remplie()).is_none_or(|t| t.eq_ignore_ascii_case(TITRE_A_COMPLETER)) {
             continue;
         }
-        let objet = lu(sp.numero_objet.remplie()).unwrap_or_else(|| cle.to_string());
+        let objet = match lu(sp.numero_objet.remplie()) {
+            Some(o) => o,
+            None => cle.to_string(),
+        };
         let propose = lu(sp.titre_propose.as_deref());
         let trouver = match &propose {
-            Some(t) => format!(
-                "Proposé : « {} », lu dans la case « {} » des bulletins de l'ancien logiciel pour le numéro d'objet {}. Validez-le ou corrigez-le.",
-                t,
-                lu(sp.titre_lu_dans.as_deref()).unwrap_or_else(|| "Spectacle".into()),
-                objet
-            ),
+            Some(t) => {
+                let ou_lu: String = lu(sp.titre_lu_dans.as_deref()).iter().map(|d| format!(" dans la case « {} »", d)).collect();
+                format!("Proposé : « {} », lu{} des bulletins de l'ancien logiciel pour le numéro d'objet {}. Validez-le ou corrigez-le.", t, ou_lu, objet)
+            }
             None => format!("Aucune pièce reprise ne porte le titre du numéro d'objet {} : celui que vous avez déclaré à France Travail.", objet),
         };
-        let mut l = json!({
-            "cle": format!("titre.{}", cle), "case": "titre", "libelle": "Titre", "champ": "titre",
-            "ou": format!("Configuration › Spectacles, la fiche du numéro d'objet {}", objet), "onglet": "spectacle",
-            "trouver": trouver, "utile": "les contrats et les bulletins", "sinon": "ils impriment « A COMPLETER »",
-            "spectacle": cle, "qui": format!("Numéro d'objet {}", objet),
-        });
-        if let Some(t) = propose {
-            l["propose"] = json!(t);
-        }
+        let mut l = Manque::utile(
+            format!("titre.{}", cle),
+            "Titre".into(),
+            "les contrats et les bulletins".into(),
+            "ils impriment « A COMPLETER »",
+            (&format!("Configuration › Spectacles, la fiche du numéro d'objet {}", objet), "spectacle"),
+            Some("titre"),
+            trouver,
+        );
+        l.spectacle = Some(cle.to_string());
+        l.qui = Some(format!("Numéro d'objet {}", objet));
+        l.propose = propose;
         out.push(l);
     }
     // La licence d'entrepreneur de spectacles : la DSN l'ecrit dans chaque contrat (S21.G00.40.049) et refuse sans elle
     // QUAND ELLE EST EXIGEE de la compagnie (`exige_si` de `champs-base.json`, lu par `dsn::licence_du_contrat` aussi) :
     // en 1790 et en 3252 la case se montre sans etre exigee, dans l'audiovisuel elle ne se montre pas.
     // Elle peut etre datee (une par periode) : le contexte la resout au jour.
-    if ctx.licence(&ctx.aujourdhui).trim().is_empty() && licence_exigee(ent, intermittents) {
-        let (libelle, aide) = champ("licence_spectacle");
-        out.push(manque("licence_spectacle", libelle, "la DSN", ENTREPRISE, Some("licence_spectacle"), aide));
+    if ctx.licence(&ctx.aujourdhui).is_none_or(|l| l.trim().is_empty()) && licence_exigee(ent, intermittents)? {
+        let (libelle, aide) = champ("licence_spectacle")?;
+        out.push(manque("licence_spectacle", libelle, "la DSN", ENTREPRISE, Some("licence_spectacle"), aide)?);
     }
     // L'EFFECTIF, puis le reste du bareme de l'annee : le contexte refuse lui-meme, avec la phrase qui dit ou trouver ce
     // qui manque. L'effectif a part : le bareme s'arrete au premier refus (le taux AT/MP), et tout doit sortir d'un coup.
@@ -205,126 +328,117 @@ pub fn manques(ctx: &Contexte) -> socle::num::Resultat<Vec<Value>> {
     // Une compagnie plus ancienne dit l'effectif de chaque annee qui manque (`Effectif::a_dire`), tel que l'Urssaf l'a
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.an;
-    if let Ok(e) = ctx.effectif() {
-        let manquent = e.a_dire(an);
-        if !manquent.is_empty() && e.premiere_embauche.is_none() {
-            let (libelle, _) = champ("premiere_embauche");
-            let m = e.atteint(11, an).err().unwrap_or_else(|| format!("L'effectif de {} n'est pas connu.", an - 1));
-            out.push(manque("premiere_embauche", libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", ENTREPRISE, Some("premiere_embauche"), m));
-        } else if !manquent.is_empty() {
-            let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
-            out.push(manque(
-                "effectif",
-                format!("L'effectif de {}", annees),
-                "l'effectif de toute paie (seuils de 11 et 50 salariés)",
-                ENTREPRISE,
-                None,
-                "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), sous « Avancé », une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
-            ));
-        }
+    let effectif = ctx.effectif()?;
+    let manquent = effectif.a_dire(an);
+    if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
+        let (libelle, _) = champ("premiere_embauche")?;
+        let m = match effectif.atteint(11, an) {
+            Err(m) => m,
+            Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
+        };
+        out.push(manque("premiere_embauche", libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", ENTREPRISE, Some("premiere_embauche"), m)?);
+    } else if !manquent.is_empty() {
+        let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
+        out.push(manque(
+            "effectif",
+            format!("L'effectif de {}", annees),
+            "l'effectif de toute paie (seuils de 11 et 50 salariés)",
+            ENTREPRISE,
+            None,
+            "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), sous « Avancé », une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
+        )?);
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
-    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`).
+    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Un bareme qui ne se lit pas se dit plus
+    // bas, ce qui lui manque.
+    let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = "representation_personnel";
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // Sans CSE dit, c'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.b) : inconnu,
     // c'est lui que la contribution demande, pas le CSE.
-    if ent.representation_personnel.dite().is_none() && ctx.bareme(&ctx.aujourdhui).is_ok_and(|b| par_representation(&b)) {
-        match ctx.effectif().ok().and_then(|e| e.valeur(an)) {
-            Some(e) if e >= 11.0 => {
-                let (libelle, aide) = champ(cle);
-                out.push(manque(cle, libelle, "la contribution au FNAS de chaque paie", ENTREPRISE, Some(cle), aide));
+    if let Ok(b) = &bareme {
+        if ent.representation_personnel.dite().is_none() && par_representation(b) {
+            match effectif.valeur(an) {
+                Some(e) if e >= 11.0 => {
+                    let (libelle, aide) = champ(cle)?;
+                    out.push(manque(cle, libelle, "la contribution au FNAS de chaque paie", ENTREPRISE, Some(cle), aide)?);
+                }
+                Some(_) => {}
+                None => out.push(manque(
+                    "effectif",
+                    format!("L'effectif de {}", an - 1),
+                    "la contribution au FNAS de chaque paie",
+                    ENTREPRISE,
+                    None,
+                    format!("Sans comité social et économique dit, la CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé », ou le comité dans Configuration › Entreprise.", an - 1),
+                )?),
             }
-            Some(_) => {}
-            None => out.push(manque(
-                "effectif",
-                format!("L'effectif de {}", an - 1),
-                "la contribution au FNAS de chaque paie",
-                ENTREPRISE,
-                None,
-                format!("Sans comité social et économique dit, la CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé », ou le comité dans Configuration › Entreprise.", an - 1),
-            )),
         }
     }
-    // EN ALSACE-MOSELLE, le taux pose a la creation (celui de l'annexe 1) ne vaut pas : l'annexe 3 en fixe d'autres (art. 4
-    // de l'arrete, `atelier/reference/sources/tarification-atmp/`), et le taux se saisit (`droit::bareme::taux_de_l_arrete`).
-    if en_alsace_moselle(ctx) && pose_a_la_creation(ctx) {
-        out.push(manque(
-            "taux_atmp",
-            format!("Le taux AT/MP {}", an),
-            "toute paie",
-            ENTREPRISE,
-            Some("taux_atmp"),
-            "L'établissement est en Alsace-Moselle : ses taux AT/MP sont ceux de l'annexe 3 de l'arrêté de l'année, pas celui posé à la création. Saisissez le code et le taux de votre notification (compte AT/MP sur net-entreprises).".into(),
-        ));
-    }
-    if let Err(m) = ctx.bareme(&ctx.aujourdhui) {
+    if let Err(m) = bareme {
         if m.contains("AT/MP") {
-            out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), m));
+            out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), m)?);
         } else if !m.contains("Effectif") {
-            out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, m));
+            out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, m)?);
         }
     }
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
     // refuse tant que la fiche ne repond pas (`calcul::sante_de_la_suspension`). Elle ne se demande que si une suspension
     // non remuneree est saisie : un champ n'apparait que parce qu'un fait l'exige.
-    let idcc = ent.idcc.texte();
-    if idcc != "3090" && !ent.sante_suspension_non_indemnisee.est_dite() && une_suspension_non_remuneree(ctx) {
+    if ent.idcc.portee() != Some("3090") && !ent.sante_suspension_non_indemnisee.est_dite() && une_suspension_non_remuneree(ctx)? {
         let cle = droit::bareme::SANTE_SUSPENSION;
-        let (libelle, aide) = champ(cle);
-        out.push(manque(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", ENTREPRISE, Some(cle), aide));
+        let (libelle, aide) = champ(cle)?;
+        out.push(manque(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", ENTREPRISE, Some(cle), aide)?);
     }
     // LA TVA ET LA TAXE SUR LES SALAIRES : la DSN de decembre declare chaque annee si la compagnie la doit (bloc
     // S21.G00.44) et ne se fait pas sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`). Une compagnie qui
     // demarre en novembre la rencontrait au premier mois de decembre, sans que rien ne l'ait dit d'avance.
     if let Err(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
         let cle = documents::taxe_sur_les_salaires::CHAMP_TAXE_SUR_LES_SALAIRES;
-        let (libelle, _) = champ(cle);
-        out.push(manque(cle, libelle, "la DSN de décembre", ENTREPRISE, Some(cle), m));
+        let (libelle, _) = champ(cle)?;
+        out.push(manque(cle, libelle, "la DSN de décembre", ENTREPRISE, Some(cle), m)?);
     }
     // LES CONTRATS DES PERMANENTS : c'est tout ce que la compagnie a a saisir des organismes (le reste, les textes le
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
-    if let (true, Ok(orgs)) = (ctx.emploie_des_permanents(), ctx.organismes()) {
-        if orgs.par_nature.permanent.references.is_empty() {
-            out.push(manque(
-                "organismes_permanents",
-                "Les contrats de prévoyance et de santé des permanents".into(),
-                "le mois d'un salarié au mois",
-                ("Configuration › Organismes et contrats", "organismes"),
-                None,
-                "La compagnie emploie des salariés au mois : leurs contrats de prévoyance et de santé se disent avec ceux des intermittents. La référence du contrat se lit sur le certificat d'adhésion de l'assureur.".into(),
-            ));
-        }
+    if ctx.emploie_des_permanents() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
+        out.push(manque(
+            "organismes_permanents",
+            "Les contrats de prévoyance et de santé des permanents".into(),
+            "le mois d'un salarié au mois",
+            ("Configuration › Organismes et contrats", "organismes"),
+            None,
+            "La compagnie emploie des salariés au mois : leurs contrats de prévoyance et de santé se disent avec ceux des intermittents. La référence du contrat se lit sur le certificat d'adhésion de l'assureur.".into(),
+        )?);
     }
     // LES CONGES PAYES ACQUIS AVANT PUPPETPAIE : un permanent dont le contrat commence avant le premier mois ou PuppetPaie
     // le paie a acquis des jours ailleurs (L3141-3 du code du travail, `atelier/reference/sources/code-du-travail/
     // articles-20260919.md`) ; un solde ne se devine pas (regle 1). Sa fiche les dit (`conges_reprise`, que
     // `engagement::conges::reprise_conges` lit). Rien ne se refuse sans eux : la ligne dit ce qui se passe sinon (`sinon`),
     // et non ce qu'elle bloque. C'est ici seulement que la question se pose, contrat repris d'un import compris.
-    for (salarie, nom, depuis) in conges_a_reprendre(ctx) {
-        out.push(conges_a_dire(&salarie, &nom, &depuis));
+    for (salarie, nom, depuis) in conges_a_reprendre(ctx)? {
+        out.push(conges_a_dire(&salarie, &nom, depuis));
     }
     Ok(out)
 }
 
 /// LA LIGNE QUI DEMANDE LES CONGES ACQUIS AVANT PUPPETPAIE d'un salarie au mois (`salarie`, `nom` tel que l'ecran le dit),
-/// paye ici depuis `depuis` (`AAAA-MM-JJ`) : la case `conges_reprise` de sa fiche, ou elle mene. « Pour démarrer » la dit,
-/// et la carte d'un contrat commence avant le logiciel la montre avant sa validation (`moteur::routes::mois`).
-pub fn conges_a_dire(salarie: &str, nom: &str, depuis: &str) -> Value {
-    let le = socle::date::Jour::lire(depuis).map(|j| j.jj_mm_aaaa()).unwrap_or(depuis.to_string());
-    json!({
-        "cle": format!("conges_reprise.{}", salarie),
-        "libelle": format!("Ses congés payés acquis avant le {}", le),
-        "utile": "le compteur de ses congés payés",
-        "sinon": "il part de zéro",
-        "ou": format!("la fiche de {}, « Congés payés à la reprise »", nom), "onglet": "salarie",
-        "champ": "conges_reprise",
-        "case": "conges_reprise",
-        "qui": nom,
-        "salarie": salarie,
-        "trouver": format!("Son contrat a commencé avant que PuppetPaie le paie : recopiez de son dernier bulletin de votre ancien logiciel les jours acquis et pris, avec le {} pour date de reprise.", le),
-    })
+/// paye ici depuis `depuis` : la case `conges_reprise` de sa fiche, ou elle mene. « Pour démarrer » la dit, et la carte
+/// d'un contrat commence avant le logiciel la montre avant sa validation (`moteur::routes::mois`).
+pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
+    let le = depuis.jj_mm_aaaa();
+    let mut l = Manque::utile(
+        format!("conges_reprise.{}", salarie),
+        format!("Ses congés payés acquis avant le {}", le),
+        "le compteur de ses congés payés".into(),
+        "il part de zéro",
+        (&format!("la fiche de {}, « Congés payés à la reprise »", nom), "salarie"),
+        Some("conges_reprise"),
+        format!("Son contrat a commencé avant que PuppetPaie le paie : recopiez de son dernier bulletin de votre ancien logiciel les jours acquis et pris, avec le {} pour date de reprise.", le),
+    );
+    l.qui = Some(nom.to_string());
+    l.salarie = Some(salarie.to_string());
+    l
 }
 
 /// La reprise des conges de ce salarie est-elle deja dite sur sa fiche (`conges_reprise.date`) ?
@@ -337,119 +451,108 @@ pub fn conges_repris(ctx: &Contexte, salarie: &str) -> bool {
 /// celui du fichier de l'engagement ; un contrat repris d'un ancien logiciel qui continue ici y est des le premier mois
 /// neuf (`engagement::importe`), valide ou non. Un intermittent n'en est pas (ses conges sont ceux des Conges
 /// Spectacles) ; un contrat ne d'ici n'a rien d'avant.
-fn conges_a_reprendre(ctx: &Contexte) -> Vec<(String, String, String)> {
-    let mensuel = |nature: &str| droit::natures::nature(nature).is_ok_and(|n| n.mensuelle());
+fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
     // (salarie, debut du contrat, premier jour paye ici)
-    let mut contrats: Vec<(String, String, String)> = Vec::new();
+    let mut contrats: Vec<(String, String, Jour)> = Vec::new();
     let mut vus: Vec<String> = Vec::new();
     // Les engagements valides et actifs, chacun dans le mois de son fichier (`engagement::stock::objets`) : un brouillon
     // n'engage rien, un contrat repris qui continue ici si.
-    for o in engagement::stock::objets(&ctx.racine).unwrap_or_default() {
+    for o in engagement::stock::objets(&ctx.racine)? {
         if !(o.est_valide() || o.est_importe()) || o.est_non_actif() || o.importe_seul() {
             continue;
         }
         let e = o.carte();
         let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
         let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature.as_deref()) else { continue };
-        if vus.contains(&salarie) || !mensuel(nature) {
+        if vus.contains(&salarie) || !droit::natures::nature(nature)?.mensuelle() {
             continue;
         }
         vus.push(salarie.clone());
-        if engagement::stock::commence_avant_le_logiciel(&ctx.racine, debut, o.premier_mois()).unwrap_or(false) {
-            contrats.push((salarie, debut.to_string(), format!("{}-01", o.premier_mois())));
+        if engagement::stock::commence_avant_le_logiciel(&ctx.racine, debut, o.premier_mois())? {
+            contrats.push((salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
         }
     }
     let mut out = Vec::new();
     for (salarie, debut, premier) in contrats {
-        let fiche = ctx.salaries.get(salarie.as_str());
-        if debut >= premier || conges_repris(ctx, &salarie) {
+        if debut >= premier.iso() || conges_repris(ctx, &salarie) {
             continue;
         }
-        let nom = fiche
-            .map(|f| {
-                let prenom = if f.prenom_affichage.texte().is_empty() { f.prenom.texte() } else { f.prenom_affichage.texte() };
-                format!("{} {}", f.nom.texte(), prenom).trim().to_string()
-            })
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| salarie.clone());
+        let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {
+            Some(n) => n,
+            None => salarie.clone(),
+        };
         out.push((salarie, nom, premier));
     }
-    out
+    Ok(out)
 }
 
-/// CE QUE LE MOTEUR A POSE DE LUI-MEME A LA CREATION, et qui se dit avec ce qui manque : le code risque et le taux AT/MP de
-/// l'annee (`moteur::routes::atmp::poser_a_la_creation`), tant que personne ne les a changes, ou ceux que la notification
-/// de la CARSAT a poses, avec sa date (`moteur::routes::atmp::poser_notifie`). Le libelle est celui de l'arrete
-/// de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
-pub fn poses(ctx: &Contexte) -> Vec<Value> {
+/// CE QUE LE MOTEUR A INSCRIT DE LUI-MEME, et qui se dit avec ce qui manque : le taux AT/MP de l'annee, quand il vient de
+/// la notification de la CARSAT recue avec les retours (`moteur::routes::atmp::recue`, avec sa date) ou du taux collectif
+/// de l'arrete pour un risque « TC » (`moteur::routes::atmp::inscrire_l_arrete`), d'apres sa `provenance`. Le libelle est celui de
+/// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
+pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
     let an = ctx.aujourdhui.an;
-    let Some(Ok(t)) = ctx.taux_atmp_de(an) else { return Vec::new() };
-    let reporte_de = t.reporte_de;
-    let notification = t.notification.as_ref();
-    let a_la_creation = t.pose_a_la_creation == Some(true);
-    if notification.is_none() && (!(a_la_creation || reporte_de.is_some()) || en_alsace_moselle(ctx)) {
-        return Vec::new();
-    }
-    let code = t.code_risque.clone().unwrap_or_default();
-    let risque = droit::contexte::socle_livre_lu(an).ok().flatten().and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == code));
-    let taux = t
-        .valeur
-        .as_ref()
-        .and_then(|v| v.au(&ctx.aujourdhui))
-        .map(|v| format!("{:.2} %", v.round_dp(2)).replace('.', ","))
-        .unwrap_or_default();
-    let nom = risque.as_ref().map(|r| r.code_arrete.clone().unwrap_or_else(|| r.code.clone())).unwrap_or_else(|| code.clone());
-    let libelle = format!("Accidents du travail : code risque {}, taux {} en {}", nom, taux, an);
-    // Le taux que la notification de la CARSAT a pose (`moteur::routes::atmp::poser_notifie`) : d'ou il vient.
-    if let Some(n) = notification {
-        let date = |d: &str| socle::date::Jour::lire(d).ok().map(|j| j.jj_mm_aaaa());
-        return vec![json!({
-            "cle": "taux_atmp",
-            "libelle": libelle,
-            "texte": format!(
-                "{}Le code risque et le taux sont ceux de la notification de la CARSAT{}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN et posés de lui-même. Rien à recopier.",
-                risque.as_ref().map(|r| format!("« {} » ", r.libelle)).unwrap_or_default(),
-                date(&n.calcul).or_else(|| date(&n.le)).map(|d| format!(" du {}", d)).unwrap_or_default(),
-                date(&n.effet).unwrap_or_default()
-            ),
-            "ou": ENTREPRISE.0, "onglet": ENTREPRISE.1,
-            "champ": "taux_atmp",
-        })];
-    }
-    let Some(r) = risque else { return Vec::new() };
-    vec![json!({
-        "cle": "taux_atmp",
-        "libelle": libelle,
-        "texte": match reporte_de {
-            Some(de) => format!("« {} » Le code risque est celui que la compagnie a dit pour {} ; son taux de {} est celui de l'arrêté de tarification, le même pour toutes les compagnies qui y sont classées. Votre notification AT/MP (compte AT/MP sur net-entreprises) dit le vôtre ; s'il est autre, changez-le dans Configuration › Entreprise, « Avancé ».", r.libelle, de, an),
-            None => format!("« {} » Le logiciel l'a posé pour vous : c'est le risque du spectacle vivant, et son taux est le même pour toutes les compagnies qui y sont classées. Votre notification AT/MP (compte AT/MP sur net-entreprises) dit le vôtre ; s'il est autre, changez-le dans Configuration › Entreprise, « Avancé ».", r.libelle),
-        },
-        "ou": ENTREPRISE.0, "onglet": ENTREPRISE.1,
-        "champ": "taux_atmp",
-    })]
+    let Some(Ok(t)) = ctx.taux_atmp_de(an) else { return Ok(Vec::new()) };
+    let d_ou = match (&t.notification, t.provenance) {
+        (Some(n), Some(droit::fiche::ProvenanceAtmp::Notification)) => format!(
+            "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",
+            // Sans jour de calcul, celui de la notification.
+            match &n.calcul {
+                Some(c) => c,
+                None => n.le.exigee("taux_atmp.notification.le")?,
+            }
+            .jj_mm_aaaa(),
+            n.effet.exigee("taux_atmp.notification.effet")?.jj_mm_aaaa()
+        ),
+        (_, Some(droit::fiche::ProvenanceAtmp::Arrete)) => format!(
+            "Le taux collectif de l'arrêté de {} pour ce risque « TC », le même pour toutes les compagnies qui y sont classées (code de la sécurité sociale, art. D. 242-6-14) : le logiciel l'a inscrit. Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, inscrivez-le.",
+            t.depuis.exigee("taux_atmp.depuis")?.an
+        ),
+        _ => return Ok(Vec::new()),
+    };
+    let risque = match &t.code_risque {
+        Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
+        None => None,
+    };
+    let nom = match (&risque, &t.code_risque) {
+        (Some(droit::bareme::RisqueAtmp { code_arrete: Some(c), .. }), _) => c.clone(),
+        (Some(r), _) => r.code.clone(),
+        (None, code) => code.exigee("taux_atmp.code_risque")?.clone(),
+    };
+    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
+    let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
+    Ok(vec![Pose {
+        cle: "taux_atmp".into(),
+        libelle: format!("Accidents du travail : code risque {}{} en {}", nom, taux, an),
+        texte: format!("{}{}", de, d_ou),
+        ou: ENTREPRISE.0.into(),
+        onglet: ENTREPRISE.1.into(),
+        champ: Some("taux_atmp".into()),
+    }])
 }
 
-/// `pour-demarrer` : `{"phrase", "titre", "note", "manques": [...], "poses": [...]}`. `proposes` : les propositions qui
-/// ne se tirent pas des fiches (les acces aux organismes, que le moteur lit dans le coffre), a la suite ; `pose` : ce qui
-/// se dit en information a leur place. Une case est EXIGEE POUR un geste (sans elle, il ne se fait pas : `bloque`) ou
-/// UTILE POUR un geste (sans elle, il se fait autrement : `utile`, `sinon`) ; chaque ligne le dit (`pour`), et sa phrase
-/// entiere dit aussi ou elle vit et de qui (`phrase`). Le refus reste a l'acte (`champs::refus_des_manques`).
-pub fn route(ctx: &Contexte, proposes: Vec<Value>, pose: Option<Value>) -> R<Value> {
+/// `pour-demarrer`. `proposes` : les propositions qui ne se tirent pas des fiches (les acces aux organismes, que le
+/// moteur lit dans le coffre), a la suite ; `pose` : ce qui se dit en information a leur place, apres ce que le moteur a
+/// pose. Une case est EXIGEE POUR un geste (sans elle, il ne se fait pas : `bloque`) ou UTILE POUR un geste (sans elle,
+/// il se fait autrement : `utile`, `sinon`) ; chaque ligne le dit (`pour`), et sa phrase entiere dit aussi ou elle vit
+/// et de qui (`phrase`). Le refus reste a l'acte (`champs::refus_des_manques`).
+pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>) -> R<PourDemarrer> {
     let mut lignes = manques(ctx).map_err(Echec::from)?;
     lignes.extend(proposes);
     for l in lignes.iter_mut() {
-        let t = |k: &str| l.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-        let pour = match l.get("bloque").and_then(Value::as_str) {
-            Some(b) => format!("case exigée pour {}", b),
-            None => format!("utile pour {} ; sinon, {}", t("utile"), t("sinon")),
+        let pour = match (&l.bloque, &l.utile, &l.sinon) {
+            (Some(b), _, _) => format!("case exigée pour {}", b),
+            (None, Some(u), Some(s)) => format!("utile pour {} ; sinon, {}", u, s),
+            _ => return Err(Echec::from(format!("La ligne « {} » de « Pour démarrer » ne dit ni ce qu'elle bloque ni ce qu'elle sert : le signaler au développeur.", l.libelle))),
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
-        let propose = l.get("propose").and_then(Value::as_str).map(|p| format!(" Proposé : « {} ».", p)).unwrap_or_default();
-        l["phrase"] = json!(format!("{} › {} : {}.{}", t("ou"), t("libelle"), pour, propose));
+        let propose: String = l.propose.iter().map(|p| format!(" Proposé : « {} ».", p)).collect();
+        l.phrase = Some(format!("{} › {} : {}.{}", l.ou, l.libelle, pour, propose));
         let mut c = pour.chars();
-        l["pour"] = json!(format!("{}{}.", c.next().map(|p| p.to_uppercase().collect::<String>()).unwrap_or_default(), c.as_str()));
+        let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
+        l.pour = Some(format!("{}{}.", initiale, c.as_str()));
     }
-    let n = lignes.iter().filter(|l| l.get("bloque").is_some()).count();
+    let n = lignes.iter().filter(|l| l.bloque.is_some()).count();
     let (titre, note) = match (n, lignes.is_empty()) {
         (0, true) => ("Pour démarrer : rien à remplir".to_string(), ""),
         (0, false) => ("Pour démarrer : tout ce qui est exigé est rempli".to_string(), "Ce qui suit est utile : sans ces cases, les gestes se font autrement."),
@@ -460,41 +563,29 @@ pub fn route(ctx: &Contexte, proposes: Vec<Value>, pose: Option<Value>) -> R<Val
     };
     let phrase = if note.is_empty() { format!("{}.", titre) } else { format!("{}. {}", titre, note) };
     let titre = if lignes.is_empty() { String::new() } else { titre };
-    let mut poses = poses(ctx);
+    let mut poses = poses(ctx).map_err(Echec::from)?;
     poses.extend(pose);
     // Chaque ligne en phrase entiere, puis ce que le moteur a pose de lui-meme : ce que la ligne de commande lit.
-    let mut phrases: Vec<Value> = lignes.iter().map(|l| l["phrase"].clone()).collect();
-    phrases.extend(poses.iter().map(|p| json!(format!("{} : {}", p["libelle"].as_str().unwrap_or(""), p["texte"].as_str().unwrap_or("")))));
-    Ok(json!({ "phrase": phrase, "phrases": phrases, "titre": titre, "note": note, "manques": lignes, "poses": poses }))
+    let mut phrases: Vec<String> = lignes.iter().flat_map(|l| l.phrase.clone()).collect();
+    phrases.extend(poses.iter().map(|p| format!("{} : {}", p.libelle, p.texte)));
+    Ok(PourDemarrer { phrase, phrases, titre, note: note.to_string(), manques: lignes, poses })
 }
 
 /// Ce qui suit le refus d'un acte quand la compagnie n'a pas fini de demarrer : toute la liste, d'un coup, sans ce que
 /// le refus `deja_dit` dit deja (un manque que le refus nomme, ou dont il donne l'explication, ne se redit pas).
-pub fn a_la_suite(ctx: &Contexte, deja_dit: &str) -> socle::num::Resultat<Option<String>> {
+pub fn a_la_suite(ctx: &Contexte, deja_dit: &str) -> Resultat<Option<String>> {
     let lignes: Vec<String> = manques(ctx)?
         .iter()
-        .filter(|x| x.get("bloque").is_some())
-        .filter(|x| !x["trouver"].as_str().map(str::trim).is_some_and(|t| !t.is_empty() && deja_dit.contains(t)))
-        .filter(|x| {
-            !(x["libelle"].as_str().is_some_and(|l| deja_dit.contains(l)) && x["qui"].as_str().is_none_or(|q| deja_dit.contains(q)))
+        .filter_map(|x| x.bloque.as_ref().map(|b| (x, b)))
+        .filter(|(x, _)| {
+            let t = x.trouver.trim();
+            t.is_empty() || !deja_dit.contains(t)
         })
-        .map(|x| {
-            let t = |k: &str| x[k].as_str().unwrap_or("").to_string();
-            format!("« {} » pour {}, dans {}", t("libelle"), t("bloque"), t("ou"))
-        })
+        .filter(|(x, _)| !(deja_dit.contains(&x.libelle) && x.qui.as_deref().is_none_or(|q| deja_dit.contains(q))))
+        .map(|(x, b)| format!("« {} » pour {}, dans {}", x.libelle, b, x.ou))
         .collect();
     if lignes.is_empty() {
         return Ok(None);
     }
     Ok(Some(format!(" Pour démarrer, il manque encore : {}.", lignes.join(" ; "))))
-}
-
-/// L'etablissement de la fiche est-il en Alsace-Moselle (`droit::bareme::en_alsace_moselle`) ?
-fn en_alsace_moselle(ctx: &Contexte) -> bool {
-    droit::bareme::en_alsace_moselle(ctx.entreprise.code_postal.texte())
-}
-
-/// Le taux AT/MP de l'annee est-il encore celui que le moteur a pose a la creation ?
-fn pose_a_la_creation(ctx: &Contexte) -> bool {
-    matches!(ctx.taux_atmp_de(ctx.aujourdhui.an), Some(Ok(t)) if t.pose_a_la_creation == Some(true))
 }

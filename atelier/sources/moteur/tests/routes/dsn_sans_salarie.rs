@@ -32,7 +32,7 @@ fn l_horloge_depose_la_dsn_d_un_mois_sans_engagement() {
         "2026-01-05",
     ));
     let r = route(&c, "horloge-rattraper", json!({"aujourdhui": "2026-03-20"}), "2026-03-20");
-    let fait: Vec<String> = reussi(&r).as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect();
+    let fait: Vec<String> = reussi(&r)["phrases"].as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect();
     assert!(fait.iter().any(|p| p.contains("DSN de février 2026 déposée") && !p.contains("non joué")), "{:?}", fait);
     let dsn = std::fs::read_to_string(c.join("sorties/2026-02/DSN_Fevrier2026.dsn")).unwrap_or_else(|e| panic!("{:?} : {}", fait, e));
     assert!(dsn.contains("S20.G00.05.002,'02'"), "la DSN de fevrier n'est pas sans individu");

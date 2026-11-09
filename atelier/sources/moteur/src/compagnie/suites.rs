@@ -3,12 +3,11 @@
 //! faire taire le reveil du filet. Elles se font toutes, que l'envoi ait abouti ou non.
 
 use droit::fiche::Lue as _;
-use serde_json::json;
+use socle::echec::Classe;
 
 use droit::contexte::Contexte;
 use envois::suites::Suites;
 use socle::echec::R;
-use documents::valeur::vrai;
 
 /// Ce que les suites laissent a dire : ce qu'il reste a faire, et ce qui n'a pas pu se faire.
 #[derive(Default)]
@@ -24,7 +23,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
         crate::compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours })?;
     }
     if let Some(d) = &s.depot_refuse {
-        noter_incident_depot(ctx, d);
+        if let Err(e) = noter_incident_depot(ctx, d) {
+            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.message));
+        }
     }
     if !s.taux_pas.is_empty() {
         if let Err(e) = appliquer_taux_pas(ctx, &s.taux_pas) {
@@ -50,32 +51,32 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// du compte rendu, il ne se devine pas (regle 1). Chaque releve se rattache a une fiche par le NIR ; un NIR qu'aucune
 /// fiche ne porte ne se rattache a personne. La validite court de la mise a disposition (`droit::pas`). Le compte rendu
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
-/// (`droit::pas::EN_RETOUR_DE`) : son taux vaut pour les mois qui suivent.
-fn appliquer_taux_pas(ctx: &Contexte, crm: &[(serde_json::Value, std::path::PathBuf)]) -> R<()> {
-    use serde_json::Value;
-    let nirs: Vec<Value> = ctx.salaries.iter().filter(|(_, s)| !s.nir.texte().is_empty()).map(|(cle, s)| json!([cle, s.nir.texte()])).collect();
-    let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur("ValueError", m))?;
-    let texte = |v: Option<&Value>| v.filter(|x| vrai(x)).map(documents::valeur::valeur_en_texte).unwrap_or_default();
-    let mois_declare = |retour: &Value| -> Option<String> {
-        let flux = texte(retour.get("flux"));
-        let l = journal.lignes.iter().find(|l| !flux.is_empty() && l.flux() == flux)?;
-        let nature = l.nature_dsn();
-        (l.acte() == envois::journal::Acte::Dsn && nature == "01").then(|| l.mois().map(|m| m.to_string())).flatten()
+/// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
+fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
+    let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
+    let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
+    let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
+        let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
+        let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
+        (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some("01")).then(|| l.mois().map(|m| m.to_string())).flatten()
     };
     let mut tous = Vec::new();
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
-        let releves: Vec<Value> = lus.get("releves").and_then(Value::as_array).cloned().unwrap_or_default();
-        let r = envois::retours::releves_vers_salaries(&releves, &nirs);
-        for x in r.get("rattaches").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let mut m = x.as_object().cloned().unwrap_or_default();
-            m.insert("mis_a_disposition".into(), retour.get("publication").cloned().unwrap_or(Value::Null));
-            if let Some(mois) = &en_retour_de {
-                m.insert(droit::pas::EN_RETOUR_DE.into(), Value::String(mois.clone()));
-            }
-            tous.push(Value::Object(m));
+        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
+        for x in &r.rattaches {
+            // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
+            let mis_a_disposition = retour.publication.clone().ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
+            tous.push(crate::compagnie::taux_pas::TauxRecu {
+                salarie: x.salarie.clone(),
+                taux: x.releve.taux.clone(),
+                type_taux: x.releve.type_taux.clone(),
+                identifiant: x.releve.identifiant.clone(),
+                mis_a_disposition,
+                en_retour_de: en_retour_de.clone(),
+            });
         }
     }
     crate::compagnie::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
@@ -83,20 +84,27 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(serde_json::Value, std::path::Path
 }
 
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;
-/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et se posent dans la surcouche de
-/// l'annee de leur date d'effet (`routes::atmp::poser_notifie`). Seul l'etablissement de la fiche entreprise (son SIREN et
-/// son NIC) a un taux dans la configuration : une notification pour un autre, illisible, ou qui donne plusieurs codes
+/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et s'inscrivent dans la case de
+/// la fiche entreprise a leur date d'effet, s'ils en different (`routes::atmp::recue`). Seul le siege (le SIREN et le NIC de la fiche
+/// entreprise) recoit ici son taux : une notification pour un autre etablissement, illisible, ou qui donne plusieurs codes
 /// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
-fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std::path::PathBuf)]) -> R<Vec<String>> {
+fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
     use std::collections::BTreeMap;
     let mut a_faire = Vec::new();
-    let (siren, nic) = (ctx.entreprise.siren.texte().to_string(), ctx.entreprise.nic.texte().to_string());
+    let (siren, nic) = (ctx.entreprise.siren.portee(), ctx.entreprise.nic.portee());
+    let la_fiche = match (siren, nic) {
+        (Some(s), Some(n)) => format!("qui n'est pas celui de la fiche Entreprise ({}{})", s, n),
+        _ => "et la fiche Entreprise ne dit pas son SIREN et son NIC".to_string(),
+    };
     for (retour, chemin) in notifications {
-        let le = envois::releve_retours::date_publication(retour);
-        let le_iso = socle::date::Jour::lire(&le).map(|j| j.iso()).unwrap_or_default();
-        let archive = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let source = format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive);
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur("OSError", socle::echec::du_disque(&chemin, &e)))?;
+        let publiee = envois::releve_retours::date_publication(retour);
+        let le_jour = publiee.as_deref().map(socle::date::Jour::lire).transpose().map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
+        let archive = socle::fichiers::nom_du(chemin);
+        let source = match &publiee {
+            Some(le) => format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive),
+            None => format!("Notification AT/MP de la CARSAT (retour DSN de nature 34, archive retours/{})", archive),
+        };
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
@@ -106,10 +114,10 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std:
         };
         let mut par_annee: BTreeMap<i32, Vec<envois::retours::TauxAtmpNotifie>> = BTreeMap::new();
         for t in lus {
-            if t.siren != siren || t.nic != nic {
+            if Some(t.siren.as_str()) != siren || Some(t.nic.as_str()) != nic {
                 a_faire.push(format!(
-                    "{} : le taux {} (code risque {}) est celui de l'établissement {}{}, qui n'est pas celui de la fiche Entreprise ({}{}). Rien n'est posé.",
-                    source, t.taux, t.code_risque, t.siren, t.nic, siren, nic
+                    "{} : le taux {} (code risque {}) est celui de l'établissement {}{}, {}. Rien n'est posé.",
+                    source, t.taux, t.code_risque, t.siren, t.nic, la_fiche
                 ));
                 continue;
             }
@@ -127,7 +135,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std:
             }
             for t in &taux {
                 let source = format!("{}, effet au {}.", source, t.date_effet.jj_mm_aaaa());
-                if let Some(pourquoi) = crate::routes::atmp::poser_notifie(ctx, t, &le_iso, &source)? {
+                if let Some(pourquoi) = crate::routes::atmp::recue(ctx, t, le_jour, &source)? {
                     a_faire.push(pourquoi);
                 }
             }
@@ -138,17 +146,27 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(serde_json::Value, std:
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
 /// alors que la repetition etait conforme.
-fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) {
+fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {
     let apres_test = d.reel && d.repetition.as_ref().is_some_and(|r| r.test.is_some());
-    let _ = crate::compagnie::incidents::noter(
+    crate::compagnie::incidents::noter(
         &ctx.racine,
         &crate::compagnie::incidents::Note {
             nature: if d.quoi == "dsn" { crate::compagnie::incidents::DSN } else { crate::compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi),
             quoi: &d.classe,
             resume: &d.message,
-            detail: json!({"reel": d.reel, "apres_test_conforme": apres_test, "repetition": d.repetition.as_ref().map_or(json!({}), |r| json!(r))}),
+            detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
             ..Default::default()
         },
-    );
+    )?;
+    Ok(())
+}
+
+/// Ce que l'incident d'un depot refuse porte au developpeur : reel ou test, s'il suivait une repetition conforme, et
+/// cette repetition.
+#[derive(Default, serde::Serialize)]
+struct DetailDuDepotRefuse<'a> {
+    reel: bool,
+    apres_test_conforme: bool,
+    repetition: Option<&'a envois::journal::Ouverture>,
 }

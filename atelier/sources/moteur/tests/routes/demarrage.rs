@@ -6,7 +6,7 @@
 //!   `dsn::type_du_contact`, prouve dans `tests/dsn/contact_declare.rs`) ; le code du service de sante au travail se
 //!   demande par sa case, comme tout ce que la DPAE exige (`exige_par` de `champs-base.json`).
 //!   La reponse sur la TVA (la taxe sur les salaires de la DSN de decembre) se demande d'avance.
-//! - Le SIREN et le NIC se deduisent du SIRET a l'enregistrement de la fiche (`crate::routes::fiches::deriver`) : un SIRET est un
+//! - Le SIREN et le NIC se deduisent du SIRET a l'enregistrement de la fiche (`routes::fiches::deriver`) : un SIRET est un
 //!   SIREN de 9 chiffres suivi d'un NIC de 5.
 //! - La rubrique d'une ligne de paie neuve (`etat.rubrique_par_defaut`, `catalogue::par_defaut`) : une rubrique de
 //!   salaire, jamais la premiere du catalogue trie (« Absence » dans une compagnie ou rien n'est coche).
@@ -59,8 +59,8 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             let racine = neuve(&nom);
             let mut fichier = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
             let valeur = Some(idcc.clone()).filter(|i| !i.is_empty());
-            fichier.idcc = vec![droit::fiche::Datee { depuis: None, valeur, note: None }];
-            fichier.emploie_des_permanents = vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }];
+            fichier.idcc = Some(vec![droit::fiche::Datee { depuis: None, valeur, note: None }]);
+            fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }]);
             ecrire(&racine, "config/entreprise.json", &socle::ecriture::en_valeur(&fichier));
             let ent = fichier.au(&socle::date::Jour::lire(JOUR).unwrap());
             if spectacle {
@@ -68,23 +68,24 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             }
             let m = manques(&racine);
             // Ce que la fiche Entreprise montre, tel que le moteur le dit a la page (route `permanents`).
-            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({}), JOUR))["montres"].as_array().unwrap().clone();
+            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({"nom": "entreprise", "donnees": socle::ecriture::en_valeur(&ent)}), JOUR))["montres"].as_array().unwrap().clone();
             let montre = |cle: &str| montres.contains(&json!(cle));
             for x in &m {
                 let Some(champ) = x["champ"].as_str() else { continue };
                 if x["ou"] != json!("Configuration › Entreprise") || champ == "taux_atmp" {
-                    continue; // le taux AT/MP vit dans le bareme de la compagnie (`ATMP_HTML`)
+                    continue; // le taux AT/MP a son propre encart, hors des cases de la fiche (`ATMP_HTML`)
                 }
                 let c = fiche.iter().find(|c| c.cle == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
                 assert!(montre(&c.cle), "{} : « {} » demande, case masquee", nom, champ);
             }
+            let lue = declarations::champs::Saisie::de_la_fiche("entreprise", &ent).unwrap();
             for c in &fiche {
-                if c.exige(&ent) {
+                if c.exige(&lue) {
                     assert!(montre(&c.cle), "{} : « {} » exige et masque", nom, c.cle);
                 }
             }
             let demandee = par_champ(&m, "licence_spectacle").len() == 1;
-            let (montree, exigee) = (montre("licence_spectacle"), declarations::demarrage::licence_exigee(&ent, spectacle));
+            let (montree, exigee) = (montre("licence_spectacle"), declarations::demarrage::licence_exigee(&ent, spectacle).unwrap());
             assert_eq!(demandee, exigee, "{} : la licence demandee si et seulement si exigee", nom);
             assert!(!exigee || montree, "{} : la licence exigee, case masquee", nom);
             match idcc.as_str() {

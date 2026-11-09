@@ -105,6 +105,14 @@ pub fn est_un_montant(rubrique: &str) -> Option<bool> {
     REPRISES.iter().find(|(r, _)| *r == rubrique).map(|(_, m)| *m)
 }
 
+/// Le refus d'un montant `v` de la rubrique `k` qui ne se lit pas, dans `quoi`.
+pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> String {
+    socle::echec::avec(
+        format!("La DSN déposée porte un montant illisible en {}.", k),
+        socle::echec::APart { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..socle::echec::APart::default() },
+    )
+}
+
 /// Le brut (S21.G00.51.013 du type 001) de lignes de versement ; chaque rubrique y doit etre de celles que
 /// l'annulation sait reprendre, chaque montant lisible.
 fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> Result<Decimal, String> {
@@ -113,13 +121,13 @@ fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> Re
     for (k, v) in lignes {
         let montant = est_un_montant(k).ok_or_else(|| format!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
         if montant {
-            Decimal::from_str(v).map_err(|_| socle::echec::avec(format!("La DSN déposée porte un montant illisible en {}.", k), serde_json::json!({"fichier": quoi, "detail": v})))?;
+            Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
         }
         if k == "S21.G00.51.011" {
             type_51 = Some(v);
         } else if k == "S21.G00.51.013" && type_51 == Some("001") {
-            let m = Decimal::from_str(v).map_err(|_| socle::echec::avec(format!("La DSN déposée porte un montant illisible en {}.", k), serde_json::json!({"fichier": quoi, "detail": v})))?;
-            brut = Some(brut.unwrap_or(Decimal::ZERO) + m);
+            let m = Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
+            brut = Some(brut.iter().sum::<Decimal>() + m);
         }
     }
     brut.ok_or_else(|| format!("le versement du contrat {} ne declare pas de brut (S21.G00.51.011 = 001) dans {}", numero, quoi))
@@ -134,7 +142,7 @@ fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> Resul
         if k == "S21.G00.58.003" {
             type_58 = Some(v);
         } else if k == "S21.G00.58.004" && type_58 == Some("03") {
-            nets.push(Decimal::from_str(v).map_err(|_| socle::echec::avec(format!("La DSN déposée porte un montant illisible en {}.", k), serde_json::json!({"fichier": quoi, "detail": v})))?);
+            nets.push(Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?);
         }
     }
     match nets[..] {
@@ -156,7 +164,7 @@ fn frais_de(lignes: &[(String, String)], quoi: &str) -> Result<Decimal, String> 
         if k == "S21.G00.54.001" {
             type_54 = Some(v);
         } else if k == "S21.G00.54.002" && type_54.is_some_and(|t| FRAIS_54.contains(&t)) {
-            total += Decimal::from_str(v).map_err(|_| socle::echec::avec(format!("La DSN déposée porte un montant illisible en {}.", k), serde_json::json!({"fichier": quoi, "detail": v})))?;
+            total += Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
         }
     }
     Ok(total)
@@ -166,8 +174,8 @@ fn frais_de(lignes: &[(String, String)], quoi: &str) -> Result<Decimal, String> 
 /// (`dsn::versement_ecrit`) : ses rubriques (bloc 50 a part, sans le bloc 52), les affiliations du contrat, et ses
 /// montants, ceux de la paie. Refus : une rubrique que l'annulation ne sait pas reprendre, un montant net social absent.
 pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: &str) -> Result<VersementDeclare, String> {
-    let numero = p.engagement.numero.as_deref().unwrap_or_default().to_string();
     let quoi = format!("la paie declaree de {}", mois);
+    let numero = p.engagement.numero.clone().ok_or_else(|| format!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
     let ecrit = crate::dsn::versement_ecrit(ctx, p, mois)?;
     let (entete, lignes): (Vec<(String, String)>, Vec<(String, String)>) =
         ecrit.rubriques.into_iter().filter(|(k, _)| !k.starts_with("S21.G00.52.")).partition(|(k, _)| k.starts_with("S21.G00.50."));

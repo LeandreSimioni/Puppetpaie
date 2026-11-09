@@ -1,13 +1,13 @@
 {
- "_source": "https://echanges.dila.gouv.fr/OPENDATA/LEGI/",
- "_global": "Freemium_legi_global_20250713-140000.tar.gz",
- "_texte": "Code de la securite sociale",
- "_legitext": "LEGITEXT000006073189",
- "_livraisons_lues": 483,
- "_livraisons_totales": 483,
- "_complet": true,
- "_derniere_livraison": "20261102-213929",
- "_changes_depuis_le_global": [
+ "source": "https://echanges.dila.gouv.fr/OPENDATA/LEGI/",
+ "global": "Freemium_legi_global_20250713-140000.tar.gz",
+ "texte": "Code de la securite sociale",
+ "legitext": "LEGITEXT000006073189",
+ "livraisons_lues": 483,
+ "livraisons_totales": 483,
+ "complet": true,
+ "derniere_livraison": "20261102-213929",
+ "changes_depuis_le_global": [
   {
    "apres": "LEGIARTI000006741897",
    "article": "L241-3",
@@ -6417,7 +6417,7 @@
    "texte": "securite-sociale"
   }
  ],
- "_releve_le": "2026-11-03",
+ "releve_le":"2026-11-03",
  "articles": {
   "D241-10": {
    "debut": "2026-06-15",

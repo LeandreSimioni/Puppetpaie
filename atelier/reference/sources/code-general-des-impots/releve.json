@@ -1,13 +1,13 @@
 {
- "_source": "https://echanges.dila.gouv.fr/OPENDATA/LEGI/",
- "_global": "Freemium_legi_global_20250713-140000.tar.gz",
- "_texte": "Code general des impots",
- "_legitext": "LEGITEXT000006069577",
- "_livraisons_lues": 483,
- "_livraisons_totales": 483,
- "_complet": true,
- "_derniere_livraison": "20261102-213929",
- "_changes_depuis_le_global": [
+ "source": "https://echanges.dila.gouv.fr/OPENDATA/LEGI/",
+ "global": "Freemium_legi_global_20250713-140000.tar.gz",
+ "texte": "Code general des impots",
+ "legitext": "LEGITEXT000006069577",
+ "livraisons_lues": 483,
+ "livraisons_totales": 483,
+ "complet": true,
+ "derniere_livraison": "20261102-213929",
+ "changes_depuis_le_global": [
   {
    "apres": "LEGIARTI000048806579",
    "article": "204 E",
@@ -449,7 +449,7 @@
    "texte": "impots"
   }
  ],
- "_releve_le": "2026-11-03",
+ "releve_le":"2026-11-03",
  "articles": {
   "154 quinquies": {
    "debut": "2026-06-27",

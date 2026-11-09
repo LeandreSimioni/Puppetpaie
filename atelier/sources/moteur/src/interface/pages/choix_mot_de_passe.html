@@ -77,7 +77,7 @@
     let r = await appel("mot-de-passe-changer", { nouveau: mdp.value, confirmation: mdp2.value });
     if (r.ok) r = await window.pywebview.api.verifier(mdp.value);
     if (r.ok) { mdp.value = mdp2.value = ""; ok.textContent = "D\u00e9marrage\u2026"; return; }
-    err.textContent = r.erreur; ok.disabled = false; mdp.focus();
+    err.textContent = r.refus.phrase; ok.disabled = false; mdp.focus();
   });
   // LA QUESTION DE L'ADMINISTRATEUR : oui, son mot de passe tape une fois (le moteur le verifie et rattache) ; non, le
   // choix d'un mot de passe propre, comme pour une premiere compagnie.
@@ -99,14 +99,14 @@
     if (r.ok) r = await window.pywebview.api.verifier(champ.value);
     champ.value = "";
     if (r.ok) { bouton.textContent = "Démarrage…"; return; }
-    errA.textContent = r.erreur; bouton.disabled = false; champ.focus();
+    errA.textContent = r.refus.phrase; bouton.disabled = false; champ.focus();
   });
   window.addEventListener("pywebviewready", () => (adm.question ? document.getElementById("q-oui") : mdp).focus());
   // « Retour » et Echap : revenir au choix de la compagnie. La reponse du geste dit `recharger` et la cale ramene la
   // fenetre sur `/`, ou le serveur sert l'accueil. Un refus s'affiche, rien ne se tait.
   async function retour() {
     const r = await window.pywebview.api.accueil();
-    if (!r.ok) err.textContent = r.erreur;
+    if (!r.ok) err.textContent = r.refus.phrase;
   }
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !e.isComposing && !e.repeat) { e.preventDefault(); retour(); }

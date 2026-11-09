@@ -19,7 +19,7 @@ use socle::mois::Mois;
 /// Où en est la DSN d'un mois : « passee », « attente », « refusee » (le journal) ; « importee » (la DSN de l'ancien
 /// logiciel) ; « sans_trace » (un mois tenu avant dont rien ne garde la DSN, qui ne se réclame pas) ; « a_deposer » (un
 /// mois de ce logiciel dont la DSN n'est pas partie).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Etat {
     Passee,
@@ -33,7 +33,9 @@ pub(crate) enum Etat {
 /// L'état de la DSN d'un mois : `etat`, ce que l'écran en dit (`courte`, `phrase` ; aucun mot pour une DSN à déposer),
 /// le jour du dépôt (`quand`, au journal), et pour une DSN du journal les `anomalies` du bilan et si France Travail a
 /// renvoyé l'attestation employeur qu'il en édite (`aer_recue`).
-#[derive(Debug, Clone, Serialize)]
+/// Il se relit avec la reponse qui le porte (le refus d'une seconde DSN du mois, `routes::enveloppe::APart`).
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EtatDsn {
     pub(crate) etat: Etat,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,7 +89,7 @@ impl EtatDsn {
 pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
     let mois = &le_mois.to_string();
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    if let Some(e) = etats::etat_dsn_du_mois(&lignes, le_mois, nic, &ctx.entreprise.nic_principal()) {
+    if let Some(e) = etats::etat_dsn_du_mois(&lignes, le_mois, nic, ctx.entreprise.nic.ecrite("nic")?) {
         let quand = etats::quand_lisible(&e.quand);
         let (etat, courte, phrase) = if e.refusee {
             (Etat::Refusee, "refusée".to_string(), format!("DSN déposée le {} — REFUSÉE par la plate-forme", quand))
@@ -99,15 +101,12 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
         return Ok(EtatDsn { etat, courte: Some(courte), phrase: Some(phrase), quand: Some(e.quand), anomalies: Some(e.anomalies), aer_recue: Some(e.aer_recue) });
     }
     if let Some(etablie) = crate::import::mois::dsn_importee_le(&ctx.racine, mois)? {
-        let jour = if etablie.len() == 10 { format!(" (établie le {}/{}/{})", &etablie[8..10], &etablie[5..7], &etablie[..4]) } else { String::new() };
-        return Ok(EtatDsn::dit(
-            Etat::Importee,
-            "déclarée avant PuppetPaie",
-            &format!(
-                "DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée{} — aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.",
-                jour
-            ),
-        ));
+        const SANS_BILAN: &str = "aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.";
+        let phrase = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
+            Some(j) => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée (établie le {}) — {}", j.jj_mm_aaaa(), SANS_BILAN),
+            None => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée — {}", SANS_BILAN),
+        };
+        return Ok(EtatDsn::dit(Etat::Importee, "déclarée avant PuppetPaie", &phrase));
     }
     if !crate::import::mois::importe(&ctx.racine, mois)? {
         return Ok(EtatDsn { etat: Etat::ADeposer, courte: None, phrase: None, quand: None, anomalies: None, aer_recue: None });
@@ -124,11 +123,10 @@ pub(crate) fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<Eta
 /// compagnie qui n'a ni paie saisie ni DSN au journal n'a encore rien a declarer avant le mois courant (des fiches ne
 /// sont pas un passe). `None` : rien ne borne -- une compagnie qui a deja des paies ou des declarations.
 pub(crate) fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
-    let embauche: String = ctx.entreprise.premiere_embauche.dite().map(|j| j.iso()).unwrap_or_default().chars().take(7).collect();
-    if !embauche.is_empty() {
-        return Ok(Some(embauche));
+    if let Some(j) = ctx.entreprise.premiere_embauche.dite() {
+        return Ok(Some(socle::mois::Mois::du_jour(j).to_string()));
     }
-    if !engagement::stock::mois_saisis(&ctx.racine).unwrap_or_default().is_empty() {
+    if !engagement::stock::mois_saisis(&ctx.racine).map_err(socle::echec::Echec::from)?.is_empty() {
         return Ok(None);
     }
     let journal = envois::journal::lu(&ctx.racine)?;

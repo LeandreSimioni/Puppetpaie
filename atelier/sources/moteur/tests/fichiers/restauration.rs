@@ -78,7 +78,7 @@ fn un_dossier_qui_porte_autre_chose_refuse_et_rien_n_est_ecrit_ni_efface() {
     let avant = tout(&cible);
     d.journal.clear();
     let e = restaurer(&cible, RD, &mut d).unwrap_err();
-    assert_eq!(e.classe, "DossierNonVide");
+    assert_eq!(e.classe, Some(socle::echec::Classe::DossierNonVide));
     assert!(e.message.contains("2 fichier(s)"), "{}", e.message);
     assert!(e.message.contains("config/entreprise.json (differe de la copie du Drive)"), "{}", e.message);
     assert!(e.message.contains("paies/2026-07/martin.json (absent de la sauvegarde)"), "{}", e.message);

@@ -11,6 +11,7 @@
 //! Le client Drive se passe en parametre (`drive::Drive`), comme pour la sauvegarde.
 
 use std::path::Path;
+use socle::echec::Classe;
 
 use envois::drive::{Client, Drive, ErreurGoogle};
 
@@ -33,7 +34,7 @@ pub struct Archivage {
 
 /// `SortieAbsente` : on demande a archiver un mois qui n'a pas ete produit.
 fn sortie_absente(dossier: &Path) -> ErreurGoogle {
-    ErreurGoogle::nouvelle("SortieAbsente", format!("{} n'existe pas.", dossier.display()))
+    ErreurGoogle::nouvelle(Classe::SortieAbsente, format!("{} n'existe pas.", dossier.display()))
 }
 
 /// `archiver` : depose les sorties d'un mois dans le Drive du compte autorise.
@@ -44,7 +45,7 @@ pub fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Option<&m
     // `..` ou `../config` archiverait le dossier `config` (coffre et jeton compris), `2026-06/envoi` les fiches de
     // salaries une a une : seul `AAAA-MM` est un mois.
     if !socle::mois::Mois::lire(mois).is_ok() {
-        return Err(ErreurGoogle::nouvelle("ErreurOperation", format!("Mois illisible : '{}' (AAAA-MM attendu).", mois)));
+        return Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Mois illisible : '{}' (AAAA-MM attendu).", mois)));
     }
     let dossier = racine.join("sorties").join(mois);
     if !dossier.exists() {
@@ -75,10 +76,10 @@ pub fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Option<&m
     let deja = client.lister(&cible)?;
     let mut deposes = Vec::new();
     for f in &fichiers {
-        let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| ErreurGoogle::nouvelle(socle::echec::Classe::DefautDuLogiciel, "Défaut du logiciel : une pièce à archiver n'a pas de nom."))?;
         let r = client.televerser(f, &cible, None, deja.get(&nom_local))?;
         let octets = std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?.len();
-        let nom = r.nom.or_else(|| f.file_name().map(|n| n.to_string_lossy().into_owned()));
+        let nom = r.nom.or(Some(nom_local));
         deposes.push(FichierArchive { nom, octets, remplace: r.remplace });
     }
     Ok(Archivage { mois: mois.to_string(), racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
@@ -106,6 +107,6 @@ impl Drive for DriveJoue {
         Ok(Vec::new())
     }
     fn telecharger(&mut self, id: &str) -> Result<Vec<u8>, ErreurGoogle> {
-        Err(ErreurGoogle::nouvelle("ErreurOperation", format!("Le Drive d'une compagnie fictive ne garde rien : {} n'y est pas.", id)))
+        Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Le Drive d'une compagnie fictive ne garde rien : {} n'y est pas.", id)))
     }
 }

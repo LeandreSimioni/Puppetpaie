@@ -121,18 +121,20 @@ fn sans_la_variable_le_montage_refuse_et_n_ecrit_rien() {
 #[test]
 fn une_cle_qui_manque_ou_en_trop_est_nommee_sans_sa_valeur_et_rien_n_est_ecrit() {
     let d = dossier("cles");
-    let mut id = identite();
-    id["declarant_dsn"].as_object_mut().unwrap().remove("civilite");
-    id.as_object_mut().unwrap().remove("medecine_travail");
-    id["telephone_portable"] = json!("0611223344");
-    let s = monter_avec(PAIE, &d, Some(&id.to_string()));
-    assert_eq!(s.code, 1, "{}", s.texte);
-    for nom in ["medecine_travail", "declarant_dsn.civilite", "telephone_portable"] {
+    let mut sans_civilite = identite();
+    sans_civilite["declarant_dsn"].as_object_mut().unwrap().remove("civilite");
+    let mut sans_medecine = identite();
+    sans_medecine.as_object_mut().unwrap().remove("medecine_travail");
+    let mut en_trop = identite();
+    en_trop["telephone_portable"] = json!("0611223344");
+    for (id, nom) in [(sans_civilite, "civilite"), (sans_medecine, "medecine_travail"), (en_trop, "telephone_portable")] {
+        let s = monter_avec(PAIE, &d, Some(&id.to_string()));
+        assert_eq!(s.code, 1, "{}", s.texte);
         assert!(s.texte.contains(nom), "{} n'est pas nomme : {}", nom, s.texte);
+        rien_d_affiche(&s, &id);
+        assert!(!s.texte.contains("0611223344"), "{}", s.texte);
+        assert!(!d.exists());
     }
-    rien_d_affiche(&s, &id);
-    assert!(!s.texte.contains("0611223344"), "{}", s.texte);
-    assert!(!d.exists());
 }
 
 /// Un dossier dans un depot Git est refuse : la copie porterait l'identite d'une vraie compagnie la ou `git add` la prendrait.
@@ -158,13 +160,14 @@ fn une_compagnie_d_essai_montee_se_lit_par_sa_forme() {
     for f in ["salaries.json", "spectacles.json"] {
         std::fs::write(config.join(f), "{}").unwrap();
     }
-    std::fs::write(source.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive fictive-du-test"}).to_string()).unwrap();
+    std::fs::write(source.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive fictive-du-test", "quoi": "livree"}).to_string()).unwrap();
     let d = dossier("se-lit");
     let s = lancer(PAIE, &["essai", "monter", d.to_str().unwrap(), "--depuis", source.to_str().unwrap()], &[("PUPPETPAIE_COMPAGNIE", &identite().to_string())]);
     assert_eq!(s.code, 0, "{}", s.texte);
     let ctx = droit::contexte::Contexte::nouveau(&d, None).unwrap_or_else(|e| panic!("la compagnie d'essai ne se lit pas : {}", e));
     let dpae = ctx.entreprise.api_dpae.as_ref().expect("le compte DPAE");
-    assert_eq!((dpae.nom.as_deref(), dpae.siret.as_deref()), (Some("QUENOUILLEDPAE"), Some("98765432400019")));
+    // Le SIRET du compte DPAE, vide dans la variable, n'est pas dit : celui de la compagnie sert (`Client::dpae`).
+    assert_eq!((dpae.nom.as_deref(), dpae.siret.as_deref()), (Some("QUENOUILLEDPAE"), None));
     assert_eq!(ctx.entreprise.declarant.as_ref().and_then(|x| x.prenom.as_ref()).map(|p| p.to_string()), Some("ARIANE MARIE".to_string()));
     let _ = std::fs::remove_dir_all(&d);
 }

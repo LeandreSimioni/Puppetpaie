@@ -21,6 +21,11 @@ pub struct Requete {
 }
 
 impl Requete {
+    /// Le parametre `nom` de l'adresse (`?nom=…`), s'il y est.
+    pub fn param(&self, nom: &str) -> Option<&str> {
+        self.params.get(nom).map(String::as_str)
+    }
+
     pub fn entete(&self, nom: &str) -> Option<&str> {
         self.entetes.get(&nom.to_ascii_lowercase()).map(String::as_str)
     }
@@ -45,8 +50,9 @@ impl Reponse {
         Reponse { code, type_mime: type_mime.into(), corps: corps.into(), entetes: Vec::new() }
     }
 
-    pub fn json(code: u16, v: &serde_json::Value) -> Reponse {
-        Reponse::nouvelle(code, "application/json; charset=utf-8", serde_json::to_vec(v).unwrap_or_default())
+    /// Une reponse en JSON, ecrite depuis sa forme (`socle::ecriture`).
+    pub fn json<T: serde::Serialize + ?Sized>(code: u16, v: &T) -> Reponse {
+        Reponse::nouvelle(code, "application/json; charset=utf-8", socle::ecriture::json_en_ligne(v).into_bytes())
     }
 
     pub fn avec(mut self, nom: &str, valeur: impl Into<String>) -> Reponse {
@@ -77,8 +83,7 @@ pub fn decoder_pourcent(s: &str) -> String {
         match o[i] {
             b'+' => v.push(b' '),
             b'%' if i + 2 < o.len() && o[i + 1].is_ascii_hexdigit() && o[i + 2].is_ascii_hexdigit() => {
-                let chiffre = |c: u8| (c as char).to_digit(16).unwrap_or(0) as u8;
-                v.push(chiffre(o[i + 1]) * 16 + chiffre(o[i + 2]));
+                v.push(hexa(o[i + 1]) * 16 + hexa(o[i + 2]));
                 i += 2;
             }
             b => v.push(b),
@@ -88,19 +93,38 @@ pub fn decoder_pourcent(s: &str) -> String {
     String::from_utf8_lossy(&v).into_owned()
 }
 
-fn lire_requete(flux: &mut BufReader<TcpStream>) -> Option<Result<Requete, u16>> {
+/// La valeur d'un chiffre hexadecimal (`decoder_pourcent` ne lui donne que des chiffres).
+fn hexa(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => c - b'a' + 10,
+        _ => c - b'A' + 10,
+    }
+}
+
+/// La longueur du corps (`Content-Length`), ou le code du refus : illisible (400), trop gros (413).
+fn longueur_du_corps(v: &str) -> Result<usize, u16> {
+    let n: usize = v.trim().parse().map_err(|_| 400u16)?;
+    if n > CORPS_MAX {
+        return Err(413);
+    }
+    Ok(n)
+}
+
+/// La requete suivante du flux : lue, refusee (son code), ou `None` quand le client a fini (le flux est clos).
+fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Result<Requete, u16>>> {
     let mut ligne = String::new();
-    if flux.read_line(&mut ligne).ok()? == 0 {
-        return None;
+    if flux.read_line(&mut ligne)? == 0 {
+        return Ok(None);
     }
     let mut morceaux = ligne.split_whitespace();
-    let methode = morceaux.next()?.to_string();
-    let cible = morceaux.next()?.to_string();
+    let (Some(methode), Some(cible)) = (morceaux.next(), morceaux.next()) else { return Ok(Some(Err(400))) };
+    let (methode, cible) = (methode.to_string(), cible.to_string());
     let mut entetes = HashMap::new();
     loop {
         let mut l = String::new();
-        if flux.read_line(&mut l).ok()? == 0 {
-            return None;
+        if flux.read_line(&mut l)? == 0 {
+            return Ok(None);
         }
         let l = l.trim_end();
         if l.is_empty() {
@@ -110,25 +134,32 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> Option<Result<Requete, u16>>
             entetes.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
         }
     }
-    let longueur: usize = entetes.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    if longueur > CORPS_MAX {
-        return Some(Err(413));
+    // Sans `Content-Length`, la requete n'a pas de corps.
+    let mut corps = Vec::new();
+    const LONGUEUR: &str = "content-length";
+    if let Some(v) = entetes.get(LONGUEUR) {
+        match longueur_du_corps(v) {
+            Ok(n) => corps.resize(n, 0),
+            Err(code) => return Ok(Some(Err(code))),
+        }
     }
-    let mut corps = vec![0; longueur];
-    flux.read_exact(&mut corps).ok()?;
-    let (chemin, requete) = cible.split_once('?').unwrap_or((&cible, ""));
+    flux.read_exact(&mut corps)?;
+    let (chemin, requete) = match cible.split_once('?') {
+        Some(c) => c,
+        None => (cible.as_str(), ""),
+    };
     let params = requete
         .split('&')
         .filter(|p| !p.is_empty())
-        .map(|p| {
-            let (k, v) = p.split_once('=').unwrap_or((p, ""));
-            (decoder_pourcent(k), decoder_pourcent(v))
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => (decoder_pourcent(k), decoder_pourcent(v)),
+            None => (decoder_pourcent(p), String::new()),
         })
         .collect();
-    Some(Ok(Requete { methode, chemin: decoder_pourcent(chemin), params, entetes, corps }))
+    Ok(Some(Ok(Requete { methode, chemin: decoder_pourcent(chemin), params, entetes, corps })))
 }
 
-/// Une requete refusee avant d'etre lue : un corps JSON que la page sait lire (`d.erreur.message`), et non un
+/// Une requete refusee avant d'etre lue : l'enveloppe d'un refus, que la page sait lire (`d.refus.phrase`), et non un
 /// corps vide sur lequel `r.json()` levait une SyntaxError.
 fn refus_de_lecture(code: u16) -> Reponse {
     let message = match code {
@@ -138,7 +169,17 @@ fn refus_de_lecture(code: u16) -> Reponse {
         ),
         _ => format!("La demande n'a pas pu être lue (code {}).", code),
     };
-    Reponse::json(code, &serde_json::json!({"ok": false, "erreur": {"type": "RequeteRefusee", "message": message}}))
+    let refus = crate::routes::enveloppe::Refus::nouveau(socle::echec::Classe::RequeteRefusee, message);
+    Reponse::json(code, &crate::routes::enveloppe::Reponse::refusee(refus))
+}
+
+/// LA CONNEXION FINIT sur une erreur du flux : le client parti (la fenetre fermee pendant un releve) ou silencieux trop
+/// longtemps n'est pas un defaut, il n'y a plus personne a qui le dire ; une autre erreur se dit sur la sortie d'erreur.
+fn fin_de_connexion(e: std::io::Error) {
+    use std::io::ErrorKind::*;
+    if !matches!(e.kind(), TimedOut | WouldBlock | ConnectionReset | ConnectionAborted | BrokenPipe | UnexpectedEof) {
+        eprintln!("Une connexion de la fenêtre s'arrête : {}.", e);
+    }
 }
 
 fn ecrire_reponse(flux: &mut TcpStream, r: &Reponse) -> std::io::Result<()> {
@@ -168,16 +209,23 @@ fn ecrire_reponse(flux: &mut TcpStream, r: &Reponse) -> std::io::Result<()> {
 fn servir_connexion(flux: TcpStream, traiter: Arc<dyn Fn(Requete) -> Reponse + Send + Sync>) {
     let _ = flux.set_read_timeout(Some(Duration::from_secs(30)));
     let _ = flux.set_nodelay(true);
-    let Ok(mut sortie) = flux.try_clone() else { return };
+    let mut sortie = match flux.try_clone() {
+        Ok(s) => s,
+        Err(e) => return fin_de_connexion(e),
+    };
     let mut entree = BufReader::new(flux);
-    while let Some(r) = lire_requete(&mut entree) {
+    loop {
+        let r = match lire_requete(&mut entree) {
+            Ok(Some(r)) => r,
+            Ok(None) => return,
+            Err(e) => return fin_de_connexion(e),
+        };
         let (reponse, refusee) = match r {
             Ok(req) => (traiter(req), false),
             Err(code) => (refus_de_lecture(code), true),
         };
-        // Le client parti (la fenetre fermee pendant un releve) n'est pas un defaut : il n'y a plus personne a qui le dire.
-        if ecrire_reponse(&mut sortie, &reponse).is_err() {
-            return;
+        if let Err(e) = ecrire_reponse(&mut sortie, &reponse) {
+            return fin_de_connexion(e);
         }
         // Le corps d'une requete refusee n'a pas ete lu : la suite du flux n'est plus une requete. On ferme.
         if refusee {

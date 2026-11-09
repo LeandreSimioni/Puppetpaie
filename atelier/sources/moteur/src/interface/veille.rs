@@ -5,28 +5,51 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde::Serialize;
+use socle::memoire::tenu;
 
 use super::api::route;
+use crate::compagnie::ouverture::{ChargeOuverture, Trace};
 use crate::etat_garde::FileDesEtats;
 use crate::routes::catalogue::Route;
+use crate::routes::enveloppe::{Charge, Refus};
 
 pub struct Veille {
     racine: PathBuf,
     pub minutes: u64,
-    jours: u32,
-    dernier: Mutex<Option<Value>>,
-    erreur: Mutex<String>,
+    jours: i64,
+    erreur: Mutex<Option<String>>,
     en_cours: AtomicBool,
     sauvegarde_en_cours: AtomicBool,
     tour_unique: Mutex<()>,
     arretee: AtomicBool,
     /// Quand partira le prochain tour de la boucle (« prochain relevé dans … minutes »).
-    prochain: Mutex<Option<std::time::SystemTime>>,
+    prochain: Mutex<Option<Instant>>,
     /// Les etats des mois, a verifier apres chaque tour : un retour releve, une signature notee changent un mois.
     etats: Option<Arc<FileDesEtats>>,
+}
+
+/// OU EN EST LE PASSAGE (`Veille::etape`) : la releve ou la sauvegarde qui tournent, et l'etape que l'ouverture ecrit.
+#[derive(Debug, Clone, Serialize)]
+pub struct EtapeDeLaVeille {
+    pub en_cours: bool,
+    pub sauvegarde_en_cours: bool,
+    pub etape: Option<String>,
+}
+
+/// L'ETAT DE LA VEILLE, tel que le bandeau le dessine (`js/veille.js`) : ce qu'il dit (`dit`), le passage en cours, la
+/// boucle (`minutes`), la trace du dernier passage (`dernier`), et ce qui l'a empeche (`erreur`).
+#[derive(Debug, Clone, Serialize)]
+pub struct EtatDeLaVeille {
+    pub dit: DitDuBandeau,
+    pub en_cours: bool,
+    pub sauvegarde_en_cours: bool,
+    pub etape: Option<String>,
+    pub minutes: u64,
+    pub dernier: Option<Trace>,
+    pub erreur: Option<String>,
 }
 
 impl Veille {
@@ -35,8 +58,7 @@ impl Veille {
             racine: racine.to_path_buf(),
             minutes,
             jours: 30,
-            dernier: Mutex::new(None),
-            erreur: Mutex::new(String::new()),
+            erreur: Mutex::new(None),
             en_cours: AtomicBool::new(false),
             sauvegarde_en_cours: AtomicBool::new(false),
             tour_unique: Mutex::new(()),
@@ -46,80 +68,91 @@ impl Veille {
         })
     }
 
-    fn derniere(&self) -> Value {
-        crate::compagnie::ouverture::derniere_ouverture(&self.racine)
-    }
-
     /// Ou en est le passage, sans rien lancer (`veille-etape`) : une lecture de drapeaux et d'un petit fichier, que la page
     /// fait toutes les secondes le temps d'un passage. L'etape est celle que l'ouverture ecrit en y entrant
     /// (`ouverture::etape_en_cours`) ; aucun passage en cours, aucune etape.
-    pub fn etape(&self) -> Value {
+    pub fn etape(&self) -> EtapeDeLaVeille {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
-        let sauvegarde = self.sauvegarde_en_cours.load(Ordering::SeqCst);
-        let etape = if en_cours || sauvegarde { crate::compagnie::ouverture::etape_en_cours(&self.racine) } else { None };
-        json!({"en_cours": en_cours, "sauvegarde_en_cours": sauvegarde, "etape": etape})
-    }
-
-    pub fn etat(&self) -> Value {
-        let coffre = route(&self.racine, Route::CoffreEtat, &json!({})).unwrap_or_else(|_| json!({}));
-        let dernier = self.dernier.lock().ok().and_then(|d| d.clone()).unwrap_or_else(|| self.derniere());
-        let prochain = self.prochain_dans();
-        let fictive = crate::compagnie::bridage::branchement(&self.racine).joue();
-        json!({
-            "dit": dit_du_bandeau(&dernier, &prochain, fictive),
-            "en_cours": self.en_cours.load(Ordering::SeqCst),
-            "sauvegarde_en_cours": self.sauvegarde_en_cours.load(Ordering::SeqCst),
-            "etape": self.etape()["etape"],
-            "minutes": self.minutes,
-            "prochain_dans": prochain,
-            "dernier": dernier,
-            "erreur": self.erreur.lock().map(|e| e.clone()).unwrap_or_default(),
-            "sauvegarde": crate::compagnie::sauvegarde::derniere(&self.racine).en_json(),
-            "coffre": coffre.get("services").cloned().unwrap_or_else(|| json!([])),
-            "mot_de_passe_pose": coffre.get("mot_de_passe_pose").cloned().unwrap_or(Value::Bool(false)),
-        })
-    }
-
-    /// Dans combien de minutes part le prochain tour, arrondi a la minute superieure (au moins 1) ; `null` sans boucle.
-    fn prochain_dans(&self) -> Value {
-        let p = *self.prochain.lock().unwrap_or_else(|p| p.into_inner());
-        match p {
-            Some(t) if self.minutes > 0 => {
-                let s = t.duration_since(std::time::SystemTime::now()).map(|d| d.as_secs()).unwrap_or(0);
-                json!(s.div_ceil(60).max(1))
+        let sauvegarde_en_cours = self.sauvegarde_en_cours.load(Ordering::SeqCst);
+        let etape = if en_cours || sauvegarde_en_cours {
+            match crate::compagnie::ouverture::etape_en_cours(&self.racine) {
+                Ok(e) => e,
+                Err(e) => Some(e.message),
             }
-            _ => Value::Null,
+        } else {
+            None
+        };
+        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape }
+    }
+
+    /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).
+    pub fn etat(&self) -> EtatDeLaVeille {
+        let (dernier, illisible) = match crate::compagnie::ouverture::derniere_ouverture(&self.racine) {
+            Ok(t) => (t, None),
+            Err(e) => (None, Some(e.message)),
+        };
+        // Un marqueur qui ne se lit pas ne dit pas si les envois sont joues : le bandeau les dit vrais, et l'erreur le dit.
+        let (fictive, marqueur) = match crate::compagnie::bridage::branchement(&self.racine) {
+            Ok(b) => (b.joue(), None),
+            Err(e) => (false, Some(socle::echec::phrase_de(&e))),
+        };
+        let erreur = match (tenu(&self.erreur).clone(), illisible, marqueur) {
+            (Some(e), _, _) | (None, Some(e), _) | (None, None, Some(e)) => Some(e),
+            (None, None, None) => None,
+        };
+        let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape } = self.etape();
+        EtatDeLaVeille {
+            dit: dit_du_bandeau(dernier.as_ref(), self.prochain_dans(), fictive),
+            en_cours,
+            sauvegarde_en_cours,
+            etape,
+            minutes: self.minutes,
+            dernier,
+            erreur,
         }
+    }
+
+    /// Dans combien de minutes part le prochain tour, arrondi a la minute superieure (au moins 1) ; aucun sans boucle.
+    fn prochain_dans(&self) -> Option<u64> {
+        let p = *tenu(&self.prochain);
+        match p {
+            Some(t) if self.minutes > 0 => Some(t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60).max(1)),
+            Some(_) | None => None,
+        }
+    }
+
+    /// La route `ouverture`, servie pour la veille sur `charge` ; son refus est l'erreur du passage.
+    fn passage(&self, charge: &ChargeOuverture) -> Result<(), Refus> {
+        let c = Charge::de_forme(charge).map_err(|e| Refus::de(Some(Route::Ouverture), e))?;
+        route(&self.racine, Route::Ouverture, &c).en_refus()
     }
 
     /// Un passage : la releve d'abord (qui ecrit la trace, et envoie les incidents a l'editeur), puis la sauvegarde seule.
-    pub fn tour(&self, veille: bool, sauvegarder: bool) -> Value {
-        let Ok(_un_seul) = self.tour_unique.try_lock() else { return self.etat() };
+    /// Un passage deja en cours : l'etat, tel quel.
+    pub fn tour(&self, veille: bool, sauvegarder: bool) -> EtatDeLaVeille {
+        let _un_seul = match self.tour_unique.try_lock() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::WouldBlock) => return self.etat(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+        };
         self.en_cours.store(true, Ordering::SeqCst);
-        if let Ok(mut e) = self.erreur.lock() {
-            e.clear();
+        *tenu(&self.erreur) = None;
+        let releve = ChargeOuverture { jours: Some(self.jours), veille: Some(veille), incidents_editeur: Some(true), sauvegarder: Some(false), ..Default::default() };
+        let mut erreur = self.passage(&releve).err();
+        self.en_cours.store(false, Ordering::SeqCst);
+        if erreur.is_none() && sauvegarder {
+            self.sauvegarde_en_cours.store(true, Ordering::SeqCst);
+            let sauvegarde = ChargeOuverture {
+                jours: Some(self.jours),
+                veille: Some(veille),
+                incidents_editeur: Some(false),
+                sauvegarder: Some(true),
+                sauvegarde_seule: Some(true),
+                ..Default::default()
+            };
+            erreur = self.passage(&sauvegarde).err();
         }
-        let base = json!({"jours": self.jours, "veille": veille, "incidents_editeur": true});
-        let mut charge = base.clone();
-        charge["sauvegarder"] = Value::Bool(false);
-        match route(&self.racine, Route::Ouverture, &charge) {
-            Ok(rep) => {
-                *self.dernier.lock().unwrap_or_else(|p| p.into_inner()) = Some(self.derniere());
-                self.en_cours.store(false, Ordering::SeqCst);
-                if sauvegarder && rep.get("retenue").and_then(Value::as_bool) != Some(true) {
-                    self.sauvegarde_en_cours.store(true, Ordering::SeqCst);
-                    let mut s = base;
-                    s["sauvegarder"] = Value::Bool(true);
-                    s["sauvegarde_seule"] = Value::Bool(true);
-                    s["incidents_editeur"] = Value::Bool(false);
-                    if let Err(r) = route(&self.racine, Route::Ouverture, &s) {
-                        *self.erreur.lock().unwrap_or_else(|p| p.into_inner()) = r.message;
-                    }
-                }
-                *self.dernier.lock().unwrap_or_else(|p| p.into_inner()) = Some(self.derniere());
-            }
-            Err(r) => *self.erreur.lock().unwrap_or_else(|p| p.into_inner()) = r.message,
-        }
+        *tenu(&self.erreur) = erreur.map(|r| r.phrase);
         self.en_cours.store(false, Ordering::SeqCst);
         self.sauvegarde_en_cours.store(false, Ordering::SeqCst);
         if let Some(f) = &self.etats {
@@ -136,7 +169,7 @@ impl Veille {
             // lui-meme, au lancement (`maj::chercher_en_fond`).
             v.tour(false, true);
             while v.minutes > 0 {
-                *v.prochain.lock().unwrap_or_else(|p| p.into_inner()) = Some(std::time::SystemTime::now() + Duration::from_secs(v.minutes * 60));
+                *tenu(&v.prochain) = Some(Instant::now() + Duration::from_secs(v.minutes * 60));
                 for _ in 0..v.minutes * 60 {
                     if v.arretee.load(Ordering::SeqCst) {
                         return;
@@ -161,7 +194,7 @@ impl Veille {
     /// rende la main -- rien ne s'ecrit plus dans son dossier ensuite.
     pub fn arreter_et_attendre(&self) {
         self.arreter();
-        let _fini = self.tour_unique.lock().unwrap_or_else(|p| p.into_inner());
+        let _fini = tenu(&self.tour_unique);
     }
 }
 
@@ -182,43 +215,70 @@ fn heure_du_passage(quand: &str) -> String {
     }
 }
 
+/// Ce que le bandeau dit d'un acces qui manque, par service (`a_poser` de la trace) : la phrase, et le bouton qui y mene.
+#[derive(Debug, Clone, Serialize)]
+pub struct APoser {
+    #[serde(rename = "net-entreprises")]
+    net_entreprises: [&'static str; 2],
+    urssaf: [&'static str; 2],
+    google: [&'static str; 2],
+}
+
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et
 /// ou, les retours nouveaux, ce que l'horloge d'une fictive a fait, et ce que dit un passage en cours ou fini. La page
 /// n'en ecrit rien.
-fn dit_du_bandeau(d: &Value, prochain: &Value, fictive: bool) -> Value {
-    let mot = crate::routes::mot;
-    let quand = heure_du_passage(&mot(&d["quand"]));
-    let hors_ligne = d["hors_ligne"].as_bool() == Some(true);
-    let retours = !mot(&d["retours"]).is_empty();
-    let dans = prochain.as_u64();
-    let etat = if hors_ligne && !retours {
-        format!("Pas de réponse au relevé {} : vérifier la connexion{}", quand, dans.map(|n| format!(" ; nouvel essai dans {} min", n)).unwrap_or_default())
-    } else {
-        format!("À jour, relevé {}{}", quand, dans.map(|n| format!(" · prochain relevé dans {} min", n)).unwrap_or_default())
+#[derive(Debug, Clone, Serialize)]
+pub struct DitDuBandeau {
+    etat: String,
+    muets: Option<String>,
+    a_poser: APoser,
+    retours: Option<String>,
+    fictive: Option<&'static str>,
+    horloge: Option<String>,
+    horloge_titre: &'static str,
+    horloge_intro: &'static str,
+    en_cours: &'static str,
+    sauvegarde: &'static str,
+    termine: &'static str,
+}
+
+fn dit_du_bandeau(d: Option<&Trace>, dans: Option<u64>, fictive: bool) -> DitDuBandeau {
+    // Aucun passage encore : le releve est a venir.
+    let quand = match d {
+        Some(t) => heure_du_passage(&t.quand),
+        None => "à venir".to_string(),
     };
-    let n_muets = d["injoignables"].as_array().map_or(0, Vec::len);
-    let muets = if hors_ligne && retours {
-        json!(format!("{} (détail au survol) : nouvel essai au prochain relevé", if n_muets > 1 { format!("{} services n'ont pas répondu", n_muets) } else { "un service n'a pas répondu".to_string() }))
-    } else {
-        Value::Null
+    let hors_ligne = d.is_some_and(|t| t.hors_ligne);
+    let retours = d.and_then(|t| t.retours.as_deref()).is_some_and(|r| !r.is_empty());
+    let etat = match (hors_ligne && !retours, dans) {
+        (true, Some(n)) => format!("Pas de réponse au relevé {} : vérifier la connexion ; nouvel essai dans {} min", quand, n),
+        (true, None) => format!("Pas de réponse au relevé {} : vérifier la connexion", quand),
+        (false, Some(n)) => format!("À jour, relevé {} · prochain relevé dans {} min", quand, n),
+        (false, None) => format!("À jour, relevé {}", quand),
     };
-    let nouveaux = d["nouveaux"].as_u64().unwrap_or(0);
-    let horloge = d["horloge"].as_array().map_or(0, Vec::len);
-    json!({
-        "etat": etat,
-        "muets": muets,
-        "a_poser": {
-            "net-entreprises": ["Les retours de DSN ne se relèvent pas seuls : le mot de passe net-entreprises n'est pas posé.", "Poser le mot de passe"],
-            "urssaf": ["Les retours de DPAE ne se relèvent pas seuls : le mot de passe Urssaf (DPAE) n'est pas posé.", "Poser le mot de passe"],
-            "google": ["La sauvegarde ne part pas : aucun Drive n'est lié.", "Lier le Drive"],
+    let n_muets = d.map(|t| t.injoignables.len());
+    let muets = match (hors_ligne && retours, n_muets) {
+        (true, Some(n)) if n > 1 => Some(format!("{} services n'ont pas répondu (détail au survol) : nouvel essai au prochain relevé", n)),
+        (true, _) => Some("un service n'a pas répondu (détail au survol) : nouvel essai au prochain relevé".to_string()),
+        (false, _) => None,
+    };
+    let nouveaux = d.map(|t| t.nouveaux).filter(|n| *n > 0);
+    let horloge = d.map(|t| t.horloge.len()).filter(|n| fictive && *n > 0);
+    DitDuBandeau {
+        etat,
+        muets,
+        a_poser: APoser {
+            net_entreprises: ["Les retours de DSN ne se relèvent pas seuls : le mot de passe net-entreprises n'est pas posé.", "Poser le mot de passe"],
+            urssaf: ["Les retours de DPAE ne se relèvent pas seuls : le mot de passe Urssaf (DPAE) n'est pas posé.", "Poser le mot de passe"],
+            google: ["La sauvegarde ne part pas : aucun Drive n'est lié.", "Lier le Drive"],
         },
-        "retours": if nouveaux > 0 { json!(format!("{} retour{} nouveau{} : les lire dans l'Historique", nouveaux, if nouveaux > 1 { "s" } else { "" }, if nouveaux > 1 { "x" } else { "" })) } else { Value::Null },
-        "fictive": if fictive { json!("compagnie fictive : pas de sauvegarde, pourquoi ?") } else { Value::Null },
-        "horloge": if fictive && horloge > 0 { json!(format!("pendant votre absence, la compagnie a travaillé ({}) : voir", horloge)) } else { Value::Null },
-        "horloge_titre": "Pendant votre absence",
-        "horloge_intro": "L'administrateur fictif a fait ce qui tombait, chacun à sa date limite : le 1er du mois, le mois s'écrit ; le jour d'une embauche, sa DPAE part ; à l'échéance, la DSN. Tout est joué, rien n'a quitté le poste, et le journal de chaque mois le montre.",
-        "en_cours": "Relevé des retours…",
-        "sauvegarde": "Sauvegarde…",
-        "termine": "Relevé terminé.",
-    })
+        retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
+        fictive: fictive.then_some("compagnie fictive : pas de sauvegarde, pourquoi ?"),
+        horloge: horloge.map(|n| format!("pendant votre absence, la compagnie a travaillé ({}) : voir", n)),
+        horloge_titre: "Pendant votre absence",
+        horloge_intro: "L'administrateur fictif a fait ce qui tombait, chacun à sa date limite : le 1er du mois, le mois s'écrit ; le jour d'une embauche, sa DPAE part ; à l'échéance, la DSN. Tout est joué, rien n'a quitté le poste, et le journal de chaque mois le montre.",
+        en_cours: "Relevé des retours…",
+        sauvegarde: "Sauvegarde…",
+        termine: "Relevé terminé.",
+    }
 }

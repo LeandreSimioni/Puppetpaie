@@ -1,21 +1,187 @@
 //! Le refus du moteur, et la memoire de l'endroit ou il se construit.
 //!
-//! Un `Echec` porte sa phrase et, s'il y a lieu, sa classe (`ErreurOperation`, `BadZipFile`...) que les
-//! routes rendent a la page. Chaque echec construit se note ici (l'endroit dans le code, le fil, l'instant) : la trace
-//! d'un refus de route (`diagnostic::trace_du_refus`) retrouve ou il est ne et ce qui l'a precede sur le meme fil.
+//! Un `Echec` porte sa phrase et, s'il y a lieu, sa classe (`Classe`) que les routes rendent a la page et au LLM. Chaque
+//! echec construit se note ici (l'endroit dans le code, le fil, l'instant) : la trace d'un refus de route
+//! (`diagnostic::trace_du_refus`) retrouve ou il est ne et ce qui l'a precede sur le meme fil.
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use crate::temps::maintenant_ms;
 
+/// LES CLASSES D'UN REFUS, chacune une fois, par son nom : celui que la reponse d'une route ecrit (`classe`), que la fiche
+/// d'une route nomme pour dire quoi corriger, que le journal et les incidents notent.
+macro_rules! classes {
+    ($($(#[doc = $d:literal])* $v:ident,)*) => {
+        /// LA CLASSE D'UN REFUS, en mots du logiciel. Le code qui refuse la choisit ; celui qui rattrape un refus la
+        /// compare, jamais sa phrase.
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
+        pub enum Classe {
+            $($(#[doc = $d])* $v,)*
+        }
+
+        impl Classe {
+            /// Le nom de la classe, tel que la reponse d'une route et le journal l'ecrivent.
+            pub const fn nom(self) -> &'static str {
+                match self {
+                    $(Classe::$v => stringify!($v),)*
+                }
+            }
+        }
+    };
+}
+
+classes! {
+    /// Le geste est refuse : ce que la phrase dit ; rien n'est ecrit.
+    Refuse,
+    /// Une donnee manque : le champ de la demande, la fiche ou la ligne que la phrase nomme.
+    Manque,
+    /// Une valeur ne se lit pas : la date, le nombre ou la donnee que la phrase dit illisible.
+    Illisible,
+    /// La demande est mal formee : un champ qu'elle ne connait pas, ou d'une autre forme.
+    MalFormee,
+    /// Une forme que le logiciel ne sait pas remplir (le modele d'un compte du plan comptable).
+    FormeNonPortee,
+    /// Un calcul ne se fait pas (un nombre hors de ses bornes, une division par zero).
+    CalculImpossible,
+    /// Un fichier attendu n'est pas sur le disque.
+    FichierAbsent,
+    /// Le disque refuse un fichier (interdit, un dossier a sa place, plein).
+    Disque,
+    /// Un XML (un retour d'organisme) ne se lit pas.
+    XmlIllisible,
+    /// Une archive zip ne se lit pas : ce n'en est pas une.
+    ArchiveIllisible,
+    /// Une archive zip que le logiciel ne lit pas (sa compression, son chiffrement, sa fin coupee).
+    ArchiveNonLue,
+    /// Le reseau ne repond pas, ou coupe la reponse.
+    Reseau,
+    /// Le reseau n'a pas repondu a temps.
+    DelaiDepasse,
+    /// Le coffre des mots de passe ne s'ouvre pas, ou n'a pas ce qu'on lui demande.
+    Coffre,
+    /// Le coffre est abime.
+    CoffreIllisible,
+    /// Un organisme (net-entreprises, l'Urssaf) refuse la demande.
+    Organisme,
+    /// Un organisme refuse le depot.
+    DepotRefuse,
+    /// Google refuse (le Drive, l'autorisation).
+    Google,
+    /// La boite courriel refuse.
+    Courriel,
+    /// Un courriel est parti, avec un avertissement a lire.
+    CourrielAvecAvertissement,
+    /// Le serveur de l'editeur (le filet) refuse.
+    Filet,
+    /// L'acte reel demande le mot de passe du logiciel, tape par un humain.
+    PreuveInsuffisante,
+    /// La saisie n'est pas finie.
+    SaisieIncomplete,
+    /// Aucun document a envoyer ou a imprimer.
+    AucunDocument,
+    /// La fiche porte des anomalies.
+    FicheRefusee,
+    /// La DSN de ce mois est deja deposee.
+    DsnDejaDeposee,
+    /// La repetition d'un depot manque.
+    RepetitionManquante,
+    /// Une modification que la DSN ne declare pas.
+    ModificationNonDeclarable,
+    /// Un mois qui ne se regularise pas.
+    MoisNonRegularisable,
+    /// La fabrique des documents refuse.
+    FabriqueRefus,
+    /// Une version plus recente du logiciel est exigee.
+    VersionExigee,
+    /// Une DSN faite par l'ancien logiciel.
+    DsnDeLAncienLogiciel,
+    /// Les compteurs sont verrouilles.
+    CompteursVerrouilles,
+    /// L'amorcage ne se fait pas.
+    AmorcageImpossible,
+    /// L'acte reel est refuse ici.
+    ActeReelRefuse,
+    /// Un modele de contrat incomplet.
+    ModeleIncomplet,
+    /// Un envoi refuse a une fictive ajoutee (la demo).
+    EnvoiBride,
+    /// La copie de developpement ne fait pas d'acte reel.
+    CopieDeDeveloppement,
+    /// L'edition est bridee (la demo).
+    EditionBridee,
+    /// Aucune boite courriel n'est posee.
+    BoiteAbsente,
+    /// Le contrat n'a pas de sortie.
+    SortieAbsente,
+    /// Le numero d'ordre est trop petit.
+    OrdreTropPetit,
+    /// L'annule et remplace est hors delai.
+    AnnuleRemplaceHorsDelai,
+    /// L'exercice est clos.
+    ExerciceClos,
+    /// Plusieurs sauvegardes conviennent.
+    SauvegardeAmbigue,
+    /// Aucune sauvegarde.
+    SauvegardeAbsente,
+    /// Le dossier n'est pas vide.
+    DossierNonVide,
+    /// Un engagement est en saisie.
+    EngagementEnSaisie,
+    /// Le recalcul d'un mois est refuse.
+    RecalculRefuse,
+    /// Le logiciel s'est arrete sur la route : un defaut, a signaler.
+    DefautDuLogiciel,
+    /// Le nom n'est celui d'aucune route.
+    RouteInconnue,
+    /// La demande ne se lit pas : ce n'est pas du JSON.
+    DemandeIllisible,
+    /// La page n'est pas reconnue (son jeton).
+    NonAutorise,
+    /// Le serveur de la fenetre refuse la requete (trop grosse, coupee).
+    RequeteRefusee,
+}
+
+impl Classe {
+    /// La classe d'un fichier que le disque refuse : absent, ou refuse.
+    pub fn du_disque(e: &std::io::Error) -> Classe {
+        match e.kind() {
+            std::io::ErrorKind::NotFound => Classe::FichierAbsent,
+            _ => Classe::Disque,
+        }
+    }
+}
+
+impl std::fmt::Display for Classe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
 /// Un refus : sa phrase, et sa classe ; `None` pour un refus ordinaire.
 #[derive(Debug)]
 pub struct Echec {
-    pub classe: Option<&'static str>,
+    pub classe: Option<Classe>,
     pub message: String,
 }
 
 pub type R<T> = Result<T, Echec>;
+
+impl Echec {
+    /// La classe du refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
+    /// `Exception`.
+    pub fn classe_notee(&self) -> &'static str {
+        classe_notee(self.classe)
+    }
+}
+
+/// La classe d'un refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
+/// `Exception`.
+pub fn classe_notee(classe: Option<Classe>) -> &'static str {
+    match classe {
+        Some(c) => c.nom(),
+        None => "Exception",
+    }
+}
 
 impl From<String> for Echec {
     #[track_caller]
@@ -35,7 +201,7 @@ impl From<&str> for Echec {
 
 /// Un echec de classe `classe`, son endroit note.
 #[track_caller]
-pub fn erreur(classe: &'static str, message: impl Into<String>) -> Echec {
+pub fn erreur(classe: Classe, message: impl Into<String>) -> Echec {
     let message = message.into();
     noter_echec(Some(classe), &message);
     Echec { classe: Some(classe), message }
@@ -43,7 +209,7 @@ pub fn erreur(classe: &'static str, message: impl Into<String>) -> Echec {
 
 /// Un echec de classe quelconque (`None` : un refus ordinaire), son endroit note comme pour `erreur`.
 #[track_caller]
-pub fn noter_et(classe: Option<&'static str>, message: impl Into<String>) -> Echec {
+pub fn noter_et(classe: Option<Classe>, message: impl Into<String>) -> Echec {
     let message = message.into();
     noter_echec(classe, &message);
     Echec { classe, message }
@@ -83,9 +249,9 @@ pub fn fil_courant() -> String {
 
 /// Un echec vient d'etre construit : son endroit dans le code, garde en memoire (les 80 derniers, trois minutes).
 #[track_caller]
-pub fn noter_echec(classe: Option<&str>, message: &str) {
+pub fn noter_echec(classe: Option<Classe>, message: &str) {
     let l = std::panic::Location::caller();
-    noter_echec_a(&format!("{}:{}", l.file(), l.line()), classe, message);
+    noter_echec_a(&format!("{}:{}", l.file(), l.line()), classe.map(Classe::nom), message);
 }
 
 /// Un echec ne a l'endroit `ou` (une panique donne le sien), garde en memoire comme `noter_echec`.
@@ -110,39 +276,6 @@ pub fn noter_echec_a(ou: &str, classe: Option<&str>, message: &str) {
 /// Les echecs notes, du plus ancien au plus recent.
 pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
     crate::memoire::tenu(les_echecs())
-}
-
-/// Un refus et, quand il porte un nom, sa classe
-/// (`SaisieIncomplete`, `KeyError`...).
-#[derive(Debug)]
-pub struct Refus {
-    pub classe: Option<&'static str>,
-    pub message: String,
-}
-
-
-impl From<String> for Refus {
-    fn from(message: String) -> Self {
-        Refus { classe: None, message }
-    }
-}
-
-impl From<&str> for Refus {
-    fn from(m: &str) -> Self {
-        Refus { classe: None, message: m.to_string() }
-    }
-}
-
-impl From<Echec> for Refus {
-    fn from(e: Echec) -> Self {
-        Refus { classe: e.classe, message: e.message }
-    }
-}
-
-impl From<Refus> for Echec {
-    fn from(r: Refus) -> Self {
-        Echec { classe: r.classe, message: r.message }
-    }
 }
 
 // ============================================================================================ ce qui va a part

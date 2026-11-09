@@ -1,5 +1,5 @@
 {
-  "_colonnes": ["code (23.001)", "qualifiant (23.002)", "taux AT (23.003)", "assiette (23.004)", "montant (23.005)"],
+  "quoi": "Chaque ligne : code (23.001), qualifiant (23.002), taux AT (23.003), assiette (23.004), montant (23.005).",
   "bordereaux": [
     {
       "jour": "2020-12-01",

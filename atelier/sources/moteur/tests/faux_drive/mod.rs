@@ -173,7 +173,7 @@ impl Drive for FauxDrive {
         }
         let mut l = BTreeMap::new();
         for f in self.fichiers.iter().filter(|f| f.parent == parent) {
-            l.insert(f.nom.clone(), Distant { id: f.id.clone(), md5: f.md5.clone(), octets: f.contenu.len() as u64 });
+            l.insert(f.nom.clone(), Distant { id: f.id.clone(), md5: f.md5.clone(), octets: Some(f.contenu.len() as u64) });
         }
         Ok(l)
     }

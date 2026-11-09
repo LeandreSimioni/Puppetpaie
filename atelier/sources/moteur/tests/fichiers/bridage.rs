@@ -58,9 +58,9 @@ fn l_accueil_bride_ne_propose_que_les_fictives() {
     for c in ["compagnies/essai", "fictives/fictive-essai"] {
         crate::outils::ecrire(&inst.join(c), "config/entreprise.json", &serde_json::json!({"nom_affichage": c}));
     }
-    let reelles = |inst: &Path| liste_de(inst).into_iter().filter(|c| c.reelle).count();
+    let reelles = |inst: &Path| liste_de(inst).unwrap().into_iter().filter(|c| c.reelle).count();
     assert_eq!(reelles(&inst), 0, "bride par defaut : pas de compagnie reelle");
-    assert_eq!(liste_de(&inst).len(), 1, "la fictive");
+    assert_eq!(liste_de(&inst).unwrap().len(), 1, "la fictive");
     geste(&inst, "debloque");
     assert_eq!(reelles(&inst), 1, "debloque par le geste : la compagnie reelle");
 }

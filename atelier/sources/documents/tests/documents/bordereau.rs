@@ -2,10 +2,28 @@
 //! valorisee au taux de la table des CTP de l'Urssaf et arrondie a l'euro. Contre les 75 bordereaux que CoolPaie a
 //! deposes et que l'Urssaf a preleves (`bordereaux-reels.json` : les blocs 22 et 23 tels qu'ecrits, rien d'autre).
 
-use crate::outils::{dec, lire_oracle};
+use crate::outils::{dec, lire_donnee};
 use documents::bordereau::{montant, LigneBordereau};
+use serde::Deserialize;
 use socle::date::Jour;
-use serde_json::Value;
+
+/// `bordereaux-reels.json` : ce qu'il est, et les bordereaux.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reels {
+    #[allow(dead_code)]
+    quoi: String,
+    bordereaux: Vec<Reel>,
+}
+
+/// Un bordereau preleve : son jour, le montant declare, ses lignes 23 (code, qualifiant, taux AT, assiette, montant).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reel {
+    jour: String,
+    declare: String,
+    lignes: Vec<[String; 5]>,
+}
 
 fn jour(s: &str) -> Jour {
     Jour::lire(s).unwrap()
@@ -49,8 +67,8 @@ fn un_ctp_inconnu_fait_refuser() {
 }
 
 /// Une ligne d'oracle : code, qualifiant, taux AT, assiette, montant (vides s'ils manquent).
-fn ligne(c: &Value) -> LigneBordereau {
-    let champ = |i: usize| c[i].as_str().unwrap();
+fn ligne(c: &[String; 5]) -> LigneBordereau {
+    let champ = |i: usize| c[i].as_str();
     LigneBordereau {
         code: champ(0).into(),
         qualifiant: champ(1).into(),
@@ -68,14 +86,14 @@ const OCTOBRE_2025: (&str, &str, &str) = ("2025-10-01", "393.00", "394.00");
 
 #[test]
 fn les_75_bordereaux_preleves_se_recalculent_au_centime_sauf_octobre_2025() {
-    let v = lire_oracle("bordereaux-reels.json");
-    let bordereaux = v["bordereaux"].as_array().unwrap();
+    let v: Reels = lire_donnee("bordereaux-reels.json");
+    let bordereaux = &v.bordereaux;
     assert_eq!(bordereaux.len(), 75);
     let mut ecarts = Vec::new();
     for b in bordereaux {
-        let le_jour = b["jour"].as_str().unwrap();
-        let declare = b["declare"].as_str().unwrap();
-        let lignes: Vec<LigneBordereau> = b["lignes"].as_array().unwrap().iter().map(ligne).collect();
+        let le_jour = b.jour.as_str();
+        let declare = b.declare.as_str();
+        let lignes: Vec<LigneBordereau> = b.lignes.iter().map(ligne).collect();
         let calcule = montant(&lignes, &jour(le_jour)).unwrap_or_else(|e| panic!("{} : {}", le_jour, e));
         if calcule != dec(declare) {
             ecarts.push((le_jour, declare, calcule.to_string()));

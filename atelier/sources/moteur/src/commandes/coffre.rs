@@ -14,10 +14,8 @@
 
 use super::actes::{est_refus, maintenant_minutes};
 use super::analyse::{Args, Opt, Pos, Spec};
-use super::rendu::{champ, texte};
 use super::Cadre;
 use crate::compagnie::coffre::Coffre;
-use serde_json::Value;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -27,14 +25,15 @@ pub static SPEC: Spec = Spec {
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
-    let r = match args.texte("quoi").unwrap_or("etat") {
-        "seance" => seance(cadre, args),
-        _ => faire(cadre),
+    // `quoi` : `etat` (le defaut de la `Spec`) ou `seance`.
+    let r = match args.texte("quoi") {
+        Some("seance") => seance(cadre, args),
+        Some(_) | None => faire(cadre),
     };
     match r {
         Ok(c) => c,
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
-        Err(e) if est_refus(e.classe) || e.classe == Some("ErreurCoffre") => {
+        Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
             dire!("! {}", e.message);
             2
         }
@@ -46,7 +45,7 @@ fn vers(e: crate::compagnie::coffre::Echec) -> Echec {
     Echec { classe: None, message: e.message }
 }
 
-/// Le refus du coffre sous sa classe (`ErreurCoffre`, `OSError`...), pour que la commande sache s'il se rend en phrase.
+/// Le refus du coffre sous sa classe (`Coffre`, `Disque`...), pour que la commande sache s'il se rend en phrase.
 fn vers_classe(e: crate::compagnie::coffre::Echec) -> Echec {
     Echec { classe: Some(e.classe), message: e.message }
 }
@@ -66,18 +65,16 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
         }
     }
     dire!();
-    for s in c.etat().map_err(vers)? {
-        let mut marque = if s.get("pose").is_some_and(documents::valeur::vrai) { "pose" } else { "-" };
-        if s.get("dans_environnement").is_some_and(documents::valeur::vrai) {
-            marque = "environnement";
-        }
-        let depuis = match s.get("pose_le") {
-            Some(d) if documents::valeur::vrai(d) => format!("depuis le {}", texte(d)),
-            _ => String::new(),
+    for s in c.services().map_err(vers)? {
+        let marque = match (s.dans_environnement, s.pose) {
+            (true, _) => "environnement",
+            (false, true) => "pose",
+            (false, false) => "-",
         };
-        dire!("  {:<18} {:<14} {}", champ(&s, "service"), marque, depuis);
-        dire!("     {}", champ(&s, "sert_a"));
-        if let Some(Value::String(compte)) = s.get("compte").filter(|v| documents::valeur::vrai(v)) {
+        let depuis: String = s.pose_le.iter().map(|d| format!("depuis le {}", d)).collect();
+        dire!("  {:<18} {:<14} {}", s.service, marque, depuis);
+        dire!("     {}", s.sert_a);
+        if let Some(compte) = &s.compte {
             dire!("     boite : {}", compte);
         }
     }
@@ -110,7 +107,10 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     match crate::compagnie::demande::ouvrir_seance(&cadre.racine) {
         crate::compagnie::demande::Verdict::Accepte => {
-            let fin = coffre.fin_ouverture_gardee().map_err(vers_classe)?.unwrap_or_default();
+            let fin = coffre
+                .fin_ouverture_gardee()
+                .map_err(vers_classe)?
+                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), message: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into() })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
                 fin.replace('T', " a ")

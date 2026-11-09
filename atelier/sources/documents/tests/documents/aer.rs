@@ -11,7 +11,7 @@
 
 use documents::aer::{self, Authentification, Echec, PaieAer};
 use socle::date::Jour;
-use serde_json::{json, Value};
+use fabrique_pdf::formulaire::{ChampLu, ValeurLue};
 
 const HAUTEUR: f64 = 842.0;
 
@@ -20,17 +20,21 @@ fn jour(a: i32, m: u32, j: u32) -> Jour {
 }
 
 fn fiche() -> droit::fiche::ChampsEntreprise {
-    droit::fiche::lire_champs(&json!({
-        "raison_sociale": "Compagnie du Chat Perche",
-        "siret": "12345678900019",
-        "naf": "9001Z",
-        "adresse": "12 rue des Lilas",
-        "code_postal": "69003",
-        "commune": "Lyon",
-        "licence_spectacle": "PLATESV-R-2026-000000",
-        "signataire": {"nom": "MARTIN", "prenom": "Camille", "fonction": "Presidente"},
-        "declarant_dsn": {"nom_prenom": "DURAND Lou", "tel": "0102030405", "email": "Lou.Durand@Exemple.TEST"},
-    }), "fiche").unwrap()
+    socle::forme::lire_texte(
+        r#"{
+            "raison_sociale": "Compagnie du Chat Perche",
+            "siret": "12345678900019",
+            "naf": "9001Z",
+            "adresse": "12 rue des Lilas",
+            "code_postal": "69003",
+            "commune": "Lyon",
+            "licence_spectacle": "PLATESV-R-2026-000000",
+            "signataire": {"nom": "MARTIN", "prenom": "Camille", "fonction": "Presidente"},
+            "declarant_dsn": {"nom_prenom": "DURAND Lou", "tel": "0102030405", "email": "Lou.Durand@Exemple.TEST"}
+        }"#,
+        "La fiche du test ne se lit pas.",
+    )
+    .unwrap()
 }
 
 // ------------------------------------------------------------------ le PDF d'essai
@@ -158,7 +162,7 @@ fn attestation() -> Vec<u8> {
 }
 
 fn paie(numero: &str, debut: Jour, fin: Jour, cachets: i128, heures: i128) -> PaieAer {
-    PaieAer { numero: numero.into(), debut, fin, cachets: cachets.into(), heures: heures.into() }
+    PaieAer { numero: numero.into(), debut, fin, cachets: cachets.into(), heures: Some(heures.into()) }
 }
 
 fn paies_justes() -> Vec<PaieAer> {
@@ -174,8 +178,12 @@ fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[Paie
 }
 
 
-fn valeur_de(champs: &Value, nom: &str) -> Value {
-    champs[nom]["valeur"].clone()
+fn le_champ<'a>(champs: &'a [ChampLu], nom: &str) -> &'a ChampLu {
+    champs.iter().find(|c| c.nom == nom).unwrap_or_else(|| panic!("pas de champ {}", nom))
+}
+
+fn valeur_de<'a>(champs: &'a [ChampLu], nom: &str) -> &'a ValeurLue {
+    &le_champ(champs, nom).valeur
 }
 
 // ------------------------------------------------------------------ verifier
@@ -260,19 +268,19 @@ fn authentifier_remplit_le_cadre_5_et_ne_touche_pas_aux_chiffres() {
         ("EMPLOYEUR_CORRES_EMAIL", "lou.durand@exemple.test"), // en minuscules
     ];
     for (nom, v) in attendu {
-        assert_eq!(valeur_de(&apres, nom), v, "{}", nom);
+        assert_eq!(valeur_de(&apres, nom).texte(), Some(v), "{}", nom);
     }
     assert_eq!(attendu.map(|(n, _)| n), aer::CHAMPS_TEXTE);
     // les chiffres de France Travail : identiques, y compris leur lecture seule
-    for (nom, c) in avant.as_object().unwrap() {
-        if nom.starts_with("SAL_") || nom.starts_with("CON_") {
-            assert_eq!(&apres[nom], c, "{}", nom);
-            assert_eq!(apres[nom]["lecture_seule"], true);
+    for c in &avant {
+        if c.nom.starts_with("SAL_") || c.nom.starts_with("CON_") {
+            assert_eq!(le_champ(&apres, &c.nom), c, "{}", c.nom);
+            assert!(le_champ(&apres, &c.nom).lecture_seule);
         }
     }
     // la signature et le cachet ne sont pas des textes tapes
-    assert!(apres["EMPLOYEUR_SIGNATURE"]["valeur"].is_null());
-    assert!(apres["EMPLOYEUR_CACHET"]["valeur"].is_null());
+    assert_eq!(valeur_de(&apres, "EMPLOYEUR_SIGNATURE"), &ValeurLue::Rien);
+    assert_eq!(valeur_de(&apres, "EMPLOYEUR_CACHET"), &ValeurLue::Rien);
     // le contenu qu'on lit toujours : l'attestation ne se lit pas autrement
     assert_eq!(aer::lire_quantites(&apres), aer::lire_quantites(&avant));
     assert_eq!(aer::verifier(&signe, &paies_justes()), Ok(vec![]));

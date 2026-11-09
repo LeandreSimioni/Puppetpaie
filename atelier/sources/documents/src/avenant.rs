@@ -10,18 +10,18 @@
 
 
 use droit::fiche::Lue as _;
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
 use fabrique_pdf::modele::{self, Modele};
-use serde_json::Value;
+use serde::Serialize;
 
 use crate::bulletin::{convention_du_contrat, fmt_eur};
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
+use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
+use engagement::saisie::Valeur;
 use socle::date::Jour;
-use crate::valeur::{dec, en_texte, vrai};
 use socle::mois::Mois;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use socle::nfkc::nfkc;
@@ -70,10 +70,6 @@ pub fn normaliser(texte: &str) -> String {
 
 // ------------------------------------------------------ les valeurs du modele
 
-pub(crate) fn requis<'a>(v: &'a Value, cle: &str) -> Resultat<&'a Value> {
-    v.get(cle).ok_or_else(|| format!("le modele n'a pas de valeur {}", cle))
-}
-
 /// Une case texte de la fiche du salarie, que le modele exige : vide, elle se refuse en se nommant.
 fn case<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
     c.ecrite(cle).map(str::to_string)
@@ -81,9 +77,9 @@ fn case<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
 
 /// La forme lisible d'une case de la fiche du salarie si elle est dite, la forme declaree sinon (`case`).
 fn lisible<T: AsRef<str>>(affichage: &Option<String>, c: &Option<T>, cle: &str) -> Resultat<String> {
-    match affichage.texte() {
-        "" => case(c, cle),
-        a => Ok(a.to_string()),
+    match affichage.remplie() {
+        Some(a) => Ok(a.to_string()),
+        None => case(c, cle),
     }
 }
 
@@ -106,74 +102,29 @@ pub(crate) fn et(morceaux: &[String]) -> String {
     }
 }
 
-/// Ce que `contrat.marqueurs` lit de l'engagement : la forme canonique du moteur
-/// (`Engagement::canon`, dans la paie calculee).
-pub(crate) struct Eng {
-    debut: String,
-    fin: Option<String>,
-    mois: String,
+/// Ce que `contrat.marqueurs` lit de l'engagement : sa forme ecrite (`paie_ecrite::FormeDEngagement`, dans la paie
+/// calculee ou ecrite), et le numero que la paie porte vraiment.
+pub(crate) struct Eng<'a> {
+    f: &'a FormeDEngagement,
     numero: Option<String>,
-    dernier_mois: bool,
-    dates_travail: Vec<String>,
-    planning: Vec<String>,
-    lieux: BTreeMap<String, String>,
-    planning_lieux: BTreeMap<String, String>,
-    lieu: String,
-    date_paiement: Option<String>,
-    cachets: String,
-    /// `None` : un contrat sans cachet dont ni l'engagement ni le mois n'ecrivent de taux.
-    taux_cachet: Option<String>,
 }
 
-impl Eng {
-    pub(crate) fn lire(e: &Value) -> Resultat<Eng> {
-        let texte = |c: &str| e.get(c).and_then(Value::as_str).map(str::to_string);
-        let requis_texte = |c: &str| texte(c).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", c));
-        let liste = |c: &str| -> Resultat<Vec<String>> {
-            e.get(c)
-                .and_then(Value::as_array)
-                .ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", c))?
-                .iter()
-                .map(|x| x.as_str().map(str::to_string).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", c)))
-                .collect()
-        };
-        let carte = |c: &str| -> Resultat<BTreeMap<String, String>> {
-            Ok(e.get(c)
-                .and_then(Value::as_object)
-                .ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", c))?
-                .iter()
-                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
-                .collect())
-        };
-        Ok(Eng {
-            debut: requis_texte("debut")?,
-            fin: texte("fin"),
-            mois: requis_texte("mois")?,
-            numero: texte("numero"),
-            dernier_mois: e.get("dernier_mois").and_then(Value::as_bool).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "dernier_mois"))?,
-            dates_travail: liste("dates_travail")?,
-            planning: liste("planning")?,
-            lieux: carte("lieux")?,
-            planning_lieux: carte("planning_lieux")?,
-            lieu: requis_texte("lieu")?,
-            date_paiement: texte("date_paiement"),
-            cachets: requis_texte("cachets")?,
-            taux_cachet: texte("taux_cachet"),
-        })
+impl<'a> Eng<'a> {
+    pub(crate) fn de(f: &'a FormeDEngagement) -> Eng<'a> {
+        Eng { f, numero: f.numero.as_deref().map(str::to_string) }
     }
 
     /// `Engagement.dates_du_contrat` : les jours du mois, puis le planning.
-    fn dates_du_contrat(&self) -> Vec<&String> {
-        self.dates_travail.iter().chain(self.planning.iter()).collect()
+    fn dates_du_contrat(&self) -> Vec<&Jour> {
+        self.f.dates_travail.iter().chain(self.f.planning.iter()).collect()
     }
 
-    /// `Engagement.lieu_de` : la date l'emporte, l'engagement supplee.
-    fn lieu_de(&self, jour: &str) -> &str {
-        [self.lieux.get(jour), self.planning_lieux.get(jour)]
-            .into_iter()
-            .flatten()
-            .find(|l| !l.is_empty())
-            .map_or(self.lieu.as_str(), String::as_str)
+    /// `Engagement.lieu_de` : le lieu que la date dit l'emporte sur celui de l'engagement.
+    fn lieu_de(&self, jour: &Jour) -> &str {
+        match [self.f.lieux.get(jour), self.f.planning_lieux.get(jour)].into_iter().flatten().find(|l| !l.is_empty()) {
+            Some(l) => l.as_str(),
+            None => self.f.lieu.as_str(),
+        }
     }
 
     /// `Engagement.lieux_joues` : dans l'ordre des dates, sans repetition.
@@ -189,8 +140,8 @@ impl Eng {
     }
 
     /// `Engagement.dates_par_lieu()` : [(lieu, [dates])] dans l'ordre des dates, sans retrier.
-    fn dates_par_lieu(&self) -> Vec<(&str, Vec<&String>)> {
-        let mut out: Vec<(&str, Vec<&String>)> = Vec::new();
+    fn dates_par_lieu(&self) -> Vec<(&str, Vec<&Jour>)> {
+        let mut out: Vec<(&str, Vec<&Jour>)> = Vec::new();
         for j in self.dates_du_contrat() {
             let ou = self.lieu_de(j);
             match out.last_mut() {
@@ -203,8 +154,8 @@ impl Eng {
 }
 
 /// « 2 cachets à 130,00 € » : une ligne de remuneration telle que le contrat la cite.
-pub(crate) fn ligne_citee(l: &Value) -> Resultat<String> {
-    let designation = requis(l, "designation")?.as_str().ok_or("designation : un texte est attendu")?;
+pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
+    let designation = &l.designation;
     // La designation ouvre une phrase : « 2 Cachets » y devient « 2 cachets ». On ne touche
     // qu'a la premiere majuscule.
     let mut texte = String::new();
@@ -217,27 +168,24 @@ pub(crate) fn ligne_citee(l: &Value) -> Resultat<String> {
             texte.push(c);
         }
     }
-    Ok(format!("{} à {}", texte, socle::texte::euros(dec(requis(l, "taux")?)?)))
+    format!("{} à {}", texte, socle::texte::euros(l.taux))
 }
 
-/// La ligne fait-elle le brut ? (`soumis` de la rubrique ; une paie qui ne le dit pas, si.)
-pub(crate) fn fait_le_brut(l: &Value) -> bool {
-    l.get("soumis").and_then(Value::as_bool).unwrap_or(true)
+/// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
+pub(crate) fn fait_le_brut(l: &FormeDeRemuneration) -> bool {
+    l.soumis
 }
 
 /// « 2 cachets à 130,00 € », ou « 1 journée de travail à
 /// 200,00 € et 6 h de masterclass à 40,00 € ». Le modele la dit « brut » : elle ne cite que les
 /// lignes qui font le brut ; les autres (les defraiements...) sont dans `remuneration_hors_brut`.
-fn remuneration_detaillee(remuneration: &[Value], e: &Eng) -> Resultat<String> {
-    let mut morceaux = Vec::new();
-    for l in remuneration.iter().filter(|l| fait_le_brut(l)) {
-        morceaux.push(ligne_citee(l)?);
-    }
+fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> Resultat<String> {
+    let morceaux: Vec<String> = remuneration.iter().filter(|l| fait_le_brut(l)).map(ligne_citee).collect();
     let mut phrase = et(&morceaux);
-    if !e.dernier_mois {
-        let quand = Mois::lire(&e.mois)?.libelle(socle::mois::Graphie::Accentuee);
-        if !e.planning.is_empty() {
-            let n = e.planning.len();
+    if !e.f.dernier_mois {
+        let quand = Mois::lire(&e.f.mois)?.libelle(socle::mois::Graphie::Accentuee);
+        if !e.f.planning.is_empty() {
+            let n = e.f.planning.len();
             phrase += &format!(
                 " pour {} et, pour {} du planning, payée{} dans {} mois, le même montant",
                 quand,
@@ -256,44 +204,42 @@ fn remuneration_detaillee(remuneration: &[Value], e: &Eng) -> Resultat<String> {
 /// indemnites hors assiette), convenues comme le reste : « , auxquels s'ajoutent 3 défraiements au
 /// forfait à 20,20 € hors brut ». Vide sans elles : la phrase du modele reste alors mot pour mot
 /// celle d'avant. Une ligne qui retranche (un acompte) n'est pas une clause du contrat.
-pub(crate) fn remuneration_hors_brut(remuneration: &[Value]) -> Resultat<String> {
-    let mut morceaux = Vec::new();
-    for l in remuneration.iter().filter(|l| !fait_le_brut(l)) {
-        if dec(requis(l, "montant")?)? > socle::num::Decimal::ZERO {
-            morceaux.push(ligne_citee(l)?);
-        }
+pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> String {
+    let morceaux: Vec<String> =
+        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > socle::num::Decimal::ZERO).map(ligne_citee).collect();
+    if morceaux.is_empty() {
+        String::new()
+    } else {
+        format!(", auxquels s'ajoutent {} hors brut", et(&morceaux))
     }
-    Ok(if morceaux.is_empty() { String::new() } else { format!(", auxquels s'ajoutent {} hors brut", et(&morceaux)) })
 }
 
 /// « pour le mois d'octobre 2026 » quand le contrat se poursuit.
 fn periode_remuneration(e: &Eng) -> Resultat<String> {
-    if e.dernier_mois {
+    if e.f.dernier_mois {
         return Ok(String::new());
     }
-    let mois = Mois::lire(&e.mois)?;
+    let mois = Mois::lire(&e.f.mois)?;
     let nom = mois.nom(socle::mois::Graphie::Accentuee);
-    let de = if nom.chars().next().map_or(false, |c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
+    let de = if nom.chars().next().is_some_and(|c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
     Ok(format!(" pour le mois {}{} {}", de, nom, mois.annee()))
 }
 
 /// Les jours joues, et OU chacun se joue quand ils different.
 fn dates_travail(e: &Eng) -> Resultat<String> {
     let mut texte = if e.lieux_joues().len() < 2 {
-        let v: Resultat<Vec<String>> = e.dates_du_contrat().into_iter().map(|j| Jour::lire(j).map(|x| x.jj_mm_aaaa())).collect();
-        v?.join(", ")
+        e.dates_du_contrat().into_iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")
     } else {
         let mut groupes = Vec::new();
         for (ou, jours) in e.dates_par_lieu() {
-            let v: Resultat<Vec<String>> = jours.into_iter().map(|j| Jour::lire(j).map(|x| x.jj_mm_aaaa())).collect();
-            let dates = et(&v?);
+            let dates = et(&jours.into_iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>());
             groupes.push(if ou.is_empty() { dates } else { format!("{} à {}", dates, ou) });
         }
         groupes.join(", ")
     };
-    if !e.dernier_mois && e.planning.is_empty() {
-        let fin = e.fin.as_deref().ok_or("contrat sans fin")?;
-        texte += &format!(", puis les dates du planning jusqu'au {}", Jour::lire(fin)?.jj_mm_aaaa());
+    if !e.f.dernier_mois && e.f.planning.is_empty() {
+        let fin = e.f.fin.ok_or("contrat sans fin")?;
+        texte += &format!(", puis les dates du planning jusqu'au {}", fin.jj_mm_aaaa());
     }
     Ok(texte)
 }
@@ -310,7 +256,8 @@ fn lieu_du_contrat(e: &Eng) -> String {
 
 /// Les valeurs offertes au modele. `remuneration`, `brut` et `net` sont ceux
 /// de la paie calculee ; `fiche` celle du salarie telle qu'elle vaut pour cet engagement.
-fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, e: &Eng, remuneration: &[Value], brut: &Value, net: &Value) -> Resultat<Valeurs> {
+fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, e: &Eng, paie: &FormeDePaie<A>) -> Resultat<Valeurs> {
+    let remuneration = &paie.remuneration;
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?.to_string();
     let mut m = parties(ent, fiche, Some(sp), e)?;
     let mut poser = |k: Marqueur, v: String| {
@@ -319,29 +266,29 @@ fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &d
     poser(Marqueur::EmployeurLicence, licence);
     // Le numero sous lequel la compagnie est affiliee a la Caisse : son numero d'adherent (`conges_spectacles::adherent`).
     poser(Marqueur::EmployeurCongesspectacles, crate::conges_spectacles::adherent(ent)?);
-    poser(Marqueur::ContratFin, Jour::lire(e.fin.as_deref().ok_or("contrat sans fin")?)?.jj_mm_aaaa());
+    poser(Marqueur::ContratFin, e.f.fin.ok_or("contrat sans fin")?.jj_mm_aaaa());
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
     // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`, que la paie ecrite porte).
-    let paiement = e.date_paiement.as_deref().filter(|p| !p.is_empty()).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
+    let paiement = e.f.date_paiement.as_deref().filter(|p| !p.is_empty()).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
     poser(Marqueur::ContratDatePaiement, Jour::lire(paiement)?.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
     poser(Marqueur::RemunerationPeriode, periode_remuneration(e)?);
-    poser(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(remuneration)?);
-    poser(Marqueur::RemunerationCachets, e.cachets.clone());
+    poser(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(remuneration));
+    poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
-    if let Some(t) = &e.taux_cachet {
-        poser(Marqueur::RemunerationTauxCachet, fmt_eur(dec(&Value::String(t.clone()))?));
+    if let Some(t) = e.f.taux_cachet {
+        poser(Marqueur::RemunerationTauxCachet, fmt_eur(t));
     }
-    poser(Marqueur::RemunerationBrut, fmt_eur(dec(brut)?));
-    poser(Marqueur::RemunerationNetEstime, fmt_eur(dec(net)?));
+    poser(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
+    poser(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
     poser(Marqueur::SpectacleTitre, case(&sp.titre, "titre")?);
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
     // l. 1161-1162) : un spectacle qui n'en a pas encore fait son contrat, qui n'en dit rien. Le bulletin, lui, l'exige
-    // (`exige_par` de `champs-base.json`).
+    // (`exige_par` de `champs-base.json`). Le marqueur est un morceau de phrase : sans numero, il ne dit rien.
     let objet = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty());
-    poser(Marqueur::SpectacleObjet, objet.map(|n| format!(" (numéro d'objet France Travail {})", n)).unwrap_or_default());
+    poser(Marqueur::SpectacleObjet, if let Some(n) = objet { format!(" (numéro d'objet France Travail {})", n) } else { String::new() });
     Ok(m)
 }
 
@@ -351,7 +298,7 @@ fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &d
 /// mois d'un contrat pour le contrat, le mois de l'avenant pour un avenant -- un contrat commence avant le logiciel n'a
 /// pas de bareme de son annee.
 pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: Option<&droit::fiche::Spectacle>, e: &Eng) -> Resultat<Valeurs> {
-    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &Mois::lire(&e.mois)?.premier_jour())?;
+    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &Mois::lire(&e.f.mois)?.premier_jour())?;
     let sig = ent.signataire.exigee("signataire")?;
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -387,10 +334,9 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
     // ce qui est vrai.
     poser(
         Marqueur::SalarieNir,
-        if !s.nir.texte().is_empty() {
-            format!("{}{}", s.nir.texte(), s.nir_cle.ecrite("nir_cle")?)
-        } else {
-            "en cours d'immatriculation".to_string()
+        match s.nir.remplie() {
+            Some(nir) => format!("{}{}", nir, s.nir_cle.ecrite("nir_cle")?),
+            None => "en cours d'immatriculation".to_string(),
         },
     );
     let emploi_texte = lisible(&s.emploi_affichage, &s.emploi, "emploi")?;
@@ -407,7 +353,7 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
             _ => INVALIDE.to_string(),
         },
     );
-    poser(Marqueur::ContratDebut, Jour::lire(&e.debut)?.jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.f.debut.jj_mm_aaaa());
     Ok(m)
 }
 
@@ -427,7 +373,7 @@ fn texte_brut(texte: &str, vals: &modele::Valeurs) -> Resultat<String> {
 pub struct Modification {
     pub numero: usize,
     pub article: String,
-    pub avant: Vec<Value>,
+    pub avant: Vec<String>,
     pub apres: Vec<String>,
     pub blocs: Vec<usize>,
 }
@@ -439,11 +385,11 @@ pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<V
     let mut out = Vec::new();
     for (n, (titre, corps)) in m.articles.iter().enumerate() {
         let n = n + 1;
-        let (mut anciens, mut neufs, mut blocs): (Vec<Value>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut anciens, mut neufs, mut blocs): (Vec<String>, Vec<String>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
         for (i, bloc) in corps.iter().enumerate() {
             let (ancien, neuf) = (normaliser(&texte_brut(bloc, avant)?), normaliser(&texte_brut(bloc, apres)?));
             if ancien != neuf {
-                anciens.push(Value::String(ancien));
+                anciens.push(ancien);
                 neufs.push(neuf);
                 blocs.push(i);
             }
@@ -458,46 +404,47 @@ pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<V
 /// La fiche entreprise, avec la licence du mois et les gabarits de la compagnie.
 pub fn ent_du_mois(ctx: &Contexte, mois: &str) -> Resultat<droit::contexte::EntrepriseDuDocument> {
     let mut ent = ctx.entreprise.clone();
-    ent.licence_spectacle = Some(ctx.licence(&Mois::lire(mois.get(..7).unwrap_or(mois))?.premier_jour()));
+    // Un jour (`AAAA-MM-JJ`) dit son mois par ses sept premiers caracteres.
+    let m = match mois.get(..7) {
+        Some(m) => m,
+        None => mois,
+    };
+    ent.licence_spectacle = ctx.licence(&Mois::lire(m)?.premier_jour());
     Ok(ctx.pour_un_modele(&ent))
 }
 
-/// `contrat.marqueurs(p, ent)` pour une paie calculee (`paie`, sa forme JSON). `numero` : le numero
-/// de contrat que la paie porte VRAIMENT (lu dans l'archive, ou celui de l'engagement), quand il
-/// differe de celui de la reponse du calcul. Le contrat d'un spectacle lit ses dates, ses cachets et son spectacle ;
-/// celui d'un permanent son salaire au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ; tous deux
-/// les mentions que la loi exige de tout contrat ecrit (`contrat_ecrit::poser_les_mentions`).
-pub fn valeurs_de_la_paie(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Value, numero: Option<&Option<String>>) -> Resultat<Valeurs> {
-    let nul = Value::Null;
-    let eng = requis(paie, "engagement")?;
-    let nat = crate::contrat_ecrit::nature_de_la_paie(paie)?;
-    let nom_spectacle = eng.get("spectacle").and_then(Value::as_str).filter(|s| !s.is_empty());
-    let mut e = Eng::lire(eng)?;
+/// `contrat.marqueurs(p, ent)` pour une paie (sa forme ecrite ou canonique, `paie_ecrite::FormeDePaie`). `numero` : le
+/// numero de contrat que la paie porte VRAIMENT (lu dans l'archive, ou celui de l'engagement), quand il differe de celui
+/// de la forme. Le contrat d'un spectacle lit ses dates, ses cachets et son spectacle ; celui d'un permanent son salaire
+/// au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ; tous deux les mentions que la loi exige de tout
+/// contrat ecrit (`contrat_ecrit::poser_les_mentions`).
+pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &FormeDePaie<A>, numero: Option<&str>) -> Resultat<Valeurs> {
+    let eng = &paie.engagement;
+    let nat = droit::natures::nature(&eng.nature)?;
+    let mut e = Eng::de(eng);
     if let Some(n) = numero {
-        e.numero = n.clone();
+        e.numero = Some(n.to_string());
     }
-    let texte = |c: &str| eng.get(c).and_then(Value::as_str).map(str::to_string).filter(|s| !s.is_empty());
-    let fiche = ctx.salarie(eng.get("salarie").and_then(Value::as_str).ok_or("engagement sans salarie")?)?;
+    let texte = |c: &Option<String>| c.clone().filter(|s| !s.is_empty());
+    let fiche = ctx.salarie(eng.salarie.as_str())?;
     let emploi = EmploiEngagement {
-        emploi: texte("emploi"),
-        emploi_affichage: texte("emploi_affichage"),
-        pcs_ese: texte("pcs_ese"),
-        code_emploi_ft: texte("code_emploi_ft"),
-        statut: texte("statut"),
-        statut_conventionnel: texte("statut_conventionnel"),
-        statut_categoriel_rc: texte("statut_categoriel_rc"),
+        emploi: texte(&eng.emploi),
+        emploi_affichage: texte(&eng.emploi_affichage),
+        pcs_ese: texte(&eng.pcs_ese),
+        code_emploi_ft: texte(&eng.code_emploi_ft),
+        statut: texte(&eng.statut),
+        statut_conventionnel: texte(&eng.statut_conventionnel),
+        statut_categoriel_rc: texte(&eng.statut_categoriel_rc),
     };
-    let lue = emploi_de(&ctx.salarie_au(fiche.id.as_str(), &Jour::lire(&e.debut)?)?, &emploi)?;
-    let remuneration = requis(paie, "remuneration")?.as_array().ok_or("remuneration : une liste est attendue")?;
-    let (brut, net) = (paie.get("brut").unwrap_or(&nul), paie.get("net_a_payer").unwrap_or(&nul));
-    let mut m = match nom_spectacle {
+    let lue = emploi_de(&ctx.salarie_au(fiche.id.as_str(), &eng.debut)?, &emploi)?;
+    let mut m = match &eng.spectacle {
         Some(s) => {
-            let sp = ctx.spectacle(s)?;
-            marqueurs(ent, &lue, &sp, &e, remuneration, brut, net)?
+            let sp = ctx.spectacle(s.as_str())?;
+            marqueurs(ent, &lue, &sp, &e, paie)?
         }
         None => {
             let mut m = parties(ent, &lue, None, &e)?;
-            crate::contrat_ecrit::marqueurs_au_mois(eng, &nat, remuneration, brut, net, &mut m)?;
+            crate::contrat_ecrit::marqueurs_au_mois(paie, &nat, &mut m)?;
             m
         }
     };
@@ -536,31 +483,61 @@ fn terme_nomme(terme: &str) -> (&'static str, &'static str) {
 
 /// La valeur d'un terme en clair : un montant en euros, une duree en heures par mois (S21.G00.40.013), une nature, un
 /// motif ou un spectacle par son nom.
-fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v: &Value) -> Resultat<String> {
-    let texte = en_texte(v);
+fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v: &Valeur) -> Resultat<String> {
+    let texte = match v {
+        Valeur::Texte(s) => s.clone(),
+        Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).en_texte(),
+        Valeur::Oui(true) => "True".into(),
+        Valeur::Oui(false) => "False".into(),
+    };
+    // Un montant ou une duree : un nombre, ou un nombre ecrit en texte (la virgule decimale admise).
+    let nombre = || -> Resultat<socle::num::Decimal> {
+        match v {
+            Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
+            Valeur::Texte(s) => s.trim().replace(',', ".").parse().map_err(|_| socle::num::illisible(s)),
+            Valeur::Oui(_) => Err(format!("{} : un nombre est attendu, lu {}", terme, texte)),
+        }
+    };
     Ok(match terme {
-        "salaire_mensuel" => crate::valeur::euros_de(v),
-        "quotite_contrat" | "quotite_reference" => dec(v).map(|x| format!("{} heures par mois", socle::texte::virgule(x))).unwrap_or(texte),
-        "cadre" => if vrai(v) { "cadre".into() } else { "non cadre".into() },
-        "nature" => droit::natures::nature(&texte).map(|n| n.libelle.clone()).unwrap_or(texte),
-        "motif_recours" => nat.libelle_motif_recours(&texte).unwrap_or(texte),
-        "spectacle" => ctx.spectacle(&texte)?.titre.portee().map(str::to_string).unwrap_or(texte),
+        "salaire_mensuel" => socle::texte::euros(nombre()?),
+        "quotite_contrat" | "quotite_reference" => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
+        "cadre" => {
+            let cadre = match v {
+                Valeur::Oui(b) => *b,
+                Valeur::Nombre(n) => n.en_f64() != 0.0,
+                Valeur::Texte(s) => !s.is_empty(),
+            };
+            if cadre { "cadre".into() } else { "non cadre".into() }
+        }
+        "nature" => droit::natures::nature(&texte)?.libelle.clone(),
+        "motif_recours" => nat.libelle_motif_recours(&texte).ok_or_else(|| format!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
+        "spectacle" => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
         "emploi" => format!("« {} »", texte),
         _ => texte,
     })
 }
 
+/// UNE MODIFICATION DITE EN CLAIR (`changements_en_clair`) : le titre du terme, ses valeurs avant et apres (aucune quand
+/// il n'en avait pas, ou n'en a plus), la phrase que l'avenant ecrit, le jour ; aucun article cite.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChangementEnClair {
+    pub article: String,
+    pub phrase: String,
+    pub jour: String,
+    pub avant: Vec<String>,
+    pub apres: Vec<String>,
+}
+
 /// CE QUE DIT L'AVENANT D'UN CONTRAT SIGNE HORS DU LOGICIEL : il ne connait pas le texte du contrat, il n'en cite aucun
 /// article ; il dit en clair, pour chaque terme qui change (`engagement::versions::termes_changes`), a partir de quand,
 /// l'ancienne valeur et la nouvelle (code du travail R. 1221-40 : « un document indiquant ces modifications »,
-/// `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`). Chaque modification : `article` (son titre), `avant` et
-/// `apres` (les valeurs), `phrase` (ce que l'avenant ecrit), `jour` ; `numero` nul (aucun article cite).
-pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, changes: &[engagement::versions::TermeChange]) -> Resultat<Vec<Value>> {
+/// `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`).
+pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, changes: &[engagement::versions::TermeChange]) -> Resultat<Vec<ChangementEnClair>> {
     changes
         .iter()
         .map(|c| {
             let (titre, nom) = terme_nomme(c.terme.nom());
-            let dit = |v: &Option<engagement::saisie::Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme.nom(), &serde_json::to_value(x).unwrap_or(Value::Null))).transpose();
+            let dit = |v: &Option<Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme.nom(), x)).transpose();
             let (avant, apres) = (dit(&c.avant)?, dit(&c.apres)?);
             let quand = format!("À compter du {}", c.jour.jj_mm_aaaa());
             let phrase = match (&avant, &apres) {
@@ -569,10 +546,7 @@ pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, change
                 (Some(a), None) => format!("{}, {} n'est plus {}.", quand, nom, a),
                 (None, None) => format!("{}, {} change.", quand, nom),
             };
-            Ok(serde_json::json!({
-                "numero": Value::Null, "article": titre, "phrase": phrase, "jour": c.jour.iso(),
-                "avant": [avant.unwrap_or_default()], "apres": [apres.unwrap_or_default()],
-            }))
+            Ok(ChangementEnClair { article: titre.to_string(), phrase, jour: c.jour.iso(), avant: avant.into_iter().collect(), apres: apres.into_iter().collect() })
         })
         .collect()
 }
