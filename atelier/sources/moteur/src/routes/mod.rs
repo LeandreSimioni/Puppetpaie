@@ -207,7 +207,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(mois::ROUTES) => mois::route(&porte, charge),
         _ if dans(etapes::ROUTES) => etapes::route(&porte, charge),
         _ if dans(engagement::ROUTES) => engagement::route(&porte, charge),
-        _ if dans(contrats::ROUTES) => brute(contrats::route(o, &ctx, route, c)),
+        _ if dans(contrats::ROUTES) => contrats::route(&porte, charge),
         _ if dans(modeles_contrat::ROUTES) => brute(modeles_contrat::route(o, &ctx, route, c)),
         _ if dans(documents::ROUTES) => documents::route(&porte, charge),
         _ if dans(depots::ROUTES) => depots::route(&porte, charge),

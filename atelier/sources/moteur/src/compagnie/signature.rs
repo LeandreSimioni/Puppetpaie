@@ -756,7 +756,8 @@ pub struct UnAvenant {
     pub date_contrat: String,
     pub effet: String,
     pub modifications: Vec<ArticleModifie>,
-    pub destinataire: String,
+    /// Le courriel du salarie, s'il est dit : sans lui, l'avenant ne part pas par courriel.
+    pub destinataire: Option<String>,
     /// La piece partie de l'avenant relance, dans `sorties/<mois>/envoi/`.
     pub relance: Option<String>,
     /// Le jour ou l'avenant relance est parti imprime : il part alors par courriel pour la premiere fois, sans « Rappel »,
@@ -928,7 +929,7 @@ pub fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAvenant>)]
             let (pdf, mut c, p) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs, &aujourdhui_jj)?;
             nommes.push(ContratNomme::de(&p)?);
             sal = Some(p.salarie.clone());
-            c.adresse = Some(a.destinataire.trim().to_lowercase());
+            c.adresse = a.destinataire.as_deref().map(|d| d.trim().to_lowercase());
             c.relance = Some(a.rappel());
             lignes_contrats.push(c);
             pdfs.push(pdf);

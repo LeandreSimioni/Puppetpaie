@@ -613,7 +613,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 // LA BOITE MUETTE, et jamais une autre : le passe joue n'ecrit rien dans `courriels-simules/`.
                 let mut ouvrir = || -> R<Box<dyn Courriel>> { Ok(Box::new(BoiteMuette::nouvelle())) };
                 let contrats = par_courriel.into_iter().map(|c| c.vise).collect();
-                crate::routes::contrats::demander_signature(ctx, ChargeSignature::des_contrats(*mois, contrats), &mut ouvrir)?;
+                crate::routes::contrats::demander_signature(ctx, ChargeSignature::des_contrats(*mois, contrats), None, &mut ouvrir)?;
                 Ok(true)
             });
             if !imprimes.is_empty() {
@@ -667,7 +667,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                     return Ok(false);
                 };
                 let numero = x.numero.as_ref().map(|n| n.to_string());
-                let voulu = AvenantVoulu { salarie: salarie.clone(), debut: *debut, numero, mois: Some(*mois), effet: None, relance: false };
+                let voulu = AvenantVoulu { salarie: salarie.clone(), debut: *debut, numero, mois: Some(*mois), effet: None, relance: None };
                 // LA BOITE MUETTE, et jamais une autre ; sans courriel dans la fiche, l'avenant s'imprime et se remet en
                 // main propre : l'impression est son depart.
                 let mut ouvrir = || -> R<Box<dyn Courriel>> { Ok(Box::new(BoiteMuette::nouvelle())) };
@@ -853,7 +853,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
         .into_iter()
         .filter(|x| x.recu_le.is_none())
         .map(|x| Signable {
-            courriel: !x.destinataire.is_empty(),
+            courriel: x.destinataire.is_some(),
             a_envoyer: x.a_envoyer && !x.en_avenant,
             vise: ContratVise { numero: x.numero.as_ref().map(|n| n.to_string()), salarie: x.salarie, debut: x.debut },
             nom: x.nom,
