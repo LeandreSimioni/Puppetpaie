@@ -120,9 +120,27 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
         ],
         exemple: r#"{"reel":false}"#,
-        rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus), tableau ; rien de prêt : phrase",
+        rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus, et suivre pour un dépôt réel), tableau ; rien de prêt : phrase",
         refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
         acte: Acte::Engage,
+        avance: true,
+        phrase: 0,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::AdministrateurSuivre,
+        geste: "Après un dépôt groupé réel, relever les retours de chaque déclaration partie.",
+        charge: &[Champ {
+            nom: "suivis",
+            libelle: Affiche::new("Déclarations à suivre"),
+            forme: Forme::Objet,
+            sens: "la liste des « suivre » des résultats partis en réel, tels qu'administrateur-deposer les rend",
+            avance: false,
+        }],
+        exemple: r#"{"suivis":[]}"#,
+        rend: "fini (toutes tranchées), suivies (par déclaration : la compagnie, passée ou refusée, la phrase et sa couleur), phrase",
+        refus: &[OPERATION],
+        acte: Acte::Lit,
         avance: true,
         phrase: 0,
         ecran: ECRAN,
@@ -199,6 +217,14 @@ pub(crate) struct ChargeTableau {
 #[serde(deny_unknown_fields)]
 struct ChargeDeposer {
     reel: bool,
+}
+
+/// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
+/// (`suivre` de chaque resultat parti en reel).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeSuivre {
+    suivis: Vec<administrateur::ASuivre>,
 }
 
 /// La charge de `portable-completer`.
@@ -366,6 +392,11 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
             let c: ChargeDeposer = charge.lire()?;
             let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?;
             en_json(depot)
+        }
+        Route::AdministrateurSuivre => {
+            let c: ChargeSuivre = charge.lire()?;
+            let suivis: administrateur::SuivisDuGroupe = administrateur::suivre(o, &inst, c.suivis)?;
+            en_json(suivis)
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }

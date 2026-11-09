@@ -997,6 +997,68 @@ pub struct Resultat {
     /// Le flux de ce qui est parti (ce que `suivre-depot` prend pour suivre ses retours).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flux: Option<String>,
+    /// Une declaration partie en reel, dont les retours se suivent (`administrateur-suivre`) : sa compagnie et ce que
+    /// `suivre-depot` prend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suivre: Option<ASuivre>,
+}
+
+/// CE QUI SE SUIT APRES UN DEPOT REEL DU GROUPE : la compagnie (son dossier, relatif a l'installation, tel que le registre
+/// le nomme) et la charge de sa route `suivre-depot`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ASuivre {
+    pub dossier: String,
+    #[serde(flatten)]
+    pub(crate) depot: crate::routes::depots::ChargeSuivre,
+}
+
+/// Ou en est une declaration suivie : sa compagnie, et ce que sa route `suivre-depot` rend.
+#[derive(Debug, Serialize)]
+pub struct Suivie {
+    pub compagnie: String,
+    #[serde(flatten)]
+    pub(crate) suivi: crate::routes::depots::Suivi,
+}
+
+/// CE QUE REND LE SUIVI DU DEPOT GROUPE : chaque declaration suivie, et si toutes sont tranchees (`fini`).
+#[derive(Debug, Serialize)]
+pub struct SuivisDuGroupe {
+    pub phrase: String,
+    pub fini: bool,
+    pub suivies: Vec<Suivie>,
+}
+
+impl Dite for SuivisDuGroupe {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+/// LE SUIVI DU DEPOT GROUPE, juste apres un depot reel : chaque declaration partie se suit dans sa compagnie, par la meme
+/// lecture que la page d'une compagnie (`routes::depots::suivre_depot`). Une compagnie que le registre ne nomme pas se
+/// refuse. Une LECTURE : rien ne part.
+pub fn suivre(o: &HashMap<String, String>, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGroupe> {
+    let groupe = rattachees(inst)?;
+    let mut suivies = Vec::new();
+    for s in a_suivre {
+        let racine = inst.join(&s.dossier);
+        if !groupe.contains(&racine) {
+            return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier)));
+        }
+        let ctx = crate::service::contexte(&o_de(o, &racine)).map_err(Echec::from)?;
+        let suivi = crate::routes::depots::suivre_depot(&ctx, s.depot)?;
+        suivies.push(Suivie { compagnie: nom_de(inst, &racine)?, suivi });
+    }
+    let fini = suivies.iter().all(|s| s.suivi.fini);
+    let tranches = suivies.iter().filter(|s| s.suivi.fini).count();
+    let attendent = suivies.len() - tranches;
+    let phrase = if fini {
+        format!("{} : retours reçus.", crate::routes::compte(tranches, "déclaration tranchée", "déclarations tranchées"))
+    } else {
+        format!("{} attendent encore le retour de l'organisme.", crate::routes::compte(attendent, "déclaration", "déclarations"))
+    };
+    Ok(SuivisDuGroupe { phrase, fini, suivies })
 }
 
 /// CE QUE REND LE DEPOT GROUPE : reel ou de test, combien sont partis et refuses, sa phrase, chaque declaration, et le
@@ -1039,7 +1101,7 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
                     }
                 }
             }
-            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(socle::echec::phrase_de(&m)), classe: None, flux: None }),
+            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(socle::echec::phrase_de(&m)), classe: None, flux: None, suivre: None }),
         }
     }
     // RIEN DE PRET : rien ne part, et la phrase dit pourquoi (ce n'est pas un refus : il n'y a rien a corriger).
@@ -1089,7 +1151,21 @@ pub fn deposer(o: &HashMap<String, String>, inst: &Path, reel: bool, motdepasse:
             }
             Err(r) => (false, None, Some(r.phrase), r.classe, None),
         };
-        resultats.push(Resultat { compagnie: nom.clone(), titre: Some(d.titre.clone()), fichier: d.fichier.clone(), genre: Some(d.genre), parti, phrase, refus, classe, flux });
+        // Une declaration partie en reel se suit : la DPAE, la DSN et ses signalements (un depot hors DSN n'a pas de retour
+        // a suivre ici).
+        let quoi = match d.genre {
+            Genre::Dpae => Some(Quoi::Dpae),
+            Genre::Dsn | Genre::Signalement => Some(Quoi::Dsn),
+            Genre::HorsDsn => None,
+        };
+        let suivre = match (reel && parti, quoi, racine.strip_prefix(inst)) {
+            (true, Some(quoi), Ok(dossier)) => Some(ASuivre {
+                dossier: dossier.to_string_lossy().into_owned(),
+                depot: crate::routes::depots::ChargeSuivre { quoi, flux: flux.clone(), mois: d.mois },
+            }),
+            _ => None,
+        };
+        resultats.push(Resultat { compagnie: nom.clone(), titre: Some(d.titre.clone()), fichier: d.fichier.clone(), genre: Some(d.genre), parti, phrase, refus, classe, flux, suivre });
     }
     let partis = resultats.iter().filter(|r| r.parti).count();
     let refuses = resultats.len() - partis;

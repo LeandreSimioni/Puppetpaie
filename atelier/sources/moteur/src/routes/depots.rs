@@ -212,12 +212,13 @@ impl ChargeDeposer {
 }
 
 /// La charge de `suivre-depot` : ce qui est parti (`flux`, tel que `deposer` le rend ; absent, tout flux) et son mois.
-#[derive(Debug, Deserialize)]
+/// Le depot groupe de l'administrateur la rend pour chaque declaration partie en reel (`administrateur::ASuivre`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeSuivre {
-    quoi: Quoi,
-    flux: Option<String>,
-    mois: Option<Mois>,
+pub(crate) struct ChargeSuivre {
+    pub(crate) quoi: Quoi,
+    pub(crate) flux: Option<String>,
+    pub(crate) mois: Option<Mois>,
 }
 
 /// Le flux que `envois::releve_retours` lit comme « tout flux ».
@@ -260,7 +261,7 @@ pub(crate) struct Deposee {
 /// et sa couleur.
 #[derive(Debug, Serialize)]
 pub(crate) struct Suivi {
-    fini: bool,
+    pub(crate) fini: bool,
     passe: bool,
     refuse: bool,
     incident: String,
@@ -846,7 +847,7 @@ impl Designation {
 
 /// `suivre_le_depot` : juste apres un depot REEL, relever ses retours et dire s'il est tranche. Une LECTURE. Fini quand
 /// chaque embauche du depot est passee ou refusee (DPAE), quand le bilan du mois est la (DSN).
-fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
+pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let ChargeSuivre { quoi, flux, mois } = c;
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee();

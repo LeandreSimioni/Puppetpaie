@@ -192,6 +192,7 @@ routes! {
         CompagniesGarder = "compagnies-garder",
         AdministrateurTableau = "administrateur-tableau",
         AdministrateurDeposer = "administrateur-deposer",
+        AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
         Routes = "routes",
     }
