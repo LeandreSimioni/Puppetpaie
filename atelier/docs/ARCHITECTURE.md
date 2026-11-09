@@ -485,8 +485,10 @@ première valeur d'un champ s'y écrit de tout temps, quelle que soit la date
 donnée ; changer une valeur existante exige sa date d'effet
 (`routes::fiches::ecrire_datee`, l'écran la demande alors) ; ce qui précède
 garde l'ancienne valeur. Ce qu'une case datée dit à un jour (sa valeur en vigueur, la dernière d'avant, la prochaine à
-venir, chacune avec sa note, et toutes) se lit par `fiche::temps_au`, seule : la route de chaque fiche le rend à la date
-du jour sous chaque case (`historique` de la fiche), le taux AT/MP (`taux-atmp`) de même.
+venir, chacune avec sa note, et toutes) se lit par `fiche::temps_au`, seule (la valeur d'avant dit un changement : jamais une case vide, ni la même valeur
+réécrite) : la route de chaque fiche le rend à la date du jour sous chaque case (`historique` de la fiche, les autres
+établissements case par case), les contrats de la DSN saisis (`organismes-contrats`) et le taux AT/MP (`taux-atmp`) de
+même, mis en phrases par `routes::temps`.
 
 Trois subtilités, chacune trouvée en cherchant pourquoi un centime manquait.
 
