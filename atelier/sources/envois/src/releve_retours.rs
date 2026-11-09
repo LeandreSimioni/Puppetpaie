@@ -834,6 +834,12 @@ fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: 
     Ok(())
 }
 
+/// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
+pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
+    let an = an.to_string();
+    Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
+}
+
 /// Les effectifs que la compagnie a dits (`dit_le`), par annee.
 fn dits(existant: Option<&FichierEffectifs>) -> Vec<(String, EffectifEcrit)> {
     existant

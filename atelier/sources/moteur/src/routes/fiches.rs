@@ -33,7 +33,7 @@ use socle::ecriture::ecrire_json;
 use socle::fichiers::repr;
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
-use crate::valeur::{euros_de, nom_type, valeur_ecrite, valeur_en_texte, valeurs_egales, vrai};
+use crate::valeur::{nom_type, valeur_en_texte, valeurs_egales, vrai};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -199,7 +199,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::Couts,
         geste: "Dire le coût de l'année, spectacle par spectacle.",
         charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
-        exemple: r#"{"annee":"2026"}"#,
+        exemple: r#"{"annee":2026}"#,
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
         acte: Acte::Lit,
@@ -239,12 +239,15 @@ pub const ROUTES: &[Fiche] = &[
 /// les couts, une demande oubliee et la suppression de la compagnie lisent encore leur charge en JSON (`Charge::brute`),
 /// comme la saisie d'une fiche (`saisie`), et rendent le leur (`Rendu::brut`).
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
-    let (o, ctx) = (porte.options, porte.ctx);
+    let ctx = porte.ctx;
     match porte.route {
         Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, charge.lire()?)?),
         Route::FicheDemander => en_json(fiche_demander(ctx, charge.lire()?)?),
+        Route::FicheOublierDemande => en_json(oublier_demande(ctx, charge.lire()?)?),
+        Route::Effectif => en_json(effectif(ctx, charge.lire()?)?),
+        Route::Couts => en_json(couts(ctx, charge.lire()?)?),
         Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
         Route::SauvegardeMaintenant => {
             let super::SansCharge {} = charge.lire()?;
@@ -260,7 +263,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
-        autre => route_brute(o, ctx, autre, charge.brute()).map(Rendu::brut),
+        autre => route_brute(ctx, autre, charge.brute()).map(Rendu::brut),
     }
 }
 
@@ -332,46 +335,18 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> SauvegardeFaite {
 }
 
 /// Une route de ce module qui lit encore sa charge en JSON.
-fn route_brute(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
+fn route_brute(ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
     match nom {
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
         Route::CompagnieSupprimer => crate::interface::suppression::route(&ctx.racine, charge, &|_| {}).map_err(|m| erreur(Classe::Refuse, m)),
-        Route::Couts => couts(o, ctx, charge).map(|mut v| {
-            // Chaque spectacle et son cout, comme l'ecran les liste ; le total de l'annee en tete.
-            let cout = |x: &Value| x["cout"].as_str().and_then(|c| c.parse::<f64>().ok()).unwrap_or(0.0);
-            let spectacles: Vec<(String, Value)> = v["spectacles"].as_object().map(|o| o.iter().map(|(k, x)| (k.clone(), x.clone())).collect()).unwrap_or_default();
-            let total: f64 = spectacles.iter().map(|(_, x)| cout(x)).sum();
-            let jusqu_a = socle::mois::Mois::en_clair(&valeur_en_texte(&v["jusqu_a"]));
-            let p = format!("Coût de {}, jusqu'à {} : {} pour {}.", valeur_en_texte(&v["annee"]), jusqu_a, euros_de(&json!(total)), super::compte(spectacles.len(), "spectacle", "spectacles"));
-            // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
-            for cote in ["spectacles", "salaries"] {
-                for x in v[cote].as_object_mut().into_iter().flat_map(|o| o.values_mut()) {
-                    let prevu = x["prevu"].as_str().and_then(|c| c.parse::<f64>().ok()).filter(|p| *p != 0.0);
-                    x["phrase"] = json!(format!(
-                        "coût employeur {} — brut {}, charges {}, {}{}{}",
-                        euros_de(&x["cout"]), euros_de(&x["brut"]), euros_de(&x["charges"]),
-                        super::compte(x["bulletins"].as_u64().unwrap_or(0) as usize, "bulletin", "bulletins"),
-                        if vrai(&x["incomplet"]) { ", coût incomplet avant PuppetPaie" } else { "" },
-                        prevu.map_or(String::new(), |p| format!(" · + {} déjà saisis pour la suite de l'année", euros_de(&json!(p))))
-                    ));
-                }
-            }
-            v["phrases"] = json!(spectacles.iter().map(|(nom, x)| format!("{} : {} ({}, brut {})", nom, euros_de(&x["cout"]), super::compte(x["bulletins"].as_u64().unwrap_or(0) as usize, "bulletin", "bulletins"), euros_de(&x["brut"]))).collect::<Vec<_>>());
-            super::phrase_en_tete(v, p)
-        }),
         Route::VerifierFiche => verifier_fiche(charge).map(|mut v| {
             let lignes: Vec<Value> = v["anomalies"].as_array().into_iter().flatten().map(|a| json!(format!("{} : {}", valeur_en_texte(&a["champ"]), valeur_en_texte(&a["message"])))).collect();
             let p = if lignes.is_empty() { "La fiche est juste.".to_string() } else { format!("Anomalies de la fiche : {}.", lignes.len()) };
             v["phrases"] = Value::Array(lignes);
             super::phrase_en_tete(v, p)
         }),
-        Route::Effectif => effectif(ctx, charge),
         Route::EnregistrerFiche => enregistrer_fiche(ctx, charge),
-        Route::FicheOublierDemande => oublier_demande(o, ctx, charge).map(|v| {
-            let p = format!("Demande à {} abandonnée.", valeur_en_texte(&v["adresse"]));
-            super::phrase_en_tete(v, p)
-        }),
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -388,7 +363,7 @@ const OU_TROUVER_L_EFFECTIF: &str =
 /// annuel est la moyenne des mois de l'annee civile, tronquee au centieme (CSS, L. 130-1, I, et R. 130-1, I :
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`) ; il ne se dit qu'une annee finie. Sans
 /// `annee` : les annees qui manquent pour payer cette annee (`Effectif::a_dire`).
-fn effectif(ctx: &Contexte, charge: &Value) -> R<Value> {
+fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     let an_paie = ctx.aujourdhui.an;
     // Les annees qui manquent : celles des seuils (`Effectif::a_dire`), et celle d'avant quand la paie la lit elle-meme et
     // ne la connait pas (le FNAS de la CCNEAC sans CSE dit) : ce que « Pour démarrer » demande (`demarrage::manques`).
@@ -402,7 +377,7 @@ fn effectif(ctx: &Contexte, charge: &Value) -> R<Value> {
         }
         Ok(v)
     };
-    let Some(an) = charge.get("annee").filter(|a| vrai(a)) else {
+    let Some(an) = charge.annee else {
         let manquent = a_dire(ctx)?;
         let phrase = if manquent.is_empty() {
             format!("L'effectif de la paie de {} est connu.", an_paie)
@@ -414,41 +389,60 @@ fn effectif(ctx: &Contexte, charge: &Value) -> R<Value> {
                 OU_TROUVER_L_EFFECTIF
             )
         };
-        return Ok(json!({"a_dire": manquent, "phrase": phrase}));
+        return Ok(EffectifDit { phrase, annee: None, valeur: None, source: None, a_dire: manquent });
     };
-    let an = entier(an)? as i32;
-    let mut phrase = String::new();
-    if let Some(v) = charge.get("valeur").filter(|v| !v.is_null() && valeur_en_texte(v).trim() != "") {
+    let en_clair = |x: f64| -> R<String> { Ok(socle::texte::virgule(socle::num::dec_f64(x).map_err(Echec::from)?.round_dp(2))) };
+    let mut pose = None;
+    if let Some(v) = &charge.valeur {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let lu = valeur_en_texte(v).replace(',', ".");
-        let x: f64 = lu.trim().parse().ok().filter(|x: &f64| x.is_finite() && *x >= 0.0).ok_or_else(|| erreur(Classe::Illisible, format!("Effectif illisible : {}.", valeur_ecrite(v))))?;
+        let x = v.flottant().map_err(|m| erreur(Classe::Illisible, m))?;
+        if !x.is_finite() || x < 0.0 {
+            return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
+        }
         // Tronque au centieme (R. 130-1, I).
         let x = (x * 100.0).trunc() / 100.0;
         let le = ctx.aujourdhui.iso();
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, &le)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
-        phrase = format!("Effectif de {} : {}.", an, socle::num::dec_f64(x).map(|e| socle::texte::virgule(e.round_dp(2))).unwrap_or_default());
+        pose = Some(format!("Effectif de {} : {}.", an, en_clair(x)?));
     }
     let e = ctx.effectif().map_err(Echec::from)?;
-    let lu = std::fs::read_to_string(ctx.racine.join(droit::contexte::EFFECTIFS)).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or(Value::Null);
-    let dit = lu.pointer(&format!("/annees/{}/A01/dit_le", an)).is_some();
+    let dit = envois::releve_retours::effectif_dit_par_la_compagnie(&ctx.racine, an)?;
     let (valeur, source) = match e.annees.get(&an) {
-        Some(v) => (json!(v), if dit { "la compagnie" } else { "l'Urssaf" }),
+        Some(v) => (Some(*v), Some(if dit { "la compagnie" } else { "l'Urssaf" })),
         None => match e.annee(an) {
-            Some(v) => (json!(v), "la première embauche"),
-            None => (Value::Null, ""),
+            Some(v) => (Some(v), Some("la première embauche")),
+            None => (None, None),
         },
     };
-    if phrase.is_empty() {
-        phrase = match valeur.as_f64() {
-            Some(v) => format!("Effectif de {} : {}, d'après {}.", an, socle::num::dec_f64(v).map(|e| socle::texte::virgule(e.round_dp(2))).unwrap_or_default(), source),
-            None => format!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
-        };
-    }
-    Ok(json!({"annee": an, "valeur": valeur, "source": source, "a_dire": a_dire(ctx)?, "phrase": phrase}))
+    let phrase = match (pose, valeur, source) {
+        (Some(p), _, _) => p,
+        (None, Some(v), Some(s)) => format!("Effectif de {} : {}, d'après {}.", an, en_clair(v)?, s),
+        (None, _, _) => format!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
+    };
+    Ok(EffectifDit { phrase, annee: Some(an), valeur, source, a_dire: a_dire(ctx)? })
+}
+
+/// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeEffectif {
+    annee: Option<i32>,
+    valeur: Option<droit::fiche::Montant>,
+}
+
+/// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les
+/// annees qui manquent pour payer cette annee.
+#[derive(Debug, serde::Serialize)]
+struct EffectifDit {
+    phrase: String,
+    annee: Option<i32>,
+    valeur: Option<f64>,
+    source: Option<&'static str>,
+    a_dire: Vec<i32>,
 }
 
 // ------------------------------------------------------------------ permanents
@@ -1470,8 +1464,8 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
 
 /// `fiche-oublier-demande` : `{"adresse"}`, la personne a qui la fiche a ete demandee ; ses demandes en attente sont
 /// abandonnees.
-fn oublier_demande(_o: &HashMap<String, String>, ctx: &Contexte, charge: &Value) -> R<Value> {
-    let adresse = strip(&charge.get("adresse").filter(|c| vrai(c)).map(valeur_en_texte).unwrap_or_default()).to_lowercase();
+fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
+    let adresse = strip(&c.adresse).to_lowercase();
     let codes: Vec<String> = fiches_attendues(ctx)?.into_iter().filter(|a| a.adresse == adresse).map(|a| a.code).collect();
     if codes.is_empty() {
         return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
@@ -1493,7 +1487,21 @@ fn oublier_demande(_o: &HashMap<String, String>, ctx: &Contexte, charge: &Value)
         journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour)).map_err(plain)?;
     }
     // Ni NIR ni IBAN dans la reponse : la page relit `configuration` (comme apres `fiche-demander`).
-    Ok(json!({"adresse": adresse}))
+    Ok(DemandeOubliee { phrase: format!("Demande à {} abandonnée.", adresse), adresse })
+}
+
+/// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeOublier {
+    adresse: String,
+}
+
+/// Ce que rend `fiche-oublier-demande` : l'adresse, en minuscules.
+#[derive(Debug, serde::Serialize)]
+struct DemandeOubliee {
+    phrase: String,
+    adresse: String,
 }
 
 // ------------------------------------------------------------- enregistrer-fiche
@@ -2601,12 +2609,89 @@ pub fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R
     Ok(boite)
 }
 
-/// `couts` : le cout de l'annee `charge["annee"]`, au jour du contexte.
-fn couts(o: &HashMap<String, String>, ctx: &Contexte, charge: &Value) -> R<Value> {
-    let _ = o;
-    let annee = valeur_en_texte(exiger(charge, "annee")?);
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
-    r.couts_de_l_annee().map(|c| socle::ecriture::en_valeur(&c)).map_err(|e| Echec { classe: e.classe, message: e.message })
+/// La charge de `couts` : l'annee.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeCouts {
+    annee: i32,
+}
+
+/// Le cout d'un spectacle ou d'un salarie (`documents::fiche_recapitulative::Cout`), et sa ligne telle que sa fiche la
+/// montre.
+#[derive(Debug, serde::Serialize)]
+struct CoutDit {
+    #[serde(flatten)]
+    cout: documents::fiche_recapitulative::Cout,
+    phrase: String,
+}
+
+/// Ce que rend `couts` : le cout de l'annee, spectacle par spectacle et salarie par salarie, le total en tete.
+#[derive(Debug, serde::Serialize)]
+struct CoutsDits {
+    phrase: String,
+    phrases: Vec<String>,
+    annee: String,
+    jusqu_a: String,
+    #[serde(serialize_with = "en_objet")]
+    spectacles: Vec<(String, CoutDit)>,
+    #[serde(serialize_with = "en_objet")]
+    salaries: Vec<(String, CoutDit)>,
+}
+
+/// Des paires (cle, cout) ecrites en objet, dans leur ordre.
+fn en_objet<S: serde::Serializer>(v: &[(String, CoutDit)], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_map(v.iter().map(|(k, c)| (k, c)))
+}
+
+dites!(EffectifDit, CoutsDits, DemandeOubliee);
+
+/// Une somme que le cout ecrit (en texte, `Cout`), en euros.
+fn euros_ecrits(somme: &str) -> R<String> {
+    match socle::num::decimal_lu(somme.trim()) {
+        Some(d) => Ok(socle::texte::euros(d)),
+        None => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", somme))),
+    }
+}
+
+/// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
+fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee.to_string()), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let couts = r.couts_de_l_annee().map_err(|e| Echec { classe: e.classe, message: e.message })?;
+    let bulletins = |x: &documents::fiche_recapitulative::Cout| super::compte(x.bulletins as usize, "bulletin", "bulletins");
+    // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
+    let dit = |liste: Vec<(String, documents::fiche_recapitulative::Cout)>| -> R<Vec<(String, CoutDit)>> {
+        liste
+            .into_iter()
+            .map(|(k, x)| {
+                let prevu = match socle::num::decimal_lu(x.prevu.trim()) {
+                    Some(p) if !p.is_zero() => format!(" · + {} déjà saisis pour la suite de l'année", socle::texte::euros(p)),
+                    Some(_) => String::new(),
+                    None => return Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.prevu))),
+                };
+                let phrase = format!(
+                    "coût employeur {} — brut {}, charges {}, {}{}{}",
+                    euros_ecrits(&x.cout)?, euros_ecrits(&x.brut)?, euros_ecrits(&x.charges)?, bulletins(&x),
+                    if x.incomplet { ", coût incomplet avant PuppetPaie" } else { "" },
+                    prevu
+                );
+                Ok((k, CoutDit { cout: x, phrase }))
+            })
+            .collect()
+    };
+    let mut total = socle::num::Decimal::ZERO;
+    let mut phrases = Vec::new();
+    for (nom, x) in &couts.spectacles {
+        total += socle::num::decimal_lu(x.cout.trim()).ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.cout)))?;
+        phrases.push(format!("{} : {} ({}, brut {})", nom, euros_ecrits(&x.cout)?, bulletins(x), euros_ecrits(&x.brut)?));
+    }
+    let phrase = format!(
+        "Coût de {}, jusqu'à {} : {} pour {}.",
+        couts.annee,
+        socle::mois::Mois::en_clair(&couts.jusqu_a),
+        socle::texte::euros(total),
+        super::compte(couts.spectacles.len(), "spectacle", "spectacles")
+    );
+    Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a, spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })
 }
 
 /// `poser-courriel` : le courriel `email` du salarie `cle`, saisi la ou il manque (la boite des contrats a

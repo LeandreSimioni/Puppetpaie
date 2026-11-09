@@ -417,10 +417,8 @@ pub(crate) fn lire(ctx: &Contexte, an: i64, phrase: Option<&str>) -> R<TauxAtmpD
     let notification = pose.as_ref().and_then(|t| t.notification.as_ref()).map(|n| NotificationDite { le: n.le.clone(), calcul: n.calcul.clone(), effet: n.effet.clone() });
     let a_la_creation = pose.as_ref().is_some_and(|t| t.pose_a_la_creation == Some(true));
     let socle = socle_de(an)?;
-    let risques = match &socle {
-        Some(s) => bareme::risques_de(s),
-        None => Vec::new(),
-    };
+    // Les codes que le socle de l'annee connait ; une annee sans socle n'en connait aucun.
+    let risques: Vec<RisqueAtmp> = socle.iter().flat_map(bareme::risques_de).collect();
     let arrete = socle.as_ref().and_then(bareme::arrete_atmp);
     let connu = code.as_ref().and_then(|c| risques.iter().find(|r| r.code == *c));
     let nom_de = |r: &RisqueAtmp| match &r.code_arrete {
@@ -464,10 +462,8 @@ pub(crate) fn lire(ctx: &Contexte, an: i64, phrase: Option<&str>) -> R<TauxAtmpD
         Some(de) => format!("Le code risque est celui que la compagnie a dit pour {}. {}", de, explication),
         None => explication,
     };
-    let avec_le_taux = match &taux_dit {
-        Some(t) => format!(", taux {}", t),
-        None => String::new(),
-    };
+    // Le taux dit s'ajoute a la phrase ; sans taux, elle s'arrete au code.
+    let avec_le_taux: String = taux_dit.iter().map(|t| format!(", taux {}", t)).collect();
     let explication = match (connu.and_then(|r| r.alsace_moselle.map(|g| (r, g))), en_alsace_moselle(ctx), &notification, &nom) {
         (_, _, Some(n), Some(nom)) => {
             let notifiee = match &n.calcul {
@@ -489,10 +485,7 @@ pub(crate) fn lire(ctx: &Contexte, an: i64, phrase: Option<&str>) -> R<TauxAtmpD
             groupe,
             en_pourcent(t),
             an,
-            match &taux_dit {
-                Some(t) => format!(" Taux saisi : {}.", t),
-                None => String::new(),
-            }
+            taux_dit.iter().map(|t| format!(" Taux saisi : {}.", t)).collect::<String>()
         ),
         _ => explication,
     };
@@ -535,10 +528,7 @@ fn d_un_etablissement(e: &droit::fiche::Etablissement, an: i64, socle: Option<&d
         return Ok(EtablissementDit { nic, libelle, resume: "Code risque non dit".to_string(), risque: None, explication: "Le code risque de cet établissement n'est pas dit : saisissez celui que la CARSAT lui a notifié.".to_string() });
     };
     let code = t.code_risque.clone().filter(|c| !c.is_empty());
-    let risques = match socle {
-        Some(s) => bareme::risques_de(s),
-        None => Vec::new(),
-    };
+    let risques: Vec<RisqueAtmp> = socle.into_iter().flat_map(bareme::risques_de).collect();
     let r = code.as_ref().and_then(|c| risques.iter().find(|r| r.code == *c));
     let nom_code = match (r.and_then(|r| r.code_arrete.clone()), &code) {
         (Some(n), _) => n,
