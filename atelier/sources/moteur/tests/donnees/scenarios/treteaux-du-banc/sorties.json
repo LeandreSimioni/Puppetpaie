@@ -2182,7 +2182,7 @@
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
                 "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "51d78b45aae629b0077acdb6833e76efca668d679a35d79b8b5804120990865b",
-                "fichier code:baremes/2026.json": "fcac703b69bdc73cde511f0a6f04f29974379322e1c552ba7a223b2ed83e6154",
+                "fichier code:baremes/2026.json": "423c8ebda3cb02f03e1732b96900ad5285e2cd92725ebad1205aa16ec08b3258",
                 "fichier code:contrats-base.json": "7b4508c34503f5514efb514acd1cd355fc10379663fa03cd93c76b6d159d8718",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
                 "fichier code:minima-conventionnels.json": "e73f412ba4c1b942078c8def3b67467a89cec714a3be8af00baf75bb6dd65e46",
@@ -2197,7 +2197,6 @@
                 "2026-09-19"
               ],
               "configuration": [
-                "2026-01-01",
                 "2026-11-20"
               ]
             },
@@ -2866,7 +2865,6 @@
     ]
   },
   "copies_avant": [
-    "config/avant/entreprise.json.20261102-090007",
     "config/avant/entreprise.json.20261102-090008",
     "config/avant/entreprise.json.20261102-090015",
     "config/avant/salaries.json.20261102-090030",

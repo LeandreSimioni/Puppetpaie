@@ -2061,7 +2061,10 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Opt
             Some(a) => a,
             None => format!("l'arrêté de tarification de {}", an),
         };
-        let nom = r.code_arrete.as_deref().unwrap_or(&r.code);
+        let nom = match &r.code_arrete {
+            Some(c) => c,
+            None => &r.code,
+        };
         return Some(Ok(TauxAtmp {
             valeur: Some(ecrit(t)),
             code_risque: Some(code),
@@ -2072,7 +2075,10 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Opt
     if code == SANS_NOTIFICATION {
         return Some(Ok(TauxAtmp { code_risque: Some(code), ..TauxAtmp::default() }));
     }
-    let nom = risque.as_ref().and_then(|r| r.code_arrete.clone()).unwrap_or_else(|| code.clone());
+    let nom = match risque.as_ref().and_then(|r| r.code_arrete.clone()) {
+        Some(c) => c,
+        None => code.clone(),
+    };
     let pourquoi = if alsace_moselle { " L'établissement est en Alsace-Moselle : son taux est celui que la CARSAT lui notifie." } else { "" };
     Some(Err(format!(
         "Le taux AT/MP de {} manque (code risque {}).{} Il est sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et s'écrit, avec son année, dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
@@ -2117,15 +2123,19 @@ pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) ->
 
 /// LE TAUX RECU QU'UNE SAISIE CHANGE : la case `avant` vient d'une notification de la CARSAT (`notification`), et `apres`
 /// en dit un autre code, taux ou annee. La phrase a confirmer avant d'ecrire (`moteur::routes::fiches`, `usage`).
-pub fn taux_atmp_a_confirmer(avant: Option<&crate::fiche::TauxAtmp>, apres: Option<&crate::fiche::TauxAtmp>) -> Option<String> {
-    let a = avant.filter(|a| a.notification.is_some())?;
+pub fn taux_atmp_a_confirmer(avant: Option<&crate::fiche::TauxAtmp>, apres: Option<&crate::fiche::TauxAtmp>) -> Resultat<Option<String>> {
+    let a = match avant.filter(|a| a.notification.is_some()) {
+        Some(a) => a,
+        None => return Ok(None),
+    };
     if apres.is_some_and(|b| meme_taux_atmp(a, b)) {
-        return None;
+        return Ok(None);
     }
-    let taux = a.valeur.as_ref().and_then(|v| v.decimal().ok()).map(pourcent)?;
-    let code = a.code_risque.as_deref().unwrap_or_default();
+    let taux: String = a.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose()?.map(pourcent).into_iter().collect();
+    let code: String = a.code_risque.iter().map(|c| format!(" (code risque {}", c)).collect();
     let annee: String = a.annee.iter().map(|x| format!(" pour {}", x)).collect();
-    Some(format!("Le taux reçu par la DSN est {} (code risque {}{}). Êtes-vous sûr de vouloir le modifier ?", taux, code, annee))
+    let fin = if code.is_empty() { annee } else { format!("{}{})", code, annee) };
+    Ok(Some(format!("Le taux reçu par la DSN est {}{}. Êtes-vous sûr de vouloir le modifier ?", taux, fin)))
 }
 
 /// Le nom de l'arrete qui fixe les taux du socle (`risques_atmp.arrete`), pour le dire a l'ecran.

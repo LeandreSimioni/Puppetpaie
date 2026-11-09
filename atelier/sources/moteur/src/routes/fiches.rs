@@ -164,7 +164,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::TauxAtmp,
-        geste: "Dire le code risque et le taux AT/MP d'une année, et d'où ils viennent (ils s'écrivent dans la case taux_atmp de la fiche entreprise).",
+        geste: "Dire le code risque et le taux AT/MP d'une année, et d'où ils viennent.",
         charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
         exemple: r#"{"annee":2026}"#,
         rend: "le code, le taux, le risque tel que l'arrêté l'écrit, d'où ils viennent ou ce qui manque, les codes que le socle connaît, ceux des autres établissements",

@@ -511,9 +511,10 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
         Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
         None => None,
     };
-    let nom = match &risque {
-        Some(r) => r.code_arrete.clone().unwrap_or_else(|| r.code.clone()),
-        None => t.code_risque.clone().unwrap_or_default(),
+    let nom = match (&risque, &t.code_risque) {
+        (Some(droit::bareme::RisqueAtmp { code_arrete: Some(c), .. }), _) => c.clone(),
+        (Some(r), _) => r.code.clone(),
+        (None, code) => code.exigee("taux_atmp.code_risque")?.clone(),
     };
     let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
     let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();

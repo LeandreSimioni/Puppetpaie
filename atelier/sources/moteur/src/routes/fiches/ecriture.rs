@@ -57,8 +57,8 @@ pub(crate) trait SorteDeFiche: FicheDatee {
         Ok(())
     }
     /// La phrase a confirmer avant d'ecrire, sans date (le jour fixe du versement des intermittents).
-    fn usage(_avant: &Self::Plate, _apres: &Self::Plate) -> Option<String> {
-        None
+    fn usage(_avant: &Self::Plate, _apres: &Self::Plate) -> R<Option<String>> {
+        Ok(None)
     }
     /// Ce qui se date a part (`A_PART`), pour la boite « Ce qui change ».
     fn a_dater_a_part(_avant: &Self::Plate, _apres: &Self::Plate) -> Vec<ChangementDit> {
@@ -112,16 +112,16 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     /// Le jour fixe du versement des intermittents ; le taux AT/MP recu par la DSN que la saisie change
     /// (`droit::bareme::taux_atmp_a_confirmer`).
-    fn usage(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Option<String> {
+    fn usage(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
         let versement = apres
             .date_de_versement_intermittents
             .remplie()
             .map(str::trim)
             .filter(|neuf| Some(*neuf) != avant.date_de_versement_intermittents.remplie().map(str::trim))
             .and_then(droit::versement::Versement::a_confirmer_pour_les_intermittents);
-        let atmp = droit::bareme::taux_atmp_a_confirmer(avant.taux_atmp.as_ref(), apres.taux_atmp.as_ref());
+        let atmp = droit::bareme::taux_atmp_a_confirmer(avant.taux_atmp.as_ref(), apres.taux_atmp.as_ref()).map_err(refus)?;
         let phrases: Vec<String> = versement.into_iter().chain(atmp).collect();
-        (!phrases.is_empty()).then(|| phrases.join(" "))
+        Ok((!phrases.is_empty()).then(|| phrases.join(" ")))
     }
     fn a_dater_a_part(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Vec<ChangementDit> {
         let liste = |e: &ChampsEntreprise| e.etablissements.iter().flatten().cloned().collect::<Vec<_>>();
@@ -977,7 +977,7 @@ pub(crate) struct Avertissement {
 
 /// L'avertissement d'une fiche preparee ; `None` : rien n'est a dater ni a confirmer. N'ecrit rien.
 fn avertissement<F: SorteDeFiche>(ctx: &Contexte, p: &Preparee<F>) -> R<Option<Avertissement>> {
-    let usage = F::usage(&p.avant, &p.apres);
+    let usage = F::usage(&p.avant, &p.apres)?;
     let cles: Vec<&'static str> = F::differentes(&p.avant, &p.apres).into_iter().filter(|k| !F::A_PART.contains(k)).collect();
     let a_dater = changements_a_dater(F::NOM, &p.vue_avant, &p.vue_apres, &cles, false)?;
     let mut changements = changements_dits(ctx, F::NOM, &p.vue_avant, &p.vue_apres, &a_dater)?;
