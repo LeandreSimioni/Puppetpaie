@@ -33,9 +33,10 @@ fn surcouche(racine: &Path, an: i64) -> std::path::PathBuf {
     racine.join(droit::contexte::BAREMES).join(format!("{}.json", an))
 }
 
-/// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`).
-fn socle_de(an: i64) -> Option<droit::forme_bareme::Pile> {
-    droit::contexte::socle_livre_lu(an as i32).ok().flatten()
+/// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`) ; un socle livre qui ne se
+/// lit pas se refuse.
+fn socle_de(an: i64) -> R<Option<droit::forme_bareme::Pile>> {
+    droit::contexte::socle_livre_lu(an as i32).map_err(|m| erreur(Classe::Illisible, m))
 }
 
 
@@ -117,7 +118,7 @@ struct ValeurDatee {
 /// A LA CREATION D'UNE COMPAGNIE : le risque par defaut du socle de l'annee et le taux que l'arrete lui fixe. Une annee dont
 /// le socle n'a pas de table des risques (son arrete n'est pas depose) ne pose rien : « Pour demarrer » le demande.
 pub(crate) fn poser_a_la_creation(racine: &Path, an: i64) -> R<()> {
-    let Some(socle) = socle_de(an) else { return Ok(()) };
+    let Some(socle) = socle_de(an)? else { return Ok(()) };
     let Some(r) = bareme::risque_par_defaut(&socle) else { return Ok(()) };
     let Some(t) = bareme::taux_de_l_arrete(&r, None, false) else { return Ok(()) };
     ecrire(
@@ -147,7 +148,7 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
             ),
         ));
     }
-    let socle = socle_de(an);
+    let socle = socle_de(an)?;
     let connu = socle.as_ref().and_then(|s| bareme::risques_de(s).into_iter().find(|r| r.code == code));
     let valeur = if code == bareme::SANS_NOTIFICATION {
         if valeur.is_some() {
@@ -365,7 +366,7 @@ pub(crate) fn lire(ctx: &Contexte, an: i64, phrase: Option<&str>) -> R<TauxAtmpD
     let valeur = pose.as_ref().and_then(|t| t.valeur.as_ref()).zip(jour).and_then(|(v, j)| v.au(&j));
     let notification = pose.as_ref().and_then(|t| t.notification.as_ref()).map(|n| NotificationDite { le: n.le.clone(), calcul: n.calcul.clone(), effet: n.effet.clone() });
     let a_la_creation = pose.as_ref().is_some_and(|t| t.pose_a_la_creation == Some(true));
-    let socle = socle_de(an);
+    let socle = socle_de(an)?;
     let risques = match &socle {
         Some(s) => bareme::risques_de(s),
         None => Vec::new(),
