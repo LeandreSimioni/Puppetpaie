@@ -690,7 +690,7 @@ mod tests_dpae_partielles {
     use super::*;
 
     fn dossier() -> PathBuf {
-        let r = crate::horloge::racine_d_essai(false).join("sorties").join("2026-10");
+        let r = crate::compagnie::racine_d_essai(false).join("sorties").join("2026-10");
         std::fs::create_dir_all(&r).unwrap();
         r
     }

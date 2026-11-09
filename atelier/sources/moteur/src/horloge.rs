@@ -67,11 +67,10 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use crate::routes::etapes::Moteur;
+use crate::compagnie::installation::FICHIER_HORLOGE;
 
 /// Qui signe, au journal, ce que l'horloge joue.
 pub const QUI_HORLOGE: &str = "horloge";
-/// La memoire de l'horloge, sous la racine de la compagnie.
-pub const FICHIER_HORLOGE: &str = "config/horloge.json";
 
 const ORIGINE: &str = "compagnie fictive : joue par l'horloge";
 const QUOI: &str = "L'horloge de la compagnie fictive : le dernier jour joue, ce qui n'est plus a regarder, et ce qu'elle a fait en dernier (le bandeau le dit).";
@@ -1026,27 +1025,10 @@ pub fn route(ctx: &Contexte, charge: &Charge) -> R<Rendu> {
 
 // ------------------------------------------------------------------ les tests
 
-/// Une racine d'essai (dans le dossier temporaire, jamais `prive/` ni `fictives/`) : les trois fiches vides de quoi ouvrir un
-/// `Contexte`, et, si `fictive`, le marqueur d'une compagnie fictive.
-#[cfg(test)]
-pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static N: AtomicUsize = AtomicUsize::new(0);
-    let r = std::env::temp_dir().join(format!("paie-horloge-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
-    let _ = std::fs::remove_dir_all(&r);
-    std::fs::create_dir_all(r.join(socle::fichiers::CONFIG)).unwrap();
-    for f in ["entreprise.json", "salaries.json", "spectacles.json"] {
-        std::fs::write(r.join(socle::fichiers::CONFIG).join(f), "{}").unwrap();
-    }
-    if fictive {
-        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "compagnie fictive essai", "quoi": "essai"}"#).unwrap();
-    }
-    r
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compagnie::racine_d_essai;
 
     fn jour(t: &str) -> Jour {
         Jour::lire(t).unwrap()

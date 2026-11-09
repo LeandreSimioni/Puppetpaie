@@ -67,7 +67,7 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     let args: Vec<String> = args.iter().filter(|a| *a != "--texte").cloned().collect();
     let lues = options(&args)?;
     // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree.
-    crate::commandes::compagnie::fixer_le_code();
+    crate::compagnie::installation::fixer_le_code();
     let mut entree = String::new();
     let lue = std::io::stdin().read_to_string(&mut entree);
     let o = match lues {

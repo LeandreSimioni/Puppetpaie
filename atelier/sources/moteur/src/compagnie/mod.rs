@@ -47,3 +47,21 @@ pub(crate) const INTERFACE: &str = "interface";
 pub(crate) fn maintenant() -> String {
     socle::paris::maintenant()[..16].replacen('T', " ", 1)
 }
+
+/// Une racine d'essai (dans le dossier temporaire, jamais `prive/` ni `fictives/`) : les trois fiches vides de quoi ouvrir un
+/// `Contexte`, et, si `fictive`, le marqueur d'une compagnie fictive.
+#[cfg(test)]
+pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let r = std::env::temp_dir().join(format!("paie-horloge-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    let _ = std::fs::remove_dir_all(&r);
+    std::fs::create_dir_all(r.join(socle::fichiers::CONFIG)).unwrap();
+    for f in ["entreprise.json", "salaries.json", "spectacles.json"] {
+        std::fs::write(r.join(socle::fichiers::CONFIG).join(f), "{}").unwrap();
+    }
+    if fictive {
+        std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "compagnie fictive essai", "quoi": "essai"}"#).unwrap();
+    }
+    r
+}

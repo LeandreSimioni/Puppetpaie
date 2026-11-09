@@ -15,6 +15,9 @@ use socle::fichiers::dossier_du_code;
 
 /// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
 pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
+/// La memoire de l'horloge d'une fictive (`horloge`), sous la racine de la compagnie : la compagnie d'essai ne la copie
+/// pas (`essai`).
+pub const FICHIER_HORLOGE: &str = "config/horloge.json";
 
 pub const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
@@ -34,8 +37,45 @@ pub(crate) fn dessus(p: &Path) -> PathBuf {
     }
 }
 
-/// Le dossier du logiciel (`logiciel/`) : celui qui porte le dossier du code (`commandes::compagnie::fixer_le_code` l'a
-/// rendu absolu et sans `..`).
+/// Le dossier `donnees/` (le code livre : baremes, echeancier...) : `PUPPETPAIE_CODE` si elle est posee, sinon celui que
+/// l'on trouve a cote du programme (`logiciel/puppetpaie.exe` -> `logiciel/donnees` ; `atelier/sources/moteur/bin/<systeme>/moteur`
+/// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
+/// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
+pub fn fixer_le_code() {
+    let valide = |p: &Path| p.join("echeancier-base.json").is_file();
+    let mut candidats: Vec<PathBuf> = Vec::new();
+    match std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()) {
+        // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
+        Some(pose) => candidats.push(PathBuf::from(pose)),
+        None => {
+            if let Ok(exe) = std::env::current_exe() {
+                for a in exe.ancestors().skip(1) {
+                    candidats.push(a.join("donnees"));
+                    candidats.push(a.join("logiciel").join("donnees"));
+                }
+            }
+            candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
+        }
+    }
+    for c in candidats {
+        if !valide(&c) {
+            continue;
+        }
+        // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
+        if let Ok(abs) = c.canonicalize() {
+            // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
+            let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
+                Some(sans) => PathBuf::from(sans),
+                None => abs.clone(),
+            };
+            std::env::set_var("PUPPETPAIE_CODE", abs);
+            return;
+        }
+    }
+}
+
+/// Le dossier du logiciel (`logiciel/`) : celui qui porte le dossier du code (`fixer_le_code` l'a rendu absolu et sans
+/// `..`).
 pub fn logiciel() -> PathBuf {
     dessus(&dossier_du_code())
 }

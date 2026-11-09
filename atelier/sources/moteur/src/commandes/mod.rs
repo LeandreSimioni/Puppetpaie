@@ -11,31 +11,12 @@
 //! par `demande::ouvrir_seance` (la fenetre du moteur s'il y en a une ; le terminal, sans echo ; sinon un refus avec sa phrase), jamais
 //! par autre chose.
 
-/// Ecrit une ligne sur la sortie standard. Un tuyau ferme (`| head`) n'est pas une erreur du programme.
-macro_rules! dire {
-    () => {{
-        use std::io::Write;
-        let _ = writeln!(std::io::stdout());
-    }};
-    ($($arg:tt)*) => {{
-        use std::io::Write;
-        let _ = writeln!(std::io::stdout(), $($arg)*);
-    }};
-}
-
-/// Ecrit sans saut de ligne, comme `dire!`.
-macro_rules! dire_sans_ligne {
-    ($($arg:tt)*) => {{
-        use std::io::Write;
-        let _ = write!(std::io::stdout(), $($arg)*);
-    }};
-}
-
 pub mod actes;
 pub mod analyse;
 pub mod coffre;
 pub mod compagnie;
 pub mod depots;
+pub mod maj;
 pub mod rendu;
 pub mod restaurer;
 pub mod sources;
@@ -185,7 +166,7 @@ pub fn executer(args: &[String]) -> i32 {
         Err(code) => return code,
     };
     // La commande est lancee a la main : sans PUPPETPAIE_CODE, le code est celui qu'on trouve a cote du programme.
-    compagnie::fixer_le_code();
+    crate::compagnie::installation::fixer_le_code();
     let racine = match compagnie::racine(dev) {
         Ok(r) => r,
         Err(phrase) => {

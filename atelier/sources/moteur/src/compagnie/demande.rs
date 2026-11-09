@@ -758,7 +758,7 @@ mod tests {
     /// Un coffre ferme par un poste A, mot de passe du logiciel pose, trois secrets ; le processus est sur un poste B.
     fn monde() -> Monde {
         let tour = TOUR.lock().unwrap_or_else(|e| e.into_inner());
-        let racine = crate::horloge::racine_d_essai(false);
+        let racine = crate::compagnie::racine_d_essai(false);
         let poste_a = racine.join("poste-a");
         let poste_b = racine.join("poste-b");
         std::fs::create_dir_all(&poste_b).unwrap();

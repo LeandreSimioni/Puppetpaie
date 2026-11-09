@@ -62,7 +62,7 @@ pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
 
 /// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
-const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::horloge::FICHIER_HORLOGE];
+const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::compagnie::installation::FICHIER_HORLOGE];
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::copie_de`).
 pub fn est_essai(racine: &Path) -> Result<bool, String> {
@@ -526,7 +526,7 @@ pub fn commande(args: &[String]) -> i32 {
             }
         }
     }
-    crate::commandes::compagnie::fixer_le_code();
+    crate::compagnie::installation::fixer_le_code();
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
         Some(d) => d,

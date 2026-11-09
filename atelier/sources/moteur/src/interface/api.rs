@@ -45,7 +45,7 @@ pub fn route(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
     }
     let debut = std::time::Instant::now();
     let r = route_seule(racine, nom, charge);
-    crate::compagnie::diagnostic::noter_route(racine, "fond", nom, charge, debut.elapsed(), issue(&r));
+    crate::compagnie::diagnostic::noter_route(racine, "fond", nom.nom(), crate::routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
     r
 }
 
@@ -142,7 +142,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
         };
         crate::compagnie::diagnostic::noter_moteur(&dit);
     } else {
-        crate::compagnie::diagnostic::noter_route(racine, "page", nom, charge, duree, issue(&rendu));
+        crate::compagnie::diagnostic::noter_route(racine, "page", nom.nom(), crate::routes::est_une_ecriture(nom), charge, duree, issue(&rendu));
     }
     // APRES UNE ECRITURE, les etats de tous les mois se verifient en fond, le mois affiche
     // d'abord : une ecriture d'un mois peut changer les suivants (un contrat en cours, une numerotation, un cumul). Meme

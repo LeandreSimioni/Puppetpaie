@@ -30,3 +30,25 @@ pub mod tables_nfkc;
 pub mod temps;
 pub mod texte;
 pub mod verrou;
+
+/// Ecrit une ligne sur la sortie standard. Un tuyau ferme (`| head`) n'est pas une erreur du programme.
+#[macro_export]
+macro_rules! dire {
+    () => {{
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout());
+    }};
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
+/// Ecrit sans saut de ligne, comme `dire!`.
+#[macro_export]
+macro_rules! dire_sans_ligne {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let _ = write!(std::io::stdout(), $($arg)*);
+    }};
+}

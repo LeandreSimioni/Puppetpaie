@@ -5,9 +5,11 @@
 //!
 //! Le JSON ne se touche qu'a la porte (`routes::enveloppe`) : sous elle, chaque donnee se lit et s'ecrit en sa forme.
 
+#[macro_use]
+extern crate socle;
+
 pub mod accueil;
 pub mod apercu_dsn;
-#[macro_use]
 pub mod commandes;
 pub mod atelier;
 pub mod compagnie;

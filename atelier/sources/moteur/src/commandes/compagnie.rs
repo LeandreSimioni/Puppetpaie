@@ -24,42 +24,6 @@ fn parent_du_logiciel() -> PathBuf {
     crate::compagnie::installation::dessus(&crate::compagnie::installation::logiciel())
 }
 
-/// Le dossier `donnees/` (le code livre : baremes, echeancier...) : `PUPPETPAIE_CODE` si elle est posee, sinon celui que
-/// l'on trouve a cote du programme (`logiciel/puppetpaie.exe` -> `logiciel/donnees` ; `atelier/sources/moteur/bin/<systeme>/moteur`
-/// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
-/// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
-pub fn fixer_le_code() {
-    let valide = |p: &Path| p.join("echeancier-base.json").is_file();
-    let mut candidats: Vec<PathBuf> = Vec::new();
-    match std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()) {
-        // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
-        Some(pose) => candidats.push(PathBuf::from(pose)),
-        None => {
-            if let Ok(exe) = std::env::current_exe() {
-                for a in exe.ancestors().skip(1) {
-                    candidats.push(a.join("donnees"));
-                    candidats.push(a.join("logiciel").join("donnees"));
-                }
-            }
-            candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
-        }
-    }
-    for c in candidats {
-        if !valide(&c) {
-            continue;
-        }
-        // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
-        if let Ok(abs) = c.canonicalize() {
-            // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
-            let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
-                Some(sans) => PathBuf::from(sans),
-                None => abs.clone(),
-            };
-            std::env::set_var("PUPPETPAIE_CODE", abs);
-            return;
-        }
-    }
-}
 /// Dans l'atelier (`atelier/prive-dev`), pas a cote de ce que les gens recoivent (a la racine : `logiciel/`, `fictives/`, `prive/`).
 pub fn dossier_dev() -> PathBuf {
     parent_du_logiciel().join("atelier").join(NOM_DEV)

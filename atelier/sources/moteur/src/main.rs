@@ -37,7 +37,7 @@ fn main() -> std::process::ExitCode {
         Some("routes") => return std::process::ExitCode::from(moteur::routes::catalogue::commande(&args[1..]).clamp(0, 255) as u8),
         // La fenetre, dans le navigateur du poste : `moteur interface`.
         // La mise a jour : verifier, appliquer, revenir ; publier et la cle, chez l'editeur.
-        Some("maj") => return std::process::ExitCode::from(moteur::compagnie::maj::commande(&args[1..]).clamp(0, 255) as u8),
+        Some("maj") => return std::process::ExitCode::from(moteur::commandes::maj::commande(&args[1..]).clamp(0, 255) as u8),
         // La compagnie d'essai : un vrai depot de TEST sans `prive/`, l'identite lue dans `PUPPETPAIE_COMPAGNIE`.
         Some("essai") => return std::process::ExitCode::from(moteur::compagnie::essai::commande(&args[1..]).clamp(0, 255) as u8),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer. L'atelier seulement.

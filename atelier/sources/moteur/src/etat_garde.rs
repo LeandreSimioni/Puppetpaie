@@ -278,7 +278,7 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
     "config/.ouverture.json",
     "config/.sauvegarde.json",
     crate::compagnie::incidents::DIAGNOSTIC,
-    crate::horloge::FICHIER_HORLOGE,
+    crate::compagnie::installation::FICHIER_HORLOGE,
     crate::compagnie::problemes::SIGNALEMENTS,
     crate::compagnie::incidents::INCIDENTS,
     // Le tableau de l'administrateur (`administrateur.rs`) : le resume de la compagnie que l'accueil lit.

@@ -62,11 +62,11 @@ fn main() -> std::process::ExitCode {
         // Le relais de la mise a jour (`moteur::compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
         Some("maj-relais") => std::process::exit(moteur::compagnie::maj::relais(&args[1..])),
         // `puppetpaie maj` : chercher et preparer une version tout de suite (le bac a sable de l'atelier s'en sert).
-        Some("maj") => std::process::exit(moteur::compagnie::maj::commande(&args[1..])),
+        Some("maj") => std::process::exit(moteur::commandes::maj::commande(&args[1..])),
         _ => {}
     }
 
-    moteur::commandes::compagnie::fixer_le_code();
+    moteur::compagnie::installation::fixer_le_code();
     // UNE FENETRE PAR INSTALLATION (`moteur::compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.

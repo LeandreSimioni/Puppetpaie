@@ -1,12 +1,19 @@
 //! CE QUE L'ACCUEIL FAIT DES COMPAGNIES DE L'INSTALLATION, au niveau des routes (`routes::accueil` les sert) : en
 //! ajouter une (le « + », `ajouter_venant`), en supprimer une, garder au deblocage celles qu'on a ajoutees en demo
 //! (`suppression`). Ce qu'est une compagnie sur le poste (sa racine, son marqueur, sa tuile) : `compagnie::installation`.
+//! Le dossier portable complete (`compagnie::maj::PortableComplete`, la route `portable-completer`) se dit ici (`Dite`).
 
 pub mod suppression;
 
 use std::path::Path;
 
 use crate::compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, Creation, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+
+impl crate::routes::enveloppe::Dite for crate::compagnie::maj::PortableComplete {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
 
 /// « Ajouter une compagnie » (la route `compagnie-ajouter`) dans l'installation `inst`, par le chemin `venue` : le
 /// dossier et les trois fiches sans lesquelles le contexte ne s'ouvre pas.

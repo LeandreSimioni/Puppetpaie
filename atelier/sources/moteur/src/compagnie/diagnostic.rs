@@ -1072,8 +1072,9 @@ pub struct Ecriture {
 }
 
 /// Une route servie par la fenetre : `source` « page » (la page l'a demandee) ou « fond » (la veille, le filet, l'etat des
-/// mois...) ; sa charge mise en forme, sa duree, son issue.
-pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: crate::routes::catalogue::Route, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
+/// mois...) ; son nom, si elle ecrit (`ecriture` : l'acte de sa fiche, `routes::est_une_ecriture`), sa charge mise en
+/// forme, sa duree, son issue.
+pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: &str, ecriture: bool, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
     let forme = en_forme(Some(racine), charge);
     let ch = if forme == "{}" || forme == "null" { String::new() } else { format!(" {}", compact(&forme, CHARGE_LIGNE_MAX)) };
     let ms = duree.as_millis();
@@ -1088,7 +1089,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: crat
     let t = maintenant_ms().saturating_sub(ms as u64);
     // DE QUOI REJOUER : la ligne du fil coupe la charge ; une ecriture de la page (ou un refus) la garde entiere, mise en
     // forme -- la saisie qui a mene au refus se rejoue sur une fictive (`ecritures`).
-    if source == "page" && (crate::routes::est_une_ecriture(nom) || refusee) {
+    if source == "page" && (ecriture || refusee) {
         let mut e = verrou(les_ecritures());
         while e.len() >= ECRITURES_MAX || e.front().is_some_and(|x| x.t + FENETRE_MS < t) {
             e.pop_front();
@@ -1099,7 +1100,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: crat
         };
         // La meme route, la meme charge, la meme issue que la derniere : le fil la compte, elle ne se garde qu'une fois.
         match e.back_mut() {
-            Some(d) if d.route == nom.nom() && d.charge == forme && d.issue == issue_texte => d.t = t,
+            Some(d) if d.route == nom && d.charge == forme && d.issue == issue_texte => d.t = t,
             _ => e.push_back(EcritureGardee { t, route: nom.to_string(), charge: forme.clone(), issue: issue_texte }),
         }
     }
