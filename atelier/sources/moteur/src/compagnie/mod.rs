@@ -6,6 +6,7 @@
 
 pub mod amorcage_demande;
 pub mod auteur;
+pub mod avant;
 pub mod boite;
 pub mod bridage;
 pub mod coffre;

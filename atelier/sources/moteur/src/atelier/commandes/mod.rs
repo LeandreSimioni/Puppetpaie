@@ -3,6 +3,7 @@
 //! (`lancer` : le releve des textes, les referentiels, les tables Unicode, le guet, le garde avant commit, les bulletins
 //! fictifs).
 
+pub mod publication;
 pub mod sources;
 #[cfg(feature = "atelier")]
 pub mod outils;

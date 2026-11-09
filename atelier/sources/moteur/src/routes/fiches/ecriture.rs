@@ -19,7 +19,7 @@ use socle::forme::NombreLu;
 
 use super::{date_proposee, ecrire, maintenant, plain, refus, DejaDeclare};
 use crate::import::proposee::A_COMPLETER;
-use crate::routes::mois::sauver_avant;
+use crate::compagnie::avant::sauver_avant;
 
 // ------------------------------------------------------------------ les trois fiches
 

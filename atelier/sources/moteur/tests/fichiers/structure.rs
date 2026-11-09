@@ -162,10 +162,11 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     let mut chemins = Vec::new();
-    // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`).
+    // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`). Les refus des
+    // outils de l'editeur et du scenario du banc (la forme d'un fichier de scenario) vont au developpeur.
     for crate_ in ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"] {
-        let atelier = espace().join("moteur/src/atelier");
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| !p.starts_with(&atelier)) {
+        let (atelier, scenario) = (espace().join("moteur/src/atelier"), espace().join("moteur/src/scenario.rs"));
+        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| !p.starts_with(&atelier) && *p != scenario) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
                 if chemin {
@@ -719,7 +720,7 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     }
 }
 
-/// LES MODULES DE `moteur` ET LEUR CRATE CIBLE (#359, le decoupage de `moteur`), de bas en haut : chaque module de
+/// LES MODULES DE `moteur` ET LEUR CRATE CIBLE, de bas en haut : chaque module de
 /// `moteur/src` a la sienne par son chemin (son dossier, ou son fichier a la racine), et ne prend (`crate::…`, tests
 /// compris, commentaires et textes a part) qu'a un module de sa crate ou d'une crate d'en dessous. Un module que la table
 /// ne place pas fait echouer le test, comme une flèche qui monte.

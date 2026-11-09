@@ -128,7 +128,7 @@ mois. Ne pas modifier a la main."
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| plain(e.to_string()))?;
     }
-    crate::routes::mois::sauver_avant(&p)?;
+    crate::compagnie::avant::sauver_avant(&p)?;
     ecrire_json(&p, &date, 2).map_err(plain)?;
     lire(ctx, charge.mois.as_deref())
 }

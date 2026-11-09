@@ -584,7 +584,7 @@ pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
 /// compagnies du poste, les fictives jouees et leur photo d'origine (`fictives/.origine/`) ne sont jamais touchees, et
 /// l'archive n'en porte aucune. Une archive D'INSTALLATION (`archiver_installation` : `logiciel/` et `fictives/` en tete)
 /// n'est pas une mise a jour : refusee avant d'ecrire quoi que ce soit.
-fn deballer(octets: &[u8], neuf: &Path) -> R<()> {
+pub(crate) fn deballer(octets: &[u8], neuf: &Path) -> R<()> {
     deballer_ce_qui(octets, neuf, &|_| true)
 }
 
@@ -1957,7 +1957,6 @@ pub fn relais(args: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::atelier::publier::{archiver, archiver_fictives, archiver_installation, signer};
 
     thread_local! {
         /// Le chemin dont `deplacer` ou `copier` echoue UNE fois, pour l'essai de la bascule qui casse en route.
@@ -1983,25 +1982,10 @@ mod tests {
         std::fs::write(d.join("interface").join("index.html"), version).unwrap();
     }
 
-    /// Une compagnie fictive livree a cote du logiciel : `<base>/fictives/fictive-essai/` (son marqueur et sa fiche), et le
-    /// LISEZ-MOI du dossier.
-    fn une_fictive(base: &Path) {
-        let f = base.join("fictives").join("fictive-essai");
-        std::fs::create_dir_all(f.join(socle::fichiers::CONFIG)).unwrap();
-        std::fs::write(f.join("COPIE-DE-DEVELOPPEMENT.json"), "{\"copie_de\": \"compagnie fictive (essai)\", \"quoi\": \"essai\"}").unwrap();
-        std::fs::write(f.join(droit::contexte::ENTREPRISE), "{\"nom_affichage\": \"Essai\"}").unwrap();
-        std::fs::write(base.join("fictives").join("LISEZ-MOI.md"), "Les fictives.\n").unwrap();
-    }
-
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
         let p = Prete { version: "2026.11.01".into(), quand: "2026-11-01T09:00".into(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
-    }
-
-    fn noms_de(octets: &[u8]) -> Vec<String> {
-        let mut z = zip::ZipArchive::new(std::io::Cursor::new(octets)).unwrap();
-        (0..z.len()).map(|i| z.by_index(i).unwrap().name().to_string()).collect()
     }
 
     /// Une archive qui porterait un `EDITION.json` ne change pas l'installation : un paquet soude
@@ -2053,80 +2037,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(neuf.join("donnees").join("a.json")).unwrap(), "2026.11.01");
         assert!(neuf.join("interface").join("index.html").is_file());
         assert!(prete(&racine).unwrap().is_some(), "la version reste prete, pour le prochain demarrage");
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    /// L'archive d'un logiciel, signee par une cle neuve, se verifie avec sa cle publique et se deballe a l'identique.
-    #[test]
-    fn archive_signee_deballee() {
-        let base = std::env::temp_dir().join(format!("puppetpaie-maj-{}", std::process::id()));
-        let code = base.join("logiciel");
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(code.join("donnees")).unwrap();
-        std::fs::create_dir_all(code.join("target")).unwrap();
-        std::fs::write(code.join("VERSION"), "2026.10.09\n").unwrap();
-        std::fs::write(code.join("donnees").join("a.json"), "{}").unwrap();
-        std::fs::write(code.join("target").join("gros"), "a ne pas livrer").unwrap();
-        // L'archive de mise a jour ne demande aucune fictive ; celle d'installation, si : decompressee, elle s'ouvrirait
-        // bridee sur un accueil vide.
-        let octets = archiver(&code, TOUT_SYSTEME).unwrap();
-        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().contains("aucune compagnie fictive"));
-        une_fictive(&base);
-        // Ce qui est du poste et pas de la fictive livree : sa photo d'origine, ses secrets, le journal
-        // de la fenetre ; et un dossier qui n'est pas une fictive.
-        let f = base.join("fictives");
-        for (rel, t) in [
-            (".origine/fictive-essai/config/entreprise.json", "{}"),
-            ("fictive-essai/config/coffre.bin", "scelle"),
-            ("fictive-essai/journal/interface.log", "chemin du poste"),
-            ("pas-une-fictive/config/entreprise.json", "{}"),
-        ] {
-            std::fs::create_dir_all(f.join(rel).parent().unwrap()).unwrap();
-            std::fs::write(f.join(rel), t).unwrap();
-        }
-        // LE CONTRAT : le contenu de `logiciel/` a la racine, rien d'autre, et les fictives n'y changent rien.
-        assert_eq!(octets, archiver(&code, TOUT_SYSTEME).unwrap(), "le zip est deterministe, et sans fictives");
-        let mut noms = noms_de(&octets);
-        noms.sort();
-        assert_eq!(noms, ["VERSION", "donnees/a.json"]);
-        let installation = archiver_installation(&code, TOUT_SYSTEME).unwrap();
-        let noms = noms_de(&installation);
-        assert!(noms.contains(&"logiciel/VERSION".to_string()) && noms.contains(&"logiciel/donnees/a.json".to_string()), "{:?}", noms);
-        assert!(noms.contains(&"fictives/LISEZ-MOI.md".to_string()) && noms.contains(&"fictives/fictive-essai/config/entreprise.json".to_string()), "{:?}", noms);
-        assert!(noms.contains(&"fictives/fictive-essai/COPIE-DE-DEVELOPPEMENT.json".to_string()), "{:?}", noms);
-        // Celle de tous les systemes est le dossier portable : son marqueur a la racine, que le moteur lit (`coffre::dossier_portable`).
-        assert!(noms.contains(&crate::compagnie::coffre::MARQUEUR_PORTABLE.to_string()), "{:?}", noms);
-        // Les trois fichiers livres, la marque de la fictive et ce que retient la livraison : rien du poste.
-        assert!(noms.contains(&"fictives/fictive-essai/.livree.json".to_string()) && noms.contains(&"fictives/.livraison.json".to_string()), "{:?}", noms);
-        assert_eq!(noms.iter().filter(|n| n.starts_with("fictives/")).count(), 5, "rien du poste : {:?}", noms);
-        assert_eq!(installation, archiver_installation(&code, TOUT_SYSTEME).unwrap(), "le zip est deterministe");
-        // L'archive des fictives porte exactement le `fictives/` de l'archive d'installation ; son empreinte ne depend que
-        // du contenu livre.
-        let (fictives, empreinte) = archiver_fictives(&code).unwrap();
-        assert_eq!(noms_de(&fictives), noms.iter().filter(|n| n.starts_with("fictives/")).cloned().collect::<Vec<_>>());
-        std::fs::write(f.join("fictive-essai/config/coffre.bin"), "autre scelle").unwrap();
-        assert_eq!(archiver_fictives(&code).unwrap().1, empreinte, "ce que la livraison ne porte pas ne change pas l'empreinte");
-        std::fs::write(f.join("fictive-essai/config/entreprise.json"), "{\"nom_affichage\": \"Autre\"}").unwrap();
-        assert_ne!(archiver_fictives(&code).unwrap().1, empreinte, "ce qu'elle porte, si");
-        let graine = [7u8; 32];
-        let k = ed25519_dalek::SigningKey::from_bytes(&graine);
-        let publique = socle::base64::ecrire(k.verifying_key().as_bytes());
-        let sig = signer(&octets, &graine).unwrap();
-        assert!(signature_valide(&octets, &sig, &publique));
-        assert!(!signature_valide(&octets, &sig, CLE_PUBLIQUE));
-        let mut altere = octets.clone();
-        let n = altere.len() / 2;
-        altere[n] ^= 1;
-        assert!(!signature_valide(&altere, &sig, &publique));
-        let neuf = base.join("maj-neuve").join("logiciel");
-        deballer(&octets, &neuf).unwrap();
-        assert_eq!(courante(&neuf).unwrap(), "2026.10.09");
-        assert!(neuf.join("donnees").join("a.json").is_file());
-        assert!(!neuf.join("target").exists());
-        // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.
-        let ailleurs = base.join("maj-installation").join("logiciel");
-        assert!(deballer(&installation, &ailleurs).unwrap_err().contains("archive d'installation"));
-        assert!(!ailleurs.exists());
         let _ = std::fs::remove_dir_all(&base);
     }
 
