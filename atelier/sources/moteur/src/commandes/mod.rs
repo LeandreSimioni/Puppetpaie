@@ -88,8 +88,11 @@ impl Cadre {
         match c.ouvre_a_ce_poste() {
             Ok(true) => return,
             Ok(false) => {}
-            // Un coffre illisible : la lecture du secret le dira.
-            Err(_) => return,
+            // Un coffre illisible : la phrase le dit, et la lecture du secret refusera.
+            Err(e) => {
+                eprintln!("{}", socle::echec::phrase_de(&e.message));
+                return;
+            }
         }
         if matches!(c.ouverture_gardee(), Ok(Some(_))) {
             // La seance gardee ouvre le coffre (`Coffre::ouvrir`) : rien a retenir.

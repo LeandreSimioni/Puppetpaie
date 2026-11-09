@@ -22,7 +22,7 @@ const PROPRES_AU_POSTE: [&str; 4] =
     [crate::compagnie::incidents::DIAGNOSTIC, crate::compagnie::problemes::SIGNALEMENTS, crate::compagnie::incidents::INCIDENTS, crate::interface::JOURNAL_INTERFACE];
 
 /// Le dossier qui porte `p`. La racine d'un disque n'a pas de dossier au-dessus d'elle : elle se porte elle-meme.
-fn dessus(p: &Path) -> PathBuf {
+pub(crate) fn dessus(p: &Path) -> PathBuf {
     match p.parent() {
         Some(d) => d.to_path_buf(),
         None => p.to_path_buf(),

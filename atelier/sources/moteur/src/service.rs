@@ -41,7 +41,7 @@ pub(crate) fn racine_de(o: &HashMap<String, String>) -> PathBuf {
 
 /// La route nomme-t-elle une compagnie (`--racine`, ou `PUPPETPAIE_DONNEES`) ?
 pub(crate) fn compagnie_nommee(o: &HashMap<String, String>) -> bool {
-    o.get("racine").is_some_and(|r| !r.is_empty()) || std::env::var("PUPPETPAIE_DONNEES").is_ok_and(|e| !e.is_empty())
+    o.get("racine").is_some_and(|r| !r.is_empty()) || matches!(std::env::var("PUPPETPAIE_DONNEES"), Ok(e) if !e.is_empty())
 }
 
 pub(crate) fn contexte(o: &HashMap<String, String>) -> Resultat<Contexte> {
@@ -65,8 +65,9 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     crate::commandes::compagnie::fixer_le_code();
     // `--date D` est l'aujourd'hui de la route : le jour du contexte, et celui de l'horloge (`socle::temps`, le jour pose)
     // qui date ce qu'elle ecrit. Une seule horloge : chaque ligne du journal porte le jour de la route.
-    if let Some(d) = o.get("date").filter(|d| Jour::lire(d).is_ok()) {
-        std::env::set_var("PUPPETPAIE_AUJOURDHUI", d);
+    // Une date qui ne se lit pas ne pose rien : le contexte de la route la refuse (`contexte`), en le disant.
+    if let Some(Ok(d)) = o.get("date").map(|d| Jour::lire(d)) {
+        std::env::set_var("PUPPETPAIE_AUJOURDHUI", d.iso());
     }
     let _canaux = crate::compagnie::demande::installer(crate::compagnie::demande::canal_de_la_route(&racine_de(&o)));
     let mut entree = String::new();
@@ -74,14 +75,26 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
         Ok(_) => crate::routes::commande(&o, entree.trim_start_matches('\u{feff}')),
         Err(e) => Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e))),
     };
-    let nom = crate::routes::enveloppe::Demande::lire(entree.trim_start_matches('\u{feff}')).map(|d| d.route).ok();
+    // Une demande qui ne se lit pas n'a pas de route : sa reponse est deja le refus qui le dit.
+    let nom = match crate::routes::enveloppe::Demande::lire(entree.trim_start_matches('\u{feff}')) {
+        Ok(d) => Some(d.route),
+        Err(refusee) => {
+            drop(refusee);
+            None
+        }
+    };
     // LE MESSAGE AU DEVELOPPEUR PART AUSSITOT, comme la fenetre le fait partir en fond (`interface::api`) : le processus
     // attend son depart, sans changer ce que la route a rendu.
     if nom == Some(Route::SignalementEnvoyer) && reponse.est_rendue() {
         let _ = crate::routes::servir_la_route(&o, Route::SignalementsPartir, &crate::routes::enveloppe::Charge::vide());
     }
     if texte_seul {
-        dire_sans_ligne!("{}", reponse.en_texte(nom.map_or("", Route::nom)));
+        // Une demande sans route lisible : son texte ne nomme aucune route.
+        const SANS_ROUTE: &str = "";
+        dire_sans_ligne!("{}", reponse.en_texte(match nom {
+            Some(r) => r.nom(),
+            None => SANS_ROUTE,
+        }));
     } else {
         dire!("{}", reponse.en_json());
     }

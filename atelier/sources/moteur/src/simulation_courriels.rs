@@ -9,7 +9,6 @@ use socle::echec::{erreur, R};
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeCourrielsFictifs {
-    #[serde(default)]
     pub apres: Option<String>,
 }
 

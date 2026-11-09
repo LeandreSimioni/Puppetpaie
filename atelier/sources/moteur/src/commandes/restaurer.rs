@@ -21,11 +21,32 @@ pub static SPEC: Spec = Spec {
     options: &[Opt::avec_defaut("racine-drive", sauvegarde::RACINE_DRIVE), Opt::drapeau("json")],
 };
 
+/// Ce que `moteur restaurer --json` ecrit d'un refus : sa classe et sa phrase.
+#[derive(serde::Serialize)]
+struct Refuse<'a> {
+    ok: bool,
+    erreur: ErreurDite<'a>,
+}
+
+#[derive(serde::Serialize)]
+struct ErreurDite<'a> {
+    #[serde(rename = "type")]
+    classe: Option<socle::echec::Classe>,
+    message: &'a str,
+}
+
+/// Ce que `moteur restaurer --json` ecrit d'une restauration : `ok` quand tout est revenu.
+#[derive(serde::Serialize)]
+struct Restauree {
+    ok: bool,
+    resultat: restauration::RestaurationDite,
+}
+
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let json = args.drapeau("json");
     let refus = |classe: Option<socle::echec::Classe>, message: &str| -> i32 {
         if json {
-            dire!("{}", serde_json::json!({"ok": false, "erreur": {"type": classe, "message": message}}));
+            dire!("{}", socle::ecriture::json_en_ligne(&Refuse { ok: false, erreur: ErreurDite { classe, message } }));
         } else {
             dire!("! {}", message);
         }
@@ -37,8 +58,15 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     if !crate::routes::coffre::autorise(&cadre.racine) {
         return refus(Some(socle::echec::Classe::Google), "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
     }
-    let racine_drive = args.texte("racine-drive").unwrap_or(sauvegarde::RACINE_DRIVE);
-    let cible = args.texte("dossier").filter(|d| !d.is_empty()).map(PathBuf::from).unwrap_or_else(|| cadre.racine.clone());
+    let racine_drive = match args.exige("racine-drive") {
+        Ok(r) => r,
+        Err(e) => return refus(e.classe, &e.message),
+    };
+    // `DOSSIER` : ou ecrire ; sans lui, le dossier des donnees de la commande (voir l'en-tete).
+    let cible = match args.texte("dossier").filter(|d| !d.is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => cadre.racine.clone(),
+    };
     let mut client = match crate::routes::coffre::client_drive(&cadre.racine) {
         Ok(c) => c,
         Err(e) => return refus(e.classe, &e.message),
@@ -53,7 +81,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let reste = restauration::a_faire(&crate::compagnie::coffre::Coffre::du_poste(&cible, ""));
     let code = if r.incidents.is_empty() { 0 } else { 1 };
     if json {
-        dire!("{}", serde_json::json!({"ok": code == 0, "resultat": r.dite(reste)}));
+        dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok: code == 0, resultat: r.dite(reste) }));
         return code;
     }
     for f in &r.redescendus {
