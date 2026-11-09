@@ -718,13 +718,17 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     }
 }
 
-/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`). La liste ne fait que
-/// grandir : une couche finie s'y ajoute, et ne recule plus.
-const COUCHES_FERMEES: [&str; 6] = ["socle", "droit", "engagement", "documents", "declarations", "envois"];
+/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
+const COUCHES_FERMEES: [&str; 7] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"];
+
+/// LES PORTES : les deux couches qui ont la bibliotheque du JSON. Le socle lit et ecrit les fichiers ; le moteur recoit
+/// la charge d'une route et rend sa reponse. Hors de leur bord, leur JSON brut se lit au texte.
+const PORTES: [&str; 2] = ["socle", "moteur"];
 
 /// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
-/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme.
-const BORD: [&str; 3] = ["socle::forme", "socle::ecriture", "socle::json_ascii"];
+/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
+/// `routes::enveloppe` lit la charge d'une route et ecrit sa reponse.
+const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "moteur::routes::enveloppe"];
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis et ses textes vides entre leurs guillemets : le
 /// code seul, a ses lignes.
@@ -753,9 +757,10 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// UNE COUCHE FERMEE NE LIT QUE DES FORMES, ENTIERES (atelier/AGENTS.md, « Chaque forme est declaree une fois, en
 /// Rust ») : aucune de ses sources (tests a part, commentaires blanchis) n'a
 /// 1. de JSON brut : la couche (code et tests) n'a pas `serde_json` dans son `Cargo.toml`, le compilateur refuse qu'elle
-///    en touche ; la porte (le socle), qui l'a, n'en touche que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
+///    en touche ; les portes (`PORTES`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
 ///    `serde_json::`, ni `Map<`, ni lecture par cle (`.get("…")`, `x["…"]`) ;
-/// 2. de cle libre : aucune cle en `_` nommee (`rename = "_…"`, `"_cle"`, `"_{}"`, une cle lue ou ecrite), aucun
+/// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
+///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
 ///    tri par le `_` de tete (`starts_with('_')`, `strip_prefix("_")`, `trim_start_matches('_')`) ;
 /// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
@@ -768,11 +773,11 @@ fn blanchi(t: &str, textes: bool) -> String {
 fn une_couche_fermee_ne_lit_que_des_formes() {
     const ORDRE: [&str; 7] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"];
     assert_eq!(COUCHES_FERMEES, ORDRE[..COUCHES_FERMEES.len()], "les couches se ferment de bas en haut, dans l'ordre des crates");
-    // La porte (le socle) a la bibliotheque du JSON : hors du bord, son JSON brut se lit au texte. Toute autre couche
-    // fermee ne l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
+    // Les portes ont la bibliotheque du JSON : hors du bord, leur JSON brut se lit au texte. Toute autre couche fermee ne
+    // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
     let json = regex::Regex::new(r#"\bjson!|\bserde_json::|\bMap\s*<|\.get\("|[A-Za-z0-9_)\]]\s*\[""#).unwrap();
     let mut fautes = Vec::new();
-    for couche in COUCHES_FERMEES.iter().filter(|c| **c != "socle") {
+    for couche in COUCHES_FERMEES.iter().filter(|c| !PORTES.contains(c)) {
         let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
         if cargo.contains("serde_json") {
             fautes.push(format!("{}/Cargo.toml prend serde_json : une couche fermée ne lit que des formes, par `socle::forme` (ses tests aussi : un texte lu par la porte)", couche));
@@ -782,6 +787,8 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
     let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
+    // Une cle en `_` que la forme elle-meme nomme.
+    let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
     for couche in COUCHES_FERMEES {
         let src = espace().join(couche).join("src");
         for f in sources(&src) {
@@ -789,7 +796,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             let texte = std::fs::read_to_string(&f).unwrap();
             let ou = |n: usize| format!("{}:{}", f.display(), n);
             for (n, l) in code_seul(&texte).lines().enumerate() {
-                if couche == "socle" && !BORD.contains(&module.as_str()) {
+                if PORTES.contains(&couche) && !BORD.contains(&module.as_str()) {
                     if let Some(m) = json.find(l) {
                         fautes.push(format!("{} : `{}`, du JSON brut hors du bord : déclare la forme (`serde`, `deny_unknown_fields`) ; la lecture passe par `socle::forme`, l'écriture par `socle::ecriture`", ou(n + 1), m.as_str().trim()));
                     }
@@ -799,8 +806,13 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
                 if let Some(m) = tri.find(l) {
                     fautes.push(format!("{} : `{}`, le tri des clés libres : une donnée est un champ nommé de sa forme", ou(n + 1), m.as_str()));
                 }
+                if let Some(m) = nommee.find(l) {
+                    fautes.push(format!("{} : `{}…`, une clé libre : une donnée est un champ nommé de sa forme", ou(n + 1), m.as_str()));
+                }
             }
-            for (n, s) in litteraux_rs(&sans_tests(&texte)) {
+            // Hors du bord, aucun JSON brut ne se touche (point 1) : un texte en `_` y est un morceau de nom de fichier ou
+            // de champ, jamais une cle. Dans le bord, il en serait une.
+            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| BORD.contains(&module.as_str())) {
                 if s.starts_with('_') && s.chars().nth(1).is_some_and(|c| c.is_alphanumeric() || c == '{') {
                     fautes.push(format!("{} : `\"{}\"`, une clé libre : une donnée est un champ nommé de sa forme", ou(n), s));
                 }
@@ -810,7 +822,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, `is_ok_and`, `is_err_and`, `is_err()`, et tout
     // motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`, `if let`, `matches!`).
     let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)").unwrap();
-    for couche in COUCHES_FERMEES.iter().chain(SANS_REPLI_NI_ERREUR_AVALEE.iter()) {
+    for couche in COUCHES_FERMEES {
         for f in sources(&espace().join(couche).join("src")) {
             for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
                 if let Some(m) = repli.find(l) {
@@ -2068,8 +2080,3 @@ fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     );
 }
 
-/// LES COUCHES TENUES SANS REPLI NI ERREUR AVALEE, en plus des couches fermees : leur code ne replie aucune donnee
-/// absente et dit chaque erreur (points 3 et 4 de `une_couche_fermee_ne_lit_que_des_formes`). Aucune aujourd'hui : une
-/// couche du dessus y entre quand son code n'a plus de repli, puis rejoint les couches fermees quand elle ne lit plus que
-/// des formes.
-const SANS_REPLI_NI_ERREUR_AVALEE: [&str; 0] = [];

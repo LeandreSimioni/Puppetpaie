@@ -434,12 +434,6 @@ pub fn venue(racine: &Path) -> Result<Option<Venue>, String> {
     Ok(creation(racine)?.map(|c| c.venue))
 }
 
-/// La compagnie a ete ajoutee par le chemin « d'un logiciel precedent ». Le pont de `import::guide`, qui ne prend pas
-/// encore un `Result` : un `creation.json` illisible s'y lit comme une compagnie qui ne vient pas d'un logiciel precedent.
-pub fn vient_d_un_logiciel_precedent(racine: &Path) -> bool {
-    matches!(venue(racine), Ok(Some(Venue::LogicielPrecedent)))
-}
-
 /// « Ajouter une compagnie » (la route `compagnie-ajouter`) dans l'installation `inst`, par le chemin `venue` : le
 /// dossier et les trois fiches sans lesquelles le contexte ne s'ouvre pas.
 ///
