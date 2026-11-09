@@ -38,7 +38,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[Value], source: &str) -> Result<Ve
         if deja {
             continue;
         }
-        crate::routes::fiches::poser_taux_recu(ctx, &cle, valeur.clone(), depuis, source)?;
+        crate::routes::fiches::poser_taux_recu(ctx, &cle, lu.clone(), depuis, source)?;
         let t = |k: &str| crate::commandes::rendu::champ(&valeur, k);
         changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, t("taux"), t("type"), t("identifiant"), mad.jj_mm_aaaa()));
         ecrits.push((cle, lu));

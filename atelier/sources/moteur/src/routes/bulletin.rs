@@ -9,7 +9,7 @@ use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::routes::fiches::refus;
 use droit::contexte::Contexte;
-use documents::bulletin::{jeux_et_description, Modele, CASE_MODELE};
+use documents::bulletin::{jeux_et_description, Modele};
 use socle::fichiers::dossier_du_code;
 use socle::echec::R;
 
@@ -266,7 +266,11 @@ pub fn apercu_pdf(modele: Modele) -> Result<Vec<u8>, String> {
 fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
     let modele = modele_demande(charge)?;
     // Le modele vaut pour les documents faits a partir d'aujourd'hui ; ceux d'avant gardent le leur.
-    crate::routes::fiches::poser_entreprise(ctx, CASE_MODELE, modele.cle(), Some(ctx.aujourdhui))?;
+    let choix = match modele {
+        Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
+        Modele::Complet => droit::fiche::ModeleBulletin::Complet,
+    };
+    crate::routes::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::modele_bulletin(Some(choix)), Some(ctx.aujourdhui))?;
     let neuf = Contexte::nouveau(&ctx.racine, None).map_err(refus)?;
     let mut v = modeles(&neuf)?;
     v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);

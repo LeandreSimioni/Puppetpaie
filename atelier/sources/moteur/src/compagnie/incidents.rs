@@ -795,7 +795,7 @@ pub fn edition() -> String {
 /// cle `envoi` : absente ou vraie, les incidents partent ; `false`, ils restent notes sur le poste et rien ne part.
 pub fn envoi_actif(racine: &Path) -> bool {
     let p = racine.join(DIAGNOSTIC);
-    match crate::routes::fiches::lire_tolerant(&p) {
+    match crate::valeur::lire_tolerant(&p) {
         Ok(Some(v)) => v.get("envoi") != Some(&Value::Bool(false)),
         _ => true,
     }
@@ -804,7 +804,7 @@ pub fn envoi_actif(racine: &Path) -> bool {
 /// Active ou coupe l'envoi a l'editeur ; le numero du poste reste.
 pub fn regler_envoi(racine: &Path, actif: bool) -> R<()> {
     let p = racine.join(DIAGNOSTIC);
-    let mut d = match crate::routes::fiches::lire_tolerant(&p)? {
+    let mut d = match crate::valeur::lire_tolerant(&p)? {
         Some(Value::Object(o)) => o,
         _ => Map::new(),
     };
@@ -834,7 +834,7 @@ pub fn poste(racine: &Path) -> R<String> {
         None => racine.to_path_buf(),
     };
     let p = ou.join(DIAGNOSTIC);
-    Ok(crate::routes::fiches::lire_tolerant(&p)?.as_ref().and_then(|d| d.get("poste")).and_then(numero_de_poste).unwrap_or_default())
+    Ok(crate::valeur::lire_tolerant(&p)?.as_ref().and_then(|d| d.get("poste")).and_then(numero_de_poste).unwrap_or_default())
 }
 
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
@@ -846,7 +846,7 @@ pub fn poste(racine: &Path) -> R<String> {
 /// telle quelle : l'appelant laisse tout en attente.
 pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet>> {
     let p = ou.join(DIAGNOSTIC);
-    let mut d = match crate::routes::fiches::lire_tolerant(&p)? {
+    let mut d = match crate::valeur::lire_tolerant(&p)? {
         Some(Value::Object(o)) => o,
         _ => Map::new(),
     };
@@ -877,7 +877,7 @@ pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet
 
 /// Le serveur de l'editeur que cette compagnie a pose : `serveur` de son `config/diagnostic.json` ; vide sinon.
 fn serveur_propre(racine: &Path) -> R<String> {
-    let d = crate::routes::fiches::lire_tolerant(&racine.join(DIAGNOSTIC))?;
+    let d = crate::valeur::lire_tolerant(&racine.join(DIAGNOSTIC))?;
     Ok(d.as_ref().and_then(|d| d.get("serveur")).filter(|v| vrai(v)).map(valeur_en_texte).unwrap_or_default())
 }
 

@@ -229,7 +229,7 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 
 /// Le numero d'un salarie : son `code_salarie` (celui des bulletins), sinon son rang dans les fiches.
 /// La fiche datee, chaque champ a sa derniere valeur.
-fn derniere_valeur(datee: &[(&'static str, Vec<crate::routes::fiches::Portee>)]) -> Value {
+fn derniere_valeur(datee: &[(&'static str, Vec<crate::valeur::Portee>)]) -> Value {
     Value::Object(datee.iter().filter_map(|(k, l)| l.last().map(|x| (k.to_string(), x.valeur.clone()))).collect())
 }
 
@@ -269,10 +269,10 @@ fn construire(racine: &Path) -> Personnes {
     };
     if let Ok(fiches) = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&racine.join(droit::contexte::SALARIES), droit::contexte::SALARIES) {
         for (rang, (cle, datee)) in fiches.fiches.iter().enumerate() {
-            let datee = crate::routes::fiches::portees(datee);
+            let datee = crate::valeur::portees(datee);
             let mut noms = vec![cle.to_string()];
             for c in CHAMPS_QUI_NOMMENT {
-                for v in crate::routes::fiches::valeurs_portees(&datee, c) {
+                for v in crate::valeur::valeurs_portees(&datee, c) {
                     if let Value::String(s) = v {
                         noms.push(s.clone());
                     }
@@ -292,10 +292,10 @@ fn construire(racine: &Path) -> Personnes {
         }
     }
     if let Ok(e) = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE) {
-        let e = crate::routes::fiches::portees(&e);
+        let e = crate::valeur::portees(&e);
         let mut noms = Vec::new();
         for c in CHAMPS_DE_LA_COMPAGNIE {
-            for s in crate::routes::fiches::valeurs_portees(&e, c).filter_map(Value::as_str) {
+            for s in crate::valeur::valeurs_portees(&e, c).filter_map(Value::as_str) {
                 noms.push(s.to_string());
                 // « Compagnie du Fil de Fer (démonstration) » : le nom sans sa parenthese aussi.
                 if let Some((avant, _)) = s.split_once(" (") {

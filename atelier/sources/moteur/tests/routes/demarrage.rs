@@ -6,7 +6,7 @@
 //!   `dsn::type_du_contact`, prouve dans `tests/dsn/contact_declare.rs`) ; le code du service de sante au travail se
 //!   demande par sa case, comme tout ce que la DPAE exige (`exige_par` de `champs-base.json`).
 //!   La reponse sur la TVA (la taxe sur les salaires de la DSN de decembre) se demande d'avance.
-//! - Le SIREN et le NIC se deduisent du SIRET a l'enregistrement de la fiche (`crate::routes::fiches::deriver`) : un SIRET est un
+//! - Le SIREN et le NIC se deduisent du SIRET a l'enregistrement de la fiche (`routes::fiches::deriver`) : un SIRET est un
 //!   SIREN de 9 chiffres suivi d'un NIC de 5.
 //! - La rubrique d'une ligne de paie neuve (`etat.rubrique_par_defaut`, `catalogue::par_defaut`) : une rubrique de
 //!   salaire, jamais la premiere du catalogue trie (« Absence » dans une compagnie ou rien n'est coche).
@@ -68,7 +68,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             }
             let m = manques(&racine);
             // Ce que la fiche Entreprise montre, tel que le moteur le dit a la page (route `permanents`).
-            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({}), JOUR))["montres"].as_array().unwrap().clone();
+            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({"nom": "entreprise", "donnees": socle::ecriture::en_valeur(&ent)}), JOUR))["montres"].as_array().unwrap().clone();
             let montre = |cle: &str| montres.contains(&json!(cle));
             for x in &m {
                 let Some(champ) = x["champ"].as_str() else { continue };

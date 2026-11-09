@@ -95,9 +95,6 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// La case de la fiche entreprise des clauses particulieres de la compagnie.
-const CLAUSES: &str = "clauses_particulieres";
-
 /// Une route de ce module, branchee sur l'enveloppe.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
@@ -402,7 +399,7 @@ fn retirer(ctx: &Contexte, c: ChargeModele) -> R<Modeles> {
 fn clauses(ctx: &Contexte, c: ChargeClauses) -> R<ClausesEcrites> {
     let texte = c.texte.trim();
     let clauses = if texte.is_empty() { None } else { Some(texte) };
-    crate::routes::fiches::poser_entreprise(ctx, CLAUSES, clauses, Some(ctx.aujourdhui))?;
+    crate::routes::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::clauses_particulieres(clauses.map(str::to_string)), Some(ctx.aujourdhui))?;
     Ok(ClausesEcrites { phrase: "Clauses particulières enregistrées." })
 }
 

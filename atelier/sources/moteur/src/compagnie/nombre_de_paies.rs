@@ -63,7 +63,7 @@ pub fn compter(ctx: &Contexte, annee: i32) -> R<usize> {
 /// Les annees deja parties, telles que `config/diagnostic.json` les retient.
 pub fn parties(racine: &Path) -> Map<String, Value> {
     let p = racine.join(crate::compagnie::incidents::DIAGNOSTIC);
-    match crate::routes::fiches::lire_tolerant(&p) {
+    match crate::valeur::lire_tolerant(&p) {
         Ok(Some(d)) => d.get(CLE).and_then(Value::as_object).cloned().unwrap_or_default(),
         _ => Map::new(),
     }
@@ -72,7 +72,7 @@ pub fn parties(racine: &Path) -> Map<String, Value> {
 /// Retient que `annee` est partie, sans toucher au reste du fichier (l'identite du poste, l'interrupteur).
 fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> Result<(), String> {
     let p = racine.join(crate::compagnie::incidents::DIAGNOSTIC);
-    let mut d = match crate::routes::fiches::lire_tolerant(&p) {
+    let mut d = match crate::valeur::lire_tolerant(&p) {
         Ok(Some(Value::Object(o))) => o,
         _ => Map::new(),
     };

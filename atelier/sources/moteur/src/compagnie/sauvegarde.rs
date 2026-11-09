@@ -413,7 +413,7 @@ fn egal(v: Option<&Value>, x: f64) -> bool {
 }
 
 /// Ce que dit l'index du dernier passage (`derniere`) : quand, combien. Pour l'affichage.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Derniere {
     /// Tel que l'index le porte (un texte, en pratique).
     pub quand: Value,
