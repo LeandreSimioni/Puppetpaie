@@ -97,7 +97,7 @@ impl Charge {
     }
 
     /// La charge ecrite en JSON `v` (le corps d'une demande de la page) : un objet, sinon un refus (`MalFormee`).
-    pub fn de(v: Value) -> R<Charge> {
+    fn de(v: Value) -> R<Charge> {
         match v {
             Value::Object(_) => Ok(Charge(v)),
             _ => Err(erreur(Classe::MalFormee, "La demande est mal formée : sa charge est un objet {…}.")),
@@ -268,7 +268,7 @@ impl Rendu {
     }
 
     /// Le rendu en JSON, pris.
-    pub fn en_valeur(self) -> Value {
+    fn en_valeur(self) -> Value {
         self.0
     }
 }
@@ -551,7 +551,7 @@ impl Reponse {
     }
 
     /// Ce que la route a rendu, s'il y a lieu.
-    pub fn resultat(&self) -> Option<&Value> {
+    fn resultat(&self) -> Option<&Value> {
         match &self.issue {
             Ok(v) => Some(v),
             Err(Refus { .. }) => None,
