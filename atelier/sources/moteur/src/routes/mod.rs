@@ -229,7 +229,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(ouverture::ROUTES) => ouverture::route(&porte, charge),
         _ if dans(rappels::ROUTES) => rappels::route(&porte, charge),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
-        _ if dans(crate::compagnie::conseils::ROUTES) => brute(crate::compagnie::conseils::route(&ctx, route, c)),
+        _ if dans(crate::compagnie::conseils::ROUTES) => crate::compagnie::conseils::route(&porte, charge),
         // L'ouverture du logiciel et la veille : sauvegarder, relever les retours, les signatures et les fiches, sans
         // jamais echouer. ATTENTION : hors d'une compagnie fictive, cette route va au reseau (net-entreprises, Urssaf,
         // boite courriel, Drive, serveur des incidents).

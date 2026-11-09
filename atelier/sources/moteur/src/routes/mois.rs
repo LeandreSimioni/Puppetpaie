@@ -17,8 +17,8 @@
 //! qui porte sa phrase (`Dite`).
 //!
 //! La carte d'un engagement et la vue du mois sont `engagement::saisie::{Carte, VueDuMois}`. Les cartes importees
-//! (`import::mois::cartes`) et le conseil de saisie (`compagnie::conseils`) se composent en JSON dans leur module, et
-//! passent ici tels quels.
+//! (`import::mois::cartes`) se composent en JSON dans leur module, et passent ici telles quelles ; le conseil de saisie
+//! est la forme de son module (`compagnie::conseils::ConseilVu`).
 
 use droit::fiche::Lue as _;
 use std::collections::{HashMap, HashSet};
@@ -1629,9 +1629,9 @@ pub(crate) struct VuePaie {
     avertissements: Vec<String>,
     informations: Vec<String>,
     emploi: EmploiVu,
-    /// TRAVAIL A FAIRE : le conseil de saisie (`compagnie::conseils::de_saisie`) se compose en JSON.
+    /// Le conseil que la saisie appelle (`compagnie::conseils::de_saisie`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    conseil: Option<Value>,
+    conseil: Option<crate::compagnie::conseils::ConseilVu>,
     /// La ligne de « Pour démarrer » qui demande les conges acquis avant le logiciel (`declarations::demarrage::conges_a_dire`).
     #[serde(skip_serializing_if = "Option::is_none")]
     a_dire: Option<[declarations::demarrage::Manque; 1]>,
