@@ -211,7 +211,7 @@ pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
 /// Un numéro de document dans une adresse web (l'Unédic en a de treize chiffres, EUR-Lex en met dans ses requêtes)
 /// n'est pas un NIR.
 fn dans_une_url(o: &[u8], i: usize) -> bool {
-    let debut = o[..i].iter().rposition(|b| b" \t\n\"'(<".contains(b)).map_or(0, |p| p + 1);
+    let debut = i - o[..i].iter().rev().take_while(|b| !b" \t\n\"'(<".contains(b)).count();
     o[debut..].starts_with(b"http://") || o[debut..].starts_with(b"https://")
 }
 
@@ -471,13 +471,21 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], trouvailles: &mut Vec<Tro
     }
 }
 
+/// Le contenu d'un fichier que git nomme : rien s'il n'est plus sur le disque (effacé, il ne partira pas tel quel).
+fn contenu(p: &Path) -> R<Option<Vec<u8>>> {
+    match std::fs::read(p) {
+        Ok(o) => Ok(Some(o)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(p, &e)),
+    }
+}
+
 /// Le garde, sur le dépôt de `racine` : ce qui partirait (`indexes` : ce que l'index porte), et les valeurs de
 /// `<racine>/prive/config/`.
 pub fn verifier(racine: &Path, indexes: bool) -> R<Vec<Trouvaille>> {
     let motifs = motifs(racine)?;
     let noms = ce_qui_part(racine, indexes)?;
-    let contenus: Vec<Option<Vec<u8>>> =
-        if indexes { contenus_indexes(racine, &noms)? } else { noms.iter().map(|n| std::fs::read(racine.join(n)).ok()).collect() };
+    let contenus: Vec<Option<Vec<u8>>> = if indexes { contenus_indexes(racine, &noms)? } else { noms.iter().map(|n| contenu(&racine.join(n))).collect::<R<_>>()? };
     let mut trouvailles = Vec::new();
     for (nom, o) in noms.iter().zip(contenus) {
         if let Some(o) = o {
