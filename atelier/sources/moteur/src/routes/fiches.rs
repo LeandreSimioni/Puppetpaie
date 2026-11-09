@@ -241,7 +241,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, charge.lire()?)?),
-        Route::FicheDemander => en_json(fiche_demander(ctx, charge.lire()?)?),
+        Route::FicheDemander => en_json(fiche_demander(ctx, charge.lire()?, charge.mot_de_passe())?),
         Route::FicheOublierDemande => en_json(oublier_demande(ctx, charge.lire()?)?),
         Route::Effectif => en_json(effectif(ctx, charge.lire()?)?),
         Route::Couts => en_json(couts(ctx, charge.lire()?)?),
@@ -859,7 +859,7 @@ fn adresse_valide(adresse: &str) -> bool {
     if adresse.chars().any(blanc) || adresse.matches('@').count() != 1 {
         return false;
     }
-    let (local, domaine) = adresse.split_once('@').unwrap_or(("", ""));
+    let Some((local, domaine)) = adresse.split_once('@') else { return false };
     let d: Vec<char> = domaine.chars().collect();
     !local.is_empty() && d.len() >= 3 && (1..d.len() - 1).any(|i| d[i] == '.')
 }
@@ -880,8 +880,6 @@ pub struct FicheDemandee {
 struct ChargeFicheDemander {
     adresse: String,
     prenom: String,
-    #[serde(default)]
-    motdepasse: Option<String>,
 }
 
 /// Ce que rend `fiche-demander`.
@@ -893,8 +891,8 @@ struct DemandeDeFiche {
 }
 
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
-fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander) -> R<DemandeDeFiche> {
-    let preuve = Preuve::du_mot_de_passe(c.motdepasse);
+fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&str>) -> R<DemandeDeFiche> {
+    let preuve = Preuve::du_mot_de_passe(motdepasse.map(str::to_string));
     let d = demander_fiche(ctx, &c.adresse, &c.prenom, &preuve, INTERFACE, None)?;
     Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }
@@ -949,7 +947,7 @@ pub fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preu
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e, demande(None, None), None)))?;
         return Err(echec_d_envoi(e));
     }
-    let detail = demande(Some(identifiants.first().cloned().unwrap_or_default()), Some(expediteur.clone()));
+    let detail = demande(identifiants.first().cloned(), Some(expediteur.clone()));
     let ligne = noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, true, &adresse, &format!("fiche demandee a {}", adresse), detail, None)))?;
     Ok(FicheDemandee { code, adresse, ligne })
 }
@@ -1085,9 +1083,12 @@ pub fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &s
                     continue;
                 }
             };
-            let Ok(m) = mailparse::parse_mail(&brut) else {
-                r.incidents.push(format!("Lecture du message {} : message illisible.", ident));
-                continue;
+            let m = match mailparse::parse_mail(&brut) {
+                Ok(m) => m,
+                Err(e) => {
+                    r.incidents.push(format!("Lecture du message {} : message illisible ({}).", ident, e));
+                    continue;
+                }
             };
             if lecture::identifiant_de(&m).is_some_and(|i| a.envoyes.contains(&i)) {
                 continue;
@@ -1199,7 +1200,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     let an = 80 + code.chars().count() % 15;
     let mois = 1 + somme % 12;
     let treize = format!("{}{:02}{:02}75056{:03}", sexe, an, mois, 1 + somme % 900);
-    let cle = 97 - treize.parse::<u64>().unwrap_or(0) % 97;
+    let cle = 97 - treize.parse::<u64>().map_err(|e| e.to_string())? % 97;
     let reponses: HashMap<&str, String> = HashMap::from([
         ("prenom", prenom),
         ("nom", nom.to_string()),
@@ -1215,8 +1216,12 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
         ("iban", "FR7630001007941234567890185".to_string()),
     ]);
     let utiles = champs::utiles("salarie").map_err(|e| e.message)?;
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|cle| reponses.get(cle).cloned().unwrap_or_default());
-    let sujet = bouton.map(|b| b.0.clone()).unwrap_or_else(|| "Re: fiche".to_string());
+    // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
+    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
+    let sujet = match bouton {
+        Some(b) => b.0.clone(),
+        None => "Re: fiche".to_string(),
+    };
     envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code))
 }
 
@@ -1229,8 +1234,9 @@ pub fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
-        let age = socle::paris::naif_de_iso(&a.quand).map_or(0, |t| maintenant_naif - t);
-        if age < delai {
+        // Une demande sans heure lisible n'a pas d'age : la personne fictive n'y repond pas.
+        let Some(partie) = socle::paris::naif_de_iso(&a.quand) else { continue };
+        if maintenant_naif - partie < delai {
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;

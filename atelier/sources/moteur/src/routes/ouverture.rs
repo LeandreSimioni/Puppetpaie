@@ -10,7 +10,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::routes::catalogue::Route;
@@ -550,7 +550,7 @@ pub(crate) fn signataire_de(ent: &droit::fiche::ChampsEntreprise) -> Signataire 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegistreIdentite {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) signature: Option<PoseePour>,
 }
 
@@ -649,7 +649,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             Some(f) => {
                 let st = std::fs::metadata(&f).map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&f, &x)))?;
                 e.octets = Some(st.len());
-                e.format = Some(f.extension().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default());
+                e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 e.quand = Some(socle::paris::iso_secondes(socle::paris::mtime(&st)));
                 e.fichier = Some(f.display().to_string());
             }
@@ -683,9 +683,10 @@ pub fn boite_liee(ctx: &Contexte) -> R<bool> {
     }
     let coffre = crate::compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
     let vers = |x: crate::compagnie::coffre::Echec| Echec { classe: Some(x.classe), message: x.message };
-    let adresse = match std::env::var("COURRIEL_COMPTE").ok().filter(|v| !v.is_empty()) {
-        Some(a) => a,
-        None => coffre.compte("courriel").map_err(vers)?,
+    // L'adresse posee dans l'environnement, sinon celle du coffre.
+    let adresse = match std::env::var("COURRIEL_COMPTE") {
+        Ok(a) if !a.is_empty() => a,
+        _ => coffre.compte("courriel").map_err(vers)?,
     };
     if adresse.trim().is_empty() {
         return Ok(false);
@@ -705,14 +706,14 @@ struct FicheAttendue {
 
 /// Les demandes de fiche parties et pas encore revenues, les plus anciennes d'abord, comme la page les lit.
 fn fiches_attendues(ctx: &Contexte) -> R<Vec<FicheAttendue>> {
-    Ok(crate::routes::fiches::fiches_attendues(ctx)?
+    crate::routes::fiches::fiches_attendues(ctx)?
         .into_iter()
         .map(|a| {
             let jour: String = a.quand.chars().take(10).collect();
-            let demande_dit = format!("demandée le {}", socle::date::Jour::lire(&jour).map(|j| j.jj_mm_aaaa()).unwrap_or(jour));
-            FicheAttendue { code: a.code, adresse: a.adresse, prenom: a.prenom, quand: a.quand, demande_dit }
+            let demande_dit = format!("demandée le {}", socle::date::Jour::lire(&jour).map_err(plain)?.jj_mm_aaaa());
+            Ok(FicheAttendue { code: a.code, adresse: a.adresse, prenom: a.prenom, quand: a.quand, demande_dit })
         })
-        .collect())
+        .collect()
 }
 
 
@@ -826,15 +827,24 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
                 .iter()
                 .find(|c| c.cle == "deduction_forfaitaire_option")
                 .and_then(|c| c.libelles.and_then(|l| l.de(option)))
-                .filter(|n| !n.is_empty())
-                .map_or_else(|| option.to_string(), str::to_string);
+                .filter(|n| !n.is_empty());
+            let nom = match nom {
+                Some(n) => n.to_string(),
+                None => option.to_string(),
+            };
             format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)
         }
     };
     // LES NUMEROS D'OBJET SANS TITRE (importes des DSN, « A COMPLETER »), archives : la liste des spectacles les groupe sous
     // cette phrase.
     let sans_titre: Vec<&droit::fiche::ChampsSpectacle> = ctx.spectacles.values().filter(|s| s.archivee() && s.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case("a completer"))).collect();
-    let ans: Vec<u32> = sans_titre.iter().filter_map(|s| s.numero_objet.portee().and_then(|n| n.get(..2)).and_then(|a| a.parse::<u32>().ok())).map(|a| 2000 + a).collect();
+    // Les deux premiers chiffres d'un numero d'objet disent son annee.
+    let ans: Vec<u32> = sans_titre
+        .iter()
+        .filter_map(|s| s.numero_objet.portee().and_then(|n| n.get(..2)))
+        .filter(|a| a.chars().all(|c| c.is_ascii_digit()))
+        .map(|a| a.parse::<u32>().map(|a| 2000 + a).map_err(|e| plain(e.to_string())))
+        .collect::<R<_>>()?;
     let numeros_sans_titre = match (sans_titre.len(), ans.iter().min(), ans.iter().max()) {
         (0, _, _) => None,
         (n, de, a) => {
@@ -850,7 +860,10 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // Les compteurs de la derniere annee, en une ligne : ce que l'en-tete de la Paie montre.
     let compteurs = documents::ecrire_documents::compteurs(&ctx.racine)?;
     let compteurs_dit = compteurs.iter().filter(|(k, _)| k.len() == 4 && k.chars().all(|c| c.is_ascii_digit())).max_by(|a, b| a.0.cmp(b.0)).map(|(an, c)| {
-        let n = |x: Option<i64>| x.map_or_else(|| "?".to_string(), |n| n.to_string());
+        let n = |x: Option<i64>| match x {
+            Some(n) => n.to_string(),
+            None => "?".to_string(),
+        };
         format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin), n(c.certificat_cs))
     });
     let fiches_attendues = fiches_attendues(ctx)?;
@@ -1018,7 +1031,11 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         if crate::routes::documents::un_nom_commence_et_finit(&ctx.racine.join("sorties").join(nom).join("envoi"), "AER_", ".pdf") {
-            let rang = sortes.iter().position(|s| *s == "AEM").unwrap_or(sortes.len());
+            // Avant les AEM, ou en dernier.
+            let rang = match sortes.iter().position(|s| *s == "AEM") {
+                Some(r) => r,
+                None => sortes.len(),
+            };
             sortes.insert(rang, "attestations AER");
         }
         // CE QUI RESTE A FAIRE DANS LA PAGE PAIE (Historique) : une DSN a deposer, refusee ou en
@@ -1051,7 +1068,10 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
             saisi_dit: "saisi",
             pastille: Some(socle::ecran::Pastille { couleur, mots: mots.to_string() }),
-            depose_dit: depose.then(|| format!("le {}", super::jour_en_clair(&json!(quand.clone().unwrap_or_default().chars().take(10).collect::<String>())))),
+            depose_dit: match (depose, &quand) {
+                (true, Some(q)) => Some(format!("le {}", socle::date::Jour::lire(&q.chars().take(10).collect::<String>()).map_err(plain)?.jj_mm_aaaa())),
+                _ => None,
+            },
             depose_le: quand,
             documents_dit: Some(if sortes.is_empty() { "aucun document".to_string() } else { sortes.join(" · ") }),
             echeance: Some(limite.iso()),
@@ -1351,7 +1371,7 @@ fn natures(ctx: &Contexte) -> R<Vec<NatureDeLaPage>> {
             carte,
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
-            spectacle: n.interdit("S21.G00.40.050").map_or(true, |s| s.is_empty()),
+            spectacle: n.interdit("S21.G00.40.050").is_none_or(|s| s.is_empty()),
             signalement_fctu: n.signalement_fctu(None),
             signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),
@@ -1360,7 +1380,7 @@ fn natures(ctx: &Contexte) -> R<Vec<NatureDeLaPage>> {
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut().map(NombreLu),
-            temps_plein_dit: n.quotite_reference_defaut().map(|q| format!("temps plein {} h", socle::texte::virgule(socle::num::dec_f64(q).unwrap_or_default()))),
+            temps_plein_dit: n.quotite_reference_defaut().map(|q| socle::num::dec_f64(q).map(|d| format!("temps plein {} h", socle::texte::virgule(d)))).transpose().map_err(plain)?,
             motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),
@@ -1441,8 +1461,8 @@ struct SalarieDeLaListe {
 #[derive(Debug, Clone, serde::Serialize)]
 struct SpectacleDeLaListe {
     cle: String,
-    titre: Value,
-    numero_objet: Value,
+    titre: String,
+    numero_objet: Option<String>,
 }
 
 /// La rubrique d'une ligne neuve, par statut du salarie.
@@ -1519,7 +1539,10 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .into_iter()
         .map(|k| {
             // Son statut, comme la paie le lit (vide, un artiste) : les rubriques `reservee_au_statut` s'y comparent.
-            let statut = ctx.salaries.get(k).and_then(|f| f.statut.dite()).map_or("artiste", |s| s.as_str()).to_string();
+            let statut = match ctx.salaries.get(k).and_then(|f| f.statut.dite()) {
+                Some(s) => s.as_str().to_string(),
+                None => droit::fiche::Statut::Artiste.as_str().to_string(),
+            };
             SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k), statut }
         })
         .collect();
@@ -1528,8 +1551,8 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .into_iter()
         .map(|k| {
             let v = &ctx.spectacles[k];
-            let titre = Some(socle::ecriture::en_valeur(&v.titre)).filter(|_| v.titre.is_some()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("titre")))?;
-            Ok(SpectacleDeLaListe { cle: k.to_string(), titre, numero_objet: socle::ecriture::en_valeur(&v.numero_objet) })
+            let titre = v.titre.clone().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("titre")))?;
+            Ok(SpectacleDeLaListe { cle: k.to_string(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;
 
