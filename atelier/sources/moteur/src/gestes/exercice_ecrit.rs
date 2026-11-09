@@ -205,10 +205,10 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
         std::fs::write(&f, csv_compta(&ecritures)).map_err(|e| en_os(&e, &f))?;
         // L'export de l'annee entiere note les saisies qu'il a lues (`export_compta_a_jour`).
         let lues = match (du, au) == (JANVIER, DECEMBRE) {
-            true => Some(crate::compagnie::depart::EmpreinteNotee::Annee(empreintes_des_saisies(&ctx.racine, annee)?)),
+            true => Some(crate::compagnie::pieces_ecrites::EmpreinteNotee::Annee(empreintes_des_saisies(&ctx.racine, annee)?)),
             false => None,
         };
-        crate::compagnie::depart::noter_piece_ecrite(&ctx.racine, &crate::compagnie::depart::cle_de_piece(&f), lues, None)?;
+        crate::compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
     Ok(ExportCompta { annee: annee.to_string(), du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
@@ -238,8 +238,8 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: &str) -> R<bool> {
     if !f.is_file() {
         return Ok(false);
     }
-    Ok(match crate::compagnie::depart::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
-        Some(crate::compagnie::depart::EmpreinteNotee::Annee(lues)) => lues == empreintes_des_saisies(racine, annee)?,
+    Ok(match crate::compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
+        Some(crate::compagnie::pieces_ecrites::EmpreinteNotee::Annee(lues)) => lues == empreintes_des_saisies(racine, annee)?,
         // Le journal ne dit pas ce que l'export a lu : le moteur ne sait pas que les saisies ont change depuis.
         _ => true,
     })

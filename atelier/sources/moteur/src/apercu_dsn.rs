@@ -492,7 +492,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let (ordres, ordres_erreur) = if signalement {
         (Vec::new(), None)
     } else {
-        match crate::compagnie::depart::refabriquer(ctx, std::path::Path::new(&chemin), mois, a.etablissement())? {
+        match crate::gestes::depart::refabriquer(ctx, std::path::Path::new(&chemin), mois, a.etablissement())? {
             Some(f) => (declarations::ordres_paiement::decrire(&f.ordres, &mois_t, ctx.echeance_dsn()?)?, None),
             None => (Vec::new(), Some("Ce fichier ne dit plus ce que disent les paies du mois : le refaire (Produire la DSN) avant de le déposer.")),
         }

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
+use crate::compagnie::preuve::{verifier_preuve, Preuve};
 use crate::import::casc::{marquer_regularise, RegularisationNotee};
 use crate::routes::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -216,7 +216,7 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: &str) -> R<Vec<PieceDeLEnv
     }
     Ok(pdf_de(&envoi)?
         .into_iter()
-        .filter(|nom| !nom.starts_with(crate::compagnie::signature::PREFIXE_IMPRESSION))
+        .filter(|nom| !nom.starts_with(crate::gestes::signature::PREFIXE_IMPRESSION))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();
@@ -652,8 +652,8 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         "etat-des-virements" => documents::etats_paie::etat_des_virements(ctx, &d),
         "prelevement-a-la-source" => documents::etats_paie::prelevement_a_la_source(ctx, &d),
         "cotisations-par-organisme" => declarations::etats_organismes::cotisations_par_organisme(ctx, &d),
-        "versements-organismes" => declarations::etats_organismes::versements_organismes(ctx, &d, &crate::compagnie::depart::dsn_du_mois),
-        "bordereau-urssaf" => declarations::etats_organismes::bordereau_urssaf(ctx, &d, &crate::compagnie::depart::dsn_du_mois),
+        "versements-organismes" => declarations::etats_organismes::versements_organismes(ctx, &d, &crate::gestes::depart::dsn_du_mois),
+        "bordereau-urssaf" => declarations::etats_organismes::bordereau_urssaf(ctx, &d, &crate::gestes::depart::dsn_du_mois),
         "fcap-svp" => declarations::etats_organismes::fcap_svp(ctx, &d),
         "afdas-2642" => declarations::etats_organismes::afdas_2642(ctx, &d),
         "paritarisme-branche" => declarations::etats_organismes::paritarisme_branche(ctx, &d),

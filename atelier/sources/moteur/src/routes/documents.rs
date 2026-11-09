@@ -14,7 +14,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
+use crate::compagnie::preuve::{verifier_preuve, Preuve};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::routes::catalogue::Route;
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -225,7 +225,7 @@ struct ApercuEnvoi {
 /// `piece-partie` : le chemin de la piece partie, refaite si son fichier manque (`depart::piece_partie`), relatif a la
 /// compagnie (`sorties/<mois>/[envoi/]<fichier>`).
 fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
-    let f = crate::compagnie::depart::piece_partie(ctx, &c.mois.to_string(), &c.fichier)?;
+    let f = crate::gestes::depart::piece_partie(ctx, &c.mois.to_string(), &c.fichier)?;
     let relatif = f.strip_prefix(&ctx.racine).map_err(|e| {
         erreur(
             Classe::DefautDuLogiciel,
@@ -794,7 +794,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         return Err(refus("Aucun salarié coché. Rien n'est imprimé."));
     }
     let choix = choisir(ctx, &mois, &paies)?;
-    let documents = crate::compagnie::depart::fabriquer_documents(ctx, &mois, &cles, qui)?;
+    let documents = crate::gestes::depart::fabriquer_documents(ctx, &mois, &cles, qui)?;
     let dossier = ctx.racine.join("sorties").join(&mois).join("envoi");
     let etiq = c.mois.etiquette();
     let mut pieces: Vec<std::path::PathBuf> = Vec::new();
@@ -815,7 +815,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", Mois::en_clair(&mois))));
     }
     let versions = journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle)).map_err(Echec::from)?;
-    let impression = crate::compagnie::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
+    let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, &mois)?;
     let detail = journal::DetailDocuments { salaries, main_propre: true, expediteur: None, durees_ms: None, partis: None, echec_a: None };
@@ -854,7 +854,7 @@ pub(crate) struct EnvoiPrepare {
     /// A qui les documents partent, et pourquoi (`choisir`) : le journal en garde l'empreinte et le resume.
     pub(crate) choix: Choix,
     /// Les documents fabriques pour ceux a qui ils partent ; leurs numeros s.ecrivent quand ils sont partis.
-    documents: crate::compagnie::depart::DocumentsFabriques,
+    documents: crate::gestes::depart::DocumentsFabriques,
     client: Box<dyn Courriel>,
     /// La preuve deja verifiee avant la fabrique (`preparer_envoi` avec une preuve) : l.expedition ne la redemande pas.
     preuve: Option<Preuve>,
@@ -1043,7 +1043,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: &str, seulement: Option<&[Str
         }
         None => None,
     };
-    let documents = crate::compagnie::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
+    let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id.to_string())).cloned().collect();
     let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(|m| refus_de_preparation(&m))?;
     let messages: Vec<envoi::Message> = choix.garder(messages, |m| m.cle.as_str()).into_iter().filter(|m| cles.contains(&m.cle)).collect();

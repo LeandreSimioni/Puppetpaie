@@ -1055,7 +1055,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             } else if format == Some("aucun") {
                 phrases.push("Un accusé de réception, sans document : son statut dit tout.".into());
             } else if matches!(statut, Some("fictive" | "demonstration")) {
-                // Le retour d'un depot joue par une compagnie fictive (`crate::compagnie::releve::rattacher_simulation`) : le
+                // Le retour d'un depot joue par une compagnie fictive (`crate::gestes::releve::rattacher_simulation`) : le
                 // bilan est joue sans piece ; seule l'AER (nature 46) a la sienne, fabriquee (`aer_fictive`).
                 phrases.push("Compagnie fictive : ce retour est joué par le logiciel, sans pièce d'organisme.".into());
             } else {

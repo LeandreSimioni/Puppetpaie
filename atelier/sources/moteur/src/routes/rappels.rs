@@ -758,7 +758,7 @@ fn annuelles(st: &Etat, base: &EcheancierBase) -> R<Vec<Echeance>> {
 
 /// L'export compta de l'annee passee : du des janvier, tant que l'annee n'est pas close et que l'export n'est pas a jour.
 fn export_compta(st: &Etat, annee: i32) -> R<Option<Echeance>> {
-    if annee != st.aujourdhui.an - 1 || crate::compagnie::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, &annee.to_string())? {
+    if annee != st.aujourdhui.an - 1 || crate::gestes::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, &annee.to_string())? {
         return Ok(None);
     }
     let mut r = Echeance::nouveau(
@@ -1016,8 +1016,8 @@ fn date_en_clair(j: &Jour) -> String {
 // -------------------------------------------------------------- l'exercice
 
 /// La cloture de l'annee (ou `None`).
-pub(crate) fn exercice_clos(ctx: &Contexte, annee: &str) -> R<Option<crate::compagnie::exercice_ecrit::ExerciceNote>> {
-    Ok(crate::compagnie::exercice_ecrit::lire_exercices(&ctx.racine)?.de(annee).cloned())
+pub(crate) fn exercice_clos(ctx: &Contexte, annee: &str) -> R<Option<crate::gestes::exercice_ecrit::ExerciceNote>> {
+    Ok(crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?.de(annee).cloned())
 }
 
 /// Les mois de l'annee connus du dossier.
@@ -1104,7 +1104,7 @@ fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
     let dossier = st.racine().join("sorties").join(mois);
-    if !crate::compagnie::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
+    if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }
     let disque = |e: std::io::Error| erreur(Classe::du_disque(&e), socle::echec::du_disque(&dossier, &e));

@@ -18,7 +18,7 @@ use crate::compagnie::boite::Ouverture;
 use crate::compagnie::coffre::Coffre;
 use droit::contexte::Contexte;
 use socle::echec::erreur;
-use crate::compagnie::releve::mot_de_passe_de_consultation;
+use crate::compagnie::consultation::mot_de_passe_de_consultation;
 use envois::releve_retours::{Client, Panne};
 use socle::echec::Echec;
 

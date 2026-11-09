@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compagnie::administrateur;
+use crate::gestes::administrateur;
 use crate::interface::{compagnies, suppression};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::routes::catalogue::Route;
@@ -319,7 +319,7 @@ impl Dite for Gardees {
 }
 
 /// Une route de l'installation, branchee sur l'enveloppe. Le tableau de l'administrateur, son depot groupe et le dossier
-/// portable rendent ce que `compagnie::administrateur` et `compagnie::maj` ecrivent.
+/// portable rendent ce que `gestes::administrateur` et `compagnie::maj` ecrivent.
 pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.

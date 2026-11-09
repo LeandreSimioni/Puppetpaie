@@ -12,7 +12,8 @@
 //! `--json` et `--fenetre` sont acceptes et sans effet. Les phrases d'une demande de mot de passe vont sur la sortie
 //! d'erreur ou sur le terminal, jamais sur la sortie standard d'un programme qui lirait du JSON.
 
-use super::actes::{est_refus, maintenant_minutes};
+use super::actes::est_refus;
+use crate::gestes::administrateur::maintenant_minutes;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
 use crate::compagnie::coffre::Coffre;

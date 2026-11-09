@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use crate::bulletins_fictifs::{a_heures, a_repetitions, page_a, pdf};
 use crate::outils::rejeu::{rejouer_dossier, scenario};
 use crate::outils::{dossier_de_test, route, route_avec};
-use moteur::compagnie::administrateur::Poste;
+use moteur::gestes::administrateur::Poste;
 use moteur::interface::compagnies::{ajouter_venant, Venue};
 use moteur::compagnie::demande::VARIABLE_ESSAIS;
 
@@ -952,7 +952,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
 /// acte (le fichier designe est-il celui du mois ?).
 #[test]
 fn un_seul_endroit_ecrit_un_fichier_d_engagements() {
-    const LECTEURS: [&str; 2] = ["moteur/src/compagnie/exercice_ecrit.rs", "moteur/src/commandes/actes.rs"];
+    const LECTEURS: [&str; 2] = ["moteur/src/gestes/exercice_ecrit.rs", "moteur/src/commandes/actes.rs"];
     let stock = espace().join("engagement/src/stock.rs");
     assert_eq!(std::fs::read_to_string(&stock).unwrap().matches("ecrire_json(").count(), 1, "stock.rs n'ecrit que par `poser`");
     for crate_ in ["engagement", "documents", "declarations", "envois", "moteur"] {
@@ -971,7 +971,7 @@ fn un_seul_endroit_ecrit_un_fichier_d_engagements() {
 /// l'exercice) et l'etat garde de l'ecran (sa signature).
 #[test]
 fn une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit() {
-    const LECTEURS: [&str; 2] = ["moteur/src/compagnie/exercice_ecrit.rs", "moteur/src/etat_garde.rs"];
+    const LECTEURS: [&str; 2] = ["moteur/src/gestes/exercice_ecrit.rs", "moteur/src/etat_garde.rs"];
     let paies = espace().join("engagement/src/paies.rs");
     let stock = espace().join("engagement/src/stock.rs");
     let texte = std::fs::read_to_string(&paies).unwrap();

@@ -184,7 +184,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase()),
     };
-    let changes = match crate::compagnie::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
+    let changes = match crate::gestes::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
         Ok(c) => c,
         Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase())),
     };

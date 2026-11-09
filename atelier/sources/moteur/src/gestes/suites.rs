@@ -79,7 +79,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
             });
         }
     }
-    crate::compagnie::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
+    crate::gestes::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
     Ok(())
 }
 

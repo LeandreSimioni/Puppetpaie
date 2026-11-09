@@ -9,7 +9,7 @@
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
-use moteur::compagnie::administrateur::{self, Poste};
+use moteur::gestes::administrateur::{self, Poste};
 use moteur::interface::compagnies::{ajouter_venant, liste_de, Venue};
 use moteur::interface::suppression::{self, supprimer};
 use serde_json::json;

@@ -9,6 +9,7 @@ pub mod commandes;
 pub mod atelier;
 pub mod compagnie;
 pub mod etat_garde;
+pub mod gestes;
 pub mod historique_mois;
 pub mod horloge;
 pub mod import;

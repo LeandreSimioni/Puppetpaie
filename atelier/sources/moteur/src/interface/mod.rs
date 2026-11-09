@@ -652,16 +652,16 @@ impl Fenetre {
     fn administrateur_ouvre(&self, racine: &Path) -> bool {
         let inst = compagnies::base();
         // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
-        if !matches!(crate::compagnie::administrateur::est_rattachee(&inst, racine), Ok(true)) {
+        if !matches!(crate::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
         }
         let garde = tenu(&self.administrateur).clone();
-        garde.is_some_and(|m| matches!(crate::compagnie::administrateur::mot_de_passe_ouvre(&crate::compagnie::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
+        garde.is_some_and(|m| matches!(crate::gestes::administrateur::mot_de_passe_ouvre(&crate::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
     }
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(crate::compagnie::administrateur::est_rattachee(&compagnies::base(), racine), Ok(true)) {
+        if matches!(crate::gestes::administrateur::est_rattachee(&compagnies::base(), racine), Ok(true)) {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
     }
@@ -794,9 +794,9 @@ impl Fenetre {
                     Err(e) => RouteReponse::de(nom, Err(e)),
                 };
             }
-            let tableau = crate::compagnie::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
+            let tableau = crate::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
                 let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
-                crate::compagnie::administrateur::tableau_de(&inst, par)
+                crate::gestes::administrateur::tableau_de(&inst, par)
             });
             return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));
         }

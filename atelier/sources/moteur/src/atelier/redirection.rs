@@ -4,13 +4,13 @@
 //! - Trois variables d'environnement pointent le client de la DSN (net-entreprises), celui de la DPAE (Urssaf) et celui
 //!   de Google (jetons et Drive) vers un faux serveur LOCAL. Une adresse qui n'est pas locale (`http://127.0.0.1:`,
 //!   `http://localhost:` ou `http://[::1]:`) est refusee : jamais une redirection vers l'exterieur.
-//! - Tout acte reel est refuse : un depot reel, un envoi, une signature passent tous par `depot_acte::verifier_preuve` ;
+//! - Tout acte reel est refuse : un depot reel, un envoi, une signature passent tous par `compagnie::preuve::verifier_preuve` ;
 //!   dans l'atelier elle refuse, mot de passe ou non (`REFUS_ACTE_REEL`).
 //!
 //! Les adresses de la boite courriel (SMTP et IMAP, en TLS) et du serveur des incidents ne sont pas redirigees ici : celle
 //! du serveur des incidents vient deja de la configuration de la compagnie.
 
-pub use envois::redirection::{base, est_locale, ADRESSE_REFUSEE, VARIABLE_DPAE, VARIABLE_DSN, VARIABLE_GOOGLE};
+use envois::redirection::{est_locale, VARIABLE_DPAE, VARIABLE_DSN, VARIABLE_GOOGLE};
 
 /// La phrase du refus d'un acte reel.
 pub const REFUS_ACTE_REEL: &str =

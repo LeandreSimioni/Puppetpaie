@@ -1621,12 +1621,12 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // Ce que la boite d'un envoi joue en dit.
         coulisses: joue.then(coulisses_fictives),
         note_fictive: joue.then(|| super::Encart::de("information", "Compagnie fictive", "Rien ne part : la réponse est là aussitôt ; en vrai, elle peut prendre quelques jours.")),
-        // UN ENVOI N'A RIEN A PROUVER : joue (`depot_acte::verifier_preuve` ne demande rien a une fictive), ou refuse
+        // UN ENVOI N'A RIEN A PROUVER : joue (`preuve::verifier_preuve` ne demande rien a une fictive), ou refuse
         // avant toute preuve (une fictive ajoutee) ; la page ne demande alors pas le mot de passe du logiciel.
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
         // fictive livree, qui se remet a zero (`interface::suppression::genre`).
-        supprimable: crate::interface::suppression::genre(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).is_ok(),
+        supprimable: crate::interface::suppression::genre(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine).is_ok(),
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
         demo: crate::interface::suppression::mention(&ctx.racine).map_err(plain)?,

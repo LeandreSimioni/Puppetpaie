@@ -284,7 +284,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let relever = || {
         socle::temps::pendant(fin, || {
             let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
-            moteur::compagnie::releve::rattacher_simulation(&ctx).unwrap();
+            moteur::gestes::releve::rattacher_simulation(&ctx).unwrap();
         })
     };
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();

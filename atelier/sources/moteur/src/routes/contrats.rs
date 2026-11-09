@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::routes::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
-use crate::compagnie::depot_acte::{verifier_preuve, Preuve};
-use crate::compagnie::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, Impression, UnAvenant};
+use crate::compagnie::preuve::{verifier_preuve, Preuve};
+use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, Impression, UnAvenant};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::routes::documents::{client_courriel, refus, Ouvrir};
 use crate::routes::engagement::maintenant;
@@ -545,7 +545,7 @@ fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
 
 // ------------------------------------------------------------------ contrat-recu
 
-/// LA REPONSE « JE SIGNE » QUE LA RELEVE A TROUVEE (`compagnie::releve_signatures`) : son code, l'adresse d'ou elle vient,
+/// LA REPONSE « JE SIGNE » QUE LA RELEVE A TROUVEE (`gestes::releve_signatures`) : son code, l'adresse d'ou elle vient,
 /// sa date, l'identifiant du message, la preuve archivee, l'exemplaire contresigne, la mention posee, ce qu'elle signe
 /// (un contrat ou un avenant, et son numero).
 pub(crate) struct ParCourriel {
@@ -688,7 +688,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
     let choisis = c.choisis();
     refuser_les_contrats_partis(ctx, c.mois, &choisis)?;
     let choisis = (c.contrats_choisis() || avenants.is_empty()).then_some(&choisis);
-    let impression = crate::compagnie::signature::contrats_imprimer(ctx, &c.mois.to_string(), choisis, &avenants, qui)?;
+    let impression = crate::gestes::signature::contrats_imprimer(ctx, &c.mois.to_string(), choisis, &avenants, qui)?;
     // Chaque piece imprimee par son numero, comme l'ecran la coche.
     let quoi: Vec<String> = impression
         .contrats
@@ -751,13 +751,13 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         if !c.relance() && !c.remplace() {
             refuser_les_contrats_partis(ctx, c.mois, &choisis)?;
         }
-        let demande = crate::compagnie::signature::DemandeDeSignature { mois: &mois, relance: c.relance(), remplace: c.remplace(), choisis, etats_des_contrats };
+        let demande = crate::gestes::signature::DemandeDeSignature { mois: &mois, relance: c.relance(), remplace: c.remplace(), choisis, etats_des_contrats };
         // Un refus se dit d'abord : la boite et la preuve ne se demandent que pour ce qui part.
-        let deja_partis = crate::compagnie::signature::verifier_demande(ctx, &demande)?;
+        let deja_partis = crate::gestes::signature::verifier_demande(ctx, &demande)?;
         let mut client = ouvrir()?;
         let quoi = if c.relance() { "relance de demande de signature de contrat" } else if c.remplace() { "contrat refait, a signer (il annule et remplace le precedent)" } else { "demande de signature de contrat" };
         preuve = Preuve { donnee: Some(verifier_preuve(ctx, Some(&preuve), &mois, quoi, &a_qui)?), ..Preuve::default() };
-        r = crate::compagnie::signature::demander_signature(ctx, &demande, client.as_mut())?;
+        r = crate::gestes::signature::demander_signature(ctx, &demande, client.as_mut())?;
         r.avertissements.splice(0..0, deja_partis);
     }
     let n_contrats = r.contrats.len();
@@ -779,7 +779,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     // leur reponse (`releve_signatures::boite_des_signatures`).
     let mut signatures = None;
     if crate::compagnie::bridage::branchement(&ctx.racine)?.joue() {
-        let releve = crate::compagnie::releve_signatures::relever_signatures(ctx, None, None, INTERFACE)?;
+        let releve = crate::gestes::releve_signatures::relever_signatures(ctx, None, None, INTERFACE)?;
         let resume = releve.resume();
         if !resume.is_empty() {
             phrase.push_str(&format!(" {}.", resume.trim_end_matches('.')));
@@ -873,7 +873,7 @@ fn avenant_a_relancer(ctx: &Contexte, v: &AvenantVoulu) -> R<UnAvenant> {
 /// Les avenants voulus, verifies, puis la boite, la preuve, et `signature::envoyer_avenants`. UN SALARIE SANS
 /// COURRIEL n'empeche pas les autres : ses avenants ne partent pas, ils se nomment dans le second terme (la phrase de
 /// `signature::avenants_sans_courriel_dit`) ; refus si aucun avenant coche n'a de courriel.
-pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: &Preuve, ouvrir: Ouvrir) -> R<(crate::compagnie::signature::Avenants, Vec<String>)> {
+pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: &Preuve, ouvrir: Ouvrir) -> R<(crate::gestes::signature::Avenants, Vec<String>)> {
     if voulus.is_empty() {
         return Err(refus("Aucun avenant coché. Rien n'est parti."));
     }
@@ -882,13 +882,13 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: 
     let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_voulus(ctx, voulus)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.as_deref().is_some_and(|d| !d.trim().is_empty())));
     let noms_sans: Vec<String> = sans.iter().map(|(k, _)| ctx.nomme(k)).collect();
     if par_salarie.is_empty() {
-        return Err(refus(format!("{} Rien n'est parti.", crate::compagnie::signature::avenants_sans_courriel_dit(&noms_sans))));
+        return Err(refus(format!("{} Rien n'est parti.", crate::gestes::signature::avenants_sans_courriel_dit(&noms_sans))));
     }
     let mut avertissements: Vec<String> = par_salarie.iter().flat_map(|(k, aa)| aa.iter().filter_map(|a| a.deja_parti(&ctx.nomme(k)))).collect();
     if !noms_sans.is_empty() {
-        avertissements.push(crate::compagnie::signature::avenants_sans_courriel_dit(&noms_sans));
+        avertissements.push(crate::gestes::signature::avenants_sans_courriel_dit(&noms_sans));
     }
-    crate::compagnie::signature::controler_avenants(ctx, &par_salarie)?;
+    crate::gestes::signature::controler_avenants(ctx, &par_salarie)?;
     let mut client = ouvrir()?;
     let Some(premier_mois) = par_salarie.iter().flat_map(|(_, aa)| aa.iter().map(|a| a.mois)).min().map(|m| m.to_string()) else {
         return Err(refus("Aucun avenant coché. Rien n'est parti."));
@@ -896,7 +896,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], preuve: 
     let a_qui = format!("{} salarie(s) : {}", par_salarie.len(), par_salarie.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(", "));
     let quoi = if par_salarie.iter().any(|(_, aa)| aa.iter().any(UnAvenant::rappel)) { "relance d'avenant(s) a signer" } else { "envoi d'avenant(s) a signer" };
     verifier_preuve(ctx, Some(preuve), &premier_mois, quoi, &a_qui)?;
-    Ok((crate::compagnie::signature::envoyer_avenants(ctx, &par_salarie, client.as_mut())?, avertissements))
+    Ok((crate::gestes::signature::envoyer_avenants(ctx, &par_salarie, client.as_mut())?, avertissements))
 }
 
 // ------------------------------------------------------------------ signature-apercu
@@ -1024,10 +1024,10 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     }
     let mut avertissements: Vec<String> = Vec::new();
     if !sans.is_empty() {
-        avertissements.push(crate::compagnie::signature::sans_courriel_dit(&sans));
+        avertissements.push(crate::gestes::signature::sans_courriel_dit(&sans));
     }
     if !sans_avenant.is_empty() {
-        avertissements.push(crate::compagnie::signature::avenants_sans_courriel_dit(&sans_avenant));
+        avertissements.push(crate::gestes::signature::avenants_sans_courriel_dit(&sans_avenant));
     }
     let phrases: Vec<String> = contrats
         .iter()
@@ -1408,7 +1408,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         contrat: Some(NumeroContrat::lire(numero).map_err(|m| erreur(Classe::Illisible, m))?),
         date_contrat: debut.iso(),
         signe: None,
-        contrat_signe: Some(crate::compagnie::signature::contrat_signe_dit(ctx, salarie, &debut.iso())),
+        contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, &debut.iso())),
         numero: signes + 1,
         effet,
         modifications,

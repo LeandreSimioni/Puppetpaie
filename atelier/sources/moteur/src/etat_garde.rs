@@ -282,7 +282,7 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
     crate::compagnie::problemes::SIGNALEMENTS,
     crate::compagnie::incidents::INCIDENTS,
     // Le tableau de l'administrateur (`administrateur.rs`) : le resume de la compagnie que l'accueil lit.
-    crate::compagnie::administrateur::TABLEAU,
+    crate::gestes::administrateur::TABLEAU,
 ];
 
 /// L'empreinte de tout ce dont l'etat `cle` est tire, au jour `jour` (AAAA-MM-JJ).
@@ -388,7 +388,7 @@ struct EtatDeLOuverture {
 
 /// LE TABLEAU D'UNE COMPAGNIE tel que l'administrateur l'ecrit (`config/.tableau.json`,
 /// `administrateur::tableau_compagnie`) : son jour, ses declarations, l'empreinte de la compagnie qu'il a lue.
-use crate::compagnie::administrateur::TableauCompagnie;
+use crate::gestes::administrateur::TableauCompagnie;
 
 /// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne).
 #[derive(Clone)]
@@ -636,7 +636,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<Etat
 /// LE TABLEAU DE L'ADMINISTRATEUR pour cette compagnie (`config/.tableau.json`) : le garde s'il porte l'empreinte
 /// d'aujourd'hui de toute la compagnie (celle de l'ouverture), sinon refait.
 fn tableau_juste(ctx: &Contexte) -> R<Garde> {
-    let f = ctx.racine.join(crate::compagnie::administrateur::TABLEAU);
+    let f = ctx.racine.join(crate::gestes::administrateur::TABLEAU);
     if f.is_file() {
         let empreinte = empreinte(&ctx.racine, Cle::Ouverture, &ctx.aujourdhui);
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
@@ -645,7 +645,7 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
             Err(m) => noter("le tableau gardé ne se lit pas, il se refait", &m),
         }
     }
-    Ok(Garde::Tableau(Arc::new(crate::compagnie::administrateur::tableau_compagnie(ctx)?)))
+    Ok(Garde::Tableau(Arc::new(crate::gestes::administrateur::tableau_compagnie(ctx)?)))
 }
 
 /// Refait l'etat de `cle` (un mois, ou l'ouverture, qui s'ecrit ; le tableau, s'il n'est plus juste). Ce qui se lit
@@ -1091,7 +1091,7 @@ impl FileDesEtats {
                 Vec::new()
             }
         };
-        let tableau = match crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&self.racine), &self.racine) {
+        let tableau = match crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&self.racine), &self.racine) {
             Ok(t) => t,
             Err(m) => {
                 noter("le registre de l'administrateur ne se lit pas", &m);

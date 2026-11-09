@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 
 
 use super::compagnies::{self, Compagnie};
-use crate::compagnie::administrateur::Poste;
+use crate::gestes::administrateur::Poste;
 
 /// La mention de demo d'une compagnie gardee.
 pub const FICHIER_DEMO: &str = "config/demo.json";
@@ -107,7 +107,7 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
 /// une compagnie reelle le rappel de la conservation et la sauvegarde a proposer (un Drive lie : la date du dernier
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
 pub fn question(racine: &Path) -> Result<Suppression, String> {
-    let inst = crate::compagnie::administrateur::installation_de(racine);
+    let inst = crate::gestes::administrateur::installation_de(racine);
     let nom = compagnies::nom_de(racine)?;
     let g = match genre(&inst, racine) {
         Ok(g) => g,
@@ -196,7 +196,7 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&str>, a
     if charge.confirme != Some(true) {
         return question(racine);
     }
-    let inst = crate::compagnie::administrateur::installation_de(racine);
+    let inst = crate::gestes::administrateur::installation_de(racine);
     let nom = supprimer(&inst, racine, motdepasse, &Poste::de_ce_poste(), avant)?;
     Ok(Suppression { phrase: format!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
 }
@@ -232,7 +232,7 @@ pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &P
     }
     avant(racine);
     let _ = poste.coffre(racine).oublier_ouverture_gardee();
-    crate::compagnie::administrateur::oublier(inst, racine)?;
+    crate::gestes::administrateur::oublier(inst, racine)?;
     effacer(racine)?;
     Ok(nom)
 }

@@ -360,7 +360,7 @@ pub struct APart {
     /// Le rang d'un engagement dans son fichier (`engagement::stock`).
     #[serde(skip_serializing_if = "Option::is_none")]
     rang: Option<usize>,
-    /// L'installation qu'un dossier n'est pas (`compagnie::administrateur`).
+    /// L'installation qu'un dossier n'est pas (`gestes::administrateur`).
     #[serde(skip_serializing_if = "Option::is_none")]
     installation: Option<String>,
     /// Le condensat d'une archive alteree, et celui qu'annonce la version publiee (`compagnie::maj`).
@@ -388,7 +388,7 @@ pub struct APart {
     anomalies: Option<Vec<declarations::champs::Anomalie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     erreurs_dit: Option<String>,
-    /// Ou en est ce qui refuse un depot (`compagnie::depot_acte`) : la DSN du mois, ou le test du fichier.
+    /// Ou en est ce qui refuse un depot (`gestes::depot_acte`) : la DSN du mois, ou le test du fichier.
     #[serde(skip_serializing_if = "Option::is_none")]
     etat: Option<EtatAPart>,
 }
