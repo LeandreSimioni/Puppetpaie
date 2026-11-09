@@ -452,16 +452,18 @@ fn paragraphe(titre: &str, alineas: &[AlineaEcrit]) -> R<Vec<String>> {
 }
 
 /// UN GESTE SUR LES PARAGRAPHES D'UN SPECIAL : `faire` change sa decoupe et rend ce que la phrase dit du geste fait. Le
-/// texte qui en sort se verifie (`documents::contrat_ecrit::manques`) : s'il lui manque quelque chose, rien n'est ecrit,
-/// et le refus dit quoi.
+/// texte qui en sort se verifie (`documents::contrat_ecrit::manques`) : s'il lui manque quelque chose que le texte d'avant
+/// avait, rien n'est ecrit, et le refus dit quoi.
 fn sur_les_paragraphes(ctx: &Contexte, id: &str, faire: impl FnOnce(&mut Decoupe) -> R<String>) -> R<Modeles> {
     let mut m = lus(ctx)?;
     let i = m.speciaux.iter().position(|s| s.id == id).ok_or_else(|| aucun(id))?;
     let nat = nature_de(&m.speciaux[i].nature)?;
+    let avant = manques(&nat, &m.speciaux[i].texte)?;
     let mut d = Decoupe::de(&m.speciaux[i].texte)?;
     let fait = faire(&mut d)?;
     let texte = d.texte();
-    let dits = manques(&nat, &texte)?;
+    // Ce que le geste ajoute de faux : un modele deja incomplet (sa base a change) se corrige un geste a la fois.
+    let dits: Vec<String> = manques(&nat, &texte)?.into_iter().filter(|x| !avant.contains(x)).collect();
     if !dits.is_empty() {
         return Err(refus(format!("{} ne peut pas faire ce geste : il en sortirait faux. {} Rien n'est écrit.", nom_special(&m.speciaux[i]), dits.join(" "))));
     }
