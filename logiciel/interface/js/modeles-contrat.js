@@ -135,12 +135,12 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
       <input type="text" class="modele-nom" value="${echapper(lu.nom)}">
       <button type="button" class="lien" data-renommer>Renommer</button>
     </div>` : ""}
-    ${contrat ? `<div class="modele-gestes">
+    <div class="modele-gestes">
       <select class="modele-engagement">
         ${lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join("")}
       </select>
       <button type="button" class="lien" data-apercu>Aperçu PDF</button>
-    </div>` : ""}
+    </div>
     ${ecrit ? choix("modele-inserer", "Insérer une donnée", null) : ""}
     ${lu.articles.map(paragraphe).join("")}
     ${ecrit ? `<div class="modele-gestes">
@@ -149,20 +149,18 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
     </div>` : ""}`;
 
   cible.querySelectorAll("[data-partie]").forEach((b) => { b.onclick = () => ouvrir({ ...ici, partie: b.dataset.partie }); });
-  if (contrat) {
-    cible.querySelector("[data-apercu]").onclick = async (ev) => {
-      const choisi = lu.engagements[cible.querySelector(".modele-engagement").value];
-      const rallumer = occupe(ev.target);
-      try {
-        const r = await api("apercu-modele-contrat", { nature: lu.nature, id: lu.id, engagement: choisi ? choisi.engagement : null });
-        await ouvrirEtDire(r.chemin, r.phrase);
-      } catch (e) {
-        dire(e.message, "erreur");
-      } finally {
-        rallumer();
-      }
-    };
-  }
+  cible.querySelector("[data-apercu]").onclick = async (ev) => {
+    const choisi = lu.engagements[cible.querySelector(".modele-engagement").value];
+    const rallumer = occupe(ev.target);
+    try {
+      const r = await api("apercu-modele-contrat", { nature: lu.nature, id: lu.id, partie: lu.partie, engagement: choisi ? choisi.engagement : null });
+      await ouvrirEtDire(r.chemin, r.phrase);
+    } catch (e) {
+      dire(e.message, "erreur");
+    } finally {
+      rallumer();
+    }
+  };
   if (!ecrit) return;
   const sur = { id: lu.id, partie: lu.partie };
   // L'alinéa où l'on écrit en dernier reçoit la donnée choisie.

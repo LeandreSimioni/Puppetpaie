@@ -632,7 +632,9 @@ dit, article par article, le champ inconnu, la condition fausse ou la mention ex
 laisserait le modèle faux n'écrit rien. Un spécial supprimé garde son id dans `supprimes` : un id ne sert qu'une fois,
 et l'engagement qui l'avait choisi suit le défaut de sa nature. **Une seule façon de personnaliser** : la compagnie
 écrit ses clauses dans un paragraphe de son spécial ; celles d'un engagement (sa case `clauses_particulieres`) ne
-s'impriment que par l'alinéa `[si contrat.clauses_particulieres]` du modèle. **Un contrat parti garde son texte** : au
+s'impriment que par un alinéa `[si contrat.clauses_particulieres]`, que le vérificateur exige de tout modèle comme une
+mention : elles ne se perdent jamais en silence. L'aperçu fait le contrat ou l'avenant d'un modèle, rempli avec un
+engagement de la compagnie (l'avenant cite le premier article du contrat sans le changer). **Un contrat parti garde son texte** : au
 départ, son contrat et son avenant se figent sous une empreinte (`gabarits/contrats/partis/`), que la ligne du journal
 note (`ContratParti::modele`) ; le refaire ou lui faire un avenant relit ces textes-là ; l'avenant d'un contrat signé
 ailleurs suit le modèle que son engagement suit (`routes::modeles_contrat`).

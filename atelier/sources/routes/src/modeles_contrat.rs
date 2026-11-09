@@ -116,9 +116,9 @@ pub const ROUTES: &[Fiche] = &[
     ),
     fiche(
         Route::ApercuModeleContrat,
-        "Faire le PDF d'un modèle de contrat rempli avec un engagement de la compagnie.",
-        &[NATURE, ID_OU_BASE, champ("engagement", "Engagement", Forme::Objet, "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent")],
-        r#"{"nature":"cddu_spectacle","id":"m1","engagement":null}"#,
+        "Faire le PDF du contrat ou de l'avenant d'un modèle, rempli avec un engagement de la compagnie.",
+        &[NATURE, ID_OU_BASE, PARTIE, champ("engagement", "Engagement", Forme::Objet, "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent")],
+        r#"{"nature":"cddu_spectacle","id":"m1","partie":"avenant","engagement":null}"#,
         "phrase, chemin (le PDF de l'aperçu)",
         &[MODELE_REFUSE, MANQUE],
         Acte::Lit,
@@ -616,6 +616,7 @@ struct EngagementVise {
 struct ChargeApercu {
     nature: String,
     id: Option<String>,
+    partie: Partie,
     engagement: Option<EngagementVise>,
 }
 
@@ -808,7 +809,7 @@ fn engagements_de(ctx: &Contexte, nature: &str) -> R<Vec<EngagementAuChoix>> {
 
 /// LIRE UNE PARTIE D'UN MODELE : `{nature, id, partie}` (sans id : la base), ses articles et leurs alineas, ce qui lui
 /// manque, les champs qu'un alinea insere ou pose en condition, ce qui a change dans sa base, les engagements de
-/// l'apercu (celui du contrat).
+/// l'apercu.
 fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let nat = nature_de(&c.nature)?;
     let m = lus(ctx)?;
@@ -841,7 +842,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
         None => Vec::new(),
     };
     let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| erreur(Classe::Illisible, m))?;
-    let engagements = if c.partie == Partie::Contrat { engagements_de(ctx, &nat.cle)? } else { Vec::new() };
+    let engagements = engagements_de(ctx, &nat.cle)?;
     Ok(ModeleRendu {
         phrase,
         nature: nat.cle.clone(),
@@ -859,9 +860,10 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     })
 }
 
-/// L'APERCU D'UN MODELE : `{nature, id, engagement}`, le PDF du contrat de cet engagement (le plus recent sans lui) fait
-/// avec ce modele, dans `sorties/apercus/` ; rien d'autre ne s'ecrit, rien ne part. Un modele qui ne fait pas ce
-/// contrat se refuse comme au depart, et dit pourquoi.
+/// L'APERCU D'UN MODELE : `{nature, id, partie, engagement}`, le PDF du contrat de cet engagement (le plus recent sans
+/// lui) fait avec ce modele, ou d'un avenant n° 1 a ce contrat, date du jour, qui cite son premier article sans le
+/// changer ; dans `sorties/apercus/`, rien d'autre ne s'ecrit, rien ne part. Un modele qui ne fait pas ce contrat se
+/// refuse comme au depart, et dit pourquoi.
 fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let nat = nature_de(&c.nature)?;
     let m = lus(ctx)?;
@@ -885,9 +887,24 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let ent = documents::avenant::ent_du_mois(ctx, &mois)?;
     let d = ctx.racine.join("sorties").join("apercus");
     std::fs::create_dir_all(&d).map_err(|e| disque(&d, e))?;
-    let chemin = d.join(format!("modele-{}-{}.pdf", nat.cle, c.id.as_deref().unwrap_or("base")));
-    documents::contrat::ecrire_contrat(ctx, std::slice::from_ref(&p), &[modele], &ent, &chemin, &[])?;
-    Ok(Apercu { phrase: format!("{}, rempli avec le contrat de {} du {} : l'aperçu est fait, rien n'est parti.", nom, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin: chemin.to_string_lossy().into_owned() })
+    let (sorte, quoi) = match c.partie {
+        Partie::Contrat => ("contrat", "le contrat"),
+        Partie::Avenant => ("avenant", "un avenant au contrat"),
+    };
+    let chemin = d.join(format!("modele-{}-{}-{}.pdf", nat.cle, c.id.as_deref().unwrap_or("base"), sorte));
+    let (debut, jour) = (p.engagement.debut.jj_mm_aaaa(), ctx.aujourdhui.jj_mm_aaaa());
+    match c.partie {
+        Partie::Contrat => documents::contrat::ecrire_contrat(ctx, std::slice::from_ref(&p), &[modele], &ent, &chemin, &[])?,
+        Partie::Avenant => {
+            // Rien ne change : l'apercu cite le premier article du contrat tel qu'il est (`modification_d_apercu`).
+            let v = documents::contrat::valeurs_de_paie(ctx, &ent, &p)?;
+            let contrat = modele.lu.decoupe(&nom).map_err(|m| erreur(Classe::Illisible, m))?;
+            let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| refus(m))?;
+            let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero as i64), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
+            documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, &debut, &jour, &jour, &modele, false)?
+        }
+    }
+    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, debut), chemin: chemin.to_string_lossy().into_owned() })
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.

@@ -339,7 +339,8 @@ pub fn mentions(nat: &Nature) -> Result<Vec<(Marqueur, String, bool)>, String> {
 /// preambule, le titre, les signatures), chaque champ cite connu du logiciel et permis a un contrat, chaque condition
 /// `[si …]` sur un champ connu, chaque valeur qui peut etre vide dans un alinea conditionne par elle ; puis chaque mention
 /// que la loi exige de sa nature (`contrat_ecrit.mentions`) citee dans un alinea qui s'ecrit (sans condition, ou
-/// conditionne par elle-meme). Une mention `si_dite` (la personne remplacee) n'est due que si sa valeur est dite :
+/// conditionne par elle-meme), et de meme les clauses particulieres de l'engagement (`CLAUSES_EXIGEES`). Une mention
+/// `si_dite` (la personne remplacee, les clauses) n'est due que si sa valeur est dite :
 /// `valeurs` celles d'un contrat ; `None`, un modele qu'on ecrit, ou chacune se demande comme si elle l'etait. Rend les
 /// manques, chacun une phrase qui nomme le paragraphe ou la donnee ; vide : le modele est bon.
 pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<Vec<String>, String> {
@@ -354,8 +355,19 @@ pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<V
             dits.push(format!("Il manque {}, que la loi exige d'un {} ({}).", cle, nat.nom_du_contrat(), pourquoi));
         }
     }
+    // Les clauses de l'engagement, exigees de tout modele comme une mention due si elle est dite.
+    let cle = Marqueur::ContratClausesParticulieres;
+    let dites = valeurs.is_none_or(|v| v.get(&cle).is_some_and(|x| !x.trim().is_empty()));
+    if dites && !ecrits.iter().any(|(x, c)| *x == cle && c.is_none_or(|c| c == cle)) {
+        dits.push(format!("Il manque {} : {}.", cle, CLAUSES_EXIGEES));
+    }
     Ok(dits)
 }
+
+/// Pourquoi tout modele de contrat cite les clauses particulieres de l'engagement : la decision 8 de Leandre (ticket
+/// #403 du prive, une seule facon de personnaliser), pas un texte de loi. Elles ne s'impriment que par lui ; un modele
+/// qui ne le citerait pas les tairait sans le dire.
+const CLAUSES_EXIGEES: &str = "les clauses particulières qu'un engagement dit ne s'impriment que par lui, dans un alinéa [si contrat.clauses_particulieres] ; un modèle qui ne le cite pas les perdrait sans le dire";
 
 /// LES CHAMPS QU'UN MODELE CITE, lieu par lieu (le titre, le preambule, la phrase d'annulation, le bloc de modification,
 /// chaque article, les signatures) : les manques de grammaire des champs (un champ inconnu, ou que ce modele ne porte
@@ -509,7 +521,10 @@ pub const CHAMPS_DE_L_AVENANT: [(Marqueur, &str); 10] = [
 /// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige ;
 /// ceux d'un avenant (`avenant`) : les memes, aucun obligatoire, et les siens.
 pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> Result<Vec<ChampDeModele>, String> {
-    let mentions = if avenant { Vec::new() } else { mentions(nat)? };
+    let mut mentions = if avenant { Vec::new() } else { mentions(nat)? };
+    if !avenant {
+        mentions.push((Marqueur::ContratClausesParticulieres, CLAUSES_EXIGEES.to_string(), true));
+    }
     let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
     let siens = CHAMPS_DE_L_AVENANT.iter().filter(|_| avenant).copied();
     Ok(du_contrat
