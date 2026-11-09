@@ -404,6 +404,22 @@ pub fn modifications(m: &Modele, avant: &Valeurs, apres: &Valeurs) -> Resultat<V
     Ok(out)
 }
 
+/// LA MODIFICATION D'UN APERCU D'AVENANT : un modele d'avenant ne s'imprime qu'avec ce qui change. L'apercu cite le
+/// premier article que le contrat `m` imprime avec les valeurs `v`, tel qu'il est, avant comme apres : il montre la forme
+/// de l'avenant, rien ne change.
+pub fn modification_d_apercu(m: &Modele, v: &Valeurs) -> Resultat<Modification> {
+    let v = &pour_la_fabrique(v);
+    let i = m.articles.iter().position(|(_, a)| modele::s_imprime(a, v)).ok_or_else(|| "Le modèle du contrat n'imprime aucun article : l'avenant n'a rien à citer.".to_string())?;
+    let (titre, corps) = &m.articles[i];
+    let mut textes = Vec::new();
+    for bloc in corps {
+        if let Some(t) = modele::retenu(bloc, v) {
+            textes.push(normaliser(&texte_brut(t, v)?));
+        }
+    }
+    Ok(Modification { numero: m.numero_imprime(i, v), article: texte_brut(titre, v)?, blocs: (0..textes.len()).collect(), avant: textes.clone(), apres: textes })
+}
+
 /// La fiche entreprise, avec la licence du mois et les gabarits de la compagnie.
 pub fn ent_du_mois(ctx: &Contexte, mois: &str) -> Resultat<droit::contexte::EntrepriseDuDocument> {
     let mut ent = ctx.entreprise.clone();
