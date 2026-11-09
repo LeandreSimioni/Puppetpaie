@@ -356,7 +356,8 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
             let cles = crate::compagnie::maj::cles_de_l_editeur();
-            en_json(crate::compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?)
+            let complete: crate::compagnie::maj::PortableComplete = crate::compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
+            en_json(complete)
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;

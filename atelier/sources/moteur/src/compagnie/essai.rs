@@ -428,7 +428,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
     if let Some(d) = depot_englobant(dossier)? {
         return Err(socle::echec::avec(
             "Ce dossier est dans un dépôt Git ou une installation de PuppetPaie : la compagnie d'essai porte l'identité d'une vraie compagnie, elle se monte hors de tout dépôt (par exemple dans le dossier temporaire, le défaut). Rien n'est écrit.",
-            socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.display())), ..Default::default() },
+            socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.to_string_lossy())), ..Default::default() },
         ));
     }
     let existe = dossier.exists();

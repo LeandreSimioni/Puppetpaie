@@ -49,7 +49,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// du compte rendu, il ne se devine pas (regle 1). Chaque releve se rattache a une fiche par le NIR ; un NIR qu'aucune
 /// fiche ne porte ne se rattache a personne. La validite court de la mise a disposition (`droit::pas`). Le compte rendu
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
-/// (`droit::pas::EN_RETOUR_DE`) : son taux vaut pour les mois qui suivent.
+/// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
     let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;

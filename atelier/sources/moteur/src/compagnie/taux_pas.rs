@@ -14,7 +14,7 @@ pub(crate) fn ko(m: String) -> Echec {
 
 /// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --
 /// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
-/// DSN mensuelle, le mois qu'elle declare (`droit::pas::EN_RETOUR_DE`).
+/// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct TauxRecu {
     #[serde(skip)]

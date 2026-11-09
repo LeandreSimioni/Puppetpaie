@@ -10,8 +10,8 @@ use rust_decimal::prelude::*;
 use serde_json::{Map, Value};
 
 use socle::date::{repr_flottant, repr_texte, Jour};
-use socle::echec::{erreur, Echec, A_PART, R};
-use socle::fichiers::{attendu, lire_texte, lire_texte_echec, noter_si_besoin, repr, signature};
+use socle::echec::{erreur, A_PART, R};
+use socle::fichiers::{attendu, lire_texte, noter_si_besoin, repr, signature};
 use socle::num::{dec_f64, dec_texte, illisible, Resultat};
 
 // ------------------------------------------------------------ une date
@@ -118,12 +118,6 @@ pub fn json_en_cache_ou<E: From<String>>(chemin: &Path, lire: impl FnOnce(&Path)
 pub fn lire_json(chemin: &Path) -> Resultat<Value> {
     let texte = lire_texte(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     serde_json::from_str(&texte).map_err(|e| socle::echec::du_disque(&chemin, &e))
-}
-
-/// Un fichier JSON (`lire_texte_echec`, puis `Illisible` s'il ne se lit pas : la phrase en mots, le chemin et ce
-/// qui ne va pas a part, `echec::du_disque`).
-pub fn lire_json_echec(p: &Path) -> Result<Value, Echec> {
-    serde_json::from_str(&lire_texte_echec(p)?).map_err(|e| erreur(socle::echec::Classe::Illisible, socle::echec::du_disque(p, &e)))
 }
 
 // ------------------------------------------------------------ un nombre

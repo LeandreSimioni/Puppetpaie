@@ -439,7 +439,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
     let suivante = format!("{}01", an + 1);
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
-    let canaux: [(PathBuf, &str); 2] = [(ctx.racine.join(envois::retours::RETOURS), ""), (ctx.racine.join(envois::retours::RETOURS).join("dpae"), "dpae/")];
+    let canaux: [(PathBuf, &str); 2] = [(ctx.racine.join(envois::retours::RETOURS), ""), (ctx.racine.join(envois::retours::RETOURS_DPAE), "dpae/")];
     for (d, prefixe) in canaux {
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();

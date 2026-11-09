@@ -392,7 +392,10 @@ pub struct FichesDites {
 /// ne refuse que sa charge mal formee : une panne est une phrase de `incidents`.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
-        Route::Ouverture => en_json(ouverture(porte.ctx, &Options::de_la_charge(charge.lire()?), Clients::default(), None).dite()),
+        Route::Ouverture => {
+            let dite: OuvertureDite = ouverture(porte.ctx, &Options::de_la_charge(charge.lire()?), Clients::default(), None).dite();
+            en_json(dite)
+        }
         autre => Err(crate::routes::enveloppe::route_inconnue(autre.nom())),
     }
 }

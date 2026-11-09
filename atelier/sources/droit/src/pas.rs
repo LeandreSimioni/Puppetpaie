@@ -145,9 +145,6 @@ pub fn recus(ctx: &Contexte, cle: &str) -> Resultat<Vec<TauxPas>> {
     Ok(r)
 }
 
-/// Dans un taux recu : le mois (AAAA-MM) de la DSN mensuelle a laquelle repond le compte rendu qui l'a transmis ; absent
-/// pour la reponse a une demande de taux (signalement d'amorcage) et pour un taux repris d'une DSN deposee.
-pub const EN_RETOUR_DE: &str = "en_retour_de";
 
 /// LE TAUX EN RETOUR DE LA DSN D'UN MOIS VAUT POUR LES MOIS QUI SUIVENT, JAMAIS POUR CELUI QU'ELLE DECLARE. Le compte
 /// rendu est « établi par l'administration fiscale en retour de chaque déclaration sociale nominative » (BOI-IR-PAS-30-10-20,
@@ -541,7 +538,7 @@ mod tests {
 
     fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxPas {
         let retour = match retour {
-            Some(m) => format!(r#", "{}": "{}""#, EN_RETOUR_DE, m),
+            Some(m) => format!(r#", "en_retour_de": "{}""#, m),
             None => String::new(),
         };
         lu(&format!(r#"{{"taux": "{}", "type": "01", "identifiant": "{}", "mis_a_disposition": "{}"{}}}"#, taux, id, le, retour))
