@@ -52,10 +52,12 @@ seule vérification, à l'arrivée », « On compile peu »).
 **L'argent est hors du logiciel.** Il dit combien et à qui ; la compagnie vire ; la DSN porte les ordres de
 prélèvement.
 
-**Deux acteurs, une porte.** La personne (la page) et un LLM (`moteur route`) passent par les mêmes routes, reçoivent
-les mêmes phrases et les mêmes refus. Chaque route porte sa fiche dans son code (`routes/src/catalogue.rs`) ; `moteur
-routes` tire le catalogue de ces fiches. La route rend ce qui se lit (phrase, état, geste) ; la page met en page et ne
-décide rien. Un manque du LLM est un manque du moteur.
+**Un seul logiciel : le moteur et ses routes.** Cliquer dans la page ou appeler `moteur route` en ligne de commande,
+c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. La route rend ce qui se lit
+(phrase, état, geste) ; la page n'est qu'une façon de lire cette réponse : elle la met en page, ne décide rien et n'a rien en propre. Il n'y a donc **ni « côté écran », ni
+« côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit. Une chose
+est faite quand la route la fait ; un manque, où qu'on le voie, est un manque de la route. Chaque route porte sa fiche
+dans son code (`routes/src/catalogue.rs`) ; `moteur routes` tire le catalogue de ces fiches.
 
 **Tout est daté.** Barèmes, configuration entière de la compagnie, engagements et leurs versions, journal : chaque
 valeur porte sa date, et le moteur lit à la date de la période payée, jamais « à aujourd'hui ». Une donnée non datée

@@ -75,17 +75,20 @@ soient droits.
   et ses tests dans le même geste ; un lot finit avec moins de lignes et de tests (sauf une forme qu'on déclare). Rien
   sans l'aval de Léandre ; une pause demandée est une pause.
 
-## Deux acteurs : la personne devant l'écran, et un LLM en ligne de commande
+## Un seul logiciel, qui que soit la main
 
-**Tout ce qui se fait à l'écran se fait par `moteur route`, et l'inverse, sans exception** : la page ne parle au moteur
-que par `/api/<route>`, qui sert la même chose ; le pont de la fenêtre ne fait que sa liste `FENETRE`.
+**Le logiciel, c'est le moteur et ses routes.** Cliquer dans la page ou appeler `moteur route` en ligne de commande,
+c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. **Il n'y a ni « côté écran »,
+ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit : une
+chose est faite quand la route la fait. La page ne parle au moteur que par `/api/<route>`, qui sert la même chose ; le
+pont de la fenêtre ne fait que sa liste `FENETRE`.
 
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
-s'écrit à côté** : un manque du LLM est un manque du moteur. Rien ne se débranche : gardé par
+s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : gardé par
 `tests/fichiers/structure.rs`, sans liste d'exceptions, et prouvé en jouant (tout cliquer ; une compagnie créée depuis
 zéro).
 
-**Le moteur rend, l'écran et le LLM lisent la même réponse** ; l'écran n'a que ses règles d'affichage. **Où chaque route
+**Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
 se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran
 fait main de cette place l'appelle), `Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
 depuis sa fiche : son nom n'est écrit dans aucun JS), `Lecture` (elle nourrit un écran, n'écrit rien). Les pages sont
