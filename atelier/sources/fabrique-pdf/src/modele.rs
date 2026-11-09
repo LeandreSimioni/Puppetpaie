@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 
 use crate::description::{refus, Refus};
 
-/// Les clés d'un modèle, dans l'ordre où elles se testent.
-const CLES: [&str; 7] = [
+/// Les clés d'un modèle, dans l'ordre où elles se testent : une ligne qui commence par l'une d'elles ouvre son bloc.
+pub const CLES: [&str; 7] = [
     "TITRE:",
     "SOUSTITRE:",
     "PREAMBULE:",

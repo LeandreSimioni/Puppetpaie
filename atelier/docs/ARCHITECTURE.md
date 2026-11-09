@@ -620,10 +620,14 @@ leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
 Un modèle de contrat est un texte `.modele` : ses `ARTICLE:` sont les paragraphes du contrat, dans l'ordre ; un alinéa
 qui commence par `[si un.champ]` ne s'écrit que si ce champ a une valeur (`fabrique_pdf::modele::retenu`), ce qui
 remplace tout morceau de phrase vide calculé dans le code. Chaque nature a sa **base**, livrée, qui suit les mises à jour
-et ne se modifie pas ; la compagnie en copie des **modèles spéciaux** (`gabarits/contrats/modeles.json`, chacun sa base
-et l'empreinte de son texte au jour de la copie), choisit le défaut de chaque nature, et un engagement en choisit un
-(sa case `modele_contrat`). Le vérificateur (`documents::contrat_ecrit::manques`) dit, article par article, le champ
-inconnu, la condition fausse ou la mention exigée qui manque. **Un contrat parti garde son texte** : au départ, le texte
+et ne se modifie pas ; la compagnie en copie des **modèles spéciaux** (`gabarits/contrats/modeles.json`, chacun sa
+nature et le texte de la base au jour de la copie, d'où la route dit quels paragraphes de la base ont changé depuis),
+choisit le défaut de chaque nature, et un engagement en choisit un (sa case `modele_contrat`). Un spécial s'écrit
+**paragraphe par paragraphe**, une route par geste (écrire, ajouter, déplacer, supprimer un paragraphe ; renommer) ;
+chaque geste passe par le vérificateur (`documents::contrat_ecrit::manques`), qui dit, article par article, le champ
+inconnu, la condition fausse ou la mention exigée qui manque : un geste qui laisserait le modèle faux n'écrit rien. Un
+spécial supprimé garde son id dans `supprimes` : un id ne sert qu'une fois, et l'engagement qui l'avait choisi suit le
+défaut de sa nature. **Un contrat parti garde son texte** : au départ, le texte
 de son modèle se fige sous son empreinte (`gabarits/contrats/partis/`), que la ligne du journal note
 (`ContratParti::modele`) ; le refaire ou lui faire un avenant relit ce texte-là (`routes::modeles_contrat`).
 

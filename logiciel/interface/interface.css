@@ -1788,12 +1788,19 @@ details.pourquoi p, details.pourquoi ul { margin: 4px 0; }
 .guide-piece { border: 1px solid var(--bord); border-radius: 4px; padding: 10px 12px; background: var(--carte, #fff); }
 .guide-piece ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
 .guide-piece li { margin: 2px 0; }
-/* Configuration › Modèles de contrat (`modeles-contrat.js`) : un bloc par modèle ; le choix du fichier se fait par
-   son lien, la case du navigateur ne se montre pas. */
+/* Configuration › Modèles de contrat (`modeles-contrat.js`) : un bloc par modèle ; ouvert, ses paragraphes, chacun
+   son titre et ses alinéas (la condition à gauche, le texte à droite). */
 .modele-contrat { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 6px; }
-.modele-contrat input[type=file] { display: none; }
-.modele-contrat .modele-editeur[hidden] { display: none; }
-.modele-champs table code { white-space: nowrap; }
+.modele-entete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.modele-gestes { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.modele-copier { display: flex; gap: 8px; margin: 6px 0; }
+.modele-editeur[hidden] { display: none; }
+.modele-texte { width: 100%; font-family: monospace; font-size: 12px; }
+.modele-paragraphe { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--bord); }
+.modele-titre { flex: 1; font-weight: bold; }
+.modele-alinea { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
+.modele-alinea select { flex: 0 0 180px; max-width: 180px; }
+.modele-alinea textarea { flex: 1; }
 
 /* Une compagnie fictive : ce que ses boutons envoient est joué. */
 body.fictive button.envoi::after { content: " — simulé"; }
