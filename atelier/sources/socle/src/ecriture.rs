@@ -33,6 +33,17 @@ pub fn json_indente<T: Serialize + ?Sized>(v: &T, indent: usize) -> String {
     s
 }
 
+/// UN OBJET DONT L'ORDRE COMPTE, ecrit de ses paires `(cle, valeur)` dans leur ordre : le pendant de `forme::en_ordre`,
+/// `#[serde(serialize_with = "socle::ecriture::en_ordre")]` sur un `Vec<(K, T)>`.
+pub fn en_ordre<S: serde::Serializer, K: Serialize, T: Serialize>(paires: &[(K, T)], s: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut m = s.serialize_map(Some(paires.len()))?;
+    for (k, v) in paires {
+        m.serialize_entry(k, v)?;
+    }
+    m.end()
+}
+
 /// Le JSON de `v` sur une ligne : separateurs `, ` et
 /// `: `, cles triees (par point de code), non-ASCII laisse tel quel.
 pub fn json_trie<T: Serialize + ?Sized>(v: &T) -> String {

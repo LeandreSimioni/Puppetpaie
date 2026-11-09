@@ -70,7 +70,10 @@ pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> Result<Vec<u8>, String> {
 
 /// Un PDF d'une page par liste de blocs, A4 (les tests : un refus arrete le test).
 pub fn pdf(pages: Vec<Vec<Bloc>>, chemin: &Path) {
-    let octets = pdf_octets(pages).unwrap_or_else(|m| panic!("{}", m));
+    let octets = match pdf_octets(pages) {
+        Ok(o) => o,
+        Err(m) => panic!("{}", m),
+    };
     std::fs::write(chemin, octets).unwrap();
 }
 
@@ -380,10 +383,14 @@ pub fn page_b<S: AsRef<str>>(p: &B<S>) -> Vec<Bloc> {
         t(b_, 39.0, 220.5, "N° Congés Sp.");
         t(b_, 108.0, 220.5, s(c));
     }
-    let (cp, commune) = s(&id.adresse[1]).split_once(' ').unwrap_or((s(&id.adresse[1]), ""));
-    t(b_, 314.0, 222.0, cp);
-    if !commune.is_empty() {
-        t(b_, 369.0, 222.0, commune);
+    match s(&id.adresse[1]).split_once(' ') {
+        Some((cp, commune)) => {
+            t(b_, 314.0, 222.0, cp);
+            if !commune.is_empty() {
+                t(b_, 369.0, 222.0, commune);
+            }
+        }
+        None => t(b_, 314.0, 222.0, s(&id.adresse[1])),
     }
     t(b_, 314.0, 233.0, "FRANCE");
     t(b_, 499.0, 264.0, "XYZ");

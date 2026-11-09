@@ -16,8 +16,34 @@ pub mod journal;
 pub mod pas;
 pub mod retours;
 
-/// Une erreur d'outil : sa phrase, code 2.
-pub(crate) fn refus(e: &socle::echec::Echec) -> i32 {
-    dire!("! {}", e.message);
-    2
+/// Le code de sortie d'un outil : le sien, ou, a l'erreur, sa phrase et le code 2.
+pub(crate) fn code(r: Result<i32, socle::echec::Echec>) -> i32 {
+    match r {
+        Ok(c) => c,
+        Err(e) => {
+            dire!("! {}", e.message);
+            2
+        }
+    }
+}
+
+/// Le nom du fichier `p`, sans son dossier ; un chemin qui ne finit pas par un nom (`..`) se dit entier.
+pub(crate) fn nom(p: &std::path::Path) -> String {
+    match p.file_name() {
+        Some(n) => n.to_string_lossy().into_owned(),
+        None => p.display().to_string(),
+    }
+}
+
+/// La valeur de l'option `nom`, que sa `Spec` pose par defaut : l'analyse l'a toujours ecrite.
+pub(crate) fn avec_defaut<'a>(args: &'a crate::commandes::analyse::Args, nom: &str) -> Result<&'a str, socle::echec::Echec> {
+    args.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Illisible), message: format!("--{} n'a pas de valeur : sa `Spec` lui en donne une par defaut.", nom) })
+}
+
+/// Un texte facultatif tel que l'outil l'affiche : `None` quand il n'est pas dit.
+pub(crate) fn dit(t: Option<&str>) -> &str {
+    match t {
+        Some(t) => t,
+        None => "None",
+    }
 }

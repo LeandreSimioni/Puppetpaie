@@ -54,10 +54,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 
-use socle::date::Jour;
 use crate::atelier::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
+use crate::atelier::EnOrdre;
+use socle::date::Jour;
 
 mod difflib;
 pub mod textes;
@@ -85,6 +86,105 @@ sources du depot (atelier/reference/sources) ; chaque texte y ecrit dans le sien
 jour (seules les livraisons nouvelles se telechargent ; `--reconstruire` refait defiler l'archive globale, 1,1 Go) puis
 ecrit `releve.json` et `xml/` ; `rapport` ecrit `articles-<date>.md` ; `comparer` relit chaque article change contre sa
 version d'avant, dans l'archive globale.";
+
+/// UN ARTICLE DE LOI, tel que l'entrepot le garde (une ligne de `articles.jsonl.gz`) : sa cle (texte, numero), son
+/// identifiant de version, le jour depuis lequel elle vaut (quand le XML le dit), si elle est en vigueur, et son XML.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArticleLegi {
+    cle: Vec<String>,
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    debut: Option<String>,
+    en_vigueur: bool,
+    xml: String,
+}
+
+impl dila::Article for ArticleLegi {
+    fn cle(&self) -> &[String] {
+        &self.cle
+    }
+}
+
+/// L'ETAT DE L'ENTREPOT LEGI (`etat.json`, cles triees) : les changements de version notes par les livraisons, le jour
+/// de sa construction, l'archive globale lue, les livraisons appliquees, le jour de la derniere sauvegarde.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EtatLegi {
+    changes: Vec<ChangeLegi>,
+    construit_le: String,
+    global: String,
+    lues: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mis_a_jour_le: Option<String>,
+}
+
+impl dila::Etat for EtatLegi {
+    fn lues(&self) -> &[String] {
+        &self.lues
+    }
+    fn lues_mut(&mut self) -> &mut Vec<String> {
+        &mut self.lues
+    }
+    fn dater(&mut self, aujourdhui: &str) {
+        self.mis_a_jour_le = Some(aujourdhui.to_string());
+    }
+}
+
+/// Une livraison qui remplace la version d'un article : laquelle (`avant` -> `apres`), depuis quand, et quand (champs
+/// dans l'ordre alphabetique : `etat.json` et `releve.json` les ecrivent ainsi).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangeLegi {
+    apres: String,
+    article: String,
+    avant: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depuis: Option<String>,
+    livraison: String,
+    texte: String,
+}
+
+type EntrepotLegi = Entrepot<ArticleLegi, EtatLegi>;
+
+/// LE RELEVE D'UN TEXTE (`<texte>/releve.json`) : d'ou il vient, ou en est la lecture des livraisons, ce qui a change
+/// depuis l'archive globale, et ses articles voulus. Les cles en `_` sont celles des releves deposes.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleveDUnTexte {
+    #[serde(rename = "_source")]
+    source: String,
+    #[serde(rename = "_global")]
+    global: String,
+    #[serde(rename = "_texte")]
+    texte: String,
+    #[serde(rename = "_legitext")]
+    legitext: String,
+    #[serde(rename = "_livraisons_lues")]
+    livraisons_lues: usize,
+    #[serde(rename = "_livraisons_totales")]
+    livraisons_totales: usize,
+    /// Ce qui reste a lire quand un passage s'interrompt : le document le dira, plutot que de se donner pour complet.
+    #[serde(rename = "_complet")]
+    complet: bool,
+    #[serde(rename = "_derniere_livraison")]
+    derniere_livraison: Option<String>,
+    #[serde(rename = "_changes_depuis_le_global")]
+    changes: Vec<ChangeLegi>,
+    #[serde(rename = "_releve_le")]
+    releve_le: String,
+    articles: EnOrdre<ArticleReleve>,
+}
+
+/// Un article d'un releve : sa version, le jour depuis lequel elle vaut, si elle est en vigueur (son XML est a cote).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArticleReleve {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    debut: Option<String>,
+    en_vigueur: bool,
+    id: String,
+}
 
 fn texte_de(cle: &str) -> Option<&'static Texte> {
     TEXTES.iter().find(|t| t.cle == cle)
@@ -156,7 +256,7 @@ pub fn commande(args: &[String]) -> i32 {
     };
     let r = match args[0].as_str() {
         "moissonner" => moissonner(racine, args.iter().any(|a| a == "--reconstruire"), &dila::Reseau, &aujourdhui),
-        "rapport" => rapport(racine, args.get(2).map(String::as_str).unwrap_or(""), &aujourdhui),
+        "rapport" => rapport(racine, args.get(2).map(String::as_str), &aujourdhui),
         "comparer" => comparer(racine, &dila::Reseau, &aujourdhui),
         v => {
             eprintln!("Verbe inconnu : {}\n\n{}", v, USAGE);
@@ -188,9 +288,9 @@ pub fn commande(args: &[String]) -> i32 {
 #[allow(clippy::too_many_arguments)]
 fn passer<L: Read>(
     tar: &mut LecteurTar<L>,
-    articles: &mut Map<String, Value>,
+    articles: &mut EnOrdre<ArticleLegi>,
     journal: &mut Vec<String>,
-    mut changes: Option<&mut Vec<Value>>,
+    mut changes: Option<&mut Vec<ChangeLegi>>,
     livraison: &str,
     tous_les_articles: bool,
     seuls: Option<&[&str]>,
@@ -208,18 +308,15 @@ fn passer<L: Read>(
                 .into_iter()
                 .map(dila::sans_blancs)
                 .filter(|l| !l.is_empty())
-                .map(|l| l.rsplit('/').next().unwrap_or(l))
+                .map(|l| match l.rsplit_once('/') {
+                    Some((_, fin)) => fin,
+                    None => l,
+                })
                 .collect();
-            let partants: Vec<String> = articles
-                .iter()
-                .filter(|(_, a)| a.get("id").and_then(Value::as_str).is_some_and(|i| retires.contains(i)))
-                .map(|(k, _)| k.clone())
-                .collect();
-            for k in partants {
-                let p = dila::parties(&k);
-                journal.push(format!("retire par {} : {} {}", livraison, p[0], p.get(1).unwrap_or(&"")));
-                articles.shift_remove(&k);
+            for (_, a) in articles.0.iter().filter(|(_, a)| retires.contains(a.id.as_str())) {
+                journal.push(format!("retire par {} : {}", livraison, a.cle.join(" ")));
             }
+            articles.0.retain(|(_, a)| !retires.contains(a.id.as_str()));
             continue;
         }
         if !m.nom.contains("/article/") {
@@ -242,37 +339,38 @@ fn passer<L: Read>(
         // PIEGE 1 : `code_en_vigueur` porte aussi les versions anterieures. La version qui vaut a `<ETAT>` VIGUEUR et
         // `<DATE_FIN>` 2999-01-01 -- la BALISE, pas l'attribut `etat` d'autres balises.
         let en_vigueur = groupe(re_etat(), &txt) == Some("VIGUEUR") && groupe(re_fin(), &txt) == Some("2999-01-01");
-        let debut = groupe(re_debut(), &txt).unwrap_or("").to_string();
+        let debut = groupe(re_debut(), &txt).map(str::to_string);
         // PIEGE 2 : l'entrepot range par (texte, NUMERO) ; une version neuve remplace l'ancienne sous la meme cle.
         let k = dila::cle(&[texte, &num]);
-        let ancien = articles.get(&k).and_then(Value::as_object);
-        if ancien.is_some_and(|a| a.get("en_vigueur") == Some(&json!(true))) && !en_vigueur {
+        let ancien = articles.valeur(&k);
+        if ancien.is_some_and(|a| a.en_vigueur) && !en_vigueur {
             continue;
         }
-        let id = groupe(re_id(), &m.nom).unwrap_or("").to_string();
+        let id = groupe(re_id(), &m.nom).ok_or_else(|| format!("{} : un article dont le nom ne porte pas son identifiant LEGIARTI", m.nom))?.to_string();
         if let (Some(ch), Some(a)) = (changes.as_deref_mut(), ancien) {
-            if a.get("id").and_then(Value::as_str).unwrap_or("") != id {
-                // L'ordre des cles se voit dans `releve.json`, qui ne trie pas.
-                ch.push(json!({
-                    "texte": texte, "article": num, "avant": a.get("id").cloned().unwrap_or(json!("")),
-                    "apres": id, "depuis": debut, "livraison": livraison,
-                }));
+            if a.id != id {
+                ch.push(ChangeLegi { texte: texte.to_string(), article: num.clone(), avant: a.id.clone(), apres: id.clone(), depuis: debut.clone(), livraison: livraison.to_string() });
             }
         }
-        articles.insert(k, json!({"id": id, "debut": debut, "en_vigueur": en_vigueur, "xml": txt}));
+        articles.poser(k, ArticleLegi { cle: vec![texte.to_string(), num], id, debut, en_vigueur, xml: txt });
     }
     Ok((vus, t0.elapsed().as_secs_f64()))
 }
 
-/// Les livraisons de l'index posterieures a l'archive globale.
+/// Les livraisons de l'index posterieures a l'archive globale. Un index qui n'en liste aucune n'est plus celui qu'on
+/// lit : la page a change.
 fn livraisons(source: &dyn Source) -> R<Vec<String>> {
     let page = dila::page(source, BASE)?;
-    Ok(dila::livraisons(&page, "LEGI").into_iter().filter(|n| n.get(..8).unwrap_or("") > DEPUIS).collect())
+    let toutes = dila::livraisons(&page, "LEGI");
+    if toutes.is_empty() {
+        return Err(format!("l'index LEGI ({}) ne liste aucune livraison : la page a change ?", BASE));
+    }
+    Ok(toutes.into_iter().filter(|n| n[..8] > *DEPUIS).collect())
 }
 
 /// L'archive globale en flux, rejouee trois fois : elle fait 1,1 Go, et une coupure de transport n'est pas une reponse.
 fn passer_le_global(
-    ent: &mut Entrepot,
+    ent: &mut EntrepotLegi,
     journal: &mut Vec<String>,
     source: &dyn Source,
     seuls: Option<&[&str]>,
@@ -289,8 +387,8 @@ fn passer_le_global(
                 }
                 // Ce qui a ete garde de ce passage-la ne vaut rien : on le retire avant de rejouer.
                 match seuls {
-                    None => ent.articles.clear(),
-                    Some(s) => ent.articles.retain(|k, _| !s.contains(&dila::parties(k)[0])),
+                    None => ent.articles.0.clear(),
+                    Some(s) => ent.articles.0.retain(|(_, a)| !s.contains(&a.cle[0].as_str())),
                 }
                 source.pause(10 * essai);
                 essai += 1;
@@ -309,38 +407,36 @@ fn passer_le_global(
 pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujourdhui: &Jour) -> R<()> {
     let jour = aujourdhui.iso();
     std::fs::create_dir_all(racine).map_err(|e| format!("{} : {}", racine.display(), e))?;
-    let mut ent = Entrepot::nouveau(&racine.join(ENTREPOT));
+    let dossier = racine.join(ENTREPOT);
     let mut journal: Vec<String> = Vec::new();
-    if ent.existe() && !reconstruire {
-        ent = ent.charger()?;
+    let mut ent: EntrepotLegi = if dila::existe(&dossier) && !reconstruire {
+        let mut ent: EntrepotLegi = Entrepot::charger(&dossier)?;
         dire(&format!("== entrepot : {} articles, {} livraisons deja appliquees ==", ent.articles.len(), ent.lues().len()));
         // UN TEXTE AJOUTE A `TEXTES` APRES LA CONSTRUCTION (l'arrete du 4 septembre 2025 sur les frais
         // professionnels) n'a aucun article dans l'entrepot : l'archive globale ne l'a pas garde. On la refait defiler pour
         // lui seul, puis les livraisons deja lues.
-        let presents: HashSet<&str> = ent.articles.keys().map(|k| dila::parties(k)[0]).collect();
-        let absents: Vec<&str> = TEXTES.iter().map(|t| t.cle).filter(|c| !presents.contains(c)).collect();
+        let presents: HashSet<String> = ent.articles.0.iter().map(|(_, a)| a.cle[0].clone()).collect();
+        let absents: Vec<&str> = TEXTES.iter().map(|t| t.cle).filter(|c| !presents.contains(*c)).collect();
         if !absents.is_empty() {
             completer(&mut ent, &absents, &mut journal, source, &jour)?;
         }
+        ent
     } else {
         dire("== archive globale (construction de l'entrepot) ==");
         // L'ARCHIVE GLOBALE EST LE SOCLE : sans elle il n'y a rien a comparer.
+        let etat = EtatLegi { changes: Vec::new(), construit_le: jour.clone(), global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
+        let mut ent: EntrepotLegi = Entrepot::neuf(&dossier, etat);
         let (vus, sec) = passer_le_global(&mut ent, &mut journal, source, None)?;
-        let mut etat = Map::new();
-        etat.insert("global".into(), json!(GLOBAL));
-        etat.insert("lues".into(), json!([]));
-        etat.insert("changes".into(), json!([]));
-        etat.insert("construit_le".into(), json!(jour));
-        ent.etat = etat;
         dire(&format!("  {} fichiers d'article lus en {:.0}s ; {} articles gardes", vus, sec, ent.articles.len()));
         ent.sauver(&jour)?;
-    }
+        ent
+    };
     let toutes = livraisons(source)?;
     let lues = ent.lues();
     let neuves: Vec<String> = toutes.iter().filter(|n| !lues.contains(*n)).cloned().collect();
     dire(&format!("== {} livraison(s) nouvelle(s) sur {} ==", neuves.len(), toutes.len()));
     let urls: Vec<String> = neuves.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
-    let mut changes: Vec<Value> = Vec::new();
+    let mut changes: Vec<ChangeLegi> = Vec::new();
     let mut panne: Option<String> = None;
     dila::en_ordre(source, &urls, 8, |i, octets| {
         let nom = &neuves[i];
@@ -361,7 +457,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         // ON ECRIT EN CHEMIN, toutes les vingt-cinq. Un releve qui ne dit pas ou il s'est arrete est un releve qu'on croit
         // complet.
         if (i + 1) % 25 == 0 {
-            ajouter_changes(&mut ent, std::mem::take(&mut changes));
+            ent.etat.changes.append(&mut changes);
             if let Err(e) = ent.sauver(&jour) {
                 panne = Some(e);
                 return false;
@@ -373,50 +469,26 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
     if let Some(e) = panne {
         return Err(e);
     }
-    ajouter_changes(&mut ent, changes);
+    ent.etat.changes.append(&mut changes);
     ent.sauver(&jour)?;
-    let articles: Map<String, Value> = ent
-        .articles
-        .iter()
-        .filter(|(k, _)| {
-            let p = dila::parties(k);
-            voulu(p[0], p.get(1).unwrap_or(&""))
-        })
-        .map(|(k, a)| (k.clone(), a.clone()))
-        .collect();
-    let changes_voulus: Vec<Value> = ent
-        .etat
-        .get("changes")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|c| voulu(c["texte"].as_str().unwrap_or(""), c["article"].as_str().unwrap_or("")))
-        .cloned()
-        .collect();
+    let articles: Vec<&ArticleLegi> = ent.articles.0.iter().map(|(_, a)| a).filter(|a| voulu(&a.cle[0], &a.cle[1])).collect();
+    let changes_voulus: Vec<&ChangeLegi> = ent.etat.changes.iter().filter(|c| voulu(&c.texte, &c.article)).collect();
     let mut lues: Vec<String> = ent.lues().into_iter().collect();
     lues.sort();
     ecrire(racine, &articles, &lues, toutes.len(), &changes_voulus, &jour)?;
+    let gardes: HashSet<(&str, &str)> = articles.iter().map(|a| (a.cle[0].as_str(), a.cle[1].as_str())).collect();
     let mut manque: Vec<String> = TEXTES
         .iter()
         .flat_map(|t| t.domaines.iter().flat_map(|d| d.numeros.iter()).map(move |n| (t.cle, *n)))
-        .filter(|(c, n)| !articles.contains_key(&dila::cle(&[c, n])))
+        .filter(|cn| !gardes.contains(cn))
         .map(|(c, n)| format!("{} {}", c, n))
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
     manque.sort();
-    let mut perimes: Vec<String> = articles
-        .iter()
-        .filter(|(_, a)| a.get("en_vigueur") != Some(&json!(true)))
-        .map(|(k, _)| dila::parties(k).join(" "))
-        .collect();
+    let mut perimes: Vec<String> = articles.iter().filter(|a| !a.en_vigueur).map(|a| a.cle.join(" ")).collect();
     perimes.sort();
-    let mut vus_changes: Vec<String> = changes_voulus
-        .iter()
-        .map(|c| format!("{} ({})", c["article"].as_str().unwrap_or(""), c["livraison"].as_str().unwrap_or("")))
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    let mut vus_changes: Vec<String> = changes_voulus.iter().map(|c| format!("{} ({})", c.article, c.livraison)).collect::<HashSet<_>>().into_iter().collect();
     vus_changes.sort();
     let toutes_ens: HashSet<&String> = toutes.iter().collect();
     dire("== fini ==");
@@ -431,21 +503,10 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
     Ok(())
 }
 
-/// `ent.etat["changes"] += changes`.
-fn ajouter_changes(ent: &mut Entrepot, changes: Vec<Value>) {
-    let v = ent.etat.entry("changes").or_insert_with(|| json!([]));
-    if !v.is_array() {
-        *v = json!([]);
-    }
-    if let Some(a) = v.as_array_mut() {
-        a.extend(changes);
-    }
-}
-
 /// Les textes de `absents`, lus dans l'archive globale puis dans chaque livraison deja appliquee a l'entrepot, dans
 /// l'ordre : l'entrepot les tient ensuite comme s'il les avait gardes des le depart. Le cout est celui d'une construction
 /// (l'archive globale en flux, puis les livraisons), mais une fois par texte ajoute.
-fn completer(ent: &mut Entrepot, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: &str) -> R<()> {
+fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: &str) -> R<()> {
     dire(&format!("== textes ajoutes depuis la construction : {} ==", absents.join(", ")));
     let (vus, sec) = passer_le_global(ent, journal, source, Some(absents))?;
     dire(&format!("  {} fichiers d'article de ces textes lus en {:.0}s", vus, sec));
@@ -475,40 +536,33 @@ fn completer(ent: &mut Entrepot, absents: &[&str], journal: &mut Vec<String>, so
 ///
 /// CHAQUE DOSSIER SE LIT SEUL : son `releve.json` ne parle que de ses articles, et le nombre de livraisons lues y est
 /// repete. Un texte dont le releve ne dirait ou il en est que par le dossier d'a cote serait un releve qu'on croit complet.
-fn ecrire(racine: &Path, articles: &Map<String, Value>, lues: &[String], totales: usize, changes: &[Value], jour: &str) -> R<()> {
-    let totales = if totales == 0 { lues.len() } else { totales };
+fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: usize, changes: &[&ChangeLegi], jour: &str) -> R<()> {
     for texte in TEXTES {
         let dossier = racine.join(texte.dossier);
         // Le XML de chaque article dans `xml/`, le releve a cote : c'est la piece justificative qui reste a cote du compte
         // rendu.
         let px = dossier.join(XML);
         std::fs::create_dir_all(&px).map_err(|e| format!("{} : {}", px.display(), e))?;
-        let mut siens = Map::new();
-        for (k, a) in articles {
-            let p = dila::parties(k);
-            if p[0] != texte.cle {
-                continue;
-            }
-            let num = p.get(1).copied().unwrap_or("");
+        let mut siens = EnOrdre::new();
+        for a in articles.iter().filter(|a| a.cle[0] == texte.cle) {
+            let num = &a.cle[1];
             let f = px.join(format!("{}.xml", fichier(num)));
-            std::fs::write(&f, a["xml"].as_str().unwrap_or("")).map_err(|e| format!("{} : {}", f.display(), e))?;
-            let sans_xml: Map<String, Value> = a.as_object().into_iter().flatten().filter(|(c, _)| *c != "xml").map(|(c, v)| (c.clone(), v.clone())).collect();
-            siens.insert(num.to_string(), Value::Object(sans_xml));
+            std::fs::write(&f, &a.xml).map_err(|e| format!("{} : {}", f.display(), e))?;
+            siens.poser(num.clone(), ArticleReleve { debut: a.debut.clone(), en_vigueur: a.en_vigueur, id: a.id.clone() });
         }
-        let siens_changes: Vec<Value> =
-            changes.iter().filter(|c| c.get("texte").and_then(Value::as_str).unwrap_or("travail") == texte.cle).cloned().collect();
-        let releve = json!({
-            "_source": BASE, "_global": GLOBAL,
-            "_texte": texte.nom, "_legitext": texte.legitext,
-            "_livraisons_lues": lues.len(),
-            "_livraisons_totales": totales,
-            // Ce qui reste a lire quand un passage s'interrompt : le document le dira, plutot que de se donner pour complet.
-            "_complet": lues.len() == totales,
-            "_derniere_livraison": lues.last().cloned().unwrap_or_default(),
-            "_changes_depuis_le_global": siens_changes,
-            "_releve_le": jour,
-            "articles": siens,
-        });
+        let releve = ReleveDUnTexte {
+            source: BASE.to_string(),
+            global: GLOBAL.to_string(),
+            texte: texte.nom.to_string(),
+            legitext: texte.legitext.to_string(),
+            livraisons_lues: lues.len(),
+            livraisons_totales: totales,
+            complet: lues.len() == totales,
+            derniere_livraison: lues.last().cloned(),
+            changes: changes.iter().filter(|c| c.texte == texte.cle).map(|c| (*c).clone()).collect(),
+            releve_le: jour.to_string(),
+            articles: siens,
+        };
         let p = dossier.join("releve.json");
         std::fs::write(&p, socle::ecriture::json_indente(&releve, 1)).map_err(|e| format!("{} : {}", p.display(), e))?;
     }
@@ -522,18 +576,17 @@ pub fn fichier(num: &str) -> String {
 
 // ------------------------------------------------------------------ rapport
 
-/// Le texte d'un article (son `BLOC_TEXTUEL`), balises en sauts de ligne, entites decodees, lignes vides retirees.
-fn contenu(xml: &str) -> String {
+/// Le texte d'un article (son `BLOC_TEXTUEL`, s'il en a un), balises en sauts de ligne, entites decodees, lignes vides
+/// retirees.
+fn contenu(xml: &str) -> Option<String> {
     static BALISE: OnceLock<Regex> = OnceLock::new();
     static VIDES: OnceLock<Regex> = OnceLock::new();
-    let Some(t) = groupe(re_texte(), xml) else {
-        return String::new();
-    };
+    let t = groupe(re_texte(), xml)?;
     let t = motif(&BALISE, r"<[^>]+>").replace_all(t, "\n");
     let t = dila::unescape_html(&t);
     // Une ligne vide : rien que des blancs d'Unicode et des caracteres \x1c a \x1f.
     let t = motif(&VIDES, r"\n[\s\x1C-\x1F]*\n+").replace_all(&t, "\n");
-    dila::sans_blancs(&t).to_string()
+    Some(dila::sans_blancs(&t).to_string())
 }
 
 /// 20250713 -> 13/07/2025. Une date se lit, elle ne se dechiffre pas.
@@ -550,33 +603,25 @@ fn jour_lisible(aaaammjj: &str) -> String {
 ///
 /// « Aucun n'a change » n'a de valeur que dit par une machine qui a reellement passe les livraisons -- et il faut alors
 /// dire combien.
-fn ce_qui_a_change(meta: &Value) -> String {
-    let changes: Vec<&Value> = meta.get("_changes_depuis_le_global").and_then(Value::as_array).into_iter().flatten().collect();
-    if changes.is_empty() {
-        let n = meta["articles"].as_object().map_or(0, Map::len);
-        return format!("**aucun de ces {} articles n'a change de version** depuis l'archive globale", n);
+fn ce_qui_a_change(meta: &ReleveDUnTexte) -> String {
+    if meta.changes.is_empty() {
+        return format!("**aucun de ces {} articles n'a change de version** depuis l'archive globale", meta.articles.len());
     }
     format!(
         "**{} article(s) ont change de version** : {}",
-        changes.len(),
-        changes
+        meta.changes.len(),
+        meta.changes
             .iter()
-            .map(|c| format!(
-                "{} ({} -> {}, livraison du {})",
-                dila::texte(&c["article"]),
-                dila::texte(&c["avant"]),
-                dila::texte(&c["apres"]),
-                jour_lisible(dila::premiers_caracteres(&dila::texte(&c["livraison"]), 8))
-            ))
+            .map(|c| format!("{} ({} -> {}, livraison du {})", c.article, c.avant, c.apres, jour_lisible(dila::premiers_caracteres(&c.livraison, 8))))
             .collect::<Vec<_>>()
             .join(" ; ")
     )
 }
 
 /// Le document lisible de chaque texte : un titre par domaine, un article par entree. `quel` limite a un seul texte.
-pub fn rapport(racine: &Path, quel: &str, aujourdhui: &Jour) -> R<()> {
+pub fn rapport(racine: &Path, quel: Option<&str>, aujourdhui: &Jour) -> R<()> {
     for texte in TEXTES {
-        if !quel.is_empty() && texte.cle != quel {
+        if quel.is_some_and(|q| texte.cle != q) {
             continue;
         }
         let dossier = racine.join(texte.dossier);
@@ -592,15 +637,15 @@ fn lire_texte(p: &Path) -> R<String> {
     Ok(if t.contains('\r') { t.replace("\r\n", "\n").replace('\r', "\n") } else { t })
 }
 
-fn lire_json(p: &Path) -> R<Value> {
-    serde_json::from_str(&lire_texte(p)?).map_err(|e| format!("{} illisible : {}", p.display(), e))
+/// Le releve d'un texte (`releve.json`), en sa forme.
+fn lire_releve(p: &Path) -> R<ReleveDUnTexte> {
+    socle::forme::lire_texte(&lire_texte(p)?, &format!("{} ne se lit pas.", p.display()))
 }
 
 fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
-    let meta = lire_json(&dossier.join("releve.json"))?;
-    let n_articles = meta["articles"].as_object().map_or(0, Map::len);
-    let lues = meta["_livraisons_lues"].as_u64().unwrap_or(0);
-    let totales = meta.get("_livraisons_totales").and_then(Value::as_u64).unwrap_or(lues);
+    let meta = lire_releve(&dossier.join("releve.json"))?;
+    let n_articles = meta.articles.len();
+    let (lues, totales) = (meta.livraisons_lues, meta.livraisons_totales);
     let mut lignes: Vec<String> = vec![
         format!("# {}", texte.titre),
         String::new(),
@@ -612,32 +657,28 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
         String::new(),
         "| | |".into(),
         "|---|---|".into(),
-        format!("| source | `{}` |", dila::texte(&meta["_source"])),
-        format!("| archive globale | `{}` |", dila::texte(&meta["_global"])),
+        format!("| source | `{}` |", meta.source),
+        format!("| archive globale | `{}` |", meta.global),
         format!("| code | {} (`{}`) |", texte.nom, texte.legitext),
         format!("| livraisons lues | **{} sur {}**, dans l'ordre depuis le {} |", lues, totales, jour_lisible(DEPUIS)),
         format!("| ce qu'elles disent | {} |", ce_qui_a_change(&meta)),
-        format!("| releve le | {} |", dila::texte(&meta["_releve_le"])),
+        format!("| releve le | {} |", meta.releve_le),
         format!("| articles | {} |", n_articles),
         String::new(),
     ];
     // CE QUI RESTE A LIRE, quand un passage s'est interrompu. Un releve qui tairait la difference se donnerait pour
-    // complet, et c'est precisement ce qu'on ne veut pas d'une source. Le defaut se DEDUIT des nombres plutot que d'un
-    // booleen absent : un releve ecrit par une version plus ancienne du moissonneur ne doit pas se donner pour complet par
-    // omission.
-    let complet = match meta.get("_complet") {
-        Some(v) => dila::vrai(v),
-        None => lues >= meta.get("_livraisons_totales").and_then(Value::as_u64).unwrap_or(0),
-    };
-    if !complet {
+    // complet, et c'est precisement ce qu'on ne veut pas d'une source.
+    if !meta.complet {
         let reste = totales as i64 - lues as i64;
+        let au = match &meta.derniere_livraison {
+            Some(l) => format!("au {}", jour_lisible(dila::premiers_caracteres(l, 8))),
+            None => "avant toute livraison".to_string(),
+        };
         lignes.push(format!(
-            "**PASSAGE INCOMPLET.** Il reste **{} livraisons** a passer -- les plus recentes. Ce qui suit est donc vrai au {} \
+            "**PASSAGE INCOMPLET.** Il reste **{} livraisons** a passer -- les plus recentes. Ce qui suit est donc vrai {} \
              pour les {} premieres ; `moteur releve-codes moissonner` le refait en entier, et c'est tout l'interet : un \
              releve a la main ne se refait pas.",
-            reste,
-            jour_lisible(dila::premiers_caracteres(&dila::texte(&meta["_derniere_livraison"]), 8)),
-            lues
+            reste, au, lues
         ));
         lignes.push(String::new());
     }
@@ -659,16 +700,21 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
     for domaine in texte.domaines {
         lignes.extend(["---".to_string(), String::new(), format!("## {}", domaine.titre), String::new()]);
         for num in domaine.numeros {
-            let a = meta["articles"].get(*num).filter(|a| a.as_object().is_some_and(|o| !o.is_empty()));
-            let Some(a) = a else {
+            let Some(a) = meta.articles.valeur(num) else {
                 lignes.extend([format!("### {} -- ABSENT DU RELEVE", num), String::new()]);
                 continue;
             };
             let xml = lire_texte(&dossier.join(XML).join(format!("{}.xml", fichier(num))))?;
-            let etat = if dila::vrai(&a["en_vigueur"]) { "" } else { "  **VERSION PERIMEE**" };
-            lignes.push(format!("### {} (`{}`, en vigueur depuis le {}){}", num, dila::texte(&a["id"]), dila::texte(&a["debut"]), etat));
+            let etat = if a.en_vigueur { "" } else { "  **VERSION PERIMEE**" };
+            match &a.debut {
+                Some(d) => lignes.push(format!("### {} (`{}`, en vigueur depuis le {}){}", num, a.id, d, etat)),
+                None => lignes.push(format!("### {} (`{}`){}", num, a.id, etat)),
+            }
             lignes.push(String::new());
-            lignes.push(format!("> {}", contenu(&xml).replace('\n', "\n> ")));
+            match contenu(&xml) {
+                Some(t) => lignes.push(format!("> {}", t.replace('\n', "\n> "))),
+                None => lignes.push("> (l'article n'a pas de bloc textuel)".to_string()),
+            }
             lignes.push(String::new());
         }
     }
@@ -683,26 +729,16 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
 
 /// Tous les changements de version notes par le dernier `moissonner`, tous textes confondus. C'est le releve qui dit ce
 /// qu'il y a a comparer : on ne redecide pas ici quels articles ont bouge.
-fn changements(racine: &Path) -> R<Vec<Map<String, Value>>> {
+fn changements(racine: &Path) -> R<Vec<ChangeLegi>> {
     let mut tout = Vec::new();
     for texte in TEXTES {
         let p = racine.join(texte.dossier).join("releve.json");
         if !p.exists() {
             continue;
         }
-        let meta = lire_json(&p)?;
-        for c in meta.get("_changes_depuis_le_global").and_then(Value::as_array).into_iter().flatten() {
-            let mut c = c.as_object().cloned().unwrap_or_default();
-            let t = c.get("texte").cloned().unwrap_or_else(|| json!(texte.cle));
-            c.insert("texte".into(), t);
-            tout.push(c);
-        }
+        tout.extend(lire_releve(&p)?.changes);
     }
     Ok(tout)
-}
-
-fn champ(c: &Map<String, Value>, k: &str) -> String {
-    c.get(k).map(dila::texte).unwrap_or_default()
 }
 
 /// Va chercher dans l'archive globale les versions d'AVANT, par leur IDENTIFIANT (le piege propre a `comparer`). Rend
@@ -710,10 +746,10 @@ fn champ(c: &Map<String, Value>, k: &str) -> String {
 ///
 /// ON S'ARRETE DES QU'ON LES A TOUTES. L'archive porte 1,75 million d'articles et les versions cherchees ne sont qu'une
 /// poignee : sortir au dernier trouve economise un cinquieme du defilement.
-fn avant(racine: &Path, changements: &[Map<String, Value>], source: &dyn Source) -> R<HashMap<(String, String), String>> {
+fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<HashMap<(String, String), String>> {
     let mut vise: HashMap<String, (String, String)> = HashMap::new();
     for c in changements {
-        vise.insert(champ(c, "avant"), (champ(c, "texte"), champ(c, "article")));
+        vise.insert(c.avant.clone(), (c.texte.clone(), c.article.clone()));
     }
     let (mut trouves, mut vus, t0) = (HashMap::new(), 0usize, Instant::now());
     let mut tar = dila::tar_gz(source.flux(&format!("{}{}", BASE, GLOBAL))?);
@@ -756,7 +792,8 @@ fn avant(racine: &Path, changements: &[Map<String, Value>], source: &dyn Source)
 fn alineas(xml: &str) -> Vec<String> {
     static ESPACES: OnceLock<Regex> = OnceLock::new();
     contenu(xml)
-        .split('\n')
+        .iter()
+        .flat_map(|t| t.split('\n'))
         .filter(|l| !dila::sans_blancs(l).is_empty())
         .map(|l| dila::sans_blancs(&motif(&ESPACES, r"[\s\x1C-\x1F]+").replace_all(l, " ")).to_string())
         .collect()
@@ -799,7 +836,7 @@ pub fn comparer(racine: &Path, source: &dyn Source, aujourdhui: &Jour) -> R<()> 
 fn ecrire_comparaison(
     racine: &Path,
     cible: &Path,
-    changements: &[Map<String, Value>],
+    changements: &[ChangeLegi],
     anterieures: &HashMap<(String, String), String>,
     aujourdhui: &Jour,
 ) -> R<()> {
@@ -825,26 +862,17 @@ fn ecrire_comparaison(
             .into(),
         String::new(),
     ];
-    let mut tries: Vec<&Map<String, Value>> = changements.iter().collect();
-    tries.sort_by(|a, b| (champ(a, "texte"), champ(a, "article")).cmp(&(champ(b, "texte"), champ(b, "article"))));
+    let mut tries: Vec<&ChangeLegi> = changements.iter().collect();
+    tries.sort_by(|a, b| (&a.texte, &a.article).cmp(&(&b.texte, &b.article)));
     for c in tries {
-        let (cle, article) = (champ(c, "texte"), champ(c, "article"));
+        let (cle, article) = (c.texte.clone(), c.article.clone());
         let texte = texte_de(&cle).ok_or_else(|| format!("texte inconnu : {}", cle))?;
-        let depuis = champ(c, "depuis");
-        lignes.extend([
-            "---".to_string(),
-            String::new(),
-            format!("## {} ({})", article, texte.nom),
-            String::new(),
-            format!(
-                "`{}` -> `{}`, en vigueur depuis le {}, livraison du {}.",
-                champ(c, "avant"),
-                champ(c, "apres"),
-                if depuis.is_empty() { "?".to_string() } else { jour_lisible(dila::premiers_caracteres(&depuis.replace('-', ""), 8)) },
-                jour_lisible(dila::premiers_caracteres(&champ(c, "livraison"), 8))
-            ),
-            String::new(),
-        ]);
+        let livraison = jour_lisible(dila::premiers_caracteres(&c.livraison, 8));
+        let quand = match &c.depuis {
+            Some(depuis) => format!("en vigueur depuis le {}, livraison du {}", jour_lisible(dila::premiers_caracteres(&depuis.replace('-', ""), 8)), livraison),
+            None => format!("livraison du {}", livraison),
+        };
+        lignes.extend(["---".to_string(), String::new(), format!("## {} ({})", article, texte.nom), String::new(), format!("`{}` -> `{}`, {}.", c.avant, c.apres, quand), String::new()]);
         let Some(xml_a) = anterieures.get(&(cle.clone(), article.clone())) else {
             // UNE VERSION INTROUVABLE SE DIT. La taire laisserait croire que l'article a ete relu, alors qu'il ne l'a pas ete.
             lignes.extend([

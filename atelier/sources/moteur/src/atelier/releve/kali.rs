@@ -17,15 +17,22 @@
 //! jusqu'a la trouver (une fois), pour savoir ensuite rattacher un texte modifie a sa convention.
 //!
 //! La lecture est incrementale : chaque livraison lue est resumee une fois dans `atelier/reference/sources/veille-kali.json` (ce
-//! qui touche NOS conventions, rien d'autre), et n'est jamais retelechargee. Le rapport est recalcule a chaque fois
-//! depuis la date de releve de la source : un signal vu hier ne disparait pas parce qu'on a relance la commande. Le
-//! fichier garde ses cles d'une version a l'autre : la veille reprend ou elle s'etait arretee.
+//! qui touche NOS conventions, rien d'autre ; sa forme : `Cache`), et n'est jamais retelechargee. Le rapport est recalcule
+//! a chaque fois depuis la date de releve de la source : un signal vu hier ne disparait pas parce qu'on a relance la
+//! commande. Le fichier garde ses cles d'une version a l'autre : la veille reprend ou elle s'etait arretee.
 //!
-//! Ce module ne decide rien : il rend ce qui a bouge, `sources::verifier` en fait un etat, la commande l'affiche.
+//! Une fiche ou un texte KALI est un XML de la DILA : on n'en lit que les elements nommes ici ; un element absent ou vide
+//! reste vide (`None`), et le resume ne l'ecrit pas.
+//!
+//! Ce module ne decide rien : il rend ce qui a bouge (`Rapport`), `sources::verifier` en fait un etat, la commande
+//! l'affiche.
 
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
+use socle::date::Jour;
+
+use crate::atelier::EnOrdre;
 
 pub const INDEX: &str = "https://echanges.dila.gouv.fr/OPENDATA/KALI/";
 pub const CACHE: &str = "veille-kali.json";
@@ -43,10 +50,14 @@ pub fn livraisons(index_html: &str) -> Vec<String> {
     crate::atelier::releve::entrepot_dila::livraisons(index_html, "KALI")
 }
 
-/// `AAAAMMJJ...` -> `AAAA-MM-JJ`.
+/// Le jour d'une estampille (`AAAAMMJJ...`, que l'index ecrit) : `AAAA-MM-JJ`.
 pub fn jour(livraison: &str) -> String {
-    let c = |a: usize, b: usize| livraison.get(a..b).unwrap_or("");
-    format!("{}-{}-{}", c(0, 4), c(4, 6), c(6, 8))
+    format!("{}-{}-{}", &livraison[0..4], &livraison[4..6], &livraison[6..8])
+}
+
+/// Le jour d'une estampille, sans l'heure (`AAAAMMJJ`).
+fn huit(estampille: &str) -> String {
+    estampille[..8].to_string()
 }
 
 // ------------------------------------------------------------------ l'archive
@@ -64,54 +75,71 @@ pub fn fichiers_tar_gz(octets: &[u8]) -> R<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
-fn texte_de(n: roxmltree::Node, chemin: &[&str]) -> String {
+/// Le texte de l'element au bout de `chemin` sous `n`, s'il y est et dit quelque chose.
+fn texte_de(n: roxmltree::Node, chemin: &[&str]) -> Option<String> {
     let mut courant = n;
     for nom in chemin {
-        match courant.children().find(|c| c.is_element() && c.tag_name().name() == *nom) {
-            Some(c) => courant = c,
-            None => return String::new(),
-        }
+        courant = courant.children().find(|c| c.is_element() && c.tag_name().name() == *nom)?;
     }
-    courant.text().unwrap_or("").trim().to_string()
+    courant.text().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string)
 }
 
-/// Ce qu'une livraison contient : les conteneurs (par identifiant : `idcc`, `titre`, `etat`, `textes` attaches) et les
-/// textes modifies (par identifiant : `titre`, `date_texte`, `modifie_le`, `etat`, `extension`, et `_xml`, le nom du
-/// fichier dans l'archive). Tout, sans filtrer : c'est l'appelant qui sait ce qu'il suit.
-pub fn lire_livraison(octets: &[u8]) -> R<(Map<String, Value>, Map<String, Value>)> {
-    let mut conteneurs = Map::new();
-    let mut textes = Map::new();
+/// LA FICHE D'UNE CONVENTION (un conteneur KALI) : son IDCC, son titre, son etat, et ses textes attaches (identifiant ->
+/// titre, dans l'ordre de la fiche).
+pub struct Fiche {
+    idcc: Option<String>,
+    titre: Option<String>,
+    etat: Option<String>,
+    textes: EnOrdre<String>,
+}
+
+/// CE QUE DIT UN TEXTE MODIFIE : son titre, ses dates, son etat, son extension.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Texte {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub titre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_texte: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modifie_le: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub etat: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<String>,
+}
+
+/// Ce qu'une livraison contient : les conteneurs (par identifiant) et les textes modifies (par identifiant : ce qu'il dit,
+/// et le nom de son fichier dans l'archive). Tout, sans filtrer : c'est l'appelant qui sait ce qu'il suit.
+fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)> {
+    let mut conteneurs = EnOrdre::new();
+    let mut textes = EnOrdre::new();
     for (nom, xml) in fichiers_tar_gz(octets)? {
         if !nom.ends_with(".xml") || !(nom.contains("/conteneur/") || nom.contains("/texte/version/")) {
             continue;
         }
-        let t = String::from_utf8(xml).map_err(|_| format!("{} : pas de l'UTF-8", nom))?;
+        let t = String::from_utf8(xml).map_err(|e| format!("{} : pas de l'UTF-8 ({})", nom, e))?;
         let doc = roxmltree::Document::parse(&t).map_err(|e| format!("{} illisible : {}", nom, e))?;
         let racine = doc.root_element();
-        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]);
+        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]).ok_or_else(|| format!("{} : sans identifiant (META_COMMUN/ID)", nom))?;
         match racine.tag_name().name() {
             "IDCC" => {
-                let meta = ["META", "META_SPEC", "META_CONTENEUR"];
-                let champ = |c: &str| texte_de(racine, &[meta[0], meta[1], meta[2], c]);
-                let mut liens = Map::new();
+                let champ = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_CONTENEUR", c]);
+                let mut liens = EnOrdre::new();
                 for l in racine.descendants().filter(|n| n.has_tag_name("LIEN_TXT")) {
                     if let Some(id) = l.attribute("idtxt").filter(|s| !s.is_empty()) {
-                        liens.insert(id.to_string(), json!(l.attribute("titretxt").unwrap_or("").trim()));
+                        let titre = l.attribute("titretxt").ok_or_else(|| format!("{} : le lien {} n'a pas de titre", nom, id))?;
+                        liens.poser(id.to_string(), titre.trim().to_string());
                     }
                 }
-                conteneurs.insert(ident, json!({"idcc": champ("NUM"), "titre": champ("TITRE"), "etat": champ("ETAT"), "textes": liens}));
+                conteneurs.poser(ident, Fiche { idcc: champ("NUM"), titre: champ("TITRE"), etat: champ("ETAT"), textes: liens });
             }
             "TEXTE_VERSION" => {
                 let chron = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_CHRONICLE", c]);
                 let vers = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_VERSION", c]);
-                let titre = Some(vers("TITRE")).filter(|t| !t.is_empty()).unwrap_or_else(|| vers("TITREFULL"));
-                textes.insert(
-                    ident,
-                    json!({
-                        "titre": titre, "date_texte": chron("DATE_TEXTE"), "modifie_le": chron("DERNIERE_MODIFICATION"),
-                        "etat": vers("ETAT"), "extension": vers("LIBELLE_EXTENSION"), "_xml": nom,
-                    }),
-                );
+                let titre = vers("TITRE").or_else(|| vers("TITREFULL"));
+                let texte = Texte { titre, date_texte: chron("DATE_TEXTE"), modifie_le: chron("DERNIERE_MODIFICATION"), etat: vers("ETAT"), extension: vers("LIBELLE_EXTENSION") };
+                textes.poser(ident, (texte, nom));
             }
             _ => {}
         }
@@ -119,43 +147,88 @@ pub fn lire_livraison(octets: &[u8]) -> R<(Map<String, Value>, Map<String, Value
     Ok((conteneurs, textes))
 }
 
+// ------------------------------------------------------------------ le resume des livraisons lues
+
+/// LE RESUME DES LIVRAISONS LUES (`veille-kali.json`, a cote des sources). Sa cle `_quoi` est celle du fichier depose,
+/// que la veille reprend tel quel.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Cache {
+    #[serde(rename = "_quoi")]
+    quoi: String,
+    /// Par estampille, ce que la livraison avait de nos conventions.
+    livraisons: EnOrdre<LivraisonLue>,
+    /// Par conteneur, ses textes connus (identifiant -> titre, ou `CITE`).
+    textes_connus: EnOrdre<EnOrdre<String>>,
+    /// Les plages de livraisons sorties de l'index sans avoir ete lues.
+    trous: Vec<Trou>,
+    /// De la premiere veille a la derniere livraison vue.
+    couverture: Plage,
+    /// Par conteneur, la fiche qui a pose la liste de reference.
+    amorces: EnOrdre<Amorce>,
+}
+
+const QUOI_DU_CACHE: &str = "Les livraisons open data KALI deja lues, resumees a ce qui touche les conventions suivies dans sources.json. Une livraison lue n'est jamais retelechargee ; supprimer ce fichier force la relecture.";
+
+/// Une plage d'estampilles.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Plage {
+    de: String,
+    a: String,
+}
+
+/// Une plage de jours (`AAAAMMJJ`) sortie de l'index sans avoir ete lue.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Trou {
+    de: String,
+    a: String,
+}
+
+/// La fiche qui a pose la liste de reference d'une convention : son jour, le nombre de ses textes, son titre.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Amorce {
+    pub livraison: String,
+    pub textes: usize,
+    pub titre: Option<String>,
+}
+
+/// Ce qu'une livraison avait de nos conventions : leurs fiches, et leurs textes modifies.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LivraisonLue {
+    conteneurs: EnOrdre<ConteneurLu>,
+    textes: EnOrdre<TexteLu>,
+}
+
+/// La fiche d'une convention suivie, telle qu'une livraison l'a portee : `premiere`, la premiere vue (elle pose la liste
+/// de reference : rien n'y est nouveau) ; `nouveaux`, ses textes qu'on ne connaissait pas.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConteneurLu {
+    idcc: Option<String>,
+    etat: Option<String>,
+    premiere: bool,
+    nouveaux: EnOrdre<String>,
+}
+
+/// Un texte d'une convention suivie modifie dans une livraison.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TexteLu {
+    #[serde(flatten)]
+    texte: Texte,
+    conteneur: String,
+}
+
+/// Les textes connus d'une convention ne viennent-ils que du manifeste (aucune fiche vue) ?
+fn tous_cites(connus: Option<&EnOrdre<String>>) -> bool {
+    connus.is_none_or(|m| m.0.iter().all(|(_, v)| v == CITE))
+}
+
 // ------------------------------------------------------------------ la veille
-
-fn charger_cache(p: &Path) -> R<Map<String, Value>> {
-    if p.exists() {
-        let t = std::fs::read_to_string(p).map_err(|e| format!("{} : {}", p.display(), e))?;
-        return match serde_json::from_str::<Value>(&t) {
-            Ok(Value::Object(m)) => Ok(m),
-            Ok(_) => Err(format!("{} n'est pas un objet JSON : le deplacer force la relecture", p.display())),
-            Err(e) => Err(format!("{} illisible ({}) : le deplacer force la relecture", p.display(), e)),
-        };
-    }
-    let mut m = Map::new();
-    m.insert(
-        "_quoi".into(),
-        json!("Les livraisons open data KALI deja lues, resumees a ce qui touche les conventions suivies dans sources.json. Une livraison lue n'est jamais retelechargee ; supprimer ce fichier force la relecture."),
-    );
-    m.insert("livraisons".into(), json!({}));
-    m.insert("textes_connus".into(), json!({}));
-    Ok(m)
-}
-
-/// `setdefault(cle, {})` sur un objet, qui doit en etre un.
-fn objet<'a>(m: &'a mut Map<String, Value>, cle: &str, defaut: Value) -> R<&'a mut Value> {
-    let v = m.entry(cle.to_string()).or_insert(defaut);
-    if v.is_null() {
-        *v = json!({});
-    }
-    Ok(v)
-}
-
-fn tous_cites(connus: &Value) -> bool {
-    connus.as_object().is_none_or(|m| m.values().all(|v| v.as_str() == Some(CITE)))
-}
-
-fn s(v: &Value) -> &str {
-    v.as_str().unwrap_or("")
-}
 
 /// Une convention suivie : son conteneur, son IDCC, les textes que le manifeste cite.
 pub struct Suivi {
@@ -164,28 +237,81 @@ pub struct Suivi {
     pub textes: Vec<String>,
 }
 
-/// Retourne voir ce qui a bouge, pour chaque convention suivie, depuis une date (`depuis`, ISO : la releve la plus
-/// ancienne ; les livraisons de ce jour-la et d'avant ne comptent pas). `relever` : poser le XML des textes touches dans
+/// CE QUI A BOUGE depuis la date de releve : les livraisons lues (leurs jours), celles lues cette fois, le trou de
+/// l'index s'il y en a un, les fiches qui ont pose les listes de reference, et les evenements par conteneur.
+pub struct Rapport {
+    pub livraisons_lues: Vec<String>,
+    pub nouvelles: Vec<String>,
+    pub trou: Option<String>,
+    pub amorces: EnOrdre<Amorce>,
+    pub evenements: EnOrdre<Vec<Evenement>>,
+}
+
+/// Ce qui a bouge pour une convention : sa fiche relivree, ou un de ses textes modifie.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum Evenement {
+    Convention(EvenementConvention),
+    Texte(EvenementTexte),
+}
+
+/// La fiche d'une convention relivree : `premiere` (la liste de reference posee), `nouveaux` (ses textes nouveaux).
+#[derive(Debug, Clone, Serialize)]
+pub struct EvenementConvention {
+    pub livraison: String,
+    pub genre: &'static str,
+    pub ident: String,
+    pub titre: String,
+    pub premiere: bool,
+    pub nouveaux: EnOrdre<String>,
+}
+
+/// Un texte d'une convention modifie.
+#[derive(Debug, Clone, Serialize)]
+pub struct EvenementTexte {
+    #[serde(flatten)]
+    pub texte: Texte,
+    pub conteneur: String,
+    pub livraison: String,
+    pub genre: &'static str,
+    pub ident: String,
+}
+
+impl Evenement {
+    /// Le jour de la livraison qui l'a porte.
+    pub fn livraison(&self) -> &str {
+        match self {
+            Evenement::Convention(c) => &c.livraison,
+            Evenement::Texte(t) => &t.livraison,
+        }
+    }
+}
+
+/// Retourne voir ce qui a bouge, pour chaque convention suivie, depuis un jour (`depuis` : la releve la plus ancienne ;
+/// les livraisons de ce jour-la et d'avant ne comptent pas). `relever` : poser le XML des textes touches dans
 /// `dossier/kali/`.
 ///
-/// Rend `{"livraisons_lues", "nouvelles", "trou", "amorces", "evenements": {conteneur: [...]}}`. Une panne de l'index ou
-/// d'une archive se rend en `Err` : c'est a l'appelant de dire « injoignable » ; rien n'est alors ecrit.
-pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &str, relever: bool, telecharger: &mut Telecharger) -> R<Value> {
+/// Une panne de l'index ou d'une archive se rend en `Err` : c'est a l'appelant de dire « injoignable » ; rien n'est
+/// alors ecrit.
+pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, telecharger: &mut Telecharger) -> R<Rapport> {
     let cache_p = dossier.join(CACHE);
-    let mut cache = charger_cache(&cache_p)?;
-    {
-        let connus = objet(&mut cache, "textes_connus", json!({}))?;
-        let connus = connus.as_object_mut().ok_or("veille-kali.json : « textes_connus » n'est pas un objet")?;
-        for s in suivis {
-            let c = connus.entry(s.conteneur.clone()).or_insert_with(|| json!({}));
-            let c = c.as_object_mut().ok_or("veille-kali.json : une convention de « textes_connus » n'est pas un objet")?;
-            for t in &s.textes {
-                c.entry(t.clone()).or_insert_with(|| json!(CITE));
-            }
+    let avant: Option<Cache> = if cache_p.exists() {
+        Some(socle::forme::lire_fichier(&cache_p, &format!("{} ne se lit pas : le deplacer force la relecture.", cache_p.display()))?)
+    } else {
+        None
+    };
+    let (mut livraisons_lues, mut connus, mut trous, couverture, mut amorces) = match avant {
+        Some(c) => (c.livraisons, c.textes_connus, c.trous, Some(c.couverture), c.amorces),
+        None => (EnOrdre::new(), EnOrdre::new(), Vec::new(), None, EnOrdre::new()),
+    };
+    for s in suivis {
+        let c = connus.entree(s.conteneur.clone(), EnOrdre::new);
+        for t in &s.textes {
+            c.entree(t.clone(), || CITE.to_string());
         }
     }
 
-    let seuil = format!("{}-999999", depuis.replace('-', ""));
+    let seuil = format!("{}-999999", depuis.iso().replace('-', ""));
     let index = String::from_utf8_lossy(&telecharger(INDEX)?).into_owned();
     let toutes = livraisons(&index);
     let (Some(premiere), Some(derniere)) = (toutes.first().cloned(), toutes.last().cloned()) else {
@@ -195,43 +321,34 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &str, relever: bool, te
 
     // Ce qu'on a couvert sans trou : de la premiere veille a la derniere livraison vue. Si l'index ne remonte plus
     // jusque-la, des livraisons sont sorties sans avoir ete lues -- on le dit, et on s'en souvient.
-    let s8 = |t: &str| t.get(..8).unwrap_or(t).to_string();
-    let couv = cache.get("couverture").filter(|c| !c.is_null()).cloned();
-    let mut trous: Vec<Value> = cache.get("trous").and_then(Value::as_array).cloned().unwrap_or_default();
-    match couv {
+    let couverture = match couverture {
         None => {
             if premiere > seuil {
-                trous.push(json!({"de": s8(&seuil), "a": s8(&premiere)}));
+                trous.push(Trou { de: huit(&seuil), a: huit(&premiere) });
             }
-            cache.insert("couverture".into(), json!({"de": std::cmp::min(&seuil, &premiere), "a": derniere}));
+            Plage { de: std::cmp::min(&seuil, &premiere).clone(), a: derniere.clone() }
         }
-        Some(c) if premiere.as_str() > s(&c["a"]) => {
-            trous.push(json!({"de": s8(s(&c["a"])), "a": s8(&premiere)}));
-            cache.insert("couverture".into(), json!({"de": c["de"], "a": derniere}));
+        Some(c) if premiere > c.a => {
+            trous.push(Trou { de: huit(&c.a), a: huit(&premiere) });
+            Plage { de: c.de, a: derniere.clone() }
         }
-        Some(mut c) => {
-            let a = std::cmp::max(s(&c["a"]).to_string(), derniere.clone());
-            c["a"] = json!(a);
-            cache.insert("couverture".into(), c);
-        }
-    }
-    let mut trou = Value::Null;
+        Some(c) => Plage { de: c.de, a: std::cmp::max(c.a, derniere.clone()) },
+    };
+    let mut trou = None;
     for t in &trous {
-        if s(&t["a"]) > s8(&seuil).as_str() {
-            trou = json!(format!(
+        if t.a > huit(&seuil) {
+            trou = Some(format!(
                 "des livraisons entre le {} et le {} sont sorties de l'index sans avoir ete lues : verifier la page a la main pour cette periode",
-                jour(s(&t["de"])),
-                jour(s(&t["a"]))
+                jour(&t.de),
+                jour(&t.a)
             ));
         }
     }
-    cache.insert("trous".into(), Value::Array(trous));
 
     // La liste de reference d'une convention (ses textes attaches) ne vient que d'une fiche livree. Tant qu'on n'en a pas
     // vu, on ne saurait pas rattacher un texte modifie a la convention -- sauf ceux que le manifeste cite. Alors, une
     // fois, on remonte l'index a rebours jusqu'a trouver la derniere fiche de chaque convention suivie.
-    let mut a_amorcer: Vec<&str> =
-        suivis.iter().map(|s| s.conteneur.as_str()).filter(|c| tous_cites(&cache["textes_connus"][*c])).collect();
+    let mut a_amorcer: Vec<&str> = suivis.iter().map(|s| s.conteneur.as_str()).filter(|c| tous_cites(connus.valeur(c))).collect();
     a_amorcer.dedup();
     for l in toutes.iter().filter(|l| **l <= seuil).rev() {
         if a_amorcer.is_empty() {
@@ -239,14 +356,12 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &str, relever: bool, te
         }
         let (conteneurs, _) = lire_livraison(&telecharger(&format!("{}KALI_{}.tar.gz", INDEX, l))?)?;
         for cont in a_amorcer.clone() {
-            if let Some(c) = conteneurs.get(cont) {
-                if let (Some(connus), Some(liens)) = (cache["textes_connus"][cont].as_object_mut(), c["textes"].as_object()) {
-                    for (k, v) in liens {
-                        connus.insert(k.clone(), v.clone());
-                    }
+            if let Some(c) = conteneurs.valeur(cont) {
+                let ses = connus.entree(cont.to_string(), EnOrdre::new);
+                for (k, v) in &c.textes.0 {
+                    ses.poser(k.clone(), v.clone());
                 }
-                let n = c["textes"].as_object().map_or(0, Map::len);
-                objet(&mut cache, "amorces", json!({}))?[cont] = json!({"livraison": jour(l), "textes": n, "titre": c["titre"]});
+                amorces.poser(cont.to_string(), Amorce { livraison: jour(l), textes: c.textes.len(), titre: c.titre.clone() });
                 a_amorcer.retain(|x| *x != cont);
             }
         }
@@ -254,105 +369,88 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &str, relever: bool, te
 
     let mut nouvelles = Vec::new();
     for l in a_lire {
-        if cache.get("livraisons").and_then(|x| x.get(l.as_str())).is_some() {
+        if livraisons_lues.valeur(l).is_some() {
             continue;
         }
         let octets = telecharger(&format!("{}KALI_{}.tar.gz", INDEX, l))?;
         let (conteneurs, textes) = lire_livraison(&octets)?;
-        let mut resume_c = Map::new();
-        let mut resume_t = Map::new();
+        let mut resume_c = EnOrdre::new();
+        let mut resume_t = EnOrdre::new();
         for suivi in suivis {
             let cont = suivi.conteneur.as_str();
-            if let Some(c) = conteneurs.get(cont) {
+            if let Some(c) = conteneurs.valeur(cont) {
                 // La premiere fiche vue donne la liste de reference : rien n'y est « nouveau », on ne connaissait pas la
                 // liste d'avant.
-                let premiere = tous_cites(&cache["textes_connus"][cont]);
-                let anciens = cache["textes_connus"][cont].as_object().cloned().unwrap_or_default();
-                let liens = c["textes"].as_object().cloned().unwrap_or_default();
-                let nouveaux: Map<String, Value> =
-                    if premiere { Map::new() } else { liens.iter().filter(|(k, _)| !anciens.contains_key(*k)).map(|(k, v)| (k.clone(), v.clone())).collect() };
-                resume_c.insert(cont.to_string(), json!({"idcc": c["idcc"], "etat": c["etat"], "premiere": premiere, "nouveaux": nouveaux}));
-                if let Some(connus) = cache["textes_connus"][cont].as_object_mut() {
-                    for (k, v) in liens {
-                        connus.insert(k, v);
-                    }
+                let premiere = tous_cites(connus.valeur(cont));
+                let anciens = connus.entree(cont.to_string(), EnOrdre::new);
+                let nouveaux = if premiere { EnOrdre::new() } else { EnOrdre(c.textes.0.iter().filter(|(k, _)| anciens.valeur(k).is_none()).cloned().collect()) };
+                resume_c.poser(cont.to_string(), ConteneurLu { idcc: c.idcc.clone(), etat: c.etat.clone(), premiere, nouveaux });
+                for (k, v) in &c.textes.0 {
+                    anciens.poser(k.clone(), v.clone());
                 }
             }
         }
-        for (ident, t) in &textes {
+        for (ident, (t, membre)) in &textes.0 {
             for suivi in suivis {
                 let cont = suivi.conteneur.as_str();
-                if cache["textes_connus"][cont].get(ident).is_some() {
-                    let mut t = t.clone();
-                    t["conteneur"] = json!(cont);
+                if connus.valeur(cont).is_some_and(|c| c.valeur(ident).is_some()) {
                     if relever {
-                        poser(dossier, l, ident, s(&t["_xml"]), &octets)?;
+                        poser(dossier, l, ident, membre, &octets)?;
                     }
-                    resume_t.insert(ident.clone(), t);
+                    resume_t.poser(ident.clone(), TexteLu { texte: t.clone(), conteneur: cont.to_string() });
                 }
             }
         }
-        for t in resume_t.values_mut() {
-            if let Some(o) = t.as_object_mut() {
-                o.shift_remove("_xml");
-            }
-        }
-        objet(&mut cache, "livraisons", json!({}))?[l.as_str()] = json!({"conteneurs": resume_c, "textes": resume_t});
+        livraisons_lues.poser(l.clone(), LivraisonLue { conteneurs: resume_c, textes: resume_t });
         nouvelles.push(l.clone());
     }
 
     std::fs::create_dir_all(dossier).map_err(|e| format!("{} : {}", dossier.display(), e))?;
-    let cache = Value::Object(cache);
+    let cache = Cache { quoi: QUOI_DU_CACHE.to_string(), livraisons: livraisons_lues, textes_connus: connus, trous, couverture, amorces };
     socle::ecriture::ecrire_json(&cache_p, &cache, 1)?;
 
-    let mut evenements = Map::new();
+    let mut evenements: EnOrdre<Vec<Evenement>> = EnOrdre::new();
     for suivi in suivis {
-        evenements.entry(suivi.conteneur.clone()).or_insert_with(|| json!([]));
+        evenements.entree(suivi.conteneur.clone(), Vec::new);
     }
-    let mut lues: Vec<&String> = cache["livraisons"].as_object().map(|m| m.keys().collect()).unwrap_or_default();
-    lues.sort();
-    for l in lues {
-        if *l <= seuil {
-            continue;
-        }
-        let r = &cache["livraisons"][l.as_str()];
-        for (cont, c) in r["conteneurs"].as_object().into_iter().flatten() {
+    let mut lues: Vec<&(String, LivraisonLue)> = cache.livraisons.0.iter().filter(|(l, _)| *l > seuil).collect();
+    lues.sort_by(|a, b| a.0.cmp(&b.0));
+    for (l, r) in lues {
+        for (cont, c) in &r.conteneurs.0 {
             // Une fiche relivree sans texte nouveau n'apprend rien de plus que les textes modifies le meme jour : on ne la
             // rapporte pas.
-            let nouveaux = c["nouveaux"].as_object().is_some_and(|m| !m.is_empty());
-            let premiere = c["premiere"].as_bool() == Some(true);
-            if let Some(Value::Array(ev)) = evenements.get_mut(cont) {
-                if nouveaux || premiere {
-                    let n = cache["textes_connus"][cont.as_str()].as_object().map_or(0, Map::len);
-                    ev.push(json!({
-                        "livraison": jour(l), "genre": "convention", "ident": cont,
-                        "titre": if premiere {
-                            format!("premiere fiche de la convention vue : {} texte(s) attache(s), liste de reference posee", n)
-                        } else {
-                            format!("fiche de la convention relivree (etat {})", s(&c["etat"]))
-                        },
-                        "premiere": premiere, "nouveaux": c["nouveaux"],
-                    }));
+            if c.nouveaux.is_empty() && !c.premiere {
+                continue;
+            }
+            let n = match cache.textes_connus.valeur(cont) {
+                Some(t) => t.len(),
+                None => return Err(format!("veille-kali.json : la convention {} n'a pas de textes connus", cont)),
+            };
+            let titre = if c.premiere {
+                format!("premiere fiche de la convention vue : {} texte(s) attache(s), liste de reference posee", n)
+            } else {
+                match &c.etat {
+                    Some(e) => format!("fiche de la convention relivree (etat {})", e),
+                    None => "fiche de la convention relivree".to_string(),
                 }
+            };
+            if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| k == cont).map(|(_, v)| v) {
+                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l), genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
             }
         }
-        for (ident, t) in r["textes"].as_object().into_iter().flatten() {
-            if let Some(Value::Array(ev)) = evenements.get_mut(s(&t["conteneur"])) {
-                let mut e = t.clone();
-                e["livraison"] = json!(jour(l));
-                e["genre"] = json!("texte");
-                e["ident"] = json!(ident);
-                ev.push(e);
+        for (ident, t) in &r.textes.0 {
+            if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| *k == t.conteneur).map(|(_, v)| v) {
+                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l), genre: "texte", ident: ident.clone() }));
             }
         }
     }
-    Ok(json!({
-        "livraisons_lues": toutes.iter().filter(|l| **l > seuil).map(|l| jour(l)).collect::<Vec<_>>(),
-        "nouvelles": nouvelles.iter().map(|l| jour(l)).collect::<Vec<_>>(),
-        "trou": trou,
-        "amorces": cache.get("amorces").cloned().unwrap_or_else(|| json!({})),
-        "evenements": evenements,
-    }))
+    Ok(Rapport {
+        livraisons_lues: toutes.iter().filter(|l| **l > seuil).map(|l| jour(l)).collect(),
+        nouvelles: nouvelles.iter().map(|l| jour(l)).collect(),
+        trou,
+        amorces: cache.amorces,
+        evenements,
+    })
 }
 
 /// Le XML d'un texte touche, garde a cote des sources : on le relira, et on ne le perd pas quand la livraison sort de
@@ -361,7 +459,8 @@ fn poser(dossier: &Path, livraison: &str, ident: &str, membre: &str, octets: &[u
     let Some((_, xml)) = fichiers_tar_gz(octets)?.into_iter().find(|(n, _)| n == membre) else {
         return Err(format!("{} absent de la livraison {}", membre, livraison));
     };
-    let cible = dossier.join("kali").join(format!("{}-{}.xml", ident, jour(livraison)));
-    std::fs::create_dir_all(cible.parent().unwrap_or(dossier)).map_err(|e| e.to_string())?;
+    let kali = dossier.join("kali");
+    let cible = kali.join(format!("{}-{}.xml", ident, jour(livraison)));
+    std::fs::create_dir_all(&kali).map_err(|e| format!("{} : {}", kali.display(), e))?;
     std::fs::write(&cible, xml).map_err(|e| format!("{} : {}", cible.display(), e))
 }

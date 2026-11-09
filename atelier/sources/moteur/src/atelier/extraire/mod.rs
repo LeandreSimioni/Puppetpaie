@@ -21,30 +21,53 @@ pub mod usages;
 
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde::Serialize;
 
 use socle::date::Jour;
 use socle::num::Resultat;
 
+/// Un referentiel releve tel qu'il s'ecrit : `quoi` (ce qu'il est), `note` (d'ou il vient : la commande, les fichiers
+/// deposes lus, la date du releve), puis ce que le releve en a tire (`corps`, la forme de chaque referentiel).
+#[derive(Serialize)]
+struct Ecrit<'a, T> {
+    quoi: &'static str,
+    note: &'a str,
+    #[serde(flatten)]
+    corps: &'a T,
+}
+
 /// Un releve fait, pret a s'ecrire.
 pub struct Releve {
-    pub donnees: Value,
-    /// L'indentation du JSON ecrit (n espaces par niveau).
-    pub indent: usize,
-    /// Un saut de ligne apres le JSON.
-    pub saut_final: bool,
+    /// La note du referentiel : la commande, les fichiers deposes lus, la date du releve.
+    pub note: String,
+    /// Le fichier ecrit avec la note donnee.
+    ecrit: Box<dyn Fn(&str) -> String>,
     /// Ce que la commande dit en finissant (les nombres, ce qui a ete ecarte).
     pub bilan: Vec<String>,
 }
 
 impl Releve {
+    /// Le releve du referentiel `quoi`, `note`, `corps`, ecrit indente de `indent` (suivi d'un saut de ligne si
+    /// `saut_final`).
+    pub(crate) fn nouveau<T: Serialize + 'static>(quoi: &'static str, note: String, corps: T, indent: usize, saut_final: bool, bilan: Vec<String>) -> Releve {
+        let ecrit = move |note: &str| {
+            let mut t = socle::ecriture::json_indente(&Ecrit { quoi, note, corps: &corps }, indent);
+            if saut_final {
+                t.push('\n');
+            }
+            t
+        };
+        Releve { note, ecrit: Box::new(ecrit), bilan }
+    }
+
     /// Les octets du fichier : le JSON indente, accents non echappes, en LF.
     pub fn octets(&self) -> Vec<u8> {
-        let mut t = socle::ecriture::json_indente(&self.donnees, self.indent);
-        if self.saut_final {
-            t.push('\n');
-        }
-        t.into_bytes()
+        self.octets_avec_note(&self.note)
+    }
+
+    /// Les octets du fichier, sa note remplacee par `note` (celle d'un referentiel livre, pour le comparer a l'octet).
+    pub fn octets_avec_note(&self, note: &str) -> Vec<u8> {
+        (self.ecrit)(note).into_bytes()
     }
 }
 
@@ -129,7 +152,8 @@ fn verifier_la_sortie(sources: &[PathBuf], sortie: &Path, remplacer: bool) -> Re
                 s.display()
             ));
         }
-        if s == sortie || (sortie.exists() && std::fs::canonicalize(s).ok() == std::fs::canonicalize(sortie).ok()) {
+        let absolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(p, &e));
+        if s == sortie || (sortie.exists() && absolu(s)? == absolu(sortie)?) {
             return Err(format!("La sortie {} est une des sources : rien n'est ecrit.", sortie.display()));
         }
     }
@@ -147,9 +171,7 @@ fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> Resultat<()> {
     if sortie.exists() && !remplacer {
         return Err(format!("{} existe deja (`--remplacer` pour l'ecraser) : rien n'est ecrit.", sortie.display()));
     }
-    let mut nom = sortie.file_name().map(|n| n.to_os_string()).unwrap_or_default();
-    nom.push(".extraire-tmp");
-    let tmp = sortie.with_file_name(nom);
+    let tmp = socle::ecriture::provisoire(sortie);
     std::fs::write(&tmp, releve.octets()).map_err(|e| format!("{} : {}", tmp.display(), e))?;
     std::fs::rename(&tmp, sortie).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
@@ -250,9 +272,7 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
         }
     };
     for (texte, sortie) in [(u, &sorties[0]), (f, &sorties[1])] {
-        let mut nom = sortie.file_name().map(|n| n.to_os_string()).unwrap_or_default();
-        nom.push(".extraire-tmp");
-        let tmp = sortie.with_file_name(nom);
+        let tmp = socle::ecriture::provisoire(sortie);
         if let Err(e) = std::fs::write(&tmp, texte).and_then(|_| std::fs::rename(&tmp, sortie)) {
             let _ = std::fs::remove_file(&tmp);
             eprintln!("{} : {}", sortie.display(), e);
@@ -265,9 +285,27 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
 
 // ------------------------------------------------------------------ les aides communes
 
-/// Le nom du fichier.
+/// Le nom du fichier ; un chemin qui ne finit pas par un nom (`..`) se dit entier.
 pub(crate) fn nom_de(chemin: &Path) -> String {
-    chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    match chemin.file_name() {
+        Some(n) => n.to_string_lossy().into_owned(),
+        None => chemin.display().to_string(),
+    }
+}
+
+pub(crate) use crate::atelier::EnOrdre;
+
+/// Une ligne d'un tableau releve, case par case : `None` pour une case vide.
+pub(crate) type Rang = Vec<Option<String>>;
+
+/// La case `j` du rang, si elle est remplie.
+pub(crate) fn case(r: &[Option<String>], j: usize) -> Option<&str> {
+    r.get(j).and_then(|c| c.as_deref())
+}
+
+/// La case `j` du rang, qui doit etre remplie (`ou` : la ligne, pour le refus).
+pub(crate) fn remplie<'a>(r: &'a [Option<String>], j: usize, ou: &str) -> Resultat<&'a str> {
+    case(r, j).ok_or_else(|| format!("{} : la case {} est vide", ou, j + 1))
 }
 
 /// L'empreinte SHA-256 du fichier, en hexadecimal.
@@ -286,13 +324,10 @@ pub(crate) fn nfc(texte: &str) -> String {
     icu_normalizer::ComposingNormalizerBorrowed::new_nfc().normalize(texte).into_owned()
 }
 
-/// Une case d'un classeur en texte comme le releve sur PDF le rend : vide pour une case vide, sinon la valeur en texte,
-/// blancs ramenes a un, en forme composee (NFC).
-pub(crate) fn propre(c: &Option<socle::lecture_xlsx::Cellule>) -> String {
-    match c {
-        None => String::new(),
-        Some(c) => nfc(&blancs_ramenes(&c.en_texte())),
-    }
+/// Une case d'un classeur en texte comme le releve sur PDF le rend : la valeur en texte, blancs ramenes a un, en forme
+/// composee (NFC) ; `None` pour une case vide ou blanche.
+pub(crate) fn propre(c: &Option<socle::lecture_xlsx::Cellule>) -> Option<String> {
+    c.as_ref().map(|c| nfc(&blancs_ramenes(&c.en_texte()))).filter(|t| !t.is_empty())
 }
 
 /// La date du releve, comme la `note` l'ecrit (`JJ/MM/AAAA`).

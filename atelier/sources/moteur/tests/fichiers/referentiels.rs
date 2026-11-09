@@ -26,16 +26,14 @@ fn reference(chemin: &str) -> PathBuf {
 /// Le releve redonne le fichier livre `nom`, octet pour octet, une fois sa `note` remplacee par celle du livre ; et sa
 /// `note` nomme la commande et chaque fichier depose qu'il a lu.
 fn redonne_le_livre(releve: Releve, nom: &str, commande: &str, deposes: &[&str]) {
-    let source = releve.donnees["note"].as_str().unwrap_or("").to_string();
+    let source = &releve.note;
     assert!(source.contains(commande), "la note de {} ne nomme pas `{}` : {}", nom, commande, source);
     for d in deposes {
         assert!(source.contains(d), "la note de {} ne nomme pas {} : {}", nom, d, source);
     }
     let livre = std::fs::read(code_livre().join(nom)).unwrap();
     let lu: Value = serde_json::from_slice(&livre).unwrap();
-    let mut donnees = releve.donnees;
-    donnees["note"] = lu["note"].clone();
-    let refait = Releve { donnees, indent: releve.indent, saut_final: releve.saut_final, bilan: Vec::new() }.octets();
+    let refait = releve.octets_avec_note(lu["note"].as_str().unwrap());
     if refait != livre {
         let (a, b) = (String::from_utf8_lossy(&refait), String::from_utf8_lossy(&livre));
         let ligne =
@@ -81,7 +79,7 @@ fn chaque_referentiel_livre_et_chaque_table_sont_ce_que_les_textes_deposes_donne
     // Les usages et les formats de la norme P26V01 : le cahier 2026.1. Le tableau des usages par rubrique occupe les
     // pages 363 a 371 ; celui des usages des controles qui le suit (p. 372-382) n'a aucune ligne de rubrique.
     let r = extraire::usages::relever(&transcription_du_cahier_2026_1("usages"), &jour).unwrap();
-    assert!(r.donnees["note"].as_str().unwrap().contains("(p. 363-371)"), "{}", r.donnees["note"]);
+    assert!(r.note.contains("(p. 363-371)"), "{}", r.note);
     redonne_le_livre(r, "usages-dsn-base.json", "moteur extraire usages", &["dsn-cahier-technique-2026.1.pdf"]);
     let r = extraire::formats::relever(&transcription_du_cahier_2026_1("formats"), &jour);
     redonne_le_livre(r.unwrap(), "formats-dsn-base.json", "moteur extraire formats", &["dsn-cahier-technique-2026.1.pdf"]);

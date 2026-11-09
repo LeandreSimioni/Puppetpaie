@@ -81,8 +81,15 @@ pub fn relever(sources: &Path, donnees: &Path, telecharger: &dyn Fn(&str) -> Res
 fn premier_jour_calculable(donnees: &Path) -> Result<socle::date::Jour, String> {
     let dossier = donnees.join("baremes");
     let lus = std::fs::read_dir(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e))?;
-    let an = lus
-        .filter_map(|e| e.ok()?.file_name().to_str()?.strip_suffix(".json")?.parse::<i32>().ok())
+    let mut ans = Vec::new();
+    for e in lus {
+        let nom = e.map_err(|e| socle::echec::du_disque(&dossier, &e))?.file_name();
+        if let Some(an) = nom.to_str().and_then(|n| n.strip_suffix(".json")) {
+            ans.push(an.parse::<i32>().map_err(|e| format!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?);
+        }
+    }
+    let an = ans
+        .into_iter()
         .min()
         .ok_or_else(|| format!("{} : aucun barème livré, la première année calculable ne se lit pas.", dossier.display()))?;
     socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| format!("année de barème illisible : {}", an))
