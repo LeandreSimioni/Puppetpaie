@@ -666,7 +666,7 @@ fn ecrire(ctx: &Contexte, mois: &str, liste: Vec<Value>) -> R<()> {
 
 /// Ce qui est parti d'un imprevu (`obligations::ce_qui_est_parti` : les envois du journal, tels qu'il les lit).
 fn ses_envois(ctx: &Contexte, imp: &Value) -> R<Vec<crate::obligations::EnvoiDeLArret>> {
-    crate::obligations::ce_qui_est_parti(ctx, imp)
+    crate::obligations::ce_qui_est_parti(ctx, &forme(imp)?)
 }
 
 /// Les mois des DSN mensuelles qui ont reporte l'imprevu (nature 01).
@@ -683,7 +683,7 @@ fn envoye(ctx: &Contexte, imp: &Value, nature: &str) -> R<bool> {
 /// (`obligations::ce_qui_est_parti` : un depot reel accepte, que le bilan n'a pas refuse).
 fn parti_le(ctx: &Contexte, imp: &Value, nature: &str) -> R<Option<Jour>> {
     let envois = ses_envois(ctx, imp)?;
-    let premier = envois.iter().filter(|x| x.nature == nature && x.type_declaration == signalement::NORMALE).map(|x| x.quand.as_str()).min().map(str::to_string);
+    let premier = envois.iter().filter(|x| x.nature == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand.as_str()).min().map(str::to_string);
     premier.map(|q| Jour::lire(&q.chars().take(10).collect::<String>()).map_err(|m| erreur(Classe::Illisible, m))).transpose()
 }
 
@@ -984,7 +984,7 @@ fn ce_qui_est_parti(prolongations: &Value, signalements: &[crate::obligations::E
         parti.push(dite(format!("prolongé jusqu'au {} (avis du {})", jour(&p["fin"]), jour(&p["le"]))));
     }
     for s in signalements {
-        let quoi = if s.nature == "05" { "reprise signalée" } else if s.type_declaration == "03" { "signalement rectifié" } else { "signalé" };
+        let quoi = if s.nature == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
         parti.push(dite(format!("{} le {}", quoi, crate::routes::quand(&s.quand))));
     }
     if !reporte_par_dit.is_empty() {
@@ -1178,7 +1178,7 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         // colonne du mois, son dossier) lit une seule liste, et chaque arret y porte ses obligations, calculees au meme
         // endroit que pour la route `arrets` (`obligations::de_l_arret`).
         if imprevus::est_un_arret(&lu) {
-            r.poser_obligations(crate::obligations::de_l_arret(ctx, &imp, &suivi, ctx.aujourdhui)?);
+            r.poser_obligations(crate::obligations::de_l_arret(ctx, &arret_de(&imp)?, &suivi, ctx.aujourdhui)?);
         }
         r.dire_ce_qui_est_parti();
         out.push(r);
@@ -1568,7 +1568,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
     // Le jour où la compagnie a su l'accident, point de départ des 48 heures de la déclaration (R441-3) : contrôlé ici,
     // écrit avec l'arrêt.
     let connu = match &c.connu {
-        Some(dite) => Some(crate::obligations::connaissance_saisie(ctx, &arret, crate::obligations::DeQuoi::Accident, dite)?),
+        Some(dite) => Some(crate::obligations::connaissance_saisie(ctx, &arret_de(&arret)?, crate::obligations::DeQuoi::Accident, dite)?),
         None => None,
     };
 
@@ -1585,7 +1585,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
     liste.push(arret.clone());
     ecrire(ctx, &mois, liste)?;
     if let Some(saisie) = connu {
-        crate::obligations::connaissance_ecrire(ctx, &arret, crate::obligations::DeQuoi::Accident, saisie)?;
+        crate::obligations::connaissance_ecrire(ctx, &arret_de(&arret)?, crate::obligations::DeQuoi::Accident, saisie)?;
     }
     reponse_arret(ctx, &arret, "Arrêt enregistré.")
 }
@@ -1788,7 +1788,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let fin = fin_de_contrat_declaree(ctx, &e, &mois)?;
     if remplace.is_none() && !refaire {
         let journal = envois::journal::lu(&ctx.racine).map_err(plain)?;
-        if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &jour(&json!(fin.fin))?) {
+        if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &jour(&json!(fin.fin))?)? {
             return Err(refus(format!(
                 "Le signalement de fin de contrat de {} est parti le {} : il ne se refait pas. Le corriger : un annule et remplace (champ « remplace »). Rien n'est écrit.",
                 cle,
@@ -2063,7 +2063,7 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
     let mut phrases = Vec::new();
     for a in &tous {
         let mut r = resume(ctx, &n, a)?;
-        let obligations = crate::obligations::de_l_arret(ctx, a, &suivi, ctx.aujourdhui)?;
+        let obligations = crate::obligations::de_l_arret(ctx, &arret_de(a)?, &suivi, ctx.aujourdhui)?;
         // Ce que l'ecran lit (Exports › Avancé) : qui, quand, le motif, ce qui reste a signaler, puis ses obligations, une
         // ligne chacune.
         if let Resume::Arret(x) = &r {

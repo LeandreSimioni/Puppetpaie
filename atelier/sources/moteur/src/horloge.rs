@@ -705,7 +705,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 .into_iter()
                 .find(|x| valeur_en_texte(&x["salarie"]) == *salarie && valeur_en_texte(&x["dernier_jour_travaille"]) == *dernier);
             let Some(a) = a else { return Ok(false) };
-            let encore = crate::obligations::de_l_arret(ctx, &a, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?
+            let encore = crate::obligations::de_l_arret(ctx, &crate::routes::imprevus::arret_de(&a)?, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?
                 .iter()
                 .any(|o| o.cle == *cle && due(o, ctx.aujourdhui).is_some());
             if !encore {
@@ -908,7 +908,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
     let arrets = crate::routes::imprevus::tous_les_arrets(ctx).unwrap_or_default();
     if let Ok(suivi) = crate::obligations::Suivi::lire(ctx) {
         for a in arrets.iter().filter(|a| valeur_en_texte(&a["dernier_jour_travaille"]).starts_with(mois)) {
-            let obligations = crate::obligations::de_l_arret(ctx, a, &suivi, jour).unwrap_or_default();
+            let obligations = crate::routes::imprevus::arret_de(a).and_then(|a| crate::obligations::de_l_arret(ctx, &a, &suivi, jour)).unwrap_or_default();
             for (cle, nature, dit) in natures {
                 let Some(butoir) = obligations.iter().find(|o| o.cle == cle).and_then(du) else { continue };
                 let (salarie, dernier) = (valeur_en_texte(&a["salarie"]), valeur_en_texte(&a["dernier_jour_travaille"]));

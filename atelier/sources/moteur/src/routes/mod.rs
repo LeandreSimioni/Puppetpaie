@@ -213,7 +213,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(depots::ROUTES) => depots::route(&porte, charge),
         _ if dans(imprevus::ROUTES) => brute(imprevus::route(o, &ctx, route, c)),
         // Les obligations d'un arret : le jour ou la compagnie l'a su, la declaration d'accident faite.
-        _ if dans(crate::obligations::ROUTES) => brute(crate::obligations::route(&ctx, route, c)),
+        _ if dans(crate::obligations::ROUTES) => crate::obligations::route(&porte, charge),
         _ if dans(fiches::ROUTES) => brute(fiches::route(o, &ctx, route, c)),
         _ if dans(identite::ROUTES) => brute(identite::route(o, &ctx, route, c)),
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
