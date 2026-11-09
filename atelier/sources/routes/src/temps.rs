@@ -25,10 +25,12 @@ pub(crate) struct TempsDeLaCase<V> {
     lignes: Vec<TempsDUneLigne<V>>,
 }
 
-/// Les temps des cases d'une ligne d'une liste datee, la ligne nommee par sa cle (le NIC d'un etablissement).
+/// Les temps des cases d'une ligne d'une liste datee, la ligne nommee par sa cle (le NIC d'un etablissement) et par ce
+/// qui la dit (son libelle).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TempsDUneLigne<V> {
     pub(crate) cle: String,
+    pub(crate) dit: String,
     pub(crate) cases: Vec<TempsDeLaCase<V>>,
 }
 

@@ -83,7 +83,7 @@ function champDeFiche(c, fiche, nom) {
                 value="${echapper(v ?? "")}">`;
     }
     const sous = sousChamps(c);
-    if (sous) return structureHtml(c, v, sous, a);
+    if (sous) return structureHtml(c, v, sous, a, tempsDuChamp(c.cle, fiche.donnees));
     // LA CONVENTION SE CHOISIT, ELLE NE SE TAPE PAS : l'IDCC seul ; son
     // libelle et le code convention DSN, le moteur les tire de lui (voir
     // `routes::fiches::deriver`). Les champs propres a une convention suivent leur condition (`si`). La liste vient du moteur
@@ -606,7 +606,8 @@ function brancherListes(fiche) {
     const sous = structureDecrite(cle);
     const boite = document.querySelector(
       `#config-formulaire [data-liste="${CSS.escape(cle)}"]`);
-    boite.innerHTML = lignes.map((l, i) => ligneStructure(cle, sous, l, i)).join("");
+    const temps = (tempsDuChamp(cle, (fiche || {}).donnees) || {}).lignes || [];
+    boite.innerHTML = lignes.map((l, i) => ligneStructure(cle, sous, l, i, temps.find((x) => x.cle === l.nic))).join("");
     boite.querySelectorAll("input").forEach((c) => {
       c.oninput = () => { marquerModifie();
         clearTimeout(verifierFormulaire._t);
@@ -954,27 +955,55 @@ async function remplirDepuisMetier(code) {
 function histoireDuChamp(cases, desc) {
   if (!Array.isArray(cases) || !cases.length) return "";
   const libelle = (cle) => (desc.find((c) => c.cle === cle) || {}).libelle || cle;
+  // Les cases d'une liste (les autres établissements) : chaque ligne, nommée par le moteur, case par case.
+  const rangees = (t) => (t.lignes || []).length
+    ? t.lignes.map((l) => l.cases.map((c) => lignesDHistoire(c,
+        `${l.dit} · ${sousLibelle(t.champ, c.champ)}`, valeurLisible)).join("")).join("")
+    : lignesDHistoire(t, libelle(t.champ), (v) => valeurHistorique(t.champ, v));
   return `<details class="champ pleine historique-fiche">
     <summary>${aideDe("historique_titre")}</summary>
     <div class="aide">${aideDe("historique_fiche")}</div>
-    <div class="histoire">${cases.map((t) => (t.valeurs || []).map((e) => `
-      <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
-        <span class="histoire-champ">${echapper(libelle(t.champ))}</span>
-        <span class="histoire-valeur">${echapper(valeurHistorique(t.champ, e.valeur))}</span>
-        <span class="histoire-date">${echapper(e.dit || "")}</span>
-        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
-      </div>`).join("")).join("")}</div>
+    <div class="histoire">${cases.map(rangees).join("")}</div>
   </details>`;
 }
 
-/* SOUS UNE CASE DATÉE, au plus deux lignes, telles que le moteur les dit (`historique` de la fiche) : la valeur d'avant
- * (« jusqu'au … ») et la prochaine à venir (« à partir du … »), chacune avec d'où elle vient quand sa ligne le dit. */
-function tempsDeLaCase(cle, donnees) {
-  const t = ((donnees || {}).historique || []).find((h) => h.champ === cle);
+/* Toutes les valeurs d'une case datée (`valeurs` de ses temps), une rangée chacune, celle d'aujourd'hui en gras. */
+function lignesDHistoire(t, nom, dire) {
+  return (t.valeurs || []).map((e) => `
+      <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
+        <span class="histoire-champ">${echapper(nom)}</span>
+        <span class="histoire-valeur">${echapper(dire(e.valeur))}</span>
+        <span class="histoire-date">${echapper(e.dit || "")}</span>
+        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
+      </div>`).join("");
+}
+
+/* Le libellé d'une case d'une structure `cle` (« adresse_affichage » des établissements), tel que la description le
+ * dit ; une case faite de cases (« versement_mobilite ») se nomme par sa première. */
+function sousLibelle(cle, sous) {
+  const champs = (structureDecrite(cle) || {}).champs || [];
+  const c = champs.find(([k]) => k === sous) || champs.find(([k]) => k.startsWith(sous + "."));
+  return c ? c[1] : sous;
+}
+
+/* SOUS UNE CASE DATÉE, au plus deux lignes, telles que le moteur les dit (ses temps : `avant`, `a_venir`) : la valeur
+ * d'avant (« jusqu'au … ») et la prochaine à venir (« à partir du … »), chacune avec d'où elle vient quand sa ligne le
+ * dit. `dire` rend une valeur lisible. */
+function lignesDuTemps(t, dire) {
   if (!t) return "";
-  const ligne = (l) => l ? `<div class="aide temps-case">${echapper(valeurHistorique(cle, l.valeur))} · ${
+  const ligne = (l) => l ? `<div class="aide temps-case">${echapper(dire(l.valeur))} · ${
     echapper(l.dit)}${l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "";
   return ligne(t.avant) + ligne(t.a_venir);
+}
+
+/* Les temps de la case `cle` d'une fiche (`historique` de ses données). */
+function tempsDuChamp(cle, donnees) {
+  return ((donnees || {}).historique || []).find((h) => h.champ === cle);
+}
+
+/* Sous une case de fiche, ses deux lignes. */
+function tempsDeLaCase(cle, donnees) {
+  return lignesDuTemps(tempsDuChamp(cle, donnees), (v) => valeurHistorique(cle, v));
 }
 
 /* MODIFIER, C'EST TOUJOURS LE MEME BOUTON : un crayon et le

@@ -355,13 +355,19 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
     }
     let mut lignes = Vec::new();
     for (nic, cases) in par_nic {
+        // Il se nomme par son dernier libelle, sinon par son NIC.
+        let libelle = cases.iter().find(|(k, _)| k == "libelle").and_then(|(_, d)| d.last()).and_then(|d| d.valeur.as_ref()).and_then(Valeur::mot);
+        let dit = match libelle {
+            Some(l) => l,
+            None => nic.clone(),
+        };
         let mut temps = Vec::new();
         for (cle, datees) in cases {
             if let Some(t) = crate::temps::d_une_case(&cle, &datees, jour, |a, b| a == b)? {
                 temps.push(t);
             }
         }
-        lignes.push(crate::temps::TempsDUneLigne { cle: nic, cases: temps });
+        lignes.push(crate::temps::TempsDUneLigne { cle: nic, dit, cases: temps });
     }
     Ok(crate::temps::d_une_liste("etablissements", lignes))
 }
