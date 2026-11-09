@@ -290,8 +290,7 @@ async function lireDemarrage(lu) {
 }
 
 /** Aller à ce qui manque : l'onglet, puis la case (son tiroir ouvert, le
- *  curseur dedans). Le taux AT/MP n'est pas une case de la fiche
- *  (`ATMP_HTML`) ; les organismes ont leur onglet ; ce qui se dit sur la
+ *  curseur dedans). Les organismes ont leur onglet ; ce qui se dit sur la
  *  fiche d'un salarié ou d'un spectacle (`salarie`, `spectacle`, du moteur)
  *  ouvre sa fiche. */
 async function allerAuManque(champ, onglet, nom, cle) {
@@ -313,8 +312,7 @@ async function allerAuManque(champ, onglet, nom, cle) {
     if (sous && !sous.classList.contains("actif")) sous.click();
   }
   if (fiche === "organismes" || fiche === "coffre" || !champ) return;
-  const trouver = () => champ === "taux_atmp" ? document.getElementById("atmp-valeur")
-    : document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
+  const trouver = () => document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
       || document.querySelector(`#config-formulaire [data-sous-de="${CSS.escape(champ)}"]:not([type="hidden"])`);
   let essais = 0;
   const viser = () => {

@@ -376,19 +376,6 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             }
         }
     }
-    // EN ALSACE-MOSELLE, le code pose a la creation n'a pas de taux (celui de l'annexe 1 ne vaut pas : l'annexe 3 en fixe
-    // d'autres, art. 4 de l'arrete, `atelier/reference/sources/tarification-atmp/`), et le taux se saisit
-    // (`droit::bareme::taux_de_l_arrete`).
-    if en_alsace_moselle(ctx) && pose_a_la_creation(ctx)? {
-        out.push(manque(
-            "taux_atmp",
-            format!("Le taux AT/MP {}", an),
-            "toute paie",
-            ENTREPRISE,
-            Some("taux_atmp"),
-            "L'établissement est en Alsace-Moselle : ses taux AT/MP sont ceux de l'annexe 3 de l'arrêté de l'année, pas celui posé à la création. Saisissez le code et le taux de votre notification (compte AT/MP sur net-entreprises).".into(),
-        )?);
-    }
     if let Err(m) = bareme {
         if m.contains("AT/MP") {
             out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), m)?);
@@ -499,43 +486,16 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
     Ok(out)
 }
 
-/// CE QUE LE MOTEUR A POSE DE LUI-MEME A LA CREATION, et qui se dit avec ce qui manque : le code risque et le taux AT/MP de
-/// l'annee (`moteur::routes::atmp::a_la_creation`), tant que personne ne les a changes, ou ceux que la notification
-/// de la CARSAT a poses, avec sa date (`moteur::routes::atmp::poser_notifie`). Le libelle est celui de l'arrete
-/// de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
+/// CE QUE LE MOTEUR A INSCRIT DE LUI-MEME, et qui se dit avec ce qui manque : le taux AT/MP de l'annee, quand il vient de
+/// la notification de la CARSAT recue avec les retours (`moteur::routes::atmp::recue`, avec sa date) ou du taux collectif
+/// de l'arrete pour un risque « TC » (`droit::bareme::taux_atmp_de_l_annee`, sa `provenance`). Le libelle est celui de
+/// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
     let an = ctx.aujourdhui.an;
-    let Some(t) = ctx.taux_atmp_de(an).transpose()? else { return Ok(Vec::new()) };
-    let reporte_de = t.reporte_de;
-    let notification = t.notification.as_ref();
-    let a_la_creation = t.pose_a_la_creation == Some(true);
-    if notification.is_none() && (!(a_la_creation || reporte_de.is_some()) || en_alsace_moselle(ctx)) {
-        return Ok(Vec::new());
-    }
-    let risque = match &t.code_risque {
-        Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
-        None => None,
-    };
-    let taux = t.valeur.map(|v| format!("{:.2} %", v.round_dp(2)).replace('.', ","));
-    let nom = match &risque {
-        Some(r) => Some(match &r.code_arrete {
-            Some(c) => c.clone(),
-            None => r.code.clone(),
-        }),
-        None => t.code_risque.clone(),
-    };
-    let dit: Vec<String> = [nom.map(|n| format!("code risque {}", n)), taux.map(|t| format!("taux {}", t))].into_iter().flatten().collect();
-    let libelle = match dit.is_empty() {
-        true => format!("Accidents du travail en {}", an),
-        false => format!("Accidents du travail : {} en {}", dit.join(", "), an),
-    };
-    let pose = |texte: String| Pose { cle: "taux_atmp".into(), libelle: libelle.clone(), texte, ou: ENTREPRISE.0.into(), onglet: ENTREPRISE.1.into(), champ: Some("taux_atmp".into()) };
-    // Le taux que la notification de la CARSAT a pose (`moteur::routes::atmp::poser_notifie`) : d'ou il vient.
-    if let Some(n) = notification {
-        let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
-        return Ok(vec![pose(format!(
-            "{}Le code risque et le taux sont ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN et posés de lui-même. Rien à recopier.",
-            de,
+    let Some(Ok(t)) = ctx.taux_atmp_de(an) else { return Ok(Vec::new()) };
+    let d_ou = match (&t.notification, &t.provenance) {
+        (Some(n), _) => format!(
+            "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",
             // Sans jour de calcul, celui de la notification.
             match &n.calcul {
                 Some(c) => c,
@@ -543,13 +503,28 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
             }
             .jj_mm_aaaa(),
             n.effet.exigee("taux_atmp.notification.effet")?.jj_mm_aaaa()
-        ))]);
-    }
-    let Some(r) = risque else { return Ok(Vec::new()) };
-    Ok(vec![pose(match reporte_de {
-        Some(de) => format!("« {} » Le code risque est celui que la compagnie a dit pour {} ; son taux de {} est celui de l'arrêté de tarification, le même pour toutes les compagnies qui y sont classées. Votre notification AT/MP (compte AT/MP sur net-entreprises) dit le vôtre ; s'il est autre, changez-le dans Configuration › Entreprise, « Avancé ».", r.libelle, de, an),
-        None => format!("« {} » Le logiciel l'a posé pour vous : c'est le risque du spectacle vivant, et son taux est le même pour toutes les compagnies qui y sont classées. Votre notification AT/MP (compte AT/MP sur net-entreprises) dit le vôtre ; s'il est autre, changez-le dans Configuration › Entreprise, « Avancé ».", r.libelle),
-    })])
+        ),
+        (None, Some(p)) => format!("{} Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, écrivez-le avec son année.", p),
+        (None, None) => return Ok(Vec::new()),
+    };
+    let risque = match &t.code_risque {
+        Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
+        None => None,
+    };
+    let nom = match &risque {
+        Some(r) => r.code_arrete.clone().unwrap_or_else(|| r.code.clone()),
+        None => t.code_risque.clone().unwrap_or_default(),
+    };
+    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
+    let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
+    Ok(vec![Pose {
+        cle: "taux_atmp".into(),
+        libelle: format!("Accidents du travail : code risque {}{} en {}", nom, taux, an),
+        texte: format!("{}{}", de, d_ou),
+        ou: ENTREPRISE.0.into(),
+        onglet: ENTREPRISE.1.into(),
+        champ: Some("taux_atmp".into()),
+    }])
 }
 
 /// `pour-demarrer`. `proposes` : les propositions qui ne se tirent pas des fiches (les acces aux organismes, que le
@@ -609,14 +584,4 @@ pub fn a_la_suite(ctx: &Contexte, deja_dit: &str) -> Resultat<Option<String>> {
         return Ok(None);
     }
     Ok(Some(format!(" Pour démarrer, il manque encore : {}.", lignes.join(" ; "))))
-}
-
-/// L'etablissement de la fiche est-il en Alsace-Moselle (`droit::bareme::en_alsace_moselle`) ?
-fn en_alsace_moselle(ctx: &Contexte) -> bool {
-    droit::bareme::en_alsace_moselle(ctx.entreprise.code_postal.portee())
-}
-
-/// Le taux AT/MP de l'annee est-il encore celui que le moteur a pose a la creation ?
-fn pose_a_la_creation(ctx: &Contexte) -> Resultat<bool> {
-    Ok(ctx.taux_atmp_de(ctx.aujourdhui.an).transpose()?.is_some_and(|t| t.pose_a_la_creation == Some(true)))
 }

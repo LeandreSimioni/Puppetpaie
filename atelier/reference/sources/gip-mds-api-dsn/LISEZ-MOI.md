@@ -143,9 +143,10 @@ pièce brute.
   `les_comptes_rendus_neores_et_des_organismes_complementaires_se_traduisent` (un CRC fabriqué en fictif).
 - `envois/src/retours.rs`, `taux_atmp_d_octets` (30/10/2026) : la notification de nature 34 lue d'après `taux_AT` (ci-dessus,
   « La notification du taux AT/MP ») ; `moteur/src/compagnie/suites.rs`, `appliquer_taux_atmp`, et
-  `moteur/src/routes/atmp.rs`, `poser_notifie` : le code risque et le taux de l'établissement de la compagnie se posent
-  dans la fiche entreprise à leur date d'effet (`config/entreprise.json`, `taux_atmp`), avec la notification pour
-  source ; un autre établissement, une notification illisible ou à plusieurs codes se disent, sans rien poser.
+  `moteur/src/routes/atmp.rs`, `recue` : le code risque et le taux de l'établissement de la compagnie s'inscrivent dans
+  la case de la fiche entreprise à leur date d'effet (`config/entreprise.json`, `taux_atmp`), avec la notification pour
+  source, s'ils en diffèrent ; un autre établissement, une notification illisible ou à plusieurs codes se disent, sans
+  rien poser.
   `envois/src/organismes_simules.rs`, `crm_atmp` : la même pièce, jouée pour une compagnie fictive (annonce `taux_atmp`).
 
 **Un courrier réel de notification** (celui d'une compagnie, daté du 01/01/2026, dans `reference-privee/atmp/` du dépôt

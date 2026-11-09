@@ -45,6 +45,9 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
     fn sans_notes(p: Self::Plate) -> Self::Plate;
 
+    /// Ce que le moteur pose dans la fiche changee `apres`, d'apres celle que l'ecran a montree (`avant`), avant tout
+    /// controle (la forme d'un code risque, la notification d'un taux AT/MP que la saisie change).
+    fn ajuster(_avant: &Self::Plate, _apres: &mut Self::Plate) {}
     /// Ce qu'une ecriture refuse, `forcer` ou non (un NIR, un matricule, un numero d'objet deja pris).
     fn refuser(_ctx: &Contexte, _cle: Option<&str>, _avant: &Self::Plate, _apres: &Self::Plate) -> R<()> {
         Ok(())
@@ -91,9 +94,34 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     fn sans_notes(p: ChampsEntreprise) -> ChampsEntreprise {
         p.sans_notes()
     }
+    /// LE TAUX AT/MP SAISI (`taux_atmp`) : le code risque s'ecrit sans point ni blanc (S21.G00.40.040, « 923AD ») ; une
+    /// notification dit le code, le taux et l'annee qu'elle a notifies : la saisie qui en change un ne vient plus d'elle.
+    fn ajuster(avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) {
+        let Some(t) = apres.taux_atmp.as_mut() else { return };
+        t.code_risque = t.code_risque.as_deref().map(|c| c.trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase()).filter(|c| !c.is_empty());
+        if !avant.taux_atmp.as_ref().is_some_and(|a| droit::bareme::meme_taux_atmp(a, t)) {
+            t.notification = None;
+        }
+    }
+    /// Le taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`).
+    fn refuser(_ctx: &Contexte, _cle: Option<&str>, _avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<()> {
+        match apres.taux_atmp.as_ref().map(droit::bareme::taux_atmp_refuse).transpose().map_err(refus)? {
+            Some(Some(m)) => Err(refus(format!("Accidents du travail (AT/MP) : {} Rien n'a été enregistré.", m))),
+            _ => Ok(()),
+        }
+    }
+    /// Le jour fixe du versement des intermittents ; le taux AT/MP recu par la DSN que la saisie change
+    /// (`droit::bareme::taux_atmp_a_confirmer`).
     fn usage(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Option<String> {
-        let neuf = apres.date_de_versement_intermittents.remplie().map(str::trim)?;
-        (Some(neuf) != avant.date_de_versement_intermittents.remplie().map(str::trim)).then(|| droit::versement::Versement::a_confirmer_pour_les_intermittents(neuf)).flatten()
+        let versement = apres
+            .date_de_versement_intermittents
+            .remplie()
+            .map(str::trim)
+            .filter(|neuf| Some(*neuf) != avant.date_de_versement_intermittents.remplie().map(str::trim))
+            .and_then(droit::versement::Versement::a_confirmer_pour_les_intermittents);
+        let atmp = droit::bareme::taux_atmp_a_confirmer(avant.taux_atmp.as_ref(), apres.taux_atmp.as_ref());
+        let phrases: Vec<String> = versement.into_iter().chain(atmp).collect();
+        (!phrases.is_empty()).then(|| phrases.join(" "))
     }
     fn a_dater_a_part(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Vec<ChangementDit> {
         let liste = |e: &ChampsEntreprise| e.etablissements.iter().flatten().cloned().collect::<Vec<_>>();
@@ -737,24 +765,6 @@ pub(crate) fn poser_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, chang
     ecrire_fichier::<F>(ctx, &contenu)
 }
 
-/// UNE VALEUR QUI VAUT A PARTIR DE SA DATE D'EFFET, telle quelle (le taux AT/MP du siege qu'une notification ou un
-/// geste date, `routes::atmp`) : `ch` s'ecrit a `depuis` dans la fiche `cle` (`FicheDatee::changer`), ce qui precede et
-/// ce qui suit restent ; une case que la fiche ne disait pas encore reste vide avant `depuis`. Sans comparaison a ce que
-/// l'ecran montre : la date vient de la piece ou du geste. L'ancien fichier sauvegarde.
-pub(crate) fn dater_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, ch: F::Changement, depuis: &Jour, note: &str) -> R<()> {
-    let mut contenu = lire_fichier::<F>(ctx)?;
-    let Some(brute) = F::existante(&mut contenu, cle) else {
-        return Err(refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.into_iter().collect::<String>())));
-    };
-    let case = F::case_changee(&ch);
-    if brute.depuis(case).is_empty() {
-        let vide = F::changement(&F::Plate::default(), case).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", case, F::NOM)))?;
-        brute.changer(vide, None, None);
-    }
-    brute.changer(ch, Some(depuis), Some(note));
-    ecrire_fichier::<F>(ctx, &contenu)
-}
-
 // ------------------------------------------------------------------ enregistrer une fiche
 
 /// CE QUE L'ENREGISTREMENT D'UNE FICHE PASSE OUTRE.
@@ -836,6 +846,7 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, chang
     }
     let mut apres = avant.clone();
     let nommees = changer(&mut apres);
+    F::ajuster(&avant, &mut apres);
     F::refuser(ctx, cle, &avant, &apres)?;
     if cle.is_none() {
         F::completer_neuve(ctx, &mut apres)?;

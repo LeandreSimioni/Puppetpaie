@@ -4,11 +4,9 @@
 //! contact DSN, la medecine du travail interne) ; ici se pose ce qui vit ailleurs :
 //!
 //! - LE CODE RISQUE ET LE TAUX AT/MP (S21.G00.40.040, .043 ; `norme-dsn/texte/bloc-S21.G00.40.txt` l. 1224-1315) dans la
-//!   fiche entreprise, au 1er janvier de chaque annee (`routes::atmp::poser`). Une annee dont une DSN est reprise recoit le code et le
-//!   taux qu'elle declare, s'ils n'y sont pas deja dits par la compagnie. L'annee en cours, sans DSN, recoit le code de la
-//!   derniere DSN a la place de celui pose a la creation ou repris d'une annee d'avant, s'il est autre : le code reste celui que la CARSAT a notifie tant qu'elle n'en
-//!   notifie pas un autre (inference : la norme dit que l'employeur declare un code « qui lui a deja ete notifie ») ; son
-//!   taux est celui que l'arrete de l'annee fixe a ce risque (`droit::bareme::taux_de_l_arrete`), et sinon il se demande.
+//!   case de la fiche entreprise (`taux_atmp`), avec leur annee, au 1er janvier de chaque annee dont une DSN est reprise,
+//!   si la case n'a pas deja de taux pour elle. Une annee sans DSN n'en recoit pas : le taux collectif de l'arrete pour un
+//!   risque « TC », sinon la saisie (`droit::bareme::taux_atmp_de_l_annee`).
 //! - LES ORGANISMES ET LES CONTRATS DE LA DSN (`config/organismes.json`, `compagnie::organismes`) : chaque contrat
 //!   que l'ecran attend encore (`organismes-contrats`, ceux des permanents des que la compagnie en emploie : `poser_organismes_repris`) recoit la reference
 //!   (S21.G00.15.001) et l'organisme (S21.G00.15.002) d'une adhesion de la derniere DSN (`norme-dsn/texte/bloc-S21.G00.15.txt`).
@@ -28,54 +26,32 @@ fn texte(v: &Value, k: &str) -> String {
     v.get(k).filter(|x| vrai(x)).map(valeur_en_texte).map(|s| s.trim().to_string()).unwrap_or_default()
 }
 
-/// Le taux AT/MP de l'annee tel que le bareme le lit (`Contexte::taux_atmp_de`) : (dit par la compagnie pour l'annee,
-/// code qui vaut sans qu'elle l'ait dit : pose a la creation, ou repris d'une annee d'avant).
-fn deja_pose(ctx: &Contexte, an: i32) -> (bool, Option<String>) {
-    match ctx.taux_atmp_de(an) {
-        Some(Ok(t)) => {
-            let code = t.code_risque.clone().filter(|c| !c.is_empty());
-            if t.pose_a_la_creation == Some(true) || t.reporte_de.is_some() {
-                (false, code)
-            } else {
-                (true, code)
-            }
-        }
-        _ => (false, None),
-    }
-}
-
-/// Le code risque et le taux AT/MP des DSN reprises (voir l'en-tete). Rend ce qui s'est pose, en phrases.
+/// Le code risque et le taux AT/MP des DSN reprises (voir l'en-tete), chacun dans la case de son annee, a partir de son
+/// 1er janvier (`routes::fiches::inscrire_taux_atmp`) ; une annee dont la case dit deja un taux n'en recoit pas. Rend
+/// ce qui s'est inscrit, ou pourquoi rien, en phrases.
 fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
-    let courante = ctx.aujourdhui.an;
     for (an, (mois, code, taux)) in &lecture.atmp {
-        if *an > courante || deja_pose(ctx, *an).0 {
+        let (Some(janvier), true) = (socle::date::Jour::nouveau(*an, 1, 1), *an <= ctx.aujourdhui.an) else { continue };
+        if ctx.entreprise_au(&janvier).taux_atmp.is_some_and(|t| t.annee == Some(i64::from(*an)) && t.valeur.is_some()) {
             continue;
         }
-        let valeur = *taux;
-        let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", socle::mois::Mois::en_clair(mois));
-        if crate::routes::atmp::poser(ctx, i64::from(*an), code, valeur, &source).is_ok() {
-            let dit = valeur.map(|v| format!("taux {} %", v.normalize().to_string().replace('.', ","))).unwrap_or_else(|| "sans taux (pas encore de notification)".into());
-            faits.push(format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, socle::mois::Mois::en_clair(mois)));
-        }
-    }
-    if lecture.atmp.contains_key(&courante) {
-        return;
-    }
-    let Some((_, (mois, code, _))) = lecture.atmp.iter().next_back() else { return };
-    let (dit, de_lui_meme) = deja_pose(ctx, courante);
-    if dit || de_lui_meme.as_deref() == Some(code.as_str()) {
-        return;
-    }
-    let source = format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040) ; taux de l'arrêté de {}.", socle::mois::Mois::en_clair(mois), courante);
-    if crate::routes::atmp::poser(ctx, i64::from(courante), code, None, &source).is_ok() {
-        faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; le taux de {} est celui de l'arrêté.", code, socle::mois::Mois::en_clair(mois), courante));
-    } else {
-        // Le taux de l'annee n'est pas celui de l'arrete pour ce code (ou l'etablissement est en Alsace-Moselle) : le code
-        // se garde, sans taux, et « Pour demarrer » demande le taux notifie.
-        let note = format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040).", socle::mois::Mois::en_clair(mois));
-        if crate::routes::atmp::poser_code_sans_taux(ctx, i64::from(courante), code, note).is_ok() {
-            faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; son taux de {} est celui de la notification, à saisir.", code, socle::mois::Mois::en_clair(mois), courante));
-        }
+        let en_clair = socle::mois::Mois::en_clair(mois);
+        let t = droit::fiche::TauxAtmp {
+            code_risque: Some(code.clone()),
+            valeur: taux.map(|v| droit::fiche::Montant::Flottant(socle::num::flottant(v))),
+            annee: Some(i64::from(*an)),
+            notification: None,
+        };
+        let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", en_clair);
+        let ecrit = match droit::bareme::taux_atmp_refuse(&t) {
+            Ok(None) => crate::routes::fiches::inscrire_taux_atmp(ctx, t, janvier, &source).map_err(|e| e.message),
+            Ok(Some(m)) | Err(m) => Err(m),
+        };
+        let dit = taux.map(|v| format!("taux {} %", v.normalize().to_string().replace('.', ","))).unwrap_or_else(|| "sans taux (pas encore de notification)".into());
+        faits.push(match ecrit {
+            Ok(()) => format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, en_clair),
+            Err(m) => format!("Accidents du travail {} : le code risque {} et le {} de la DSN de {} ne s'inscrivent pas. {}", an, code, dit, en_clair, m),
+        });
     }
 }
 

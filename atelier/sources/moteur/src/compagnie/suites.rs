@@ -80,8 +80,8 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
 }
 
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;
-/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et se posent dans la fiche
-/// entreprise a leur date d'effet (`routes::atmp::poser_notifie`). Seul le siege (le SIREN et le NIC de la fiche
+/// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et s'inscrivent dans la case de
+/// la fiche entreprise a leur date d'effet, s'ils en different (`routes::atmp::recue`). Seul le siege (le SIREN et le NIC de la fiche
 /// entreprise) recoit ici son taux : une notification pour un autre etablissement, illisible, ou qui donne plusieurs codes
 /// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
 fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
@@ -129,7 +129,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
             }
             for t in &taux {
                 let source = format!("{}, effet au {}.", source, t.date_effet.jj_mm_aaaa());
-                if let Some(pourquoi) = crate::routes::atmp::poser_notifie(ctx, t, le_jour, &source)? {
+                if let Some(pourquoi) = crate::routes::atmp::recue(ctx, t, le_jour, &source)? {
                     a_faire.push(pourquoi);
                 }
             }

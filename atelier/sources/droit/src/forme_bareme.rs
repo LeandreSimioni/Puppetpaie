@@ -719,7 +719,6 @@ forme! {
 forme! {
     pub struct RisquesAtmp {
         pub arrete: String,
-        pub par_defaut: Option<String>,
         pub codes: Vec<RisqueAtmp>,
     }
 }
@@ -1156,18 +1155,16 @@ forme! {
     }
 }
 
-/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE ANNEE : ce que sa fiche dit (`fiche::TauxAtmp`), ce que
-/// le moteur en reprend d'une annee d'avant (`bareme::taux_atmp_reporte`, `reporte_de`) ou en dit quand il manque.
-/// `pose_a_la_creation` : le code seul que le moteur a pose a la creation de la compagnie, son taux celui de l'arrete.
+/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE ANNEE : ce que sa case de la configuration dit
+/// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`), avec la notification d'ou il vient ; le taux collectif de
+/// l'arrete et sa `provenance` ; ce qui manque.
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
     pub valeur: Option<Decimal>,
     pub code_risque: Option<String>,
     pub provenance: Option<String>,
-    pub pose_a_la_creation: Option<bool>,
     pub notification: Option<crate::fiche::NotificationAtmp>,
     pub manque: Option<String>,
-    pub reporte_de: Option<i32>,
     pub alsace_moselle: Option<bool>,
     pub etablissement_neuf: Option<bool>,
 }

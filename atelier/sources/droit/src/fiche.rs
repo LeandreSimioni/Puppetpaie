@@ -1092,15 +1092,16 @@ cases! {
 
 cases! {
     /// LA NOTIFICATION DE LA CARSAT d'ou viennent un code risque et un taux (retour DSN de nature 34,
-    /// `moteur::routes::atmp::poser_notifie`) : le jour ou elle a paru, celui de son calcul, sa date d'effet.
+    /// `moteur::routes::atmp::recue`) : le jour ou elle a paru, celui de son calcul, sa date d'effet.
     pub struct NotificationAtmp { le: Jour, calcul: Jour, effet: Jour }
 }
 
 cases! {
     /// LE CODE RISQUE ET LE TAUX AT/MP du siege (`taux_atmp` de la fiche, `moteur::routes::atmp`) ou d'un autre
     /// etablissement (`etablissements`, `moteur::routes::etablissements`), dates comme toute la configuration. `annee` :
-    /// celle que le taux vaut (D. 242-6-15 : celle de sa date d'effet) ; sans taux, le code seul, le taux est celui de
-    /// l'arrete de l'annee quand il s'applique (`bareme::taux_atmp_applique`). `notification` : celle d'ou ils viennent.
+    /// celle que le taux vaut (D. 242-6-15 : il est notifie pour une annee) ; sans taux pour l'annee, celui de l'arrete
+    /// pour un risque « TC » (`bareme::taux_atmp_de_l_annee`, `bareme::taux_atmp_applique`). `notification` : celle d'ou
+    /// ils viennent.
     pub struct TauxAtmp { code_risque: String, valeur: Montant, annee: i64, notification: NotificationAtmp }
 }
 

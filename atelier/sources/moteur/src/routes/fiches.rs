@@ -164,17 +164,13 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::TauxAtmp,
-        geste: "Dire le code risque et le taux AT/MP d'une année ; les poser s'il y a lieu.",
-        charge: &[
-            Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false },
-            Champ { nom: "code_risque", libelle: Affiche::new("Code risque"), forme: Forme::Texte, sens: "le code risque notifié par la CARSAT", avance: false },
-            Champ { nom: "valeur", libelle: Affiche::new("Taux net"), forme: Forme::Nombre, sens: "le taux net notifié, en %", avance: false },
-        ],
+        geste: "Dire le code risque et le taux AT/MP d'une année, et d'où ils viennent (ils s'écrivent dans la case taux_atmp de la fiche entreprise).",
+        charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
         exemple: r#"{"annee":2026}"#,
-        rend: "le code, le taux, leur libellé et d'où ils viennent, les codes que le socle connaît ; phrase : ce que le geste a écrit",
-        refus: &[OPERATION, MANQUE, FORME, ILLISIBLE],
-        acte: Acte::Ecrit,
-        avance: true,
+        rend: "le code, le taux, le risque tel que l'arrêté l'écrit, d'où ils viennent ou ce qui manque, les codes que le socle connaît, ceux des autres établissements",
+        refus: &[FORME, ILLISIBLE],
+        acte: Acte::Lit,
+        avance: false,
         phrase: 60,
         ecran: ECRAN,
     },
@@ -786,10 +782,11 @@ pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: droit::fich
     ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::taux_pas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
-/// LE TAUX AT/MP DU SIEGE S'ECRIT DANS LA FICHE ENTREPRISE (`taux_atmp`), a sa date d'effet (`ecriture::dater_au`) ;
-/// `note` dit d'ou il vient.
-pub(crate) fn dater_taux_atmp(ctx: &Contexte, valeur: droit::fiche::TauxAtmp, depuis: &Jour, note: &str) -> R<()> {
-    ecriture::dater_au::<FicheEntrepriseDatee>(ctx, None, ChangementEntreprise::taux_atmp(Some(valeur)), depuis, note)
+/// LE TAUX AT/MP DU SIEGE QU'UNE PIECE DONNE (une notification recue, une DSN reprise) s'ecrit dans sa case de la fiche
+/// entreprise (`taux_atmp`), comme un taux de PAS recu : a partir de `depuis`, sa date d'effet ; avant, la case garde ce
+/// qu'elle disait. La meme valeur n'ecrit rien. `note` dit d'ou il vient.
+pub(crate) fn inscrire_taux_atmp(ctx: &Contexte, valeur: droit::fiche::TauxAtmp, depuis: Jour, note: &str) -> R<()> {
+    ecriture::poser_au::<FicheEntrepriseDatee>(ctx, None, vec![ChangementEntreprise::taux_atmp(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
 /// Une case de la fiche entreprise (`poser`).

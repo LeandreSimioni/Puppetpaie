@@ -1490,8 +1490,9 @@ depuis le plus recent.",
     }
 
     /// LE TAUX AT/MP DE L'ANNEE `an` TEL QUE LE BAREME LE LIT : celui que la fiche entreprise dit (`taux_atmp`), lue au
-    /// jour de l'annee (`jour_du_taux_atmp`), avec la notification d'ou il vient (`taux_atmp_du_siege`). `Some(Err)` :
-    /// pourquoi il ne se reprend pas d'une autre annee, ou un socle illisible ; `None` : rien de dit. Tout ce qui demande
+    /// jour de l'annee (`jour_du_taux_atmp`), avec la notification d'ou il vient, ou le taux collectif de l'arrete
+    /// (`taux_atmp_du_siege`). `Some(Err)` : le taux de l'annee manque, ou un socle illisible ; `None` : aucun code dit.
+    /// Tout ce qui demande
     /// « le taux de l'annee est-il pose ? » lit ici.
     pub fn taux_atmp_de(&self, an: i32) -> Option<Result<TauxAtmp, String>> {
         let jour = match self.jour_du_taux_atmp(an) {
@@ -1512,47 +1513,18 @@ depuis le plus recent.",
         Ok(self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.annee == Some(i64::from(an))))
     }
 
-    /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`, datee comme
-    /// toute la configuration ; une notification recue s'y ecrit a sa date d'effet) : le taux de cette annee ; le code
-    /// seul, sans annee (pose a la creation), avec le taux de l'arrete de l'annee quand il s'applique
-    /// (`bareme::taux_atmp_applique`, d'apres `socle_an`) ; le taux d'une autre annee, ce qui s'en reprend
-    /// (`bareme::taux_atmp_reporte`). Le taux qu'une piece atteste (`atmp_lu`) vaut pour une annee que la fiche ne dit pas.
+    /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la case de la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`,
+    /// datee comme toute la configuration), ou le taux collectif de l'arrete pour un risque « TC »
+    /// (`bareme::taux_atmp_de_l_annee`, d'apres `socle_an`). Le taux qu'une piece atteste (`atmp_lu`) vaut pour une annee
+    /// que la case ne dit pas.
     fn taux_atmp_du_siege(&self, an: i32, ent: &ChampsEntreprise, socle_an: Option<&Pile>) -> Option<Result<TauxAtmp, String>> {
         let dit = ent.taux_atmp.as_ref().filter(|t| !t.est_vide());
-        let pour_l_annee = dit.is_some_and(|t| t.annee == Some(i64::from(an)));
         if let Some((a, v)) = &self.atmp_lu {
-            if *a == an && !pour_l_annee {
+            if *a == an && !dit.is_some_and(|t| t.annee == Some(i64::from(an))) {
                 return Some(Ok(TauxAtmp { valeur: Some(*v), ..TauxAtmp::default() }));
             }
         }
-        let dit = dit?;
-        let alsace = crate::bareme::en_alsace_moselle(ent.code_postal.portee());
-        if let Some(a) = dit.annee.filter(|a| *a != i64::from(an)) {
-            let pa = match i32::try_from(a).map_err(|e| format!("L'année du taux AT/MP de la fiche entreprise, {}, n'est pas une année ({}).", a, e)) {
-                Ok(pa) => pa,
-                Err(e) => return Some(Err(e)),
-            };
-            let socle_avant = match socle_livre_lu(pa) {
-                Ok(s) => s,
-                Err(e) => return Some(Err(e)),
-            };
-            return crate::bareme::taux_atmp_reporte(an, socle_an, (pa, dit), socle_avant.as_ref(), alsace);
-        }
-        let valeur = match dit.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose() {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-        };
-        let mut t = TauxAtmp {
-            valeur,
-            code_risque: dit.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty()).map(str::to_string),
-            pose_a_la_creation: (dit.annee.is_none() && valeur.is_none()).then_some(true),
-            notification: dit.notification.clone(),
-            ..TauxAtmp::default()
-        };
-        if t.valeur.is_none() {
-            t.valeur = socle_an.and_then(|s| crate::bareme::taux_atmp_applique(&crate::bareme::risques_de(s), &t, alsace));
-        }
-        Some(Ok(t))
+        crate::bareme::taux_atmp_de_l_annee(dit?, an, socle_an, crate::bareme::en_alsace_moselle(ent.code_postal.portee()))
     }
 
     /// LE BAREME DE `jour` AVANT SON CONTROLE (le socle, la convention, la surcouche de la compagnie) : ce contre quoi une

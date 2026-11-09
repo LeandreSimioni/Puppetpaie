@@ -12,7 +12,7 @@
 //! `atelier/reference/sources/code-de-la-securite-sociale/xml/D242-6-1.xml` ; arrete du 17/10/1995, art. 1, I, 1°,
 //! `tarification-atmp/`). Un code laisse vide prend celui que la compagnie a pour l'annee de l'ouverture (INFERENCE :
 //! l'activite de l'etablissement est celle de la compagnie tant que la notification de la CARSAT ne dit pas autre chose),
-//! et l'ecran le dit (`atmp::lire`). Le taux saisi est « le taux net notifie de l'annee » (D. 242-6-15) : il porte l'annee
+//! et l'ecran le dit (`taux-atmp`, `atmp::route`). Le taux saisi est « le taux net notifie de l'annee » (D. 242-6-15) : il porte l'annee
 //! de sa date d'effet (`annee`) et ne vaut que pour elle (`droit::bareme::taux_atmp_d_un_etablissement`). Le taux laisse vide est
 //! celui de l'arrete pour un risque « TC » (`droit::bareme::taux_atmp_applique`) ; sinon il se refuse (le controle des
 //! etablissements, `droit::contexte::controler_etablissements`).

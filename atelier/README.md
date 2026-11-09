@@ -1259,10 +1259,11 @@ fois l'embauche commencée.
 
 1. **Le taux AT/MP**, et lui seul, si vous êtes une compagnie : l'Assurance
    Maladie le notifie courant janvier (compte AT/MP sur net-entreprises), il
-   est propre à votre établissement, et il s'écrit une fois dans
-   Configuration › Entreprise, « Accidents du travail (AT/MP) » (la fiche
-   entreprise le garde, daté) ; reçu avec les retours de la DSN, il s'y pose
-   de lui-même.
+   est propre à votre établissement, et il s'écrit, avec son année, dans
+   Configuration › Entreprise, « Accidents du travail (AT/MP) » (une case
+   datée comme les autres) ; reçu avec les retours de la DSN, il s'y inscrit
+   de lui-même. Pour un risque « TC » (92.3AD, le spectacle vivant), une
+   année que la case ne dit pas prend le taux collectif de l'arrêté.
 
    Tout le reste — SMIC, plafond de Sécurité sociale, taux Urssaf,
    Agirc-Arrco, chômage, CSG, taux de la branche — est **livré avec le

@@ -393,10 +393,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
     let plate: droit::fiche::ChampsEntreprise = droit::fiche::lire_saisie(&ent, droit::contexte::ENTREPRISE)?;
-    let mut fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
-    // Le code risque AT/MP : le risque par defaut du socle de l'annee, son taux celui de l'arrete, dits a l'ecran et
-    // modifiables (`routes::atmp`).
-    fiche.taux_atmp = crate::routes::atmp::a_la_creation(i64::from(creation.an)).map_err(|e| e.message)?;
+    let fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
     ecrire(&cfg.join("entreprise.json"), &socle::ecriture::en_valeur(&fiche))?;
     ecrire(&cfg.join("salaries.json"), &json!({}))?;
     ecrire(&cfg.join("spectacles.json"), &json!({}))?;

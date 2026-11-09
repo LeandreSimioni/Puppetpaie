@@ -437,18 +437,10 @@
       "taux_atmp": [
         {
           "valeur": {
-            "code_risque": "923AD"
-          },
-          "note": "Pose a la creation de la compagnie : le risque par defaut du socle 2026, son taux celui de l'arrete de l'annee (atelier/reference/sources/tarification-atmp/)."
-        },
-        {
-          "depuis": "2026-01-01",
-          "valeur": {
             "code_risque": "923AD",
             "valeur": 1.1,
             "annee": 2026
-          },
-          "note": "Saisi dans PuppetPaie le 02/11/2026 (notification AT/MP)."
+          }
         }
       ],
       "signataire": [

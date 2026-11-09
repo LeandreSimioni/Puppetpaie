@@ -778,14 +778,17 @@ const SECTIONS_FICHE = {
     // Les conseils « Le saviez-vous ? » :
     // une option qui parle de vos salariés, elle se pose avec eux.
     ["Vos salariés", ["emploie_des_permanents", "date_de_versement_permanents", "date_de_versement_intermittents", "conseils"]],
-    // Le taux AT/MP se pose en tête de ce bloc (`ATMP_HTML`).
     // LE CODE DU SERVICE DE SANTÉ AU TRAVAIL N'EST PAS DANS L'« AVANCÉ » (le tiroir
     // replié) : chaque DPAE l'exige (`dpae::medecine_de`) et
     // « Pour démarrer » le demande. Un champ exigé est visible là où on l'exige.
     ["Numéros chez les organismes",
      ["urssaf_compte", "congesspectacles_adherent",
       "affiliation_france_travail",
-      "france_travail_dossier_recouvrement", "medecine_travail"], { atmp: true }],
+      "france_travail_dossier_recouvrement", "medecine_travail"]],
+    // LE TAUX AT/MP : une case comme les autres ; le moteur (`taux-atmp`)
+    // dit sous elle ce qu'elle donne pour l'année et d'où cela vient
+    // (`brancherAtmp`).
+    ["Accidents du travail (AT/MP)", ["taux_atmp"]],
     // Le contact de la médecine du travail interne ne se montre que si le code du
     // service de santé au travail vaut MT999 (`si` de champs-base.json) ; la DSN
     // l'écrit alors en S20.G00.07 de type 17.
@@ -1004,6 +1007,10 @@ function caseSousChamp(parent, k, val, genre) {
   if (genre.nombre) {
     return `<input type="number" step="0.01" min="0" ${attrs} data-sous-type="nombre"
       value="${echapper(val ?? "")}">`;
+  }
+  // Un code risque AT/MP : les codes que le moteur connaît (`brancherAtmp`).
+  if (genre.codesAtmp) {
+    return `<input ${attrs} list="codes-atmp" maxlength="7" value="${echapper(val ?? "")}">`;
   }
   // Une date se choisit dans un calendrier, comme partout ; la valeur
   // reste AAAA-MM-JJ. Une valeur ancienne d'une autre forme reste un texte.
@@ -1231,62 +1238,37 @@ async function ouvrirOptionDfs() {
   champ.focus();
 }
 
-/* LE CODE RISQUE ET LE TAUX AT/MP, en tête du bloc « Vos numéros chez les
- * organismes ». Ils sont dans la fiche (`taux_atmp`, datés), mais pas parmi
- * ses cases : la route `taux-atmp` les pose. Le moteur
- * (`taux-atmp`) dit ce qui est posé, le risque tel que l'arrêté l'écrit,
- * pourquoi, où le lire, où le changer, et les codes qu'il connaît ; la page
- * les affiche. « Avancé » les change : le moteur refuse ce qui ne va pas. */
-function ATMP_HTML() {
-  const an = anneeDuJour();
-  return `<div class="encart" id="config-atmp" data-annee="${an}">
-    <h4>Accidents du travail (AT/MP) — ${an}</h4>
-    <p id="atmp-resume"></p>
-    <p class="note" id="atmp-libelle"></p>
-    <p class="aide" id="atmp-explication"></p>
-    <p class="aide" id="atmp-ou"></p>
-    <details id="atmp-avance"><summary>Avancé</summary>
-      <div class="ligne-champs">
-        <label>Code risque notifié
-          <select id="atmp-choix" class="hors-fiche"></select></label>
-        <label id="atmp-autre-l">Autre code
-          <input id="atmp-code" class="hors-fiche" maxlength="7"></label>
-        <label>Taux notifié (%)
-          <input id="atmp-valeur" class="hors-fiche" inputmode="decimal"></label>
-      </div>
-      <div class="aide" id="atmp-aide"></div>
-      <div class="actions"><button class="petit" id="atmp-enregistrer">Enregistrer</button>
-        <span id="atmp-etat"></span></div>
-    </details>
-  </div>`;
-}
-
+/* LE CODE RISQUE ET LE TAUX AT/MP : une case de la fiche (`taux_atmp`),
+ * enregistrée comme les autres. Le moteur (`taux-atmp`) dit sous elle ce
+ * qu'elle donne pour l'année en cours, d'où cela vient (la notification, le
+ * taux collectif de l'arrêté) ou ce qui manque, le risque tel que l'arrêté
+ * l'écrit, où le lire, les codes qu'il connaît, et ce qui vaut pour chaque
+ * autre établissement ; la page l'affiche. */
 async function brancherAtmp() {
-  const bloc = document.getElementById("config-atmp");
-  if (!bloc) return;
-  const annee = Number(bloc.dataset.annee);
-  const $ = (id) => document.getElementById(id);
-  const [choix, code, valeur, etat] = ["atmp-choix", "atmp-code", "atmp-valeur", "atmp-etat"].map($);
-  // Ces cases ne sont pas la fiche : elles ne la marquent pas modifiée.
-  [choix, code, valeur].forEach((c) => { c.oninput = null; });
+  const cases = document.querySelectorAll('#config-formulaire [data-sous-de="taux_atmp"]');
+  if (!cases.length) return;
+  const bloc = cases[0].closest(".structure");
+  let dit = bloc.querySelector(".atmp-dit");
+  if (!dit) {
+    dit = document.createElement("div");
+    dit.className = "encart atmp-dit";
+    bloc.querySelector(".sous-champs").after(dit);
+  }
   const peindre = (r) => {
-    if (!r) return;
-    const t = r.taux || {};
-    $("atmp-resume").innerHTML = r.resume ? `<b>${echapper(r.resume)}</b>` : "";
-    $("atmp-libelle").textContent = r.risque ? `« ${r.risque.libelle} »` : "";
-    $("atmp-explication").textContent = r.explication || "";
-    $("atmp-aide").textContent = r.aide || "";
-    $("atmp-ou").textContent = [r.ou_le_lire, r.ou_le_changer].filter(Boolean).join(" ");
+    dit.replaceChildren(...[
+      [r.phrase, "b"],
+      [r.risque ? `« ${r.risque.libelle} »` : "", "p"],
+      [r.explication, "p"],
+      [r.ou_le_lire, "p"],
+    ].filter(([t]) => t).map(([t, forme]) => {
+      const p = document.createElement("p");
+      if (forme === "b") p.appendChild(document.createElement("b")).textContent = t;
+      else { p.className = "aide"; p.textContent = t; }
+      return p;
+    }));
     const codes = r.codes || [];
-    const connu = codes.some((c) => c.code === t.code_risque);
-    choix.innerHTML = codes.map((c) =>
-      `<option value="${echapper(c.code)}">${echapper(c.code_arrete || c.code)} — ${echapper(c.libelle)}</option>`).join("")
-      + `<option value="">Un autre code notifié</option>`;
-    choix.value = connu ? t.code_risque : "";
-    if (document.activeElement !== code) code.value = connu ? "" : (t.code_risque || "");
-    if (document.activeElement !== valeur) valeur.value = "";
-    // Les codes que les autres établissements proposent, et ce que le
-    // moteur applique à chacun, sous sa ligne.
+    // Les codes que la case et les autres établissements proposent, et ce
+    // que le moteur applique à chacun, sous sa ligne.
     let liste = document.getElementById("codes-atmp");
     if (!liste) {
       liste = document.createElement("datalist");
@@ -1300,21 +1282,11 @@ async function brancherAtmp() {
       if (p) p.innerHTML = `<b>${echapper(e.resume || "")}</b>${e.risque ? ` — « ${echapper(e.risque.libelle)} »` : ""}. ${echapper(e.explication || "")}`;
     });
   };
-  $("atmp-enregistrer").onclick = async (ev) => {
-    ev.preventDefault();
-    try {
-      const r = await api("taux-atmp", { annee, code_risque: choix.value || code.value,
-                                         valeur: valeur.value });
-      peindre(r);
-      etat.textContent = r.phrase;
-      valeur.classList.remove("faute");
-    } catch (e) {
-      etat.textContent = e.message;
-      valeur.classList.add("faute");
-    }
-  };
   // La fiche quittée avant la réponse n'a plus ces cases : rien à peindre.
-  try { const r = await api("taux-atmp", { annee }); if (bloc.isConnected) peindre(r); } catch (e) { /* rien à montrer */ }
+  try {
+    const r = await api("taux-atmp", { annee: anneeDuJour() });
+    if (bloc.isConnected) peindre(r);
+  } catch (e) { dit.textContent = e.message; }
 }
 
 /* LA COMPLÉMENTAIRE SANTÉ D'UN PERMANENT, en tete du bloc
