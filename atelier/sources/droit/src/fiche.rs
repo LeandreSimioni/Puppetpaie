@@ -1096,13 +1096,18 @@ cases! {
     pub struct NotificationAtmp { le: Jour, calcul: Jour, effet: Jour }
 }
 
+choix! {
+    /// D'OU VIENT UNE LIGNE DU TAUX AT/MP (`moteur::routes::atmp`) : la saisie, l'import des DSN reprises, la notification
+    /// de la CARSAT recue avec les retours, le taux collectif de l'arrete de l'annee.
+    pub enum ProvenanceAtmp { Saisie = "saisie", Import = "import", Notification = "notification", Arrete = "arrete" }
+}
+
 cases! {
-    /// LE CODE RISQUE ET LE TAUX AT/MP du siege (`taux_atmp` de la fiche, `moteur::routes::atmp`) ou d'un autre
-    /// etablissement (`etablissements`, `moteur::routes::etablissements`), dates comme toute la configuration. `annee` :
-    /// celle que le taux vaut (D. 242-6-15 : il est notifie pour une annee) ; sans taux pour l'annee, celui de l'arrete
-    /// pour un risque « TC » (`bareme::taux_atmp_de_l_annee`, `bareme::taux_atmp_applique`). `notification` : celle d'ou
-    /// ils viennent.
-    pub struct TauxAtmp { code_risque: String, valeur: Montant, annee: i64, notification: NotificationAtmp }
+    /// UNE LIGNE DU CODE RISQUE ET DU TAUX AT/MP du siege (`taux_atmp` de la fiche) ou d'un autre etablissement
+    /// (`etablissements`), datee comme toute la configuration : le taux vaut a partir de `depuis` (la date d'effet de la
+    /// notification), pour l'annee de cette date (`bareme::taux_atmp_de_l_annee`) ; `provenance` dit qui l'a ecrite,
+    /// `notification` celle d'ou elle vient.
+    pub struct TauxAtmp { code_risque: String, valeur: Montant, depuis: Jour, provenance: ProvenanceAtmp, notification: NotificationAtmp }
 }
 
 cases! {

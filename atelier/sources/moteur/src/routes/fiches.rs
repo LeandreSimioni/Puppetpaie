@@ -32,7 +32,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, Forcer, SaisieDeFiche, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, Forcer, SaisieDeFiche, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -164,10 +164,10 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::TauxAtmp,
-        geste: "Dire le code risque et le taux AT/MP d'une année, et d'où ils viennent.",
-        charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
-        exemple: r#"{"annee":2026}"#,
-        rend: "le code, le taux, le risque tel que l'arrêté l'écrit, d'où ils viennent ou ce qui manque, les codes que le socle connaît, ceux des autres établissements",
+        geste: "Dire le code risque et le taux AT/MP en vigueur, celui d'avant et celui à venir, et d'où ils viennent ; une ligne s'inscrit par enregistrer-fiche (case taux_atmp : code_risque, valeur, depuis).",
+        charge: &[],
+        exemple: r#"{}"#,
+        rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
         acte: Acte::Lit,
         avance: false,
@@ -236,7 +236,10 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
-        Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, charge.lire()?)?),
+        Route::TauxAtmp => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(crate::routes::atmp::route(ctx)?)
+        }
         Route::FicheDemander => en_json(fiche_demander(ctx, charge.lire()?, charge.mot_de_passe())?),
         Route::FicheOublierDemande => en_json(oublier_demande(ctx, charge.lire()?)?),
         Route::Effectif => en_json(effectif(ctx, charge.lire()?)?),
@@ -780,13 +783,6 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
 /// `depuis` : avant ce jour, la fiche ne le disait pas (la case vide). `note` dit d'ou il vient.
 pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: droit::fiche::TauxPas, depuis: Jour, note: &str) -> R<()> {
     ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::taux_pas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
-}
-
-/// LE TAUX AT/MP DU SIEGE QU'UNE PIECE DONNE (une notification recue, une DSN reprise) s'ecrit dans sa case de la fiche
-/// entreprise (`taux_atmp`), comme un taux de PAS recu : a partir de `depuis`, sa date d'effet ; avant, la case garde ce
-/// qu'elle disait. La meme valeur n'ecrit rien. `note` dit d'ou il vient.
-pub(crate) fn inscrire_taux_atmp(ctx: &Contexte, valeur: droit::fiche::TauxAtmp, depuis: Jour, note: &str) -> R<()> {
-    ecriture::poser_au::<FicheEntrepriseDatee>(ctx, None, vec![ChangementEntreprise::taux_atmp(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
 /// Une case de la fiche entreprise (`poser`).

@@ -4,9 +4,9 @@
 //! contact DSN, la medecine du travail interne) ; ici se pose ce qui vit ailleurs :
 //!
 //! - LE CODE RISQUE ET LE TAUX AT/MP (S21.G00.40.040, .043 ; `norme-dsn/texte/bloc-S21.G00.40.txt` l. 1224-1315) dans la
-//!   case de la fiche entreprise (`taux_atmp`), avec leur annee, au 1er janvier de chaque annee dont une DSN est reprise,
-//!   si la case n'a pas deja de taux pour elle. Une annee sans DSN n'en recoit pas : le taux collectif de l'arrete pour un
-//!   risque « TC », sinon la saisie (`droit::bareme::taux_atmp_de_l_annee`).
+//!   case de la fiche entreprise (`taux_atmp`, `routes::atmp`), une ligne au 1er janvier de chaque annee dont une DSN est
+//!   reprise, si aucune ne vaut deja a partir de ce jour ; puis, pour l'annee en cours, le taux collectif de l'arrete pour
+//!   un risque « TC » (`routes::atmp::inscrire_l_arrete`).
 //! - LES ORGANISMES ET LES CONTRATS DE LA DSN (`config/organismes.json`, `compagnie::organismes`) : chaque contrat
 //!   que l'ecran attend encore (`organismes-contrats`, ceux des permanents des que la compagnie en emploie : `poser_organismes_repris`) recoit la reference
 //!   (S21.G00.15.001) et l'organisme (S21.G00.15.002) d'une adhesion de la derniere DSN (`norme-dsn/texte/bloc-S21.G00.15.txt`).
@@ -32,26 +32,35 @@ fn texte(v: &Value, k: &str) -> String {
 fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
     for (an, (mois, code, taux)) in &lecture.atmp {
         let (Some(janvier), true) = (socle::date::Jour::nouveau(*an, 1, 1), *an <= ctx.aujourdhui.an) else { continue };
-        if ctx.entreprise_au(&janvier).taux_atmp.is_some_and(|t| t.annee == Some(i64::from(*an)) && t.valeur.is_some()) {
+        if ctx.entreprise_au(&janvier).taux_atmp.and_then(|t| t.depuis).is_some_and(|d| d >= janvier) {
             continue;
         }
         let en_clair = socle::mois::Mois::en_clair(mois);
         let t = droit::fiche::TauxAtmp {
             code_risque: Some(code.clone()),
             valeur: taux.map(|v| droit::fiche::Montant::Flottant(socle::num::flottant(v))),
-            annee: Some(i64::from(*an)),
+            depuis: Some(janvier),
+            provenance: Some(droit::fiche::ProvenanceAtmp::Import),
             notification: None,
         };
         let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", en_clair);
         let ecrit = match droit::bareme::taux_atmp_refuse(&t) {
-            Ok(None) => crate::routes::fiches::inscrire_taux_atmp(ctx, t, janvier, &source).map_err(|e| e.message),
+            Ok(None) => crate::routes::fiches::inscrire_taux_atmp(ctx, t, &source).map_err(|e| e.message),
             Ok(Some(m)) | Err(m) => Err(m),
         };
-        let dit = taux.map(|v| format!("taux {} %", v.normalize().to_string().replace('.', ","))).unwrap_or_else(|| "sans taux (pas encore de notification)".into());
+        let dit = match taux {
+            Some(v) => format!("taux {} %", v.normalize().to_string().replace('.', ",")),
+            None => "sans taux (pas encore de notification)".to_string(),
+        };
         faits.push(match ecrit {
-            Ok(()) => format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, en_clair),
+            Ok(_) => format!("Accidents du travail {} : code risque {}, {}, lus dans la DSN de {}.", an, code, dit, en_clair),
             Err(m) => format!("Accidents du travail {} : le code risque {} et le {} de la DSN de {} ne s'inscrivent pas. {}", an, code, dit, en_clair, m),
         });
+    }
+    // L'annee en cours : le taux collectif de l'arrete pour un risque « TC », comme a l'ouverture.
+    match crate::routes::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.an) {
+        Ok(dits) => faits.extend(dits),
+        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, e.message)),
     }
 }
 

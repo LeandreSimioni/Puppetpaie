@@ -488,13 +488,13 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
 
 /// CE QUE LE MOTEUR A INSCRIT DE LUI-MEME, et qui se dit avec ce qui manque : le taux AT/MP de l'annee, quand il vient de
 /// la notification de la CARSAT recue avec les retours (`moteur::routes::atmp::recue`, avec sa date) ou du taux collectif
-/// de l'arrete pour un risque « TC » (`droit::bareme::taux_atmp_de_l_annee`, sa `provenance`). Le libelle est celui de
+/// de l'arrete pour un risque « TC » (`moteur::routes::atmp::inscrire_l_arrete`), d'apres sa `provenance`. Le libelle est celui de
 /// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
     let an = ctx.aujourdhui.an;
     let Some(Ok(t)) = ctx.taux_atmp_de(an) else { return Ok(Vec::new()) };
-    let d_ou = match (&t.notification, &t.provenance) {
-        (Some(n), _) => format!(
+    let d_ou = match (&t.notification, t.provenance) {
+        (Some(n), Some(droit::fiche::ProvenanceAtmp::Notification)) => format!(
             "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",
             // Sans jour de calcul, celui de la notification.
             match &n.calcul {
@@ -504,8 +504,11 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
             .jj_mm_aaaa(),
             n.effet.exigee("taux_atmp.notification.effet")?.jj_mm_aaaa()
         ),
-        (None, Some(p)) => format!("{} Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, écrivez-le avec son année.", p),
-        (None, None) => return Ok(Vec::new()),
+        (_, Some(droit::fiche::ProvenanceAtmp::Arrete)) => format!(
+            "Le taux collectif de l'arrêté de {} pour ce risque « TC », le même pour toutes les compagnies qui y sont classées (code de la sécurité sociale, art. D. 242-6-14) : le logiciel l'a inscrit. Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, inscrivez-le.",
+            t.depuis.exigee("taux_atmp.depuis")?.an
+        ),
+        _ => return Ok(Vec::new()),
     };
     let risque = match &t.code_risque {
         Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),

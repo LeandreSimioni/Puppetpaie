@@ -582,8 +582,6 @@ fn versement_mobilite_dit(pile: &Pile) -> bool {
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
 pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> Resultat<()> {
     let siren = fiche.siren.portee();
-    let an = pile.annee.to_string();
-    let risques = crate::bareme::risques_de(pile);
     let mut vus: Vec<&str> = fiche.nic_principal().into_iter().collect();
     let mut griefs: Vec<String> = Vec::new();
     for e in fiche.secondaires() {
@@ -615,16 +613,10 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> Result
                 griefs.push(format!("{} : `{}` manque", nom, cle));
             }
         }
-        // Le code risque se dit toujours ; le taux, sauf quand l'arrete de l'annee le fixe (`bareme::taux_atmp_applique`).
-        // Le taux d'une autre annee que celle du bareme ne se controle pas ici : la paie de l'annee le demande
-        // (`bareme::surcharger`, `bareme::taux_atmp_d_un_etablissement`).
-        let d_une_autre_annee = e.taux_atmp.dite().and_then(|t| t.annee.dite()).is_some_and(|a| *a != 0 && a.to_string() != an);
-        let atmp = crate::bareme::taux_atmp_d_un_etablissement(e, pile.annee)?;
-        let atmp_juste = atmp.as_ref().is_some_and(|t| t.code_risque.as_deref().is_some_and(|c| !c.is_empty())
-            && (d_une_autre_annee || crate::bareme::taux_atmp_applique(&risques, t, crate::bareme::en_alsace_moselle(e.code_postal.portee())).is_some()));
-        if !atmp_juste {
+        // Le code risque se dit toujours ; le taux de la periode, c'est la paie qui le demande (`bareme::surcharger`).
+        if e.taux_atmp.dite().and_then(|t| t.code_risque.remplie()).is_none_or(|c| c.trim().is_empty()) {
             griefs.push(format!(
-                "{} : son code risque AT/MP et son taux, tels que la CARSAT les notifie a CET etablissement (Configuration › \
+                "{} : son code risque AT/MP, tel que la CARSAT le notifie a CET etablissement (Configuration › \
 Entreprise › Avancé, « Établissements »)",
                 nom
             ));
@@ -1490,10 +1482,9 @@ depuis le plus recent.",
     }
 
     /// LE TAUX AT/MP DE L'ANNEE `an` TEL QUE LE BAREME LE LIT : celui que la fiche entreprise dit (`taux_atmp`), lue au
-    /// jour de l'annee (`jour_du_taux_atmp`), avec la notification d'ou il vient, ou le taux collectif de l'arrete
-    /// (`taux_atmp_du_siege`). `Some(Err)` : le taux de l'annee manque, ou un socle illisible ; `None` : aucun code dit.
-    /// Tout ce qui demande
-    /// « le taux de l'annee est-il pose ? » lit ici.
+    /// jour de l'annee (`jour_du_taux_atmp`), avec sa date et d'ou il vient (`taux_atmp_du_siege`). `Some(Err)` : le taux
+    /// de l'annee manque, ou un socle illisible ; `None` : aucun code dit. Tout ce qui demande « le taux de l'annee
+    /// est-il pose ? » lit ici.
     pub fn taux_atmp_de(&self, an: i32) -> Option<Result<TauxAtmp, String>> {
         let jour = match self.jour_du_taux_atmp(an) {
             Ok(j) => j,
@@ -1510,17 +1501,16 @@ depuis le plus recent.",
     /// qu'une piece atteste se lit (`avec_le_taux_atmp_lu`).
     pub fn taux_atmp_dit(&self, an: i32) -> Resultat<bool> {
         let jour = self.jour_du_taux_atmp(an)?;
-        Ok(self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.annee == Some(i64::from(an))))
+        Ok(self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.an == an)))
     }
 
     /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la case de la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`,
-    /// datee comme toute la configuration), ou le taux collectif de l'arrete pour un risque « TC »
-    /// (`bareme::taux_atmp_de_l_annee`, d'apres `socle_an`). Le taux qu'une piece atteste (`atmp_lu`) vaut pour une annee
-    /// que la case ne dit pas.
+    /// datee comme toute la configuration), lue par sa regle (`bareme::taux_atmp_de_l_annee`, d'apres `socle_an`). Le taux
+    /// qu'une piece atteste (`atmp_lu`) vaut pour une annee que la case ne dit pas.
     fn taux_atmp_du_siege(&self, an: i32, ent: &ChampsEntreprise, socle_an: Option<&Pile>) -> Option<Result<TauxAtmp, String>> {
         let dit = ent.taux_atmp.as_ref().filter(|t| !t.est_vide());
         if let Some((a, v)) = &self.atmp_lu {
-            if *a == an && !dit.is_some_and(|t| t.annee == Some(i64::from(an))) {
+            if *a == an && !dit.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.an == an)) {
                 return Some(Ok(TauxAtmp { valeur: Some(*v), ..TauxAtmp::default() }));
             }
         }

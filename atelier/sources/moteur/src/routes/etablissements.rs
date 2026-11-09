@@ -12,10 +12,9 @@
 //! `atelier/reference/sources/code-de-la-securite-sociale/xml/D242-6-1.xml` ; arrete du 17/10/1995, art. 1, I, 1°,
 //! `tarification-atmp/`). Un code laisse vide prend celui que la compagnie a pour l'annee de l'ouverture (INFERENCE :
 //! l'activite de l'etablissement est celle de la compagnie tant que la notification de la CARSAT ne dit pas autre chose),
-//! et l'ecran le dit (`taux-atmp`, `atmp::route`). Le taux saisi est « le taux net notifie de l'annee » (D. 242-6-15) : il porte l'annee
-//! de sa date d'effet (`annee`) et ne vaut que pour elle (`droit::bareme::taux_atmp_d_un_etablissement`). Le taux laisse vide est
-//! celui de l'arrete pour un risque « TC » (`droit::bareme::taux_atmp_applique`) ; sinon il se refuse (le controle des
-//! etablissements, `droit::contexte::controler_etablissements`).
+//! et l'ecran le dit (`taux-atmp`, `atmp::route`). Le taux AT/MP est une ligne comme celle du siege (`routes::atmp`) : il
+//! vaut a partir de sa date (`depuis`, celle de la notification), et la ligne qui le change se date a ce jour-la
+//! (`jour_du_changement`) ; la paie le lit par la meme regle que celui du siege (`droit::bareme::surcharger`).
 
 use std::collections::BTreeMap;
 
@@ -42,9 +41,9 @@ fn nom(e: &Etablissement) -> String {
 }
 
 /// Ce qu'une ligne dit, sans ce qui ne se date pas : son ouverture, son NIC qui se lit dans le SIRET, la forme lisible de
-/// son adresse, l'annee du taux ; une structure vide n'y est pas.
+/// son adresse, d'ou vient son taux AT/MP ; une structure vide n'y est pas.
 fn comparable(e: &Etablissement) -> Etablissement {
-    let taux_atmp = e.taux_atmp.clone().map(|t| droit::fiche::TauxAtmp { annee: None, ..t }).filter(|t| !t.est_vide());
+    let taux_atmp = e.taux_atmp.clone().map(|t| droit::fiche::TauxAtmp { provenance: None, notification: None, ..t }).filter(|t| !t.est_vide());
     let versement_mobilite = e.versement_mobilite.clone().filter(|v| !v.est_vide());
     Etablissement {
         ouverture: None,
@@ -125,10 +124,27 @@ fn au(frise: &Frise, jour: &Jour) -> Option<Etablissement> {
     frise.range(..=*jour).next_back().and_then(|(_, v)| v.clone())
 }
 
-/// L'annee du taux saisi (D. 242-6-15) ; un taux laisse vide (celui de l'arrete) n'en a pas.
-fn poser_annee(ligne: &mut Etablissement, annee: Option<i64>) {
-    if let Some(t) = &mut ligne.taux_atmp {
-        t.annee = annee.filter(|_| t.valeur.is_some());
+/// LA LIGNE DU TAUX AT/MP D'UN ETABLISSEMENT, telle que l'ecran la renvoie (sans `provenance` ni `notification`, que la
+/// liste ne garde pas) : la meme que celle de la fiche (`avant`), elle reste ce qu'elle etait ; autre, elle est celle de
+/// la personne, sauf celle que le moteur pose (l'arrete), qui dit deja la sienne.
+fn provenance_de(ligne: &mut Etablissement, avant: Option<&Etablissement>) {
+    let Some(t) = ligne.taux_atmp.as_mut() else { return };
+    match avant.and_then(|a| a.taux_atmp.as_ref()) {
+        Some(a) if droit::bareme::meme_taux_atmp(a, t) => *t = a.clone(),
+        _ if t.provenance.is_none() && !t.est_vide() => {
+            t.provenance = Some(droit::fiche::ProvenanceAtmp::Saisie);
+            t.notification = None;
+        }
+        _ => {}
+    }
+}
+
+/// Le jour ou une ligne qui change vaut : celui de son nouveau taux AT/MP (la date de la notification) quand c'est lui qui
+/// change, sinon la date d'effet de la boite (`d`).
+fn jour_du_changement(avant: &Etablissement, apres: &Etablissement, d: Jour) -> Jour {
+    match (comparable(avant).taux_atmp != comparable(apres).taux_atmp, apres.taux_atmp.as_ref().and_then(|t| t.depuis)) {
+        (true, Some(j)) => j,
+        _ => d,
     }
 }
 
@@ -173,11 +189,14 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
             continue;
         };
         if o.taux_atmp.as_ref().and_then(|t| t.code_risque.remplie()).is_none() {
-            let du_siege = ctx.taux_atmp_de(ouverture.an).transpose().map_err(refus)?.and_then(|t| t.code_risque).filter(|c| !c.is_empty());
+            let du_siege = ctx.entreprise_au(&ouverture).taux_atmp.and_then(|t| t.code_risque).filter(|c| !c.is_empty());
             match du_siege {
                 Some(code) => o.taux_atmp.get_or_insert_with(droit::fiche::TauxAtmp::default).code_risque = Some(code),
                 None => griefs.push(format!("{} : son code risque AT/MP, tel que la CARSAT le notifie", nom)),
             }
+        }
+        if let Some(m) = o.taux_atmp.as_ref().map(droit::bareme::taux_atmp_refuse).transpose().map_err(refus)?.flatten() {
+            griefs.push(format!("{} : {}", nom, m));
         }
         nouvelles.push((ouverture, o));
     }
@@ -209,6 +228,10 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
         });
     }
 
+    for (_, o) in nouvelles.iter_mut() {
+        let n = nic(o);
+        provenance_de(o, ouverts.iter().find(|a| nic(a) == n));
+    }
     let lignes: Vec<Etablissement> = nouvelles.iter().map(|(_, e)| e.clone()).collect();
     for c in &a_dater(&ouverts, &lignes) {
         let d = depuis.ok_or_else(|| {
@@ -232,15 +255,7 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
                 }
             }
             Some(apres) => {
-                let mut apres = apres.clone();
-                // Le taux qui change est celui de l'annee de sa date d'effet (D. 242-6-15) ; inchange, il garde la sienne.
-                let annee = if comparable(&apres).taux_atmp != comparable(&c.avant).taux_atmp {
-                    Some(i64::from(d.an))
-                } else {
-                    c.avant.taux_atmp.as_ref().and_then(|t| t.annee)
-                };
-                poser_annee(&mut apres, annee);
-                f.insert(d, Some(apres));
+                f.insert(jour_du_changement(&c.avant, apres, d), Some(apres.clone()));
             }
         }
     }
@@ -249,19 +264,15 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
         let deja = ouverts.iter().any(|a| nic(a) == n);
         let f = frises.entry(n.clone()).or_default();
         if f.is_empty() {
-            // Un etablissement neuf : il vaut a son ouverture, son taux pour l'annee de son ouverture.
-            let mut l = ligne.clone();
-            poser_annee(&mut l, Some(i64::from(ouverture.an)));
-            f.insert(*ouverture, Some(l));
+            // Un etablissement neuf : il vaut a son ouverture.
+            f.insert(*ouverture, Some(ligne.clone()));
             continue;
         }
         if !deja {
             // Ferme, il rouvre a la date d'effet.
             let d = depuis.ok_or_else(|| refus(format!("Rouvrir l'établissement « {} » demande sa date (« à partir du »). Rien n'a été enregistré.", nom(ligne))))?;
-            let mut l = ligne.clone();
-            poser_annee(&mut l, Some(i64::from(d.an)));
             f.retain(|j, _| *j < d);
-            f.insert(d, Some(l));
+            f.insert(d, Some(ligne.clone()));
             continue;
         }
         // L'ouverture se corrige : la ligne vaut a partir d'elle, avec ce qu'elle disait alors.

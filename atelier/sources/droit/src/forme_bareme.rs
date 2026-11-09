@@ -1155,18 +1155,16 @@ forme! {
     }
 }
 
-/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE ANNEE : ce que sa case de la configuration dit
-/// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`), avec la notification d'ou il vient ; le taux collectif de
-/// l'arrete et sa `provenance` ; ce qui manque.
+/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE PERIODE : la ligne de sa case de la configuration
+/// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`) : son taux, son code, sa date, d'ou elle vient ; ce qui manque.
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
     pub valeur: Option<Decimal>,
     pub code_risque: Option<String>,
-    pub provenance: Option<String>,
+    pub depuis: Option<socle::date::Jour>,
+    pub provenance: Option<crate::fiche::ProvenanceAtmp>,
     pub notification: Option<crate::fiche::NotificationAtmp>,
     pub manque: Option<String>,
-    pub alsace_moselle: Option<bool>,
-    pub etablissement_neuf: Option<bool>,
 }
 
 /// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas

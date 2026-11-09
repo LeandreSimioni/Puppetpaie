@@ -57,7 +57,7 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
         droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &jour(j)).unwrap()
     };
     let t = taux_au("2026-01-01");
-    assert_eq!((t.code_risque.as_deref(), t.valeur.clone(), t.annee), (Some("923AD"), Some(droit::fiche::Montant::Flottant(1.7)), Some(2026)), "{:?}", t);
+    assert_eq!((t.code_risque.as_deref(), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(droit::fiche::Montant::Flottant(1.7)), Some(jour("2026-01-01")), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
     assert_eq!(t.notification.and_then(|n| n.effet), Some(jour("2026-01-01")));
 
     // Effet en cours d'annee : le taux d'avant jusqu'a la date d'effet, le notifie ensuite.
@@ -69,5 +69,5 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
     // Un autre etablissement : rien ne se pose, et cela se dit.
     let a_faire = suites(&racine, vec![notification(&racine, "n3.xml", "987654321", "00011", &[("923AD", "2.10", "20270101", "20261210")])]);
     assert_eq!(a_faire.len(), 1, "{:?}", a_faire);
-    assert_eq!(taux_au("2027-06-01").annee, Some(2026));
+    assert_eq!(taux_au("2027-06-01").depuis, Some(jour("2026-07-01")));
 }

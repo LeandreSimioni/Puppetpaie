@@ -154,19 +154,18 @@ cotisations dues à compter de 2027 : `../tarification-atmp/`).
 
 - **D. 242-6-15** (`xml/D242-6-15.xml`, version du même décret, cotisations de 2027 et après ; la version applicable
   jusqu'à 2026 : `xml-anterieur/D242-6-15.xml`, `LEGIARTI000028429426`, relevée le 30/10/2026) : « le taux net notifié ne
-  peut varier d'une année sur l'autre » — le taux notifié l'est pour une année.
+  peut varier d'une année sur l'autre ». Il ne dit pas que le taux notifié vaut pour une année : il le suppose. Que le taux
+  d'un risque sans « TC » ne vaille que pour l'année de sa date est une **inférence** (l'arrêté est « pour l'année », la
+  CARSAT notifie chaque année).
 
-**Où le moteur s'en sert (D. 242-6-15, D. 242-6-17 de 2012)** : `droit/src/bareme.rs` (`taux_atmp_d_un_etablissement`) :
-le taux saisi d'un établissement ne vaut que pour l'année de sa date d'effet ; sans taux saisi, un établissement ouvert dans
-l'année ou les deux précédentes a, jusqu'en 2026, le taux collectif de l'arrêté pour son risque (TC ou non) ; ce que
-l'article excepte se dit par le taux notifié, qui se saisit.
-
-**Où le moteur s'en sert** : `moteur/src/routes/etablissements.rs` (`ecrire` : la ligne d'un établissement se date ; son
-taux saisi porte l'année de sa date d'effet), `droit/src/bareme.rs` (`taux_atmp_d_un_etablissement` : il ne vaut que pour cette
-année, D. 242-6-15), `moteur/src/routes/atmp.rs`
-(`d_un_etablissement`), `droit/src/bareme.rs` (`taux_atmp_applique`) : chaque établissement a son code risque et son taux,
-lus au même endroit que ceux de la compagnie (`bareme_atmp`) ; un code « TC » prend le taux de l'arrêté de l'année
-(D. 242-6-14).
+**Où le moteur s'en sert** : `droit/src/bareme.rs` (`taux_atmp_de_l_annee`, la même règle pour le siège et chaque
+établissement, `surcharger`) : une ligne du taux vaut à partir de sa date ; celle d'un risque sans « TC » ne vaut pas
+au-delà du 31 décembre de son année (l'inférence ci-dessus), et la paie demande la suivante. `droit/src/bareme.rs`
+(`etablissement_neuf`, D. 242-6-17 de 2012) et `moteur/src/routes/atmp.rs` (`inscrire_l_arrete`) : un établissement
+ouvert dans l'année ou les deux précédentes reçoit, jusqu'en 2026, le taux collectif de l'arrêté pour son risque (TC ou
+non), inscrit à l'ouverture ; ce que l'article excepte se dit par le taux notifié, qui s'inscrit.
+`moteur/src/routes/etablissements.rs` (`ecrire`) : la ligne d'un établissement dont le taux change se date à la date de
+ce taux.
 
 ## La réduction de cotisations salariales des heures supplémentaires et complémentaires, et la déduction patronale (relevé du 02/11/2026, lot LONG7)
 

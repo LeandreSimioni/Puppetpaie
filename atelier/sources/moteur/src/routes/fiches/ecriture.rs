@@ -57,7 +57,7 @@ pub(crate) trait SorteDeFiche: FicheDatee {
         Ok(())
     }
     /// La phrase a confirmer avant d'ecrire, sans date (le jour fixe du versement des intermittents).
-    fn usage(_avant: &Self::Plate, _apres: &Self::Plate) -> R<Option<String>> {
+    fn usage(_ctx: &Contexte, _avant: &Self::Plate, _apres: &Self::Plate) -> R<Option<String>> {
         Ok(None)
     }
     /// Ce qui se date a part (`A_PART`), pour la boite « Ce qui change ».
@@ -73,7 +73,7 @@ pub(crate) trait SorteDeFiche: FicheDatee {
 impl SorteDeFiche for FicheEntrepriseDatee {
     const NOM: &'static str = "entreprise";
     const FICHIER: &'static str = droit::contexte::ENTREPRISE;
-    const A_PART: &'static [&'static str] = &["etablissements"];
+    const A_PART: &'static [&'static str] = &["etablissements", "taux_atmp"];
     type Fichier = FicheEntrepriseDatee;
 
     fn existante<'a>(f: &'a mut Self, _cle: Option<&str>) -> Option<&'a mut Self> {
@@ -94,32 +94,47 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     fn sans_notes(p: ChampsEntreprise) -> ChampsEntreprise {
         p.sans_notes()
     }
-    /// LE TAUX AT/MP SAISI (`taux_atmp`) : le code risque s'ecrit sans point ni blanc (S21.G00.40.040, « 923AD ») ; une
-    /// notification dit le code, le taux et l'annee qu'elle a notifies : la saisie qui en change un ne vient plus d'elle.
+    /// LE TAUX AT/MP SAISI (`taux_atmp`, une ligne : `routes::atmp`) : le code risque s'ecrit sans point ni blanc
+    /// (S21.G00.40.040, « 923AD ») ; la ligne est celle de la personne (`provenance`), sans notification.
     fn ajuster(avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) {
+        if apres.taux_atmp == avant.taux_atmp {
+            return;
+        }
         let Some(t) = apres.taux_atmp.as_mut() else { return };
         t.code_risque = t.code_risque.as_deref().map(|c| c.trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase()).filter(|c| !c.is_empty());
-        if !avant.taux_atmp.as_ref().is_some_and(|a| droit::bareme::meme_taux_atmp(a, t)) {
-            t.notification = None;
+        t.provenance = Some(droit::fiche::ProvenanceAtmp::Saisie);
+        t.notification = None;
+    }
+    /// La ligne du taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`) ; une ligne
+    /// ne se retire pas (une autre la remplace, a sa date).
+    fn refuser(_ctx: &Contexte, _cle: Option<&str>, avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<()> {
+        if apres.taux_atmp == avant.taux_atmp {
+            return Ok(());
+        }
+        let Some(t) = apres.taux_atmp.as_ref() else {
+            return Err(refus("Accidents du travail (AT/MP) : une ligne ne se retire pas ; inscrivez celle qui la remplace, avec sa date. Rien n'a été enregistré."));
+        };
+        match droit::bareme::taux_atmp_refuse(t).map_err(refus)? {
+            Some(m) => Err(refus(format!("Accidents du travail (AT/MP) : {} Rien n'a été enregistré.", m))),
+            None => Ok(()),
         }
     }
-    /// Le taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`).
-    fn refuser(_ctx: &Contexte, _cle: Option<&str>, _avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<()> {
-        match apres.taux_atmp.as_ref().map(droit::bareme::taux_atmp_refuse).transpose().map_err(refus)? {
-            Some(Some(m)) => Err(refus(format!("Accidents du travail (AT/MP) : {} Rien n'a été enregistré.", m))),
-            _ => Ok(()),
-        }
-    }
-    /// Le jour fixe du versement des intermittents ; le taux AT/MP recu par la DSN que la saisie change
-    /// (`droit::bareme::taux_atmp_a_confirmer`).
-    fn usage(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
+    /// Le jour fixe du versement des intermittents ; le taux AT/MP recu par la DSN que la saisie change, a la date de la
+    /// saisie (`droit::bareme::taux_atmp_a_confirmer`).
+    fn usage(ctx: &Contexte, avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
         let versement = apres
             .date_de_versement_intermittents
             .remplie()
             .map(str::trim)
             .filter(|neuf| Some(*neuf) != avant.date_de_versement_intermittents.remplie().map(str::trim))
             .and_then(droit::versement::Versement::a_confirmer_pour_les_intermittents);
-        let atmp = droit::bareme::taux_atmp_a_confirmer(avant.taux_atmp.as_ref(), apres.taux_atmp.as_ref()).map_err(refus)?;
+        let atmp = match apres.taux_atmp.as_ref().filter(|_| apres.taux_atmp != avant.taux_atmp) {
+            Some(t) => {
+                let recue = t.depuis.and_then(|d| ctx.entreprise_au(&d).taux_atmp);
+                droit::bareme::taux_atmp_a_confirmer(recue.as_ref(), t).map_err(refus)?
+            }
+            None => None,
+        };
         let phrases: Vec<String> = versement.into_iter().chain(atmp).collect();
         Ok((!phrases.is_empty()).then(|| phrases.join(" ")))
     }
@@ -127,12 +142,63 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         let liste = |e: &ChampsEntreprise| e.etablissements.iter().flatten().cloned().collect::<Vec<_>>();
         crate::routes::etablissements::a_dater(&liste(avant), &liste(apres)).iter().map(crate::routes::etablissements::Changement::dit).collect()
     }
+    /// Les autres etablissements (`routes::etablissements`), et la ligne du taux AT/MP, a sa propre date
+    /// (`ecrire_ligne_atmp`).
     fn ecrire_a_part(ctx: &Contexte, brute: &mut Self, apres: &ChampsEntreprise, depuis: Option<Jour>, note: Option<&str>) -> R<bool> {
-        let avant = brute.etablissements.clone();
-        let liste: Vec<droit::fiche::Etablissement> = apres.etablissements.iter().flatten().cloned().collect();
-        crate::routes::etablissements::ecrire(ctx, brute, apres, &liste, depuis, note)?;
-        Ok(brute.etablissements != avant)
+        let montree = brute.au(&ctx.lue_au);
+        let mut ecrit = false;
+        if montree.etablissements != apres.etablissements {
+            let avant = brute.etablissements.clone();
+            let liste: Vec<droit::fiche::Etablissement> = apres.etablissements.iter().flatten().cloned().collect();
+            crate::routes::etablissements::ecrire(ctx, brute, apres, &liste, depuis, note)?;
+            ecrit |= brute.etablissements != avant;
+        }
+        if montree.taux_atmp != apres.taux_atmp {
+            if let Some(t) = apres.taux_atmp.clone() {
+                ecrit |= ecrire_ligne_atmp(brute, t, note)?;
+            }
+        }
+        Ok(ecrit)
     }
+}
+
+/// UNE LIGNE DU TAUX AT/MP DU SIEGE S'ECRIT A SA DATE (`depuis`, celle de la notification), dans la case datee
+/// (`droit::fiche::dater`) : avant elle, la case garde ce qu'elle disait (vide, si elle ne disait rien) ; une ligne au
+/// meme jour est remplacee. La meme ligne n'ecrit rien. Le seul endroit qui ecrit la case, quelle que soit la source
+/// (`routes::atmp`). Rend vrai si elle a change.
+pub(crate) fn ecrire_ligne_atmp(brute: &mut FicheEntrepriseDatee, t: droit::fiche::TauxAtmp, note: Option<&str>) -> R<bool> {
+    let depuis = t.depuis.ok_or_else(|| refus("Accidents du travail (AT/MP) : la ligne dit à partir de quand elle vaut. Rien n'a été enregistré."))?;
+    // La meme ligne ; ou une saisie qui redit la ligne que la notification ou l'arrete a ecrite : celle-ci garde sa
+    // provenance.
+    let deja = brute.taux_atmp.as_deref().and_then(|l| droit::fiche::valeur_au(l, &depuis));
+    if deja.as_ref() == Some(&t) || (t.provenance == Some(droit::fiche::ProvenanceAtmp::Saisie) && deja.as_ref().is_some_and(|d| droit::bareme::meme_taux_atmp(d, &t))) {
+        return Ok(false);
+    }
+    if brute.taux_atmp.as_ref().is_none_or(|l| l.is_empty()) {
+        droit::fiche::dater(&mut brute.taux_atmp, None, None, None);
+    }
+    droit::fiche::dater(&mut brute.taux_atmp, Some(t), Some(&depuis), note);
+    Ok(true)
+}
+
+/// UNE LIGNE DU TAUX AT/MP QU'UNE SOURCE DONNE (l'import, la notification recue, l'arrete : `routes::atmp`), ecrite
+/// dans la fiche entreprise (`ecrire_ligne_atmp`), l'ancien fichier sauvegarde. Rend vrai si elle a change.
+pub(crate) fn inscrire_taux_atmp(ctx: &Contexte, t: droit::fiche::TauxAtmp, note: &str) -> R<bool> {
+    let mut contenu = lire_fichier::<FicheEntrepriseDatee>(ctx)?;
+    let ecrit = ecrire_ligne_atmp(&mut contenu, t, Some(note))?;
+    if ecrit {
+        ecrire_fichier::<FicheEntrepriseDatee>(ctx, &contenu)?;
+    }
+    Ok(ecrit)
+}
+
+/// LES LIGNES DES AUTRES ETABLISSEMENTS QUE LE MOTEUR CHANGE (le taux collectif de l'arrete, `routes::atmp`), ecrites
+/// comme celles de l'ecran (`routes::etablissements::ecrire`), a partir de `depuis`, l'ancien fichier sauvegarde.
+pub(crate) fn inscrire_etablissements(ctx: &Contexte, liste: &[droit::fiche::Etablissement], depuis: Jour, note: &str) -> R<()> {
+    let mut contenu = lire_fichier::<FicheEntrepriseDatee>(ctx)?;
+    let siege = contenu.au(&depuis);
+    crate::routes::etablissements::ecrire(ctx, &mut contenu, &siege, liste, Some(depuis), Some(note))?;
+    ecrire_fichier::<FicheEntrepriseDatee>(ctx, &contenu)
 }
 
 impl SorteDeFiche for FicheSalarieDatee {
@@ -977,7 +1043,7 @@ pub(crate) struct Avertissement {
 
 /// L'avertissement d'une fiche preparee ; `None` : rien n'est a dater ni a confirmer. N'ecrit rien.
 fn avertissement<F: SorteDeFiche>(ctx: &Contexte, p: &Preparee<F>) -> R<Option<Avertissement>> {
-    let usage = F::usage(&p.avant, &p.apres)?;
+    let usage = F::usage(ctx, &p.avant, &p.apres)?;
     let cles: Vec<&'static str> = F::differentes(&p.avant, &p.apres).into_iter().filter(|k| !F::A_PART.contains(k)).collect();
     let a_dater = changements_a_dater(F::NOM, &p.vue_avant, &p.vue_apres, &cles, false)?;
     let mut changements = changements_dits(ctx, F::NOM, &p.vue_avant, &p.vue_apres, &a_dater)?;

@@ -26,13 +26,6 @@ fn flt(x: Decimal) -> f64 {
     socle::num::flottant(x)
 }
 
-/// Un decimal tel que la pile le garde : ecrit en flottant, relu par sa forme la plus courte (`socle::num::dec_f64`).
-fn ecrit(x: Decimal) -> Decimal {
-    match dec_f64(flt(x)) {
-        Ok(d) => d,
-        Err(e) => unreachable!("un décimal fini s'écrit en flottant fini : {} ({})", x, e),
-    }
-}
 
 /// `round(x, 4)` d'un flottant : arrondi correct, au pair sur le demi exact.
 fn arrondi4(x: f64) -> f64 {
@@ -773,34 +766,17 @@ fn composant_79(mut bar: Pile, id: &str, type_79: Option<&str>) -> Pile {
     bar
 }
 
-/// LE TAUX AT/MP DU BAREME, RESOLU : celui que la paie applique (`taux_atmp_applique` : le dit, ou celui de l'arrete pour
-/// un risque « TC ») s'ecrit dans `taux_atmp.valeur`, que la DSN declare (S21.G00.40.043) et que ses CTP portent ; `None`
-/// quand il ne se resout pas (`bareme_atmp` dit alors pourquoi). La compagnie et chacun de ses etablissements
-/// (`surcharger`) passent par ici.
-pub fn taux_atmp_resolu(mut bar: Pile, ent: &ChampsEntreprise) -> (Pile, Option<Decimal>) {
-    let Some(t) = &bar.taux_atmp else { return (bar, None) };
-    let alsace = t.alsace_moselle == Some(true) || (bar.etablissement.is_none() && en_alsace_moselle(ent.code_postal.portee()));
-    let applique = taux_atmp_applique(&risques_de(&bar), t, alsace);
-    if let (Some(x), Some(t)) = (applique, bar.taux_atmp.as_mut()) {
-        if t.valeur.is_none() {
-            t.valeur = Some(ecrit(x));
-        }
-    }
-    (bar, applique)
-}
-
-/// Le taux AT/MP : un seul endroit ou l'ecrire, les rubriques s'en deduisent. Le taux que la paie applique
-/// (`taux_atmp_applique` : le dit, ou celui de l'arrete pour un risque « TC ») s'ecrit dans `taux_atmp.valeur`, que la
-/// DSN declare (S21.G00.40.043).
-pub fn bareme_atmp(bar: Pile, ent: &ChampsEntreprise) -> Resultat<Pile> {
-    let (mut bar, applique) = taux_atmp_resolu(bar, ent);
+/// Le taux AT/MP : un seul endroit ou l'ecrire, les rubriques s'en deduisent. Le taux que la case de la configuration
+/// dit pour la periode (`taux_atmp.valeur`, celui de la compagnie ou de l'etablissement : `surcharger`), que la DSN declare
+/// (S21.G00.40.043).
+pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> Resultat<Pile> {
     if !bar.rubriques_bulletin.iter().any(|r| r.facteur_atmp.is_some()) {
         return Ok(bar);
     }
-    let Some(taux) = applique else {
+    let Some(taux) = bar.taux_atmp.as_ref().filter(|t| t.manque.is_none()).and_then(|t| t.valeur) else {
         let a = annee(&bar);
         let t = bar.taux_atmp.as_ref();
-        // Le taux d'un etablissement que sa ligne ne dit pas pour l'annee, et que l'arrete ne donne pas (`surcharger`).
+        // Le taux d'un etablissement que sa ligne ne donne pas pour l'annee (`surcharger`).
         if let Some(pourquoi) = t.and_then(|t| t.manque.clone()) {
             return Err(pourquoi);
         }
@@ -1283,37 +1259,20 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &str) -> Resulta
         Some(e) => e,
         None => return Ok(bar),
     };
-    let an = annee(&bar);
-    // Le taux de l'etablissement, que `bareme_atmp` lit comme celui de la compagnie ; en Alsace-Moselle d'apres SON code postal.
-    if e.taux_atmp.is_none() {
+    // Le taux de l'etablissement, lu par la meme regle que celui de la compagnie (`taux_atmp_de_l_annee`), en
+    // Alsace-Moselle d'apres SON code postal ; ce qui manque, `bareme_atmp` le refuse en le disant.
+    let Some(dit) = e.taux_atmp.as_ref().filter(|t| !t.est_vide()) else {
         return Err(socle::fichiers::absent("taux_atmp"));
-    }
-    let mut atmp = taux_atmp_d_un_etablissement(e, bar.annee)?;
-    let alsace = en_alsace_moselle(e.code_postal.portee());
-    if let Some(t) = atmp.as_mut() {
-        if alsace {
-            t.alsace_moselle = Some(true);
-        }
-        // Le taux saisi d'une autre annee ne vaut pas pour celle-ci, et l'arrete ne le donne pas (un risque sans « TC ») :
-        // `bareme_atmp` le refuse en le disant.
-        if t.valeur.is_none() && taux_atmp_applique(&risques_de(&bar), t, alsace).is_none() {
-            let nom = match e.libelle.remplie().filter(|l| !l.trim().is_empty()) {
-                Some(libelle) => libelle,
-                None => e.nic.ecrite("nic")?,
-            };
-            let risque = match t.code_risque.as_deref() {
-                Some(code) => code.trim(),
-                None => "(non dit)",
-            };
-            t.manque = Some(format!(
-                "Le taux AT/MP {} de l'établissement « {} » manque : la CARSAT le notifie chaque année à cet établissement \
-(compte AT/MP sur net-entreprises), et son risque {} n'a pas de taux collectif dans l'arrêté de l'année. Il se saisit dans \
-Configuration › Entreprise › Avancé, « Autres établissements », à partir du 1er janvier {}.",
-                an, nom, risque, an
-            ));
-        }
-    }
-    bar.taux_atmp = atmp;
+    };
+    let nom = match e.libelle.remplie().filter(|l| !l.trim().is_empty()) {
+        Some(libelle) => libelle,
+        None => e.nic.ecrite("nic")?,
+    };
+    bar.taux_atmp = match taux_atmp_de_l_annee(dit, bar.annee, Some(&bar), en_alsace_moselle(e.code_postal.portee())) {
+        Some(Ok(t)) => Some(t),
+        Some(Err(m)) => Some(TauxAtmp { code_risque: dit.code_risque.clone(), manque: Some(format!("Établissement « {} » : {}", nom, m)), ..TauxAtmp::default() }),
+        None => None,
+    };
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
@@ -1838,40 +1797,18 @@ pub struct RisqueAtmp {
 pub const SANS_NOTIFICATION: &str = "999ZZ";
 
 /// LE TAUX QUE L'ARRETE FIXE pour ce risque : le taux net collectif de l'annexe 1 quand il s'applique, c'est-a-dire pour
-/// un risque « TC » quel que soit l'effectif (D. 242-6-14, I), et pour un autre sous 20 salaries (D. 242-6-2, 1°). `moins_de_20`
-/// : l'effectif dit-il moins de 20 salaries (`None` : il ne le dit pas) ? Rien quand le taux est celui que la CARSAT
+/// un risque « TC » quel que soit l'effectif (D. 242-6-14, I), et pour un autre quand le taux collectif lui vaut
+/// (`collectif` : un etablissement nouvellement cree, `etablissement_neuf`). Rien quand le taux est celui que la CARSAT
 /// notifie, ou qu'il n'y en a pas (999ZZ). Rien en Alsace-Moselle (`alsace_moselle`) : l'annexe 3 y fixe d'autres taux
-/// collectifs, sans lettres TC, en application de D. 242-35, qui n'est pas releve : ce qu'il dit de l'effectif n'est pas
-/// etabli, le taux se saisit.
-pub fn taux_de_l_arrete(r: &RisqueAtmp, moins_de_20: Option<bool>, alsace_moselle: bool) -> Option<Decimal> {
+/// collectifs, sans lettres TC, en application de D. 242-35, qui n'est pas releve : le taux se saisit.
+pub fn taux_de_l_arrete(r: &RisqueAtmp, collectif: bool, alsace_moselle: bool) -> Option<Decimal> {
     if alsace_moselle {
         None
-    } else if r.tc || moins_de_20 == Some(true) {
+    } else if r.tc || collectif {
         r.taux
     } else {
         None
     }
-}
-
-/// LE TAUX AT/MP QUE LA PAIE APPLIQUE, celui de la compagnie ou celui d'un de ses etablissements (`taux_atmp` :
-/// `valeur`, `code_risque`), pour l'annee du bareme `bar` : la valeur dite, sinon, pour un risque « TC » de l'annexe 1 de
-/// l'arrete de l'annee (`risques_atmp` du socle), le taux collectif qu'il fixe, quel que soit l'effectif (D. 242-6-14, I ;
-/// art. 5 de l'arrete, `atelier/reference/sources/tarification-atmp/`). Le taux est determine par etablissement, le
-/// classement suivant l'activite qui y est exercee (D. 242-6-1, `code-de-la-securite-sociale/xml/D242-6-1.xml` ; arrete du
-/// 17/10/1995, art. 1, I, 1°). Rien : le taux est celui que la CARSAT notifie (un risque sans TC, 999ZZ, l'Alsace-Moselle,
-/// `taux_de_l_arrete`).
-pub fn taux_atmp_applique(risques: &[RisqueAtmp], taux_atmp: &TauxAtmp, alsace_moselle: bool) -> Option<Decimal> {
-    if let Some(v) = taux_atmp.valeur {
-        return Some(v);
-    }
-    if taux_atmp.manque.is_some() {
-        return None;
-    }
-    let code = taux_atmp.code_risque.as_deref()?.trim();
-    let r = risques.iter().find(|r| r.code == code)?;
-    // Un etablissement nouvellement cree a le taux collectif, quel que soit l'effectif (`taux_atmp_d_un_etablissement`).
-    let collectif = if taux_atmp.etablissement_neuf == Some(true) { Some(true) } else { None };
-    taux_de_l_arrete(r, collectif, alsace_moselle)
 }
 
 /// Les risques que la pile `bar` connait (`risques_atmp` de son socle).
@@ -1900,40 +1837,15 @@ pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
 /// `code-de-la-securite-sociale/xml/D242-6-17.xml`).
 const DERNIERE_ANNEE_D242_6_17_DE_2012: i32 = 2026;
 
-/// LE CODE ET LE TAUX D'UN AUTRE ETABLISSEMENT (`e`, une ligne de `etablissements`) POUR L'ANNEE `an`.
-///
-/// Le taux saisi porte l'annee pour laquelle la CARSAT l'a notifie (`annee`) et ne vaut que pour elle, comme celui du
-/// siege (`contexte::Contexte::taux_atmp_de`) : le taux est determine par etablissement (D. 242-6-1) et « le taux
-/// net notifie » l'est d'une annee sur l'autre (D. 242-6-15, `code-de-la-securite-sociale/xml-anterieur/D242-6-15.xml`, la
-/// version applicable en 2026). Une autre annee garde le code, sans taux.
-///
-/// Sans taux saisi, « les taux nets collectifs sont applicables aux etablissements nouvellement crees durant l'annee de
-/// leur creation et les deux annees civiles suivantes, quel que soit leur effectif ou celui de l'entreprise dont ils
-/// relevent » (D. 242-6-17, version applicable aux cotisations jusqu'a 2026,
-/// `code-de-la-securite-sociale/xml-anterieur/D242-6-17.xml`) : l'annee de son ouverture et les deux suivantes, le taux
-/// de l'arrete de l'annee pour son risque, TC ou non (`etablissement_neuf`, lu par `taux_atmp_applique`). Ce que cet
-/// article excepte (un etablissement issu d'un precedent, le taux unique d'une entreprise qui l'a choisi) se dit par le taux
-/// notifie, qui se saisit. A compter de 2027, la version du decret n° 2026-951 ne se lit pas ici : un risque sans TC
-/// demande son taux.
-///
-/// Le taux s'ecrit dans la pile (`forme_bareme::Pile::taux_atmp`) ; `None` quand la fiche ne dit pas le taux de
-/// l'etablissement.
-pub fn taux_atmp_d_un_etablissement(e: &Etablissement, an: i32) -> Resultat<Option<TauxAtmp>> {
-    let Some(dit) = e.taux_atmp.dite() else {
-        return Ok(None);
-    };
-    let ouvert: Option<i32> = e.ouverture.dite().map(|j| j.an);
-    let d_une_autre_annee = dit.annee.dite().is_some_and(|a| *a != 0 && *a != i64::from(an));
-    let mut t = TauxAtmp {
-        code_risque: dit.code_risque.clone(),
-        valeur: if d_une_autre_annee { None } else { dit.valeur.dite().map(crate::fiche::Montant::decimal).transpose()? },
-        ..TauxAtmp::default()
-    };
-    let neuf = ouvert.is_some_and(|y| an <= DERNIERE_ANNEE_D242_6_17_DE_2012 && y <= an && an <= y + 2);
-    if neuf && t.valeur.is_none() {
-        t.etablissement_neuf = Some(true);
-    }
-    Ok(Some(t))
+/// UN ETABLISSEMENT NOUVELLEMENT CREE EN `an` : « les taux nets collectifs sont applicables aux etablissements nouvellement
+/// crees durant l'annee de leur creation et les deux annees civiles suivantes, quel que soit leur effectif ou celui de
+/// l'entreprise dont ils relevent » (D. 242-6-17, version applicable aux cotisations jusqu'a 2026,
+/// `code-de-la-securite-sociale/xml-anterieur/D242-6-17.xml`) : l'annee de son ouverture et les deux suivantes, le taux de
+/// l'arrete pour son risque, TC ou non (`moteur::routes::atmp`, qui l'inscrit). Ce que cet article excepte (un
+/// etablissement issu d'un precedent, le taux unique d'une entreprise qui l'a choisi) se dit par le taux notifie. A compter
+/// de 2027, la version du decret n° 2026-951 ne se lit pas ici.
+pub fn etablissement_neuf(e: &Etablissement, an: i32) -> bool {
+    e.ouverture.dite().is_some_and(|o| an <= DERNIERE_ANNEE_D242_6_17_DE_2012 && o.an <= an && an <= o.an + 2)
 }
 
 /// L'etablissement est-il dans le Haut-Rhin, le Bas-Rhin ou la Moselle (art. 4 de l'arrete) ? Lu dans les deux premiers
@@ -1949,84 +1861,46 @@ mod tests_risques_atmp {
 
     /// 92.3AD est « TC » a 1,50 % en 2026 (`tarification-atmp/legifrance-arrete-tarification-atmp-2026-complet-20261029.txt`,
     /// annexe 1, l. 496-498) : son taux est celui de l'arrete quel que soit l'effectif
-    /// (D. 242-6-14, I) ; 92.1CC, sans TC (l. 489-493), ne l'a que sous 20 salaries (D. 242-6-2, 1°) ; en Alsace-Moselle,
-    /// l'annexe 3 vaut et le taux se saisit (art. 4).
+    /// (D. 242-6-14, I) ; 92.1CC, sans TC (l. 489-493), ne l'a que pour un etablissement nouvellement cree, l'annee de son
+    /// ouverture et les deux suivantes (D. 242-6-17, version applicable aux cotisations de 2026,
+    /// `code-de-la-securite-sociale/xml-anterieur/D242-6-17.xml`) ; en Alsace-Moselle, l'annexe 3 vaut et le taux se saisit
+    /// (art. 4).
     #[test]
     fn le_taux_d_un_risque_tc_est_celui_de_l_arrete_quel_que_soit_l_effectif() {
         let socle = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
         let r = risques_de(&socle).into_iter().find(|r| r.code == "923AD").unwrap();
         assert_eq!((r.code.as_str(), r.code_arrete.as_deref(), r.tc), ("923AD", Some("92.3AD"), true));
-        assert_eq!(taux_de_l_arrete(&r, Some(false), false), Some(Decimal::new(150, 2)));
-        assert_eq!(taux_de_l_arrete(&r, None, false), Some(Decimal::new(150, 2)));
-        assert_eq!(taux_de_l_arrete(&r, Some(true), true), None);
+        assert_eq!(taux_de_l_arrete(&r, false, false), Some(Decimal::new(150, 2)));
+        assert_eq!(taux_de_l_arrete(&r, true, true), None);
         assert_eq!(r.alsace_moselle, Some((3, Decimal::new(334, 2))));
         let gestion = risques_de(&socle).into_iter().find(|r| r.code == "921CC").unwrap();
-        assert_eq!(taux_de_l_arrete(&gestion, Some(true), false), Some(Decimal::new(107, 2)));
-        assert_eq!(taux_de_l_arrete(&gestion, Some(false), false), None);
-        assert_eq!(taux_de_l_arrete(&gestion, None, false), None);
+        assert_eq!(taux_de_l_arrete(&gestion, true, false), Some(Decimal::new(107, 2)));
+        assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
-        assert_eq!(taux_de_l_arrete(&sans, Some(true), false), None);
+        assert_eq!(taux_de_l_arrete(&sans, true, false), None);
+        let ouvert = |le: &str| Etablissement { ouverture: Some(Jour::lire(le).unwrap()), ..Etablissement::default() };
+        assert!(etablissement_neuf(&ouvert("2024-06-01"), 2026));
+        assert!(!etablissement_neuf(&ouvert("2023-12-01"), 2026));
     }
 
-    /// Le taux est determine par etablissement (D. 242-6-1, `code-de-la-securite-sociale/xml/D242-6-1.xml`) : un autre
-    /// etablissement classe en 92.3AD, « TC », a le taux collectif de l'arrete de l'annee sans le saisir (1,50 % en 2026,
-    /// D. 242-6-14), lu par `bareme_atmp` comme celui de la compagnie et ecrit pour la DSN ; un taux notifie saisi vaut ;
-    /// en Alsace-Moselle, le taux se saisit (art. 4 de l'arrete).
+    /// Un taux vaut a partir de sa date ; celui d'un risque sans TC ne vaut que pour l'annee de cette date (inference : la
+    /// CARSAT le notifie chaque annee, l'arrete est « pour l'annee », et D. 242-6-15 borne sa variation « d'une annee sur
+    /// l'autre », `code-de-la-securite-sociale/xml-anterieur/D242-6-15.xml`) : l'annee suivante, il se demande. Celui d'un
+    /// risque « TC » vaut jusqu'a la ligne suivante, celle que l'arrete de l'annee inscrit (D. 242-6-14, I).
     #[test]
-    fn le_taux_d_un_etablissement_en_risque_tc_est_celui_de_l_arrete() {
-        let socle = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
-        let bar = Pile { annee: 2026, risques_atmp: socle.risques_atmp.clone(), ..Pile::default() };
-        let fiche: ChampsEntreprise = socle::forme::lire_texte(r#"{"nic": "00017", "etablissements": [
-            {"nic": "00025", "code_postal": "44000", "taux_atmp": {"code_risque": "923AD"}},
-            {"nic": "00033", "code_postal": "67000", "taux_atmp": {"code_risque": "923AD"}},
-            {"nic": "00041", "code_postal": "44000", "taux_atmp": {"code_risque": "921CC", "valeur": 2.4}}]}"#, "fiche").unwrap();
-        let taux = |nic: &str| {
-            let b = taux_atmp_resolu(surcharger(bar.clone(), &fiche, nic).unwrap(), &fiche).0;
-            b.taux_atmp.and_then(|t| t.valeur).map(flt)
-        };
-        assert_eq!(taux("00025"), Some(1.5));
-        assert_eq!(taux("00033"), None);
-        assert_eq!(taux("00041"), Some(2.4));
-    }
-
-    /// « Les taux nets collectifs sont applicables aux etablissements nouvellement crees durant l'annee de leur creation et
-    /// les deux annees civiles suivantes, quel que soit leur effectif » (D. 242-6-17, version applicable aux cotisations de
-    /// 2026, `code-de-la-securite-sociale/xml-anterieur/D242-6-17.xml`) : un etablissement ouvert en 2024 ou apres, classe
-    /// en 92.1CC (sans TC), a en 2026 le taux collectif de l'arrete (1,07 %, `legifrance-arrete-tarification-atmp-2026-
-    /// complet-20261029.txt`, annexe 1) ; ouvert en 2023, il demande son taux notifie. Le taux saisi pour une annee
-    /// (D. 242-6-15) ne vaut pas pour la suivante.
-    #[test]
-    fn un_etablissement_neuf_a_le_taux_collectif_trois_annees() {
-        let socle = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
-        let bar = Pile { annee: 2026, risques_atmp: socle.risques_atmp.clone(), ..Pile::default() };
-        let fiche: ChampsEntreprise = socle::forme::lire_texte(r#"{"nic": "00017", "etablissements": [
-            {"nic": "00025", "code_postal": "44000", "ouverture": "2024-06-01", "taux_atmp": {"code_risque": "921CC"}},
-            {"nic": "00033", "code_postal": "38000", "ouverture": "2023-12-01", "taux_atmp": {"code_risque": "921CC"}},
-            {"nic": "00041", "code_postal": "38000", "ouverture": "2023-12-01", "taux_atmp": {"code_risque": "921CC", "valeur": 2.4, "annee": 2025}}]}"#, "fiche").unwrap();
-        let taux = |nic: &str| {
-            let b = taux_atmp_resolu(surcharger(bar.clone(), &fiche, nic).unwrap(), &fiche).0;
-            b.taux_atmp.and_then(|t| t.valeur).map(flt)
-        };
-        assert_eq!(taux("00025"), Some(1.07));
-        assert_eq!(taux("00033"), None);
-        assert_eq!(taux("00041"), None);
-    }
-
-    /// Le taux notifie vaut pour son annee (D. 242-6-15) ; l'annee que la case ne dit pas, 92.3AD, « TC », prend le taux
-    /// de l'arrete de l'annee (1,50 % en 2026, annexe 1 de `legifrance-arrete-tarification-atmp-2026-complet-20261029.txt`),
-    /// quel que soit l'effectif et quel qu'ait ete le taux d'avant (D. 242-6-14, I). Un risque sans TC (92.1CC), l'Alsace-
-    /// Moselle (art. 4) ou une annee dont l'arrete n'est pas depose demandent le taux notifie de l'annee.
-    #[test]
-    fn le_taux_collectif_d_un_risque_tc_se_lit_dans_l_arrete_de_chaque_annee() {
+    fn un_taux_notifie_sans_tc_ne_vaut_pas_au_dela_de_son_annee() {
         let s26 = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
-        let pose = |code: &str, t: f64| crate::fiche::TauxAtmp { code_risque: Some(code.into()), valeur: Some(crate::fiche::Montant::Flottant(t)), annee: Some(2025), ..Default::default() };
-        let t = taux_atmp_de_l_annee(&pose("923AD", 2.10), 2025, Some(&s26), false).unwrap().unwrap();
-        assert_eq!((t.valeur, t.provenance), (Some(Decimal::new(210, 2)), None));
-        let t = taux_atmp_de_l_annee(&pose("923AD", 2.10), 2026, Some(&s26), false).unwrap().unwrap();
-        assert_eq!((t.code_risque.as_deref(), t.valeur, t.provenance.is_some()), (Some("923AD"), Some(Decimal::new(150, 2)), true));
-        assert!(taux_atmp_de_l_annee(&pose("921CC", 1.04), 2026, Some(&s26), false).unwrap().is_err());
-        assert!(taux_atmp_de_l_annee(&pose("923AD", 1.65), 2026, Some(&s26), true).unwrap().is_err());
-        assert!(taux_atmp_de_l_annee(&pose("923AD", 1.50), 2027, None, false).unwrap().is_err());
+        let ligne = |code: &str, t: f64| crate::fiche::TauxAtmp {
+            code_risque: Some(code.into()),
+            valeur: Some(crate::fiche::Montant::Flottant(t)),
+            depuis: Some(Jour::lire("2025-01-01").unwrap()),
+            ..Default::default()
+        };
+        let t = taux_atmp_de_l_annee(&ligne("921CC", 2.10), 2025, Some(&s26), false).unwrap().unwrap();
+        assert_eq!(t.valeur, Some(Decimal::new(210, 2)));
+        assert!(taux_atmp_de_l_annee(&ligne("921CC", 2.10), 2026, Some(&s26), false).unwrap().is_err());
+        assert_eq!(taux_atmp_de_l_annee(&ligne("923AD", 1.65), 2026, Some(&s26), false).unwrap().unwrap().valeur, Some(Decimal::new(165, 2)));
+        assert!(taux_atmp_de_l_annee(&ligne("923AD", 1.65), 2026, Some(&s26), true).unwrap().is_err());
         assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(crate::fiche::Montant::Flottant(1.65)), ..Default::default() }, 2026, Some(&s26), false).is_none());
     }
 }
@@ -2038,52 +1912,46 @@ fn pourcent(t: Decimal) -> String {
     format!("{} %", t.to_string().replace('.', ","))
 }
 
-/// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, d'apres sa case de la configuration (`dit`, `fiche::TauxAtmp` : code risque,
-/// taux, annee ; celle en vigueur dans l'annee). L'import, la notification recue et la saisie l'ecrivent ; le taux notifie
-/// l'est pour une annee (D. 242-6-15) : il vaut pour l'annee qu'il dit (`annee`). Une annee que la case ne dit pas prend,
-/// pour un risque « TC » de l'annexe 1 de l'arrete de l'annee (`socle_an`), le taux collectif de l'arrete, quel que soit
-/// l'effectif (D. 242-6-14, I ; art. 5 de l'arrete, `atelier/reference/sources/tarification-atmp/`), avec sa
-/// `provenance` ; hors de l'Alsace-Moselle (art. 4 : l'annexe 3 y vaut, `taux_de_l_arrete`). 999ZZ (pas encore de
-/// notification) n'a pas de taux (`bareme_atmp` dit pourquoi). Tout autre cas : `Err`, le taux manque et se saisit.
+/// LE TAUX AT/MP DE L'ANNEE `an`, d'apres la ligne de la case en vigueur (`dit`, `fiche::TauxAtmp`, celle du siege ou
+/// d'un etablissement) : la paie ne lit que la case, que l'import, la notification recue, la saisie et le taux collectif
+/// de l'arrete ecrivent (`moteur::routes::atmp`). Le taux vaut a partir de sa date (`depuis`). Celui d'un risque sans
+/// « TC » (ou en Alsace-Moselle, art. 4 de l'arrete : l'annexe 3 n'a pas de TC) ne vaut pas au-dela du 31 decembre de
+/// l'annee de cette date : la CARSAT le notifie chaque annee (inference ; l'arrete est « pour l'annee », et D. 242-6-15 borne
+/// la variation du taux notifie « d'une annee sur l'autre », `code-de-la-securite-sociale/xml-anterieur/D242-6-15.xml`).
+/// Celui d'un risque « TC » (D. 242-6-14, I, `socle_an`) vaut jusqu'a la ligne suivante. 999ZZ (pas encore de
+/// notification) n'a pas de taux (`bareme_atmp` dit pourquoi). Sinon `Err` : le taux de l'annee manque et se demande.
 /// `None` : la case ne dit aucun code.
 pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Option<&Pile>, alsace_moselle: bool) -> Option<Result<TauxAtmp, String>> {
     let code = dit.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty())?.to_string();
-    let valeur = match dit.valeur.as_ref().filter(|_| dit.annee == Some(i64::from(an))).map(crate::fiche::Montant::decimal).transpose() {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-    };
-    if valeur.is_some() {
-        return Some(Ok(TauxAtmp { valeur, code_risque: Some(code), notification: dit.notification.clone(), ..TauxAtmp::default() }));
-    }
     let risque = socle_an.and_then(|s| risques_de(s).into_iter().find(|r| r.code == code));
-    if let Some((r, t)) = risque.as_ref().filter(|r| r.tc).and_then(|r| taux_de_l_arrete(r, None, alsace_moselle).map(|t| (r, t))) {
-        let arrete = match socle_an.and_then(arrete_atmp) {
-            Some(a) => a,
-            None => format!("l'arrêté de tarification de {}", an),
-        };
-        let nom = match &r.code_arrete {
-            Some(c) => c,
-            None => &r.code,
-        };
-        return Some(Ok(TauxAtmp {
-            valeur: Some(ecrit(t)),
-            code_risque: Some(code),
-            provenance: Some(format!("Taux collectif de {} pour le risque {} (« TC » : code de la sécurité sociale, art. D. 242-6-14).", arrete, nom)),
-            ..TauxAtmp::default()
-        }));
-    }
-    if code == SANS_NOTIFICATION {
-        return Some(Ok(TauxAtmp { code_risque: Some(code), ..TauxAtmp::default() }));
-    }
     let nom = match risque.as_ref().and_then(|r| r.code_arrete.clone()) {
         Some(c) => c,
         None => code.clone(),
     };
-    let pourquoi = if alsace_moselle { " L'établissement est en Alsace-Moselle : son taux est celui que la CARSAT lui notifie." } else { "" };
-    Some(Err(format!(
-        "Le taux AT/MP de {} manque (code risque {}).{} Il est sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et s'écrit, avec son année, dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-        an, nom, pourquoi
-    )))
+    let manque = |pourquoi: String| {
+        Some(Err(format!(
+            "Le taux AT/MP de {} manque (code risque {}). {} Il est sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et s'inscrit dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
+            an, nom, pourquoi
+        )))
+    };
+    let valeur = match dit.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose() {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+    };
+    match (valeur, dit.depuis) {
+        (None, _) if code == SANS_NOTIFICATION => Some(Ok(TauxAtmp { code_risque: Some(code), depuis: dit.depuis, provenance: dit.provenance, ..TauxAtmp::default() })),
+        (None, _) => manque("La configuration ne dit que le code risque.".to_string()),
+        (Some(_), None) => manque("La ligne inscrite ne dit pas à partir de quand son taux vaut.".to_string()),
+        (Some(_), Some(d)) if d.an > an => manque(format!("Le taux inscrit ne vaut qu'à partir du {}.", d.jj_mm_aaaa())),
+        (Some(v), Some(d)) => {
+            let collectif = risque.as_ref().is_some_and(|r| r.tc) && !alsace_moselle;
+            if d.an < an && !collectif {
+                let ou = if alsace_moselle { " (l'établissement est en Alsace-Moselle)" } else { "" };
+                return manque(format!("Celui de {} ({}) ne vaut que pour son année{} : le taux notifié de {} se demande.", d.an, pourcent(v), ou, an));
+            }
+            Some(Ok(TauxAtmp { valeur: Some(v), code_risque: Some(code), provenance: dit.provenance, depuis: Some(d), notification: dit.notification.clone(), ..TauxAtmp::default() }))
+        }
+    }
 }
 
 /// LA FORME D'UN CODE RISQUE (S21.G00.40.040, `X [5,6]`) : trois chiffres et deux caracteres, suivis du « B » du taux
@@ -2096,8 +1964,8 @@ pub fn code_risque_valide(code: &str) -> bool {
 }
 
 /// CE QUE LA CASE DU TAUX AT/MP REFUSE, quoi qu'on force : un code risque hors de sa forme (`code_risque_valide`), un taux
-/// avec 999ZZ (la DSN n'en declare aucun, S21.G00.40.043, SIG-11), un taux hors de (0 ; 20) %, un taux sans son annee
-/// (D. 242-6-15 : il est notifie pour une annee). `None` : rien a redire.
+/// avec 999ZZ (la DSN n'en declare aucun, S21.G00.40.043, SIG-11), un taux hors de (0 ; 20) %, un taux sans la date a
+/// partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> Resultat<Option<String>> {
     let code = t.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty());
     let valeur = t.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose()?;
@@ -2109,33 +1977,34 @@ pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> Resultat<Option<String>> 
         )),
         (Some(SANS_NOTIFICATION), Some(_)) => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),
         (_, Some(v)) if v <= Decimal::ZERO || v >= Decimal::from(20) => Some(format!("Taux AT/MP de {} % : il se donne en pourcentage, par exemple 1,50 pour 1,50 %.", v.normalize())),
-        (_, Some(_)) if t.annee.is_none() => Some("Le taux AT/MP se dit avec son année, celle que la notification de la CARSAT lui donne.".to_string()),
+        (_, Some(_)) if t.depuis.is_none() => Some("Le taux AT/MP se dit avec la date à partir de laquelle il vaut, celle de la notification de la CARSAT.".to_string()),
         _ => None,
     })
 }
 
-/// Les deux cases du taux AT/MP disent-elles le meme code, le meme taux (en nombre : 2 et 2,0 sont le meme) et la meme
-/// annee, quelle que soit la notification d'ou elles viennent ?
+/// Les deux lignes du taux AT/MP disent-elles le meme code, le meme taux (en nombre : 2 et 2,0 sont le meme) et la meme
+/// date, d'ou qu'elles viennent ?
 pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) -> bool {
     let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()));
-    a.code_risque == b.code_risque && a.annee == b.annee && taux(a) == taux(b)
+    a.code_risque == b.code_risque && a.depuis == b.depuis && taux(a) == taux(b)
 }
 
-/// LE TAUX RECU QU'UNE SAISIE CHANGE : la case `avant` vient d'une notification de la CARSAT (`notification`), et `apres`
-/// en dit un autre code, taux ou annee. La phrase a confirmer avant d'ecrire (`moteur::routes::fiches`, `usage`).
-pub fn taux_atmp_a_confirmer(avant: Option<&crate::fiche::TauxAtmp>, apres: Option<&crate::fiche::TauxAtmp>) -> Resultat<Option<String>> {
-    let a = match avant.filter(|a| a.notification.is_some()) {
+/// LE TAUX RECU QU'UNE SAISIE CHANGE : la ligne en vigueur a la date saisie (`recue`) vient d'une notification de la
+/// CARSAT, et la saisie (`apres`) en dit un autre code ou un autre taux. La phrase a confirmer avant d'ecrire
+/// (`moteur::routes::fiches`, `usage`).
+pub fn taux_atmp_a_confirmer(recue: Option<&crate::fiche::TauxAtmp>, apres: &crate::fiche::TauxAtmp) -> Resultat<Option<String>> {
+    let a = match recue.filter(|a| a.provenance == Some(crate::fiche::ProvenanceAtmp::Notification)) {
         Some(a) => a,
         None => return Ok(None),
     };
-    if apres.is_some_and(|b| meme_taux_atmp(a, b)) {
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize())).transpose();
+    if a.code_risque == apres.code_risque && taux(a)? == taux(apres)? {
         return Ok(None);
     }
-    let taux: String = a.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose()?.map(pourcent).into_iter().collect();
-    let code: String = a.code_risque.iter().map(|c| format!(" (code risque {}", c)).collect();
-    let annee: String = a.annee.iter().map(|x| format!(" pour {}", x)).collect();
-    let fin = if code.is_empty() { annee } else { format!("{}{})", code, annee) };
-    Ok(Some(format!("Le taux reçu par la DSN est {}{}. Êtes-vous sûr de vouloir le modifier ?", taux, fin)))
+    let dit: String = taux(a)?.map(pourcent).into_iter().collect();
+    let code: String = a.code_risque.iter().map(|c| format!(" (code risque {})", c)).collect();
+    let depuis: String = a.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
+    Ok(Some(format!("Le taux reçu par la DSN est {}{}{}. Êtes-vous sûr de vouloir le modifier ?", dit, code, depuis)))
 }
 
 /// Le nom de l'arrete qui fixe les taux du socle (`risques_atmp.arrete`), pour le dire a l'ecran.

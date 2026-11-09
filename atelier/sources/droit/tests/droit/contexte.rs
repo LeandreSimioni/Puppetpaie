@@ -19,7 +19,7 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     std::fs::create_dir_all(racine.join("config")).unwrap();
     let j = |s: &str| Jour::lire(s).unwrap();
     let plate = r#"{"raison_sociale": "CIE DATEE", "idcc": "3090", "annexe_convention": "4", "adresse": "21 RUE DU PORT",
-                    "premiere_embauche": "2026-01-01", "taux_atmp": {"valeur": 1.25, "code_risque": "923AD", "annee": 2026}}"#;
+                    "premiere_embauche": "2026-01-01", "taux_atmp": {"valeur": 1.25, "code_risque": "923AD", "depuis": "2026-01-01"}}"#;
     let e = |texte: &str| lu::<ChampsEntreprise>(texte);
     let mut ent = FicheEntrepriseDatee::neuve(&e(plate));
     let ce = |texte: &str| lu::<ChangementEntreprise>(texte);

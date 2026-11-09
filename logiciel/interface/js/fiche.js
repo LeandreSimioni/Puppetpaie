@@ -350,7 +350,8 @@ function dessinerFormulaire(fiche) {
       // salarie au mois sur sa complementaire sante : chacun a sa place,
       // et non plus en tete de fiche.
       const opt = options || {};
-      const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML() : "";
+      const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML()
+        : opt.atmp ? ATMP_HTML() : "";
       const permanents = toute || opt.sante;
       // LE BLOC DU SALARIÉ AU MOIS NE S'OUVRE QU'À LUI. Dans une
       // compagnie qui emploie aussi des permanents, la fiche d'une comédienne

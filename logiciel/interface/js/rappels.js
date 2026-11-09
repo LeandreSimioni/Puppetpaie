@@ -312,7 +312,9 @@ async function allerAuManque(champ, onglet, nom, cle) {
     if (sous && !sous.classList.contains("actif")) sous.click();
   }
   if (fiche === "organismes" || fiche === "coffre" || !champ) return;
-  const trouver = () => document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
+  // Le taux AT/MP n'est pas une case du formulaire : son encart (`ATMP_HTML`).
+  const trouver = () => champ === "taux_atmp" ? document.getElementById("atmp-valeur")
+    : document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
       || document.querySelector(`#config-formulaire [data-sous-de="${CSS.escape(champ)}"]:not([type="hidden"])`);
   let essais = 0;
   const viser = () => {

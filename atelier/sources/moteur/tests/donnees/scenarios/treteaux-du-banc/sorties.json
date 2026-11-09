@@ -436,10 +436,15 @@
       ],
       "taux_atmp": [
         {
+          "valeur": null
+        },
+        {
+          "depuis": "2026-01-01",
           "valeur": {
             "code_risque": "923AD",
             "valeur": 1.1,
-            "annee": 2026
+            "depuis": "2026-01-01",
+            "provenance": "saisie"
           }
         }
       ],

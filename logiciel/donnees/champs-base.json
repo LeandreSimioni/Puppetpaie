@@ -1034,15 +1034,16 @@
    "ecran": true
   },
   {
-   "note": "LE CODE RISQUE ET LE TAUX AT/MP DU SIEGE, une case datee comme toute la configuration (`moteur::routes::atmp`) : ecrite par l'import (les DSN reprises), par la notification recue de la CARSAT (a sa date d'effet, avec `notification`) et par la saisie, qui avertit quand elle change un taux recu. `annee` : celle que le taux vaut (D. 242-6-15). Une annee qu'elle ne dit pas prend, pour un risque « TC », le taux collectif de l'arrete (`droit::bareme::taux_atmp_de_l_annee`). Le seul lecteur : `droit::contexte::Contexte::taux_atmp_de`.",
+   "note": "LE CODE RISQUE ET LE TAUX AT/MP DU SIEGE, une case datee comme toute la configuration (`moteur::routes::atmp`) : chaque ligne vaut a partir de sa date (`depuis`, celle de la notification) et dit d'ou elle vient (`provenance`) : l'import (les DSN reprises), la notification recue de la CARSAT (avec `notification`), le taux collectif de l'arrete pour un risque « TC » (inscrit a l'ouverture), la saisie (« Inscrire le taux d'une notification », qui avertit quand elle change un taux recu). L'ecran la dessine a part (le taux en vigueur, celui d'avant, celui a venir). Le seul lecteur de la paie : `droit::bareme::taux_atmp_de_l_annee`.",
    "cle": "taux_atmp",
    "libelle": "Accidents du travail (AT/MP)",
    "forme": "structure",
-   "aide": "Le code risque et le taux que la CARSAT vous notifie chaque année (compte AT/MP sur net-entreprises), avec l'année du taux.",
+   "aide": "",
    "champs": [
-    {"cle": "code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": true},
-    {"cle": "valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": true},
-    {"cle": "annee", "libelle": "Année du taux", "forme": "montant", "ecran": true},
+    {"cle": "code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": false},
+    {"cle": "valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": false},
+    {"cle": "depuis", "libelle": "À partir du", "forme": "date", "ecran": false},
+    {"cle": "provenance", "libelle": "D'où vient le taux", "forme": "choix", "choix": ["saisie", "import", "notification", "arrete"], "ecran": false},
     {"cle": "notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
     {"cle": "notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
     {"cle": "notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false}
@@ -1058,7 +1059,7 @@
    "si_etablissements": false,
    "si_entreprise": null,
    "booleen_defaut": true,
-   "ecran": true
+   "ecran": false
   },
   {
    "note": "LES AUTRES ETABLISSEMENTS que le siege (celui du `nic` ci-dessus) : chacun son SIRET, son adresse, sa date d'ouverture, son code risque et son taux AT/MP (`taux_atmp`, D. 242-6-1 du code de la securite sociale : le taux est determine par etablissement). Chacun a sa DSN (S21.G00.11) ; un engagement dit le sien (`engagement::Engagement::etablissement`). La liste se date a chaque ouverture, modification et fermeture (`moteur::routes::etablissements`).",
@@ -1078,7 +1079,8 @@
     {"cle": "ouverture", "libelle": "Ouvert le", "forme": "date", "ecran": true},
     {"cle": "taux_atmp.code_risque", "libelle": "Code risque AT/MP", "forme": "code_atmp", "ecran": true},
     {"cle": "taux_atmp.valeur", "libelle": "Taux AT/MP (%)", "forme": "montant", "ecran": true},
-    {"cle": "taux_atmp.annee", "libelle": "Année du taux AT/MP", "forme": "chiffres", "aide": "Celle de la date d'effet du taux (D. 242-6-15) : l'écran la pose.", "ecran": false},
+    {"cle": "taux_atmp.depuis", "libelle": "Taux AT/MP à partir du", "forme": "date", "aide": "La date de la notification de la CARSAT.", "ecran": true},
+    {"cle": "taux_atmp.provenance", "libelle": "D'où vient le taux", "forme": "choix", "choix": ["saisie", "import", "notification", "arrete"], "ecran": false},
     {"cle": "taux_atmp.notification.le", "libelle": "Notification parue le", "forme": "date", "ecran": false},
     {"cle": "taux_atmp.notification.calcul", "libelle": "Taux calculé le", "forme": "date", "ecran": false},
     {"cle": "taux_atmp.notification.effet", "libelle": "En vigueur à partir du", "forme": "date", "ecran": false},

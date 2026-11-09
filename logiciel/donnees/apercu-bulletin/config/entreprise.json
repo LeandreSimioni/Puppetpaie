@@ -21,5 +21,5 @@
   "retraite_complementaire": [{"valeur": "AUDIENS"}],
   "emploie_des_permanents": [{"valeur": false}],
   "jours_feries_chomes": [{"valeur": "tous"}],
-  "taux_atmp": [{"valeur": {"code_risque": "923AD", "valeur": 1.25, "annee": 2026}, "note": "Fabrique pour l'apercu. Un vrai taux est notifie chaque janvier par l'Assurance Maladie."}]
+  "taux_atmp": [{"valeur": {"code_risque": "923AD", "valeur": 1.25, "depuis": "2026-01-01", "provenance": "saisie"}, "note": "Fabrique pour l'apercu. Un vrai taux est notifie chaque janvier par l'Assurance Maladie."}]
 }

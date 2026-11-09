@@ -4144,8 +4144,8 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// seule facon de l'obtenir (regle 8 : chaque etablissement a son taux AT/MP) : le bordereau courant, le bordereau
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
-fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, lue: &EntrepriseLue, nic: &str, mois: &str) -> Resultat<Pile> {
-    Ok(bareme::taux_atmp_resolu(bareme::surcharger((*ctx.bareme(&Mois::lire(mois)?.premier_jour())?).clone(), ent, nic)?, &lue.fiche).0)
+fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: &str) -> Resultat<Pile> {
+    bareme::surcharger((*ctx.bareme(&Mois::lire(mois)?.premier_jour())?).clone(), ent, nic)
 }
 
 /// LE BLOC 40 DECLARE du contrat de `p` (regle 4 : il se lit, il ne se recalcule pas), pour le bloc Changements contrat
@@ -4203,7 +4203,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: &str, etats: &[engagement::et
 /// Le bareme d'un mois pour l'etablissement, avec ses contributions.
 pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &str, m: &str) -> Resultat<BaremeDuMois> {
     let lue = ctx.entreprise_lue(&Mois::lire(m)?.premier_jour())?;
-    let b = bareme_du_nic(ctx, ent, &lue, nic, m)?;
+    let b = bareme_du_nic(ctx, ent, nic, m)?;
     let c = contributions_dsn(ctx, ent, orgs, m, &b)?;
     let mut bar = BaremeDuMois::nouveau(b, lue);
     bar.contributions_du_mois = c;

@@ -657,6 +657,14 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     // compagnie completee depuis l'import compare celles que le calcul refusait. Ils partent avec les autres incidents.
     crate::import::ecarts::noter(ctx);
 
+    // LE TAUX COLLECTIF DE L'ARRETE pour un risque « TC », au 1er janvier de l'annee en cours et, des que son bareme est
+    // livre, de la suivante (`routes::atmp::inscrire_l_arrete`) : il s'inscrit dans la case, qui le montre.
+    for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+        if let Err(e) = crate::routes::atmp::inscrire_l_arrete(ctx, an) {
+            r.incidents.push(format!("Taux AT/MP {} : {}", an, e.message));
+        }
+    }
+
     // LE DIAGNOSTIC A DISTANCE : ce que le journal des incidents a note part chez l'editeur -- pas depuis la
     // copie de developpement (ses refus sont ceux qu'on provoque pour essayer), mais depuis une compagnie fictive. Et les
     // reponses de l'editeur aux signalements de ce poste. Pas pendant les tests (`PUPPETPAIE_INCIDENTS` pose : le journal est

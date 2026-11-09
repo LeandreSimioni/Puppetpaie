@@ -977,9 +977,9 @@ bonnes raisons de ne pas avoir.
 
 **Le taux AT/MP se lit dans la configuration** : la fiche entreprise (`taux_atmp`, datée comme toute la configuration)
 pour le siège, la ligne de chaque autre établissement (`etablissements[].taux_atmp`) ; `droit::contexte` le pose sur la
-pile, la surcouche ne le porte pas. La case du siège dit le code, le taux et son année ; l'import, la notification reçue
-et la saisie l'écrivent ; une année qu'elle ne dit pas prend, pour un risque « TC », le taux collectif de l'arrêté
-(`droit::bareme::taux_atmp_de_l_annee`). Les rubriques du socle
+pile, la surcouche ne le porte pas. Chaque ligne de la case dit le code, le taux, la date à partir de laquelle il vaut
+et d'où il vient (l'import, la notification reçue, la saisie, le taux collectif de l'arrêté pour un risque « TC », inscrit
+à l'ouverture : `moteur::routes::atmp`) ; la paie ne lit qu'elle (`droit::bareme::taux_atmp_de_l_annee`). Les rubriques du socle
 portent leur **facteur** (`_facteur_atmp`) — 0,70 pour un artiste, dont les taux Urssaf sont abattus de 30 % (arrêté
 du 24/01/1975), 1 pour tout le monde d'autre — et `droit::bareme::bareme_atmp` fait la multiplication.
 
