@@ -1299,7 +1299,6 @@
             "preuve": "Signature_FULLER_SIG-PXJEKG.eml",
             "fichier_signe": "Contrat_FULLER_FU1.26.01_Novembre2026_signe.pdf",
             "mention": "Signé électroniquement le 20/11/2026 à 06:00\npar FULLER Loïe\nloie.fuller@exemple.invalid\ncode de signature SIG-PXJEKG",
-            "acte": "contrat",
             "qui": "interface",
             "reponse": "contrat signe par courriel (SIG-PXJEKG, loie.fuller@exemple.invalid)"
           }

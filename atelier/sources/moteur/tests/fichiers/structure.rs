@@ -406,7 +406,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     // Un administrateur, pour son tableau et son dépôt groupé : la compagnie est rattachée à son registre, après les
     // exemples du mot de passe du logiciel (celui d'une compagnie seule).
     let inst = c.parent().unwrap().parent().unwrap();
-    let registre = json!({"compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy()}]});
+    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00:00"}]});
     let mut phrases_fautives = Vec::new();
     for f in &fiches {
         if (f.route == Route::AdministrateurTableau || f.route == Route::AdministrateurDeposer) && !inst.join("administrateur.json").exists() {

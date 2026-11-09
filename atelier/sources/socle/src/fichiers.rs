@@ -542,13 +542,6 @@ pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
     dossier_du_code().join("modeles").join(nom)
 }
 
-/// Un fichier texte UTF-8 ; le refus porte la classe de l'erreur de lecture (`FichierAbsent`, `Disque`, `Illisible`).
-pub fn lire_texte_echec(p: &Path) -> Result<String, crate::echec::Echec> {
-    use crate::echec::{erreur, Classe};
-    let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), panne_fichier(&e, p)))?;
-    String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, crate::echec::du_disque(&p, &e)))
-}
-
 /// Le nom d'un chemin, ou son texte entier s'il n'en a pas.
 pub fn nom_du(chemin: &std::path::Path) -> String {
     match chemin.file_name() {

@@ -347,7 +347,7 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
         }
         Route::AdministrateurTableau => {
             let c: ChargeTableau = charge.lire()?;
-            let tableau = match c.garde {
+            let tableau: administrateur::TableauAdministrateur = match c.garde {
                 Some(true) => administrateur::tableau_garde(&inst)?,
                 Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true))?,
             };
@@ -361,7 +361,8 @@ pub fn route(o: &HashMap<String, String>, nom: Route, charge: &Charge) -> R<Rend
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
-            en_json(administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?)
+            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?;
+            en_json(depot)
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }

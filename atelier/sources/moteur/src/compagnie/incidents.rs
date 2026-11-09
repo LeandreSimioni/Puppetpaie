@@ -936,7 +936,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         return Ok((s, racine.to_path_buf()));
     }
     let code = dossier_du_code();
-    let logiciel = code.parent().ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Le dossier du code n'a pas de parent : {}.", code.display())))?;
+    let logiciel = code.parent().ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::avec("Le dossier du code n'a pas de parent.", socle::echec::APart { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() })))?;
     let voisin = match logiciel.parent() {
         Some(r) => Some(r.join("prive")),
         None => None,

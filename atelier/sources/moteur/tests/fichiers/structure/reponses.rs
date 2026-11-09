@@ -908,6 +908,11 @@ impl<'e> Formes<'e> {
                 _ => Ok(Forme::Feuille),
             };
         }
+        // Une enumeration declaree par une `macro_rules!` (`socle::echec::Classe`) : ses variantes sont des repetitions
+        // (`$v`, le `$` lu `Autre`), des noms sans corps ; elle s'ecrit en texte.
+        if corps.iter().any(|j| matches!(j, J::Autre)) {
+            return Ok(Forme::Feuille);
+        }
         // Une enumeration : ses variantes, selon qu'elle est etiquetee dehors (par defaut), dedans (`tag`) ou pas.
         let dedans = serde.get("tag").cloned().flatten();
         let sans_etiquette = serde.contains_key("untagged");
