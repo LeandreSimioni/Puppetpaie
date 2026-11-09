@@ -696,6 +696,21 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, Result<Value, String>)>) 
     })
 }
 
+/// Le tableau de l'administrateur en phrases, tel que la route `administrateur-tableau` le rend : combien de
+/// declarations, puis chacune (sa compagnie, ce qu'elle est, quand).
+pub fn tableau_dit(mut v: Value) -> Value {
+    let t = |x: &Value, k: &str| crate::routes::mot(&x[k]);
+    let lignes: Vec<Value> = v["declarations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|d| json!(format!("{} : {}, {}{}", t(d, "compagnie"), t(d, "titre"), if d["en_retard"] == json!(true) { "en retard, c'était " } else { "au plus tard " }, t(d, "quand"))))
+        .collect();
+    let p = format!("Déclarations à faire : {} ; compagnies : {}.", lignes.len(), crate::routes::nombre(&v["compagnies"]));
+    v["phrases"] = Value::Array(lignes);
+    crate::routes::phrase_en_tete(v, p)
+}
+
 /// Le tableau de l'administrateur a partir du tableau de chaque compagnie, deja fait ailleurs (le fil de la fenetre) : celui de chacune, ou son refus en phrase.
 pub fn tableau_de(inst: &Path, par_compagnie: Vec<(PathBuf, Result<Value, String>)>) -> Value {
     let mut v = assembler(inst, par_compagnie);

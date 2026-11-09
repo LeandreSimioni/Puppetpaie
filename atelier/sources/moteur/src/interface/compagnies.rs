@@ -325,7 +325,8 @@ pub fn cree_le(racine: &Path) -> Option<socle::date::Jour> {
 /// une compagnie qui vient d'un logiciel precedent commence par reprendre son passe (`import`), et la page s'ouvre sur
 /// l'import tant qu'il n'a rien repris (`routes::ouverture::etat`, `commencer_par_l_import`). `creation.json` le garde
 /// (`venue`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Venue {
     Neuve,
     LogicielPrecedent,

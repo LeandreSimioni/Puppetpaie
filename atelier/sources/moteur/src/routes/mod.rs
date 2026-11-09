@@ -168,7 +168,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
     }
     // UNE ROUTE DE L'INSTALLATION (l'accueil des compagnies) ne porte sur aucune compagnie : elle se sert sans contexte.
     if catalogue::dans(accueil::ROUTES, route).is_some() {
-        return brute(accueil::route(o, route, charge.brute()));
+        return accueil::route(o, route, charge);
     }
     // ECRIRE AU DEVELOPPEUR, ET CE QUI S'Y RATTACHE, SE SERT AUSSI SANS COMPAGNIE : depuis l'accueil, ou en ligne de
     // commande sans `--racine` (`filet::sans_compagnie`).
