@@ -12,7 +12,8 @@
 //!   a l'ouverture, et c'est a elle de choisir ;
 //! - le taux collectif de l'arrete de l'annee, pour un risque « TC » (annexe 1, D. 242-6-14, I ; et pour un autre
 //!   etablissement nouvellement cree, D. 242-6-17) : a l'ouverture, au 1er janvier, des que le bareme de l'annee est livre
-//!   (`inscrire_l_arrete`), si aucune ligne ne vaut deja a partir de ce jour ;
+//!   (`inscrire_l_arrete`), si aucun taux ne vaut deja a partir de ce jour ; et aussitot qu'un code TC s'inscrit sans
+//!   taux ;
 //! - la personne : « Inscrire le taux d'une notification », le geste ordinaire de la fiche (`enregistrer-fiche`) ; la
 //!   date qu'elle tape fait foi. Si elle change un taux recu par la DSN, l'avertissement le dit.
 //!
@@ -94,9 +95,10 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
 /// LE TAUX COLLECTIF DE L'ARRETE DE L'ANNEE `an` s'inscrit au 1er janvier, des que le socle de l'annee est livre (en
 /// decembre, la ligne est a venir), pour le siege et pour chaque autre etablissement dont le risque est « TC » (annexe 1,
 /// D. 242-6-14, I), ou qui est nouvellement cree (D. 242-6-17, `bareme::etablissement_neuf`) ; hors de l'Alsace-Moselle
-/// (art. 4 de l'arrete : l'annexe 3 y vaut, `bareme::taux_de_l_arrete`). Seulement si aucune ligne ne vaut deja a partir
-/// de ce 1er janvier ou apres (la notification de l'annee, deja recue, ou la saisie) ; le code est celui de la derniere
-/// ligne. Appele a l'ouverture et a l'import. Rend ce qui s'est inscrit, en phrases.
+/// (art. 4 de l'arrete : l'annexe 3 y vaut, `bareme::taux_de_l_arrete`). Seulement si aucun taux ne vaut deja a partir
+/// de ce 1er janvier ou apres (la notification de l'annee, deja recue, ou la saisie) ; une ligne de l'annee qui ne dit que
+/// le code se complete a sa date. Le code est celui de la derniere ligne. Appele a l'ouverture, a l'import, et apres
+/// l'enregistrement de la case (`SorteDeFiche::apres_ecriture`). Rend ce qui s'est inscrit, en phrases.
 pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
     let Some(socle) = socle_de(an)? else { return Ok(Vec::new()) };
     let janvier = premier_janvier(an)?;
@@ -107,8 +109,10 @@ pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
     };
     let note = format!("Taux collectif de {} (annexe 1 ; code de la sécurité sociale, art. D. 242-6-14), atelier/reference/sources/tarification-atmp/.", arrete);
     // La ligne de l'arrete pour la derniere ligne `l` d'une case, si elle lui revient.
+    // Une ligne de cette annee qui ne dit que le code (la personne l'a inscrit sans taux) se complete a sa propre date.
     let de_l_arrete = |l: &TauxAtmp, alsace: bool, neuf: bool, depuis: Jour| -> Option<TauxAtmp> {
-        if l.depuis.is_some_and(|d| d >= janvier) {
+        let de_l_annee = l.depuis.filter(|d| *d >= janvier);
+        if de_l_annee.is_some_and(|d| d.an > an || l.valeur.is_some()) {
             return None;
         }
         let code = l.code_risque.clone().filter(|c| !c.is_empty())?;
@@ -117,7 +121,10 @@ pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
         Some(TauxAtmp {
             code_risque: Some(code),
             valeur: Some(Montant::Flottant(socle::num::flottant(t))),
-            depuis: Some(depuis),
+            depuis: Some(match de_l_annee {
+                Some(d) => d.max(depuis),
+                None => depuis,
+            }),
             provenance: Some(ProvenanceAtmp::Arrete),
             notification: None,
         })

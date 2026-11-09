@@ -68,6 +68,11 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     fn ecrire_a_part(_ctx: &Contexte, _brute: &mut Self, _apres: &Self::Plate, _depuis: Option<Jour>, _note: Option<&str>) -> R<bool> {
         Ok(false)
     }
+    /// Ce que le moteur inscrit apres l'ecriture des cases `ecrites`, par la regle qui l'inscrit aussi ailleurs ; en
+    /// phrases, que la reponse dit.
+    fn apres_ecriture(_ctx: &Contexte, _ecrites: &[&'static str]) -> R<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 impl SorteDeFiche for FicheEntrepriseDatee {
@@ -159,6 +164,19 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             }
         }
         Ok(ecrit)
+    }
+    /// UN CODE RISQUE « TC » INSCRIT SANS TAUX (siege ou autre etablissement) prend aussitot le taux collectif de
+    /// l'arrete de l'annee, comme a l'ouverture (`routes::atmp::inscrire_l_arrete`, la meme regle et la meme ecriture) :
+    /// la paie n'attend pas la prochaine ouverture.
+    fn apres_ecriture(ctx: &Contexte, ecrites: &[&'static str]) -> R<Vec<String>> {
+        if !ecrites.iter().any(|c| *c == "taux_atmp" || *c == "etablissements") {
+            return Ok(Vec::new());
+        }
+        let mut dit = Vec::new();
+        for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+            dit.extend(crate::routes::atmp::inscrire_l_arrete(ctx, an)?);
+        }
+        Ok(dit)
     }
 }
 
@@ -1216,7 +1234,9 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>
     // « enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
     let enregistre_a = e.ecrit.then(maintenant);
     let enregistre_dit = enregistre_a.as_ref().map(|a| format!("enregistré à {}", a.chars().skip(11).take(5).collect::<String>()));
-    Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase: phrase.to_string() })
+    let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };
+    let phrase = std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" ");
+    Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase })
 }
 
 // ------------------------------------------------------------------ la route verifier-fiche
