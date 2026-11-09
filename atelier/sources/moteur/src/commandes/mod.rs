@@ -44,8 +44,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use serde_json::json;
-
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
@@ -62,13 +60,21 @@ pub struct Cadre {
     pub commande: &'static str,
 }
 
+/// Ce que porte l'incident d'une commande qui tombe : son nom.
+#[derive(serde::Serialize)]
+struct DeLaCommande {
+    commande: &'static str,
+}
+
 impl Cadre {
     /// Un plantage : une ligne dans le journal des incidents (sa classe et sa nature), puis la phrase seule a l'ecran
     /// (sortie d'erreur), code 1.
     pub fn plantage(&self, e: Echec) -> i32 {
         let nature = crate::compagnie::incidents::nature_de(e.classe);
         let ou = if nature == crate::compagnie::incidents::REFUS { self.commande } else { "" };
-        let _ = crate::compagnie::incidents::depuis_exception(&self.racine, e.classe,&e.message, Some(nature), ou, json!({"commande": self.commande}), None);
+        if let Err(f) = crate::compagnie::incidents::depuis_exception(&self.racine, e.classe, &e.message, Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
+            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", socle::echec::phrase_de(&f.message));
+        }
         eprintln!("{}", e.message);
         1
     }

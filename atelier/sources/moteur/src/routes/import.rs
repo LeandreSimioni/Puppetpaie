@@ -597,9 +597,8 @@ pub(crate) fn apercu_lu(
 ///   quand, et le jour de la reprise ;
 /// - `editeur` : ce qui attend l'editeur -- les incidents et les signalements partis (ou a partir) de ce poste qui
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
-///   compte ceux qui n'ont pas de reponse.
-///
-/// Ces ajouts ne levent jamais : une ligne qui n'a pas la forme attendue n'est pas comptee.
+///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
+///   refuse.
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine).map_err(Echec::from)?;
     let paies = engagement::importe::paies_lues(racine).map_err(Echec::from)?;
