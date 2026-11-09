@@ -455,7 +455,7 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
     let racine = outils::rejeu::livrer(&outils::rejeu::reference(nom), &d, "2026-11-02");
     assert!(moteur::interface::compagnies::est_fictive_livree(&racine), "la fictive posee n'est pas une fictive livree");
     assert!(!racine.join("journal/incidents.json").exists(), "les incidents du rejeu ne se livrent pas");
-    let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour)).clone();
+    let horloge = |jour: &str| outils::reussi(&outils::route(&racine, "horloge-rattraper", json!({}), jour))["phrases"].clone();
     assert_eq!(horloge("2026-11-02"), json!([]), "l'horloge a trouve a faire derriere l'administratrice");
     let cartes = outils::lire(&racine, "engagements/2026-12.json");
     let cartes = cartes["engagements"].as_array().unwrap();

@@ -62,7 +62,7 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
     ));
     let horloge = |jour: &str| -> Vec<String> {
         let r = route(&c, "horloge-rattraper", json!({"aujourdhui": jour}), jour);
-        reussi(&r).as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect()
+        reussi(&r)["phrases"].as_array().unwrap().iter().map(|p| p.as_str().unwrap_or_default().to_string()).collect()
     };
     let le_5 = horloge("2026-02-05");
     assert!(le_5.iter().any(|p| p.contains("DSN de janvier 2026 déposée") && !p.contains("non joué")), "{:?}", le_5);

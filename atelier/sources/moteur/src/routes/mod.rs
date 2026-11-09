@@ -235,7 +235,7 @@ fn servir(o: &HashMap<String, String>, route: Route, charge: &Charge) -> R<Rendu
         _ if dans(crate::compagnie::ouverture::ROUTES) => brute(crate::compagnie::ouverture::route(o, &ctx, route, c)),
         // Le banc : l'horloge de la compagnie fictive (rattraper ce qui etait du, ce que le bandeau « pendant votre
         // absence » lit ; `horloge::HorlogeFictive`).
-        Route::HorlogeRattraper => brute(crate::horloge::route(o, &ctx, c)),
+        Route::HorlogeRattraper => crate::horloge::route(&ctx, charge),
         autre => return Err(enveloppe::route_inconnue(autre.nom())),
     };
     // UN ACTE REFUSE A UNE COMPAGNIE QUI N'A PAS FINI DE DEMARRER dit tout ce qui lui manque, pas un manque a la fois.

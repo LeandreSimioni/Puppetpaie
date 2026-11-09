@@ -444,7 +444,7 @@ fn rejouer_les_gestes(
                 let ok = rep.get("ok") == Some(&Value::Bool(true));
                 // Ce que l'horloge de la fictive a joue (la route `horloge-rattraper`, ou la veille par `ouverture`), date du geste.
                 let jouees = match route {
-                    Some(Route::HorlogeRattraper) => rep.pointer("/resultat"),
+                    Some(Route::HorlogeRattraper) => rep.pointer("/resultat/phrases"),
                     Some(Route::Ouverture) => rep.pointer("/resultat/horloge"),
                     _ => None,
                 };
