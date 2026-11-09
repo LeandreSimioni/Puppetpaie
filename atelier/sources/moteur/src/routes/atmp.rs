@@ -17,17 +17,13 @@ use droit::fiche::Lue as _;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-// La surcouche du bareme de l'annee ne s'ecrit pas en sa forme (`ecrire`) : ses cles se gardent en JSON.
-use serde_json::{json, Value};
 
 use crate::routes::enveloppe::Dite;
 use droit::bareme::{self, RisqueAtmp};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, R};
 use socle::ecriture::ecrire_json;
-use crate::valeur::vrai;
 use socle::num::Decimal;
-use crate::valeur::nom_type;
 
 fn surcouche(racine: &Path, an: i64) -> std::path::PathBuf {
     racine.join(droit::contexte::BAREMES).join(format!("{}.json", an))
@@ -60,30 +56,72 @@ fn code_risque_valide(code: &str) -> bool {
         && c[3..5].iter().all(|x| x.is_ascii_digit() || x.is_ascii_uppercase())
 }
 
-/// Moins de 20 salaries (D. 242-6-2, 1°), d'apres l'effectif que le moteur connait ; `None` s'il ne le sait pas.
-fn moins_de_20(ctx: &Contexte, an: i64) -> Option<bool> {
-    ctx.effectif().ok()?.atteint(20, an as i32).ok().map(|atteint| !atteint)
+/// L'EFFECTIF AU REGARD DU SEUIL DE 20 SALARIES (D. 242-6-2, 1°) pour payer en `an` (`droit::contexte::Effectif::atteint`) :
+/// sous le seuil, au seuil, ou inconnu (et ce qui manque pour le dire).
+enum SeuilDeVingt {
+    Sous,
+    Atteint,
+    Inconnu(String),
 }
 
-/// Ecrit `taux_atmp` dans la surcouche de l'annee ; le reste de la surcouche est garde.
-///
-/// La surcouche (`droit::forme_bareme::Surcouche`) se lit en sa forme mais ne s'ecrit pas : ses autres cles sont gardees
-/// telles qu'elles sont ecrites, et seul `taux_atmp` se pose, en sa forme (`TauxAEcrire`).
+fn seuil_de_vingt(ctx: &Contexte, an: i64) -> R<SeuilDeVingt> {
+    Ok(match ctx.effectif().map_err(|m| erreur(Classe::Illisible, m))?.atteint(20, an as i32) {
+        Ok(true) => SeuilDeVingt::Atteint,
+        Ok(false) => SeuilDeVingt::Sous,
+        Err(manque) => SeuilDeVingt::Inconnu(manque),
+    })
+}
+
+/// LA SURCOUCHE DE L'ANNEE TELLE QUE LE MOTEUR L'ECRIT : l'annee, le socle qu'elle reprend, son titre et sa note, son taux
+/// AT/MP. `droit::forme_bareme::Surcouche` la relit.
+#[derive(Debug, Serialize)]
+struct SurcoucheEcrite<'a> {
+    annee: i32,
+    socle: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quoi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+    taux_atmp: &'a TauxAEcrire,
+}
+
+/// ECRIT `taux_atmp` DANS LA SURCOUCHE DE L'ANNEE, lue d'abord en sa forme (`droit::forme_bareme::lire_la_surcouche`) :
+/// son annee, son socle, son titre et sa note restent. Une surcouche qui porte d'autres choix de la compagnie (son
+/// versement mobilite, ses rubriques, ses cotisations, son fondement) ne s'ecrit pas ici : le moteur ne les ecrit pas, le
+/// taux s'y pose a la main.
 fn ecrire(racine: &Path, an: i64, taux: &TauxAEcrire) -> R<()> {
     let p = surcouche(racine, an);
-    let lu = if p.exists() { crate::routes::mois::lire_saisie(&p)? } else { json!({}) };
-    let mut data = if vrai(&lu) { lu } else { json!({"annee": an, "socle": an}) };
-    let Value::Object(d) = &mut data else {
-        return Err(erreur(Classe::Illisible, socle::fichiers::attendu("un objet", nom_type(&data))));
+    let ecrite = if p.exists() {
+        let s = droit::forme_bareme::lire_la_surcouche(&p).map_err(|m| erreur(Classe::Illisible, m))?;
+        let autres = s.versement_mobilite.is_some()
+            || s.rubriques.is_some()
+            || s.cotisations_dsn.is_some()
+            || s.par_statut.is_some()
+            || s.par_nature.is_some()
+            || s.source.is_some();
+        if autres {
+            return Err(erreur(
+                Classe::Refuse,
+                format!("Le barème propre à la compagnie pour {} porte d'autres choix que son taux AT/MP : le code risque {} s'y écrit à la main. Rien n'est écrit.", an, taux.code_risque),
+            ));
+        }
+        SurcoucheEcrite { annee: s.annee, socle: s.socle, quoi: s.quoi, note: s.note, taux_atmp: taux }
+    } else {
+        SurcoucheEcrite { annee: an as i32, socle: an as i32, quoi: None, note: None, taux_atmp: taux }
     };
-    d.insert("taux_atmp".into(), socle::ecriture::en_valeur(taux));
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&parent, &e)))?;
     }
     if p.exists() {
         crate::routes::mois::sauver_avant(&p)?;
     }
-    ecrire_json(&p, &data, 2).map_err(|m| erreur(Classe::Disque, m))
+    ecrire_json(&p, &ecrite, 2).map_err(|m| erreur(Classe::Disque, m))
+}
+
+/// LE CODE RISQUE SEUL, SANS TAUX : celui que l'import lit dans une DSN reprise quand le taux de l'annee n'est pas celui
+/// de l'arrete (`import::parametrage`) ; « Pour demarrer » demande alors le taux notifie. `note` dit d'ou vient le code.
+pub(crate) fn poser_code_sans_taux(racine: &Path, an: i64, code: &str, note: String) -> R<()> {
+    ecrire(racine, an, &TauxAEcrire { valeur: None, code_risque: code.to_string(), note, pose_a_la_creation: None, notification: None })
 }
 
 /// LE TAUX AT/MP TEL QU'IL S'ECRIT dans la surcouche de l'annee (`droit::forme_bareme::TauxAtmpEcrit` le lit) : le taux
@@ -159,7 +197,14 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
         }
         None
     } else {
-        match valeur.or_else(|| connu.as_ref().and_then(|r| bareme::taux_de_l_arrete(r, moins_de_20(ctx, an), en_alsace_moselle(ctx)))) {
+        let seuil = seuil_de_vingt(ctx, an)?;
+        let moins_de_20 = match &seuil {
+            SeuilDeVingt::Sous => Some(true),
+            SeuilDeVingt::Atteint => Some(false),
+            SeuilDeVingt::Inconnu(_) => None,
+        };
+        let arrete = connu.as_ref().and_then(|r| bareme::taux_de_l_arrete(r, moins_de_20, en_alsace_moselle(ctx)));
+        match valeur.or(arrete) {
             Some(v) if v > Decimal::ZERO && v < Decimal::from(20) => Some(v),
             Some(v) => {
                 return Err(erreur(
@@ -168,10 +213,15 @@ pub(crate) fn poser(ctx: &Contexte, an: i64, code: &str, valeur: Option<Decimal>
                 ))
             }
             None => {
+                // Un risque de l'arrete qui n'est pas TC : son taux collectif ne vaut que sous 20 salaries, que l'effectif dit.
+                let effectif = match (&seuil, connu.as_ref().is_some_and(|r| !r.tc)) {
+                    (SeuilDeVingt::Inconnu(manque), true) => format!(" Le taux de l'arrêté ne vaut pour ce code que sous 20 salariés, et l'effectif ne le dit pas : {}", manque),
+                    _ => String::new(),
+                };
                 return Err(erreur(
                     Classe::Refuse,
-                    format!("Code risque {} : son taux est celui que la CARSAT vous a notifié (compte AT/MP sur net-entreprises) ; saisissez-le.", code),
-                ))
+                    format!("Code risque {} : son taux est celui que la CARSAT vous a notifié (compte AT/MP sur net-entreprises) ; saisissez-le.{}", code, effectif),
+                ));
             }
         }
     };

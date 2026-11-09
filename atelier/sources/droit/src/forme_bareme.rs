@@ -1283,7 +1283,7 @@ pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour,
 }
 
 /// LA SURCOUCHE DE LA COMPAGNIE `fichier` : la phrase d'un refus dit ce que la compagnie corrige, la cle a part.
-pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::num::Resultat<Surcouche> {
+pub fn lire_la_surcouche(fichier: &std::path::Path) -> socle::num::Resultat<Surcouche> {
     socle::forme::lire_fichier(fichier, "Le barème propre à la compagnie (config/baremes) porte une clé ou une valeur que le moteur ne sait pas lire : la corriger, ou le signaler au développeur.")
 }
 

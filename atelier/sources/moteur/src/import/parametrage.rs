@@ -72,13 +72,8 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
     } else {
         // Le taux de l'annee n'est pas celui de l'arrete pour ce code (ou l'etablissement est en Alsace-Moselle) : le code
         // se garde, sans taux, et « Pour demarrer » demande le taux notifie.
-        let mut m = Map::new();
-        m.insert("code_risque".into(), json!(code));
-        m.insert("note".into(), json!(format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040).", socle::mois::Mois::en_clair(mois))));
-        let p = ctx.racine.join(droit::contexte::BAREMES).join(format!("{}.json", courante));
-        let mut data = crate::valeur::lire_json(&p).unwrap_or_else(|_| json!({"annee": courante, "socle": courante}));
-        data["taux_atmp"] = Value::Object(m);
-        if socle::ecriture::ecrire_json(&p, &data, 2).is_ok() {
+        let note = format!("Code lu dans la DSN de {} reprise par l'import (S21.G00.40.040).", socle::mois::Mois::en_clair(mois));
+        if crate::routes::atmp::poser_code_sans_taux(&ctx.racine, i64::from(courante), code, note).is_ok() {
             faits.push(format!("Code risque AT/MP {} lu dans la DSN de {} ; son taux de {} est celui de la notification, à saisir.", code, socle::mois::Mois::en_clair(mois), courante));
         }
     }
