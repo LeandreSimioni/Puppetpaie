@@ -38,7 +38,10 @@ fn main() -> std::process::ExitCode {
         // La fenetre, dans le navigateur du poste : `moteur interface`.
         // La mise a jour : verifier, appliquer, revenir ; publier et la cle, chez l'editeur.
         Some("maj") => {
-            let code = moteur::atelier::commandes::publication::commande(&args[1..]).unwrap_or_else(|| moteur::commandes::maj::commande(&args[1..]));
+            let code = match moteur::atelier::commandes::publication::commande(&args[1..]) {
+                Some(code) => code,
+                None => moteur::commandes::maj::commande(&args[1..]),
+            };
             return std::process::ExitCode::from(code.clamp(0, 255) as u8);
         }
         // La compagnie d'essai : un vrai depot de TEST sans `prive/`, l'identite lue dans `PUPPETPAIE_COMPAGNIE`.
