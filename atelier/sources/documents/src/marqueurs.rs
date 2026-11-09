@@ -117,20 +117,6 @@ impl std::fmt::Display for Marqueur {
 /// (bloc `MODIFICATION:`).
 pub const DU_REMPLACEMENT: [Marqueur; 2] = [Marqueur::RemplaceNumero, Marqueur::RemplaceDate];
 
-/// Ce que l'avenant ajoute aux champs du contrat : les siens, et ceux de chaque modification.
-pub const DE_L_AVENANT: [Marqueur; 10] = [
-    Marqueur::AvenantNumero,
-    Marqueur::AvenantDateContrat,
-    Marqueur::AvenantReference,
-    Marqueur::AvenantEffet,
-    Marqueur::AvenantDate,
-    Marqueur::ModificationNumero,
-    Marqueur::ModificationArticle,
-    Marqueur::ModificationAvant,
-    Marqueur::ModificationApres,
-    Marqueur::ModificationPhrase,
-];
-
 /// LES VALEURS D'UN DOCUMENT, par marqueur.
 pub type Valeurs = BTreeMap<Marqueur, String>;
 

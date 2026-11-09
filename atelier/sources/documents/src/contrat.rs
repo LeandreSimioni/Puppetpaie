@@ -66,8 +66,7 @@ pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> 
 /// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire a sa place.
 #[derive(Serialize)]
 struct MarqueurAPart {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    modele: Option<String>,
+    modele: String,
     marqueur: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     a_ecrire: Option<String>,
@@ -131,7 +130,7 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
                     modele.nom,
                     qui,
                 ),
-                MarqueurAPart { modele: Some(modele.nom.clone()), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()) },
+                MarqueurAPart { modele: modele.nom.clone(), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()) },
             ),
         });
     }
@@ -148,7 +147,7 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
                         valeur.trim(),
                         cle.nom()
                     ),
-                    MarqueurAPart { modele: Some(modele.nom.clone()), marqueur: cle.to_string(), a_ecrire: None },
+                    MarqueurAPart { modele: modele.nom.clone(), marqueur: cle.to_string(), a_ecrire: None },
                 ),
             });
         }
@@ -168,11 +167,6 @@ pub fn ecrire_contrat(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat
     crate::fabrique::ecrire_pdf(&description(ctx, paies, modeles, ent, remplacements)?, chemin).map_err(Echec::from)
 }
 
-
-/// Le modele livre de l'avenant du contrat ecrit de cette nature (`contrat_ecrit.avenant` de `contrats-base.json`).
-fn nom_de_l_avenant(nat: &droit::natures::Nature) -> R<String> {
-    nat.modele_avenant().ok_or_else(|| Echec::from(format!("La nature {} n'a pas d'avenant écrit.", nat.libelle)))
-}
 
 /// `avenant.description` puis `fabrique.figer` : le modele de l'avenant (`lu`) en texte, les valeurs du contrat et les
 /// siennes (`extra`), et les articles modifies avec l'ancien texte et le nouveau. `du_contrat` : le modele du contrat
@@ -209,9 +203,9 @@ fn reference_du_contrat(p: &Paie, date_contrat: &str, ailleurs: bool) -> String 
 }
 
 /// L'avenant en PDF, a l'identite de la compagnie, la signature de l'employeur posee comme sur
-/// le contrat. Les dates en JJ/MM/AAAA. `modifs` : ce que
-/// `avenant-apercu` rend ; `du_contrat` : le modele avec lequel le contrat est parti ; `None` : le contrat a ete signe
-/// hors du logiciel, ses modifications se disent en clair (`avenant::changements_en_clair`), par le paragraphe
+/// le contrat. Les dates en JJ/MM/AAAA. `modifs` : ce que `avenant-apercu` rend ; `modele` : le modele du contrat, dont
+/// l'avenant suit le sien -- celui avec lequel le contrat est parti, ou, signe hors du logiciel (`ailleurs`), celui que
+/// son engagement suit : ses modifications se disent alors en clair (`avenant::changements_en_clair`), par le paragraphe
 /// `{{modification.phrase}}` du bloc MODIFICATION:.
 #[allow(clippy::too_many_arguments)]
 pub fn ecrire_avenant(
@@ -224,30 +218,16 @@ pub fn ecrire_avenant(
     date_contrat: &str,
     effet: &str,
     date: &str,
-    du_contrat: Option<&ModeleDuContrat>,
+    modele: &ModeleDuContrat,
+    ailleurs: bool,
 ) -> R<()> {
-    let ailleurs = du_contrat.is_none();
     if modifs.is_empty() {
         return Err(Echec { classe: Some(Classe::Illisible), message: "Rien n'a changé : pas d'avenant à écrire.".into() });
     }
-    let nom = nom_de_l_avenant(&*p.engagement.nat()?)?;
-    let fichier = socle::fichiers::modele_de(&nom, Some(&ent.gabarits), &ctx.gabarits());
-    let lu = ModeleLu::du_fichier(&fichier)?;
-    let m = lu.decoupe(&fichier.to_string_lossy()).map_err(|r| Echec { classe: Some(Classe::Illisible), message: r })?;
-    if m.modification.is_empty() {
-        return Err(Echec { classe: Some(Classe::Illisible), message: format!("{} n'a pas de bloc MODIFICATION:.", nom) });
-    }
-    if ailleurs && !m.modification.iter().any(|b| b.contains(Marqueur::ModificationPhrase.nom())) {
-        return Err(Echec {
-            classe: Some(Classe::ModeleIncomplet),
-            message: socle::echec::avec(
-                format!(
-                    "Le modèle d'avenant {} ne dit pas une modification en clair : un contrat signé hors du logiciel n'a pas d'article à citer. Ajoutez à son bloc de modification un paragraphe qui porte la phrase de la modification (Configuration › Modèles de contrat). Rien n'est parti.",
-                    nom
-                ),
-                MarqueurAPart { modele: None, marqueur: Marqueur::ModificationPhrase.to_string(), a_ecrire: None },
-            ),
-        });
+    let dits = crate::contrat_ecrit::manques_de_l_avenant(&modele.avenant.texte);
+    if !dits.is_empty() {
+        let quoi_faire = if modele.base { "C'est un défaut du logiciel : le signaler." } else { "Corriger l'avenant de ce modèle (Configuration › Modèles de contrat)." };
+        return Err(Echec { classe: Some(Classe::ModeleIncomplet), message: format!("L'avenant de {} ne se fait pas : {} {} Rien n'est parti.", modele.nom, dits.join(" "), quoi_faire) });
     }
     let extra = Valeurs::from([
         (Marqueur::AvenantNumero, numero.to_string()),
@@ -256,6 +236,6 @@ pub fn ecrire_avenant(
         (Marqueur::AvenantEffet, effet.to_string()),
         (Marqueur::AvenantDate, date.to_string()),
     ]);
-    let d = description_avenant(ctx, p, ent, &lu, modifs, extra, du_contrat)?;
+    let d = description_avenant(ctx, p, ent, &modele.avenant, modifs, extra, (!ailleurs).then_some(modele))?;
     crate::fabrique::ecrire_pdf(&d, chemin).map_err(Echec::from)
 }

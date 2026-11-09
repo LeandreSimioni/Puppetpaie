@@ -1794,8 +1794,6 @@ details.pourquoi p, details.pourquoi ul { margin: 4px 0; }
 .modele-entete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .modele-gestes { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
 .modele-copier { display: flex; gap: 8px; margin: 6px 0; }
-.modele-editeur[hidden] { display: none; }
-.modele-texte { width: 100%; font-family: monospace; font-size: 12px; }
 .modele-paragraphe { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--bord); }
 .modele-titre { flex: 1; font-weight: bold; }
 .modele-alinea { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }

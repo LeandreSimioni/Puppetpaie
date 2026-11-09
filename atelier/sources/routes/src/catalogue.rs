@@ -97,8 +97,6 @@ routes! {
         ApercuModeleContrat = "apercu-modele-contrat",
         SupprimerModeleContrat = "supprimer-modele-contrat",
         ModeleContratParDefaut = "modele-contrat-par-defaut",
-        PoserModeleAvenant = "poser-modele-avenant",
-        RetirerModeleAvenant = "retirer-modele-avenant",
         DepotApercu = "depot-apercu",
         Deposer = "deposer",
         SuivreDepot = "suivre-depot",

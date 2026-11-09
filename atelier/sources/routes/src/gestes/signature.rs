@@ -913,15 +913,16 @@ fn avenant_ecrit(
         }
         None => {
             let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_deref()), a.mois.etiquette()));
-            // Le modele du contrat qu'il modifie : celui avec lequel ce contrat est parti.
-            let du_contrat = if ailleurs {
-                None
+            // Le modele du contrat qu'il modifie, dont il suit l'avenant : celui avec lequel ce contrat est parti ; signe
+            // hors du logiciel, celui que son engagement suit.
+            let modele = if ailleurs {
+                crate::modeles_contrat::du_contrat(ctx, p)?
             } else {
                 let j = envois::journal::lu(&ctx.racine).map_err(Echec::from)?;
                 let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
-                Some(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?)
+                crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?
             };
-            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, &jj(&a.date_contrat)?, &jj(&a.effet)?, aujourdhui_jj, du_contrat.as_ref())?;
+            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, &jj(&a.date_contrat)?, &jj(&a.effet)?, aujourdhui_jj, &modele, ailleurs)?;
             f
         }
     };

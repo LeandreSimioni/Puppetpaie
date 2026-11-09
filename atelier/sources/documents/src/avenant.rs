@@ -4,9 +4,9 @@
 //! chaque paragraphe des articles du modele qui differe d'une version a l'autre est une modification (`modifications`).
 //!
 //! Ici, les valeurs que le modele de contrat lit dans une paie (`valeurs_de_la_paie`, `contrat.marqueurs`), le contrat
-//! parti que le journal connait (`contrat_parti`) et ses avenants. Le texte de l'avenant vit dans le modele de sa nature
-//! (`contrat_ecrit.avenant` de `contrats-base.json` : `avenant-cddu.modele`, `avenant-permanent.modele`), une donnee,
-//! comme celui du contrat.
+//! parti que le journal connait (`contrat_parti`) et ses avenants. Le texte de l'avenant est celui du modele du contrat
+//! (`contrat_ecrit::ModeleDuContrat::avenant`) : la base de sa nature (`contrat_ecrit.avenant` de `contrats-base.json`)
+//! ou celui d'un modele special.
 
 
 use droit::fiche::Lue as _;

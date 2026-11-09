@@ -1443,17 +1443,18 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let ecrire = || -> R<()> {
         if premier.est_avenant() {
             let numero_av = premier.avenant.ok_or_else(|| valeur(format!("journal : {} sans numero d'avenant", nom)))?;
-            // Le contrat qu'il modifie : parti avant lui, ou signe hors du logiciel (`ailleurs`), date de son premier jour.
-            let (date_contrat, du_contrat) = if premier.ailleurs {
-                (premier.debut.clone(), None)
+            // Le contrat qu'il modifie : parti avant lui, avec son modele fige ; ou signe hors du logiciel (`ailleurs`),
+            // date de son premier jour, avec le modele que son engagement suit.
+            let (date_contrat, modele) = if premier.ailleurs {
+                (premier.debut.clone(), crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero_dit())
                     .ok_or_else(|| valeur(format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
-                (parti.date(), Some(crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?))
+                (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?)
             };
             let modifs = crate::gestes::signature::pour_la_piece(premier.modifications.as_deref().ok_or_else(|| valeur(format!("journal : {} sans les articles qu'il modifie", nom)))?);
             let effet = premier.effet.as_deref().ok_or_else(|| valeur(format!("journal : {} sans sa date d'effet", nom)))?;
-            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, &jj(&date_contrat)?, &jj(effet)?, &jour.jj_mm_aaaa(), du_contrat.as_ref())
+            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, &jj(&date_contrat)?, &jj(effet)?, &jour.jj_mm_aaaa(), &modele, premier.ailleurs)
                 .map_err(Echec::from);
         }
         let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();

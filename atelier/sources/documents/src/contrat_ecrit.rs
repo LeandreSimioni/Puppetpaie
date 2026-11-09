@@ -299,12 +299,13 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
 }
 
 /// UN MODELE DE CONTRAT TEL QU'IL SERT A UN CONTRAT : comment une phrase le nomme (« le modèle de base « … » », « le
-/// modèle « Tournée » »), s'il est la base de sa nature, et son texte lu.
+/// modèle « Tournée » »), s'il est la base de sa nature, son texte lu, et celui de son avenant.
 #[derive(Debug, Clone)]
 pub struct ModeleDuContrat {
     pub nom: String,
     pub base: bool,
     pub lu: ModeleLu,
+    pub avenant: ModeleLu,
 }
 
 /// La phrase de L. 1221-3 que le verificateur rappelle : il ne detecte aucune langue, il dit la regle
@@ -346,21 +347,36 @@ pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<V
         Ok(m) => m,
         Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.0)]),
     };
-    let permis = |c: &Marqueur| CHAMPS.iter().any(|(k, _, _)| k == c);
-    let mut lieux: Vec<(String, &[String], bool)> = vec![
-        ("le titre".into(), std::slice::from_ref(&m.titre), false),
-        ("le sous-titre".into(), std::slice::from_ref(&m.soustitre), false),
-        ("le préambule".into(), &m.preambule, false),
-        ("la phrase d'annulation".into(), &m.annule, true),
+    let (mut dits, ecrits) = champs_cites(&m, &crate::marqueurs::DU_REMPLACEMENT, &[]);
+    for (cle, pourquoi, si_dite) in mentions(nat)? {
+        let due = !si_dite || valeurs.is_none_or(|v| v.get(&cle).is_some_and(|x| !x.trim().is_empty()));
+        if due && !ecrits.iter().any(|(x, c)| *x == cle && c.is_none_or(|c| c == cle)) {
+            dits.push(format!("Il manque {}, que la loi exige d'un {} ({}).", cle, nat.nom_du_contrat(), pourquoi));
+        }
+    }
+    Ok(dits)
+}
+
+/// LES CHAMPS QU'UN MODELE CITE, lieu par lieu (le titre, le preambule, la phrase d'annulation, le bloc de modification,
+/// chaque article, les signatures) : les manques de grammaire des champs (un champ inconnu, ou que ce modele ne porte
+/// pas ; une condition sur un champ inconnu ; une valeur qui peut etre vide hors de son alinea `[si …]`), et chaque champ
+/// cite avec la condition de son alinea. Un contrat porte les champs de `CHAMPS` ; `annulation` : ceux que sa phrase
+/// d'annulation ajoute ; `partout` : ceux qu'un avenant ajoute.
+fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], partout: &[Marqueur]) -> (Vec<String>, Vec<(Marqueur, Option<Marqueur>)>) {
+    let permis = |c: &Marqueur| CHAMPS.iter().any(|(k, _, _)| k == c) || partout.contains(c);
+    let mut lieux: Vec<(String, &[String], &[Marqueur])> = vec![
+        ("le titre".into(), std::slice::from_ref(&m.titre), &[]),
+        ("le sous-titre".into(), std::slice::from_ref(&m.soustitre), &[]),
+        ("le préambule".into(), &m.preambule, &[]),
+        ("la phrase d'annulation".into(), &m.annule, annulation),
+        ("le bloc de modification".into(), &m.modification, &[]),
     ];
     for (n, (titre, alineas)) in m.articles.iter().enumerate() {
-        lieux.push((format!("l'article {} « {} »", n + 1, titre), alineas, false));
+        lieux.push((format!("l'article {} « {} »", n + 1, titre), alineas, &[]));
     }
-    lieux.push(("les signatures".into(), &m.signatures, false));
-    let mut dits: Vec<String> = Vec::new();
-    // Les champs cites dans un alinea qui s'ecrit sans autre condition que lui-meme.
-    let mut ecrits: Vec<(Marqueur, Option<Marqueur>)> = Vec::new();
-    for (ou, alineas, annule) in &lieux {
+    lieux.push(("les signatures".into(), &m.signatures, &[]));
+    let (mut dits, mut ecrits) = (Vec::new(), Vec::new());
+    for (ou, alineas, en_plus) in &lieux {
         for a in alineas.iter() {
             let (condition, corps) = match fabrique_pdf::modele::condition(a) {
                 Some((c, t)) => match Marqueur::lire(c).filter(|x| permis(x)) {
@@ -374,25 +390,37 @@ pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<V
             };
             for cite in crate::marqueurs::cites(corps) {
                 match cite {
-                    Ok(x) if permis(&x) || (*annule && crate::marqueurs::DU_REMPLACEMENT.contains(&x)) => {
+                    Ok(x) if permis(&x) || en_plus.contains(&x) => {
                         if PEUVENT_ETRE_VIDES.contains(&x) && condition != Some(x) {
                             dits.push(format!("Dans {}, {} peut être vide : l'écrire dans un alinéa qui commence par [si {}].", ou, x, x.nom()));
                         }
                         ecrits.push((x, condition));
                     }
-                    Ok(x) => dits.push(format!("Dans {}, {} n'est pas un champ d'un contrat.", ou, x)),
+                    Ok(x) => dits.push(format!("Dans {}, {} n'est pas un champ de ce modèle.", ou, x)),
                     Err(inconnu) => dits.push(format!("Dans {}, {{{{{}}}}} n'est pas un champ du logiciel : le corriger d'après la liste des champs, ou l'écrire en texte.", ou, inconnu)),
                 }
             }
         }
     }
-    for (cle, pourquoi, si_dite) in mentions(nat)? {
-        let due = !si_dite || valeurs.is_none_or(|v| v.get(&cle).is_some_and(|x| !x.trim().is_empty()));
-        if due && !ecrits.iter().any(|(x, c)| *x == cle && c.is_none_or(|c| c == cle)) {
-            dits.push(format!("Il manque {}, que la loi exige d'un {} ({}).", cle, nat.nom_du_contrat(), pourquoi));
-        }
+    (dits, ecrits)
+}
+
+/// LE VERIFICATEUR D'UN MODELE D'AVENANT, le meme que celui du contrat (`champs_cites`), ses champs en plus
+/// (`CHAMPS_DE_L_AVENANT`) : il a un bloc MODIFICATION:, qui dit ce qui change (R. 1221-40 pour un permanent :
+/// `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`), et ce bloc porte `modification.phrase`, seul a s'ecrire
+/// pour un contrat signe hors du logiciel, dont aucun article ne se cite. Rend les manques ; vide : le modele est bon.
+pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
+    let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle d'avenant") {
+        Ok(m) => m,
+        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.0)],
+    };
+    let (mut dits, _) = champs_cites(&m, &[], &CHAMPS_DE_L_AVENANT.map(|(c, _)| c));
+    if m.modification.is_empty() {
+        dits.push("L'avenant n'a pas de bloc MODIFICATION: : c'est lui qui dit, article par article, ce qui change.".into());
+    } else if !m.modification.iter().any(|b| crate::marqueurs::cites(b).contains(&Ok(Marqueur::ModificationPhrase))) {
+        dits.push(format!("Le bloc de modification de l'avenant ne cite pas {} : un contrat signé hors du logiciel n'a pas d'article à citer, l'avenant y dit ce qui change en clair.", Marqueur::ModificationPhrase));
     }
-    Ok(dits)
+    dits
 }
 
 /// LE MODELE `m` FAIT-IL CE CONTRAT ? (`manques`, avec ses valeurs). `Err` : la phrase du refus, qui dit chaque manque et
@@ -463,21 +491,32 @@ pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
     (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", "tous"),
 ];
 
-/// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige.
-pub fn champs_des_modeles(nat: &Nature) -> Result<Vec<ChampDeModele>, String> {
-    let mentions = mentions(nat)?;
-    Ok(CHAMPS
-        .iter()
-        .filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle))
-        .map(|(cle, quoi, _)| {
-            let exige = mentions.iter().find(|(m, _, _)| *m == *cle);
-            ChampDeModele {
-                marqueur: cle.to_string(),
-                quoi,
-                obligatoire: exige.is_some(),
-                texte: exige.map(|(_, t, _)| t.clone()),
-                si_dite: exige.is_some_and(|(_, _, s)| *s),
-            }
+/// Ce que l'avenant ajoute aux champs du contrat, et ce que chacun imprime : les siens, et ceux de chaque modification
+/// (le bloc MODIFICATION: se repete pour chacune).
+pub const CHAMPS_DE_L_AVENANT: [(Marqueur, &str); 10] = [
+    (Marqueur::AvenantNumero, "le numéro de l'avenant (1, 2… par contrat)"),
+    (Marqueur::AvenantDateContrat, "le jour où le contrat modifié a été signé"),
+    (Marqueur::AvenantReference, "le contrat modifié : « n° … du … », ou « commencé le … » s'il a été signé ailleurs"),
+    (Marqueur::AvenantEffet, "la date d'effet de l'avenant"),
+    (Marqueur::AvenantDate, "le jour où l'avenant est établi"),
+    (Marqueur::ModificationNumero, "le numéro de l'article modifié"),
+    (Marqueur::ModificationArticle, "le titre de l'article modifié"),
+    (Marqueur::ModificationAvant, "un alinéa du contrat signé, tel qu'il s'y lit"),
+    (Marqueur::ModificationApres, "le même alinéa, à jour"),
+    (Marqueur::ModificationPhrase, "ce qui change en clair, pour un contrat signé ailleurs"),
+];
+
+/// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige ;
+/// ceux d'un avenant (`avenant`) : les memes, aucun obligatoire, et les siens.
+pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> Result<Vec<ChampDeModele>, String> {
+    let mentions = if avenant { Vec::new() } else { mentions(nat)? };
+    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
+    let siens = CHAMPS_DE_L_AVENANT.iter().filter(|_| avenant).copied();
+    Ok(du_contrat
+        .chain(siens)
+        .map(|(cle, quoi)| {
+            let exige = mentions.iter().find(|(m, _, _)| *m == cle);
+            ChampDeModele { marqueur: cle.to_string(), quoi, obligatoire: exige.is_some(), texte: exige.map(|(_, t, _)| t.clone()), si_dite: exige.is_some_and(|(_, _, s)| *s) }
         })
         .collect())
 }

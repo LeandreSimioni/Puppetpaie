@@ -1,28 +1,24 @@
 //! LES MODELES DE CONTRAT DE LA COMPAGNIE : ce que Configuration › Modeles de contrat montre et fait, et le modele que
 //! chaque contrat suit.
 //!
-//! Chaque nature de contrat a son MODELE DE BASE, livre (`contrat_ecrit.modele` de `contrats-base.json`, dans
-//! `donnees/modeles/`) : il suit les mises a jour du logiciel et ne se modifie pas. La compagnie en copie des MODELES
-//! SPECIAUX, chacun un nom et le texte de la base dont il part (le logiciel dit ce qui a change dans la base depuis) ;
-//! ils sont ranges avec elle (`gabarits/contrats/modeles.json`, la forme `ModelesDeContrat`) et sauvegardes avec elle.
-//! Elle choisit le modele par defaut de chaque nature (la base sinon) ; un engagement en choisit un sous « Avance » (sa
-//! case `modele_contrat`, le defaut sinon).
+//! Chaque nature de contrat a son MODELE DE BASE, livre (`contrat_ecrit` de `contrats-base.json`, dans
+//! `donnees/modeles/`) : un contrat et son avenant, qui suivent les mises a jour du logiciel et ne se modifient pas. La
+//! compagnie en copie des MODELES SPECIAUX : chacun un nom, son contrat et son avenant, et pour chacun le texte de la
+//! base dont il part (le logiciel dit ce qui a change dans la base depuis) ; ils sont ranges avec elle
+//! (`gabarits/contrats/modeles.json`, la forme `ModelesDeContrat`). Elle choisit le modele par defaut de chaque nature
+//! (la base sinon) ; un engagement en choisit un sous « Avance » (sa case `modele_contrat`, le defaut sinon).
 //!
-//! UN SPECIAL S'ECRIT PARAGRAPHE PAR PARAGRAPHE (ses `ARTICLE:`) : une route par geste (ecrire, ajouter, deplacer,
-//! supprimer un paragraphe ; renommer le modele). Chaque geste se fait sur le texte, qui se verifie ensuite
-//! (`documents::contrat_ecrit::manques`) : un geste qui laisserait le modele faux est refuse, rien n'est ecrit, et la
-//! phrase dit quelle donnee manque (le paragraphe d'une mention exigee ne se supprime pas tant qu'elle n'est pas
-//! ailleurs).
+//! UN SPECIAL S'ECRIT PARAGRAPHE PAR PARAGRAPHE (les `ARTICLE:` de son contrat ou de son avenant, sa `partie`) : une
+//! route par geste (ecrire, ajouter, deplacer, supprimer un paragraphe ; renommer le modele). Chaque geste se fait sur le
+//! texte, qui se verifie ensuite (`documents::contrat_ecrit::manques`, `manques_de_l_avenant`) : un geste qui laisserait
+//! le modele faux est refuse, rien n'est ecrit, et la phrase dit quelle donnee manque.
 //!
-//! LE CONTRAT PARTI GARDE SON TEXTE : au depart, le texte du modele qu'il suit se fige sous son empreinte
-//! (`gabarits/contrats/partis/<empreinte>.modele`, `figer`), que la ligne du journal note (`ContratParti::modele`) ;
-//! refaire ce contrat, ou lui faire un avenant, relit ce texte-la (`du_contrat_parti`).
-//!
-//! L'avenant garde ici son modele propre d'une nature, pose en texte entier dans `gabarits/` (`poser-modele-avenant`) ;
-//! les clauses particulieres de la compagnie (`clauses_particulieres` de sa fiche) s'ecrivent ici une fois.
+//! LE CONTRAT PARTI GARDE SON TEXTE, et celui de son avenant : au depart, les deux se figent sous une empreinte
+//! (`gabarits/contrats/partis/<empreinte>.modele` et `.avenant.modele`, `figer`), que la ligne du journal note
+//! (`ContratParti::modele`) ; refaire ce contrat, ou lui faire un avenant, relit ces textes-la (`du_contrat_parti`).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -30,152 +26,113 @@ use crate::catalogue::Route;
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
-use documents::marqueurs::{Marqueur, ModeleLu, DE_L_AVENANT, DU_REMPLACEMENT};
+use documents::marqueurs::ModeleLu;
 use droit::contexte::Contexte;
 use droit::natures::Nature;
 use engagement::calcul::Paie;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecran::Pastille;
-use socle::fichiers::dossier_du_code;
 use socle::mois::Mois;
 
-const NATURE: Champ = Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "la nature du contrat : cddu_spectacle, cdd, cdi…", avance: false };
-const ID: Champ = Champ { nom: "id", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "l'id d'un modèle spécial (`modeles` de modeles-contrat)", avance: false };
-const ID_OU_BASE: Champ = Champ { nom: "id", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "l'id d'un modèle spécial ; absent ou null : le modèle de base de la nature", avance: false };
-const NOM: Champ = Champ { nom: "nom", libelle: Affiche::new("Nom"), forme: Forme::Texte, sens: "le nom du modèle spécial", avance: false };
-const NUMERO: Champ = Champ { nom: "numero", libelle: Affiche::new("Paragraphe"), forme: Forme::Nombre, sens: "le numéro du paragraphe (`articles[].numero` de modele-contrat), à partir de 1", avance: false };
-const TITRE: Champ = Champ { nom: "titre", libelle: Affiche::new("Titre"), forme: Forme::Texte, sens: "le titre du paragraphe", avance: false };
-const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "le modèle d'avenant entier (TITRE:, MODIFICATION:, ARTICLE:…)", avance: false };
-const MODELE_REFUSE: Refus = Refus { classe: Classe::Refuse, corriger: "le modèle : ce que la phrase nomme, paragraphe par paragraphe ; rien n'est écrit" };
-
-/// Ce que la ligne d'un modele special dit quand la base dont il est copie a change depuis (une mise a jour).
-const BASE_CHANGEE: &str = "Le modèle de base a changé depuis la copie : ouvrir ce modèle pour voir quels paragraphes.";
-
-/// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::Dessine(Place::ModelesContrat);
-
-/// Une fiche de ce module qui ecrit un modele special et rend la liste, comme modeles-contrat.
-const fn geste(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str) -> Fiche {
-    Fiche { route, geste, charge, exemple, rend: "les modèles, comme modeles-contrat", refus: &[MODELE_REFUSE, MANQUE], acte: Acte::Ecrit, avance: true, phrase: 0, ecran: ECRAN }
+const fn champ(nom: &'static str, libelle: &'static str, forme: Forme, sens: &'static str) -> Champ {
+    Champ { nom, libelle: Affiche::new(libelle), forme, sens, avance: false }
 }
 
-/// Les routes de ce module, et leurs fiches.
+const NATURE: Champ = champ("nature", "Nature du contrat", Forme::Texte, "la nature du contrat : cddu_spectacle, cdd, cdi…");
+const ID: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial (`modeles` de modeles-contrat)");
+const ID_OU_BASE: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial ; absent ou null : le modèle de base de la nature");
+const PARTIE: Champ = champ("partie", "Partie", Forme::Texte, "« contrat » ou « avenant » : le texte du modèle que le geste lit ou écrit");
+const NOM: Champ = champ("nom", "Nom", Forme::Texte, "le nom du modèle spécial");
+const NUMERO: Champ = champ("numero", "Paragraphe", Forme::Nombre, "le numéro du paragraphe (`articles[].numero` de modele-contrat), à partir de 1");
+const TITRE: Champ = champ("titre", "Titre", Forme::Texte, "le titre du paragraphe");
+const MODELE_REFUSE: Refus = Refus { classe: Classe::Refuse, corriger: "le modèle : ce que la phrase nomme, paragraphe par paragraphe ; rien n'est écrit" };
+
+/// Ce que la ligne d'un modele special dit quand une base dont il est copie a change depuis (une mise a jour).
+const BASE_CHANGEE: &str = "Le modèle de base a changé depuis la copie : ouvrir ce modèle pour voir quels paragraphes.";
+
+/// Une fiche de ce module (elles se voient toutes sur l'ecran des modeles de contrat, sous « Avance »).
+const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte) -> Fiche {
+    Fiche { route, geste, charge, exemple, rend, refus, acte, avance: true, phrase: 0, ecran: Ecran::Dessine(Place::ModelesContrat) }
+}
+
+/// Une fiche d'un geste qui ecrit un modele et rend la liste, comme modeles-contrat.
+const fn geste(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str) -> Fiche {
+    fiche(route, geste, charge, exemple, "les modèles, comme modeles-contrat", &[MODELE_REFUSE, MANQUE], Acte::Ecrit)
+}
+
+/// Les routes de ce module, et leurs fiches, dans l'ordre ou leurs exemples se jouent : la copie fait `m1`, que les
+/// gestes suivants ecrivent, et que le dernier supprime.
 pub const ROUTES: &[Fiche] = &[
-    Fiche {
-        route: Route::ModelesContrat,
-        geste: "Lister les modèles de contrat de chaque nature (la base et les spéciaux), et les modèles d'avenant.",
-        charge: &[],
-        exemple: r#"{}"#,
-        rend: "natures (chacune : ses modèles, la base d'abord, le défaut marqué, ce qui manque à chacun ; son avenant), clauses de la compagnie",
-        refus: &[OPERATION],
-        acte: Acte::Lit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::ModeleContrat,
-        geste: "Lire un modèle de contrat, paragraphe par paragraphe, et ce qui lui manque.",
-        charge: &[NATURE, ID_OU_BASE],
-        exemple: r#"{"nature":"cddu_spectacle"}"#,
-        rend: "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie), engagements (ceux de l'aperçu, le plus récent d'abord)",
-        refus: &[OPERATION, MANQUE],
-        acte: Acte::Lit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::ApercuModeleContrat,
-        geste: "Faire le PDF d'un modèle de contrat rempli avec un engagement de la compagnie.",
-        charge: &[
-            NATURE,
-            ID_OU_BASE,
-            Champ { nom: "engagement", libelle: Affiche::new("Engagement"), forme: Forme::Objet, sens: "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent", avance: false },
-        ],
-        exemple: r#"{"nature":"cddu_spectacle","id":"m1","engagement":null}"#,
-        rend: "phrase, chemin (le PDF de l'aperçu)",
-        refus: &[MODELE_REFUSE, MANQUE],
-        acte: Acte::Lit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    geste(Route::CopierModeleContrat, "Copier le modèle de base d'une nature en un modèle spécial de la compagnie.", &[NATURE, NOM], r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
+    fiche(
+        Route::ModelesContrat,
+        "Lister les modèles de contrat de chaque nature : la base et les spéciaux, chacun avec son avenant.",
+        &[],
+        r#"{}"#,
+        "natures (chacune : ses modèles, la base d'abord, le défaut marqué, ce qui manque à chacun, à son contrat ou à son avenant)",
+        &[OPERATION],
+        Acte::Lit,
+    ),
+    geste(Route::CopierModeleContrat, "Copier le modèle de base d'une nature, contrat et avenant, en un modèle spécial de la compagnie.", &[NATURE, NOM], r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
+    fiche(
+        Route::ModeleContrat,
+        "Lire le contrat ou l'avenant d'un modèle, paragraphe par paragraphe, et ce qui lui manque.",
+        &[NATURE, ID_OU_BASE, PARTIE],
+        r#"{"nature":"cddu_spectacle","id":"m1","partie":"contrat"}"#,
+        "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie), engagements (ceux de l'aperçu, le plus récent d'abord)",
+        &[OPERATION, MANQUE],
+        Acte::Lit,
+    ),
     geste(Route::RenommerModeleContrat, "Renommer un modèle spécial.", &[ID, NOM], r#"{"id":"m1","nom":"Tournée d'été"}"#),
     geste(
         Route::EcrireParagrapheContrat,
         "Écrire un paragraphe d'un modèle spécial : son titre, ses alinéas et leur condition ; le modèle est vérifié d'abord.",
         &[
             ID,
+            PARTIE,
             NUMERO,
             TITRE,
-            Champ { nom: "alineas", libelle: Affiche::new("Alinéas"), forme: Forme::Objet, sens: "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours", avance: false },
+            champ("alineas", "Alinéas", Forme::Objet, "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours"),
         ],
-        r#"{"id":"m1","numero":3,"titre":"Lieu de travail","alineas":[{"si":null,"texte":"Le travail a lieu à {{contrat.lieu}}."}]}"#,
+        r#"{"id":"m1","partie":"contrat","numero":3,"titre":"Lieu de travail","alineas":[{"si":null,"texte":"Le travail a lieu {{contrat.lieu}}."}]}"#,
     ),
     geste(
         Route::AjouterParagrapheContrat,
         "Ajouter un paragraphe à un modèle spécial, à une place.",
-        &[ID, Champ { nom: "numero", libelle: Affiche::new("Place"), forme: Forme::Nombre, sens: "sa place : 1 en tête, le nombre de paragraphes plus 1 à la fin", avance: false }, TITRE],
-        r#"{"id":"m1","numero":4,"titre":"Déplacements"}"#,
+        &[ID, PARTIE, champ("numero", "Place", Forme::Nombre, "sa place : 1 en tête, le nombre de paragraphes plus 1 à la fin"), TITRE],
+        r#"{"id":"m1","partie":"contrat","numero":4,"titre":"Déplacements"}"#,
     ),
     geste(
         Route::DeplacerParagrapheContrat,
         "Monter ou descendre un paragraphe d'un modèle spécial.",
-        &[ID, NUMERO, Champ { nom: "sens", libelle: Affiche::new("Sens"), forme: Forme::Texte, sens: "« monter » ou « descendre »", avance: false }],
-        r#"{"id":"m1","numero":4,"sens":"monter"}"#,
+        &[ID, PARTIE, NUMERO, champ("sens", "Sens", Forme::Texte, "« monter » ou « descendre »")],
+        r#"{"id":"m1","partie":"contrat","numero":4,"sens":"monter"}"#,
     ),
-    geste(Route::SupprimerParagrapheContrat, "Supprimer un paragraphe d'un modèle spécial ; celui d'une mention exigée ne se supprime pas tant qu'elle n'est pas ailleurs.", &[ID, NUMERO], r#"{"id":"m1","numero":4}"#),
-    Fiche {
-        route: Route::SupprimerModeleContrat,
-        geste: "Supprimer un modèle spécial ; les engagements qui l'avaient choisi suivent le défaut de leur nature, un contrat déjà parti garde son texte.",
-        charge: &[ID],
-        exemple: r#"{"id":"m1"}"#,
-        rend: "les modèles, comme modeles-contrat ; la phrase nomme les engagements qui l'avaient choisi",
-        refus: &[OPERATION, MANQUE],
-        acte: Acte::Ecrit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::ModeleContratParDefaut,
-        geste: "Choisir le modèle par défaut d'une nature.",
-        charge: &[NATURE, ID_OU_BASE],
-        exemple: r#"{"nature":"cddu_spectacle","id":"m1"}"#,
-        rend: "les modèles, comme modeles-contrat",
-        refus: &[OPERATION, MANQUE],
-        acte: Acte::Ecrit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::PoserModeleAvenant,
-        geste: "Poser le modèle d'avenant propre à la compagnie.",
-        charge: &[NATURE, TEXTE],
-        exemple: r#"{"nature":"cddu_spectacle","texte":"TITRE: Avenant n° {{avenant.numero}}\n\nMODIFICATION:\nL'article {{modification.numero}} est désormais rédigé ainsi : « {{modification.apres}} »\n\nARTICLE: Le reste\nLe reste du contrat est inchangé.\n"}"#,
-        rend: "les modèles, comme modeles-contrat",
-        refus: &[MODELE_REFUSE, MANQUE],
-        acte: Acte::Ecrit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::RetirerModeleAvenant,
-        geste: "Remettre le modèle d'avenant livré à la place de celui de la compagnie.",
-        charge: &[NATURE],
-        exemple: r#"{"nature":"cddu_spectacle"}"#,
-        rend: "les modèles, comme modeles-contrat",
-        refus: &[OPERATION, MANQUE],
-        acte: Acte::Ecrit,
-        avance: true,
-        phrase: 0,
-        ecran: ECRAN,
-    },
+    geste(
+        Route::SupprimerParagrapheContrat,
+        "Supprimer un paragraphe d'un modèle spécial ; celui d'une mention exigée ne se supprime pas tant qu'elle n'est pas ailleurs.",
+        &[ID, PARTIE, NUMERO],
+        r#"{"id":"m1","partie":"contrat","numero":3}"#,
+    ),
+    fiche(
+        Route::ApercuModeleContrat,
+        "Faire le PDF d'un modèle de contrat rempli avec un engagement de la compagnie.",
+        &[NATURE, ID_OU_BASE, champ("engagement", "Engagement", Forme::Objet, "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent")],
+        r#"{"nature":"cddu_spectacle","id":"m1","engagement":null}"#,
+        "phrase, chemin (le PDF de l'aperçu)",
+        &[MODELE_REFUSE, MANQUE],
+        Acte::Lit,
+    ),
+    fiche(Route::ModeleContratParDefaut, "Choisir le modèle par défaut d'une nature.", &[NATURE, ID_OU_BASE], r#"{"nature":"cddu_spectacle","id":"m1"}"#, "les modèles, comme modeles-contrat", &[OPERATION, MANQUE], Acte::Ecrit),
+    fiche(
+        Route::SupprimerModeleContrat,
+        "Supprimer un modèle spécial ; les engagements qui l'avaient choisi suivent le défaut de leur nature, un contrat déjà parti garde son texte.",
+        &[ID],
+        r#"{"id":"m1"}"#,
+        "les modèles, comme modeles-contrat ; la phrase nomme les engagements qui l'avaient choisi",
+        &[OPERATION, MANQUE],
+        Acte::Ecrit,
+    ),
 ];
 
 /// Une route de ce module, branchee sur l'enveloppe.
@@ -196,8 +153,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::SupprimerParagrapheContrat => en_json(supprimer_paragraphe(ctx, charge.lire()?)?),
         Route::SupprimerModeleContrat => en_json(supprimer(ctx, charge.lire()?)?),
         Route::ModeleContratParDefaut => en_json(par_defaut(ctx, charge.lire()?)?),
-        Route::PoserModeleAvenant => en_json(poser_avenant(ctx, charge.lire()?)?),
-        Route::RetirerModeleAvenant => en_json(retirer_avenant(ctx, charge.lire()?)?),
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -216,24 +171,65 @@ struct ModelesDeContrat {
     supprimes: Vec<String>,
 }
 
-/// UN MODELE SPECIAL : son id (celui que l'engagement et le defaut nomment), son nom, sa nature, le texte de la base dont
-/// il a ete copie (ce qui a change dans la base depuis se dit en le comparant a celle du jour), et son texte.
+/// UN MODELE SPECIAL : son id (celui que l'engagement et le defaut nomment), son nom, sa nature, son contrat et son
+/// avenant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Special {
     id: String,
     nom: String,
     nature: String,
+    contrat: Texte,
+    avenant: Texte,
+}
+
+/// Le texte d'une partie d'un special, et celui de la base dont elle a ete copiee (ce qui a change dans la base depuis
+/// se dit en le comparant a celle du jour).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Texte {
     base: String,
     texte: String,
+}
+
+/// La partie d'un modele qu'un geste lit ou ecrit : le contrat, ou son avenant.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Partie {
+    Contrat,
+    Avenant,
+}
+
+impl Special {
+    fn partie(&self, p: Partie) -> &Texte {
+        match p {
+            Partie::Contrat => &self.contrat,
+            Partie::Avenant => &self.avenant,
+        }
+    }
+
+    fn partie_mut(&mut self, p: Partie) -> &mut Texte {
+        match p {
+            Partie::Contrat => &mut self.contrat,
+            Partie::Avenant => &mut self.avenant,
+        }
+    }
+
+    fn nom_dit(&self) -> String {
+        format!("Le modèle « {} »", self.nom)
+    }
 }
 
 fn dossier(ctx: &Contexte) -> PathBuf {
     ctx.gabarits().join("contrats")
 }
 
-fn disque(chemin: &std::path::Path, e: std::io::Error) -> Echec {
+fn disque(chemin: &Path, e: std::io::Error) -> Echec {
     erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
+}
+
+fn lire_texte(chemin: &Path) -> R<String> {
+    std::fs::read_to_string(chemin).map_err(|e| disque(chemin, e))
 }
 
 /// Les modeles de la compagnie ; aucun fichier : elle n'en a fait aucun.
@@ -253,11 +249,6 @@ fn ecrire(ctx: &Contexte, m: &ModelesDeContrat) -> R<()> {
     std::fs::rename(&tmp, &chemin).map_err(|e| disque(&chemin, e))
 }
 
-/// L'empreinte d'un texte de modele : ce qui le nomme une fois fige.
-fn empreinte(texte: &str) -> String {
-    socle::fichiers::sha256_hex(texte.as_bytes()).chars().take(16).collect()
-}
-
 fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
@@ -266,25 +257,32 @@ fn nature_de(cle: &str) -> R<std::sync::Arc<Nature>> {
     droit::natures::nature(cle).map_err(Echec::from)
 }
 
-/// Le texte du modele de base de cette nature.
-fn texte_de_base(nat: &Nature) -> R<String> {
-    let nom = nat.modele_contrat().ok_or_else(|| refus(format!("La nature {} n'a pas de contrat écrit.", nat.libelle)))?;
-    let chemin = dossier_du_code().join("modeles").join(nom);
-    std::fs::read_to_string(&chemin).map_err(|e| disque(&chemin, e))
+/// Le texte livre d'une partie du modele de base de cette nature.
+fn texte_de_base(nat: &Nature, partie: Partie) -> R<String> {
+    let nom = match partie {
+        Partie::Contrat => nat.modele_contrat(),
+        Partie::Avenant => nat.modele_avenant(),
+    };
+    let nom = nom.ok_or_else(|| refus(format!("La nature {} n'a pas de contrat écrit.", nat.libelle)))?;
+    lire_texte(&socle::fichiers::dossier_du_code().join("modeles").join(nom))
 }
 
 fn nom_de_base(nat: &Nature) -> String {
     format!("Le modèle de base du {}", nat.nom_du_contrat())
 }
 
-fn nom_special(s: &Special) -> String {
-    format!("Le modèle « {} »", s.nom)
+/// Ce qui manque a une partie d'un modele de cette nature (le verificateur de sa partie).
+fn manques(nat: &Nature, partie: Partie, texte: &str) -> R<Vec<String>> {
+    match partie {
+        Partie::Contrat => documents::contrat_ecrit::manques(nat, texte, None).map_err(|m| erreur(Classe::Illisible, m)),
+        Partie::Avenant => Ok(documents::contrat_ecrit::manques_de_l_avenant(texte)),
+    }
 }
 
-/// Un modele lu pour un contrat ; un texte qui ne se lit pas est un refus.
-fn modele_du_texte(nom: String, base: bool, texte: &str) -> R<ModeleDuContrat> {
-    let lu = ModeleLu::lire(texte, &nom).map_err(|m| erreur(Classe::ModeleIncomplet, m))?;
-    Ok(ModeleDuContrat { nom, base, lu })
+/// Un modele lu pour un contrat, et son avenant ; un texte qui ne se lit pas est un refus.
+fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleDuContrat> {
+    let lire = |t: &str| ModeleLu::lire(t, &nom).map_err(|m| erreur(Classe::ModeleIncomplet, m));
+    Ok(ModeleDuContrat { lu: lire(contrat)?, avenant: lire(avenant)?, nom, base })
 }
 
 fn aucun(id: &str) -> Echec {
@@ -295,25 +293,33 @@ fn special<'a>(m: &'a ModelesDeContrat, id: &str) -> R<&'a Special> {
     m.speciaux.iter().find(|s| s.id == id).ok_or_else(|| aucun(id))
 }
 
-/// Le modele que nomme `{nature, id}` : son nom, s'il est la base, son texte ; et le special lui-meme.
-fn designe<'a>(m: &'a ModelesDeContrat, nat: &Nature, id: Option<&str>) -> R<(String, Option<&'a Special>, String)> {
+/// Le modele que nomme `{nature, id}` : son nom, et le special (aucun : la base).
+fn designe<'a>(m: &'a ModelesDeContrat, nat: &Nature, id: Option<&str>) -> R<(String, Option<&'a Special>)> {
     match id {
         Some(id) => {
             let s = special(m, id)?;
             if s.nature != nat.cle {
-                return Err(refus(format!("{} n'est pas un modèle de {}. Rien n'est écrit.", nom_special(s), nat.nom_du_contrat())));
+                return Err(refus(format!("{} n'est pas un modèle de {}. Rien n'est écrit.", s.nom_dit(), nat.nom_du_contrat())));
             }
-            Ok((nom_special(s), Some(s), s.texte.clone()))
+            Ok((s.nom_dit(), Some(s)))
         }
-        None => Ok((nom_de_base(nat), None, texte_de_base(nat)?)),
+        None => Ok((nom_de_base(nat), None)),
+    }
+}
+
+/// Le texte d'une partie du modele que `designe` rend.
+fn texte_de(nat: &Nature, s: Option<&Special>, partie: Partie) -> R<String> {
+    match s {
+        Some(s) => Ok(s.partie(partie).texte.clone()),
+        None => texte_de_base(nat, partie),
     }
 }
 
 // ------------------------------------------------------------------ le modele d'un contrat
 
-/// LE MODELE QUE SUIT CE CONTRAT, avant son depart : celui que son engagement choisit (`modele_contrat`), sinon le
-/// defaut que la compagnie a choisi pour sa nature, sinon la base de sa nature. Un choix qui nomme un special supprime
-/// (`supprimes`) revient au defaut : c'est ce que la suppression dit.
+/// LE MODELE QUE SUIT CE CONTRAT, avant son depart, et son avenant : celui que son engagement choisit
+/// (`modele_contrat`), sinon le defaut que la compagnie a choisi pour sa nature, sinon la base de sa nature. Un choix qui
+/// nomme un special supprime (`supprimes`) revient au defaut : c'est ce que la suppression dit.
 pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
     let nat = p.engagement.nat().map_err(Echec::from)?;
     let m = lus(ctx)?;
@@ -325,40 +331,47 @@ pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
         None => m.defauts.get(&nat.cle).map(|id| special(&m, id)).transpose()?,
     };
     match choisi {
-        Some(s) if s.nature != nat.cle => Err(refus(format!("{} est un modèle de {}, pas de {} : en choisir un autre. Rien n'est écrit.", nom_special(s), nature_de(&s.nature)?.nom_du_contrat(), nat.nom_du_contrat()))),
-        Some(s) => modele_du_texte(nom_special(s), false, &s.texte),
-        None => modele_du_texte(nom_de_base(&nat), true, &texte_de_base(&nat)?),
+        Some(s) if s.nature != nat.cle => Err(refus(format!("{} est un modèle de {}, pas de {} : en choisir un autre. Rien n'est écrit.", s.nom_dit(), nature_de(&s.nature)?.nom_du_contrat(), nat.nom_du_contrat()))),
+        Some(s) => modele_lu(s.nom_dit(), false, &s.contrat.texte, &s.avenant.texte),
+        None => modele_lu(nom_de_base(&nat), true, &texte_de_base(&nat, Partie::Contrat)?, &texte_de_base(&nat, Partie::Avenant)?),
     }
 }
 
-/// FIGE LE TEXTE DE CE MODELE, au depart d'un contrat qui le suit (`gabarits/contrats/partis/<empreinte>.modele`, s'il
-/// ne l'est pas deja) ; rend son empreinte, que la ligne du journal note.
-pub(crate) fn figer(ctx: &Contexte, m: &ModeleDuContrat) -> R<String> {
-    let e = empreinte(&m.lu.texte);
+/// Les fichiers ou un contrat parti garde son texte et celui de son avenant.
+fn figes(ctx: &Contexte, empreinte: &str) -> (PathBuf, PathBuf) {
     let d = dossier(ctx).join("partis");
-    let chemin = d.join(format!("{}.modele", e));
-    if !chemin.is_file() {
-        std::fs::create_dir_all(&d).map_err(|x| disque(&d, x))?;
-        std::fs::write(&chemin, &m.lu.texte).map_err(|x| disque(&chemin, x))?;
+    (d.join(format!("{}.modele", empreinte)), d.join(format!("{}.avenant.modele", empreinte)))
+}
+
+/// FIGE LE TEXTE DE CE MODELE ET CELUI DE SON AVENANT, au depart d'un contrat qui le suit (s'ils ne le sont pas deja) ;
+/// rend leur empreinte, que la ligne du journal note.
+pub(crate) fn figer(ctx: &Contexte, m: &ModeleDuContrat) -> R<String> {
+    let e: String = socle::fichiers::sha256_hex(format!("{}\u{0}{}", m.lu.texte, m.avenant.texte).as_bytes()).chars().take(16).collect();
+    let (contrat, avenant) = figes(ctx, &e);
+    for (chemin, texte) in [(contrat, &m.lu.texte), (avenant, &m.avenant.texte)] {
+        if !chemin.is_file() {
+            let d = dossier(ctx).join("partis");
+            std::fs::create_dir_all(&d).map_err(|x| disque(&d, x))?;
+            std::fs::write(&chemin, texte).map_err(|x| disque(&chemin, x))?;
+        }
     }
     Ok(e)
 }
 
-/// LE MODELE AVEC LEQUEL CE CONTRAT EST PARTI : le texte fige sous l'empreinte que sa ligne du journal note. Une ligne
-/// qui n'en note pas est celle d'un contrat parti avant que le journal note son modele : il se refait avec le modele
-/// qu'il suit aujourd'hui (`du_contrat`).
+/// LE MODELE AVEC LEQUEL CE CONTRAT EST PARTI, et son avenant : les textes figes sous l'empreinte que sa ligne du journal
+/// note. Une ligne qui n'en note pas est celle d'un contrat parti avant que le journal note son modele : il se refait
+/// avec le modele qu'il suit aujourd'hui (`du_contrat`).
 pub(crate) fn du_contrat_parti(ctx: &Contexte, empreinte: Option<&str>, p: &Paie) -> R<ModeleDuContrat> {
     let Some(e) = empreinte else { return du_contrat(ctx, p) };
-    let chemin = dossier(ctx).join("partis").join(format!("{}.modele", e));
-    let texte = std::fs::read_to_string(&chemin).map_err(|x| disque(&chemin, x))?;
-    modele_du_texte("Le modèle avec lequel ce contrat est parti".to_string(), false, &texte)
+    let (contrat, avenant) = figes(ctx, e);
+    modele_lu("Le modèle avec lequel ce contrat est parti".to_string(), false, &lire_texte(&contrat)?, &lire_texte(&avenant)?)
 }
 
 // ------------------------------------------------------------------ les paragraphes d'un special
 
 /// UN MODELE DECOUPE EN PARAGRAPHES, ligne a ligne et sans rien perdre : ce qui precede le premier `ARTICLE:` (l'en-tete,
-/// le preambule, les notes), chaque paragraphe (sa ligne `ARTICLE:` et les siennes), ce qui suit le dernier (les
-/// signatures). Recolle, il redonne le texte.
+/// le preambule, le bloc de modification d'un avenant, les notes), chaque paragraphe (sa ligne `ARTICLE:` et les
+/// siennes), ce qui suit le dernier (les signatures). Recolle, il redonne le texte.
 struct Decoupe {
     tete: Vec<String>,
     articles: Vec<Vec<String>>,
@@ -397,11 +410,11 @@ impl Decoupe {
     }
 }
 
-/// Un alinea tel qu'un geste l'ecrit : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son
-/// texte.
-#[derive(Debug, Deserialize)]
+/// Un alinea : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son texte. Un geste l'ecrit,
+/// `modele-contrat` le rend.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct AlineaEcrit {
+struct Alinea {
     si: Option<String>,
     texte: String,
 }
@@ -414,7 +427,7 @@ fn une_ligne(t: &str) -> String {
 /// LES LIGNES D'UN PARAGRAPHE : `ARTICLE: titre`, puis chaque alinea (precede de `[si champ]` s'il en a une), une ligne
 /// vide apres chacun. Un alinea vide ne s'ecrit pas ; un alinea qui commencerait par ce que la grammaire lit autrement
 /// (une note, une condition, une cle) se refuse.
-fn paragraphe(titre: &str, alineas: &[AlineaEcrit]) -> R<Vec<String>> {
+fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Vec<String>> {
     let titre = une_ligne(titre);
     if titre.is_empty() {
         return Err(erreur(Classe::Manque, "Le paragraphe a besoin d'un titre. Rien n'est écrit."));
@@ -437,24 +450,25 @@ fn paragraphe(titre: &str, alineas: &[AlineaEcrit]) -> R<Vec<String>> {
     Ok(lignes)
 }
 
-/// UN GESTE SUR LES PARAGRAPHES D'UN SPECIAL : `faire` change sa decoupe et rend ce que la phrase dit du geste fait. Le
-/// texte qui en sort se verifie (`documents::contrat_ecrit::manques`) : s'il lui manque quelque chose que le texte d'avant
-/// avait, rien n'est ecrit, et le refus dit quoi.
-fn sur_les_paragraphes(ctx: &Contexte, id: &str, faire: impl FnOnce(&mut Decoupe) -> R<String>) -> R<Modeles> {
+/// UN GESTE SUR LES PARAGRAPHES D'UNE PARTIE D'UN SPECIAL : `faire` change sa decoupe et rend ce que la phrase dit du
+/// geste fait. Le texte qui en sort se verifie : s'il lui manque quelque chose que le texte d'avant avait, rien n'est
+/// ecrit, et le refus dit quoi. Un manque deja la (la base a change) ne bloque pas : il se corrige un geste a la fois.
+fn sur_les_paragraphes(ctx: &Contexte, id: &str, partie: Partie, faire: impl FnOnce(&mut Decoupe) -> R<String>) -> R<Modeles> {
     let mut m = lus(ctx)?;
     let i = m.speciaux.iter().position(|s| s.id == id).ok_or_else(|| aucun(id))?;
     let nat = nature_de(&m.speciaux[i].nature)?;
-    let avant = manques(&nat, &m.speciaux[i].texte)?;
-    let mut d = Decoupe::de(&m.speciaux[i].texte)?;
+    let avant = m.speciaux[i].partie(partie).texte.clone();
+    let mut d = Decoupe::de(&avant)?;
     let fait = faire(&mut d)?;
     let texte = d.texte();
-    // Ce que le geste ajoute de faux : un modele deja incomplet (sa base a change) se corrige un geste a la fois.
-    let dits: Vec<String> = manques(&nat, &texte)?.into_iter().filter(|x| !avant.contains(x)).collect();
+    let deja = manques(&nat, partie, &avant)?;
+    let dits: Vec<String> = manques(&nat, partie, &texte)?.into_iter().filter(|x| !deja.contains(x)).collect();
     if !dits.is_empty() {
-        return Err(refus(format!("{} ne peut pas faire ce geste : il en sortirait faux. {} Rien n'est écrit.", nom_special(&m.speciaux[i]), dits.join(" "))));
+        return Err(refus(format!("{} ne peut pas faire ce geste : il en sortirait faux. {} Rien n'est écrit.", m.speciaux[i].nom_dit(), dits.join(" "))));
     }
-    m.speciaux[i].texte = texte;
-    let devant = format!("{} : {} ", m.speciaux[i].nom, fait);
+    let s = &mut m.speciaux[i];
+    s.partie_mut(partie).texte = texte;
+    let devant = format!("{}{} : {} ", s.nom, if partie == Partie::Avenant { ", avenant" } else { "" }, fait);
     ecrire(ctx, &m)?;
     modeles(ctx, &devant)
 }
@@ -463,14 +477,15 @@ fn sur_les_paragraphes(ctx: &Contexte, id: &str, faire: impl FnOnce(&mut Decoupe
 #[serde(deny_unknown_fields)]
 struct ChargeEcrireParagraphe {
     id: String,
+    partie: Partie,
     numero: usize,
     titre: String,
-    alineas: Vec<AlineaEcrit>,
+    alineas: Vec<Alinea>,
 }
 
-/// ECRIRE UN PARAGRAPHE : `{id, numero, titre, alineas}` remplace le paragraphe `numero` (sa condition comprise).
+/// ECRIRE UN PARAGRAPHE : `{id, partie, numero, titre, alineas}` remplace le paragraphe `numero` (sa condition comprise).
 fn ecrire_paragraphe(ctx: &Contexte, c: ChargeEcrireParagraphe) -> R<Modeles> {
-    sur_les_paragraphes(ctx, &c.id, |d| {
+    sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let i = d.indice(c.numero)?;
         d.articles[i] = paragraphe(&c.titre, &c.alineas)?;
         Ok(format!("paragraphe {} « {} » écrit.", c.numero, d.titre(i)))
@@ -481,14 +496,15 @@ fn ecrire_paragraphe(ctx: &Contexte, c: ChargeEcrireParagraphe) -> R<Modeles> {
 #[serde(deny_unknown_fields)]
 struct ChargeAjouter {
     id: String,
+    partie: Partie,
     numero: usize,
     titre: String,
 }
 
-/// AJOUTER UN PARAGRAPHE : `{id, numero, titre}`, un paragraphe sans alinea a la place `numero` (1 en tete, n + 1 a la
-/// fin) ; ses alineas s'ecrivent ensuite.
+/// AJOUTER UN PARAGRAPHE : `{id, partie, numero, titre}`, un paragraphe sans alinea a la place `numero` (1 en tete,
+/// n + 1 a la fin) ; ses alineas s'ecrivent ensuite.
 fn ajouter_paragraphe(ctx: &Contexte, c: ChargeAjouter) -> R<Modeles> {
-    sur_les_paragraphes(ctx, &c.id, |d| {
+    sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let n = d.articles.len();
         if !(1..=n + 1).contains(&c.numero) {
             return Err(refus(format!("Un paragraphe s'ajoute à une place de 1 à {}. Rien n'est écrit.", n + 1)));
@@ -510,13 +526,14 @@ enum Sens {
 #[serde(deny_unknown_fields)]
 struct ChargeDeplacer {
     id: String,
+    partie: Partie,
     numero: usize,
     sens: Sens,
 }
 
-/// DEPLACER UN PARAGRAPHE : `{id, numero, sens}`, d'une place vers le haut ou vers le bas.
+/// DEPLACER UN PARAGRAPHE : `{id, partie, numero, sens}`, d'une place vers le haut ou vers le bas.
 fn deplacer_paragraphe(ctx: &Contexte, c: ChargeDeplacer) -> R<Modeles> {
-    sur_les_paragraphes(ctx, &c.id, |d| {
+    sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let i = d.indice(c.numero)?;
         let j = match c.sens {
             Sens::Monter if i == 0 => return Err(refus("Ce paragraphe est déjà le premier. Rien n'est écrit.")),
@@ -533,13 +550,14 @@ fn deplacer_paragraphe(ctx: &Contexte, c: ChargeDeplacer) -> R<Modeles> {
 #[serde(deny_unknown_fields)]
 struct ChargeParagraphe {
     id: String,
+    partie: Partie,
     numero: usize,
 }
 
-/// SUPPRIMER UN PARAGRAPHE : `{id, numero}`. Celui qui porte une mention exigee ne se supprime pas tant qu'elle n'est
-/// pas ailleurs : le verificateur le refuse, et dit laquelle.
+/// SUPPRIMER UN PARAGRAPHE : `{id, partie, numero}`. Celui qui porte une mention exigee ne se supprime pas tant qu'elle
+/// n'est pas ailleurs : le verificateur le refuse, et dit laquelle.
 fn supprimer_paragraphe(ctx: &Contexte, c: ChargeParagraphe) -> R<Modeles> {
-    sur_les_paragraphes(ctx, &c.id, |d| {
+    sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let i = d.indice(c.numero)?;
         let titre = d.titre(i);
         d.articles.remove(i);
@@ -552,6 +570,14 @@ fn supprimer_paragraphe(ctx: &Contexte, c: ChargeParagraphe) -> R<Modeles> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
+    nature: String,
+    id: Option<String>,
+    partie: Partie,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChargeDefaut {
     nature: String,
     id: Option<String>,
 }
@@ -574,19 +600,6 @@ struct ChargeRenommer {
 #[serde(deny_unknown_fields)]
 struct ChargeId {
     id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeNature {
-    nature: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeAvenant {
-    nature: String,
-    texte: String,
 }
 
 /// L'engagement d'un apercu : le mois de sa carte, la cle de son salarie, son debut.
@@ -615,29 +628,18 @@ struct ModeleDit {
     defaut: bool,
     /// Ce que la ligne dit d'une base qui a change depuis la copie ; `None` : rien.
     base_changee: Option<&'static str>,
+    /// Ce qui manque a son contrat, puis a son avenant.
     manques: Vec<String>,
     pastille: Pastille,
 }
 
-/// Le modele d'avenant d'une nature : le livre ou celui de la compagnie, son refus s'il en a un, son texte (le livre, ou le sien ; aucun s'il ne se lit pas).
-#[derive(Debug, Serialize)]
-struct AvenantDit {
-    nom: String,
-    propre: bool,
-    refus: Option<String>,
-    texte: Option<String>,
-    bouton: &'static str,
-    pastille: Pastille,
-}
-
-/// Une nature, ses modeles de contrat et son avenant.
+/// Une nature et ses modeles de contrat.
 #[derive(Debug, Serialize)]
 struct NatureDite {
     nature: String,
     libelle: String,
     nom: String,
     modeles: Vec<ModeleDit>,
-    avenant: AvenantDit,
 }
 
 /// Ce que l'ecran des modeles de contrat dit (`ecran` de `modeles-contrat`).
@@ -646,7 +648,6 @@ struct EcranDesModeles {
     intro: &'static str,
     comment: [&'static str; 3],
     en_francais: &'static str,
-    avenant: String,
 }
 
 /// Ce que rendent `modeles-contrat` et chaque geste qui change un modele.
@@ -658,19 +659,12 @@ struct Modeles {
     ecran: Option<EcranDesModeles>,
 }
 
-/// Un alinea d'un article : sa condition (le champ qui doit avoir une valeur) et son texte.
-#[derive(Debug, Serialize)]
-struct AlineaRendu {
-    si: Option<String>,
-    texte: String,
-}
-
 /// Un article d'un modele : son numero, son titre, ses alineas.
 #[derive(Debug, Serialize)]
 struct ArticleRendu {
     numero: usize,
     titre: String,
-    alineas: Vec<AlineaRendu>,
+    alineas: Vec<Alinea>,
 }
 
 /// Un engagement que l'apercu peut remplir : ce qui le designe (`engagement` de apercu-modele-contrat) et son nom.
@@ -686,6 +680,7 @@ struct ModeleRendu {
     phrase: String,
     nature: String,
     id: Option<String>,
+    partie: Partie,
     nom: String,
     base: bool,
     articles: Vec<ArticleRendu>,
@@ -703,24 +698,16 @@ struct Apercu {
     chemin: String,
 }
 
-impl Dite for Modeles {
-    fn phrase(&self) -> &str {
-        &self.phrase
-    }
+macro_rules! dites {
+    ($($t:ty),*) => {$(
+        impl Dite for $t {
+            fn phrase(&self) -> &str {
+                &self.phrase
+            }
+        }
+    )*};
 }
-
-impl Dite for ModeleRendu {
-    fn phrase(&self) -> &str {
-        &self.phrase
-    }
-}
-
-impl Dite for Apercu {
-    fn phrase(&self) -> &str {
-        &self.phrase
-    }
-}
-
+dites!(Modeles, ModeleRendu, Apercu);
 
 // ------------------------------------------------------------------ les gestes
 
@@ -736,43 +723,43 @@ fn natures_de(ctx: &Contexte) -> R<Vec<std::sync::Arc<Nature>>> {
         .collect())
 }
 
-fn manques(nat: &Nature, texte: &str) -> R<Vec<String>> {
-    documents::contrat_ecrit::manques(nat, texte, None).map_err(|m| erreur(Classe::Illisible, m))
+/// Ce qui manque au contrat et a l'avenant d'un modele, l'avenant nomme.
+fn manques_des_deux(nat: &Nature, contrat: &str, avenant: &str) -> R<Vec<String>> {
+    let mut v = manques(nat, Partie::Contrat, contrat)?;
+    v.extend(manques(nat, Partie::Avenant, avenant)?.into_iter().map(|x| format!("Avenant : {}", x)));
+    Ok(v)
 }
 
-/// CE QUE LA PAGE MONTRE : pour chaque nature, ses modeles de contrat (la base, puis les speciaux, le defaut marque,
-/// ce qui manque a chacun, si sa base a change depuis la copie) et son modele d'avenant ; et les clauses particulieres
-/// de la compagnie. `devant` : ce que la phrase dit avant (le geste qui vient d'etre fait).
+/// CE QUE LA PAGE MONTRE : pour chaque nature, ses modeles (la base, puis les speciaux, le defaut marque, ce qui manque
+/// a chacun, si sa base a change depuis la copie). `devant` : ce que la phrase dit avant (le geste qui vient d'etre fait).
 fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
     let m = lus(ctx)?;
     let mut sortie = Vec::new();
     for nat in natures_de(ctx)? {
-        let base = texte_de_base(&nat)?;
+        let (contrat, avenant) = (texte_de_base(&nat, Partie::Contrat)?, texte_de_base(&nat, Partie::Avenant)?);
         let defaut = m.defauts.get(&nat.cle);
-        let pastille = |manques: &[String], defaut: bool, base: bool| match (manques.is_empty(), defaut) {
-            (false, _) => Pastille::de("refuse", "incomplet"),
-            (true, true) => Pastille::de("fait", "par défaut"),
-            (true, false) if base => Pastille::de("info", "le modèle du logiciel"),
-            (true, false) => Pastille::de("info", "modèle spécial"),
+        let dit = |id: Option<&String>, nom: String, manques: Vec<String>, base_changee: bool| {
+            let est_defaut = defaut == id;
+            let pastille = match (manques.is_empty(), est_defaut) {
+                (false, _) => Pastille::de("refuse", "incomplet"),
+                (true, true) => Pastille::de("fait", "par défaut"),
+                (true, false) if id.is_none() => Pastille::de("info", "le modèle du logiciel"),
+                (true, false) => Pastille::de("info", "modèle spécial"),
+            };
+            ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille }
         };
-        let manques_base = manques(&nat, &base)?;
-        let mut pieces = vec![ModeleDit { id: None, nom: nom_de_base(&nat), base: true, defaut: defaut.is_none(), base_changee: None, pastille: pastille(&manques_base, defaut.is_none(), true), manques: manques_base }];
+        let mut pieces = vec![dit(None, nom_de_base(&nat), manques_des_deux(&nat, &contrat, &avenant)?, false)];
         for s in m.speciaux.iter().filter(|s| s.nature == nat.cle) {
-            let dits = manques(&nat, &s.texte)?;
-            let est_defaut = defaut == Some(&s.id);
-            pieces.push(ModeleDit { id: Some(s.id.clone()), nom: s.nom.clone(), base: false, defaut: est_defaut, base_changee: (s.base != base).then_some(BASE_CHANGEE), pastille: pastille(&dits, est_defaut, false), manques: dits });
+            let change = s.contrat.base != contrat || s.avenant.base != avenant;
+            pieces.push(dit(Some(&s.id), s.nom.clone(), manques_des_deux(&nat, &s.contrat.texte, &s.avenant.texte)?, change));
         }
-        sortie.push(NatureDite { nature: nat.cle.clone(), libelle: nat.libelle.clone(), nom: nat.nom_du_contrat().to_string(), modeles: pieces, avenant: avenant_dit(ctx, &nat)? });
+        sortie.push(NatureDite { nature: nat.cle.clone(), libelle: nat.libelle.clone(), nom: nat.nom_du_contrat().to_string(), modeles: pieces });
     }
-    Ok(Modeles {
-        phrase: format!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()),
-        natures: sortie,
-        ecran: None,
-    })
+    Ok(Modeles { phrase: format!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()), natures: sortie, ecran: None })
 }
 
-/// CE QUI A CHANGE DANS LA BASE depuis la copie d'un special (`avant` : la base copiee, `maintenant` : celle du jour),
-/// paragraphe par paragraphe (par leur titre), sans rien fusionner : la compagnie reprend ce qu'elle veut.
+/// CE QUI A CHANGE DANS LA BASE depuis la copie d'une partie d'un special (`avant` : la base copiee, `maintenant` :
+/// celle du jour), paragraphe par paragraphe (par leur titre), sans rien fusionner : la compagnie reprend ce qu'elle veut.
 fn ce_qui_a_change(avant: &str, maintenant: &str) -> Vec<String> {
     if avant == maintenant {
         return Vec::new();
@@ -781,8 +768,8 @@ fn ce_qui_a_change(avant: &str, maintenant: &str) -> Vec<String> {
         return vec![BASE_CHANGEE.to_string()];
     };
     let mut dits = Vec::new();
-    if (&a.titre, &a.soustitre, &a.preambule) != (&b.titre, &b.soustitre, &b.preambule) {
-        dits.push("Dans la base, l'en-tête (titre, préambule) a changé.".to_string());
+    if (&a.titre, &a.soustitre, &a.preambule, &a.modification) != (&b.titre, &b.soustitre, &b.preambule, &b.modification) {
+        dits.push("Dans la base, l'en-tête (titre, préambule, bloc de modification) a changé.".to_string());
     }
     for (titre, alineas) in &b.articles {
         match a.articles.iter().find(|(t, _)| t == titre) {
@@ -819,12 +806,14 @@ fn engagements_de(ctx: &Contexte, nature: &str) -> R<Vec<EngagementAuChoix>> {
     Ok(v)
 }
 
-/// LIRE UN MODELE : `{nature, id}` (sans id : la base), ses articles et leurs alineas, ce qui lui manque, les champs
-/// qu'un alinea insere ou pose en condition, ce qui a change dans sa base, les engagements de l'apercu.
+/// LIRE UNE PARTIE D'UN MODELE : `{nature, id, partie}` (sans id : la base), ses articles et leurs alineas, ce qui lui
+/// manque, les champs qu'un alinea insere ou pose en condition, ce qui a change dans sa base, les engagements de
+/// l'apercu (celui du contrat).
 fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let nat = nature_de(&c.nature)?;
     let m = lus(ctx)?;
-    let (nom, s, texte) = designe(&m, &nat, c.id.as_deref())?;
+    let (nom, s) = designe(&m, &nat, c.id.as_deref())?;
+    let texte = texte_de(&nat, s, c.partie)?;
     let articles = match fabrique_pdf::modele::lire_modele(&texte, &nom) {
         Ok(lu) => lu
             .articles
@@ -836,24 +825,38 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
                 alineas: alineas
                     .iter()
                     .map(|a| match fabrique_pdf::modele::condition(a) {
-                        Some((si, t)) => AlineaRendu { si: Some(si.to_string()), texte: t.to_string() },
-                        None => AlineaRendu { si: None, texte: a.clone() },
+                        Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
+                        None => Alinea { si: None, texte: a.clone() },
                     })
                     .collect(),
             })
             .collect(),
         Err(_) => Vec::new(),
     };
-    let dits = manques(&nat, &texte)?;
-    let phrase = if dits.is_empty() { format!("{} : complet.", nom) } else { format!("{} : {}", nom, dits.join(" ")) };
+    let dits = manques(&nat, c.partie, &texte)?;
+    let quoi = if c.partie == Partie::Avenant { format!("{}, son avenant", nom) } else { nom };
+    let phrase = if dits.is_empty() { format!("{} : complet.", quoi) } else { format!("{} : {}", quoi, dits.join(" ")) };
     let base_changee = match s {
-        Some(s) => ce_qui_a_change(&s.base, &texte_de_base(&nat)?),
+        Some(s) => ce_qui_a_change(&s.partie(c.partie).base, &texte_de_base(&nat, c.partie)?),
         None => Vec::new(),
     };
-    let champs = documents::contrat_ecrit::champs_des_modeles(&nat).map_err(|m| erreur(Classe::Illisible, m))?;
-    // Le nom qu'un special porte (celui que l'on renomme) ; la base, comme la liste la nomme.
-    let nom = s.map_or(nom, |s| s.nom.clone());
-    Ok(ModeleRendu { phrase, nature: nat.cle.clone(), id: c.id, nom, base: s.is_none(), articles, manques: dits, en_francais: documents::contrat_ecrit::EN_FRANCAIS, champs, base_changee, engagements: engagements_de(ctx, &nat.cle)? })
+    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| erreur(Classe::Illisible, m))?;
+    let engagements = if c.partie == Partie::Contrat { engagements_de(ctx, &nat.cle)? } else { Vec::new() };
+    Ok(ModeleRendu {
+        phrase,
+        nature: nat.cle.clone(),
+        id: c.id,
+        partie: c.partie,
+        // Le nom qu'un special porte (celui que l'on renomme) ; la base, comme la liste la nomme.
+        nom: s.map_or_else(|| nom_de_base(&nat), |s| s.nom.clone()),
+        base: s.is_none(),
+        articles,
+        manques: dits,
+        en_francais: documents::contrat_ecrit::EN_FRANCAIS,
+        champs,
+        base_changee,
+        engagements,
+    })
 }
 
 /// L'APERCU D'UN MODELE : `{nature, id, engagement}`, le PDF du contrat de cet engagement (le plus recent sans lui) fait
@@ -862,7 +865,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
 fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let nat = nature_de(&c.nature)?;
     let m = lus(ctx)?;
-    let (nom, s, texte) = designe(&m, &nat, c.id.as_deref())?;
+    let (nom, s) = designe(&m, &nat, c.id.as_deref())?;
     let vise = match c.engagement {
         Some(v) => v,
         None => engagements_de(ctx, &nat.cle)?
@@ -878,26 +881,13 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         .into_iter()
         .find(|p| p.salarie.id.to_string() == vise.salarie && p.engagement.debut == vise.debut)
         .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste (`engagements` de modele-contrat).", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
-    let modele = modele_du_texte(nom.clone(), s.is_none(), &texte)?;
+    let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
     let ent = documents::avenant::ent_du_mois(ctx, &mois)?;
     let d = ctx.racine.join("sorties").join("apercus");
     std::fs::create_dir_all(&d).map_err(|e| disque(&d, e))?;
     let chemin = d.join(format!("modele-{}-{}.pdf", nat.cle, c.id.as_deref().unwrap_or("base")));
     documents::contrat::ecrire_contrat(ctx, std::slice::from_ref(&p), &[modele], &ent, &chemin, &[])?;
     Ok(Apercu { phrase: format!("{}, rempli avec le contrat de {} du {} : l'aperçu est fait, rien n'est parti.", nom, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin: chemin.to_string_lossy().into_owned() })
-}
-
-/// COPIER LA BASE D'UNE NATURE EN UN MODELE SPECIAL : `{nature, nom}` ; il garde le texte de la base dont il part.
-fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
-    let nat = nature_de(&c.nature)?;
-    let mut m = lus(ctx)?;
-    let nom = nom_libre(&m, None, &c.nom)?;
-    let texte = texte_de_base(&nat)?;
-    // Un id ne sert qu'une fois : ni un special present, ni un supprime.
-    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).filter_map(|id| id.strip_prefix('m')?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
-    m.speciaux.push(Special { id: format!("m{}", n), nom: nom.clone(), nature: nat.cle.clone(), base: texte.clone(), texte });
-    ecrire(ctx, &m)?;
-    modeles(ctx, &format!("Modèle « {} » copié de la base du {}. ", nom, nat.nom_du_contrat()))
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.
@@ -910,6 +900,21 @@ fn nom_libre(m: &ModelesDeContrat, sauf: Option<&str>, nom: &str) -> R<String> {
         return Err(refus(format!("La compagnie a déjà un modèle « {} » : lui donner un autre nom. Rien n'est écrit.", nom)));
     }
     Ok(nom)
+}
+
+/// COPIER LA BASE D'UNE NATURE EN UN MODELE SPECIAL : `{nature, nom}`, son contrat et son avenant ; chacun garde le texte
+/// de la base dont il part.
+fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
+    let nat = nature_de(&c.nature)?;
+    let mut m = lus(ctx)?;
+    let nom = nom_libre(&m, None, &c.nom)?;
+    let partie = |p| texte_de_base(&nat, p).map(|t| Texte { base: t.clone(), texte: t });
+    let (contrat, avenant) = (partie(Partie::Contrat)?, partie(Partie::Avenant)?);
+    // Un id ne sert qu'une fois : ni un special present, ni un supprime.
+    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).filter_map(|id| id.strip_prefix('m')?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
+    m.speciaux.push(Special { id: format!("m{}", n), nom: nom.clone(), nature: nat.cle.clone(), contrat, avenant });
+    ecrire(ctx, &m)?;
+    modeles(ctx, &format!("Modèle « {} » copié de la base du {}. ", nom, nat.nom_du_contrat()))
 }
 
 /// RENOMMER UN MODELE SPECIAL : `{id, nom}`.
@@ -951,12 +956,12 @@ fn supprimer(ctx: &Contexte, c: ChargeId) -> R<Modeles> {
 }
 
 /// CHOISIR LE MODELE PAR DEFAUT D'UNE NATURE : `{nature, id}` ; sans id, la base.
-fn par_defaut(ctx: &Contexte, c: ChargeLire) -> R<Modeles> {
+fn par_defaut(ctx: &Contexte, c: ChargeDefaut) -> R<Modeles> {
     let nat = nature_de(&c.nature)?;
     let mut m = lus(ctx)?;
     let devant = match &c.id {
         Some(id) => {
-            let (nom, _, _) = designe(&m, &nat, Some(id))?;
+            let (nom, _) = designe(&m, &nat, Some(id))?;
             m.defauts.insert(nat.cle.clone(), id.clone());
             format!("{} est le modèle par défaut du {}. ", nom, nat.nom_du_contrat())
         }
@@ -993,103 +998,16 @@ pub(crate) struct ModeleAuChoix {
     nom: String,
 }
 
-// ------------------------------------------------------------------ l'avenant
-
-/// Le nom du modele livre de l'avenant de la nature `cle`.
-fn nom_de_l_avenant(cle: &str) -> R<(std::sync::Arc<Nature>, String)> {
-    let nat = nature_de(cle)?;
-    let nom = nat.modele_avenant().ok_or_else(|| refus(format!("La nature {} n'a pas de modèle d'avenant.", nat.libelle)))?;
-    Ok((nat, nom))
-}
-
-/// Le modele d'avenant de la compagnie, s'il est pose dans son dossier `gabarits/`.
-fn propre(ctx: &Contexte, nom: &str) -> Option<PathBuf> {
-    Some(ctx.gabarits().join(nom)).filter(|p| p.is_file())
-}
-
-fn avenant_dit(ctx: &Contexte, nat: &Nature) -> R<AvenantDit> {
-    let (_, nom) = nom_de_l_avenant(&nat.cle)?;
-    let a_soi = propre(ctx, &nom);
-    let (verdict, texte) = match &a_soi {
-        Some(p) => match std::fs::read_to_string(p) {
-            Ok(t) => (verifier_avenant(&nom, &t).err(), Some(t)),
-            Err(e) => (Some(format!("Ce modèle ne se lit pas ({}) : le poser de nouveau.", e)), None),
-        },
-        // Le modele livre, pour en partir.
-        None => {
-            let chemin = dossier_du_code().join("modeles").join(&nom);
-            (None, Some(std::fs::read_to_string(&chemin).map_err(|e| disque(&chemin, e))?))
-        }
-    };
-    let pastille = match (&a_soi, &verdict) {
-        (Some(_), Some(_)) => Pastille::de("refuse", "le modèle de la compagnie, refusé"),
-        (Some(_), None) => Pastille::de("fait", "le modèle de la compagnie"),
-        (None, _) => Pastille::de("info", "le modèle du logiciel"),
-    };
-    Ok(AvenantDit { nom, propre: a_soi.is_some(), refus: verdict, texte, bouton: if a_soi.is_some() { "Modifier le modèle" } else { "Écrire le modèle" }, pastille })
-}
-
-/// UN MODELE D'AVENANT SE VERIFIE AVANT D'ETRE POSE : sa grammaire, son bloc MODIFICATION:, et chacun de ses champs
-/// connu du logiciel.
-fn verifier_avenant(nom: &str, texte: &str) -> Result<(), String> {
-    let lu = ModeleLu::lire(texte, nom)?;
-    let m = lu.decoupe(nom).map_err(|r| format!("Ce modèle ne se lit pas : {}", r))?;
-    if m.modification.is_empty() {
-        return Err("Ce modèle d'avenant n'a pas de bloc MODIFICATION: : c'est lui qui dit, article par article, ce qui change.".into());
-    }
-    let permis = |c: &Marqueur| documents::contrat_ecrit::CHAMPS.iter().any(|(k, _, _)| k == c) || DU_REMPLACEMENT.contains(c) || DE_L_AVENANT.contains(c);
-    let mut hors: Vec<String> = Vec::new();
-    for c in lu.morceaux.iter().filter_map(|x| match x {
-        documents::marqueurs::Morceau::Marqueur(c) => Some(c),
-        documents::marqueurs::Morceau::Texte(_) => None,
-    }) {
-        if !permis(c) && !hors.contains(&c.to_string()) {
-            hors.push(c.to_string());
-        }
-    }
-    if !hors.is_empty() {
-        return Err(format!("Ce modèle cite des champs qu'un modèle d'avenant ne porte pas : {}. Les corriger d'après la liste des champs, ou les écrire en texte.", hors.join(", ")));
-    }
-    Ok(())
-}
-
-/// POSER LE MODELE D'AVENANT DE LA COMPAGNIE : `{nature, texte}`. Verifie d'abord ; l'ancien, s'il y en a un, est garde a
-/// cote (`.avant`).
-fn poser_avenant(ctx: &Contexte, c: ChargeAvenant) -> R<Modeles> {
-    let (_, nom) = nom_de_l_avenant(&c.nature)?;
-    verifier_avenant(&nom, &c.texte).map_err(|m| refus(format!("{} Rien n'est posé.", m)))?;
-    let dossier = ctx.gabarits();
-    std::fs::create_dir_all(&dossier).map_err(|e| disque(&dossier, e))?;
-    let cible = dossier.join(&nom);
-    if cible.is_file() {
-        let ancien = dossier.join(format!("{}.avant", nom));
-        std::fs::rename(&cible, &ancien).map_err(|e| disque(&cible, e))?;
-    }
-    std::fs::write(&cible, &c.texte).map_err(|e| disque(&cible, e))?;
-    modeles(ctx, "Modèle d'avenant de la compagnie posé. ")
-}
-
-/// RETIRER LE MODELE D'AVENANT DE LA COMPAGNIE : le livre reprend sa place ; le sien est garde a cote (`.avant`).
-fn retirer_avenant(ctx: &Contexte, c: ChargeNature) -> R<Modeles> {
-    let (_, nom) = nom_de_l_avenant(&c.nature)?;
-    if let Some(p) = propre(ctx, &nom) {
-        let ancien = ctx.gabarits().join(format!("{}.avant", nom));
-        std::fs::rename(&p, &ancien).map_err(|e| disque(&p, e))?;
-    }
-    modeles(ctx, "Modèle d'avenant de la compagnie retiré : le modèle livré revient. ")
-}
-
-/// CE QUE L'ECRAN DES MODELES DE CONTRAT DIT (`ecran` de `modeles-contrat`) : a quoi sert un modele, les clauses
-/// particulieres, comment faire celui de la compagnie, le francais, et ce que cite un modele d'avenant.
+/// CE QUE L'ECRAN DES MODELES DE CONTRAT DIT (`ecran` de `modeles-contrat`) : a quoi sert un modele, comment faire
+/// celui de la compagnie, le francais.
 fn ecran_des_modeles() -> EcranDesModeles {
     EcranDesModeles {
-        intro: "Chaque contrat que le logiciel fait signer suit un modèle. Le modèle de base de chaque sorte de contrat porte déjà ce que la loi exige, rempli de lui-même depuis l'engagement et la configuration ; il suit les mises à jour et ne se modifie pas. La compagnie le copie en modèles spéciaux, choisit celui par défaut, et un engagement peut en choisir un autre (Avancé). Un contrat parti garde son texte.",
+        intro: "Chaque contrat que le logiciel fait signer suit un modèle, et ses avenants l'avenant de ce modèle. Le modèle de base de chaque sorte de contrat porte déjà ce que la loi exige, rempli de lui-même depuis l'engagement et la configuration ; il suit les mises à jour et ne se modifie pas. La compagnie le copie en modèles spéciaux, choisit celui par défaut, et un engagement peut en choisir un autre (Avancé). Un contrat parti garde son texte.",
         comment: [
-            "« Copier la base » fait un modèle spécial, qui garde la base dont il part : si elle change avec une mise à jour, le modèle dit quels paragraphes ont changé.",
-            "Un modèle spécial s'écrit paragraphe par paragraphe : un titre, des alinéas. Une donnée s'insère par la liste et se remplit d'elle-même ; un alinéa peut ne s'écrire que si une donnée est remplie ; **texte** met en gras.",
+            "« Copier la base » fait un modèle spécial, contrat et avenant, qui garde la base dont il part : si elle change avec une mise à jour, le modèle dit quels paragraphes ont changé.",
+            "Un modèle spécial s'écrit paragraphe par paragraphe : un titre, des alinéas. Une donnée s'insère par la liste et se remplit d'elle-même ; un alinéa peut ne s'écrire que si une donnée est remplie (les clauses particulières d'un engagement, par exemple) ; **texte** met en gras.",
             "Ce que la loi exige doit rester : un geste qui l'ôterait est refusé, et le refus dit quelle donnée manque. L'aperçu montre le contrat rempli avec un engagement de la compagnie.",
         ],
         en_francais: documents::contrat_ecrit::EN_FRANCAIS,
-        avenant: format!("Un modèle d'avenant cite les champs du contrat et : {}.", DE_L_AVENANT.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(", ")),
     }
 }
