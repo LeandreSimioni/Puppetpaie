@@ -100,7 +100,8 @@ const AIDES: &[(&str, &str)] = &[
     ("fiche_cle", "La clé de la fiche se fabrique à l'enregistrement."),
     ("signature_lourde", "Trop lourde : une image collée pèse tout son poids, préférez une image en ligne."),
     ("urssaf_changer", "D'après l'adresse de l'entreprise, vos déclarations vont à l'Urssaf de son code postal : c'est elle qui reçoit normalement DPAE et DSN. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations. Voulez-vous vraiment la changer ?"),
-    ("historique_fiche", "Les valeurs remplacées, et jusqu'à quand elles ont servi. Elles restent pour les déclarations déjà envoyées."),
+    ("historique_titre", "Historique des valeurs"),
+    ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
     ("dater", "Ce que vous changez vaut à partir d'une date : la voici proposée, changez-la si besoin, puis enregistrez."),
     ("dater_avant", "Avant cette date, la fiche garde ce qu'elle disait."),
@@ -934,7 +935,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let boite_liee = boite_liee(ctx)?;
     let (versement_mobilite_des_etablissements, bareme) = versement_mobilite_des_etablissements(ctx);
     Ok(ConfigurationDeLaPage {
-        ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "ancienne valeur" },
+        ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
         fiches_attendues_titre: format!("{} fiche(s) en attente", fiches_attendues.len()),
         compteurs_dit,
         deduction_forfaitaire: deduction,

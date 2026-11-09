@@ -211,8 +211,8 @@ function dessinerConfig() {
         if (k.startsWith("_") || k === "historique" || k === "actif") return;
         ajouter(libelleDe(k), v, k);
       });
-    (f.donnees.historique || []).forEach((h) =>
-      ajouter(libelleDe(h.champ), h.valeur, h.champ, true));
+    (f.donnees.historique || []).forEach((h) => (h.valeurs || []).filter((e) => !e.en_vigueur)
+      .forEach((e) => ajouter(libelleDe(h.champ), e.valeur, h.champ, true)));
     return out.map((x) => ({ ...x, cle: plat(x.quoi), serre: plat(x.quoi).replace(/\s+/g, "") }));
   };
   const chercher = (f, mots) => {
@@ -1257,15 +1257,16 @@ function ATMP_HTML() {
   </div>`;
 }
 
-/* Les lignes d'une case (avant, en vigueur, à venir), telles que le moteur
- * les dit, dans `ou`. */
+/* Les lignes d'une case (en vigueur, à venir, avant), telles que le moteur
+ * les dit, chacune avec d'où elle vient quand sa ligne le dit, dans `ou`. */
 function peindreLignesAtmp(ou, r) {
+  const ligne = (l, forme) => l ? [[l.dit, forme], [l.note, "aide discret"]] : [];
   ou.replaceChildren(...[
     [r.phrase, "b"],
     [r.risque ? `« ${r.risque.libelle} »` : "", ""],
-    [r.maintenant && r.maintenant.dit, ""],
-    [r.a_venir && r.a_venir.dit, ""],
-    [r.avant && r.avant.dit, "aide"],
+    ...ligne(r.maintenant, ""),
+    ...ligne(r.a_venir, ""),
+    ...ligne(r.avant, "aide"),
     [r.explication, "aide"],
   ].filter(([t]) => t).map(([t, forme]) => {
     const p = document.createElement("p");
