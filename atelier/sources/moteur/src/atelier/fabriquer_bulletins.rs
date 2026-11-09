@@ -27,7 +27,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use rust_decimal::RoundingStrategy;
-use serde_json::Value;
+use serde::Deserialize;
+use socle::forme::Nombre;
 
 use super::bulletins_fictifs::{page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
 use crate::import::bulletin_lu::{jetons, Table};
@@ -44,11 +45,15 @@ pub fn commande(args: &[String]) -> i32 {
     let mut k = 0;
     while k < args.len() {
         if args[k] == "--gabarit" {
-            let Some(g) = args.get(k + 1) else {
-                eprintln!("{}", USAGE);
-                return 2;
+            let g = match args.get(k + 1).map(String::as_str) {
+                Some("coolpaie") => Gabarit::Coolpaie,
+                Some("spaiectacle") => Gabarit::Spaiectacle,
+                _ => {
+                    eprintln!("{}", USAGE);
+                    return 2;
+                }
             };
-            gabarit = Some(g.clone());
+            gabarit = Some(g);
             k += 2;
         } else {
             libres.push(args[k].clone());
@@ -59,10 +64,8 @@ pub fn commande(args: &[String]) -> i32 {
         eprintln!("{}", USAGE);
         return 2;
     };
-    let r = std::fs::read_to_string(description)
-        .map_err(|e| format!("{} illisible ({})", description, e))
-        .and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| format!("{} : JSON illisible ({})", description, e)))
-        .and_then(|d| fabriquer(&d, gabarit.as_deref(), Path::new(dossier)));
+    let r = socle::forme::lire_fichier::<DescriptionLue>(Path::new(description), "La description des bulletins ne se lit pas.")
+        .and_then(|d| fabriquer(d, gabarit, Path::new(dossier)));
     match r {
         Ok(faits) => {
             for f in &faits {
@@ -88,26 +91,34 @@ enum Base {
 }
 
 /// Les cotisations d'un FAUX bulletin : (cle, base, taux employeur et salarie de l'intermittent, puis du permanent).
-/// Des taux vraisemblables d'un logiciel de paie, en pourcentage ; « » : pas de part. Ils ne fondent aucune regle (le
-/// moteur ne s'en sert pas, l'import ne les recalcule pas) : ils donnent des montants coherents a relire.
-const COTISATIONS: [(&str, Base, &str, &str, &str, &str); 13] = [
-    ("maladie", Base::Brut, "7.000", "", "7.000", ""),
-    ("prevoyance", Base::Brut, "1.040", "0.120", "0.800", "0.800"),
-    ("atmp", Base::Brut, "1.050", "", "1.050", ""),
-    ("vieillesse_plafonnee", Base::Plafonnee, "8.550", "6.900", "8.550", "6.900"),
-    ("vieillesse_deplafonnee", Base::Brut, "2.020", "0.400", "2.020", "0.400"),
-    ("complementaire", Base::Plafonnee, "6.010", "4.010", "6.010", "4.010"),
-    ("famille", Base::Brut, "3.450", "", "3.450", ""),
-    ("chomage", Base::Brut, "9.050", "2.400", "4.300", ""),
-    ("autres", Base::Brut, "2.836", "", "2.836", ""),
-    ("conges_spectacles", Base::Brut, "15.500", "", "", ""),
-    ("conventionnelles", Base::Brut, "0.300", "", "0.300", ""),
-    ("csg_deductible", Base::Csg, "", "6.800", "", "6.800"),
-    ("csg_non_deductible", Base::Csg, "", "2.900", "", "2.900"),
+/// Des taux vraisemblables d'un logiciel de paie, en millièmes de pour cent (7000 : 7,000 %) ; `None` : pas de part. Ils
+/// ne fondent aucune regle (le moteur ne s'en sert pas, l'import ne les recalcule pas) : ils donnent des montants
+/// coherents a relire.
+const COTISATIONS: [(&str, Base, Option<i64>, Option<i64>, Option<i64>, Option<i64>); 13] = [
+    ("maladie", Base::Brut, Some(7000), None, Some(7000), None),
+    ("prevoyance", Base::Brut, Some(1040), Some(120), Some(800), Some(800)),
+    ("atmp", Base::Brut, Some(1050), None, Some(1050), None),
+    ("vieillesse_plafonnee", Base::Plafonnee, Some(8550), Some(6900), Some(8550), Some(6900)),
+    ("vieillesse_deplafonnee", Base::Brut, Some(2020), Some(400), Some(2020), Some(400)),
+    ("complementaire", Base::Plafonnee, Some(6010), Some(4010), Some(6010), Some(4010)),
+    ("famille", Base::Brut, Some(3450), None, Some(3450), None),
+    ("chomage", Base::Brut, Some(9050), Some(2400), Some(4300), None),
+    ("autres", Base::Brut, Some(2836), None, Some(2836), None),
+    ("conges_spectacles", Base::Brut, Some(15500), None, None, None),
+    ("conventionnelles", Base::Brut, Some(300), None, Some(300), None),
+    ("csg_deductible", Base::Csg, None, Some(6800), None, Some(6800)),
+    ("csg_non_deductible", Base::Csg, None, Some(2900), None, Some(2900)),
 ];
 
-/// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels).
-const ASSIETTE_CSG: &str = "0.9825";
+/// Un taux de `COTISATIONS`, en pourcentage a trois decimales.
+fn taux_millieme(t: Option<i64>) -> Option<Decimal> {
+    t.map(|m| Decimal::new(m, 3))
+}
+
+/// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels) : 0,9825.
+fn assiette_csg() -> Decimal {
+    Decimal::new(9825, 4)
+}
 
 /// La table des parametres du BOSS deposee : elle porte le PSS de 2021 a 2026 (codes PSS_M_METROP et PSS_H_METROP),
 /// les annees qu'aucun bareme livre n'a (2024).
@@ -120,27 +131,21 @@ fn table_boss() -> std::path::PathBuf {
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
 fn pss(annee: i32) -> Resultat<(Decimal, Decimal)> {
-    let bareme = socle::fichiers::dossier_du_code().join("baremes").join(format!("{}.json", annee));
-    if let Ok(t) = std::fs::read_to_string(&bareme) {
-        let v: Value = serde_json::from_str(&t).map_err(|e| format!("{} illisible ({})", bareme.display(), e))?;
-        let p = &v["plafond_securite_sociale"];
-        if let (Some(m), Some(h)) = (p.get("mensuel"), p.get("horaire")) {
-            return Ok((crate::valeur::dec(m)?, crate::valeur::dec(h)?));
-        }
+    if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
+        return Ok((p.mensuel, p.horaire));
     }
     let chemin = table_boss();
     let octets = std::fs::read(&chemin).map_err(|e| format!("{} : {}", chemin.display(), e))?;
     let texte = String::from_utf8_lossy(&octets);
-    let valeur = |code: &str| -> Option<Decimal> {
-        texte.lines().find_map(|l| {
-            let c: Vec<&str> = l.split(';').collect();
-            let effet = format!("01/01/{}", annee);
-            (c.len() >= 4 && c[0] == code && c[3].trim() == effet)
-                .then(|| c[2].replace([' ', '\u{a0}'], "").replace(',', ".").parse::<Decimal>().ok())
-                .flatten()
-        })
+    let effet = format!("01/01/{}", annee);
+    let valeur = |code: &str| -> Resultat<Option<Decimal>> {
+        let Some(c) = texte.lines().map(|l| l.split(';').collect::<Vec<&str>>()).find(|c| c.len() >= 4 && c[0] == code && c[3].trim() == effet) else {
+            return Ok(None);
+        };
+        let ecrit = c[2].replace([' ', '\u{a0}'], "").replace(',', ".");
+        ecrit.parse::<Decimal>().map(Some).map_err(|e| format!("{} : {} au {} : {} ne se lit pas en nombre ({})", chemin.display(), code, effet, c[2], e))
     };
-    match (valeur("PSS_M_METROP"), valeur("PSS_H_METROP")) {
+    match (valeur("PSS_M_METROP")?, valeur("PSS_H_METROP")?) {
         (Some(m), Some(h)) => Ok((m, h)),
         _ => Err(format!(
             "pas de plafond de la Sécurité sociale pour {} : ni bareme livré (logiciel/donnees/baremes/{}.json) ni ligne \
@@ -184,12 +189,11 @@ struct Bulletin {
     fin: Jour,
     dates: Vec<(Jour, Jour)>,
     objet: Option<(String, String)>,
-    analytique: String,
+    analytique: Option<String>,
     lignes: Vec<Ligne>,
     non_soumis: Vec<Ligne>,
     taux_pas: Decimal,
     regle_le: Jour,
-    numero: Option<String>,
     /// Ce que la paie a calcule, quand la description le porte : le bulletin l'imprime au lieu de le calculer.
     paie: Option<Paie>,
 }
@@ -202,8 +206,8 @@ struct Paie {
 }
 
 struct CotisationPayee {
-    /// La cle de sa famille (`familles` de la table de lecture).
-    famille: &'static str,
+    /// La cle de sa famille (`familles` de la table de lecture), et comment sPAIEctacle l'imprime.
+    famille: (&'static str, RenduB),
     libelle: String,
     base: Option<Decimal>,
     taux_salarie: Option<Decimal>,
@@ -211,25 +215,121 @@ struct CotisationPayee {
     montant_employeur: Decimal,
 }
 
-fn texte(v: &Value, cle: &str, ou: &str) -> Resultat<String> {
-    match v.get(cle) {
-        Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().to_string()),
-        Some(Value::Number(n)) => Ok(n.to_string()),
-        _ => Err(format!("{} : `{}` manque", ou, cle)),
-    }
+// --------------------------------------------------------------------------------------------- la forme de la description
+
+/// LA DESCRIPTION, telle qu'elle s'ecrit (`atelier/outils/banc/LISEZ-MOI.md`, « Une compagnie qui vient d'un logiciel
+/// précédent ») : chaque valeur y est dite ; seuls sont facultatifs ce qui peut ne pas exister (le numero Congés
+/// Spectacles d'un salarie, l'objet d'un bulletin, sa case « Analytique », ses lignes non soumises, la paie qu'il
+/// imprime).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DescriptionLue {
+    gabarit: Option<Gabarit>,
+    entreprise: EntrepriseLue,
+    salaries: Vec<SalarieLu>,
+    bulletins: Vec<BulletinLu>,
 }
 
-fn texte_ou(v: &Value, cle: &str) -> Option<String> {
-    texte(v, cle, "").ok()
+/// Le logiciel dont le bulletin prend la page.
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Gabarit {
+    Coolpaie,
+    Spaiectacle,
 }
 
-fn jour(v: &Value, cle: &str, ou: &str) -> Resultat<Jour> {
-    Jour::lire(&texte(v, cle, ou)?).map_err(|m| format!("{} : `{}` : {}", ou, cle, m))
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EntrepriseLue {
+    raison_sociale: String,
+    adresse: String,
+    code_postal: String,
+    commune: String,
+    siret: String,
+    naf: String,
+    urssaf: String,
+    licence: String,
+    convention: ConventionLue,
 }
 
-fn nombre(v: &Value, cle: &str, ou: &str) -> Resultat<Decimal> {
-    let x = v.get(cle).ok_or_else(|| format!("{} : `{}` manque", ou, cle))?;
-    crate::valeur::dec(x).map_err(|m| format!("{} : `{}` : {}", ou, cle, m))
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConventionLue {
+    idcc: String,
+    libelle: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SalarieLu {
+    code: String,
+    nom: String,
+    prenom: String,
+    nir: String,
+    naissance: Jour,
+    adresse: String,
+    code_postal: String,
+    commune: String,
+    conges_spectacles: Option<String>,
+}
+
+/// Le regime du salarie : l'intermittent cotise au chomage des annexes 8 et 10 et aux Congés Spectacles.
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum Regime {
+    Intermittent,
+    Permanent,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulletinLu {
+    salarie: String,
+    emploi: String,
+    statut: String,
+    regime: Regime,
+    debut: Jour,
+    fin: Jour,
+    /// Les jours travailles, en paires [debut, fin].
+    dates: Vec<[Jour; 2]>,
+    objet: Option<ObjetLu>,
+    /// La case « Analytique » de sPAIEctacle (le titre du spectacle, sous son numero d'objet).
+    analytique: Option<String>,
+    lignes: Vec<LigneLue>,
+    non_soumis: Option<Vec<LigneLue>>,
+    taux_pas: Nombre,
+    regle_le: Jour,
+    cotisations: Option<Vec<CotisationLue>>,
+    net_imposable: Option<Nombre>,
+    pas: Option<Nombre>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjetLu {
+    numero: String,
+    titre: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LigneLue {
+    libelle: String,
+    quantite: Nombre,
+    taux: Nombre,
+}
+
+/// Une cotisation d'une paie de PuppetPaie (une de ses `lignes`, telle quelle).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CotisationLue {
+    famille: String,
+    libelle: String,
+    base: Option<Nombre>,
+    taux_sal: Option<Nombre>,
+    montant_sal: Nombre,
+    montant_pat: Nombre,
+    masquer_base_et_taux: bool,
 }
 
 fn verifier_nir(nir: &str, ou: &str) -> Resultat<()> {
@@ -271,8 +371,9 @@ fn deux_rangs(texte: &str, largeur: usize, quoi: &str) -> Resultat<[String; 2]> 
 /// « 1 234,56 », comme les bulletins l'impriment.
 fn fr(x: Decimal) -> String {
     let x = eur2(x);
-    let s = x.abs().to_string();
-    let (ent, dec) = s.split_once('.').unwrap_or((&s, "00"));
+    let s = format!("{:.2}", x.abs());
+    let (ent, point_dec) = s.split_at(s.len() - 3);
+    let dec = &point_dec[1..];
     let mut groupes = Vec::new();
     let c: Vec<char> = ent.chars().collect();
     let mut fin = c.len();
@@ -305,8 +406,8 @@ fn dmy_court(j: &Jour) -> String {
     format!("{:02}/{:02}/{:02}", j.jour, j.mois, j.an % 100)
 }
 
-fn pct(base: Decimal, taux: &str) -> Option<Decimal> {
-    (!taux.is_empty()).then(|| socle::num::pct(base, taux.parse::<Decimal>().unwrap_or_default()))
+fn pct(base: Decimal, taux: Option<Decimal>) -> Option<Decimal> {
+    taux.map(|t| socle::num::pct(base, t))
 }
 
 // --------------------------------------------------------------------------------------------- le calcul du faux bulletin
@@ -329,7 +430,7 @@ struct Calcule {
     plafond: Decimal,
     assiette_csg: Decimal,
     /// (cle, base, taux employeur, montant employeur, taux salarie, montant salarie)
-    cotisations: Vec<(&'static str, Decimal, &'static str, Option<Decimal>, &'static str, Option<Decimal>)>,
+    cotisations: Vec<(&'static str, Decimal, Option<Decimal>, Option<Decimal>, Option<Decimal>, Option<Decimal>)>,
     total_employeur: Decimal,
     total_salarie: Decimal,
     net_social: Decimal,
@@ -347,11 +448,12 @@ struct Calcule {
 
 fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
     let brut: Decimal = b.lignes.iter().map(|l| l.montant).sum();
-    let jours_travailles: BTreeSet<Jour> = b
-        .dates
-        .iter()
-        .flat_map(|(d, f)| (0..=f.moins(d)).filter_map(move |k| d.plus_jours(k).ok()))
-        .collect();
+    let mut jours_travailles: BTreeSet<Jour> = BTreeSet::new();
+    for (d, f) in &b.dates {
+        for k in 0..=f.moins(d) {
+            jours_travailles.insert(d.plus_jours(k).map_err(|m| format!("bulletin {} : {}", b.rang, m))?);
+        }
+    }
     let jours = Decimal::from(jours_travailles.len());
     // LE « PLAFOND URSSAF » IMPRIME, PAR LA REGLE DU MOTEUR (`plafond.rs`, qui cite ses textes) et le PSS d'un texte
     // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
@@ -365,12 +467,12 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
         droit::plafond::plafond_urssaf(t(&b.debut), t(&b.fin), jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| format!("bulletin {} : {}", b.rang, m))?;
-    let assiette_csg = eur2(brut * ASSIETTE_CSG.parse::<Decimal>().unwrap_or_default());
+    let assiette_csg = eur2(brut * assiette_csg());
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
-        let (te, ts) = if b.permanent { (ep, sp) } else { (ei, si) };
-        if te.is_empty() && ts.is_empty() {
+        let (te, ts) = if b.permanent { (taux_millieme(ep), taux_millieme(sp)) } else { (taux_millieme(ei), taux_millieme(si)) };
+        if te.is_none() && ts.is_none() {
             continue;
         }
         let assiette = match base {
@@ -379,10 +481,10 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
             Base::Csg => assiette_csg,
         };
         let (me, ms) = (pct(assiette, te), pct(assiette, ts));
-        total_e += me.unwrap_or_default();
-        total_s += ms.unwrap_or_default();
+        total_e += me.into_iter().sum::<Decimal>();
+        total_s += ms.into_iter().sum::<Decimal>();
         if cle == "csg_non_deductible" {
-            csg_non_deductible = ms.unwrap_or_default();
+            csg_non_deductible = ms.into_iter().sum();
         }
         cotisations.push((cle, assiette, te, me, ts, ms));
     }
@@ -438,61 +540,47 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
 // --------------------------------------------------------------------------------------------- la lecture de la description
 
 struct Description {
-    gabarit: String,
-    entreprise: Value,
+    gabarit: Gabarit,
+    entreprise: EntrepriseLue,
     salaries: Vec<Salarie>,
     bulletins: Vec<Bulletin>,
 }
 
-fn lire_description(d: &Value, gabarit: Option<&str>, racine_catalogue: &Path) -> Resultat<Description> {
-    let gabarit = gabarit
-        .map(str::to_string)
-        .or_else(|| texte_ou(d, "gabarit"))
-        .ok_or("le gabarit manque : `gabarit` dans la description, ou --gabarit coolpaie|spaiectacle")?;
-    if !matches!(gabarit.as_str(), "coolpaie" | "spaiectacle") {
-        return Err(format!("gabarit inconnu : {} (coolpaie ou spaiectacle)", gabarit));
-    }
+fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogue: &Path) -> Resultat<Description> {
+    let gabarit = gabarit.or(d.gabarit).ok_or("le gabarit manque : `gabarit` dans la description, ou --gabarit coolpaie|spaiectacle")?;
     let g = Table::livree()?;
 
-    let e = d.get("entreprise").filter(|v| v.is_object()).ok_or("`entreprise` manque")?.clone();
-    for cle in ["raison_sociale", "adresse", "code_postal", "commune", "siret", "naf"] {
-        texte(&e, cle, "entreprise")?;
+    let e = d.entreprise;
+    if e.siret.len() != 14 || !declarations::champs::luhn(&e.siret) {
+        return Err(format!("entreprise : le Siret {} n'a pas quatorze chiffres ou sa clé de Luhn est fausse", e.siret));
     }
-    let siret = texte(&e, "siret", "entreprise")?;
-    if siret.len() != 14 || !declarations::champs::luhn(&siret) {
-        return Err(format!("entreprise : le Siret {} n'a pas quatorze chiffres ou sa clé de Luhn est fausse", siret));
-    }
-    let conv = e.get("convention").ok_or("entreprise : `convention` manque ({\"idcc\": …, \"libelle\": …})")?;
-    let idcc = texte(conv, "idcc", "entreprise.convention")?;
+    let idcc = &e.convention.idcc;
     if idcc.len() != 4 || !idcc.chars().all(|c| c.is_ascii_digit()) {
         return Err(format!("entreprise.convention : l'IDCC {} n'a pas quatre chiffres", idcc));
     }
-    texte(conv, "libelle", "entreprise.convention")?;
 
     let mut salaries = Vec::new();
     let mut codes: HashMap<String, usize> = HashMap::new();
-    for (k, s) in d.get("salaries").and_then(Value::as_array).ok_or("`salaries` manque (une liste)")?.iter().enumerate() {
+    for (k, s) in d.salaries.into_iter().enumerate() {
         let ou = format!("salarié {}", k + 1);
-        let code = texte(s, "code", &ou)?;
-        let nir = texte(s, "nir", &ou)?;
-        verifier_nir(&nir, &ou)?;
-        if codes.insert(code.clone(), k).is_some() {
-            return Err(format!("{} : le code {} est déjà pris", ou, code));
+        verifier_nir(&s.nir, &ou)?;
+        if codes.insert(s.code.clone(), k).is_some() {
+            return Err(format!("{} : le code {} est déjà pris", ou, s.code));
         }
         salaries.push(Salarie {
-            code,
-            nom: texte(s, "nom", &ou)?,
-            prenom: texte(s, "prenom", &ou)?,
-            nir,
-            naissance: jour(s, "naissance", &ou)?,
-            adresse: [texte(s, "adresse", &ou)?, format!("{} {}", texte(s, "code_postal", &ou)?, texte(s, "commune", &ou)?)],
-            conges_spectacles: texte_ou(s, "conges_spectacles"),
+            code: s.code,
+            nom: s.nom,
+            prenom: s.prenom,
+            nir: s.nir,
+            naissance: s.naissance,
+            adresse: [s.adresse, format!("{} {}", s.code_postal, s.commune)],
+            conges_spectacles: s.conges_spectacles,
         });
     }
 
-    let lire_ligne = |l: &Value, ou: &str, soumise: bool| -> Resultat<Ligne> {
-        let libelle = texte(l, "libelle", ou)?;
-        let canon = jetons(&libelle);
+    let lire_ligne = |l: &LigneLue, ou: &str, soumise: bool| -> Resultat<Ligne> {
+        let libelle = &l.libelle;
+        let canon = jetons(libelle);
         let connu = g.lignes().iter().find(|x| jetons(&x.libelle) == canon).ok_or_else(|| {
             let connus: Vec<&str> = g.lignes().iter().map(|x| x.libelle.as_str()).collect();
             format!("{} : « {} » n'est pas un libellé de la table de lecture ({})", ou, libelle, connus.join(", "))
@@ -512,8 +600,7 @@ fn lire_description(d: &Value, gabarit: Option<&str>, racine_catalogue: &Path) -
                 if r.soumis { "lignes" } else { "non_soumis" }
             ));
         }
-        let q = nombre(l, "quantite", ou)?;
-        let taux = nombre(l, "taux", ou)?;
+        let (q, taux) = (l.quantite.0, l.taux.0);
         let (mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO);
         if r.unite == "cachet" {
             cachets = q;
@@ -524,142 +611,111 @@ fn lire_description(d: &Value, gabarit: Option<&str>, racine_catalogue: &Path) -
     };
 
     let mut bulletins = Vec::new();
-    for (k, b) in d.get("bulletins").and_then(Value::as_array).ok_or("`bulletins` manque (une liste)")?.iter().enumerate() {
+    for (k, b) in d.bulletins.into_iter().enumerate() {
         let ou = format!("bulletin {}", k + 1);
-        let code = texte(b, "salarie", &ou)?;
-        let salarie = *codes.get(&code).ok_or_else(|| format!("{} : aucun salarié de code {}", ou, code))?;
-        let (debut, fin) = (jour(b, "debut", &ou)?, jour(b, "fin", &ou)?);
+        let salarie = *codes.get(&b.salarie).ok_or_else(|| format!("{} : aucun salarié de code {}", ou, b.salarie))?;
+        let (debut, fin) = (b.debut, b.fin);
         if fin < debut {
             return Err(format!("{} : la fin précède le début", ou));
         }
-        let mut dates = Vec::new();
-        match b.get("dates").and_then(Value::as_array) {
-            None => dates.push((debut, fin)),
-            Some(l) => {
-                for x in l {
-                    let paire = x.as_array().filter(|p| p.len() == 2).ok_or_else(|| format!("{} : `dates` : des paires [début, fin]", ou))?;
-                    let lire = |v: &Value| v.as_str().ok_or("une date en texte".to_string()).and_then(Jour::lire).map_err(|m| format!("{} : `dates` : {}", ou, m));
-                    let (d0, d1) = (lire(&paire[0])?, lire(&paire[1])?);
-                    if d1 < d0 || d0 < debut || d1 > fin {
-                        return Err(format!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso()));
-                    }
-                    dates.push((d0, d1));
-                }
-            }
+        if b.dates.is_empty() {
+            return Err(format!("{} : `dates` : au moins une paire [début, fin]", ou));
         }
-        let lignes = b
-            .get("lignes")
-            .and_then(Value::as_array)
-            .filter(|l| !l.is_empty())
-            .ok_or_else(|| format!("{} : `lignes` manque", ou))?
-            .iter()
-            .map(|l| lire_ligne(l, &ou, true))
-            .collect::<Resultat<Vec<_>>>()?;
-        let non_soumis = b.get("non_soumis").and_then(Value::as_array).map(|l| l.iter().map(|x| lire_ligne(x, &ou, false)).collect::<Resultat<Vec<_>>>()).transpose()?.unwrap_or_default();
-        if gabarit == "coolpaie" && !non_soumis.is_empty() {
+        let mut dates = Vec::new();
+        for [d0, d1] in b.dates {
+            if d1 < d0 || d0 < debut || d1 > fin {
+                return Err(format!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso()));
+            }
+            dates.push((d0, d1));
+        }
+        if b.lignes.is_empty() {
+            return Err(format!("{} : `lignes` manque", ou));
+        }
+        let lignes = b.lignes.iter().map(|l| lire_ligne(l, &ou, true)).collect::<Resultat<Vec<_>>>()?;
+        let non_soumis = b.non_soumis.iter().flatten().map(|x| lire_ligne(x, &ou, false)).collect::<Resultat<Vec<_>>>()?;
+        if gabarit == Gabarit::Coolpaie && !non_soumis.is_empty() {
             return Err(format!("{} : le gabarit CoolPaie n'a pas de ligne non soumise", ou));
         }
-        let regime = texte_ou(b, "regime").unwrap_or_else(|| "intermittent".into());
-        if !matches!(regime.as_str(), "intermittent" | "permanent") {
-            return Err(format!("{} : `regime` vaut intermittent ou permanent, lu {}", ou, regime));
+        if gabarit == Gabarit::Coolpaie && b.analytique.is_some() {
+            return Err(format!("{} : le gabarit CoolPaie n'a pas de case « Analytique »", ou));
         }
-        let objet = match b.get("objet") {
-            None | Some(Value::Null) => None,
-            Some(o) => Some((texte(o, "numero", &format!("{}.objet", ou))?, texte_ou(o, "titre").unwrap_or_default())),
-        };
+        let paie = lire_paie(b.cotisations, b.net_imposable, b.pas, &g, gabarit, &ou)?;
         bulletins.push(Bulletin {
             rang: k + 1,
             salarie,
-            emploi: texte(b, "emploi", &ou)?,
-            statut: texte(b, "statut", &ou)?,
-            permanent: regime == "permanent",
+            emploi: b.emploi,
+            statut: b.statut,
+            permanent: b.regime == Regime::Permanent,
             debut,
             fin,
             dates,
-            // sPAIEctacle imprime le titre du spectacle dans sa case « Analytique », sous le numero d'objet : un
-            // bulletin fictif sans analytique dite y porte le titre de son objet.
-            analytique: texte_ou(b, "analytique").or_else(|| (gabarit == "spaiectacle").then(|| objet.as_ref().map(|o| o.1.clone())).flatten()).unwrap_or_default(),
-            objet,
+            objet: b.objet.map(|o| (o.numero, o.titre)),
+            analytique: b.analytique,
             lignes,
             non_soumis,
-            taux_pas: b.get("taux_pas").map(crate::valeur::dec).transpose().map_err(|m| format!("{} : `taux_pas` : {}", ou, m))?.unwrap_or_default(),
-            regle_le: if b.get("regle_le").is_some() { jour(b, "regle_le", &ou)? } else { fin },
-            numero: texte_ou(b, "numero"),
-            paie: lire_paie(b, &g, &gabarit, &ou)?,
+            taux_pas: b.taux_pas.0,
+            regle_le: b.regle_le,
+            paie,
         });
-    }
-
-    if d.get("plafonds").is_some() {
-        return Err("`plafonds` ne se donne plus : le plafond de la Sécurité sociale se lit dans le barème livré ou la table du BOSS déposée".into());
     }
     Ok(Description { gabarit, entreprise: e, salaries, bulletins })
 }
 
-/// Les cotisations d'une paie (`cotisations` : les `lignes` d'une paie de PuppetPaie, `famille`, `libelle`, `base`,
-/// `taux_sal`, `montant_sal`, `montant_pat`, `masquer_base_et_taux`), son `net_imposable` et son impot preleve (`pas`) :
-/// les trois ensemble, ou aucun.
-fn lire_paie(b: &Value, g: &Table, gabarit: &str, ou: &str) -> Resultat<Option<Paie>> {
-    let Some(liste) = b.get("cotisations") else {
-        if b.get("net_imposable").is_some() || b.get("pas").is_some() {
-            return Err(format!("{} : `net_imposable` et `pas` vont avec les `cotisations` de la paie", ou));
-        }
-        return Ok(None);
+/// Les cotisations d'une paie (`cotisations` : les `lignes` d'une paie de PuppetPaie), son `net_imposable` et son impot
+/// preleve (`pas`) : les trois ensemble, ou aucun.
+fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Nombre>, pas: Option<Nombre>, g: &Table, gabarit: Gabarit, ou: &str) -> Resultat<Option<Paie>> {
+    let (liste, net_imposable, pas) = match (liste, net_imposable, pas) {
+        (None, None, None) => return Ok(None),
+        (Some(l), Some(n), Some(p)) => (l, n.0, p.0),
+        _ => return Err(format!("{} : `cotisations`, `net_imposable` et `pas` vont ensemble", ou)),
     };
-    if gabarit != "spaiectacle" {
+    if gabarit != Gabarit::Spaiectacle {
         return Err(format!("{} : les cotisations d'une paie ne s'impriment qu'au gabarit sPAIEctacle", ou));
     }
-    let liste = liste.as_array().filter(|l| !l.is_empty()).ok_or_else(|| format!("{} : `cotisations` : une liste non vide", ou))?;
+    if liste.is_empty() {
+        return Err(format!("{} : `cotisations` : une liste non vide", ou));
+    }
     let mut cotisations = Vec::new();
-    for (k, c) in liste.iter().enumerate() {
+    for (k, c) in liste.into_iter().enumerate() {
         let ouc = format!("{} : cotisation {}", ou, k + 1);
-        let titre = texte(c, "famille", &ouc)?;
         let famille = g
-            .famille_nommee(&titre)
-            .and_then(|f| FAMILLES_B.iter().find(|(x, _)| *x == f).map(|(x, _)| *x))
-            .ok_or_else(|| format!("{} : la famille « {} » n'en est pas une que le bulletin imprime dans son total", ouc, titre))?;
-        let libelle = texte(c, "libelle", &ouc)?;
-        if g.cotisation(&libelle).is_none() {
-            return Err(format!("{} : « {} » n'est pas une cotisation de la table de lecture : ajoutez-la à `cotisations`", ouc, libelle));
+            .famille_nommee(&c.famille)
+            .and_then(|f| FAMILLES_B.iter().find(|(x, _)| *x == f).copied())
+            .ok_or_else(|| format!("{} : la famille « {} » n'en est pas une que le bulletin imprime dans son total", ouc, c.famille))?;
+        if g.cotisation(&c.libelle).is_none() {
+            return Err(format!("{} : « {} » n'est pas une cotisation de la table de lecture : ajoutez-la à `cotisations`", ouc, c.libelle));
         }
-        let facultatif = |cle: &str| -> Resultat<Option<Decimal>> {
-            match c.get(cle) {
-                None | Some(Value::Null) => Ok(None),
-                Some(v) => crate::valeur::dec(v).map(Some).map_err(|m| format!("{} : `{}` : {}", ouc, cle, m)),
-            }
-        };
-        let masquee = c.get("masquer_base_et_taux").and_then(Value::as_bool).unwrap_or(false);
+        let masquee = c.masquer_base_et_taux;
         cotisations.push(CotisationPayee {
             famille,
-            libelle,
-            base: if masquee { None } else { facultatif("base")? },
-            taux_salarie: if masquee { None } else { facultatif("taux_sal")? },
-            montant_salarie: facultatif("montant_sal")?.unwrap_or_default(),
-            montant_employeur: facultatif("montant_pat")?.unwrap_or_default(),
+            libelle: c.libelle,
+            base: if masquee { None } else { c.base.map(|n| n.0) },
+            taux_salarie: if masquee { None } else { c.taux_sal.map(|n| n.0) },
+            montant_salarie: c.montant_sal.0,
+            montant_employeur: c.montant_pat.0,
         });
     }
-    Ok(Some(Paie { cotisations, net_imposable: nombre(b, "net_imposable", ou)?, pas: nombre(b, "pas", ou)? }))
+    Ok(Some(Paie { cotisations, net_imposable, pas }))
 }
 
 // --------------------------------------------------------------------------------------------- les pages
 
 fn identite(d: &Description, s: &Salarie) -> Resultat<Identite<String>> {
     let e = &d.entreprise;
-    let t = |k: &str| texte_ou(e, k).unwrap_or_default();
-    let conv = &e["convention"];
-    let (idcc, libelle) = (texte_ou(conv, "idcc").unwrap_or_default(), texte_ou(conv, "libelle").unwrap_or_default());
-    let convention = if d.gabarit == "coolpaie" {
+    let (idcc, libelle) = (&e.convention.idcc, &e.convention.libelle);
+    let convention = if d.gabarit == Gabarit::Coolpaie {
         let [a, b] = deux_rangs(&format!("IDCC n° {} - {}", idcc, libelle), 34, "la convention")?;
         [a, b]
     } else {
         deux_rangs(&format!("{} (IDCC {})", libelle, idcc), 46, "la convention")?
     };
     Ok(Identite {
-        entreprise: [t("raison_sociale"), t("adresse"), format!("{} {}", t("code_postal"), t("commune"))],
-        siret: t("siret"),
-        naf: t("naf"),
-        urssaf: t("urssaf"),
+        entreprise: [e.raison_sociale.clone(), e.adresse.clone(), format!("{} {}", e.code_postal, e.commune)],
+        siret: e.siret.clone(),
+        naf: e.naf.clone(),
+        urssaf: e.urssaf.clone(),
         convention,
-        licence: t("licence"),
+        licence: e.licence.clone(),
         nom: s.nom.clone(),
         prenom: s.prenom.clone(),
         adresse: s.adresse.clone(),
@@ -730,10 +786,6 @@ const FAMILLES_B: [(&str, RenduB); 10] = [
     ("exonerations", RenduB::Rang("Exonérations et allègements de cotisations")),
 ];
 
-fn rendu_b(famille: &str) -> RenduB {
-    FAMILLES_B.iter().find(|(k, _)| *k == famille).map(|(_, r)| *r).unwrap_or(RenduB::Lignes)
-}
-
 /// Les rangs sPAIEctacle des cotisations d'une paie, famille par famille, dans l'ordre de la paie. Un montant nul ne
 /// s'imprime pas ; une ligne sans aucun montant non plus (elle se lirait comme un titre).
 fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
@@ -741,18 +793,18 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
     let montant = |x: Decimal| if x.is_zero() { String::new() } else { fr(x) };
     let mut k = 0;
     while k < p.cotisations.len() {
-        let famille = p.cotisations[k].famille;
-        let n = p.cotisations[k..].iter().take_while(|c| c.famille == famille).count();
+        let (famille, rendu) = p.cotisations[k].famille;
+        let n = p.cotisations[k..].iter().take_while(|c| c.famille.0 == famille).count();
         let groupe: Vec<&CotisationPayee> = p.cotisations[k..k + n].iter().filter(|c| !(c.montant_salarie.is_zero() && c.montant_employeur.is_zero())).collect();
         k += n;
         if groupe.is_empty() {
             continue;
         }
         let seule = |x: f64, c: &CotisationPayee| -> RangB<String> {
-            let taux = c.taux_salarie.filter(|_| !c.montant_salarie.is_zero()).map(taux3).unwrap_or_default();
-            (x, c.libelle.clone(), famille, c.base.map(fr).unwrap_or_default(), taux, montant(c.montant_salarie), montant(c.montant_employeur))
+            let taux = c.taux_salarie.filter(|_| !c.montant_salarie.is_zero()).map(taux3).into_iter().collect();
+            (x, c.libelle.clone(), famille, c.base.map(fr).into_iter().collect(), taux, montant(c.montant_salarie), montant(c.montant_employeur))
         };
-        match rendu_b(famille) {
+        match rendu {
             RenduB::Titre(t) => {
                 out.push((39.0, t.into(), "", String::new(), String::new(), String::new(), String::new()));
                 out.extend(groupe.iter().map(|c| seule(74.0, c)));
@@ -765,7 +817,7 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
             }
             RenduB::Rang(libelle) => {
                 let bases: BTreeSet<Option<Decimal>> = groupe.iter().map(|c| c.base).collect();
-                let base = if bases.len() == 1 { bases.into_iter().next().flatten().map(fr).unwrap_or_default() } else { String::new() };
+                let base = if bases.len() == 1 { bases.into_iter().flatten().map(fr).collect() } else { String::new() };
                 let s: Decimal = groupe.iter().map(|c| c.montant_salarie).sum();
                 let e: Decimal = groupe.iter().map(|c| c.montant_employeur).sum();
                 out.push((39.0, libelle.into(), famille, base, String::new(), montant(s), montant(e)));
@@ -804,8 +856,9 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         if let Some(t) = titre {
             cotisations.push((33.9, t.into(), "", vide(), vide(), vide(), vide(), vide()));
         }
-        let taux = |t: &str| if t.is_empty() { String::new() } else { taux3(t.parse().unwrap_or_default()) };
-        cotisations.push((x, libelle.into(), famille, fr(*base), taux(te), me.map(fr).unwrap_or_default(), taux(ts), ms.map(fr).unwrap_or_default()));
+        let taux = |t: &Option<Decimal>| t.map(taux3).into_iter().collect::<String>();
+        let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
+        cotisations.push((x, libelle.into(), famille, fr(*base), taux(te), montant(me), taux(ts), montant(ms)));
     }
     let cachets = c.periode.cachets > Decimal::ZERO;
     let (unite, p, a) = if cachets { ("Cachets:", c.periode.cachets, c.annee.cachets) } else { ("Heures:", c.periode.heures, c.annee.heures) };
@@ -849,14 +902,14 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
 fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> Resultat<Vec<fabrique_pdf::forme::Bloc>> {
     let s = &d.salaries[b.salarie];
     let vide = String::new;
-    let mut cotisations: Vec<RangB<String>> = b.paie.as_ref().map(rangs_de_la_paie).unwrap_or_default();
+    let mut cotisations: Vec<RangB<String>> = b.paie.iter().flat_map(rangs_de_la_paie).collect();
     for (cle, base, _, me, ts, ms) in &c.cotisations {
         let (titre, x, libelle, famille) = libelle_b(cle);
         if let Some(t) = titre {
             cotisations.push((39.0, t.into(), "", vide(), vide(), vide(), vide()));
         }
-        let taux = if ts.is_empty() { String::new() } else { taux3(ts.parse().unwrap_or_default()) };
-        cotisations.push((x, libelle.into(), famille, fr(*base), taux, ms.map(fr).unwrap_or_default(), me.map(fr).unwrap_or_default()));
+        let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
+        cotisations.push((x, libelle.into(), famille, fr(*base), ts.map(taux3).into_iter().collect(), montant(ms), montant(me)));
     }
     let ligne = |l: &Ligne| (quantite(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
@@ -892,8 +945,8 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> Resultat<Vec<
         periode: format!("du {} au {}", dmy_court(d0), dmy_court(d1)),
         periode_courte: courte,
         reglement: format!("{} par virement", dmy_court(&b.regle_le)),
-        objet: b.objet.as_ref().map(|o| o.0.clone()).unwrap_or_default(),
-        analytique: b.analytique.clone(),
+        objet: b.objet.iter().map(|o| o.0.as_str()).collect(),
+        analytique: b.analytique.iter().map(String::as_str).collect(),
         emploi: b.emploi.clone(),
         statut,
         lignes,
@@ -922,23 +975,24 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> Resultat<Vec<
 
 /// Fabrique les bulletins de la description dans `dossier` (cree au besoin), un PDF par bulletin ; rend une ligne par
 /// fichier ecrit. Rien n'est ecrit si un bulletin se refuse.
-pub fn fabriquer(d: &Value, gabarit: Option<&str>, dossier: &Path) -> Resultat<Vec<String>> {
+pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) -> Resultat<Vec<String>> {
     let desc = lire_description(d, gabarit, dossier)?;
     let mut ordre: Vec<usize> = (0..desc.bulletins.len()).collect();
     ordre.sort_by_key(|&k| (desc.bulletins[k].fin, desc.bulletins[k].debut, k));
+    // Les cumuls de l'annee de chaque salarie, qui partent de rien a son premier bulletin de l'annee.
     let mut cumuls: HashMap<(usize, i32), Cumuls> = HashMap::new();
     let mut numeros: HashMap<i32, usize> = HashMap::new();
     let mut pages = Vec::new();
     for k in ordre {
         let b = &desc.bulletins[k];
-        let cle = (b.salarie, b.fin.an);
-        let avant = cumuls.get(&cle).cloned().unwrap_or_default();
-        let c = calculer(b, &avant)?;
-        cumuls.insert(cle, c.annee.clone());
+        let annee = cumuls.entry((b.salarie, b.fin.an)).or_default();
+        let c = calculer(b, annee)?;
+        *annee = c.annee.clone();
+        // CoolPaie numerote ses bulletins dans l'annee : `k/annee`.
         let n = numeros.entry(b.fin.an).or_insert(0);
         *n += 1;
-        let numero = b.numero.clone().unwrap_or_else(|| format!("{}/{}", n, b.fin.an));
-        let page = if desc.gabarit == "coolpaie" { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
+        let numero = format!("{}/{}", n, b.fin.an);
+        let page = if desc.gabarit == Gabarit::Coolpaie { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
         let s = &desc.salaries[b.salarie];
         let nom = format!("{}-{:02}-{}-{:03}.pdf", b.fin.an, b.fin.mois, s.code, b.rang);
         let ligne = format!(

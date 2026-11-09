@@ -147,28 +147,37 @@ commune 999 à clé juste ; rien de réel) :
      "adresse": "12 rue Kervégan", "code_postal": "44000", "commune": "Nantes"}
   ],
   "bulletins": [
-    {"salarie": "1", "emploi": "MUSICIEN", "statut": "artiste", "debut": "2025-03-10", "fin": "2025-03-14",
-     "dates": [["2025-03-10", "2025-03-11"], ["2025-03-14", "2025-03-14"]],
+    {"salarie": "1", "emploi": "MUSICIEN", "statut": "artiste", "regime": "intermittent",
+     "debut": "2025-03-10", "fin": "2025-03-14", "dates": [["2025-03-10", "2025-03-11"], ["2025-03-14", "2025-03-14"]],
      "objet": {"numero": "256Z00920031", "titre": "Les Toits en Fanfare"},
-     "lignes": [{"libelle": "Cachets isolés", "quantite": 3, "taux": 146}], "taux_pas": 2.5},
+     "lignes": [{"libelle": "Cachets isolés", "quantite": 3, "taux": 146}], "taux_pas": 2.5, "regle_le": "2025-03-14"},
     {"salarie": "2", "emploi": "CHARGEE DE DIFFUSION", "statut": "non cadre", "regime": "permanent",
-     "debut": "2025-03-01", "fin": "2025-03-31", "lignes": [{"libelle": "Heures", "quantite": 86.67, "taux": 14.5}]}
+     "debut": "2025-03-01", "fin": "2025-03-31", "dates": [["2025-03-01", "2025-03-31"]],
+     "lignes": [{"libelle": "Heures", "quantite": 86.67, "taux": 14.5}], "taux_pas": 0, "regle_le": "2025-03-31"}
   ]
 }
 ```
+
+Chaque valeur se dit : aucune clé n'a de défaut, et une clé inconnue se refuse. Seul ce qui peut ne pas exister se tait
+(le numéro Congés Spectacles d'un salarié, l'objet d'un bulletin, sa case « Analytique », ses lignes non soumises, la
+paie qu'il imprime).
 
 | clé d'un bulletin | |
 |---|---|
 | `salarie` | le `code` d'un salarié de la liste |
 | `emploi`, `statut` | imprimés tels quels ; `statut` « artiste » fait une fiche d'artiste à l'import |
-| `regime` | `intermittent` (défaut : chômage des annexes 8 et 10, Congés Spectacles) ou `permanent` |
+| `regime` | `intermittent` (chômage des annexes 8 et 10, Congés Spectacles) ou `permanent` |
 | `debut`, `fin` | la période ; le mois du bulletin est celui de `fin` |
-| `dates` | les jours travaillés, en paires [début, fin] (défaut : toute la période) ; ils font les jours du contrat |
-| `objet` | `{"numero", "titre"}` : le spectacle (numéro d'objet), pour un CDDU |
+| `dates` | les jours travaillés, en paires [début, fin], au moins une ; ils font les jours du contrat |
+| `objet` | facultatif, `{"numero", "titre"}` : le spectacle (numéro d'objet), pour un CDDU |
+| `analytique` | facultatif, sPAIEctacle seulement : la case « Analytique » (sPAIEctacle y imprime le titre du spectacle) |
 | `lignes` | `{"libelle", "quantite", "taux"}` ; libellés du gabarit : `Cachets isolés`, `Cachets groupés`, `Heures`, `Service(s) répét. 4h (contrat<5j)` et `Masterclass / Action Culturelle` (CoolPaie), `Service de répétition 4 heures` (sPAIEctacle) |
-| `non_soumis` | sPAIEctacle seulement : `Défraiement non soumis`, `Prime de panier non soumise`, `Acompte` |
-| `cotisations`, `net_imposable`, `pas` | sPAIEctacle seulement, les trois ensemble : ce qu'une paie de PuppetPaie a calculé (ses `lignes` telles quelles : `famille`, `libelle`, `base`, `taux_sal`, `montant_sal`, `montant_pat`, `masquer_base_et_taux` ; son net imposable ; l'impôt prélevé), que le bulletin imprime au lieu de ses cotisations vraisemblables ; la santé et la retraite ligne à ligne, toute autre famille sur un rang, comme le bulletin clarifié |
-| `taux_pas`, `regle_le`, `numero`, `analytique` | facultatifs : le taux du PAS (0), le jour du règlement (`fin`), le numéro CoolPaie (`k/année`), la case « Analytique » de sPAIEctacle (par défaut : le titre de l'objet, comme sPAIEctacle l'y imprime) |
+| `non_soumis` | facultatif, sPAIEctacle seulement : `Défraiement non soumis`, `Prime de panier non soumise`, `Acompte` |
+| `taux_pas` | le taux du PAS, en pourcentage |
+| `regle_le` | le jour du règlement |
+| `cotisations`, `net_imposable`, `pas` | facultatifs, sPAIEctacle seulement, les trois ensemble : ce qu'une paie de PuppetPaie a calculé (ses `lignes` telles quelles : `famille`, `libelle`, `base` et `taux_sal` (nuls quand la ligne n'en a pas), `montant_sal`, `montant_pat`, `masquer_base_et_taux` ; son net imposable ; l'impôt prélevé), que le bulletin imprime au lieu de ses cotisations vraisemblables ; la santé et la retraite ligne à ligne, toute autre famille sur un rang, comme le bulletin clarifié |
+
+CoolPaie numérote ses bulletins dans l'année, dans l'ordre du temps (`k/année`).
 
 Le gabarit se donne dans la description ou par `--gabarit` (qui l'emporte). Le « plafond Urssaf » imprimé se calcule
 par la règle du moteur (`plafond.rs`), sur le plafond de la Sécurité sociale de l'année lu dans le barème livré
