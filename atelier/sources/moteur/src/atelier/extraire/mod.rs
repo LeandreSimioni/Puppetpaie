@@ -115,7 +115,7 @@ pub fn commande(args: &[String]) -> i32 {
         eprintln!("{}", m);
         return 1;
     }
-    let jour = crate::commandes::compagnie::jour_de_paris();
+    let jour = socle::temps::jour_de_paris();
     let releve = match pos[0] {
         "naf" => naf::relever(&sources[0], &sources[1], &jour),
         "usages" => usages::relever(&sources[0], &jour),

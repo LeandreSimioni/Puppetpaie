@@ -718,6 +718,73 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     }
 }
 
+/// LES MODULES DE `moteur` ET LEUR CRATE CIBLE (#359, le decoupage de `moteur`), de bas en haut : chaque module de
+/// `moteur/src` a la sienne par son chemin (son dossier, ou son fichier a la racine), et ne prend (`crate::…`, tests
+/// compris, commentaires et textes a part) qu'a un module de sa crate ou d'une crate d'en dessous. Un module que la table
+/// ne place pas fait echouer le test, comme une flèche qui monte.
+#[test]
+fn un_module_du_moteur_ne_prend_qu_aux_crates_du_dessous() {
+    const ORDRE: [&str; 5] = ["compagnie", "import", "routes", "moteur", "atelier"];
+    const CIBLES: [(&str, &str); 18] = [
+        ("compagnie", "compagnie"),
+        ("import", "import"),
+        ("routes", "routes"),
+        ("service", "routes"),
+        ("etat_garde", "routes"),
+        ("obligations", "routes"),
+        ("horloge", "routes"),
+        ("regularisation", "routes"),
+        ("historique_mois", "routes"),
+        ("apercu_dsn", "routes"),
+        ("simulation_courriels", "routes"),
+        ("gestes", "routes"),
+        ("scenario", "routes"),
+        ("lib", "moteur"),
+        ("main", "moteur"),
+        ("commandes", "moteur"),
+        ("interface", "moteur"),
+        ("atelier", "atelier"),
+    ];
+    let rang = |module: &str| CIBLES.iter().find(|(m, _)| *m == module).and_then(|(_, c)| ORDRE.iter().position(|x| x == c));
+    let reference = regex::Regex::new(r"\bcrate::([a-z_][a-z0-9_]*)").unwrap();
+    let src = espace().join("moteur/src");
+    let mut fautes = Vec::new();
+    for f in sources(&src) {
+        let rel = f.strip_prefix(&src).unwrap();
+        let tete = rel.components().next().unwrap().as_os_str().to_string_lossy().trim_end_matches(".rs").to_string();
+        let Some(sa) = rang(&tete) else {
+            fautes.push(format!("{} : aucune crate cible ne porte `{}` (`CIBLES`)", rel.display(), tete));
+            continue;
+        };
+        for (n, l) in code_et_tests(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
+            for m in reference.captures_iter(l) {
+                match rang(&m[1]) {
+                    Some(r) if r <= sa => {}
+                    Some(r) => fautes.push(format!("{}:{} : `crate::{}` est dans `{}`, au-dessus de `{}`", rel.display(), n + 1, &m[1], ORDRE[r], ORDRE[sa])),
+                    None => fautes.push(format!("{}:{} : `crate::{}`, qu'aucune crate cible ne porte (`CIBLES`)", rel.display(), n + 1, &m[1])),
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un module du moteur ne prend qu'aux crates de dessous ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
+/// Un source Rust entier, tests compris, ses commentaires blanchis et ses textes vides entre leurs guillemets, a ses
+/// lignes.
+fn code_et_tests(t: &str) -> String {
+    let mut c: Vec<char> = t.chars().collect();
+    for (_, debut, fin, commentaire, _) in jetons_rs(t) {
+        let (a, b) = if commentaire { (debut, fin) } else { (debut + 1, fin.saturating_sub(1)) };
+        let n = c.len();
+        for x in c.iter_mut().take(b.min(n)).skip(a) {
+            if *x != '\n' {
+                *x = ' ';
+            }
+        }
+    }
+    c.into_iter().collect()
+}
+
 /// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
 const COUCHES_FERMEES: [&str; 7] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "moteur"];
 
