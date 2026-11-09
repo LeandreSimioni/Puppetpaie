@@ -639,6 +639,19 @@ impl Saisie {
         self.notes.iter().find(|(k, _)| k == cle).map(|(_, t)| t.as_str())
     }
 
+    /// Ses notes, dans l'ordre saisi.
+    pub fn notes(&self) -> &[(String, String)] {
+        &self.notes
+    }
+
+    /// La note `cle` vaut `t`.
+    pub fn poser_note(&mut self, cle: &str, t: String) {
+        match self.notes.iter_mut().find(|(k, _)| k == cle) {
+            Some(n) => n.1 = t,
+            None => self.notes.push((cle.to_string(), t)),
+        }
+    }
+
     /// Les cases que la table ne decrit pas : leur nom, et si elles disent quelque chose.
     pub fn autres(&self) -> &[(String, bool)] {
         &self.autres

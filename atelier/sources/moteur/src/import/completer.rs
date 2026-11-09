@@ -5,129 +5,83 @@
 //! est vide ou « A COMPLETER » (sans casse : le titre que l'import des DSN donne a un spectacle dont la DSN ne porte que
 //! le numero d'objet, `crate::routes::import::apercu_lu`), et garde tout champ rempli : la fiche fait foi, l'ecart reste
 //! seulement signale (`ecarts`). L'apercu dit, fiche par fiche, ce qui serait complete et d'ou ca vient (`completer`) ;
-//! l'import l'ecrit (`crate::import::fiche_brute::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
+//! l'import l'ecrit (`crate::import::proposee::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
 //!
 //! Un champ que la piece ne porte pas ne s'invente pas (regle 1) : on ne complete que de ce que la DSN ou le bulletin
-//! imprime, par le meme chemin que la fiche qu'il creerait.
+//! imprime, par le meme chemin que la fiche qu'il creerait. La fiche qui existe et ce que l'import en ferait se
+//! confrontent case par case, chacune une saisie de sa fiche (`declarations::champs::Saisie`).
 
-use serde_json::{Map, Value};
-
+use declarations::champs::{Saisie, Valeur};
 use socle::echec::R;
-
-/// UNE FICHE QUE L'IMPORT CONFRONTE A SES PIECES, case par case, par le nom que `champs-base.json` donne a chacune : une
-/// fiche lue par sa forme (`droit::fiche::case_en`), ou ce que l'import composerait.
-pub(crate) trait ParCase {
-    fn case(&self, cle: &str) -> Option<Value>;
-}
-
-impl ParCase for Value {
-    fn case(&self, cle: &str) -> Option<Value> {
-        self.get(cle).cloned()
-    }
-}
-
-impl ParCase for Map<String, Value> {
-    fn case(&self, cle: &str) -> Option<Value> {
-        self.get(cle).cloned()
-    }
-}
-
-macro_rules! par_sa_forme {
-    ($($t:ty),*) => {
-        $(impl ParCase for $t {
-            fn case(&self, cle: &str) -> Option<Value> {
-                droit::fiche::case_en(self, cle, serde_json::value::Serializer).and_then(Result::ok)
-            }
-        })*
-    };
-}
-
-par_sa_forme!(droit::fiche::ChampsSalarie, droit::fiche::ChampsEntreprise, droit::fiche::ChampsSpectacle);
 
 /// Le titre que l'import donne a un spectacle dont il ne connait que le numero d'objet.
 pub(crate) const A_COMPLETER: &str = "A COMPLETER";
 
-/// Une case qui ne dit rien : absente, nulle, un texte blanc ou « A COMPLETER » (sans casse), une liste ou un objet vides.
+/// Une case qui ne dit rien : absente, un texte blanc ou « A COMPLETER » (sans casse), une liste ou une structure vides.
 /// Un booleen ou un nombre disent quelque chose.
-pub(crate) fn vide(v: Option<&Value>) -> bool {
-    match v {
-        None | Some(Value::Null) => true,
-        Some(Value::String(s)) => {
-            let t = s.trim();
-            t.is_empty() || t.eq_ignore_ascii_case(A_COMPLETER)
-        }
-        Some(Value::Array(a)) => a.is_empty(),
-        Some(Value::Object(o)) => o.is_empty(),
-        Some(_) => false,
-    }
+pub(crate) fn vide(v: Option<&Valeur>) -> bool {
+    crate::routes::fiches::vide(v)
 }
 
 /// Ce que l'import ne met jamais dans une fiche qui existe : son etat (`actif` : une fiche archivee l'est exprès), et son
 /// historique.
 const JAMAIS: [&str; 2] = ["actif", "historique"];
 
-/// Les champs de `proposees` (la fiche que l'import creerait de cette piece) qu'une fiche existante recoit : un champ de
-/// la fiche, vide dans `fiche`, plein dans `proposees`. Un champ officiel dont la forme lisible est remplie se derive
+/// Les cases de `proposees` (la fiche que l'import creerait de cette piece) qu'une fiche existante recoit : une case de
+/// la fiche, vide dans `fiche`, pleine dans `proposees`. Un champ officiel dont la forme lisible est remplie se derive
 /// d'elle a l'ecriture : il n'est pas complete. La forme lisible (`*_affichage`) d'un champ complete suit, quand elle
-/// est vide : celle que la piece donne, sinon celle que l'ecran en ferait (`champs::combler_affichage`).
-pub(crate) fn champs_a_completer(nom: &str, fiche: &dyn ParCase, proposees: &Map<String, Value>) -> R<Map<String, Value>> {
+/// est vide : celle que la piece donne, sinon celle que l'ecran en ferait (`Saisie::comblee`).
+pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) -> R<Saisie> {
     let champs = declarations::champs::fiche(nom)?;
-    let dite = |cle: &str| fiche.case(cle);
-    let mut out = Map::new();
+    let mut out = Saisie::default();
     for c in &champs {
         if c.cle.ends_with("_affichage") || JAMAIS.contains(&c.cle.as_str()) {
             continue;
         }
-        let Some(v) = proposees.get(&c.cle) else { continue };
-        if vide(Some(v)) || !vide(dite(&c.cle).as_ref()) {
+        let Some(v) = proposees.case(&c.cle) else { continue };
+        if vide(Some(v)) || !vide(fiche.case(&c.cle)) {
             continue;
         }
-        if c.derive_de.as_deref().is_some_and(|src| !src.is_empty() && !vide(dite(src).as_ref())) {
+        if c.derive_de.as_deref().is_some_and(|src| !src.is_empty() && !vide(fiche.case(src))) {
             continue;
         }
-        out.insert(c.cle.clone(), v.clone());
+        out.poser(&c.cle, v.clone());
     }
-    if out.is_empty() {
+    if !out.est_dite() {
         return Ok(out);
     }
-    // La fiche, case par case, et ce qui la complete : ce que l'ecran en ferait (`combler_affichage`).
-    let mut fusion: Map<String, Value> = champs.iter().filter_map(|c| dite(&c.cle).map(|v| (c.cle.clone(), v))).collect();
-    for (k, v) in &out {
-        fusion.insert(k.clone(), v.clone());
-    }
-    let comble = crate::import::fiche_brute::combler_affichage(nom, &fusion)?;
+    // La fiche, case par case, et ce qui la complete : ce que l'ecran en ferait (`comblee`).
+    let mut fusion = fiche.clone();
+    crate::import::proposee::fondre(&mut fusion, &out);
+    let comble = fusion.comblee(nom)?;
     for c in &champs {
         let Some(src) = c.derive_de.as_deref().filter(|d| !d.is_empty()) else { continue };
-        if !out.contains_key(&c.cle) || !vide(dite(src).as_ref()) {
+        if out.case(&c.cle).is_none() || !vide(fiche.case(src)) {
             continue;
         }
-        let lisible = proposees.get(src).filter(|v| !vide(Some(v))).or_else(|| comble.get(src).filter(|v| !vide(Some(v))));
+        let lisible = proposees.case(src).filter(|v| !vide(Some(v))).or_else(|| comble.case(src).filter(|v| !vide(Some(v))));
         if let Some(v) = lisible {
-            out.insert(src.to_string(), v.clone());
+            out.poser(src, v.clone());
         }
     }
     Ok(out)
 }
 
-/// Une fiche existante que l'import completerait : laquelle (`cle` ; rien pour l'entreprise), et les champs.
+/// Une fiche existante que l'import completerait : laquelle (`cle` ; rien pour l'entreprise), et ses cases.
 pub(crate) struct ACompleter {
     pub(crate) nom: &'static str,
     pub(crate) cle: Option<String>,
-    pub(crate) champs: Map<String, Value>,
+    pub(crate) champs: Saisie,
 }
 
-/// Ajoute des champs a completer. LA PREMIERE PIECE QUI DONNE UN CHAMP LE GARDE : les DSN passent avant les bulletins,
+/// Ajoute des cases a completer. LA PREMIERE PIECE QUI DONNE UNE CASE LA GARDE : les DSN passent avant les bulletins,
 /// comme pour une fiche que l'import cree (le bulletin complete la fiche que la DSN cree, il ne la reecrit pas).
-pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: &'static str, cle: Option<&str>, champs: &Map<String, Value>) {
-    if champs.is_empty() {
+pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: &'static str, cle: Option<&str>, champs: &Saisie) {
+    if !champs.est_dite() {
         return;
     }
     match liste.iter_mut().find(|a| a.nom == nom && a.cle.as_deref() == cle) {
-        Some(a) => {
-            for (k, v) in champs {
-                a.champs.entry(k.clone()).or_insert_with(|| v.clone());
-            }
-        }
+        Some(a) => crate::import::proposee::completer_de(&mut a.champs, champs),
         None => liste.push(ACompleter { nom, cle: cle.map(String::from), champs: champs.clone() }),
     }
 }

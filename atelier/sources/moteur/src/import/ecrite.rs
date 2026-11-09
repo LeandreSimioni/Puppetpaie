@@ -21,14 +21,13 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
-
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, ContratLu, Declaration, PaieLue, PaieVersee};
+use socle::date::Jour;
 use socle::echec::erreur;
 use socle::num::{Decimal, Resultat};
 use socle::echec::Echec;
-use crate::import::reponse::{brut, Copie, EtatFiche, Importation};
+use crate::import::reponse::{Copie, EtatFiche, Importation};
 
 type R<T> = Result<T, Echec>;
 
@@ -53,7 +52,8 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: &str) -> Result<Option<PathBuf>
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    Err(socle::echec::avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), serde_json::json!({"fichier": nom})))
+    let a_part = socle::echec::APart { fichier: Some(nom.clone()), ..Default::default() };
+    Err(socle::echec::avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
 /// `lire_dsn_casc` : la DSN deposee, et si elle porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a
@@ -86,15 +86,16 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
     let mut dispo: BTreeSet<String> = BTreeSet::new();
     dispo.extend(engagement::importe::paies_lues(&ctx.racine).map_err(Echec::from)?.into_iter().map(|x| x.mois));
-    dispo.extend(engagement::stock::mois_saisis(&ctx.racine).unwrap_or_default().into_iter().map(String::from));
+    dispo.extend(engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.into_iter().map(String::from));
     let depuis = base.depuis.clone();
     let contrat = base.dsn.contrat.clone();
     let mut par_mois: Vec<(String, Decimal)> = Vec::new();
     for m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
+        // Une DSN importee dont le fichier manque ne se controle pas : l'alerte le dit.
         let chemin = match dsn_importee(ctx, m) {
             Ok(Some(c)) => c,
             Ok(None) => continue,
-            Err(_) => return Ok(None),
+            Err(m) => return Ok(Some(format!("CASC-SVP : {}", socle::echec::phrase_de(&m)))),
         };
         let Some((d, porte)) = lire_dsn_casc(&chemin, &contrat)? else { return Ok(None) };
         if porte {
@@ -187,13 +188,14 @@ fn rapprocher(par_cle: &mut BTreeMap<(String, String, String), PaieLue>) -> usiz
     let mut ambigues = 0usize;
     for kb in de_bulletin {
         let b = par_cle[&kb].clone();
-        let (salarie, debut, fin) = (b.salarie.clone(), iso(b.paie.debut), iso(b.paie.fin));
-        if salarie.is_empty() || salarie == "<a creer>" || debut.is_empty() || fin.is_empty() {
+        let salarie = b.salarie.clone();
+        let (Some(debut), Some(fin)) = (b.paie.debut, b.paie.fin) else { continue };
+        if salarie.is_empty() || salarie == crate::routes::import::A_CREER {
             continue;
         }
         let mut cibles: Vec<(String, String, String)> = par_cle
             .iter()
-            .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && iso(x.paie.debut) == debut && iso(x.paie.fin) == fin)
+            .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.debut == Some(debut) && x.paie.fin == Some(fin))
             .map(|(k, _)| k.clone())
             .collect();
         if cibles.len() > 1 {
@@ -206,8 +208,7 @@ fn rapprocher(par_cle: &mut BTreeMap<(String, String, String), PaieLue>) -> usiz
             cibles = par_cle
                 .iter()
                 .filter(|(k, x)| {
-                    let (d, f) = (iso(x.paie.debut), iso(x.paie.fin));
-                    !declaree_par_bulletin(x) && k.0 == kb.0 && x.salarie == salarie && !d.is_empty() && d <= debut && (f.is_empty() || fin <= f)
+                    !declaree_par_bulletin(x) && k.0 == kb.0 && x.salarie == salarie && x.paie.debut.is_some_and(|d| d <= debut) && x.paie.fin.is_none_or(|f| fin <= f)
                 })
                 .map(|(k, _)| k.clone())
                 .collect();
@@ -228,9 +229,9 @@ fn rapprocher(par_cle: &mut BTreeMap<(String, String, String), PaieLue>) -> usiz
     ambigues
 }
 
-/// Un jour en ISO, vide s'il manque.
-fn iso(j: Option<socle::date::Jour>) -> String {
-    j.map(|j| j.iso()).unwrap_or_default()
+/// Un jour en ISO, s'il est dit.
+fn iso(j: Option<Jour>) -> Option<String> {
+    j.map(|j| j.iso())
 }
 
 /// LES ENGAGEMENTS IMPORTES, tires des contrats attestes (`contrats`, une AEM ou un bulletin chacun) et des paies
@@ -240,28 +241,39 @@ fn iso(j: Option<socle::date::Jour>) -> String {
 /// contrat d'un permanent font un seul engagement (plus bas).
 /// Son numero est celui que la DSN deposee a declare (S21.G00.40.009), sinon celui que le bulletin imprime ; jamais un
 /// numero tire.
-fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Resultat<Vec<engagement::importe::Neuf>> {
+fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhui: &str) -> Resultat<Vec<engagement::importe::Neuf>> {
     use engagement::importe::{Neuf, Pieces};
+    // Un salarie, et les dates de son engagement (une fin absente : il court encore). Les dates se comparent comme leur
+    // ecriture ISO ; une date absente vient avant toute date.
     struct Groupe {
         salarie: String,
-        debut: String,
-        fin: String,
+        debut: Option<String>,
+        fin: Option<String>,
         contrat: Option<ContratLu>,
         paies: Vec<PaieLue>,
     }
-    let objet = |c: &ContratLu| c.contrat.numero_objet.clone().unwrap_or_default();
+    let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
     // Le contrat d'un permanent : sa nature, payee au mois, est dite, ou reste a dire (`import::nature`).
-    let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.as_deref().is_some_and(|n| droit::natures::nature(n).is_ok_and(|n| n.mensuelle()));
+    let mensuelle = |n: &str| -> Resultat<bool> { Ok(droit::natures::nature(n)?.mensuelle()) };
+    let mut permanents: HashSet<String> = HashSet::new();
+    for c in &contrats {
+        if let Some(n) = c.contrat.nature.as_deref() {
+            if mensuelle(n)? {
+                permanents.insert(n.to_string());
+            }
+        }
+    }
+    let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.as_deref().is_some_and(|n| permanents.contains(n));
     let mut groupes: Vec<Groupe> = Vec::new();
     for c in contrats {
-        groupes.push(Groupe { salarie: c.salarie.clone(), debut: c.debut.clone().unwrap_or_default(), fin: c.fin.clone().unwrap_or_default(), contrat: Some(c), paies: Vec::new() });
+        groupes.push(Groupe { salarie: c.salarie.clone(), debut: plein(&c.debut), fin: plein(&c.fin), contrat: Some(c), paies: Vec::new() });
     }
     for p in paies {
-        let (s, d, f, o) = (p.salarie.clone(), iso(p.paie.debut), iso(p.paie.fin), p.paie.numero_objet.clone().unwrap_or_default());
+        let (s, d, f, o) = (p.salarie.clone(), iso(p.paie.debut), iso(p.paie.fin), plein(&p.paie.numero_objet));
         let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].debut == d && groupes[i].fin == f).collect();
         // Le contrat qu'un bulletin atteste porte la periode du mois ; la paie declaree, le contrat entier : la periode
         // du bulletin dans le contrat declare, et l'engagement prend les dates du contrat.
-        if candidats.is_empty() && !d.is_empty() && !declaree_par_bulletin(&p) {
+        if candidats.is_empty() && d.is_some() && !declaree_par_bulletin(&p) {
             candidats = (0..groupes.len())
                 .filter(|&i| {
                     let g = &groupes[i];
@@ -269,7 +281,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
                         && g.contrat.as_ref().is_some_and(|c| c.contrat.atteste_par == Attestation::Bulletin)
                         && g.salarie == s
                         && d <= g.debut
-                        && (f.is_empty() || g.fin <= f)
+                        && (f.is_none() || g.fin <= f)
                 })
                 .collect();
             if let [i] = candidats.as_slice() {
@@ -283,7 +295,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
             candidats = (0..groupes.len())
                 .filter(|&i| {
                     let g = &groupes[i];
-                    g.salarie == s && g.contrat.as_ref().is_some_and(permanent) && g.debut <= d && (g.fin.is_empty() || (!f.is_empty() && f <= g.fin))
+                    g.salarie == s && g.contrat.as_ref().is_some_and(permanent) && g.debut <= d && (g.fin.is_none() || (f.is_some() && f <= g.fin))
                 })
                 .collect();
         }
@@ -291,7 +303,11 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
             [i] => Some(*i),
             [] => None,
             plusieurs => {
-                let memes: Vec<usize> = plusieurs.iter().copied().filter(|&i| groupes[i].contrat.as_ref().is_some_and(|c| objet(c).eq_ignore_ascii_case(&o))).collect();
+                let meme_objet = |c: &ContratLu| match (plein(&c.contrat.numero_objet), &o) {
+                    (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                    (a, b) => a.is_none() && b.is_none(),
+                };
+                let memes: Vec<usize> = plusieurs.iter().copied().filter(|&i| groupes[i].contrat.as_ref().is_some_and(meme_objet)).collect();
                 (memes.len() == 1).then(|| memes[0])
             }
         };
@@ -321,13 +337,14 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
     let du_permanent: HashSet<(String, String)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
-        .flat_map(|g| mois_de(g).into_iter().chain(std::iter::once(g.debut.chars().take(7).collect())).map(|m| (g.salarie.clone(), m)).collect::<Vec<_>>())
+        .flat_map(|g| mois_de(g).into_iter().chain(g.debut.iter().map(|d| d.chars().take(7).collect())).map(|m| (g.salarie.clone(), m)).collect::<Vec<_>>())
         .collect();
     let (mut a_fondre, mut autres): (Vec<Groupe>, Vec<Groupe>) = groupes.into_iter().partition(|g| match &g.contrat {
         Some(c) => permanent(c),
         None => !g.paies.is_empty() && mois_de(g).into_iter().all(|m| du_permanent.contains(&(g.salarie.clone(), m))),
     });
-    let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().unwrap_or_else(|| g.debut.chars().take(7).collect());
+    // Le premier mois d'un groupe : celui de sa premiere paie, sinon celui de son debut.
+    let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().or_else(|| g.debut.as_ref().map(|d| d.chars().take(7).collect()));
     a_fondre.sort_by_key(|g| (g.salarie.clone(), premier_mois(g)));
     let declare = |g: &Groupe| g.paies.iter().filter(|p| !declaree_par_bulletin(p)).map(|p| p.paie.contrat.clone()).find(|n| !n.is_empty());
     let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone()).filter(|n| !n.is_empty());
@@ -355,9 +372,10 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
         gs.sort_by_key(premier_mois);
         let paies: Vec<PaieLue> = gs.iter().flat_map(|g| g.paies.iter().cloned()).collect();
         let declarees: Vec<&PaieLue> = paies.iter().filter(|p| !declaree_par_bulletin(p)).collect();
-        let debut = declarees.iter().map(|p| iso(p.paie.debut)).find(|d| !d.is_empty()).unwrap_or_else(|| gs.iter().map(|g| g.debut.clone()).min().unwrap_or_default());
+        // Son debut est celui que la DSN declare, sinon le plus tot de ses groupes.
+        let debut = declarees.iter().find_map(|p| iso(p.paie.debut)).or_else(|| gs.iter().filter_map(|g| g.debut.clone()).min());
         // Sa fin est celle que la DSN declare ; un bulletin ne paie que son mois, il ne dit pas quand le contrat finit.
-        let fin = declarees.last().map(|p| iso(p.paie.fin)).unwrap_or_default();
+        let fin = declarees.last().and_then(|p| iso(p.paie.fin));
         // Le contrat entier : ce qu'un bulletin atteste de son seul mois reste a la paie de ce mois.
         let mut contrat = gs.iter().rev().find_map(|g| g.contrat.clone());
         if let Some(c) = contrat.as_mut().filter(|_| gs.len() > 1) {
@@ -371,14 +389,18 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>) -> Result
         .into_iter()
         .map(|g| -> Resultat<Neuf> {
             let dates = g.contrat.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(g.paies.iter().filter_map(|p| p.paie.importe_le.clone()));
-            let le = dates.filter(|x| !x.is_empty()).min().unwrap_or_default();
+            // Le jour ou ses pieces ont ete reprises ; des pieces que rien ne date sont reprises par cet import, aujourd'hui.
+            let le = match dates.filter(|x| !x.is_empty()).min() {
+                Some(l) => l,
+                None => aujourdhui.to_string(),
+            };
             let numero = declare(&g).or_else(|| imprime(&g));
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
             let pieces = Pieces { le, contrat: g.contrat.map(|c| c.contrat), paies };
             let carte = engagement::saisie::Carte {
                 salarie: Some(droit::contexte::IdSalarie::lire(&g.salarie)?),
-                debut: Some(g.debut),
-                fin: Some(g.fin).filter(|f| !f.is_empty()),
+                debut: g.debut,
+                fin: g.fin,
                 numero,
                 ..Default::default()
             };
@@ -416,13 +438,13 @@ impl Ecrit {
 
 /// Ecrit ce que l'apercu `imp` annonce : les fiches (et leur place dans `reponse`), puis les engagements importes
 /// (`engagements_importes` : les contrats des AEM et des bulletins, les paies versees).
-fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Importation, note: &Value) -> R<Ecrit> {
+fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Importation, note: &str) -> R<Ecrit> {
     let aujourdhui = ctx.date;
     // Les fiches, comme celles de l'ecran (`forcer` : une fiche importee avec des anomalies est ecrite quand meme).
     let mut ecrits: BTreeSet<String> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (cle, anomalies) = crate::import::fiche_brute::ecrire_fiche(ctx, a.nom, &a.donnees, note.as_str())?;
+        let (cle, anomalies) = crate::import::proposee::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
         let emplacement = match (a.nom, a.rang) {
             ("entreprise", _) => reponse.entreprise.as_mut(),
             ("salarie", Some(i)) => reponse.salaries.get_mut(i),
@@ -435,7 +457,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         };
         emplacement.cle = cle;
         emplacement.etat = EtatFiche::Creee;
-        emplacement.anomalies = anomalies.iter().map(brut).collect();
+        emplacement.anomalies = anomalies;
         let fichier = match a.nom {
             "entreprise" => "entreprise.json",
             "salarie" => "salaries.json",
@@ -446,8 +468,8 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
     for a in &imp.a_completer {
-        let faits = crate::import::fiche_brute::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
-        if faits.is_empty() {
+        let faits = crate::import::proposee::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
+        if !faits.est_dite() {
             continue;
         }
         let emplacement = match a.nom {
@@ -457,7 +479,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
-            e.completer.retain(|c| faits.contains_key(&c.champ));
+            e.completer.retain(|c| faits.case(&c.champ).is_some() || faits.note(&c.champ).is_some());
         }
         let fichier = match a.nom {
             "entreprise" => "entreprise.json",
@@ -467,7 +489,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier).display().to_string());
         completees += 1;
     }
-    crate::routes::fiches::dater_licences_suivantes(ctx, &imp.licences, note.as_str())?;
+    crate::routes::fiches::dater_licences_suivantes(ctx, &imp.licences, Some(note))?;
     let mut fichiers: Vec<String> = ecrits.into_iter().collect();
     let mut avertissements: Vec<String> = Vec::new();
 
@@ -505,7 +527,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         engagements.push(e);
         *comptes.entry(bloc).or_default() += 1;
     }
-    let compte = |bloc: &str| comptes.get(bloc).copied().unwrap_or(0);
+    let compte = |bloc: &str| -> usize { comptes.iter().filter(|(b, _)| **b == bloc).map(|(_, n)| *n).sum() };
     let (contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf) =
         (compte("declarations"), compte("bulletins"), compte("certificats"), compte("aem_pdf"));
 
@@ -542,7 +564,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         }
     }
     if contrats_aem + contrats_bulletins + contrats_certificats + contrats_aem_pdf + neuves > 0 || importes_avant.is_empty() {
-        let importes = engagements_importes(engagements, par_cle.into_values().collect()).map_err(Echec::from)?;
+        let importes = engagements_importes(engagements, par_cle.into_values().collect(), &le).map_err(Echec::from)?;
         for p in engagement::importe::ecrire_tous(&ctx.racine, importes).map_err(Echec::from)? {
             fichiers.push(p.display().to_string());
         }
@@ -563,10 +585,8 @@ fn depots_attestes_au_journal(ctx: &Contexte) -> R<usize> {
 
 /// LES ECARTS DE CALCUL PARTENT A CHAQUE IMPORT (`import::ecarts`), lus avec les fiches telles que l'import les a
 /// ecrites ; rien ne s'en dit a l'ecran.
-fn rapporter_les_ecarts(ctx: &Contexte) {
-    if let Ok(frais) = Contexte::nouveau(&ctx.racine, Some(ctx.date)) {
-        crate::import::ecarts::rapporter(&frais);
-    }
+fn rapporter_les_ecarts(frais: &Contexte) -> R<usize> {
+    crate::import::ecarts::rapporter(frais)
 }
 fn avertissement_differents(differents: &[String], ou: &str) -> String {
     format!(
@@ -605,11 +625,10 @@ fn copier_repris(ctx: &Contexte, lu: &crate::import::bulletins::DossierLu) -> R<
         }
         std::fs::create_dir_all(&dossier).map_err(|e| en_os(&e, &dossier))?;
         std::fs::copy(source, &cible).map_err(|e| en_os(&e, source))?;
-        if let Ok(m) = std::fs::metadata(source).and_then(|m| m.modified()) {
-            if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&cible) {
-                let _ = f.set_modified(m);
-            }
-        }
+        // La copie garde la date de la piece.
+        let m = std::fs::metadata(source).and_then(|m| m.modified()).map_err(|e| en_os(&e, source))?;
+        let f = std::fs::OpenOptions::new().write(true).open(&cible).map_err(|e| en_os(&e, &cible))?;
+        f.set_modified(m).map_err(|e| en_os(&e, &cible))?;
         copies += 1;
         noms.push(nom.clone());
     }
@@ -618,7 +637,7 @@ fn copier_repris(ctx: &Contexte, lu: &crate::import::bulletins::DossierLu) -> R<
 
 /// `importer` : `{"dossier": ...}`, la boite aux lettres `import/` (vide ou absent : celle de la compagnie) -- la copie
 /// de ce qui est repris, l'apercu relu dans la copie, l'ecriture.
-pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
+pub(crate) fn importer(ctx: &Contexte, charge: &crate::routes::import::ChargeDossier) -> R<Importation> {
     let aujourdhui = ctx.date;
     let dossier = crate::routes::import::dossier_import(ctx, charge)?;
     // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
@@ -657,7 +676,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
     }
     reponse.tri = tri;
     reponse.source = dossier.display().to_string();
-    let note = json!(format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa()));
+    let note = format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa());
     let e = ecrire(ctx, &imp, &mut reponse, &note)?;
     reponse.avertissements.extend(e.avertissements.iter().cloned());
     reponse.contrats_nouveaux = e.contrats_aem;
@@ -675,12 +694,11 @@ pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
     reponse.depots_repris = Some(depots_attestes_au_journal(ctx)?);
     // Ce que les DSN reprises disent de la configuration hors de la fiche (le taux AT/MP, les organismes), lu avec les
     // fiches telles que l'import les a ecrites.
-    if let Ok(frais) = Contexte::nouveau(&ctx.racine, Some(ctx.date)) {
-        let mut faits = crate::import::parametrage::parametrer(&frais);
-        // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
-        faits.extend(crate::import::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date));
-        reponse.parametrage = faits;
-    }
+    let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(Echec::from)?;
+    let mut faits = crate::import::parametrage::parametrer(&frais);
+    // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
+    faits.extend(crate::import::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
+    reponse.parametrage = faits;
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
     let ecrite = |f: &crate::import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);
@@ -700,7 +718,8 @@ pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
     // (`demarrage::TITRE_PROPOSE`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
     // le dit. Lu dans les fiches telles que l'import les a ecrites.
     let (mut proposes, mut sans_titre) = (0, 0);
-    if let Ok(frais) = Contexte::nouveau(&ctx.racine, Some(ctx.date)) {
+    let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(Echec::from)?;
+    {
         for sp in frais.spectacles.values().filter(|sp| !sp.archivee()) {
             if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(crate::import::completer::A_COMPLETER)) {
                 if sp.titre_propose.as_deref().is_some_and(|t| !t.is_empty()) {
@@ -727,6 +746,6 @@ pub(crate) fn importer(ctx: &Contexte, charge: &Value) -> R<Importation> {
         titres
     );
     reponse.fait();
-    rapporter_les_ecarts(ctx);
+    rapporter_les_ecarts(&frais)?;
     Ok(reponse)
 }

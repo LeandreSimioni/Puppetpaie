@@ -1629,7 +1629,7 @@ pub fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         demo: crate::interface::suppression::mention(&ctx.racine).map_err(plain)?,
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
-        commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine),
+        commencer_par_l_import: crate::import::guide::commencer_par_l_import(&ctx.racine).map_err(plain)?,
         historique,
         historique_incomplet,
         salaries,

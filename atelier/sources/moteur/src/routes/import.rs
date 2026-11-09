@@ -8,23 +8,27 @@
 //!
 //! `contrats_nouveaux` : les contrats des AEM deposees que le registre de l'import retient (`import::attestes`) : un
 //! contrat du meme salarie dont les dates chevauchent les siennes l'atteste deja.
+//!
+//! LES FICHES QUE L'IMPORT PROPOSE sont des saisies de leur fiche (`declarations::champs::Saisie`), composees des formes
+//! lues (`import::proposee::de`) ; la convention collective que les pieces declarent les accompagne
+//! (`Apercu::convention`), et c'est sous elle que les metiers se resolvent.
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde::Serialize;
 
 use crate::import::dsn_aem::{self, SalarieDeclare};
-use crate::import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Importation, Origine};
+use crate::import::proposee;
+use crate::import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Importation, Origine};
 use crate::routes::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::routes::catalogue::Route;
+use crate::routes::catalogue::{Ecran, Place};
+use crate::routes::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
+use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec, R};
-use crate::valeur::{valeur_en_texte, vrai};
-use crate::routes::catalogue::{Ecran, Place};
-
-
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
 
@@ -90,30 +94,31 @@ pub const ROUTES: &[Fiche] = &[
         ecran: ECRAN,
     },
 ];
+
 /// Une route de ce module.
-pub fn route(_o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &Value) -> R<Value> {
+pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     // Chaque PDF de la boite aux lettres se releve une fois pour toute la route (`import::releve`).
     let _releves = crate::import::releve::Releves::ouvrir();
-    match nom {
+    let ctx = porte.ctx;
+    match porte.route {
         // `{"dossier": ...}` (vide ou absent : `import/` de la compagnie) : la boite aux lettres entiere, bulletins
         // compris (`import::bulletins`).
-        Route::ImportationApercu => super::en_json(crate::import::bulletins::apercu_dossier(ctx, &dossier_import(ctx, charge)?)?),
+        Route::ImportationApercu => en_json(crate::import::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
         Route::ImportationEtat => {
-            let _: super::SansCharge = super::lire_charge(charge)?;
-            super::en_json(etat_importation(&ctx.racine)?)
+            let _: super::SansCharge = charge.lire()?;
+            en_json(etat_importation(&ctx.racine)?)
         }
-        Route::Importer => super::en_json(crate::import::ecrite::importer(ctx, charge)?),
+        Route::Importer => en_json(crate::import::ecrite::importer(ctx, &charge.lire()?)?),
         // La nature des contrats repris qu'aucun bulletin ne dit.
-        Route::ImportationNature => super::en_json(crate::import::nature::dire(ctx, &super::lire_charge(charge)?)?),
-        autre => Err(Echec { classe: None, message: format!("route inconnue : {}", autre) }),
+        Route::ImportationNature => en_json(crate::import::nature::dire(ctx, &charge.lire()?)?),
+        autre => Err(enveloppe::route_inconnue(autre.nom())),
     }
 }
 
 /// La charge de `importation-apercu` et d'`importer` : le dossier a lire (vide ou absent : la boite aux lettres).
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeDossier {
-    #[serde(default)]
+pub(crate) struct ChargeDossier {
     dossier: Option<String>,
 }
 
@@ -123,18 +128,21 @@ struct ChargeDossier {
 /// cree, et l'apercu (ou l'import) n'a rien a reprendre, au lieu de refuser « dossier absent » ; de meme quand l'ecran le
 /// nomme (`charge.dossier`, le chemin que `importation-etat` lui a donne). Un AUTRE dossier donne qui n'existe pas reste
 /// refuse (`import::tri::trier`).
-pub(crate) fn dossier_import(ctx: &Contexte, charge: &Value) -> R<PathBuf> {
+pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBuf> {
     let boite = ctx.racine.join("import");
-    let charge: ChargeDossier = super::lire_charge(charge)?;
-    let d = match charge.dossier.filter(|s| !s.trim().is_empty()) {
+    let d = match charge.dossier.as_deref().filter(|s| !s.trim().is_empty()) {
         None => boite.clone(),
-        Some(s) => PathBuf::from(crate::routes::depots::normaliser(&s)),
+        Some(s) => PathBuf::from(crate::routes::depots::normaliser(s)),
     };
-    let la_boite = |p: &Path| {
-        p.file_name() == boite.file_name()
-            && p.parent().and_then(|x| x.canonicalize().ok()).is_some_and(|x| ctx.racine.canonicalize().is_ok_and(|r| r == x))
-    };
-    if la_boite(&d) && !d.exists() {
+    // Le dossier nomme est-il la boite : sous la racine de la compagnie, sous son nom. Un parent qui ne se resout pas
+    // n'est pas la racine.
+    let la_boite = d == boite
+        || (d.file_name() == boite.file_name()
+            && match (d.parent().map(Path::canonicalize), ctx.racine.canonicalize()) {
+                (Some(Ok(p)), Ok(r)) => p == r,
+                _ => false,
+            });
+    if la_boite && !d.exists() {
         std::fs::create_dir_all(&d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
     }
     Ok(d)
@@ -142,112 +150,161 @@ pub(crate) fn dossier_import(ctx: &Contexte, charge: &Value) -> R<PathBuf> {
 
 /// Un dossier de travail temporaire du systeme, propre a cet appel (a effacer avant de rendre).
 pub(crate) fn dossier_de_travail() -> PathBuf {
-    let marque = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    // Les nanosecondes depuis 1970 (avant : leur distance) font la marque.
+    let marque = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_nanos(),
+        Err(e) => e.duration().as_nanos(),
+    };
     std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", std::process::id(), marque))
 }
 
-/// Chaque mot d'un texte avec sa première lettre en capitale, `""` s'il manque.
-pub(crate) fn titre_de(v: Option<&Value>) -> String {
-    match v.filter(|x| vrai(x)) {
-        Some(x) => declarations::champs::titre(&valeur_en_texte(x)),
-        None => String::new(),
-    }
+/// Chaque mot d'un texte avec sa première lettre en capitale ; rien s'il manque.
+pub(crate) fn titre_de(v: Option<&str>) -> Option<String> {
+    v.map(str::trim).filter(|t| !t.is_empty()).map(declarations::champs::titre)
 }
 
 /// Les champs DECLARES que la DSN disait autrement que la fiche.
-fn ecarts(nom: &str, fiche: &dyn crate::import::completer::ParCase, declare: &Map<String, Value>, mois: &str) -> R<Vec<Ecart>> {
+fn ecarts(nom: &str, fiche: &Saisie, declare: &Saisie, mois: &str) -> R<Vec<Ecart>> {
     let mut out = Vec::new();
     for c in declarations::champs::fiche(nom)? {
-        let Some(b) = declare.get(&c.cle).filter(|_| c.declare) else { continue };
-        let a = fiche.case(&c.cle).unwrap_or(Value::Null);
+        let (Some(b), Some(a)) = (declare.case(&c.cle).filter(|_| c.declare), fiche.case(&c.cle)) else { continue };
         // Une case vide ou « A COMPLETER » n'est pas un ecart : l'import la complete (`import::completer`).
-        if crate::import::completer::vide(Some(&a)) || valeur_en_texte(&a) == valeur_en_texte(b) {
+        if crate::import::completer::vide(Some(a)) || en_mots(a) == en_mots(b) {
             continue;
         }
-        // Une structure (la banque) ne differe que par ce que la DSN en declare : ses notes et autres cles restent.
-        if let (Value::Object(x), Value::Object(y)) = (&a, b) {
-            if y.iter().all(|(k, v)| x.get(k).map(valeur_en_texte) == Some(valeur_en_texte(v))) {
+        // Une structure (la banque) ne differe que par ce que la DSN en declare : ses notes et autres cases restent.
+        if let (Valeur::Bloc(x), Valeur::Bloc(y)) = (a, b) {
+            if y.cases().iter().all(|(k, v)| x.case(k).map(en_mots) == Some(en_mots(v))) {
                 continue;
             }
         }
-        out.push(Ecart::new(&c.cle, a, DitPar::Dsn { dsn: b.clone(), mois: mois.to_string() }));
+        out.push(Ecart::new(&c.cle, a.clone(), DitPar::Dsn { dsn: b.clone(), mois: mois.to_string() }));
     }
     Ok(out)
 }
 
+/// La fiche d'un salarie telle qu'elle est, case par case.
+fn vue_salarie(ctx: &Contexte, cle: &str) -> R<Saisie> {
+    proposee::de("salarie", &ctx.salaries[cle].champs)
+}
+
+/// CE QU'UNE FICHE NEUVE RECOIT D'UNE DSN, a cote de son identite et de son emploi (`SalarieDeclare::fiche`).
+#[derive(Serialize)]
+struct SalarieDeLaDsn<'a> {
+    nir: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nir_cle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    initiales_contrat: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    date_anciennete: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    statut: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    emploi_affichage: Option<String>,
+    actif: bool,
+}
+
 /// Ce qu'une fiche neuve recoit d'une DSN.
-fn fiche_salarie(decl: &SalarieDeclare) -> R<Map<String, Value>> {
-    let mut f = decl.fiche();
-    f.insert("nir_cle".into(), json!(declarations::champs::cle_nir(&decl.nir).unwrap_or_default()));
-    f.insert("nir".into(), json!(decl.nir));
-    if !decl.initiales.is_empty() {
-        f.insert("initiales_contrat".into(), json!(decl.initiales));
-    }
-    if let Some(j) = decl.premier_contrat {
-        f.insert("date_anciennete".into(), json!(j.iso()));
-    }
-    // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes).
-    let code = decl.emploi.code_emploi_ft.clone().unwrap_or_default();
-    let m = droit::emplois::metier(&code)?;
-    let statut = match &m {
-        Some(m) => json!(m.statut()),
-        None => json!(if decl.emploi.pcs_ese.as_deref().unwrap_or("").starts_with("354") { "artiste" } else { "technicien" }),
+fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
+    let emploi = decl.emploi.as_ref();
+    // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes ; une autre PCS :
+    // technicien) ; sans l'un ni l'autre, rien ne le dit.
+    let m = match emploi.and_then(|e| e.code_emploi_ft.as_deref()) {
+        Some(code) => droit::emplois::metier(code)?,
+        None => None,
     };
-    f.insert("statut".into(), statut);
-    // L'EMPLOI EN CLAIR d'un metier du catalogue : son libelle, au feminin pour une salariee (le sexe que porte son NIR),
-    // comme quand on le choisit dans la fiche (`routes::mois::emploi`) ; la forme declaree reste celle de la DSN. Le metier
-    // est celui du code emploi, sinon celui que nomme l'intitule declare (S21.G00.40.006), s'il en nomme un seul
-    // (`emplois::par_intitule`, comme pour un bulletin).
-    let intitule = decl.emploi.emploi.clone().unwrap_or_default();
-    let du_catalogue = if m.is_some() {
-        Some(code.clone())
-    } else {
-        droit::emplois::par_intitule(&intitule, crate::import::bulletins::compare)?.map(|(c, _)| c)
+    let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_deref())) {
+        (Some(m), _) => Some(m.statut().as_str()),
+        (None, Some(pcs)) if pcs.starts_with("354") => Some("artiste"),
+        (None, Some(_)) => Some("technicien"),
+        (None, None) => None,
     };
-    if let Some(c) = du_catalogue {
-        let femme = declarations::ntt::sexe_de(Some(decl.nir.as_str()), None) == Some("2");
-        let l = droit::emplois::resoudre(&c, None, femme, None)?.emploi_affichage;
-        if !l.is_empty() {
-            f.insert("emploi_affichage".into(), Value::String(l));
+    // L'EMPLOI EN CLAIR d'un metier : son libelle, au feminin pour une salariee (le sexe que porte son NIR), comme quand
+    // on le choisit dans la fiche (`routes::mois::emploi`) ; la forme declaree reste celle de la DSN. Le metier est celui
+    // du code emploi, sinon celui du catalogue que nomme l'intitule declare (S21.G00.40.006), s'il en nomme un seul
+    // (`emplois::par_intitule`, comme pour un bulletin). Le libelle ne depend ni de la convention ni de la qualite de
+    // cadre : il se lit sur le metier.
+    let du_catalogue = match m {
+        Some(m) => Some(m),
+        None => match emploi.and_then(|e| e.emploi.as_deref()) {
+            Some(intitule) => match droit::emplois::par_intitule(intitule, crate::import::bulletins::compare)? {
+                Some((c, _)) => droit::emplois::metier(&c)?,
+                None => None,
+            },
+            None => None,
+        },
+    };
+    let femme = declarations::ntt::sexe_de(Some(decl.nir.as_str()), None) == Some("2");
+    let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
+    let de_la_dsn = SalarieDeLaDsn {
+        nir: &decl.nir,
+        nir_cle: declarations::champs::cle_nir(&decl.nir),
+        initiales_contrat: Some(decl.initiales.as_str()).filter(|i| !i.is_empty()),
+        date_anciennete: decl.premier_contrat.map(|j| j.iso()),
+        statut,
+        emploi_affichage,
+        actif: true,
+    };
+    let mut f = decl.fiche()?;
+    proposee::fondre(&mut f, &proposee::de("salarie", &de_la_dsn)?);
+    f.comblee("salarie")
+}
+
+/// LA FICHE ENTREPRISE QUE LES PIECES DONNENT, a cote de ce qu'elles declarent : son Siret, sa licence, son nom en clair.
+/// La fiche porte un numero de licence, comme quand on le saisit : le premier que les pieces donnent (`licences` :
+/// chaque numero lu, avec le mois ou il apparait, du plus ancien au plus recent), qui vaut de tout temps ; ceux qui le
+/// suivent se datent du mois ou les pieces le changent, a l'ecriture (`Apercu::licences`,
+/// `routes::fiches::dater_licences_suivantes`), comme un numero renouvele se saisit « a partir du ».
+#[derive(Serialize, Default)]
+pub(crate) struct EntrepriseDesPieces {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) siret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) licence_spectacle: Option<String>,
+}
+
+/// La fiche entreprise `f`, comblee de ses formes lisibles ; son nom en clair, celui de sa raison sociale en capitales
+/// initiales, quand rien ne le dit.
+pub(crate) fn entreprise_comblee(f: &Saisie) -> R<Saisie> {
+    let mut f = f.comblee("entreprise")?;
+    if f.mot("nom_affichage").is_none() {
+        if let Some(t) = titre_de(f.mot("raison_sociale").as_deref()) {
+            #[derive(Serialize)]
+            struct Nom {
+                nom_affichage: String,
+            }
+            proposee::fondre(&mut f, &proposee::de("entreprise", &Nom { nom_affichage: t })?);
         }
     }
-    let mut f = crate::import::fiche_brute::combler_affichage("salarie", &f)?;
-    f.insert("actif".into(), json!(true));
     Ok(f)
 }
 
-/// LA LICENCE QUE LES PIECES DONNENT (`licences` : chaque numero lu, avec le mois ou il apparait, du plus ancien au plus
-/// recent). La fiche porte un numero, comme quand on le saisit : le premier, qui vaut de tout temps ; ceux qui le
-/// suivent se datent du mois ou les pieces le changent, a l'ecriture (`Apercu::licences`,
-/// `routes::fiches::dater_licences_suivantes`), comme un numero renouvele se saisit « a partir du ».
-pub(crate) fn poser_licence(f: &mut Map<String, Value>, licences: &[(String, String)]) {
-    if let Some((_, n)) = licences.first() {
-        f.insert("licence_spectacle".into(), json!(n));
-    }
-}
-
 /// La fiche Entreprise que les DSN donnent : ce qu'elles declarent de l'entreprise, son Siret, sa premiere licence.
-fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Map<String, Value>> {
-    let mut e = dsn_aem::fiche_entreprise(&lecture.entreprise);
-    if let (Some(s), Some(n)) = (&lecture.entreprise.siren, &lecture.entreprise.nic) {
-        e.insert("siret".into(), json!(format!("{}{}", s, n)));
-    }
-    poser_licence(&mut e, &lecture.licences);
-    let mut e = crate::import::fiche_brute::combler_affichage("entreprise", &e)?;
-    if e.get("raison_sociale").is_some_and(vrai) && !e.get("nom_affichage").is_some_and(vrai) {
-        let t = titre_de(e.get("raison_sociale"));
-        e.insert("nom_affichage".into(), json!(t));
-    }
-    Ok(e)
+fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Saisie> {
+    let mut e = dsn_aem::fiche_entreprise(&lecture.entreprise)?;
+    let siret = match (&lecture.entreprise.siren, &lecture.entreprise.nic) {
+        (Some(s), Some(n)) => Some(format!("{}{}", s, n)),
+        _ => None,
+    };
+    let pieces = EntrepriseDesPieces { siret, licence_spectacle: lecture.licences.first().map(|l| l.1.clone()) };
+    proposee::fondre(&mut e, &proposee::de("entreprise", &pieces)?);
+    entreprise_comblee(&e)
 }
 
-/// Une fiche que l'import creerait : ou elle va dans la reponse, et ce qu'elle porte (tel quel, les cles
-/// `_vu_dans` comprises, que la reponse ne montre pas).
+/// Une fiche que l'import creerait : ou elle va dans la reponse, et ce qu'elle porte.
 pub(crate) struct ACreer {
     pub(crate) nom: &'static str,
     /// Le rang dans `salaries` ou `spectacles` de la reponse ; rien pour l'entreprise.
     pub(crate) rang: Option<usize>,
-    pub(crate) donnees: Map<String, Value>,
+    pub(crate) donnees: Saisie,
+}
+
+impl ACreer {
+    /// Le NIR de la fiche d'un salarie a creer.
+    pub(crate) fn nir(&self) -> Option<String> {
+        self.donnees.mot("nir")
+    }
 }
 
 /// Ce que l'import ferait : la reponse (`sortie_json.importation`), et ce dont l'ecriture a besoin.
@@ -266,10 +323,13 @@ pub(crate) struct Apercu {
     /// CE QUE L'IMPORT CHANGE AUX CONTRATS DE L'HISTORIQUE : le contrat qu'un certificat atteste, reduit aux mois qu'il atteste
     /// seul ou retire, celui d'une AEM que le bulletin remplace (`import::attestes`).
     pub(crate) contrats_changes: Vec<crate::import::attestes::Change>,
-    /// La suite des licences que les pieces donnent (mois `AAAA-MM`, numero), la plus ancienne d'abord (`poser_licence`).
+    /// La suite des licences que les pieces donnent (mois `AAAA-MM`, numero), la plus ancienne d'abord.
     pub(crate) licences: Vec<(String, String)>,
     /// Les contrats que la DSN declare payes sans que les nets de leur versement se rattachent a eux (`PaieDuContrat::nets`).
     pub(crate) sans_nets: Vec<SansNets>,
+    /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
+    /// `declarations::dsn_lue`), la plus recente ; rien si aucune ne la dit.
+    pub(crate) convention: Option<String>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -304,22 +364,31 @@ impl SansNets {
 
 /// Le salarie qu'une DSN declare, en clair : son nom, son prenom.
 fn libelle_de(i: &declarations::dsn_lue::IndividuDeclare) -> String {
-    format!("{} {}", i.nom.clone().unwrap_or_default(), i.prenom.as_deref().map(declarations::champs::titre).unwrap_or_default())
+    [i.nom.clone(), i.prenom.as_deref().map(declarations::champs::titre)].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
 /// LE NOM QUE LA PERSONNE A DONNE A LA COMPAGNIE (« Ajouter une compagnie ») reste le sien : la fiche que l'import cree
 /// garde son nom et sa raison sociale, que les pieces ecrivent en capitales (S21.G00.06.003) ; changer le nom d'une
 /// fiche demande une date d'effet que l'import ne devine pas.
-pub(crate) fn garder_le_nom(ctx: &Contexte, e: &mut Map<String, Value>) {
-    for (k, c) in [("nom_affichage", &ctx.entreprise.nom_affichage), ("raison_sociale", &ctx.entreprise.raison_sociale.en_texte())] {
-        if let Some(v) = c.remplie().filter(|v| !v.trim().is_empty()) {
-            e.insert(k.into(), Value::from(v));
-        }
+pub(crate) fn garder_le_nom(ctx: &Contexte, e: &mut Saisie) -> R<()> {
+    #[derive(Serialize)]
+    struct Nom {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        nom_affichage: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        raison_sociale: Option<String>,
     }
+    let dit = |v: Option<String>| v.filter(|v| !v.trim().is_empty());
+    let nom = Nom {
+        nom_affichage: dit(ctx.entreprise.nom_affichage.remplie().map(str::to_string)),
+        raison_sociale: dit(ctx.entreprise.raison_sociale.en_texte().remplie().map(str::to_string)),
+    };
+    proposee::fondre(e, &proposee::de("entreprise", &nom)?);
+    Ok(())
 }
 
-/// La cle `_cle_engagement` : (salarie, debut, fin, numero_objet, heures, cachets, jours, str(brut)).
-pub(crate) type CleEngagement = (String, String, String, String, i128, i128, i128, String);
+/// La cle d'une fiche a creer, tant qu'elle n'existe pas.
+pub(crate) const A_CREER: &str = "<a creer>";
 
 /// Les paies versees des engagements importes, une par mois.
 pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieLue>> {
@@ -347,6 +416,23 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
     x
 }
 
+/// UN SPECTACLE QUE L'IMPORT CREE d'un numero d'objet qu'aucune fiche ne porte : sans titre (les pieces n'en impriment
+/// pas, ou il se propose a valider : `declarations::demarrage::TITRE_PROPOSE`), actif s'il a ete declare dans l'annee.
+#[derive(Serialize)]
+pub(crate) struct SpectacleDesPieces {
+    pub(crate) titre: &'static str,
+    pub(crate) numero_objet: String,
+    pub(crate) alias: Vec<String>,
+    pub(crate) actif: bool,
+    pub(crate) note: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) code_analytique: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) titre_propose: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) titre_lu_dans: Option<&'static str>,
+}
+
 /// L'apercu de ce qu'un dossier de DSN et un dossier d'AEM donneraient (l'un ou l'autre peut manquer : rien n'en
 /// vient). `a_venir` : des NIR dont une fiche sera creee d'ailleurs (les bulletins) -- un contrat atteste qui les
 /// porte n'est pas « sans fiche ».
@@ -360,7 +446,7 @@ pub(crate) fn apercu_lu(
 ) -> R<Apercu> {
     let lecture = match &dsn {
         Some(d) => dsn_aem::lire_dsn(d)?,
-        None => Default::default(),
+        None => dsn_aem::LectureDsn::aucune(),
     };
     let mut avertissements: Vec<String> = lecture.illisibles.iter().map(|f| format!("DSN illisible, ignoree : {}", f)).collect();
     // LA FICHE NE PORTE QU'UN ETABLISSEMENT (celui de son NIC, `champs-base.json`, `etablissements`) : des DSN qui en
@@ -377,27 +463,36 @@ pub(crate) fn apercu_lu(
             lecture.nics_siege.iter().cloned().collect::<Vec<_>>().join(", ")
         ));
     }
+    // LES CONVENTIONS QUI DIVERGENT, d'un contrat a l'autre ou d'une DSN a l'autre (`dsn_aem::LectureDsn::conventions`).
+    avertissements.extend(lecture.conventions_divergentes());
 
     // 1. L'entreprise : seulement si la fiche est vide.
     let mut entreprise: Option<FicheImportee> = None;
     let mut a_creer = 0usize;
     let mut a_creer_liste: Vec<ACreer> = Vec::new();
     let mut a_completer: Vec<crate::import::completer::ACompleter> = Vec::new();
-    let vide = Map::new();
+    let vide = Saisie::default();
     if !lecture.entreprise.est_vide() {
         let mut e = fiche_entreprise(&lecture)?;
-        garder_le_nom(ctx, &mut e);
+        garder_le_nom(ctx, &mut e)?;
         if ctx.entreprise.siren.is_none() {
-            let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("entreprise", &e)?;
-            let libelle = e.get("raison_sociale").map_or("?".to_string(), valeur_en_texte);
-            a_creer_liste.push(ACreer { nom: "entreprise", rang: None, donnees: e.clone() });
+            let anomalies = proposee::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let libelle = match e.mot("raison_sociale") {
+                Some(r) => r,
+                None => "?".to_string(),
+            };
             entreprise = Some(FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
+            a_creer_liste.push(ACreer { nom: "entreprise", rang: None, donnees: e });
             a_creer += 1;
         } else {
-            let libelle = ctx.entreprise.raison_sociale.portee().unwrap_or("?").to_string();
-            let ec = ecarts("entreprise", &ctx.entreprise, &dsn_aem::fiche_entreprise(&lecture.entreprise), &lecture.dernier_mois)?;
+            let libelle = match ctx.entreprise.raison_sociale.portee() {
+                Some(r) => r.to_string(),
+                None => "?".to_string(),
+            };
+            let fiche = proposee::de("entreprise", &ctx.entreprise)?;
+            let ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, &lecture.dernier_mois)?;
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::import::completer::champs_a_completer("entreprise", &ctx.entreprise, &e)?;
+            let champs = crate::import::completer::champs_a_completer("entreprise", &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(&lecture.dernier_mois));
             entreprise = Some(f);
             crate::import::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
@@ -418,18 +513,19 @@ pub(crate) fn apercu_lu(
     for decl in ordre {
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = par_nir.get(&decl.nir) {
-            let ec = ecarts("salarie", &ctx.salaries[cle.as_str()].champs, &decl.fiche(), &decl.mois)?;
+            let fiche = vue_salarie(ctx, cle)?;
+            let ec = ecarts("salarie", &fiche, &decl.fiche()?, &decl.mois)?;
             let mut entree = FicheImportee::new("salarie", Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::import::completer::champs_a_completer("salarie", &ctx.salaries[cle.as_str()].champs, &fiche_salarie(decl)?)?;
+            let champs = crate::import::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(&decl.mois));
             crate::import::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
             salaries.push(entree);
             continue;
         }
         let donnees = fiche_salarie(decl)?;
-        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("salarie", &donnees)?;
-        a_creer_liste.push(ACreer { nom: "salarie", rang: Some(salaries.len()), donnees: donnees.clone() });
+        let anomalies = proposee::verifier_comme_a_l_ecriture("salarie", &donnees)?;
         salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        a_creer_liste.push(ACreer { nom: "salarie", rang: Some(salaries.len() - 1), donnees });
         cles_a_venir.insert(decl.nir.clone());
         a_creer += 1;
     }
@@ -459,7 +555,7 @@ pub(crate) fn apercu_lu(
         if c.numero_objet.is_empty() {
             continue;
         }
-        let m: String = c.fin.iso().chars().take(7).collect();
+        let m = c.fin.mois_civil().to_string();
         let i = match objets.iter().position(|o| o.numero == c.numero_objet) {
             Some(i) => i,
             None => {
@@ -485,19 +581,26 @@ pub(crate) fn apercu_lu(
     let mut spectacles = Vec::new();
     for o in &objets {
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {
-            let titre = ctx.spectacles[cle].titre.portee().unwrap_or("?").to_string();
+            let titre = match ctx.spectacles[cle].titre.portee() {
+                Some(t) => t.to_string(),
+                None => "?".to_string(),
+            };
             spectacles.push(FicheImportee::new("spectacle", Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
             continue;
         }
         let source = if o.aem { "AEM" } else { "DSN" };
-        let mut donnees = Map::new();
-        donnees.insert("titre".into(), json!("A COMPLETER"));
-        donnees.insert("numero_objet".into(), json!(o.numero));
-        donnees.insert("alias".into(), json!([]));
-        donnees.insert("actif".into(), json!(o.dernier >= seuil));
-        donnees.insert("note".into(), json!(format!("{} de {} a {} ({} contrat(s))", source, o.premier, o.dernier, o.contrats)));
-        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
-        a_creer_liste.push(ACreer { nom: "spectacle", rang: Some(spectacles.len()), donnees: donnees.clone() });
+        let sp = SpectacleDesPieces {
+            titre: crate::import::completer::A_COMPLETER,
+            numero_objet: o.numero.clone(),
+            alias: Vec::new(),
+            actif: o.dernier >= seuil,
+            note: format!("{} de {} a {} ({} contrat(s))", source, o.premier, o.dernier, o.contrats),
+            code_analytique: None,
+            titre_propose: None,
+            titre_lu_dans: None,
+        };
+        let donnees = proposee::de("spectacle", &sp)?;
+        let anomalies = proposee::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         spectacles.push(FicheImportee::new(
             "spectacle",
             None,
@@ -507,19 +610,15 @@ pub(crate) fn apercu_lu(
             anomalies,
             &donnees,
         ));
+        a_creer_liste.push(ACreer { nom: "spectacle", rang: Some(spectacles.len() - 1), donnees });
         a_creer += 1;
     }
 
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
-    let mut sans_fiche = 0usize;
-    for c in &contrats {
-        if !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&c.nir) {
-            sans_fiche += 1;
-        }
-    }
-    let contrats_du = contrats.iter().map(|c| c.debut).min().map(|d| d.iso()).unwrap_or_default();
-    let contrats_au = contrats.iter().map(|c| c.fin).max().map(|d| d.iso()).unwrap_or_default();
+    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&c.nir)).count();
+    let contrats_du = contrats.iter().map(|c| c.debut).min().map(|d| d.iso());
+    let contrats_au = contrats.iter().map(|c| c.fin).max().map(|d| d.iso());
     if sans_fiche > 0 {
         avertissements.push(format!(
             "{} contrat(s) atteste(s) portent un NIR qu'aucune DSN ne declare : ils ne seront pas rattaches a une fiche, donc pas comptes dans les droits. Creer la fiche a la main, puis reimporter.",
@@ -529,14 +628,16 @@ pub(crate) fn apercu_lu(
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
     let deja_paies: HashSet<(String, String, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieLue::cle).collect();
+    let cle_de = |nir: &str| match par_nir.get(nir) {
+        Some(c) => c.clone(),
+        None => A_CREER.to_string(),
+    };
     let mut paies_nouvelles = 0usize;
-    for ((mois, nir, contrat), _) in &lecture.paies {
-        let cle = par_nir.get(nir);
-        if cle.is_none() && !cles_a_venir.contains(nir) {
+    for (mois, nir, contrat) in lecture.paies.keys() {
+        if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
             continue;
         }
-        let salarie = cle.cloned().unwrap_or_else(|| "<a creer>".to_string());
-        if !deja_paies.contains(&(mois.clone(), salarie, contrat.clone())) {
+        if !deja_paies.contains(&(mois.clone(), cle_de(nir), contrat.clone())) {
             paies_nouvelles += 1;
         }
     }
@@ -551,8 +652,7 @@ pub(crate) fn apercu_lu(
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
-        let cle = par_nir.get(nir);
-        if cle.is_none() && !cles_a_venir.contains(nir) {
+        if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
             continue;
         }
         let c = v.contrat.as_ref();
@@ -561,12 +661,15 @@ pub(crate) fn apercu_lu(
             objets_aem.get(&(nir.clone(), debut.iso(), fin.iso())).cloned()
         });
         if v.paie.nets.is_none() {
-            let qui = lecture.salaries.iter().find(|s| s.nir == *nir).map(|s| libelle_de(&s.individu)).unwrap_or_else(|| nir.clone());
+            let qui = match lecture.salaries.iter().find(|s| s.nir == *nir) {
+                Some(s) => libelle_de(&s.individu),
+                None => nir.clone(),
+            };
             sans_nets.push(SansNets { mois: mois.clone(), nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
         let paie = paie_declaree(v, objet);
-        paies.push(engagement::importe::PaieLue { mois: mois.clone(), salarie: cle.cloned().unwrap_or_else(|| "<a creer>".to_string()), paie });
+        paies.push(engagement::importe::PaieLue { mois: mois.clone(), salarie: cle_de(nir), paie });
     }
     let reponse = Importation {
         source: source.to_string(),
@@ -585,7 +688,18 @@ pub(crate) fn apercu_lu(
         rien_a_faire,
         ..Importation::default()
     };
-    Ok(Apercu { reponse, a_creer: a_creer_liste, a_completer, contrats, paies, contrats_attestes: Vec::new(), contrats_changes: Vec::new(), licences: lecture.licences.clone(), sans_nets })
+    Ok(Apercu {
+        reponse,
+        a_creer: a_creer_liste,
+        a_completer,
+        contrats,
+        paies,
+        contrats_attestes: Vec::new(),
+        contrats_changes: Vec::new(),
+        licences: lecture.licences.clone(),
+        sans_nets,
+        convention: lecture.entreprise.idcc.clone(),
+    })
 }
 
 /// `etat_importation` : ce qui a deja ete repris, d'apres les engagements importes, pour que la page le dise :
@@ -598,34 +712,36 @@ pub(crate) fn apercu_lu(
 /// - `editeur` : ce qui attend l'editeur -- les incidents et les signalements partis (ou a partir) de ce poste qui
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
 ///   compte ceux qui n'ont pas de reponse.
-///
-/// Ces ajouts ne levent jamais : une ligne qui n'a pas la forme attendue n'est pas comptee.
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine).map_err(Echec::from)?;
     let paies = engagement::importe::paies_lues(racine).map_err(Echec::from)?;
-    let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(paies.iter().filter_map(|p| p.paie.importe_le.clone())).max().unwrap_or_default();
     let plein = |t: &str| Some(t.to_string()).filter(|t| !t.is_empty());
-    let debut = contrats.iter().filter_map(|c| c.debut.as_deref().and_then(plein)).min().unwrap_or_default();
-    let fin = contrats.iter().filter_map(|c| c.fin.as_deref().and_then(plein)).max().unwrap_or_default();
+    let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(paies.iter().filter_map(|p| p.paie.importe_le.clone())).filter(|t| !t.is_empty()).max();
+    let debut = contrats.iter().filter_map(|c| c.debut.as_deref().and_then(plein)).min();
+    let fin = contrats.iter().filter_map(|c| c.fin.as_deref().and_then(plein)).max();
     let salaries: HashSet<&str> = contrats.iter().map(|c| c.salarie.as_str()).filter(|s| !s.is_empty()).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
-    let editeur = attend_l_editeur(racine);
+    let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
-    let reprises = reprises_faites(racine, &contrats, &paies);
+    let reprises = reprises_faites(racine, &contrats, &paies)?;
     // L'historique repris en une ligne (`repris_dit`), et son titre : le jour de la derniere reprise.
-    let de = |source: &str| reprises.iter().find(|r| r.source == source);
-    let nombre = |source: &str| de(source).map_or(0, |r| r.nombre);
+    let nombre = |source: &str| -> usize { reprises.iter().filter(|r| r.source == source).map(|r| r.nombre).sum() };
+    let declarations: usize = reprises.iter().filter(|r| r.source == "DSN").filter_map(|r| r.declarations).sum();
     let quoi: Vec<String> = [
         n_mots(nombre("bulletins"), "bulletin"),
-        n_mots(de("DSN").and_then(|r| r.declarations).unwrap_or(0) + nombre("AEM"), "déclaration"),
+        n_mots(declarations + nombre("AEM"), "déclaration"),
         n_mots(nombre("certificats"), "certificat"),
         n_mots(contrats.len(), "contrat"),
     ]
     .into_iter()
     .filter(|x| !x.is_empty())
     .collect();
-    let mut bornes: Vec<String> =
-        [&debut, &fin].into_iter().chain(reprises.iter().flat_map(|r| [&r.du, &r.au])).filter(|x| !x.is_empty()).map(|x| x.chars().take(7).collect()).collect();
+    let mut bornes: Vec<String> = debut
+        .iter()
+        .chain(fin.iter())
+        .chain(reprises.iter().flat_map(|r| r.du.iter().chain(r.au.iter())))
+        .map(|x| x.chars().take(7).collect())
+        .collect();
     bornes.sort();
     let periode = match (bornes.first(), bornes.last()) {
         (Some(du), Some(au)) if du == au => format!(", en {}", socle::mois::Mois::en_clair(du)),
@@ -633,15 +749,17 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         _ => String::new(),
     };
     let repris_dit = (!quoi.is_empty()).then(|| format!("{}{}", quoi.join(", "), periode));
-    let le = std::iter::once(importe_le.clone()).chain(reprises.iter().map(|r| r.le.clone())).filter(|x| !x.is_empty()).max();
+    let le = importe_le.iter().chain(reprises.iter().filter_map(|r| r.le.as_ref())).max();
     let repris_titre = match le {
         Some(l) => format!("Historique repris le {}", super::quand(&l.chars().take(10).collect::<String>())),
         None => "Historique repris".to_string(),
     };
-    let phrase = if importe_le.is_empty() {
-        "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string()
-    } else {
-        format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", super::quand(&importe_le), contrats.len(), salaries.len(), super::quand(&debut), super::quand(&fin))
+    let phrase = match (&importe_le, &debut, &fin) {
+        (Some(le), Some(du), Some(au)) => {
+            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", super::quand(le), contrats.len(), salaries.len(), super::quand(du), super::quand(au))
+        }
+        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", super::quand(le), contrats.len(), salaries.len()),
+        (None, _, _) => "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string(),
     };
     Ok(EtatImportation {
         phrase,
@@ -656,7 +774,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         editeur,
         pastille_repris: super::Pastille::de("fait", "fait"),
         attend_editeur,
-        a_dire: crate::import::nature::a_dire(racine),
+        a_dire: crate::import::nature::a_dire(racine)?,
         guide: crate::import::guide::guide(),
         repris_dit,
         repris_titre,
@@ -664,15 +782,15 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
 }
 
 /// `importation-etat` : ce qui a deja ete repris, et ce que la page en dit.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 struct EtatImportation {
     phrase: String,
-    importe_le: String,
+    importe_le: Option<String>,
     contrats: usize,
     salaries: usize,
     objets: usize,
-    du: String,
-    au: String,
+    du: Option<String>,
+    au: Option<String>,
     dossier: String,
     reprises: Vec<RepriseVue>,
     editeur: Vec<MessageEditeur>,
@@ -687,15 +805,21 @@ struct EtatImportation {
     repris_titre: String,
 }
 
+impl Dite for EtatImportation {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
 /// Une source reprise, telle que la page la lit.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 struct RepriseVue {
     source: &'static str,
     quoi: &'static str,
     nombre: usize,
-    du: String,
-    au: String,
-    le: String,
+    du: Option<String>,
+    au: Option<String>,
+    le: Option<String>,
     /// Les DSN reprises : une par mois declare.
     #[serde(skip_serializing_if = "Option::is_none")]
     declarations: Option<usize>,
@@ -707,10 +831,10 @@ struct RepriseVue {
 }
 
 /// Un incident ou un signalement de ce poste qui parle de l'import, tel que la page le lit.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 struct MessageEditeur {
     canal: &'static str,
-    quand: String,
+    quand: Option<String>,
     resume: String,
     parti: bool,
     repondu: bool,
@@ -729,7 +853,7 @@ struct Reprise {
 
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
-fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], paies: &[engagement::importe::PaieLue]) -> Vec<RepriseVue> {
+fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], paies: &[engagement::importe::PaieLue]) -> R<Vec<RepriseVue>> {
     use engagement::importe::{Attestation, Declaration};
     let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::default(), Reprise::default(), Reprise::default());
     for c in contrats {
@@ -756,17 +880,15 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
             bulletins.voir(Some(&x.mois), Some(&x.mois), le);
         }
     }
-    let copies = std::fs::read_dir(racine.join("historique").join("bulletins"))
-        .map(|d| d.flatten().filter(|e| e.path().is_file()).count())
-        .unwrap_or(0);
+    let copies = copies_reprises(racine)?;
     let mut out = Vec::new();
     let base = |source: &'static str, quoi: &'static str, r: &Reprise| RepriseVue {
         source,
         quoi,
         nombre: r.nombre,
-        du: r.du.clone().unwrap_or_default(),
-        au: r.au.clone().unwrap_or_default(),
-        le: r.le.clone().unwrap_or_default(),
+        du: r.du.clone(),
+        au: r.au.clone(),
+        le: r.le.clone(),
         declarations: None,
         contrats: None,
         copies: None,
@@ -782,61 +904,82 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
     }
     if bulletins.nombre > 0 || contrats_bulletins.nombre > 0 || copies > 0 {
         let mut b = RepriseVue { contrats: Some(contrats_bulletins.nombre), copies: Some(copies), ..base("bulletins", "bulletins de paie", &bulletins) };
-        if b.le.is_empty() {
-            b.le = contrats_bulletins.le.clone().unwrap_or_default();
+        if b.le.is_none() {
+            b.le = contrats_bulletins.le.clone();
         }
         out.push(b);
     }
-    out
+    Ok(out)
+}
+
+/// Les pieces copiees sous `historique/bulletins/` : aucune tant que le dossier n'existe pas. Un dossier qui ne se lit
+/// pas se refuse.
+fn copies_reprises(racine: &Path) -> R<usize> {
+    let dossier = racine.join("historique").join("bulletins");
+    if !dossier.exists() {
+        return Ok(0);
+    }
+    let disque = |e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e));
+    let mut n = 0;
+    for e in std::fs::read_dir(&dossier).map_err(disque)? {
+        if e.map_err(disque)?.path().is_file() {
+            n += 1;
+        }
+    }
+    Ok(n)
 }
 
 /// `editeur` de `importation-etat` : les incidents (`journal/incidents.json`) et les signalements
 /// (`journal/signalements.json`) de ce poste qui parlent de l'import -- un incident de nature `refus` n'en est pas : la
-/// phrase a ete dite a l'ecran. Rien que ce qu'ils portent deja (caviarde).
-fn attend_l_editeur(racine: &Path) -> Vec<MessageEditeur> {
+/// phrase a ete dite a l'ecran. Rien que ce qu'ils portent deja (caviarde). Leurs lignes sont celles que
+/// `compagnie::incidents` et `compagnie::problemes` rendent.
+fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
     let parle_d_import = |t: &str| {
         let t = t.to_lowercase();
         t.contains("import") || t.contains("repris")
     };
-    let texte = |v: &Value, cle: &str| v.get(cle).and_then(Value::as_str).unwrap_or("").to_string();
+    let texte = |v: &serde_json::Value, cle: &str| v.get(cle).and_then(serde_json::Value::as_str).map(str::to_string);
     let mut out = Vec::new();
-    for l in crate::compagnie::incidents::lire(racine, None, false).unwrap_or_default() {
+    for l in crate::compagnie::incidents::lire(racine, None, false)? {
         let (ou_, genre, resume) = (texte(&l, "ou"), texte(&l, "genre"), texte(&l, "resume"));
         // Les ecarts de calcul de l'import sont l'etude de l'editeur (`import::ecarts`) : rien n'y attend la compagnie.
-        if ou_ == crate::import::ecarts::OU {
+        if ou_.as_deref() == Some(crate::import::ecarts::OU) {
             continue;
         }
         // Un refus (un dossier mal tape, un export absent) se dit a l'ecran ; il n'attend pas l'editeur.
-        if l.get("quoi").and_then(Value::as_str) == Some(crate::compagnie::incidents::REFUS) || !parle_d_import(&format!("{} {}", ou_, genre)) {
+        let de = [ou_.clone(), genre.clone()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        if texte(&l, "quoi").as_deref() == Some(crate::compagnie::incidents::REFUS) || !parle_d_import(&de) {
             continue;
         }
-        let etat = l.get("envoi").map_or(String::new(), |e| texte(e, "etat"));
-        if etat == crate::compagnie::incidents::SANS_OBJET {
+        let etat = l.get("envoi").and_then(|e| texte(e, "etat"));
+        if etat.as_deref() == Some(crate::compagnie::incidents::SANS_OBJET) {
             continue;
         }
-        out.push(message("incident", texte(&l, "quand"), if resume.is_empty() { genre } else { resume }, etat == crate::compagnie::incidents::DEPOSE, false));
+        let dit = [resume, genre].into_iter().flatten().find(|x| !x.is_empty());
+        out.push(message("incident", texte(&l, "quand"), dit, etat.as_deref() == Some(crate::compagnie::incidents::DEPOSE), false));
     }
     for s in crate::compagnie::problemes::signalements(racine) {
-        let debut = texte(&s, "texte");
-        if !parle_d_import(&debut) {
-            continue;
-        }
-        let (parti, repondu) = (s.get("etat").and_then(Value::as_str) == Some("arrive"), s.get("reponse").is_some_and(vrai));
-        out.push(message("signalement", texte(&s, "quand"), debut, parti, repondu));
+        let Some(debut) = texte(&s, "texte").filter(|t| parle_d_import(t)) else { continue };
+        let (parti, repondu) = (texte(&s, "etat").as_deref() == Some("arrive"), s.get("reponse").is_some_and(crate::valeur::vrai));
+        out.push(message("signalement", texte(&s, "quand"), Some(debut), parti, repondu));
     }
-    out
+    Ok(out)
 }
 
 /// Un message a l'editeur, son titre et sa pastille : la reponse recue, faite ; le reste attend l'editeur, rien que la
 /// compagnie ait a faire.
-fn message(canal: &'static str, quand: String, resume: String, parti: bool, repondu: bool) -> MessageEditeur {
+fn message(canal: &'static str, quand: Option<String>, resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
     let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
-    let titre_dit = if quand.is_empty() { quoi.to_string() } else { format!("{} du {}", quoi, super::quand(&quand)) };
+    let titre_dit = match &quand {
+        Some(q) => format!("{} du {}", quoi, super::quand(q)),
+        None => quoi.to_string(),
+    };
     let pastille = match (repondu, parti) {
         (true, _) => super::Pastille::de("fait", "réponse reçue"),
         (false, true) => super::Pastille::de("information", "attend l'éditeur"),
         (false, false) => super::Pastille::de("information", "pas encore parti"),
     };
+    let resume: String = resume.into_iter().collect();
     MessageEditeur { canal, quand, resume, parti, repondu, pastille, titre_dit }
 }
 

@@ -811,7 +811,9 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
     // LES ECARTS DE CALCUL DES PAIES IMPORTEES qui ne sont pas encore comparees (`import::ecarts::noter`) : une
     // compagnie completee depuis l'import compare celles que le calcul refusait. Ils partent avec les autres incidents.
-    crate::import::ecarts::noter(ctx);
+    if let Err(e) = crate::import::ecarts::noter(ctx) {
+        r.incidents.push(format!("Écarts de calcul de l'import : {}", e.message));
+    }
 
     // LE TAUX COLLECTIF DE L'ARRETE pour un risque « TC », au 1er janvier de l'annee en cours et, des que son bareme est
     // livre, de la suivante (`routes::atmp::inscrire_l_arrete`) : il s'inscrit dans la case, qui le montre.

@@ -23,11 +23,6 @@ pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
     serde_json::to_value(v).map_err(|e| Echec::from(e.to_string()))
 }
 
-/// Ce qu'une route pas encore branchee a rendu, pour la porte.
-pub(super) fn brute(rendu: R<Value>) -> R<super::Rendu> {
-    rendu.map(super::Rendu::brut)
-}
-
 /// `Pastille::de`, en JSON.
 pub(crate) fn pastille(etat: &str, mots: &str) -> Value {
     json!(Pastille::de(etat, mots))
