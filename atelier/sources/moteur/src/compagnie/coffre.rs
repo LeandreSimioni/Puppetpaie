@@ -550,8 +550,12 @@ pub fn dossier_portable() -> Option<PathBuf> {
     base.join(MARQUEUR_PORTABLE).is_file().then_some(base)
 }
 
+/// L'identifiant du paquet de la fenetre (`identifier` de `fenetre/tauri.conf.json`) : il nomme son dossier sous macOS.
+pub(crate) const IDENTIFIANT_DU_PAQUET: &str = "fr.puppetpaie.fenetre";
+
 /// Ou vit la cle du poste : `PUPPETPAIE_CLE` la deplace ; sinon le dossier portable (`dossier_portable`), s'il y en a
-/// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
+/// un ; sinon la machine, `%APPDATA%\PuppetPaie` (Windows), `~/Library/Application Support/fr.puppetpaie.fenetre`
+/// (macOS) ou `$XDG_CONFIG_HOME/puppetpaie` (`~/.config/puppetpaie`).
 /// Le dossier de la personne : `HOME` (vide, la racine), sinon `USERPROFILE` sous Windows, sinon ce que le systeme en dit,
 /// sinon la racine.
 pub(crate) fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
@@ -597,6 +601,9 @@ pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Pa
     // defaut (`atelier/reference/sources/dossiers-de-configuration/`) :
     // - Windows, `APPDATA` : FOLDERID_RoamingAppData, « Default Path %APPDATA% (%USERPROFILE%\AppData\Roaming) »
     //   (Microsoft, KNOWNFOLDERID) ;
+    // - macOS, `~/Library/Application Support/<identifiant du paquet>` : « Contains all app-specific data and support
+    //   files » ; « all of these items should be put in a subdirectory whose name matches the bundle identifier of the
+    //   app » (Apple, macOS Library Directory Details) ;
     // - ailleurs, `XDG_CONFIG_HOME` : « If $XDG_CONFIG_HOME is either not set or empty, a default equal to $HOME/.config
     //   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of
     //   these variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
@@ -606,6 +613,9 @@ pub fn dossier_cle_de(env: &dyn Fn(&str) -> Option<String>, portable: Option<&Pa
             Some(_) | None => maison().join("AppData").join("Roaming"),
         };
         return normal(base.join("PuppetPaie"));
+    }
+    if cfg!(target_os = "macos") {
+        return normal(maison().join("Library").join("Application Support").join(IDENTIFIANT_DU_PAQUET));
     }
     let base = match env("XDG_CONFIG_HOME") {
         Some(b) if Path::new(&b).is_absolute() => PathBuf::from(b),

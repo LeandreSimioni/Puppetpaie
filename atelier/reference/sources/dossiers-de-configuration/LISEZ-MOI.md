@@ -14,6 +14,7 @@ leurs condensats SHA-256 sont donnés ici.
 |---|---|---|---|
 | `freedesktop-basedir-spec-20210508.txt` | https://specifications.freedesktop.org/basedir-spec/0.8/ | XDG Base Directory Specification, version 0.8, 08/05/2021 | `87baabbcfb63f544bde60c461f327497704e6de61cb16337635cde80ed19fd73` |
 | `microsoft-knownfolderid-20230830.txt` | https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid | mise à jour de la page : 30/08/2023 | `441bf797989b85c3d0505d29e67cc1b9071fef558527d8d53252630bf63229ac` |
+| `apple-macos-library-directory-details-20180409.txt` (relevé le 09/11/2026, par `curl`) | https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/MacOSXDirectories/MacOSXDirectories.html | « macOS Library Directory Details », File System Programming Guide (archive d'Apple), « Updated: 2018-04-09 » | `2d3e6a8b2b314f593c0172390e3867a2214161fb35cbde98698d9f9db52756e8` |
 
 ## Ce qu'on en lit
 
@@ -32,3 +33,9 @@ leurs condensats SHA-256 sont donnés ici.
 - **Le profil de la fenêtre, Windows**, `microsoft-knownfolderid-20230830.txt` l. 614-618 : « FOLDERID_LocalAppData […]
   Default Path %LOCALAPPDATA% (%USERPROFILE%\AppData\Local) ». Le moteur prend `LOCALAPPDATA` s'il est dit,
   `%USERPROFILE%\AppData\Local` sinon.
+- **macOS, la clé du poste et le profil de la fenêtre**, `apple-macos-library-directory-details-20180409.txt` l. 26 :
+  « Application Support | Contains all app-specific data and support files. » ; l. 28 : « By convention, all of these
+  items should be put in a subdirectory whose name matches the bundle identifier of the app. » L'exemple de la page place
+  ces fichiers dans `~/Library/Application Support/com.example.MyApp/`. Le moteur prend donc
+  `~/Library/Application Support/fr.puppetpaie.fenetre` (l'identifiant de la fenêtre, `fenetre/tauri.conf.json`), pour
+  la clé du poste (`coffre.rs`, `dossier_cle_de`) comme pour le profil (`navigateur.rs`, `dossier_utilisateur`).
