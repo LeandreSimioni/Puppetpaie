@@ -519,9 +519,6 @@ pub enum Modele {
     Complet,
 }
 
-/// La case qui porte le choix, dans la fiche entreprise comme dans la fiche salarie.
-pub const CASE_MODELE: &str = "modele_bulletin";
-
 impl Modele {
     pub const TOUS: [Modele; 2] = [Modele::Simplifie, Modele::Complet];
 
@@ -575,10 +572,18 @@ impl Modele {
 /// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie. Sans choix,
 /// le bulletin est celui de l'arrete du 25/02/2016, art. 1, I, le simplifie, sans l'annexe que seul le complet ajoute.
 pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> Resultat<Modele> {
-    Ok(match (modele_du_salarie(sal)?, Modele::du_choix(ent.modele_bulletin.dite())) {
-        (Some(m), _) | (None, Some(m)) => m,
-        (None, None) => Modele::Simplifie,
+    Ok(match modele_du_salarie(sal)? {
+        Some(m) => m,
+        None => modele_de_la_compagnie(ent),
     })
+}
+
+/// Le modele de la compagnie : celui qu'elle a choisi ; sans choix, le simplifie de l'arrete du 25/02/2016, art. 1, I.
+pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> Modele {
+    match Modele::du_choix(ent.modele_bulletin.dite()) {
+        Some(m) => m,
+        None => Modele::Simplifie,
+    }
 }
 
 /// Le style d'un titre de rubrique du modele (« COTISATIONS ET CONTRIBUTIONS SOCIALES OBLIGATOIRES », « IMPÔT SUR LE

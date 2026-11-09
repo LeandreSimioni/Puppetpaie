@@ -15,9 +15,9 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::{repr_flottant, Jour};
 use engagement::Engagement;
 use socle::num::{dec_f64, Decimal};
-use socle::echec::{Classe, Refus};
+use socle::echec::{Classe, Echec};
 
-type R<T> = Result<T, Refus>;
+type R<T> = Result<T, Echec>;
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
 
@@ -296,7 +296,7 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
     if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
-        return Err(Refus {
+        return Err(Echec {
             classe: Some(Classe::Illisible),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
@@ -307,7 +307,7 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
     }
     let n = eng.dates_travail.len() as i64;
     if eng.cachets != n || eng.jours != n {
-        return Err(Refus {
+        return Err(Echec {
             classe: Some(Classe::Illisible),
             message: format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
@@ -374,7 +374,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Decimal::ZERO,
                 None => {
-                    return Err(Refus {
+                    return Err(Echec {
                         classe: Some(Classe::Illisible),
                         message: format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
@@ -405,7 +405,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 Some(n) => n.to_string(),
                 None => texte_requis(&paie.salarie.nom, "nom")?,
             };
-            return Err(Refus {
+            return Err(Echec {
                 classe: Some(Classe::Illisible),
                 message: format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
@@ -437,8 +437,8 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
     Ok(out)
 }
 
-fn cle_absente(k: &str) -> Refus {
-    Refus { classe: Some(Classe::Manque), message: socle::fichiers::absent(k) }
+fn cle_absente(k: &str) -> Echec {
+    Echec { classe: Some(Classe::Manque), message: socle::fichiers::absent(k) }
 }
 
 // --------------------------------------------------------------------- rendu
@@ -613,7 +613,7 @@ pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) 
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
 pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(Refus {
+        return Err(Echec {
             classe: Some(Classe::Illisible),
             message: socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent"),
         });

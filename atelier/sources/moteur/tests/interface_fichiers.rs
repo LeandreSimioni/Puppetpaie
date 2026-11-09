@@ -251,7 +251,7 @@ fn retour_et_echap_ramenent_des_pages_du_mot_de_passe_au_choix_de_la_compagnie()
     chaque_geste_appele_est_dans_la_cale(&racine_servie(&f, &jeton), "l'accueil");
 
     // Une compagnie reelle neuve, par sa route : la fenetre l'ouvre sur le choix du mot de passe.
-    let v = route_de_la_page(&f, &jeton, "compagnie-ajouter", serde_json::json!({"nom": "Compagnie du Retour"}));
+    let v = route_de_la_page(&f, &jeton, "compagnie-ajouter", serde_json::json!({"nom": "Compagnie du Retour", "venue": "neuve"}));
     assert_eq!(v["ok"], serde_json::json!(true), "{}", v);
     assert_eq!(poste(&f, &jeton, "choisir", serde_json::json!([v["resultat"]["id"]]))["ok"], serde_json::json!(true));
     let choix = racine_servie(&f, &jeton);

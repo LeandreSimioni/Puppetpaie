@@ -346,7 +346,7 @@ async function ouvrirCourts(format, phrase) {
       <td>${echapper(l.zone)}</td><td>${echapper(l.long)}</td>
       <td><input type="text" class="x-court" data-i="${i}" size="${l.largeur + 2}" value="${echapper(l.court ?? l.propose)}"></td>
     </tr>`).join("");
-  ouvrirBoite(`<h3>Libellés courts — ${echapper(r.nom)}</h3>
+  ouvrirBoite(`<h3>Libellés courts — ${echapper(r.nom || "")}</h3>
     <div class="encart" id="x-courts-dit">${echapper(phrase || r.phrase)}</div>
     <table class="tableau"><tr><th>Zone</th><th>Libellé</th><th>Valeur courte</th></tr>${lignes}</table>
     <div class="actions">

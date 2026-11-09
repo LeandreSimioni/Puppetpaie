@@ -298,3 +298,44 @@ pub fn ou<'a>(v: &'a Value, defaut: &'a Value) -> &'a Value {
         defaut
     }
 }
+
+// ------------------------------------------------------------ les valeurs portees d'une fiche
+
+/// UNE VALEUR QU'UNE FICHE DATEE A PORTEE, en JSON.
+pub(crate) struct Portee {
+    pub valeur: Value,
+}
+
+/// TOUTES LES VALEURS QU'UNE FICHE DATEE A PORTEES, champ par champ dans l'ordre de sa forme, chacune dans l'ordre ecrit
+/// (`droit::fiche::VoirListe`) : les gardes qui cherchent tout ce qui nomme une personne, a quelque date que ce soit. Un
+/// champ que la fiche ne dit pas n'y est pas.
+pub(crate) fn portees<F: droit::fiche::FicheDatee>(f: &F) -> Vec<(&'static str, Vec<Portee>)> {
+    struct Toutes(Vec<(&'static str, Vec<Portee>)>);
+    impl droit::fiche::VoirListe for Toutes {
+        fn liste<T: serde::Serialize>(&mut self, cle: &'static str, liste: &[droit::fiche::Datee<T>]) {
+            if !liste.is_empty() {
+                self.0.push((cle, liste.iter().map(|e| Portee { valeur: socle::ecriture::en_valeur(&e.valeur) }).collect()));
+            }
+        }
+    }
+    let mut t = Toutes(Vec::new());
+    f.voir_listes(&mut t);
+    t.0
+}
+
+/// Les valeurs que le champ `cle` a portees (`portees`).
+pub(crate) fn valeurs_portees<'a>(p: &'a [(&'static str, Vec<Portee>)], cle: &'a str) -> impl Iterator<Item = &'a Value> + 'a {
+    p.iter().filter(move |(c, _)| *c == cle).flat_map(|(_, l)| l.iter().map(|x| &x.valeur))
+}
+
+// ------------------------------------------------------------ une charge, un fichier
+
+/// Le JSON d'un fichier : `None` quand le fichier est absent, illisible comme texte ou comme JSON ; un refus du disque se
+/// leve.
+pub(crate) fn lire_tolerant(p: &Path) -> R<Option<Value>> {
+    if !p.exists() {
+        return Ok(None);
+    }
+    let octets = std::fs::read(p).map_err(|e| erreur(socle::echec::Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+    Ok(String::from_utf8(octets).ok().and_then(|t| serde_json::from_str(&t).ok()))
+}

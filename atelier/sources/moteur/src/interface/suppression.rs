@@ -256,8 +256,8 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
 /// LA REPONSE A LA QUESTION DU DEBLOCAGE : `garder` et `ne_pas_garder`, des identifiants de tuile (`fictive:<dossier>`)
 /// parmi `a_garder`. Chacune est gardee ou supprimee ; une fictive ajoutee nommee nulle part reste, et la question
 /// reviendra pour elle. `lacher` : ce que la fenetre tient de chacune (sa file sur le fil des calculs), avant qu'elle
-/// bouge. Rend `{"gardees", "supprimees", "erreurs"}` : un echec sur l'une n'arrete pas les autres.
-pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], poste: &Poste, lacher: &dyn Fn(&Path)) -> Result<Value, String> {
+/// bouge. Rend ce qui est garde, supprime, et chaque echec : un echec sur l'une n'arrete pas les autres.
+pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], poste: &Poste, lacher: &dyn Fn(&Path)) -> Result<Reponse, String> {
     if crate::compagnie::bridage::est_bride_de(inst) {
         return Err("Le logiciel est bridé : ses compagnies ajoutées restent des compagnies fictives.".into());
     }
@@ -274,17 +274,32 @@ pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], po
         if garder_ids.contains(&c.id) {
             lacher(&c.racine);
             match garder(inst, &c.racine) {
-                Ok(r) => gardees.push(json!({"id": r.id, "nom": r.nom})),
+                Ok(r) => gardees.push(Gardee { id: r.id, nom: r.nom }),
                 Err(m) => erreurs.push(m),
             }
         } else if ne_pas_garder.contains(&c.id) {
             match supprimer(inst, &c.racine, None, poste, lacher) {
-                Ok(nom) => supprimees.push(json!(nom)),
+                Ok(nom) => supprimees.push(nom),
                 Err(m) => erreurs.push(m),
             }
         }
     }
-    Ok(json!({"gardees": gardees, "supprimees": supprimees, "erreurs": erreurs}))
+    Ok(Reponse { gardees, supprimees, erreurs })
+}
+
+/// Une compagnie gardee : son identifiant de tuile, son nom.
+#[derive(Debug, serde::Serialize)]
+pub struct Gardee {
+    pub id: String,
+    pub nom: String,
+}
+
+/// LA REPONSE AU DEBLOCAGE (`repondre`) : les compagnies gardees, les noms des supprimees, et chaque echec en phrase.
+#[derive(Debug, serde::Serialize)]
+pub struct Reponse {
+    pub gardees: Vec<Gardee>,
+    pub supprimees: Vec<String>,
+    pub erreurs: Vec<String>,
 }
 
 // --------------------------------------------------------- la mention de demo

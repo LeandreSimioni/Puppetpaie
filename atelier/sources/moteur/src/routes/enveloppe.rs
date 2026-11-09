@@ -13,6 +13,10 @@
 //! refus. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
 //! `corriger`, ce que la fiche de la route dit de corriger pour cette classe, quand elle le dit ; `a_part`, ce que le
 //! refus porte hors de sa phrase (un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche : `socle::echec::avec`).
+//!
+//! C'EST LE BORD DU MOTEUR : le seul module des routes ou le JSON se touche (lire la demande, ecrire la reponse, lire les
+//! phrases d'un rendu pour les controler a la porte : `Rendu::phrases`). Ailleurs, une route lit sa charge en sa forme
+//! et rend la sienne.
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -74,8 +78,10 @@ struct Nomme<'a> {
 // ------------------------------------------------------------------------------------------------- la charge
 
 /// LA CHARGE D'UNE ROUTE, telle qu'elle arrive a la porte : un objet, qui ne se lit qu'en la forme de sa route
-/// (`lire`). Le mot de passe du logiciel qu'elle porte est a l'enveloppe (`mot_de_passe`).
-#[derive(Clone, Debug)]
+/// (`lire`). Le mot de passe du logiciel qu'elle porte est a l'enveloppe (`mot_de_passe`). Elle s'ecrit telle qu'elle
+/// est arrivee (l'exemple d'une fiche, au catalogue).
+#[derive(Clone, Debug, Serialize)]
+#[serde(transparent)]
 pub struct Charge(Value);
 
 impl<'de> serde::Deserialize<'de> for Charge {
@@ -147,11 +153,12 @@ impl Charge {
 
 // ------------------------------------------------------------------------------------------------- la porte
 
-/// CE QU'UNE ROUTE BRANCHEE RECOIT DE LA PORTE, a cote de sa charge : la route servie, et la compagnie sous la
-/// configuration du mois de la charge (`Charge::mois`).
+/// CE QU'UNE ROUTE BRANCHEE RECOIT DE LA PORTE, a cote de sa charge : la route servie, la compagnie sous la
+/// configuration du mois de la charge (`Charge::mois`), et les options de la commande (`--racine`, `--date`).
 pub struct Porte<'a> {
     pub route: Route,
     pub ctx: &'a droit::contexte::Contexte,
+    pub options: &'a std::collections::HashMap<String, String>,
 }
 
 // ------------------------------------------------------------------------------------------------- ce qu'une route rend
@@ -184,15 +191,71 @@ impl Rendu {
         Rendu(v)
     }
 
-    /// Le rendu en JSON, tel que l'ecran et le LLM le lisent.
-    pub fn valeur(&self) -> &Value {
-        &self.0
+    /// A-t-il sa phrase, un texte non vide ?
+    pub fn a_sa_phrase(&self) -> bool {
+        matches!(self.0.get("phrase"), Some(Value::String(p)) if !p.trim().is_empty())
+    }
+
+    /// Les cles qu'il porte, pour dire au developpeur ce qu'une reponse sans phrase rendait.
+    pub fn cles(&self) -> Vec<&str> {
+        match &self.0 {
+            Value::Object(o) => o.keys().map(String::as_str).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Les phrases qu'il porte, a toute profondeur (`phrases_rendues`).
+    pub fn phrases(&self) -> Vec<&str> {
+        phrases_rendues(&self.0)
+    }
+
+    /// La plus longue de ses phrases, en caracteres (`plus_longue_phrase`).
+    pub fn plus_longue_phrase(&self) -> usize {
+        plus_longue_phrase(&self.0)
     }
 
     /// Le rendu en JSON, pris.
     pub fn en_valeur(self) -> Value {
         self.0
     }
+}
+
+/// LA PLUS LONGUE DES PHRASES QUE REND UNE ROUTE, en caracteres : la sienne, et celle de chaque ligne qu'elle porte (la
+/// `phrase` d'une carte, d'un carre, de la frise d'un engagement), a toute profondeur. Chacune s'affiche dans la place
+/// de la route (`Fiche::phrase`).
+pub fn plus_longue_phrase(v: &Value) -> usize {
+    match v {
+        Value::Object(o) => o
+            .iter()
+            .map(|(k, x)| match (k.as_str(), x) {
+                ("phrase", Value::String(p)) => p.chars().count(),
+                _ => plus_longue_phrase(x),
+            })
+            .fold(0, usize::max),
+        Value::Array(a) => a.iter().map(plus_longue_phrase).fold(0, usize::max),
+        _ => 0,
+    }
+}
+
+/// LES PHRASES QUE REND UNE ROUTE, celles que l'ecran lit : la `phrase`, les `phrases` et les `aides` de la reponse et de
+/// chaque ligne qu'elle porte, a toute profondeur.
+pub fn phrases_rendues(v: &Value) -> Vec<&str> {
+    let mut out = Vec::new();
+    match v {
+        Value::Object(o) => {
+            for (k, x) in o {
+                match (k.as_str(), x) {
+                    ("phrase", Value::String(p)) => out.push(p.as_str()),
+                    ("phrases", Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
+                    ("aides", Value::Object(a)) => out.extend(a.values().filter_map(Value::as_str)),
+                    _ => out.extend(phrases_rendues(x)),
+                }
+            }
+        }
+        Value::Array(a) => out.extend(a.iter().flat_map(phrases_rendues)),
+        _ => {}
+    }
+    out
 }
 
 /// Ce qu'une route branchee rend, ecrit (`Rendu::de`) : la fin de chaque bras de son module.
@@ -211,8 +274,22 @@ pub struct Refus {
     pub phrase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub corriger: Option<&'static str>,
-    #[serde(skip_serializing_if = "Map::is_empty")]
-    pub a_part: Map<String, Value>,
+    #[serde(skip_serializing_if = "APart::est_vide")]
+    pub a_part: APart,
+}
+
+/// CE QU'UN REFUS PORTE A PART : ce que la couche qui refuse a mis hors de la phrase, en sa forme (`socle::echec::APart`,
+/// ou celle de la couche : l'etat d'un mois, les anomalies d'une fiche), ecrite avec la phrase (`socle::echec::avec`). La
+/// porte ne le lit pas : elle le rend tel qu'il a ete ecrit, la fenetre l'ouvre, le LLM le lit.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(transparent)]
+pub struct APart(Map<String, Value>);
+
+impl APart {
+    /// Le refus ne porte-t-il rien a part ?
+    pub fn est_vide(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl Refus {
@@ -224,12 +301,12 @@ impl Refus {
             (Some(r), Some(c)) => catalogue::catalogue().iter().filter(|f| f.route == r).flat_map(|f| f.refus.iter()).find(|x| x.classe == c).map(|x| x.corriger),
             _ => None,
         };
-        Refus { classe: e.classe, phrase, corriger, a_part }
+        Refus { classe: e.classe, phrase, corriger, a_part: APart(a_part) }
     }
 
     /// Un refus de classe `classe`, en une phrase, sans rien a part : celui de la fenetre, avant ou autour d'une route.
     pub fn nouveau(classe: Classe, phrase: impl Into<String>) -> Refus {
-        Refus { classe: Some(classe), phrase: phrase.into(), corriger: None, a_part: Map::new() }
+        Refus { classe: Some(classe), phrase: phrase.into(), corriger: None, a_part: APart::default() }
     }
 }
 
@@ -255,7 +332,7 @@ struct ReponseEcrite<'a> {
 
 impl Serialize for Reponse {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ReponseEcrite { ok: self.issue.is_ok(), ecrit: self.ecrit, resultat: self.issue.as_ref().ok(), refus: self.issue.as_ref().err() }.serialize(s)
+        ReponseEcrite { ok: self.issue.is_ok(), ecrit: self.ecrit, resultat: self.resultat(), refus: self.issue.as_ref().err() }.serialize(s)
     }
 }
 
@@ -283,7 +360,10 @@ impl Reponse {
 
     /// Ce que la route a rendu, s'il y a lieu.
     pub fn resultat(&self) -> Option<&Value> {
-        self.issue.as_ref().ok()
+        match &self.issue {
+            Ok(v) => Some(v),
+            Err(Refus { .. }) => None,
+        }
     }
 
     /// Le refus, s'il y a lieu.
@@ -310,8 +390,10 @@ impl Reponse {
     pub fn en_texte(&self, route: &str) -> String {
         let r = match &self.issue {
             Err(r) => {
-                let corriger = r.corriger.map(|c| format!("À corriger : {}\n", c)).unwrap_or_default();
-                return format!("Refus : {}\n{}", r.phrase, corriger);
+                return match r.corriger {
+                    Some(c) => format!("Refus : {}\nÀ corriger : {}\n", r.phrase, c),
+                    None => format!("Refus : {}\n", r.phrase),
+                };
             }
             Ok(r) => r,
         };

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::assemblage::{Assemblage, Piece};
 use fabrique_pdf::Description;
-use socle::echec::{Classe, Refus};
+use socle::echec::{Classe, Echec};
 
 use socle::num::Resultat;
 
@@ -44,7 +44,7 @@ pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, String> {
 
 /// Des pieces (un PDF, ses pages 0-based ou toutes) fusionnees par la fabrique ;
 /// un refus est `Refuse`, aucun PDF n'est assemble autrement.
-pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> Result<Vec<u8>, Refus> {
+pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> Result<Vec<u8>, Echec> {
     let assemblage = Assemblage {
         format: Some(1),
         pieces: pieces
@@ -69,7 +69,7 @@ pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> Result<Vec<u8>
 }
 
 /// La fusion de PDF en memoire : chacun va dans un fichier de `tmp` le temps de la fusion.
-pub fn fusion_octets(morceaux: &[Vec<u8>], tmp: &Path) -> Result<Vec<u8>, Refus> {
+pub fn fusion_octets(morceaux: &[Vec<u8>], tmp: &Path) -> Result<Vec<u8>, Echec> {
     let dossier = Temporaire::nouveau_dans(tmp, "assemblage")?;
     let mut pieces = Vec::new();
     for (i, octets) in morceaux.iter().enumerate() {
@@ -84,7 +84,7 @@ pub fn fusion_octets(morceaux: &[Vec<u8>], tmp: &Path) -> Result<Vec<u8>, Refus>
 pub struct Temporaire(pub PathBuf);
 
 impl Temporaire {
-    pub fn nouveau_dans(parent: &Path, prefixe: &str) -> Result<Temporaire, Refus> {
+    pub fn nouveau_dans(parent: &Path, prefixe: &str) -> Result<Temporaire, Echec> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let p = parent.join(format!("{}-{}-{}", prefixe, std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
         std::fs::create_dir_all(&p).map_err(|e| avec(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
@@ -98,6 +98,6 @@ impl Drop for Temporaire {
     }
 }
 
-fn avec(classe: Classe, message: impl Into<String>) -> Refus {
-    Refus { classe: Some(classe), message: message.into() }
+fn avec(classe: Classe, message: impl Into<String>) -> Echec {
+    Echec { classe: Some(classe), message: message.into() }
 }

@@ -17,6 +17,7 @@ pub mod completer;
 pub mod dsn_aem;
 pub mod ecarts;
 pub mod ecrite;
+pub mod fiche_brute;
 pub mod guide;
 pub mod incident;
 pub mod mois;

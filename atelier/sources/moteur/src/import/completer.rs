@@ -5,7 +5,7 @@
 //! est vide ou « A COMPLETER » (sans casse : le titre que l'import des DSN donne a un spectacle dont la DSN ne porte que
 //! le numero d'objet, `crate::routes::import::apercu_lu`), et garde tout champ rempli : la fiche fait foi, l'ecart reste
 //! seulement signale (`ecarts`). L'apercu dit, fiche par fiche, ce qui serait complete et d'ou ca vient (`completer`) ;
-//! l'import l'ecrit (`crate::routes::fiches::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
+//! l'import l'ecrit (`crate::import::fiche_brute::completer_fiche`), sans rien dater : une case vide n'avait rien declare.
 //!
 //! Un champ que la piece ne porte pas ne s'invente pas (regle 1) : on ne complete que de ce que la DSN ou le bulletin
 //! imprime, par le meme chemin que la fiche qu'il creerait.
@@ -95,7 +95,7 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &dyn ParCase, proposees: &Map
     for (k, v) in &out {
         fusion.insert(k.clone(), v.clone());
     }
-    let comble = crate::routes::fiches::combler_affichage(nom, &fusion)?;
+    let comble = crate::import::fiche_brute::combler_affichage(nom, &fusion)?;
     for c in &champs {
         let Some(src) = c.derive_de.as_deref().filter(|d| !d.is_empty()) else { continue };
         if !out.contains_key(&c.cle) || !vide(dite(src).as_ref()) {

@@ -211,7 +211,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Map<String, Value>> {
             f.insert("emploi_affichage".into(), Value::String(l));
         }
     }
-    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
+    let mut f = crate::import::fiche_brute::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -233,7 +233,7 @@ fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Map<String, Value>> {
         e.insert("siret".into(), json!(format!("{}{}", s, n)));
     }
     poser_licence(&mut e, &lecture.licences);
-    let mut e = crate::routes::fiches::combler_affichage("entreprise", &e)?;
+    let mut e = crate::import::fiche_brute::combler_affichage("entreprise", &e)?;
     if e.get("raison_sociale").is_some_and(vrai) && !e.get("nom_affichage").is_some_and(vrai) {
         let t = titre_de(e.get("raison_sociale"));
         e.insert("nom_affichage".into(), json!(t));
@@ -388,7 +388,7 @@ pub(crate) fn apercu_lu(
         let mut e = fiche_entreprise(&lecture)?;
         garder_le_nom(ctx, &mut e);
         if ctx.entreprise.siren.is_none() {
-            let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("entreprise", &e)?;
             let libelle = e.get("raison_sociale").map_or("?".to_string(), valeur_en_texte);
             a_creer_liste.push(ACreer { nom: "entreprise", rang: None, donnees: e.clone() });
             entreprise = Some(FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
@@ -427,7 +427,7 @@ pub(crate) fn apercu_lu(
             continue;
         }
         let donnees = fiche_salarie(decl)?;
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("salarie", &donnees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("salarie", &donnees)?;
         a_creer_liste.push(ACreer { nom: "salarie", rang: Some(salaries.len()), donnees: donnees.clone() });
         salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         cles_a_venir.insert(decl.nir.clone());
@@ -496,7 +496,7 @@ pub(crate) fn apercu_lu(
         donnees.insert("alias".into(), json!([]));
         donnees.insert("actif".into(), json!(o.dernier >= seuil));
         donnees.insert("note".into(), json!(format!("{} de {} a {} ({} contrat(s))", source, o.premier, o.dernier, o.contrats)));
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         a_creer_liste.push(ACreer { nom: "spectacle", rang: Some(spectacles.len()), donnees: donnees.clone() });
         spectacles.push(FicheImportee::new(
             "spectacle",

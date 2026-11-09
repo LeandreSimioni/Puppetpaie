@@ -26,7 +26,6 @@ use droit::fiche::Lue as _;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
 
 use droit::contexte::Contexte;
 use engagement::importe::Importe;
@@ -370,7 +369,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     if permanents_declares {
         // A partir du premier jour que les bulletins repris paient.
         let depuis = Jour::lire(&du).map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", m)))?;
-        crate::routes::fiches::poser_entreprise(ctx, "emploie_des_permanents", json!(true), Some(depuis))?;
+        crate::routes::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;
     }
     // Les contrats de prevoyance et de sante des permanents que l'ecran attend maintenant : ceux que les DSN reprises
     // declarent (S21.G00.15) se posent, lus sous la fiche telle qu'elle vient d'etre ecrite.

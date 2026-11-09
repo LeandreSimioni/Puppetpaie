@@ -1,5 +1,5 @@
 //! Les taux de prelevement a la source que la DGFiP a fait connaitre (un compte rendu de nature 94, `suites`) ou que les
-//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`droit::pas::CHAMP`,
+//! DSN deposees declarent (l'import) : chacun s'ecrit dans la fiche de son salarie (`taux_pas`,
 //! `routes::fiches::poser_taux_recu`), et les engagements qu'il touche se recalculent. `droit::pas` les lit.
 
 use droit::fiche::Lue as _;
@@ -38,7 +38,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[Value], source: &str) -> Result<Ve
         if deja {
             continue;
         }
-        crate::routes::fiches::poser_taux_recu(ctx, &cle, valeur.clone(), depuis, source)?;
+        crate::routes::fiches::poser_taux_recu(ctx, &cle, lu.clone(), depuis, source)?;
         let t = |k: &str| crate::commandes::rendu::champ(&valeur, k);
         changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, t("taux"), t("type"), t("identifiant"), mad.jj_mm_aaaa()));
         ecrits.push((cle, lu));

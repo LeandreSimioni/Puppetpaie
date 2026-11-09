@@ -117,7 +117,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
             fautes.push(format!("{} : « {} » : {}", ou, t, d.corriger()));
         }
     };
-    for f in moteur::routes::catalogue::catalogue().iter().map(moteur::routes::catalogue::Fiche::en_json) {
+    for f in moteur::routes::catalogue::catalogue().iter().map(|f| serde_json::to_value(f.ecrite().unwrap()).unwrap()) {
         let f = &f;
         let nom = f["nom"].as_str().unwrap();
         if let Some(b) = f["bouton"].as_str() {
@@ -517,12 +517,12 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     let mut charge = exemple;
     charge["administrateur"] = json!(ADMIN);
     if route == Route::AdministrateurDetacher {
-        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, &json!({"administrateur": ADMIN}), &poste).unwrap();
+        moteur::routes::coffre::administrateur(&b, Route::AdministrateurRattacher, serde_json::from_value(json!({"administrateur": ADMIN})).unwrap(), None, &poste).unwrap();
         charge["nouveau"] = json!("propre-essai-1");
         charge["confirmation"] = json!("propre-essai-1");
     }
-    match moteur::routes::coffre::administrateur(&b, route, &charge, &poste) {
-        Ok(v) => json!({"ok": true, "resultat": v}),
+    match moteur::routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
+        Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
         Err(e) => json!({"ok": false, "erreur": e.message}),
     }
 }
@@ -834,22 +834,22 @@ fn l_engagement_ne_lit_pas_le_journal() {
 }
 
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
-/// l'ecran, les gestes d'une case et l'import appellent, par `FicheAEcrire::ecrire_case`, qui la date par la forme de la
-/// fiche (`droit::fiche::FicheDatee::dater`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans
-/// le moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a
-/// rien a dater.
+/// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
+/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le
+/// moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a rien a
+/// dater.
 #[test]
 fn une_seule_fonction_date_une_valeur_de_fiche() {
-    let fiches = espace().join("moteur/src/routes/fiches.rs");
+    let fiches = espace().join("moteur/src/routes/fiches/ecriture.rs");
     let texte = std::fs::read_to_string(&fiches).unwrap();
-    let debut = texte.find("pub(crate) fn ecrire_datee(").unwrap();
+    let debut = texte.find("pub(crate) fn ecrire_datee<").unwrap();
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
-    assert_eq!(texte[..debut].matches(".ecrire_case(").count() + texte[fin..].matches(".ecrire_case(").count(), 0, "fiches.rs ne date que par `ecrire_datee`");
-    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "seul `FicheAEcrire::ecrire_case` date une case d'une fiche");
+    assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
+    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "`ecrire_datee` date ses cases en un seul endroit");
     for p in sources(&espace().join("moteur/src")).into_iter().filter(|p| *p != fiches) {
         let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
         let t = std::fs::read_to_string(&p).unwrap();
-        assert!(!t.contains(".ecrire_case(") && !t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
+        assert!(!t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
         if t.contains("fiche::dater(") {
             assert_eq!(rel, "moteur/src/compagnie/organismes.rs", "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
         }

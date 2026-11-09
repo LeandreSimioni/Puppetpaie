@@ -157,7 +157,7 @@ fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, 
             if v.get("pret").and_then(Value::as_bool) == Some(true) && !frais {
                 v["veille"] = etat_veille.unwrap_or_else(|| json!({"minutes": 0, "dernier": {}, "en_cours": false}));
                 v["maj"] = crate::compagnie::maj::RECHERCHE.etat();
-                v["signalements"] = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).map(Rendu::brut)).en_json();
+                v["signalements"] = Reponse::de(Route::Signalements, crate::routes::filet::signalements_route(racine).and_then(crate::routes::enveloppe::en_json)).en_json();
             }
             rendu(Ok(v))
         }
@@ -208,8 +208,8 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             if let Some(m) = charge.brute().get("mois").and_then(Value::as_str) {
                 detail.insert("mois".into(), crate::compagnie::diagnostic::etat_du_mois(racine, m));
             }
-            if !r.a_part.is_empty() {
-                detail.insert("refus".into(), crate::compagnie::diagnostic::en_forme(Some(racine), &Value::Object(r.a_part.clone())));
+            if !r.a_part.est_vide() {
+                detail.insert("refus".into(), crate::compagnie::diagnostic::en_forme(Some(racine), &socle::ecriture::en_valeur(&r.a_part)));
             }
             let trace = crate::compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
             let _ = crate::compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), Value::Object(detail), trace.as_deref());

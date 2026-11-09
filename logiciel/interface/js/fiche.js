@@ -804,10 +804,8 @@ function brancherConditions() {
   let demande = 0;
   const appliquer = async () => {
     const n = ++demande;
-    const donnees = lireFormulaire();
-    const charge = FICHE_ACTIVE === "entreprise" ? { entreprise: donnees } : { nom: FICHE_ACTIVE, donnees };
     let r;
-    try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
+    try { r = await api("permanents", { nom: FICHE_ACTIVE, donnees: lireFormulaire() }); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== demande || !form.isConnected) return;
     PERMANENTS_A_L_ECRAN = !!r.permanents;
     const montres = new Set(r.montres || []);

@@ -63,7 +63,7 @@ pub fn compter(ctx: &Contexte, annee: i32) -> R<usize> {
 /// Les annees deja parties, telles que `config/diagnostic.json` les retient.
 pub fn parties(racine: &Path) -> Map<String, Value> {
     let p = racine.join(crate::compagnie::incidents::DIAGNOSTIC);
-    match crate::routes::fiches::lire_tolerant(&p) {
+    match crate::valeur::lire_tolerant(&p) {
         Ok(Some(d)) => d.get(CLE).and_then(Value::as_object).cloned().unwrap_or_default(),
         _ => Map::new(),
     }
@@ -72,7 +72,7 @@ pub fn parties(racine: &Path) -> Map<String, Value> {
 /// Retient que `annee` est partie, sans toucher au reste du fichier (l'identite du poste, l'interrupteur).
 fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> Result<(), String> {
     let p = racine.join(crate::compagnie::incidents::DIAGNOSTIC);
-    let mut d = match crate::routes::fiches::lire_tolerant(&p) {
+    let mut d = match crate::valeur::lire_tolerant(&p) {
         Ok(Some(Value::Object(o))) => o,
         _ => Map::new(),
     };
@@ -137,7 +137,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> Value {
 
 /// Ce que l'ecran « Ce qui est parti chez l'editeur » montre de chaque annee partie, la plus recente en tete : exactement ce
 /// qui a quitte le poste (`contenu`), et quand.
-pub fn pour_l_ecran(racine: &Path) -> Vec<Value> {
+pub fn pour_l_ecran(racine: &Path) -> Vec<AnneePartie> {
     let mut v: Vec<(String, Value)> = parties(racine).into_iter().collect();
     v.sort_by(|a, b| b.0.cmp(&a.0));
     v.into_iter()
@@ -145,12 +145,24 @@ pub fn pour_l_ecran(racine: &Path) -> Vec<Value> {
             let an: i64 = annee.parse().ok()?;
             let paies = e.get("paies").and_then(Value::as_u64)?;
             let poste = e.get("poste").cloned().unwrap_or(Value::Null);
-            Some(json!({
-                "annee": an,
-                "paies": paies,
-                "parti_le": e.get("parti_le").cloned().unwrap_or(Value::Null),
-                "contenu": {"annee": an, "paies": paies, "poste": poste},
-            }))
+            Some(AnneePartie { annee: an, paies, parti_le: e.get("parti_le").and_then(Value::as_str).map(String::from), contenu: ContenuParti { annee: an, paies, poste } })
         })
         .collect()
+}
+
+/// Une annee partie, telle que l'ecran du filet la montre : son nombre de paies, quand il est parti, et ce qui est parti.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AnneePartie {
+    pub annee: i64,
+    pub paies: u64,
+    pub parti_le: Option<String>,
+    pub contenu: ContenuParti,
+}
+
+/// Exactement ce qui a quitte le poste pour une annee.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ContenuParti {
+    pub annee: i64,
+    pub paies: u64,
+    pub poste: Value,
 }

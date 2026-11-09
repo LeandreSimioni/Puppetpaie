@@ -558,6 +558,35 @@ pub enum Valeur {
     Lignes(Vec<Saisie>),
 }
 
+/// UNE SAISIE S'ECRIT comme elle se lit : ses cases, puis ses notes ; une case que la table ne decrit pas ne s'ecrit pas
+/// (sa valeur ne se garde pas, et une fiche la refuse).
+impl Serialize for Saisie {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut m = s.serialize_map(Some(self.cases.len() + self.notes.len()))?;
+        for (k, v) in &self.cases {
+            m.serialize_entry(k, v)?;
+        }
+        for (k, t) in &self.notes {
+            m.serialize_entry(k, t)?;
+        }
+        m.end()
+    }
+}
+
+impl Serialize for Valeur {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Valeur::Texte(t) => s.serialize_str(t),
+            Valeur::Nombre(n) => n.serialize(s),
+            Valeur::OuiNon(b) => s.serialize_bool(*b),
+            Valeur::Mots(l) => l.serialize(s),
+            Valeur::Bloc(b) => b.serialize(s),
+            Valeur::Lignes(l) => l.serialize(s),
+        }
+    }
+}
+
 impl Valeur {
     /// La valeur dit-elle quelque chose ? Un texte vide, zero, non, une liste ou une structure vides ne disent rien.
     pub fn dite(&self) -> bool {
@@ -620,6 +649,21 @@ impl Saisie {
         !self.cases.is_empty() || !self.notes.is_empty() || !self.autres.is_empty()
     }
 
+    /// Ses cases, dans l'ordre saisi.
+    pub fn cases(&self) -> &[(String, Valeur)] {
+        &self.cases
+    }
+
+    /// La case `cle`, a changer.
+    pub fn case_mut(&mut self, cle: &str) -> Option<&mut Valeur> {
+        self.cases.iter_mut().find(|(k, _)| k == cle).map(|(_, v)| v)
+    }
+
+    /// La case `cle` retiree : vide.
+    pub fn retirer(&mut self, cle: &str) {
+        self.cases.retain(|(k, _)| k != cle);
+    }
+
     /// La case `cle` vaut `v`.
     pub fn poser(&mut self, cle: &str, v: Valeur) {
         match self.cases.iter_mut().find(|(k, _)| k == cle) {
@@ -660,6 +704,8 @@ enum Attendu {
     Bloc(Lecture),
     Lignes(Lecture),
     Libre,
+    /// Une case d'une structure que la table ne decrit pas : un texte, un nombre, oui ou non, des mots, ou des cases.
+    Quelconque,
     Histoire,
 }
 
@@ -708,7 +754,7 @@ impl Lecture {
                     }
                 }
             }
-            Niveau::Libre => None,
+            Niveau::Libre => Some(Attendu::Quelconque),
         }
     }
 }
@@ -753,6 +799,7 @@ impl Attendu {
     fn nombre<E: serde::de::Error>(self, n: NombreLu, lu: Unexpected) -> Result<Option<Valeur>, E> {
         match self {
             Attendu::Simple(f) if f.admet_un_nombre() => Ok(Some(Valeur::Nombre(n))),
+            Attendu::Quelconque => Ok(Some(Valeur::Nombre(n))),
             _ => Err(E::invalid_type(lu, &self)),
         }
     }
@@ -778,6 +825,7 @@ impl<'de> Visitor<'de> for Attendu {
             Attendu::Bloc(_) => "les cases d'une structure (un objet)",
             Attendu::Lignes(_) => "une liste de lignes",
             Attendu::Libre => "une liste de mots, ou un objet",
+            Attendu::Quelconque => "une valeur",
             Attendu::Histoire => "l'histoire de la fiche",
         })
     }
@@ -792,13 +840,14 @@ impl<'de> Visitor<'de> for Attendu {
     }
     fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(Forme::Booleen) => Ok(Some(Valeur::OuiNon(b))),
+            Attendu::Simple(Forme::Booleen) | Attendu::Quelconque => Ok(Some(Valeur::OuiNon(b))),
             _ => Err(E::invalid_type(Unexpected::Bool(b), &self)),
         }
     }
     fn visit_str<E: serde::de::Error>(self, t: &str) -> Result<Option<Valeur>, E> {
         match self {
             Attendu::Simple(f) if f != Forme::Booleen => Ok(Some(Valeur::Texte(t.to_string()))),
+            Attendu::Quelconque => Ok(Some(Valeur::Texte(t.to_string()))),
             _ => Err(E::invalid_type(Unexpected::Str(t), &self)),
         }
     }
@@ -823,7 +872,7 @@ impl<'de> Visitor<'de> for Attendu {
                 }
                 Ok(Some(Valeur::Lignes(out)))
             }
-            Attendu::Libre => {
+            Attendu::Libre | Attendu::Quelconque => {
                 let mut out = Vec::new();
                 while let Some(m) = a.next_element::<String>()? {
                     out.push(m);
@@ -836,7 +885,7 @@ impl<'de> Visitor<'de> for Attendu {
     fn visit_map<A: MapAccess<'de>>(self, m: A) -> Result<Option<Valeur>, A::Error> {
         match self {
             Attendu::Bloc(l) => l.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
-            Attendu::Libre => Lecture { niveau: Niveau::Libre, devant: String::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Libre | Attendu::Quelconque => Lecture { niveau: Niveau::Libre, devant: String::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
             _ => Err(A::Error::invalid_type(Unexpected::Map, &self)),
         }
     }

@@ -422,7 +422,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
     let mut ecrits: BTreeSet<String> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let e = crate::routes::fiches::ecrire_fiche(ctx, a.nom, None, &Value::Object(a.donnees.clone()), crate::routes::fiches::Forcer::Tout, &Value::Null, note)?;
+        let (cle, anomalies) = crate::import::fiche_brute::ecrire_fiche(ctx, a.nom, &a.donnees, note.as_str())?;
         let emplacement = match (a.nom, a.rang) {
             ("entreprise", _) => reponse.entreprise.as_mut(),
             ("salarie", Some(i)) => reponse.salaries.get_mut(i),
@@ -433,10 +433,8 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
             restent_a_creer += 1;
             continue;
         };
-        emplacement.cle = e.cle;
+        emplacement.cle = cle;
         emplacement.etat = EtatFiche::Creee;
-        let mut anomalies = e.anomalies;
-        crate::routes::fiches::avec_libelles(a.nom, &mut anomalies)?;
         emplacement.anomalies = anomalies.iter().map(brut).collect();
         let fichier = match a.nom {
             "entreprise" => "entreprise.json",
@@ -448,7 +446,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
     for a in &imp.a_completer {
-        let faits = crate::routes::fiches::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
+        let faits = crate::import::fiche_brute::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
         if faits.is_empty() {
             continue;
         }
@@ -469,7 +467,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::routes::import::Apercu, reponse: &mut Imp
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier).display().to_string());
         completees += 1;
     }
-    crate::routes::fiches::dater_licences_suivantes(ctx, &imp.licences, note)?;
+    crate::routes::fiches::dater_licences_suivantes(ctx, &imp.licences, note.as_str())?;
     let mut fichiers: Vec<String> = ecrits.into_iter().collect();
     let mut avertissements: Vec<String> = Vec::new();
 

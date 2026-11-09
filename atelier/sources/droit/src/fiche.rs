@@ -651,6 +651,21 @@ macro_rules! cases {
                     self.$champ = autre.$champ.clone();
                 } )*
             }
+
+            /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
+            /// sont pas.
+            pub fn cases_differentes(&self, autre: &$nom) -> Vec<&'static str> {
+                let mut out = Vec::new();
+                $( if self.$champ != autre.$champ {
+                    out.push(stringify!($champ).trim_start_matches("r#"));
+                } )*
+                out
+            }
+
+            /// Les memes cases, sans ses notes.
+            pub fn sans_notes(self) -> $nom {
+                $nom { $( $( $note: None, )* )? ..self }
+            }
         }
         impl Cases for $nom {
             fn voir<V: VoirCase>(&self, v: &mut V) {
@@ -747,6 +762,23 @@ macro_rules! fiche {
                 }
             }
 
+            fn appliquer(plate: &mut $plate, ch: $ch) {
+                match ch {
+                    $( $ch::$champ(x) => plate.$champ = x, )*
+                }
+            }
+
+            fn changement(plate: &$plate, cle: &str) -> Option<$ch> {
+                $( if stringify!($champ).trim_start_matches("r#") == cle {
+                    return Some($ch::$champ(plate.$champ.clone()));
+                } )*
+                None
+            }
+
+            fn case_changee(ch: &$ch) -> &'static str {
+                ch.case()
+            }
+
             fn noter(&mut self, plate: &$plate) {
                 $( $( if plate.$note.is_some() {
                     self.$note = plate.$note.clone();
@@ -787,6 +819,15 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 
     /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`) : sa valeur, ou vide.
     fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, note: Option<&str>);
+
+    /// La case que `ch` change, posee dans la fiche a un jour `plate` : sa valeur, ou vide.
+    fn appliquer(plate: &mut Self::Plate, ch: Self::Changement);
+
+    /// La case `cle` de `plate`, comme un changement qui la poserait (`None` : la forme ne declare pas cette case).
+    fn changement(plate: &Self::Plate, cle: &str) -> Option<Self::Changement>;
+
+    /// La case que `ch` change, nommee comme `champs-base.json` la nomme.
+    fn case_changee(ch: &Self::Changement) -> &'static str;
 
     /// Les notes que `plate` porte remplacent les siennes ; les autres restent.
     fn noter(&mut self, plate: &Self::Plate);

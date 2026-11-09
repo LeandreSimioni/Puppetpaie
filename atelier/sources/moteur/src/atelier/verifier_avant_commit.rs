@@ -282,9 +282,9 @@ fn valeurs_reelles(racine: &Path) -> R<Vec<(String, String)>> {
     if !cfg.is_dir() {
         return Ok(Vec::new());
     }
-    use crate::routes::fiches::{portees, valeurs_portees};
+    use crate::valeur::{portees, valeurs_portees};
     if let Some(ent) = lire_config::<droit::fiche::FicheEntrepriseDatee>(&cfg, "entreprise.json")? {
-        // Toute valeur qu'une fiche datee a portee, a quelque date que ce soit (`routes::fiches::portees`).
+        // Toute valeur qu'une fiche datee a portee, a quelque date que ce soit (`valeur::portees`).
         let ent = portees(&ent);
         for cle in CLES_ENTREPRISE {
             for v in valeurs_portees(&ent, cle).filter_map(valeur_vraie_en_texte) {

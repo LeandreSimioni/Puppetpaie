@@ -425,15 +425,6 @@ dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajust
 
 // ------------------------------------------------------------------ outils
 
-/// Le fichier d'une saisie, lu en JSON ; un fichier illisible refuse en le nommant. TRAVAIL A FAIRE : ses lecteurs
-/// (`rappels` : l'echeancier livre et celui de la compagnie ; `atmp` ; `fiches`) lisent chacun un fichier de leur domaine,
-/// qui se declarera avec lui.
-pub(crate) fn lire_saisie(chemin: &Path) -> R<Value> {
-    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
-    let texte = String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, socle::echec::du_disque(&chemin, &e)))?;
-    serde_json::from_str(&texte).map_err(|e| erreur(Classe::Illisible, e.to_string()))
-}
-
 #[track_caller]
 fn plain(m: impl Into<String>) -> Echec {
     socle::echec::noter_et(None, m)

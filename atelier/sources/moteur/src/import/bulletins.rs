@@ -567,7 +567,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             continue;
         }
         let donnees = fiche_salarie(nir, &siens, ctx.entreprise.idcc.portee())?;
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("salarie", &donnees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("salarie", &donnees)?;
         let libelle = format!("{} {}", donnees.get("nom").map_or(String::new(), valeur_en_texte), ri::titre_de(donnees.get("prenom")));
         ap.a_creer.push(ACreer { nom: "salarie", rang: Some(reponse.salaries.len()), donnees: donnees.clone() });
         reponse.salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
@@ -605,7 +605,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             completer_a_creer(&mut ap.a_creer, &mut reponse, "salarie", Some(nir), &proposees)?;
             continue;
         }
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("salarie", &proposees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("salarie", &proposees)?;
         let libelle = format!("{} {}", proposees.get("nom").map_or(String::new(), valeur_en_texte), ri::titre_de(proposees.get("prenom")));
         ap.a_creer.push(ACreer { nom: "salarie", rang: Some(reponse.salaries.len()), donnees: proposees.clone() });
         let mut entree = FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
@@ -635,7 +635,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else if reponse.entreprise.is_none() {
             let mut e = fiche_entreprise(&lus, dernier)?;
             ri::garder_le_nom(ctx, &mut e);
-            let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("entreprise", &e)?;
             let libelle = e.get("raison_sociale").map_or("?".to_string(), valeur_en_texte);
             ap.a_creer.push(ACreer { nom: "entreprise", rang: None, donnees: e.clone() });
             reponse.entreprise = Some(FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
@@ -667,7 +667,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else if reponse.entreprise.is_none() {
             let mut e = proposees;
             ri::garder_le_nom(ctx, &mut e);
-            let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("entreprise", &e)?;
             let libelle = e.get("raison_sociale").map_or("?".to_string(), valeur_en_texte);
             ap.a_creer.push(ACreer { nom: "entreprise", rang: None, donnees: e.clone() });
             let mut entree = FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
@@ -749,7 +749,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             if let Some(x) = &analytique {
                 a.donnees.entry("code_analytique").or_insert_with(|| json!(x));
             }
-            let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("spectacle", &a.donnees)?;
+            let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("spectacle", &a.donnees)?;
             reponse.spectacles[rang].poser(&a.donnees, anomalies);
             continue;
         }
@@ -765,7 +765,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         donnees.insert("alias".into(), json!([]));
         donnees.insert("actif".into(), json!(dernier >= seuil));
         donnees.insert("note".into(), json!(format!("bulletins de {} a {} ({} bulletin(s))", premier, dernier, rangs.len())));
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         let libelle = match &propose {
             Some(t) => format!("numéro d'objet {}, titre proposé « {} » (bulletins de {} à {})", numero, t, premier, dernier),
             None => format!("numéro d'objet {}, sans titre (bulletins de {} à {})", numero, premier, dernier),
@@ -794,7 +794,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         donnees.insert("alias".into(), json!([]));
         donnees.insert("actif".into(), json!(dernier >= seuil));
         donnees.insert("note".into(), json!(format!("AEM de {} a {} ({} contrat(s))", premier, dernier, mois.len())));
-        let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
         let libelle = format!("numéro d'objet {}, sans titre (AEM de {} à {})", numero, premier, dernier);
         ap.a_creer.push(ACreer { nom: "spectacle", rang: Some(reponse.spectacles.len()), donnees: donnees.clone() });
         reponse.spectacles.push(FicheImportee::new("spectacle", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
@@ -1389,7 +1389,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &st
         return Ok(());
     }
     a.donnees.extend(champs);
-    let anomalies = crate::routes::fiches::verifier_comme_a_l_ecriture(nom, &a.donnees)?;
+    let anomalies = crate::import::fiche_brute::verifier_comme_a_l_ecriture(nom, &a.donnees)?;
     let entree = match (nom, a.rang) {
         ("entreprise", _) => reponse.entreprise.as_mut(),
         (_, Some(i)) => reponse.salaries.get_mut(i),
@@ -1542,7 +1542,7 @@ fn lisibles_de_la_piece_sur(nom: &str, fiche: &Map<String, Value>, proposees: &M
         if lisible_piece == lisible || compare(officiel_piece) != compare(officiel) {
             continue;
         }
-        let reconstitue = crate::routes::fiches::combler_affichage(nom, &Map::from_iter([(c.cle.clone(), json!(officiel))]))?;
+        let reconstitue = crate::import::fiche_brute::combler_affichage(nom, &Map::from_iter([(c.cle.clone(), json!(officiel))]))?;
         if reconstitue.get(source) == Some(&json!(lisible)) {
             out.insert(source.to_string(), json!(lisible_piece));
         }
@@ -1576,7 +1576,7 @@ fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Map<String, Val
         f.insert("date_anciennete".into(), json!(premier.iso()));
     }
     lisibles_de_la_piece("salarie", &mut f)?;
-    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
+    let mut f = crate::import::fiche_brute::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -1670,7 +1670,7 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Map<String, Value>> {
     }
     crate::routes::import::poser_licence(&mut f, &licences_lues(lus));
     lisibles_de_la_piece("entreprise", &mut f)?;
-    let mut f = crate::routes::fiches::combler_affichage("entreprise", &f)?;
+    let mut f = crate::import::fiche_brute::combler_affichage("entreprise", &f)?;
     if f.get("raison_sociale").is_some_and(vrai) && !f.get("nom_affichage").is_some_and(vrai) {
         let t = ri::titre_de(f.get("raison_sociale"));
         f.insert("nom_affichage".into(), json!(t));
@@ -1909,7 +1909,7 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Ma
         f.insert("date_anciennete".into(), json!(premier.iso()));
     }
     lisibles_de_la_piece("salarie", &mut f)?;
-    let mut f = crate::routes::fiches::combler_affichage("salarie", &f)?;
+    let mut f = crate::import::fiche_brute::combler_affichage("salarie", &f)?;
     f.insert("actif".into(), json!(true));
     Ok(f)
 }
@@ -1940,7 +1940,7 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Map<String, Value>> {
         f.insert(documents::conges_spectacles::CLE_ADHERENT.into(), json!(a));
     }
     lisibles_de_la_piece("entreprise", &mut f)?;
-    let mut f = crate::routes::fiches::combler_affichage("entreprise", &f)?;
+    let mut f = crate::import::fiche_brute::combler_affichage("entreprise", &f)?;
     if f.get("raison_sociale").is_some_and(vrai) && !f.get("nom_affichage").is_some_and(vrai) {
         let t = ri::titre_de(f.get("raison_sociale"));
         f.insert("nom_affichage".into(), json!(t));
