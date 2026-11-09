@@ -530,16 +530,17 @@ impl Fenetre {
     /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ?
     fn administrateur_ouvre(&self, racine: &Path) -> bool {
         let inst = compagnies::base();
-        if !crate::compagnie::administrateur::est_rattachee(&inst, racine) {
+        // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
+        if !matches!(crate::compagnie::administrateur::est_rattachee(&inst, racine), Ok(true)) {
             return false;
         }
         let garde = self.administrateur.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        garde.is_some_and(|m| crate::compagnie::administrateur::mot_de_passe_ouvre(&crate::compagnie::administrateur::Poste::de_ce_poste(), racine, &m))
+        garde.is_some_and(|m| matches!(crate::compagnie::administrateur::mot_de_passe_ouvre(&crate::compagnie::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
     }
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
     fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if crate::compagnie::administrateur::est_rattachee(&compagnies::base(), racine) {
+        if matches!(crate::compagnie::administrateur::est_rattachee(&compagnies::base(), racine), Ok(true)) {
             *self.administrateur.lock().unwrap_or_else(|e| e.into_inner()) = Some(motdepasse.to_string());
         }
     }
@@ -673,9 +674,11 @@ impl Fenetre {
                     Err(e) => RouteReponse::de(nom, Err(e)),
                 };
             }
-            let rattachees = crate::compagnie::administrateur::rattachees(&inst);
-            let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
-            return RouteReponse::de(nom, Ok(Rendu::brut(crate::compagnie::administrateur::tableau_de(&inst, par))));
+            let tableau = crate::compagnie::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
+                let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
+                crate::compagnie::administrateur::tableau_de(&inst, par)
+            });
+            return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));
         }
         api::route_de_l_installation(nom, charge)
     }
@@ -808,9 +811,7 @@ impl Fenetre {
                 // CE QUE LA PAGE A FAIT depuis sa derniere demande (`X-Gestes`, js/tuyau.js : clics, champs, boites, console),
                 // note dans le fil AVANT la route qu'il a declenchee (`diagnostic::noter_gestes`, qui le met en forme).
                 if let Some(g) = r.entete("x-gestes").filter(|g| !g.is_empty()) {
-                    if let Ok(lot) = serde_json::from_str::<Value>(&http::decoder_pourcent(g)) {
-                        crate::compagnie::diagnostic::noter_gestes(&racine, &lot);
-                    }
+                    crate::compagnie::diagnostic::noter_gestes(&racine, &http::decoder_pourcent(g));
                 }
                 // SUPPRIMER LA COMPAGNIE OUVERTE (`compagnie-supprimer` confirmee) : la route decide tout
                 // (`suppression::route`) ; la fenetre lache d'abord ce qu'elle tient de la compagnie (sa veille, sa file
@@ -853,7 +854,10 @@ impl Fenetre {
                     Phase::MotDePasse { racine, premiere } => {
                         // Ce que l'administrateur est pour cette compagnie (la route `administrateur-etat`) : la page le lit,
                         // sans rien decider.
-                        let etat = crate::routes::coffre::administrateur_etat(&racine);
+                        let etat = match crate::routes::coffre::administrateur_etat(&racine) {
+                            Ok(e) => e,
+                            Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase()),
+                        };
                         let gabarit = if premiere { CHOIX_MOT_DE_PASSE } else { MOT_DE_PASSE };
                         page(&gabarit.replace("{{ADMINISTRATEUR}}", &json_dans_la_page(&etat)), &self.jeton, NOMS_ACCUEIL)
                     }

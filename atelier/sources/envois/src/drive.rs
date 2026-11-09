@@ -225,13 +225,12 @@ pub struct Adresses {
     pub televersement: String,
 }
 
-impl Default for Adresses {
-    fn default() -> Self {
+impl Adresses {
+    /// Les adresses de Google.
+    pub fn de_google() -> Adresses {
         Adresses { jetons: JETONS.into(), fichiers: DRIVE_FICHIERS.into(), televersement: DRIVE_TELEVERSEMENT.into() }
     }
-}
 
-impl Adresses {
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
         Adresses { jetons: format!("{}/token", base), fichiers: format!("{}/drive/v3/files", base), televersement: format!("{}/upload/drive/v3/files", base) }

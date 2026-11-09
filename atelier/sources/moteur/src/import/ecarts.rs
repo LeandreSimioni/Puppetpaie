@@ -191,18 +191,19 @@ pub fn noter(ctx: &Contexte) -> usize {
     let deja = incidents::lire(racine, Some(incidents::LOGICIEL), false).unwrap_or_default();
     let mut notes = 0;
     for r in rapports {
-        let empreinte = json!(incidents::empreinte(incidents::LOGICIEL, OU, &r.genre));
-        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes, le rapport se reconnait a la
-        // signature de ce qu'il dit en entier.
-        let signature = json!(socle::fichiers::sha256_hex(format!("{}|{}", r.resume, r.detail).as_bytes())[..16].to_string());
-        if deja.iter().any(|l| l.get("empreinte") == Some(&empreinte) && l.pointer("/detail/signature") == Some(&signature)) {
+        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes et ne relit pas un detail, le
+        // rapport se reconnait a la signature de ce qu'il dit en entier, que son genre porte (et donc son empreinte).
+        let signature = socle::fichiers::sha256_hex(format!("{}|{}", r.resume, r.detail).as_bytes())[..16].to_string();
+        let genre = format!("{} · {}", r.genre, signature);
+        let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
+        if deja.iter().any(|l| l.empreinte == empreinte) {
             continue;
         }
-        let mut detail = r.detail;
-        detail["signature"] = signature;
-        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &r.genre, detail, sans_contexte: true, ..Default::default() };
-        if incidents::noter(racine, &note).is_some() {
-            notes += 1;
+        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &genre, detail: r.detail, sans_contexte: true, ..Default::default() };
+        match incidents::noter(racine, &note) {
+            Ok(Some(_)) => notes += 1,
+            Ok(None) => {}
+            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
         }
     }
     if !faites.is_empty() {

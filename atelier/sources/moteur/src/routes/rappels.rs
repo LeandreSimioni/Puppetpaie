@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use crate::valeur::vrai;
 use socle::mois::{Graphie, Mois};
 use engagement;
 use crate::compagnie::etat_dsn;
@@ -1394,7 +1393,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
     Ok(out)
 }
 
-/// LES ACCES AUX ORGANISMES (les mots de passe et les comptes du coffre, `coffre::coffre_etat_de`) : aucun ne bloque.
+/// LES ACCES AUX ORGANISMES (les mots de passe et les comptes du coffre, `coffre::coffre_etat_de_la_fiche`) : aucun ne bloque.
 /// On configure, on saisit, on fabrique la DPAE et la DSN sans eux ; ils servent a envoyer depuis le logiciel, et chacun
 /// est un choix. « Pour demarrer » propose ceux qui ne sont pas poses, avec ce qu'ils permettent (`sinon` : ce qui se
 /// fait sans eux) ; une compagnie dont rien ne part (envois simules, ou la demo : `bridage::branchement`) n'en propose
@@ -1410,16 +1409,13 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose,
         let sans_objet = Pose { cle: "acces".into(), libelle: "Les accès aux organismes".into(), texte: texte.into(), ou: OU_DES_ACCES.into(), onglet: "coffre".into(), champ: None };
         return Ok((Vec::new(), Some((sans_objet, Pastille::de("information", mots)))));
     }
-    let etat = super::coffre::coffre_etat_de(&ctx.racine, &ctx.entreprise)?;
+    let etat = super::coffre::coffre_etat_de_la_fiche(&ctx.racine, &ctx.entreprise)?;
     let mut out = Vec::new();
-    for s in etat["services"].as_array().into_iter().flatten() {
-        let pose = vrai(&s["pose"]) || vrai(&s["environnement"]);
-        let compte_dit = s["identifiant"]["manque"].as_array().is_none_or(Vec::is_empty);
-        if pose && compte_dit {
+    for s in etat.services {
+        if (s.pose || s.environnement) && s.identifiant.manque.is_empty() {
             continue;
         }
-        let dit = |k: &str| s[k].as_str().unwrap_or("").to_string();
-        out.push(acces_propose(format!("acces.{}", dit("service")), dit("libelle"), format!("{} depuis le logiciel", dit("sert_a")), "vous le faites vous-même, hors du logiciel"));
+        out.push(acces_propose(format!("acces.{}", s.service), s.libelle.to_string(), format!("{} depuis le logiciel", s.sert_a), "vous le faites vous-même, hors du logiciel"));
     }
     // Le Drive de la sauvegarde : se lie au meme endroit (« Lier le Drive »), sans reseau pour le savoir.
     if super::coffre::compte_autorise(&ctx.racine).is_none() {

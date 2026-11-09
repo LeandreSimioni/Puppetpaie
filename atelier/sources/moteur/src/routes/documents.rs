@@ -719,7 +719,7 @@ pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
     if branchement.joue() {
         return Ok(Box::new(BoiteSimulee::du_contexte(ctx)?));
     }
-    if !crate::compagnie::boite::disponible(&ctx.racine) {
+    if !crate::compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
         return Err(erreur(
             Classe::BoiteAbsente,
             socle::echec::cle("Aucune boîte courriel : poser le mot de passe d'application de la boîte dans Configuration › Mots de passe.", "courriel"),

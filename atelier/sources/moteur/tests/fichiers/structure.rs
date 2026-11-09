@@ -333,9 +333,16 @@ fn treteaux(test: &str) -> PathBuf {
 #[test]
 fn l_exemple_de_chaque_fiche_est_accepte() {
     let c = treteaux("exemples");
-    // Le serveur du filet et du développeur : un faux, sur cette machine ; il donne une identité de poste et accepte tout.
-    let (filet, _) = crate::outils::serveur(|_| {
-        Some(crate::outils::http_json(200, &json!({"poste": "0".repeat(32), "cle": "0".repeat(64), "confirme": false, "numero": 1})))
+    // Le serveur du filet et du développeur : un faux, sur cette machine ; il donne une identité de poste et accepte tout,
+    // chaque action rendant sa forme (`editeur.rs`).
+    let (filet, _) = crate::outils::serveur(|r| {
+        Some(match r.chemin.as_str() {
+            "/poste" => crate::outils::http_json(200, &json!({"poste": "0".repeat(32), "cle": "0".repeat(64)})),
+            "/rapport" => crate::outils::http_json(200, &json!({"recus": [], "ecartes": []})),
+            "/retour" => crate::outils::http_json(200, &json!({"numero": "R-000001", "ticket": "", "ticket_numero": null})),
+            "/reponses" => crate::outils::http_json(200, &json!({"retours": []})),
+            _ => crate::outils::http_json(404, &json!({"erreur": "Action inconnue."})),
+        })
     });
     std::fs::write(c.join("config/diagnostic.json"), json!({"serveur": filet}).to_string()).unwrap();
     // Les bulletins d'un ancien logiciel, dans la boîte de l'import : un artiste (janvier 2026, sans la CASC-SVP) et un

@@ -597,9 +597,8 @@ pub(crate) fn apercu_lu(
 ///   quand, et le jour de la reprise ;
 /// - `editeur` : ce qui attend l'editeur -- les incidents et les signalements partis (ou a partir) de ce poste qui
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
-///   compte ceux qui n'ont pas de reponse.
-///
-/// Ces ajouts ne levent jamais : une ligne qui n'a pas la forme attendue n'est pas comptee.
+///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
+///   refuse.
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine).map_err(Echec::from)?;
     let paies = engagement::importe::paies_lues(racine).map_err(Echec::from)?;
@@ -609,7 +608,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let fin = contrats.iter().filter_map(|c| c.fin.as_deref().and_then(plein)).max().unwrap_or_default();
     let salaries: HashSet<&str> = contrats.iter().map(|c| c.salarie.as_str()).filter(|s| !s.is_empty()).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
-    let editeur = attend_l_editeur(racine);
+    let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
     let reprises = reprises_faites(racine, &contrats, &paies);
     // L'historique repris en une ligne (`repris_dit`), et son titre : le jour de la derniere reprise.
@@ -793,38 +792,35 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
 /// `editeur` de `importation-etat` : les incidents (`journal/incidents.json`) et les signalements
 /// (`journal/signalements.json`) de ce poste qui parlent de l'import -- un incident de nature `refus` n'en est pas : la
 /// phrase a ete dite a l'ecran. Rien que ce qu'ils portent deja (caviarde).
-fn attend_l_editeur(racine: &Path) -> Vec<MessageEditeur> {
+fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
     let parle_d_import = |t: &str| {
         let t = t.to_lowercase();
         t.contains("import") || t.contains("repris")
     };
-    let texte = |v: &Value, cle: &str| v.get(cle).and_then(Value::as_str).unwrap_or("").to_string();
     let mut out = Vec::new();
-    for l in crate::compagnie::incidents::lire(racine, None, false).unwrap_or_default() {
-        let (ou_, genre, resume) = (texte(&l, "ou"), texte(&l, "genre"), texte(&l, "resume"));
+    for l in crate::compagnie::incidents::lire(racine, None, false)? {
         // Les ecarts de calcul de l'import sont l'etude de l'editeur (`import::ecarts`) : rien n'y attend la compagnie.
-        if ou_ == crate::import::ecarts::OU {
+        if l.ou == crate::import::ecarts::OU {
             continue;
         }
         // Un refus (un dossier mal tape, un export absent) se dit a l'ecran ; il n'attend pas l'editeur.
-        if l.get("quoi").and_then(Value::as_str) == Some(crate::compagnie::incidents::REFUS) || !parle_d_import(&format!("{} {}", ou_, genre)) {
+        if l.quoi == crate::compagnie::incidents::REFUS || !parle_d_import(&format!("{} {}", l.ou, l.genre)) {
             continue;
         }
-        let etat = l.get("envoi").map_or(String::new(), |e| texte(e, "etat"));
-        if etat == crate::compagnie::incidents::SANS_OBJET {
+        if l.envoi.etat == crate::compagnie::incidents::SANS_OBJET {
             continue;
         }
-        out.push(message("incident", texte(&l, "quand"), if resume.is_empty() { genre } else { resume }, etat == crate::compagnie::incidents::DEPOSE, false));
+        let parti = l.envoi.etat == crate::compagnie::incidents::DEPOSE;
+        out.push(message("incident", l.quand, if l.resume.is_empty() { l.genre } else { l.resume }, parti, false));
     }
-    for s in crate::compagnie::problemes::signalements(racine) {
-        let debut = texte(&s, "texte");
-        if !parle_d_import(&debut) {
+    for s in crate::compagnie::problemes::signalements(racine)? {
+        if !parle_d_import(&s.garde.texte) {
             continue;
         }
-        let (parti, repondu) = (s.get("etat").and_then(Value::as_str) == Some("arrive"), s.get("reponse").is_some_and(vrai));
-        out.push(message("signalement", texte(&s, "quand"), debut, parti, repondu));
+        let (parti, repondu) = (s.etat == crate::compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
+        out.push(message("signalement", s.garde.quand, s.garde.texte, parti, repondu));
     }
-    out
+    Ok(out)
 }
 
 /// Un message a l'editeur, son titre et sa pastille : la reponse recue, faite ; le reste attend l'editeur, rien que la

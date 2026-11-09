@@ -332,7 +332,7 @@ pub const VARIABLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_DEMANDE";
 /// ni n'y engage), la fausse demande tape ce que `VARIABLE_ESSAIS` dit : les exemples des fiches du coffre se jouent ainsi
 /// sans humain. Une compagnie reelle n'a jamais que le canal du poste.
 pub fn canal_de_la_route(racine: &Path) -> Rc<dyn Canal> {
-    let fausse = std::env::var(VARIABLE_ESSAIS).ok().filter(|_| socle::garde_reseau::en_essai() && crate::compagnie::bridage::branchement(racine).joue());
+    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && crate::compagnie::bridage::branchement(racine).joue());
     match fausse {
         Some(m) => Rc::new(Fausse::mot(&m)),
         None => Rc::new(Reel::du_poste()),
@@ -354,8 +354,27 @@ pub struct Reel {
 impl Reel {
     /// Les canaux de CE poste, d'apres l'environnement du processus.
     pub fn du_poste() -> Reel {
-        let env = |n: &str| std::env::var(n).ok().filter(|v| !v.is_empty());
+        let env = |n: &str| variable(n).filter(|v| !v.is_empty());
         Reel { ecran: ecran_present(&env), fenetre: fenetre_native(), terminal: terminal_du_poste() }
+    }
+}
+
+/// La variable d'environnement `nom`, si elle est posee et se lit.
+fn variable(nom: &str) -> Option<String> {
+    match std::env::var(nom) {
+        Ok(v) => Some(v),
+        Err(std::env::VarError::NotPresent | std::env::VarError::NotUnicode(_)) => None,
+    }
+}
+
+/// Ce qu'un terminal demande quand la question ne dit pas son invite.
+const INVITE_DU_TERMINAL: &str = "Mot de passe du logiciel (rien ne s'affiche) : ";
+
+/// L'invite de la question `q`, ou `de_base` quand elle ne dit pas la sienne.
+fn invite<'a>(q: &'a Question, de_base: &'a str) -> &'a str {
+    match q.invite.as_deref() {
+        Some(i) => i,
+        None => de_base,
     }
 }
 
@@ -421,7 +440,7 @@ mod fenetre_systeme {
         if q.precedent_refuse {
             t.push(format!("Mot de passe refuse (essai {}).", q.essai));
         }
-        t.push(q.invite.as_deref().unwrap_or("Mot de passe du logiciel :").trim().to_string());
+        t.push(super::invite(q, "Mot de passe du logiciel :").trim().to_string());
         t
     }
 
@@ -473,8 +492,15 @@ mod fenetre_systeme {
             match sortie {
                 Ok(s) if s.status.success() => {
                     let tape = String::from_utf8_lossy(&s.stdout).into_owned();
-                    let tape = tape.strip_suffix('\n').map(|t| t.strip_suffix('\r').unwrap_or(t)).unwrap_or(&tape);
-                    Reponse::Mot(tape.to_string())
+                    // La fin de ligne que la boite ajoute (`\n`, ou `\r\n`), et elle seule.
+                    let mut sans_fin = tape.as_str();
+                    if let Some(t) = sans_fin.strip_suffix('\n') {
+                        sans_fin = t;
+                        if let Some(t) = sans_fin.strip_suffix('\r') {
+                            sans_fin = t;
+                        }
+                    }
+                    Reponse::Mot(sans_fin.to_string())
                 }
                 Ok(_) => Reponse::Refus(FERMEE.into()),
                 Err(e) => Reponse::Refus(format!("La fenetre du mot de passe ne s'ouvre pas ({}) : refuse. Rien n'est parti.", e)),
@@ -580,14 +606,15 @@ mod terminal_windows {
             if q.precedent_refuse {
                 invite.push_str(&format!("  Mot de passe refuse (essai {}).\n", q.essai));
             }
-            invite.push_str(q.invite.as_deref().unwrap_or("Mot de passe du logiciel (rien ne s'affiche) : "));
+            invite.push_str(super::invite(q, super::INVITE_DU_TERMINAL));
             let (envoi, recu) = mpsc::channel();
             std::thread::spawn(move || {
-                let _ = envoi.send(rpassword::prompt_password(invite).ok());
+                let _ = envoi.send(rpassword::prompt_password(invite));
             });
-            match recu.recv_timeout(ATTENTE).ok().flatten() {
-                Some(m) => Reponse::Mot(m.trim_end_matches(['\r', '\n']).to_string()),
-                None => Reponse::Refus("Rien n'a ete tape (delai depasse, ou pas de console) : refuse. Rien n'est parti.".into()),
+            match recu.recv_timeout(ATTENTE) {
+                Ok(Ok(m)) => Reponse::Mot(m.trim_end_matches(['\r', '\n']).to_string()),
+                Ok(Err(e)) => Reponse::Refus(format!("La console ne se lit pas ({}) : refuse. Rien n'est parti.", e)),
+                Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus("Rien n'a ete tape (delai depasse, ou pas de console) : refuse. Rien n'est parti.".into()),
             }
         }
     }
@@ -619,22 +646,34 @@ mod terminal_unix {
         }
     }
 
-    /// `stty` avec le terminal pour entree ; sa sortie si elle reussit.
-    fn stty(tty: &File, args: &[&str]) -> Option<String> {
-        let entree = tty.try_clone().ok()?;
-        let sortie = Command::new("stty").args(args).stdin(Stdio::from(entree)).stderr(Stdio::null()).output().ok()?;
-        sortie.status.success().then(|| String::from_utf8_lossy(&sortie.stdout).trim().to_string())
+    /// `stty` avec le terminal pour entree ; sa sortie si elle reussit, sinon ce qui l'en empeche.
+    fn stty(tty: &File, args: &[&str]) -> Result<String, String> {
+        let entree = tty.try_clone().map_err(|e| e.to_string())?;
+        let sortie = Command::new("stty").args(args).stdin(Stdio::from(entree)).stderr(Stdio::null()).output().map_err(|e| e.to_string())?;
+        if !sortie.status.success() {
+            return Err(sortie.status.to_string());
+        }
+        Ok(String::from_utf8_lossy(&sortie.stdout).trim().to_string())
+    }
+
+    /// Le refus d'un terminal qui ne masque pas la saisie, et ce qu'il a dit a part.
+    fn sans_masque(detail: String) -> Reponse {
+        Reponse::Refus(socle::echec::avec("Ce terminal ne sait pas masquer la saisie : rien n'est tape, refuse. Rien n'est parti.", socle::echec::APart { detail: Some(detail), ..socle::echec::APart::default() }))
     }
 
     impl Canal for Tty {
         fn demander(&self, q: &Question) -> Reponse {
-            let Ok(mut tty) = ouvrir() else { return Reponse::Refus(super::SANS_HUMAIN.into()) };
-            // L'etat du terminal avant, pour le rendre tel quel : pas de saisie sans pouvoir masquer l'echo.
-            let Some(avant) = stty(&tty, &["-g"]) else {
-                return Reponse::Refus("Ce terminal ne sait pas masquer la saisie : rien n'est tape, refuse. Rien n'est parti.".into());
+            let mut tty = match ouvrir() {
+                Ok(t) => t,
+                Err(e) => return Reponse::Refus(socle::echec::avec(super::SANS_HUMAIN, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() })),
             };
-            if stty(&tty, &["-echo"]).is_none() {
-                return Reponse::Refus("Ce terminal ne sait pas masquer la saisie : rien n'est tape, refuse. Rien n'est parti.".into());
+            // L'etat du terminal avant, pour le rendre tel quel : pas de saisie sans pouvoir masquer l'echo.
+            let avant = match stty(&tty, &["-g"]) {
+                Ok(a) => a,
+                Err(e) => return sans_masque(e),
+            };
+            if let Err(e) = stty(&tty, &["-echo"]) {
+                return sans_masque(e);
             }
             let _ = writeln!(tty, "\n{}", q.titre);
             for l in &q.lignes {
@@ -643,24 +682,29 @@ mod terminal_unix {
             if q.precedent_refuse {
                 let _ = writeln!(tty, "  Mot de passe refuse (essai {}).", q.essai);
             }
-            let _ = write!(tty, "{}", q.invite.as_deref().unwrap_or("Mot de passe du logiciel (rien ne s'affiche) : "));
+            let _ = write!(tty, "{}", super::invite(q, super::INVITE_DU_TERMINAL));
             let _ = tty.flush();
-            let lecteur = tty.try_clone().ok();
             let (envoi, recu) = mpsc::channel();
-            if let Some(l) = lecteur {
-                std::thread::spawn(move || {
-                    let mut ligne = String::new();
-                    let ok = BufReader::new(l).read_line(&mut ligne).is_ok();
-                    let _ = envoi.send(ok.then_some(ligne));
-                });
+            match tty.try_clone() {
+                Ok(l) => {
+                    std::thread::spawn(move || {
+                        let mut ligne = String::new();
+                        let lu = BufReader::new(l).read_line(&mut ligne).map(|_| ligne).map_err(|e| e.to_string());
+                        let _ = envoi.send(lu);
+                    });
+                }
+                Err(e) => {
+                    let _ = envoi.send(Err(e.to_string()));
+                }
             }
-            let ligne = recu.recv_timeout(ATTENTE).ok().flatten();
+            let ligne = recu.recv_timeout(ATTENTE);
             // Rendre le terminal dans tous les cas.
             let _ = stty(&tty, &[&avant]);
             let _ = writeln!(tty);
             match ligne {
-                Some(l) => Reponse::Mot(l.trim_end_matches(['\r', '\n']).to_string()),
-                None => Reponse::Refus("Rien n'a ete tape (delai depasse ou terminal ferme) : refuse. Rien n'est parti.".into()),
+                Ok(Ok(l)) => Reponse::Mot(l.trim_end_matches(['\r', '\n']).to_string()),
+                Ok(Err(e)) => Reponse::Refus(socle::echec::avec("Le terminal ne se lit pas : refuse. Rien n'est parti.", socle::echec::APart { detail: Some(e), ..socle::echec::APart::default() })),
+                Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus("Rien n'a ete tape (delai depasse ou terminal ferme) : refuse. Rien n'est parti.".into()),
             }
         }
     }

@@ -73,7 +73,7 @@ pub enum Ou {
 pub struct Lieu {
     pub code: String,
     pub court: String,
-    libelle: String,
+    pub libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     edi: Option<String>,
     texte: String,

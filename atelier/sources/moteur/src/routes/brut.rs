@@ -1,14 +1,12 @@
 //! CE QUE LES MODULES PAS ENCORE BRANCHES SUR L'ENVELOPPE LISENT ET ECRIVENT EN JSON : leur charge (`lire_charge`), leur
-//! reponse (`en_json`), les morceaux qu'ils y composent (un encart, une pastille, une phrase en tete) et les mots qu'ils
+//! reponse (`en_json`) et les mots qu'ils
 //! tirent d'une valeur. Une route branchee n'en prend rien : elle lit sa charge en sa forme (`Charge::lire`) et rend la
 //! sienne (`enveloppe::Dite`). Ce module s'efface avec le dernier module qui s'en sert.
 
-use serde_json::{json, Map, Value};
+use serde_json::Value;
 
 use crate::valeur::valeur_en_texte;
 use socle::echec::{erreur, Classe, Echec, R};
-
-use super::Pastille;
 
 /// La charge d'une route pas encore branchee, lue en sa forme comme `Charge::lire` : une cle que la forme ne connait
 /// pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle fautive a part ; rien ne
@@ -26,26 +24,6 @@ pub(crate) fn en_json(v: impl serde::Serialize) -> R<Value> {
 /// Ce qu'une route pas encore branchee a rendu, pour la porte.
 pub(super) fn brute(rendu: R<Value>) -> R<super::Rendu> {
     rendu.map(super::Rendu::brut)
-}
-
-/// `Pastille::de`, en JSON.
-pub(crate) fn pastille(etat: &str, mots: &str) -> Value {
-    json!(Pastille::de(etat, mots))
-}
-
-/// La phrase d'une route, en tete de ce qu'elle rend ; une phrase deja posee par la route est remplacee.
-pub(crate) fn phrase_en_tete(v: Value, phrase: impl Into<String>) -> Value {
-    let mut m = Map::new();
-    m.insert("phrase".into(), Value::String(phrase.into()));
-    if let Value::Object(o) = v {
-        m.extend(o.into_iter().filter(|(k, _)| k != "phrase"));
-    }
-    Value::Object(m)
-}
-
-/// Le nombre d'elements d'une liste rendue (0 : pas une liste).
-pub(crate) fn nombre(v: &Value) -> usize {
-    v.as_array().map_or(0, Vec::len)
 }
 
 /// Une valeur rendue, en mots dans une phrase : rien pour une valeur absente (jamais « None »).

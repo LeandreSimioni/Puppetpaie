@@ -17,9 +17,6 @@ use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-// Ce que `compagnie::coffre` dit de chaque service, et le verdict de `compagnie::coffre_verifier`, sont encore du JSON :
-// ce module les porte tels quels.
-use serde_json::Value;
 
 use crate::compagnie::coffre::{Coffre, Echec as EchecCoffre};
 use crate::compagnie::administrateur::Poste;
@@ -266,9 +263,9 @@ struct Fictive {
 /// LE COMPTE QU'UN MOT DE PASSE OUVRE (`identifiant_du_compte`) : en clair, ce qui en manque, et s'il se saisit sur cette
 /// ligne (`ici`).
 #[derive(Debug, Serialize)]
-struct Identifiant {
+pub(crate) struct Identifiant {
     texte: Option<String>,
-    manque: Vec<&'static str>,
+    pub(crate) manque: Vec<&'static str>,
     ici: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     incomplet_dit: Option<String>,
@@ -285,16 +282,16 @@ struct Identifiant {
 /// Un service du coffre, tel que l'ecran le montre : ce que `compagnie::coffre` en dit (jamais la valeur), le compte qu'il
 /// ouvre, son bouton et sa pastille.
 #[derive(Debug, Serialize)]
-struct ServiceDit {
-    service: String,
-    libelle: String,
-    sert_a: Value,
-    pose: bool,
-    pose_le: Value,
-    environnement: bool,
-    compte: Value,
-    avec_compte: Value,
-    identifiant: Identifiant,
+pub(crate) struct ServiceDit {
+    pub(crate) service: &'static str,
+    pub(crate) libelle: &'static str,
+    pub(crate) sert_a: &'static str,
+    pub(crate) pose: bool,
+    pose_le: Option<String>,
+    pub(crate) environnement: bool,
+    compte: Option<String>,
+    avec_compte: bool,
+    pub(crate) identifiant: Identifiant,
     bouton: &'static str,
     pastille: Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -305,7 +302,7 @@ struct ServiceDit {
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatDuCoffre {
     phrase: String,
-    services: Vec<ServiceDit>,
+    pub(crate) services: Vec<ServiceDit>,
     mot_de_passe_pose: bool,
     bouton_mot_de_passe: &'static str,
     cle_poste: bool,
@@ -348,7 +345,7 @@ struct EtatGoogle {
 struct Verifie {
     phrase: String,
     #[serde(flatten)]
-    verdict: Value,
+    verdict: crate::compagnie::coffre_verifier::Verdict,
 }
 
 /// Ce que rend `google-oublier`.
@@ -409,7 +406,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffreEtat => {
             let SansCharge {} = charge.lire()?;
             let mut e = coffre_etat(ctx)?;
-            e.ecran = Some(ecran_du_coffre(ctx, &mut e));
+            e.ecran = Some(ecran_du_coffre(ctx, &mut e)?);
             let etat: EtatDuCoffre = e.dit("");
             en_json(etat)
         }
@@ -420,18 +417,14 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffrePoser => en_json(coffre_poser(ctx, charge.lire()?, mdp)?),
         Route::CoffreVerifier => {
             let c: ChargeService = charge.lire()?;
-            let verdict = crate::compagnie::coffre_verifier::route(ctx, &socle::ecriture::en_valeur(&c))?;
-            let ok = verdict.get("ok") == Some(&Value::Bool(true));
-            let mots = super::mot(&verdict["pastille"]["mots"]);
+            let verdict = crate::compagnie::coffre_verifier::route(ctx, &c.service)?;
+            let mots = &verdict.pastille.mots;
             // Un compte incomplet se dit avec ce qui lui manque et ou le donner (`identifiant_du_compte`).
             let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, &c.service)?);
-            let conseil = match verdict.get("conseil").and_then(Value::as_str).filter(|c| !c.is_empty()) {
-                Some(c) => format!(" {}", c),
-                None => String::new(),
-            };
+            let conseil: String = verdict.conseil.iter().map(|c| format!(" {}", c)).collect();
             let phrase = match manque {
-                Some(m) if !ok => format!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
-                _ => format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, super::mot(&verdict["message"]), conseil).trim().to_string(),
+                Some(m) if !verdict.ok => format!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
+                _ => format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, verdict.message, conseil).trim().to_string(),
             };
             en_json(Verifie { phrase, verdict })
         }
@@ -459,7 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;
-            let etat = administrateur_etat(&ctx.racine);
+            let etat = administrateur_etat(&ctx.racine)?;
             en_json(EtatAdministrateurDit { phrase: format!("Mot de passe de la compagnie : {}.", etat.pastille.mots), etat })
         }
         Route::AdministrateurRattacher | Route::AdministrateurDetacher => en_json(administrateur(&ctx.racine, porte.route, charge.lire()?, mdp, &Poste::de_ce_poste())?),
@@ -470,9 +463,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 // ------------------------------------------------------------------ l'administrateur
 
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
-pub(crate) fn administrateur_etat(racine: &Path) -> crate::compagnie::administrateur::EtatAdministrateur {
+pub(crate) fn administrateur_etat(racine: &Path) -> R<crate::compagnie::administrateur::EtatAdministrateur> {
     let inst = crate::compagnie::administrateur::installation_de(racine);
-    crate::compagnie::administrateur::etat(&inst, racine, &Poste::de_ce_poste())
+    crate::compagnie::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
 }
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
@@ -502,7 +495,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         };
         let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(refus)?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
-        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste) });
+        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? });
     }
     let lignes = ["Le NOUVEAU mot de passe de cette compagnie, à elle seule.".to_string(), "La frappe ne s'affiche pas.".to_string()];
     let nouveau = secret_a_poser(charge.nouveau, "PuppetPaie : son propre mot de passe", &lignes)?;
@@ -512,7 +505,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         None => nouveau.clone(),
     };
     adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(refus)?;
-    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste) })
+    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? })
 }
 
 /// Des noms en une liste : « A », « A et B », « A, B et C ».
@@ -633,7 +626,7 @@ fn manque_du_compte(identifiant: &Identifiant) -> Option<String> {
 /// seul geste, une seule preuve : tout se verifie avant d'ecrire. Rend l'etat du coffre, sans valeur. Rien a poser se
 /// refuse avant la porte du mot de passe du logiciel : il n'y a rien a autoriser.
 fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    let service = crate::compagnie::coffre::service_connu(&socle::ecriture::en_valeur(&c.service)).map_err(en_operation)?;
+    let service = crate::compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     let compte = if c.nom.is_some() || c.prenom.is_some() { compte_dpae_change(ctx, c.nom.as_deref(), c.prenom.as_deref())? } else { None };
     // Sans `valeur` (`moteur route`) : le compte seul s'il change, sinon le secret, tape par un humain apres la porte.
     let donne = c.valeur.as_deref().is_some_and(|v| !socle::texte::strip(v).is_empty());
@@ -660,14 +653,11 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
     let manque = etat.services.iter().filter(|s| s.service == service.nom).find_map(|s| manque_du_compte(&s.identifiant));
     let (phrase, couleur) = match manque {
         Some(manque) => (format!("{} ; pas essayé : {}.", quoi, manque), "gris"),
-        None => match crate::compagnie::coffre_verifier::route(ctx, &socle::ecriture::en_valeur(&ChargeService { service: service.nom.to_string() })) {
-            Ok(v) if v.get("ok") == Some(&Value::Bool(true)) => (format!("{}, et vérifié : la connexion passe.", quoi), "vert"),
+        None => match crate::compagnie::coffre_verifier::route(ctx, service.nom) {
+            Ok(v) if v.ok => (format!("{}, et vérifié : la connexion passe.", quoi), "vert"),
             Ok(v) => {
-                let conseil = match v.get("conseil").and_then(Value::as_str).filter(|c| !c.is_empty()) {
-                    Some(c) => format!(" — {}", c),
-                    None => String::new(),
-                };
-                (format!("{} ; connexion refusée : {}{}", quoi, super::mot(&v["message"]), conseil), "rouge")
+                let conseil: String = v.conseil.iter().map(|c| format!(" — {}", c)).collect();
+                (format!("{} ; connexion refusée : {}{}", quoi, v.message, conseil), "rouge")
             }
             Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase()), "rouge"),
         },
@@ -678,7 +668,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
 /// `coffre-oublier` : retire un secret du coffre.
 fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&str>) -> R<EtatDuCoffre> {
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer un mot de passe")?;
-    let service = crate::compagnie::coffre::service_connu(&socle::ecriture::en_valeur(&c.service)).map_err(en_operation)?;
+    let service = crate::compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
     coffre_etat(ctx)
 }
@@ -753,7 +743,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
     let inst = crate::compagnie::administrateur::installation_de(&ctx.racine);
-    if crate::compagnie::administrateur::est_rattachee(&inst, &ctx.racine) {
+    if crate::compagnie::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
@@ -766,7 +756,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    if crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine) {
+    if crate::compagnie::administrateur::est_rattachee(&crate::compagnie::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
@@ -922,7 +912,7 @@ fn faux_google() -> Option<String> {
 fn adresses_du_poste() -> envois::drive::Adresses {
     match faux_google() {
         Some(b) => envois::drive::Adresses::de_la_base(&b),
-        None => envois::drive::Adresses::default(),
+        None => envois::drive::Adresses::de_google(),
     }
 }
 
@@ -951,7 +941,7 @@ pub const VARIABLE_GOOGLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_GOOGLE";
 fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
     match faux_google() {
         Some(b) => envois::google_autorisation::Adresses::de_la_base(&b),
-        None => envois::google_autorisation::Adresses::default(),
+        None => envois::google_autorisation::Adresses::de_google(),
     }
 }
 
@@ -1112,52 +1102,43 @@ fn coffre_etat(ctx: &Contexte) -> R<EtatDuCoffre> {
     coffre_etat_de_la_fiche(&ctx.racine, &ctx.entreprise)
 }
 
-/// `coffre_etat` en JSON, pour les rappels (`routes::rappels`, qui lit encore l'etat par ses cles).
-pub(crate) fn coffre_etat_de(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<Value> {
-    Ok(socle::ecriture::en_valeur(&coffre_etat_de_la_fiche(racine, entreprise)?))
-}
-
-/// L'etat du coffre sur une fiche entreprise donnee : `coffre_poser` le relit sur la fiche qu'il vient d'ecrire.
-fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
+/// L'etat du coffre sur une fiche entreprise donnee : `coffre_poser` le relit sur la fiche qu'il vient d'ecrire, les
+/// rappels y lisent les acces qui manquent (`routes::rappels`).
+pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
     let coffre = crate::compagnie::coffre::Coffre::du_poste(racine, "");
-    let secrets = coffre.etat().map_err(vers_route)?;
+    let secrets = coffre.services().map_err(vers_route)?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = crate::compagnie::bridage::branchement(racine).joue();
     let mut services = Vec::new();
     for s in secrets {
-        // Ce que `compagnie::coffre::etat` dit de chaque service : son nom et son libelle, s'il est pose ou fourni par
-        // l'environnement, et quand.
-        let service = super::mot(&s["service"]);
-        let pose = s["pose"] == Value::Bool(true);
-        let environnement = s["dans_environnement"] == Value::Bool(true);
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
         // fait ; absent, a poser.
         let pastille = if simule {
             Pastille::de("information", "simulé")
-        } else if environnement {
+        } else if s.dans_environnement {
             Pastille::de("a_faire", "fourni par l'environnement")
-        } else if pose {
-            match s["pose_le"].as_str().and_then(|t| t.get(..10)) {
+        } else if s.pose {
+            match s.pose_le.as_deref().and_then(|t| t.get(..10)) {
                 Some(le) => Pastille::de("fait", &format!("posé le {}", super::quand(le))),
                 None => Pastille::de("fait", "posé"),
             }
         } else {
             Pastille::de("a_faire", "absent")
         };
-        let identifiant = identifiant_du_compte(entreprise, &service)?;
+        let identifiant = identifiant_du_compte(entreprise, s.service)?;
         services.push(ServiceDit {
-            libelle: super::mot(&s["libelle"]),
-            sert_a: s["sert_a"].clone(),
-            pose,
-            pose_le: s["pose_le"].clone(),
-            environnement,
-            compte: s["compte"].clone(),
-            avec_compte: s["avec_compte"].clone(),
+            service: s.service,
+            libelle: s.libelle,
+            sert_a: s.sert_a,
+            pose: s.pose,
+            pose_le: s.pose_le,
+            environnement: s.dans_environnement,
+            compte: s.compte,
+            avec_compte: s.avec_compte,
             bouton: if identifiant.ici { "Enregistrer" } else { "Poser" },
             identifiant,
             pastille,
             oublier: None,
-            service,
         });
     }
     let mot_de_passe_pose = coffre.ouverture_exigee().map_err(vers_route)?;
@@ -1220,9 +1201,9 @@ struct EcranDuCoffre {
 /// d'un poste sans cle, la ligne du mot de passe du logiciel et celle de l'administrateur, les notes des comptes Urssaf
 /// et courriel, a quoi servent le compte Google et le filet, et ce que demandent les confirmations. La page n'en ecrit
 /// rien ; chaque service porte aussi ce que sa confirmation d'oubli demande (`oublier`).
-fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
+fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
     let fictive = crate::compagnie::bridage::branchement(&ctx.racine).joue();
-    let adm = (!fictive).then(|| administrateur_etat(&ctx.racine));
+    let adm = if fictive { None } else { Some(administrateur_etat(&ctx.racine)?) };
     let (en_liste, rattachee, peut_rattacher) = match &adm {
         Some(a) => (a.autres_dit.clone(), a.rattachee, a.peut_rattacher),
         None => (String::new(), false, false),
@@ -1238,7 +1219,7 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
         None
     };
     let demande = "demandé à l'ouverture et à chaque dépôt réel, envoi ou signature";
-    EcranDuCoffre {
+    Ok(EcranDuCoffre {
         intro: "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. La page ne voit jamais un mot de passe, seulement s'il est posé.",
         encart,
         logiciel: LigneDuLogiciel {
@@ -1267,5 +1248,5 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> EcranDuCoffre {
         google_ouvert: "La fenêtre Google est ouverte dans votre navigateur : choisissez le compte, acceptez, puis revenez ici ; cette ligne se met à jour toute seule. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.",
         google_oublier: "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.",
         diagnostic: "ce qui casse part chez l'éditeur, avec de quoi le reproduire (ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an le nombre de paies faites ; les noms, NIR, adresses et coordonnées des salariés n'en partent pas",
-    }
+    })
 }
