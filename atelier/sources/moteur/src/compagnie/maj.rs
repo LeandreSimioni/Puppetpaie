@@ -653,41 +653,15 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
     let s = p.wait_with_output().map_err(|e| e.to_string())?;
     let sortie = String::from_utf8_lossy(&s.stdout);
     let erreurs = || -> String { String::from_utf8_lossy(&s.stderr).trim().chars().rev().take(800).collect::<String>().chars().rev().collect() };
-    // La reponse de `moteur route` est sa derniere ligne (`routes::enveloppe::Reponse`).
-    let Some(ligne) = sortie.lines().rev().find(|l| !l.trim().is_empty()) else { return Err(erreurs()) };
-    let rep: ReponseDuNeuf = socle::forme::lire_texte(ligne, "La réponse du nouveau programme ne se lit pas.").map_err(|e| format!("{} {}", e, erreurs()))?;
-    match (rep.ok, rep.refus) {
-        (true, _) => Ok(()),
-        (false, Some(r)) => Err(format!("il ne lit pas la configuration : {}", r.phrase)),
-        (false, None) => Err("il ne lit pas la configuration".to_string()),
+    // L'issue est le code de sortie de `moteur route` (0 : la route a repondu ; un refus sort en 1, `service::commande`) :
+    // le programme d'aujourd'hui ne lit pas la reponse de celui de demain, dont la forme peut avoir change. Un echec se
+    // dit avec la derniere ligne qu'il a ecrite, en texte, et ce qu'il a dit sur sa sortie d'erreur.
+    if s.status.success() {
+        return Ok(());
     }
-}
-
-/// La reponse d'une route du nouveau programme (`routes::enveloppe::Reponse`), ce que `controler` en lit : l'issue, et la
-/// phrase d'un refus ; ce qu'elle rend d'autre n'est pas lu.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReponseDuNeuf {
-    ok: bool,
-    #[allow(dead_code)]
-    ecrit: bool,
-    #[allow(dead_code)]
-    resultat: Option<serde::de::IgnoredAny>,
-    refus: Option<RefusDuNeuf>,
-}
-
-/// Le refus d'une route du nouveau programme : sa phrase ; sa classe, ce qu'il faut corriger et ce qu'il porte a part ne
-/// sont pas lus.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RefusDuNeuf {
-    #[allow(dead_code)]
-    classe: Option<serde::de::IgnoredAny>,
-    phrase: String,
-    #[allow(dead_code)]
-    corriger: Option<serde::de::IgnoredAny>,
-    #[allow(dead_code)]
-    a_part: Option<serde::de::IgnoredAny>,
+    let derniere = sortie.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim).map(String::from);
+    let dit: Vec<String> = derniere.into_iter().chain(Some(erreurs()).filter(|e| !e.is_empty())).collect();
+    Err(format!("il ne lit pas la configuration ({})", dit.join(" ; ")))
 }
 
 /// UNE ARCHIVE SIGNEE, recue et verifiee : son entree de `derniere.json` (`archive`, `sha256`, `signature`) lue au depot,
