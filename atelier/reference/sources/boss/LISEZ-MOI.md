@@ -39,7 +39,7 @@ Ce que le moteur en lit (chapitre 6) :
   suit l'arrêté (« par journée de travail accomplie »).
 
 Où le moteur s'en sert : `atelier/sources/paie/src/plafond.rs` (le plafond d'un contrat), `calcul::plafond_de_l_engagement`
-(lots 1i, 1l et 1o, `prive/journal/norme/corrections/`).
+(lots 1i, 1l et 1o, `prive/journal/archives/2026-10-08-lots/norme/corrections/`).
 
 ## `boss-frais-professionnels-20261013.pdf` — Autres éléments de rémunération › Frais professionnels
 

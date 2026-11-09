@@ -125,7 +125,7 @@ pièce brute.
   SIREN, NIC, état, essai ou réel, codes d'anomalies) — et rien d'autre, puisque rien d'autre n'y est.
 - `paie/src/ordre_signalements.rs` : la relève des trois derniers mois (§8.2) avant d'écrire un signalement, et
   l'ordre suivant du plus grand que la plate-forme (ses bilans) et le journal connaissent.
-- `prive/journal/finitions/PASSATION-O1.md`, point 1 : la réponse « ce que la plate-forme donne et ne donne pas ».
+- `prive/journal/archives/2026-10-13-finitions/PASSATION-O1.md`, point 1 : la réponse « ce que la plate-forme donne et ne donne pas ».
 - `paie/src/retours.rs`, `lire_rapport` : un rapport au format DSN harmonisé (la spécification VT2.2 : type, message,
   `envoi_etat`, déclarations, anomalies avec code, catégorie, message, rubrique déclenchante, ligne, nombre et salarié,
   informations collectives) lu pour l'Historique.

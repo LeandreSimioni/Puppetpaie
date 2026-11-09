@@ -210,7 +210,7 @@ rompu avant son terme écrit 62.017 = 02 dans la mensuelle et paraît dans les f
 l'accueil, `paie fin-contrat liste`) ; arrivé à son terme (031), rien ne change. Le CDDU a aussi la liste de motifs de la nature 02
 (CCH-11 de 62.002). Inférence écrite : depuis le 100 % DSN, 40.025 « doit rester vide » (`../francetravail-100-dsn/`), l'exclusion
 « AEM » ne joue donc plus. Test : `atelier/sources/paie/tests/dsn/fin_cddu.rs`. Ce qui reste ouvert (la demande expresse du
-salarié, le CDDU non infra-DSN) : `contrats-base.json`, `circuit_derogatoire._reste_ouvert`, et `prive/journal/finitions/PASSATION-C1.md`.
+salarié, le CDDU non infra-DSN) : `contrats-base.json`, `circuit_derogatoire._reste_ouvert`, et `prive/journal/archives/2026-10-13-finitions/PASSATION-C1.md`.
 
 ### Fiche 119 — Quelles informations renseigner concernant le préavis pour un signalement fin de contrat ?
 

@@ -169,7 +169,7 @@ ligne `prevoyance` des intermittents, le Fonds santé (santé) du décès (prév
   déclare aux dates du mois du versement (norme 2026.1, S21.G00.58.003, `norme-dsn/texte/bloc-S21.G00.60.txt` l. 14-18,
   p. 265 : « à renseigner en période de versement »). **Inférence** : la « période de versement » est le mois de la
   correction, du 1er au dernier jour (la date du versement, 50.001, en est le dernier jour). Une correction suivante
-  relit ces rappels (`versement_declare::VersementDeclare::rappels_net_social`). `prive/journal/norme/corrections/PASSATION-V1o.md`.
+  relit ces rappels (`versement_declare::VersementDeclare::rappels_net_social`). `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1o.md`.
 - **Q 37** (montant négatif affiché négatif) : rien ne borne `Paie::net_social` ; `fmt_eur` et `dsn::ms` écrivent le
   signe ; le format CSL de 58.004 admet le `-`. Conforme.
 - **Q 38** (aucun cumul) : le bulletin n'imprime pas de cumul du montant net social. Conforme.
@@ -271,7 +271,7 @@ charges dues par l'employeur », une ligne « dont … » par contribution (libe
 détail ajouté sous le regroupement ne le défasse pas est une **inférence** (le regroupement reste, au même montant ; le
 texte n'interdit pas d'en dire plus). La CSG et la CRDS non déductibles restent une seule ligne dans les deux modèles
 (al. 2 : elles « sont agrégées ») — c'est déjà une ligne du barème. Tests : `tests/bulletin_modeles.rs`,
-`tests/routes_bulletin_modele.rs`. Passation : `prive/journal/restes/PASSATION-R11.md`.
+`tests/routes_bulletin_modele.rs`. Passation : `prive/journal/archives/2026-10-08-lots/restes/PASSATION-R11.md`.
 
 ## La FAQ « Règles générales relatives au bulletin de paie » du BOSS (déposée le 13/10/2026, lot D1, pour le point 3)
 

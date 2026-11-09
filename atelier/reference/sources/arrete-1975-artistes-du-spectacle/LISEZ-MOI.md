@@ -9,7 +9,7 @@ les pièces, `articles-20261010.md` le texte.
   porte « cuits » dans les taux du barème (`logiciel/donnees/baremes/2026.json`, `_statuts`) et le facteur AT/MP 0,70.
 - art. 3, al. 2 : le plafond d'un artiste engagé moins de cinq jours continus, douze fois le plafond horaire par
   journée de travail. Le moteur : `paie/src/plafond.rs` (`plafond_urssaf`, `pour_paie`, `plafond_journees`), à la
-  lettre depuis la vague 1l (10/10/2026, `prive/journal/norme/corrections/PASSATION-V1l.md`) : la « période
+  lettre depuis la vague 1l (10/10/2026, `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1l.md`) : la « période
   d'engagement continu » est le contrat, du début à la fin, en jours calendaires ; une journée de travail est une date
   distincte des lignes de paie (répétitions comprises, quel que soit le nombre de cachets du jour) ; le plafond « est
   égal » à 12 × le plafond horaire par journée, sans maximum avec le prorata ; une journée dite et non datée refuse.

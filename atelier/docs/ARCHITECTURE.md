@@ -1,8 +1,66 @@
 # Architecture
 
+Ce fichier fait foi pour l'architecture : il dit comment le logiciel est fait, et pourquoi. Ce qui change l'architecture
+le change dans le même commit.
+
+## Le corps et ses portes
+
+**Tout est en Rust**, et le logiciel est un corps solide sous une peau solide, percée de quelques portes seulement : les
+routes (la page et le LLM), les fichiers, les imports. À la porte, on choisit ce qui entre ; partout ailleurs, rien
+n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; dedans ne circulent que des types.
+
+- **Une donnée lue est une forme, déclarée une fois.** Fichier, barème, charge ou réponse d'une route : une structure
+  `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
+  qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
+  texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
+  aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature est une `enum`.
+- **Pourquoi** : aucun calcul ne se demande si une case est vide ou mal écrite ; le compilateur oblige chaque calcul à
+  traiter chaque cas, et suit chaque lecteur quand une forme change. Et la vitesse : avant, ouvrir une page prenait
+  jusqu'à 5 s parce que la même carte se relisait 40 à 50 fois ; lue une fois à la porte, elle se passe ensuite en type
+  (`socle::forme::partagee`, le journal lu une fois par geste : `envois::journal::lu`). C'est la structure qui fait la
+  vitesse, pas Rust seul.
+- **La peau protège la forme, les sources protègent le contenu** : chaque valeur livrée cite le texte déposé qui la
+  fonde (« Les sources », `AGENTS.md`). Il faut les deux.
+
+## Les garde-fous sont dans la structure
+
+Un garde-fou écrit dans le code ou dans une consigne finit contourné (un agent au long contexte l'oublie) ; un
+garde-fou que le compilateur ou un test de structure tient ne s'oublie pas. On ne garde donc une règle d'architecture
+que par la structure :
+
+- **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que des portes, `socle` et `routes` (`moteur` et
+  `atelier` l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
+- **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
+  `engagement`.
+- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
+  `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
+  `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
+  `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
+  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`. Les tests de structure sont
+  les bienvenus ; un test qui fige un détail ne s'écrit pas.
+
+## Compiler peu
+
+Le découpage en crates sert aussi le temps : on code, et on compile après. Pendant le travail, `cargo check` (types
+seulement, quelques secondes) ; les tests de la crate qu'on touche, de temps en temps ; la compilation complète et la
+suite, **une fois, à la fin**, par l'orchestrateur, qui règle alors ce qui casse. Avec des agents qui font peu
+d'erreurs, compiler toutes les trente secondes ne coûte que du temps. La règle de travail est dans `AGENTS.md` (« Une
+seule vérification, à l'arrivée », « On compile peu »).
+
 ## Le principe
 
-Trois règles de conception.
+**L'argent est hors du logiciel.** Il dit combien et à qui ; la compagnie vire ; la DSN porte les ordres de
+prélèvement.
+
+**Deux acteurs, une porte.** La personne (la page) et un LLM (`moteur route`) passent par les mêmes routes, reçoivent
+les mêmes phrases et les mêmes refus. Chaque route porte sa fiche dans son code (`routes/src/catalogue.rs`) ; `moteur
+routes` tire le catalogue de ces fiches. La route rend ce qui se lit (phrase, état, geste) ; la page met en page et ne
+décide rien. Un manque du LLM est un manque du moteur.
+
+**Tout est daté.** Barèmes, configuration entière de la compagnie, engagements et leurs versions, journal : chaque
+valeur porte sa date, et le moteur lit à la date de la période payée, jamais « à aujourd'hui ». Une donnée non datée
+est un trou : elle rend le passé faux dès qu'elle change. Une compagnie se rejoue donc depuis son premier jour en
+avançant l'horloge (« L'horloge des compagnies fictives »).
 
 **Le calcul est du code, pas du langage.** Un modèle de langage ne calcule jamais
 une cotisation. La crate `engagement` applique les barèmes datés ; elle est la seule
@@ -34,10 +92,12 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
                            │
                         compagnie l'installation, le coffre, la mise à jour, la sauvegarde, les incidents
                            │
-         ┌─────────────────┼─────────────────┐
-       envois        declarations ──────► documents
-         │                 │                 │
-         └─────────────────┼─────────────────┘
+                         envois     ce qui part et revient ; le journal
+                           │
+                       declarations la DSN, la DPAE, la norme
+                           │
+                       documents    contrat, bulletin, certificat… (ne calcule rien)
+                           │
                        engagement   la saisie, le calcul (le seul), la validation, le recalcul
                            │
                          droit      barèmes datés, conventions, natures de contrat, règles ; lit tout à une date
@@ -52,7 +112,7 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `engagement` | la saisie, le calcul de ses paies, la validation, la modification et ses versions, le recalcul de lui-même, l'engagement importé, l'engagement non actif, les écarts d'une paie importée avec le calcul du moteur ; reçoit ce qui est parti (`departs`) | ne fabrique aucun document, ne lit jamais le journal |
 | `documents` | contrat, avenant, bulletin, certificat Congés Spectacles, AER, questionnaire, récapitulatif annuel, bordereau, prélèvement, états de paie, du personnel et de comptabilité, plan comptable | ne calcule rien |
 | `declarations` | DSN mensuelle et signalements, DPAE, régularisations, bloc 44, CSA, OETH, CASC-SVP, et la norme qui les contrôle (usages, formats, natures, champs) ; prend à `documents` | ne calcule rien, n'envoie rien |
-| `envois` | ce qui part et revient : net-entreprises, DPAE, signature, courriel, Drive, retours et bilans ; le journal de ce qui est parti ; le branchement (le monde, le simulateur, le message) | ne fabrique rien, n'ouvre jamais le coffre |
+| `envois` | ce qui part et revient : net-entreprises, DPAE, signature, courriel, Drive, retours et bilans ; le journal de ce qui est parti ; le branchement (le monde, le simulateur, le message) ; prend à `declarations` et à `documents` ce qui part | ne fabrique rien, n'ouvre jamais le coffre |
 | `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, le filet, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
 | `import` | le passé d'une compagnie tenu dans un autre logiciel, tel que ses pièces le disent : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les certificats et les AEM en PDF, ce qu'une pièce atteste (`attestes`), les fiches proposées, le mois importé, les écarts de calcul, le caviardage | n'écrit rien pour une route : c'est `routes/src/importation/` |
 | `routes` | `moteur route` : la porte (`lib.rs` : l'aiguillage ; `enveloppe`, `catalogue`), une route par geste de l'écran, et ce qu'elles font ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) | ne prend rien à l'interface, aux commandes ni à l'atelier |
@@ -1614,11 +1674,11 @@ racine (les installations posées ne lisent que `version` et `archives`),
 jamais en perdre ni rien gagner sous `archives` qui ne soit un système.
 
 **Deux autres sortes d'archives, à côté.** L'**archive des fictives**
-(`puppetpaie-<version>-fictives.zip`, `publier::archiver_fictives`), signée, que
+(`puppetpaie-<version>-fictives.zip`, `publication::publier::archiver_fictives`), signée, que
 `derniere.json` nomme sous `fictives` avec l'**empreinte** de leur contenu
 (SHA-256 des fichiers livrés et de leurs noms, ni compression ni dates). Les
 **archives d'installation** (`puppetpaie-<version>-<système>-installation.zip`,
-Linux, Mac et tous ; `publier::archiver_installation`) : `logiciel/` et
+Linux, Mac et tous ; `publication::publier::archiver_installation`) : `logiciel/` et
 `fictives/`, ce qu'on décompresse pour installer ; ni signées ni nommées,
 comme l'installeur Windows.
 
@@ -1658,7 +1718,7 @@ et `maj/journal.log` le dit.
 - `publier` — par le flux « Publier » du dépôt public
   (`.github/workflows/publier.yml`), qui compile les systèmes choisis (le Mac
   sur `macos-latest`), attend l'approbation de Léandre, signe
-  (`publier::publier_depuis_l_environnement`) et pose leurs archives, celle de
+  (`publication::publier::publier_depuis_l_environnement`) et pose leurs archives, celle de
   tous et celle des fictives, les archives d'installation, `derniere.json` et
   l'installeur dans une Release ; jamais republier un numéro.
 
@@ -1732,9 +1792,9 @@ vit dans `moteur/tests/` ; un test qui n'appelle qu'une crate sur des valeurs vi
 | documents | `documents/` | 20 | la forme relue, les chiffres égaux à l'engagement |
 | déclarations | `declarations/`, `moteur/tests/dsn/` | 90 | la norme : usages, formats, blocs, ordre, échéances |
 | envois | `envois/` | 40 | la lecture des retours réels transcrits, le garde-fou réseau, aucun envoi réel sans mot de passe |
-| interface | `moteur/tests/routes/`, `interface_fichiers.rs`, `interface_http.rs`, `src/interface/`, `src/routes/` | 20 | une route refuse et rien n'est écrit ; l'ouverture |
-| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `src/compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
-| import | `moteur/tests/fichiers/bulletin_lu.rs`, `caviardage.rs`, `tests/routes/import_neuve.rs`, `src/import/` | 15 | un passé importé se relit (bulletins, DSN) ; ce qui part chez l'éditeur ne désigne personne |
+| routes | `routes/`, `moteur/tests/routes/`, `interface_fichiers.rs`, `interface_http.rs`, `moteur/src/interface/` | 20 | une route refuse et rien n'est écrit ; l'ouverture |
+| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
+| import | `moteur/tests/fichiers/bulletin_lu.rs`, `caviardage.rs`, `tests/routes/import_neuve.rs`, `import/` | 15 | un passé importé se relit (bulletins, DSN) ; ce qui part chez l'éditeur ne désigne personne |
 | atelier | `atelier/tests/atelier/` (`donnees_reelles.rs`, `verifier_avant_commit.rs`, `referentiels.rs` : sa propre cible), `moteur/tests/fichiers/garde_reseau.rs`, `moteur/tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
 | parcours | `moteur/tests/rejeu.rs` | 4 | un scénario joué de bout en bout à l'horloge, ses sorties comparées à un oracle |
 

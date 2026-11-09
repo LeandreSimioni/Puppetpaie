@@ -1,6 +1,6 @@
 # Le plafond de la Sécurité sociale d'un salarié à temps partiel, et S21.G00.40.084
 
-Déposé le 10/10/2026, lot V4b (`prive/journal/norme/corrections/PASSATION-V4b.md`). Ce dossier ne porte pas de texte
+Déposé le 10/10/2026, lot V4b (`prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V4b.md`). Ce dossier ne porte pas de texte
 brut : les textes lus sont relevés ailleurs dans `atelier/reference/`, et ce qui suit dit où, ce qu'on en lit, et où le
 moteur s'en sert.
 
@@ -73,7 +73,7 @@ santé dans l'assiette CSG. Test : `tests/dsn/rubriques_2027.rs`,
    complémentaire, c'est **lu** : l'ANI du 17/11/2017, art. 32, définit T1 par renvoi au plafond de L. 241-3, et le cahier
    CT2026 (l. 3325-3333) fait proratiser la caisse sur 40.013 / 40.012. Pour la santé et la prévoyance, les accords 3090 et
    1285 déposés le 11/10 parlent du PMSS sans mot sur le temps partiel : **le moteur les proratise aussi, ce qui reste à
-   trancher** (voir `prive/journal/restes/PASSATION-R5a.md`).
+   trancher** (voir `prive/journal/archives/2026-10-08-lots/restes/PASSATION-R5a.md`).
 5. **Le choix est par compagnie, sans date** (Q16) ; la fiche 3369 dit « établissement ».
 6. **Pas porté** : le forfait jour réduit (aucune nature n'a `40.011 = 20`) ; L. 242-10, 2° (plafond fractionné entre
    plusieurs employeurs).

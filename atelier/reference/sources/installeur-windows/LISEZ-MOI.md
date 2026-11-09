@@ -2,7 +2,7 @@
 
 Relevé le 14/10/2026 par l'Opus du lot I1, déposé par l'orchestrateur. Où le moteur s'en sert : nulle part dans `paie/` ;
 ces textes fondent `atelier/installeur/puppetpaie.nsi` et `atelier/installeur/construire.sh` (la compilation croisée et
-l'installeur NSIS), décrits dans `prive/journal/finitions/PASSATION-I1.md`.
+l'installeur NSIS), décrits dans `prive/journal/archives/2026-10-13-finitions/PASSATION-I1.md`.
 
 | fichier | d'où | ce qu'on en lit |
 |---|---|---|
