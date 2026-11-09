@@ -310,7 +310,8 @@ impl VersementMobiliteEcrit {
 #[serde(deny_unknown_fields)]
 pub struct NotificationAtmp {
     pub le: String,
-    pub calcul: String,
+    /// Le jour du calcul du taux, quand la notification le dit.
+    pub calcul: Option<String>,
     pub effet: String,
 }
 

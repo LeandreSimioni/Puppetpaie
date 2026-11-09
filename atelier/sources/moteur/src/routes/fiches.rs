@@ -285,11 +285,7 @@ pub fn route(o: &HashMap<String, String>, ctx: &Contexte, nom: Route, charge: &V
             v["phrases"] = Value::Array(lignes);
             super::phrase_en_tete(v, p)
         }),
-        Route::TauxAtmp => crate::routes::atmp::route(ctx, charge).map(|mut v| {
-            // Ce que dit la saisie avancee d'un taux notifie.
-            v["aide"] = json!("Le taux vide : celui de l'arrêté de l'année, quand il s'applique au code choisi. Avec 999ZZ, pas de taux.");
-            v
-        }),
+        Route::TauxAtmp => en_json(crate::routes::atmp::route(ctx, lire_charge(charge)?)?),
         Route::Effectif => effectif(ctx, charge),
         Route::ActiverFiche => activer_fiche_route(o, ctx, charge),
         Route::EnregistrerFiche => enregistrer_fiche(ctx, charge),
@@ -802,8 +798,8 @@ fn deriver_etablissements(donnees: &mut Map<String, Value>) -> R<()> {
         if let Some(Value::Object(t)) = o.get_mut("taux_atmp") {
             let code = texte_ou_vide(t.get("code_risque")).trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase();
             t.insert("code_risque".into(), Value::String(code));
-            match crate::routes::atmp::taux_saisi(t.get("valeur"))? {
-                Some(v) => t.insert("valeur".into(), json!(v.to_string().parse::<f64>().unwrap_or(0.0))),
+            match crate::routes::atmp::taux_saisi(&texte_ou_vide(t.get("valeur")))? {
+                Some(v) => t.insert("valeur".into(), json!(socle::num::flottant(v))),
                 None => t.shift_remove("valeur"),
             };
         }

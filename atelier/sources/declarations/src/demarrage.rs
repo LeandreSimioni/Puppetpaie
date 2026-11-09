@@ -535,7 +535,12 @@ pub fn poses(ctx: &Contexte) -> Resultat<Vec<Pose>> {
         return Ok(vec![pose(format!(
             "{}Le code risque et le taux sont ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN et posés de lui-même. Rien à recopier.",
             de,
-            Jour::lire(&n.calcul)?.jj_mm_aaaa(),
+            // Sans jour de calcul, celui de la notification.
+            Jour::lire(match &n.calcul {
+                Some(c) => c,
+                None => &n.le,
+            })?
+            .jj_mm_aaaa(),
             Jour::lire(&n.effet)?.jj_mm_aaaa()
         ))]);
     }
