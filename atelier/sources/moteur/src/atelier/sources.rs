@@ -20,7 +20,6 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::atelier::releve::kali::{self, Evenement, Rapport, Suivi};
@@ -132,7 +131,7 @@ fn sha256(o: &[u8]) -> String {
 /// Ce que la veille sait d'une source en ligne.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum EnLigne {
+pub enum EnLigne {
     Inchangee,
     Changee,
     Injoignable,
@@ -141,7 +140,7 @@ enum EnLigne {
 
 /// Les dates et le commentaire de verification d'une source, quand elle les dit.
 #[derive(Debug, Clone, Serialize)]
-struct Extra {
+pub struct Extra {
     #[serde(skip_serializing_if = "Option::is_none")]
     en_vigueur: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -153,25 +152,25 @@ struct Extra {
 /// L'ETAT D'UNE SOURCE : ce que le manifeste dit, confronte au disque, puis (`verifier`) a ce qui est en ligne. La copie
 /// n'a pas d'etat de conformite quand elle est absente ; la veille n'a rien dit (`en_ligne`) tant qu'on ne l'a pas lancee.
 #[derive(Debug, Clone, Serialize)]
-struct EtatSource {
-    ident: String,
-    titre: String,
-    editeur: String,
+pub struct EtatSource {
+    pub(crate) ident: String,
+    pub(crate) titre: String,
+    pub(crate) editeur: String,
     url: String,
-    contenu: String,
-    version: String,
-    releve_le: String,
+    pub(crate) contenu: String,
+    pub(crate) version: String,
+    pub(crate) releve_le: String,
     verification: Verification,
-    nourrit: Vec<String>,
-    fichier: String,
-    copie_presente: bool,
-    copie_conforme: Option<bool>,
-    transcription: Option<String>,
-    transcription_presente: Option<bool>,
-    en_ligne: Option<EnLigne>,
-    detail: Option<String>,
-    page_de_veille: Option<String>,
-    age_jours: i64,
+    pub(crate) nourrit: Vec<String>,
+    pub(crate) fichier: String,
+    pub(crate) copie_presente: bool,
+    pub(crate) copie_conforme: Option<bool>,
+    pub(crate) transcription: Option<String>,
+    pub(crate) transcription_presente: Option<bool>,
+    pub(crate) en_ligne: Option<EnLigne>,
+    pub(crate) detail: Option<String>,
+    pub(crate) page_de_veille: Option<String>,
+    pub(crate) age_jours: i64,
     extra: Extra,
     kali: Option<KaliSuivi>,
     evenements: Vec<Evenement>,
@@ -179,14 +178,9 @@ struct EtatSource {
     releve: Jour,
 }
 
-/// Ce que la commande lit de chaque etat : sa forme ecrite (`EtatSource`).
-fn ecrits(liste: &[EtatSource]) -> Vec<Value> {
-    liste.iter().map(socle::ecriture::en_valeur).collect()
-}
-
 /// Ce que le manifeste dit, confronte au disque -- sans reseau. Un etat par source, dans l'ordre du manifeste.
-pub fn etats(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R<Vec<Value>> {
-    Ok(ecrits(&etats_lus(installation, manifeste, aujourdhui)?))
+pub fn etats(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R<Vec<EtatSource>> {
+    etats_lus(installation, manifeste, aujourdhui)
 }
 
 fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R<Vec<EtatSource>> {
@@ -263,7 +257,7 @@ pub fn verifier(
     relever: bool,
     telecharger: &mut Telecharger,
     kali_telecharger: &mut kali::Telecharger,
-) -> R<Vec<Value>> {
+) -> R<Vec<EtatSource>> {
     let d = dossier(installation);
     let mut liste: Vec<EtatSource> = etats_lus(installation, manifeste, aujourdhui)?.into_iter().filter(|e| seulement.is_empty() || seulement.contains(&e.ident)).collect();
     let rapport = veiller_kali(&d, &liste, relever, kali_telecharger);
@@ -286,21 +280,20 @@ pub fn verifier(
                 continue;
             }
         };
-        let modifie = match modifie {
-            Some(m) => m,
-            None => "non donne".to_string(),
-        };
+        // Le serveur ne donne pas toujours la date de son fichier : rien ne s'en dit alors.
+        let modifie = modifie.map(|m| format!("Last-Modified : {}", m));
         let attendu = match manifeste.sources.valeur(&e.ident) {
             Some(s) => &s.sha256,
             None => return Err(format!("sources.json : la source « {} » n'y est plus", e.ident)),
         };
         if sha256(&octets) == *attendu {
             e.en_ligne = Some(EnLigne::Inchangee);
-            e.detail = Some(format!("Last-Modified : {}", modifie));
+            e.detail = modifie;
             continue;
         }
         e.en_ligne = Some(EnLigne::Changee);
-        let mut detail = format!("le fichier en ligne n'est plus celui qui a ete lu (Last-Modified : {}). Relire, puis mettre a jour : {}", modifie, nourrit(e));
+        let entre_parentheses = modifie.map(|m| format!(" ({})", m)).into_iter().collect::<String>();
+        let mut detail = format!("le fichier en ligne n'est plus celui qui a ete lu{}. Relire, puis mettre a jour : {}", entre_parentheses, nourrit(e));
         if relever {
             let p = d.join(&e.fichier);
             let souche = p.file_stem().ok_or_else(|| format!("sources.json : « {} » n'a pas de nom de fichier ({})", e.ident, e.fichier))?.to_string_lossy();
@@ -317,7 +310,7 @@ pub fn verifier(
         }
         e.detail = Some(detail);
     }
-    Ok(ecrits(&liste))
+    Ok(liste)
 }
 
 fn nourrit(e: &EtatSource) -> String {
@@ -409,11 +402,8 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
                 if let Some(x) = &t.texte.extension {
                     dit.push(x.clone());
                 }
-                let titre = match &t.texte.titre {
-                    Some(titre) => titre.as_str(),
-                    None => "sans titre",
-                };
-                let ligne = format!("{} : texte {} modifie -- {} ({})", t.livraison, t.ident, titre, dit.join(", "));
+                let titre = t.texte.titre.as_ref().map(|titre| format!(" -- {}", titre)).into_iter().collect::<String>();
+                let ligne = format!("{} : texte {} modifie{} ({})", t.livraison, t.ident, titre, dit.join(", "));
                 if t.ident == k.texte || t.texte.titre.as_deref().is_some_and(parle_salaires) {
                     forts.push(ligne);
                 } else {

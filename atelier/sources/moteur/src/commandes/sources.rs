@@ -13,7 +13,7 @@
 //! resume des livraisons KALI (`veille-kali.json`), et avec `--relever`, la nouvelle version d'une source a cote de
 //! l'ancienne et le XML des textes KALI touches (`kali/`).
 
-use serde_json::{json, Value};
+use crate::atelier::sources::{EnLigne, EtatSource};
 
 use super::analyse::{Args, Opt, Spec};
 use super::rendu::rendre;
@@ -62,41 +62,34 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         #[derive(serde::Serialize)]
         struct Sources<'a> {
             total: usize,
-            sources: &'a [Value],
+            sources: &'a [EtatSource],
         }
         return rendre("sources", Sources { total: liste.len(), sources: &liste });
     }
-    let s = |e: &Value, k: &str| match &e[k] {
-        Value::Null => "?".to_string(),
-        v => crate::valeur::valeur_en_texte(v),
-    };
     dire!();
     for e in &liste {
-        dire!("{}", s(e, "ident"));
-        dire!("   {}", s(e, "titre"));
-        dire!("   {} -- version {}, relevee le {} (il y a {} j)", s(e, "editeur"), s(e, "version"), s(e, "releve_le"), s(e, "age_jours"));
-        dire!("   {}", s(e, "contenu"));
-        let copie = if e["copie_conforme"] == json!(true) {
-            "copie conforme".to_string()
-        } else if e["copie_presente"] == json!(true) {
-            "COPIE DIFFERENTE du manifeste".to_string()
-        } else if e["transcription_presente"] == json!(true) {
-            format!("original hors du depot public, transcription : {}/{}", crate::atelier::sources::COPIES, s(e, "transcription"))
-        } else {
-            format!("copie absente ({}/{})", crate::atelier::sources::COPIES, s(e, "fichier"))
+        dire!("{}", e.ident);
+        dire!("   {}", e.titre);
+        dire!("   {} -- version {}, relevee le {} (il y a {} j)", e.editeur, e.version, e.releve_le, e.age_jours);
+        dire!("   {}", e.contenu);
+        let copie = match (e.copie_conforme, e.copie_presente, e.transcription_presente, &e.transcription) {
+            (Some(true), _, _, _) => "copie conforme".to_string(),
+            (_, true, _, _) => "COPIE DIFFERENTE du manifeste".to_string(),
+            (_, _, Some(true), Some(t)) => format!("original hors du depot public, transcription : {}/{}", crate::atelier::sources::COPIES, t),
+            _ => format!("copie absente ({}/{})", crate::atelier::sources::COPIES, e.fichier),
         };
-        let nourrit: Vec<String> = e["nourrit"].as_array().into_iter().flatten().map(crate::valeur::valeur_en_texte).collect();
-        dire!("   {} ; nourrit : {}", copie, if nourrit.is_empty() { "rien (verification)".to_string() } else { nourrit.join(", ") });
-        if let Some(en_ligne) = e["en_ligne"].as_str() {
+        dire!("   {} ; nourrit : {}", copie, if e.nourrit.is_empty() { "rien (verification)".to_string() } else { e.nourrit.join(", ") });
+        if let Some(en_ligne) = e.en_ligne {
             let marque = match en_ligne {
-                "inchangee" => "OK",
-                "changee" => "A RELIRE",
-                "injoignable" => "??",
-                _ => "A LA MAIN",
+                EnLigne::Inchangee => "OK",
+                EnLigne::Changee => "A RELIRE",
+                EnLigne::Injoignable => "??",
+                EnLigne::Manuelle => "A LA MAIN",
             };
-            dire!("   en ligne : {} {}", marque, s(e, "detail"));
-            if matches!(en_ligne, "manuelle" | "changee") && e["page_de_veille"].is_string() {
-                dire!("   ouvrir : {}", s(e, "page_de_veille"));
+            let detail = e.detail.as_ref().map(|d| format!(" {}", d)).into_iter().collect::<String>();
+            dire!("   en ligne : {}{}", marque, detail);
+            if let (EnLigne::Manuelle | EnLigne::Changee, Some(page)) = (en_ligne, &e.page_de_veille) {
+                dire!("   ouvrir : {}", page);
             }
         }
         dire!();
