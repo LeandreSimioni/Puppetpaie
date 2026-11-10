@@ -194,7 +194,7 @@ pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> Resultat<Retr
 }
 
 pub(crate) fn prime(idcc: &str, annexe: &str, fiche: &str, eng: Option<&Eng>, j: &Jour, jauge: Option<&str>) -> Resultat<Option<Prime>> {
-    c::prime_anciennete(dit_ou_vide(idcc), dit_ou_vide(annexe), &champs(fiche)?, &dit(eng)?, j, jauge)
+    c::prime_anciennete(dit_ou_vide(idcc), dit_ou_vide(annexe), &champs(fiche)?, &dit(eng)?, j, |_| jauge)
 }
 
 pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> Vec<Resultat<Option<Prime>>> {

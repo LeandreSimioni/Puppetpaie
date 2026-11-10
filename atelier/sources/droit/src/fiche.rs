@@ -744,6 +744,8 @@ pub enum Piece {
     /// Les cases d'une compagnie qui emploie des permanents : seule la case « emploie des permanents » cochee les ouvre
     /// (`EmploieDesPermanents`).
     EmploieDesPermanents,
+    /// Les cases que seule une grille qui vise le metier d'un engagement lit (`minima::ParLaGrille`).
+    Metier,
 }
 
 /// LA CLE DES CASES D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS (`ChampsEntreprise::avec_permanents`) : seule sa case
@@ -1549,11 +1551,7 @@ fiche! {
         deduction_forfaitaire: ProfessionDfs,
         deduction_forfaitaire_accord: AccordDfs,
         statut_boeth: StatutBoeth,
-        echelon_ccneac: EchelonCcneac,
         classement_conventionnel: String,
-        poste_depuis: Jour,
-        stagiaire_ccneac: StagiaireCcneac,
-        experimente_3241: bool,
         date_anciennete: Jour,
         actif: bool,
         anniversaire_droits: Jour,
@@ -1573,6 +1571,15 @@ fiche! {
             prevoyance_branche_depuis: Jour,
             categorie_conventionnelle: CategorieConventionnelle,
             conges_reprise: CongesReprise,
+        }
+        /// LES CASES DU METIER : ce que seule une grille des minima qui vise le metier d'un engagement lit (l'echelon de
+        /// la CCNEAC, le poste depuis lequel une anciennete se compte, l'artiste stagiaire, l'experience de la 3241).
+        /// Seule une grille trouvee les ouvre (`minima::ParLaGrille`).
+        metier: Metier, CasesDuMetier, crate::minima::ParLaGrille {
+            echelon_ccneac: EchelonCcneac,
+            poste_depuis: Jour,
+            stagiaire_ccneac: StagiaireCcneac,
+            experimente_3241: bool,
         }
     }
 }
@@ -1599,7 +1606,6 @@ fiche! {
         secteur_2121: Secteur2121,
         type_radio_1922: TypeRadio1922,
         cinquante_salaries_3241: bool,
-        jauge_annexe_1: JaugeAnnexe1,
         urssaf_compte: String,
         medecine_travail: CodeMedecine,
         contact_sante_travail: ContactSanteTravail,
@@ -1647,6 +1653,11 @@ fiche! {
         /// « emploie des permanents » cochee ouvre (`ChampsEntreprise::avec_permanents`).
         avec_permanents: EmploieDesPermanents, CasesAvecPermanents, EmploieDesPermanents {
             cinquante_salaries_et_plus: bool,
+        }
+        /// LES CASES DU METIER : la jauge de la salle, que seule la prime d'anciennete d'un technicien de l'annexe I lit
+        /// (`clauses::prime_anciennete`, `minima::ParLaGrille`).
+        metier: Metier, CasesDuMetierEntreprise, crate::minima::ParLaGrille {
+            jauge_annexe_1: JaugeAnnexe1,
         }
     }
     notes {

@@ -114,6 +114,8 @@ struct Cx<'a> {
     /// jour depuis lequel elle la lie quand c'est celle d'un accord qui suit la grille de la convention.
     grille: &'a Convention,
     lie_depuis: Option<String>,
+    /// La cle des cases du metier de la fiche, que la grille trouvee donne.
+    par_la_grille: droit::minima::ParLaGrille,
     m: &'a emplois::Metier,
     fiche: &'a droit::fiche::SalarieDuContrat,
     paie: &'a Paie,
@@ -124,11 +126,14 @@ struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
-    /// LA CASE `cle` DE LA FICHE DU SALARIE qu'une condition de grille nomme (`droit::minima::case_lue`) : une case de la
-    /// piece d'un permanent (le forfait en jours) ne se lit que pour un contrat paye au mois ; pour un autre, elle ne dit
-    /// rien.
+    /// LA CASE `cle` DE LA FICHE DU SALARIE qu'une condition de grille nomme (`droit::minima::case_lue`) : une case du
+    /// metier, par la cle de la grille ; une case de la piece d'un permanent (le forfait en jours) ne se lit que pour un
+    /// contrat paye au mois ; pour un autre, elle ne dit rien.
     fn case_du_salarie(&self, cle: &str) -> Resultat<Option<CaseLue>> {
         if let Some(lue) = case_lue(&self.fiche.champs, cle)? {
+            return Ok(Some(lue));
+        }
+        if let Some(lue) = case_lue(self.fiche.metier.ouvrir(&self.par_la_grille), cle)? {
             return Ok(Some(lue));
         }
         match self.paie.engagement.nat()?.au_mois() {
@@ -274,7 +279,7 @@ impl<'a> Cx<'a> {
     /// (art. X.4.1, `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Seule la compagnie le
     /// connait : sans lui, le calcul refuse en nommant la case (son type le borne a 1..12, `droit::fiche::EchelonCcneac`).
     fn echelon_ccneac(&self) -> Resultat<(usize, String)> {
-        let Some(e) = self.fiche.echelon_ccneac.dite() else {
+        let Some(e) = self.fiche.metier.ouvrir(&self.par_la_grille).echelon_ccneac.dite() else {
             return Err(socle::echec::cle(
                 format!(
                     "La fiche de {} ne dit pas son échelon de la CCNEAC, et le minimum de son emploi en dépend : l'employeur l'attribue, de 1 à 12 (art. X.4.1). Le dire sur sa fiche (« Échelon (CCNEAC) »).",
@@ -700,7 +705,7 @@ impl<'a> Cx<'a> {
     /// revolus a la veille du dernier jour paye. Seule la compagnie sait depuis quand (`poste_depuis`) : sans elle, le
     /// calcul refuse en nommant la case.
     fn echelon_3090(&self) -> Resultat<(usize, String)> {
-        let Some(depuis) = self.fiche.poste_depuis.dite() else {
+        let Some(depuis) = self.fiche.metier.ouvrir(&self.par_la_grille).poste_depuis.dite() else {
             return Err(socle::echec::cle(
                 format!(
                     "La fiche de {} ne dit pas depuis quand ce poste est le sien, et le minimum de la grille administrative de la 3090 en dépend : un échelon de plus après 5, 10, 15 et 20 ans dans l'entreprise et la fonction. Le dire sur sa fiche (« Dans ce poste depuis »).",
@@ -916,12 +921,13 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> Resultat<Optio
         .parse::<i64>()
         .map_err(|e| e.to_string())?;
     let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
-    let Some((grille, lie_depuis)) = grille_au(t, &idcc, organisation.as_deref(), premier_jour(paie).as_deref()) else { return Ok(None) };
+    let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_deref(), premier_jour(paie).as_deref()) else { return Ok(None) };
     let cx = Cx {
         t,
         idcc: &idcc,
         grille,
         lie_depuis,
+        par_la_grille,
         m: &m,
         fiche: &paie.salarie,
         paie,
@@ -1145,7 +1151,8 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> Resultat<Vec<Avis>> {
 /// (`anciennete`, `si_salarie` : l'artiste stagiaire, l'anciennete du choeur de la CCNEAC, l'experience de la 3241).
 /// Ce que la paie seule departage (la population, l'unite de la ligne, les conditions sur le spectacle et
 /// l'entreprise) ne retire rien : une case que le calcul peut demander se montre. La fiche du salarie montre ces
-/// cases-la, et seulement celles-la (`champs::Champ::si_metier`).
+/// cases-la, et seulement celles-la (`droit::fiche::Piece::Metier`, `routes::fiches::montres`) ; le calcul ne les lit
+/// qu'avec la cle de la grille trouvee (`droit::minima::ParLaGrille`).
 pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> Resultat<BTreeSet<String>> {
     let mut lues = BTreeSet::new();
     let ent = ctx.entreprise_au(jour);
@@ -1154,7 +1161,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> Resultat<BTre
     let tab = table()?;
     let t: &Table = &tab;
     let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
-    let Some((grille, _)) = grille_au(t, idcc, organisation.as_deref(), Some(&jour.iso())) else { return Ok(lues) };
+    let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_deref(), Some(&jour.iso())) else { return Ok(lues) };
     let statut = m.statut().as_str();
     if idcc == "1285" && statut == "technicien" {
         let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| g.to_string()).filter(|g| !g.is_empty());

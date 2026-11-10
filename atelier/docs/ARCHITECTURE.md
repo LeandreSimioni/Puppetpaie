@@ -46,9 +46,13 @@ que par la structure :
   (`ChampsSalarie::permanent`), et celles de l'entreprise que seul son calcul lit (`ChampsEntreprise::permanent`), ne
   s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé au mois donne : un calcul qui n'a
   pas cette nature en main ne les lit pas, il ne compile pas. « Au moins cinquante salariés »
-  (`ChampsEntreprise::avec_permanents`) ne s'ouvre que par la case « emploie des permanents » cochée. Ce que la fiche
+  (`ChampsEntreprise::avec_permanents`) ne s'ouvre que par la case « emploie des permanents » cochée. Les cases du
+  métier (l'échelon de la CCNEAC, le poste, l'artiste stagiaire, l'expérience de la 3241 ; la jauge de la salle de
+  l'annexe I sur la fiche Entreprise) ne s'ouvrent que par `droit::minima::ParLaGrille`, que seule une grille trouvée
+  donne (`grille_au`, et la prime d'ancienneté d'un technicien de l'annexe I). Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
-  engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; une pièce qu'aucun engagement ne peut ouvrir
+  engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
+  du métier de chacun de ses engagements ; une pièce qu'aucun engagement ne peut ouvrir
   ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :

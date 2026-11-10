@@ -1100,8 +1100,16 @@ pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metie
 }
 
 /// La prime d'anciennete d'un technicien de l'annexe de la convention qui en porte une, pour le mois qui finit `jour`,
-/// ou `None` si elle ne le concerne pas.
-pub fn prime_anciennete(idcc: Option<&str>, annexe: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement, jour: &Jour, jauge: Option<&str>) -> Resultat<Option<Prime>> {
+/// ou `None` si elle ne le concerne pas. La jauge de la salle est une case du metier (`fiche::Piece::Metier`) : `jauge`
+/// ne la lit qu'avec la cle de la grille de l'annexe, qu'un technicien de l'annexe seul donne.
+pub fn prime_anciennete<'j>(
+    idcc: Option<&str>,
+    annexe: Option<&str>,
+    fiche: &ChampsSalarie,
+    e: &DitParLEngagement,
+    jour: &Jour,
+    jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<&'j str>,
+) -> Resultat<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -1138,6 +1146,7 @@ pub fn prime_anciennete(idcc: Option<&str>, annexe: Option<&str>, fiche: &Champs
     let base = if sec.familles_costume.iter().flatten().any(|f| f == famille) {
         g.costume.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.costume.{}", niveau)))?
     } else {
+        let jauge = jauge(&crate::minima::ParLaGrille::de_l_annexe());
         let Some((_, salaires)) = jauge.and_then(|j| g.technique.iter().find(|(k, _)| k == j)) else {
             let cles: Vec<String> = g.technique.iter().map(|(k, _)| format!("\"{}\"", k)).collect();
             return Ok(Some(prime(None, Some(format!(

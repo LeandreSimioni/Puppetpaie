@@ -640,8 +640,9 @@ pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: &str)
 
 /// LA GRILLE DE LA CONVENTION `idcc` QUI LIE LA COMPAGNIE AU `jour` : celle du dernier de ses accords (`accords`) dont
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
-/// grille de la convention elle-meme. `None` : la table ne connait pas la convention.
-pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<&str>) -> Option<(&'a Convention, Option<String>)> {
+/// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
+/// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
+pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<&str>) -> Option<(&'a Convention, Option<String>, ParLaGrille)> {
     let base = t.convention(idcc)?;
     let jour: Option<String> = jour.map(|j| j.chars().take(10).collect());
     let lie = |a: &'a Convention| {
@@ -649,10 +650,25 @@ pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour:
         let depuis = lie_depuis(a, organisation, a.en_vigueur.as_deref()?)?;
         jour.as_ref().filter(|j| **j >= depuis).map(|_| (a, Some(depuis)))
     };
-    Some(match base.accords.iter().flatten().rev().find_map(lie) {
+    let (grille, depuis) = match base.accords.iter().flatten().rev().find_map(lie) {
         Some(retenu) => retenu,
         None => (base, None),
-    })
+    };
+    Some((grille, depuis, ParLaGrille(())))
+}
+
+/// LA CLE DES CASES DU METIER (`fiche::Piece::Metier`) : l'echelon, le poste, l'artiste stagiaire, l'experience que
+/// seule une grille des minima lit, et la jauge de la salle que seule la prime d'anciennete d'un technicien de l'annexe I
+/// lit. Seule une grille trouvee pour la convention a un jour la donne (`grille_au`) ; la prime d'anciennete tient la
+/// sienne (`clauses::prime_anciennete`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParLaGrille(());
+
+impl ParLaGrille {
+    /// La cle de la grille de l'annexe I qui donne la prime d'anciennete d'un technicien (`clauses::prime_anciennete`).
+    pub(crate) fn de_l_annexe() -> ParLaGrille {
+        ParLaGrille(())
+    }
 }
 
 /// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, ou d'une unite de grille (la journee,

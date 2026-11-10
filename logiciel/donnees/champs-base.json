@@ -385,7 +385,6 @@
    "declare": false,
    "derive_de": null,
    "rubrique": null,
-   "si_permanents": true,
    "si": {
     "idcc": [
      "3090"
@@ -2033,7 +2032,6 @@
    "note": "L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC (article X.4.1) :\nattribue par l'employeur, il fixe le minimum de la grille. Seule la\ncompagnie le connait : vide, le calcul refuse en nommant la case.",
    "cle": "echelon_ccneac",
    "avance": "cas_particulier",
-   "si_fait": "metier_qui_la_lit",
    "libelle": "Échelon (CCNEAC)",
    "forme": "chiffres",
    "aide": "Pour un emploi non artistique dans une structure de la CCNEAC : l'échelon de 1 à 12 donné par l'employeur (X.4.1), au moins un de plus tous les deux ans jusqu'au septième. Le logiciel en a besoin pour calculer la paie d'un tel emploi.",
@@ -2087,7 +2085,6 @@
    "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Seule la compagnie la connait : vide, la ou\nun minimum en depend, le calcul refuse en nommant la case.",
    "cle": "poste_depuis",
    "avance": "cas_particulier",
-   "si_fait": "metier_qui_la_lit",
    "libelle": "Dans ce poste depuis",
    "forme": "date",
    "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention : quand un minimum en dépend, le logiciel en a besoin pour calculer la paie.",
@@ -2114,7 +2111,6 @@
    "note": "L'ARTISTE STAGIAIRE DE LA CCNEAC (accord du 02/05/2024, art. 1.1.1) : le minimum mensuel d'un artiste dramatique ou\nchoregraphique est abattu de 30 % la 1re annee, de 15 % la 2e.",
    "cle": "stagiaire_ccneac",
    "avance": "cas_particulier",
-   "si_fait": "metier_qui_la_lit",
    "libelle": "Artiste stagiaire (CCNEAC)",
    "forme": "choix",
    "aide": "Entreprises artistiques et culturelles : 1 ou 2 pour un artiste dramatique ou chorégraphique stagiaire en 1re ou 2e année (son minimum mensuel est abattu de 30 % ou de 15 %). Vide : pas stagiaire.",
@@ -2142,7 +2138,6 @@
    "note": "LE CDDU EXPERIMENTE DE LA 3241 : M2 = M1 + 5 %\napres 350 jours ou 2 800 heures dans la fonction, sur quatre branches\n(accord du 22/12/2006, art. 4.3) -- un cumul de carriere, que le moteur\nne voit pas.",
    "cle": "experimente_3241",
    "avance": "cas_particulier",
-   "si_fait": "metier_qui_la_lit",
    "libelle": "Expérimenté dans la fonction (M2)",
    "forme": "booleen",
    "aide": "Télédiffusion : à cocher si la personne a exercé cette fonction au moins 350 jours ou 2 800 heures (télédiffusion, production audiovisuelle ou cinématographique, prestation technique). Son minimum est alors le M2 (+5 %).",

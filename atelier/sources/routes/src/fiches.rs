@@ -463,32 +463,29 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
         _ => false,
     };
     let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
-    let ouverte = |piece: Piece| match piece {
+    let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
+    let ouverte = |piece: Piece, case: &str| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
+        Piece::Metier => du_metier.contains(case),
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
-    let faits = FaitsDeLaFiche::lus(ctx, nom, cle, donnees)?;
-    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
+    let faits = FaitsDeLaFiche::lus(ctx)?;
+    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
 }
 
-/// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : les cases que le metier de
-/// chaque engagement du salarie demande, et si l'effectif connu de la compagnie est sous onze salaries.
+/// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : si l'effectif connu de la
+/// compagnie est sous onze salaries.
 struct FaitsDeLaFiche {
-    du_metier: std::collections::BTreeSet<String>,
     sous_onze: bool,
 }
 
 impl FaitsDeLaFiche {
-    fn lus(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<FaitsDeLaFiche> {
-        let du_metier = match (nom, cle) {
-            ("salarie", Some(c)) => cases_des_metiers(ctx, c, donnees)?,
-            _ => std::collections::BTreeSet::new(),
-        };
+    fn lus(ctx: &Contexte) -> R<FaitsDeLaFiche> {
         // L'effectif que la representation du personnel lit (`Contexte::entreprise_lue`) : celui de l'annee d'avant.
         let sous_onze = ctx.effectif().map_err(plain)?.valeur(ctx.aujourdhui.an).is_some_and(|e| e < 11.0);
-        Ok(FaitsDeLaFiche { du_metier, sous_onze })
+        Ok(FaitsDeLaFiche { sous_onze })
     }
 
     /// Le fait de la case `c` de la fiche `donnees` tient-il ? Une case sans fait tient toujours. Sous onze salaries, la
@@ -496,39 +493,56 @@ impl FaitsDeLaFiche {
     /// l'exemption cochee se refuse en se nommant (`casc_exemptee`) : dites, elles restent montrees.
     fn tient(&self, c: &champs::Champ, donnees: &Saisie) -> bool {
         c.si_fait.as_ref().is_none_or(|f| match f {
-            champs::Fait::MetierQuiLaLit => self.du_metier.contains(&c.cle),
             champs::Fait::OnzeSalaries => !self.sous_onze || donnees.dite(&c.cle).is_some(),
         })
     }
 }
 
-/// LES CASES DE LA FICHE DU SALARIE `cle` QUE LE METIER DE CHACUN DE SES ENGAGEMENTS DEMANDE
-/// (`engagement::minima::cases_du_metier`), au premier jour de chacun : le metier de la carte ou d'un avenant, sinon
-/// l'emploi de la fiche en cours de saisie (`donnees`), comme la paie le lit. Un engagement qui n'est plus actif ne
-/// demande rien ; un salarie sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, cle: &str, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
-    let de_la_fiche = donnees.mot("code_emploi_ft").map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
-    let mut metiers: std::collections::BTreeSet<(String, Jour)> = std::collections::BTreeSet::new();
+/// LES CASES DU METIER (`droit::fiche::Piece::Metier`) QUE LA FICHE `nom` MONTRE : celles que la grille du metier de
+/// chaque engagement actif lit. Sur la fiche du salarie `cle`, les cases que son metier demande
+/// (`engagement::minima::cases_du_metier`), au premier jour de chacun de ses engagements : le metier de la carte ou
+/// d'un avenant, sinon l'emploi de la fiche en cours de saisie (`donnees`), comme la paie le lit. Sur la fiche de
+/// l'entreprise, la jauge de la salle quand un engagement est celui d'un technicien de l'annexe I, que sa prime
+/// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
+/// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
+fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
+    let mut cases = std::collections::BTreeSet::new();
+    let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
+    let de_la_fiche = dit(donnees.mot("code_emploi_ft").as_deref());
+    // (metier, statut dit par la carte, jour, salarie)
+    let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine) {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, &f).map_err(plain)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
             let s = &e.saisie;
-            if s.carte.salarie.as_ref().map(IdSalarie::as_str) != Some(cle) {
-                continue;
-            }
+            let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
+            let du_salarie = match (nom, cle) {
+                ("salarie", Some(c)) if c == salarie => de_la_fiche.clone(),
+                ("entreprise", _) => dit(ctx.salarie(salarie).map_err(plain)?.code_emploi_ft.portee()),
+                _ => continue,
+            };
             let jour = lu.mois.premier_jour();
             let termes = std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes));
             for t in termes {
-                let dit = |x: &Option<String>| x.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-                if let Some(code) = dit(&t.code_emploi_ft).or_else(|| dit(&t.metier)).or_else(|| de_la_fiche.clone()) {
-                    metiers.insert((code, jour.clone()));
+                if let Some(code) = dit(t.code_emploi_ft.as_deref()).or_else(|| dit(t.metier.as_deref())).or_else(|| du_salarie.clone()) {
+                    metiers.insert((code, dit(t.statut.as_deref()), jour.clone(), salarie.to_string()));
                 }
             }
         }
     }
-    let mut cases = std::collections::BTreeSet::new();
-    for (code, jour) in &metiers {
-        cases.extend(engagement::minima::cases_du_metier(ctx, code, jour).map_err(plain)?);
+    for (code, statut, jour, salarie) in &metiers {
+        if nom == "salarie" {
+            cases.extend(engagement::minima::cases_du_metier(ctx, code, jour).map_err(plain)?);
+            continue;
+        }
+        let ent = &ctx.entreprise;
+        let statut = match statut {
+            Some(s) => Some(s.clone()),
+            None => ctx.salarie(salarie).map_err(plain)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
+        };
+        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref()).map_err(plain)? {
+            cases.insert("jauge_annexe_1".to_string());
+        }
     }
     Ok(cases)
 }
