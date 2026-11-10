@@ -29,16 +29,12 @@ use crate::imprevus::{FinASignaler, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::{erreur, Classe};
 use crate::catalogue::{Ecran, Place};
 
 // ------------------------------------------------------------------ les refus
 
 use socle::echec::R;
-
-fn avec_classe(classe: Classe, message: impl Into<String>) -> Echec {
-    erreur(classe, message)
-}
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -254,7 +250,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     }
     marquer_echeance(ctx, &format!("{}:{}", REVUE_SPECTACLES, annee), true, "interface")?;
     let continuent: Vec<String> = garder.into_iter().collect();
-    let neuf = Contexte::nouveau(&ctx.racine, None).map_err(|m| socle::echec::noter_et(None, m))?;
+    let neuf = Contexte::nouveau(&ctx.racine, None)?;
     let configuration = crate::ouverture::configuration_dite(&neuf)?;
     let phrase = format!("Spectacles qui continuent : {} ; archivés : {}.", continuent.len(), archives.len());
     Ok(Revue { phrase, annee, archives, continuent, configuration })
@@ -457,7 +453,7 @@ impl Echeance {
                     }
                     cle @ (C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise) => {
                         let Some((s, dernier)) = arret() else { return Ok(None) };
-                        let dernier_jour = Jour::lire(&dernier).map_err(|m| erreur(Classe::Illisible, m))?;
+                        let dernier_jour = Jour::lire(&dernier).map_err(|m| m.reclasser(Classe::Illisible))?;
                         let nature = if cle == C::SignalementReprise { NatureSignalement::Reprise } else { NatureSignalement::Arret };
                         action(Route::ArretSignaler, ChargeArretSignaler::de(s, dernier_jour, nature), Some(Route::Deposer), "Signaler…".into())
                     }
@@ -778,7 +774,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     if cle == REVUE_SPECTACLES && ctx.spectacles.is_empty() {
         return Ok(None);
     }
-    let trop_courte = || avec_classe(Classe::Manque, socle::fichiers::trop_courte("les mois de l'échéance"));
+    let trop_courte = || erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de l'échéance"));
     let debut = Mois::nouveau(annee, *e.mois.first().ok_or_else(trop_courte)?)?;
     let dernier = Mois::nouveau(annee, *e.mois.last().ok_or_else(trop_courte)?)?;
     // Ce qui tombait avant l'arrivee de la compagnie ne la concerne pas -- sauf le taux AT/MP de l'annee, sans lequel
@@ -895,7 +891,7 @@ enum FaitPar {
 }
 
 fn echeancier_base() -> socle::echec::R<EcheancierBase> {
-    socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join("echeancier-base.json"), "L'échéancier livré avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join("echeancier-base.json"), "L'échéancier livré avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------ ce que la compagnie a coche
@@ -928,7 +924,7 @@ fn cochees(ctx: &Contexte) -> socle::echec::R<Cochees> {
     if !p.exists() {
         return Ok(Cochees { quoi: QUOI_COCHEES.to_string(), fait: BTreeMap::new() });
     }
-    socle::forme::lire_fichier(&p, "Les échéances cochées de la compagnie ne se lisent pas.").map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "Les échéances cochées de la compagnie ne se lisent pas.").map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Coche (ou decoche) une echeance que seule la compagnie peut dire faite : « quoi:AAAA », `quoi` une echeance annuelle
@@ -980,13 +976,13 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
                     match it.next() {
                         Some('}') => break,
                         Some(x) => nom.push(x),
-                        None => return Err(avec_classe(Classe::Illisible, "une accolade ouverte n'est pas fermée avant la fin du texte")),
+                        None => return Err(erreur(Classe::Illisible, "une accolade ouverte n'est pas fermée avant la fin du texte")),
                     }
                 }
-                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| avec_classe(Classe::Manque, socle::fichiers::absent(&nom)))?;
+                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| socle::fichiers::absent(&nom).reclasser(Classe::Manque))?;
                 out.push_str(&v.1);
             }
-            '}' => return Err(avec_classe(Classe::Illisible, "une accolade fermée n'a pas été ouverte")),
+            '}' => return Err(erreur(Classe::Illisible, "une accolade fermée n'a pas été ouverte")),
             c => out.push(c),
         }
     }
@@ -1094,7 +1090,7 @@ fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
     if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }
-    let disque = |e: std::io::Error| erreur(Classe::du_disque(&e), socle::echec::du_disque(&dossier, &e));
+    let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::du_disque(&e));
     let mut fichiers = Vec::new();
     for e in std::fs::read_dir(&dossier).map_err(disque)? {
         let e = e.map_err(disque)?;
@@ -1201,7 +1197,7 @@ fn ajouter_les_mois_de_l_ancien_logiciel(st: &Etat, mois: &str, r: &mut Echeance
     for m in engagement::stock::mois_saisis(st.racine())?.into_iter().map(String::from).filter(|m| m.as_str() < mois) {
         let Some(d) = import::mois::dsn_de_l_ancien_logiciel(st.ctx, &m)? else { continue };
         if d.porteur == mois && d.engagements > 0 {
-            let lib = socle::mois::Mois::lire(&m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| erreur(Classe::Illisible, e))?;
+            let lib = socle::mois::Mois::lire(&m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Illisible))?;
             r.detail.push_str(&format!(" {} : {}", socle::texte::capitaliser(&lib), d.phrase));
         }
     }

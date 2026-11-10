@@ -452,8 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
 pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::EtatAdministrateur> {
     let inst = crate::gestes::administrateur::installation_de(racine);
-    crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
-}
+    crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste())}
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
 /// `administrateur.rs`. Le mot de passe de l'administrateur vient de la charge (la page), sinon il est tape par un humain ;
@@ -480,7 +479,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
             }
             None => None,
         };
-        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(refus)?;
+        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
         return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? });
     }
@@ -491,7 +490,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         Some(c) => c,
         None => nouveau.clone(),
     };
-    adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(refus)?;
+    adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(|e| e.reclasser(Classe::Refuse))?;
     Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? })
 }
 
@@ -642,7 +641,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
                 let conseil: String = v.conseil.iter().map(|c| format!(" — {}", c)).collect();
                 (format!("{} ; connexion refusée : {}{}", quoi, v.message, conseil), "rouge")
             }
-            Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase()), "rouge"),
+            Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase), "rouge"),
         },
     };
     Ok(EtatDuCoffre { phrase, couleur: Some(couleur), ..etat })
@@ -730,7 +729,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
-        crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(refus)?;
+        crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(|e| e.reclasser(Classe::Refuse))?;
         return coffre_etat(ctx);
     }
     coffre(ctx).poser_ouverture(&nouveau, actuel.as_deref()).map_err(en_operation)?;
@@ -755,7 +754,7 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&str>) -> R<GoogleOublie> {
     let p = ctx.racine.join(JETON_GOOGLE);
     let efface = p.exists();
     if efface {
-        std::fs::remove_file(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     }
     Ok(GoogleOublie { phrase: "Compte Google délié : la sauvegarde ne va plus au Drive. L'accès accordé côté Google se retire sur myaccount.google.com.", efface })
 }
@@ -777,10 +776,9 @@ fn config(racine: &Path) -> PathBuf {
     racine.join(socle::fichiers::CONFIG)
 }
 
-/// `ErreurGoogle` : la phrase est ecrite pour etre lue.
-#[track_caller]
-fn erreur_google(message: impl Into<String>) -> Echec {
-    erreur(Classe::Google, message)
+/// `ErreurGoogle` : le refus, dont la phrase est ecrite pour etre lue, rendu `Google`.
+fn erreur_google(e: Echec) -> Echec {
+    e.reclasser(Classe::Google)
 }
 
 /// L'APPLICATION GOOGLE TELLE QU'ELLE S'ECRIT (`google.json` de la compagnie, `google-application.json` livre) : son
@@ -809,24 +807,26 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
         let a: ApplicationEcrite = socle::forme::lire_fichier(&p, "L'application Google de la compagnie (google.json) ne se lit pas : la corriger, ou la supprimer pour revenir à celle du logiciel.")
             .map_err(erreur_google)?;
         if a.client_id.is_empty() || a.client_secret.is_empty() {
-            return Err(erreur_google(socle::echec::avec(
-                "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.",
-                socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() },
-            )));
+            let lieu = socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() };
+            return Err(Echec {
+                a_part: Some(lieu.into()),
+                ..erreur(Classe::Google, "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.")
+            });
         }
         return Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, p.to_string_lossy().into_owned()));
     }
     let livre = socle::fichiers::dossier_du_code().join(FICHIER_APPLICATION);
     if !livre.exists() {
-        return Err(erreur_google(socle::echec::avec(
-            "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.",
-            socle::echec::Lieu {
-                chemin: Some(p.to_string_lossy().into_owned()),
-                fichier: Some(livre.to_string_lossy().into_owned()),
-                detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
-                ..socle::echec::Lieu::default()
-            },
-        )));
+        let lieu = socle::echec::Lieu {
+            chemin: Some(p.to_string_lossy().into_owned()),
+            fichier: Some(livre.to_string_lossy().into_owned()),
+            detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
+            ..socle::echec::Lieu::default()
+        };
+        return Err(Echec {
+            a_part: Some(lieu.into()),
+            ..erreur(Classe::Google, "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.")
+        });
     }
     let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(erreur_google)?;
     Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, "le logiciel".into()))
@@ -837,7 +837,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
 enum Jeton {
     Absent,
     Lu(JetonEcrit),
-    Illisible(String),
+    Illisible(Echec),
 }
 
 impl Jeton {
@@ -849,18 +849,18 @@ impl Jeton {
         }
         match Jeton::ouvrir(racine, &p) {
             Ok(j) => Jeton::Lu(j),
-            Err(phrase) => Jeton::Illisible(phrase),
+            Err(e) => Jeton::Illisible(e),
         }
     }
 
-    fn ouvrir(racine: &Path, p: &Path) -> Result<JetonEcrit, String> {
+    fn ouvrir(racine: &Path, p: &Path) -> R<JetonEcrit> {
         // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
         let brut = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e))?;
         let clair = compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
-            String::from(e.reformuler(|m| format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", m)))
+            e.reformuler(|m| format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", m))
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
-        socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).").map_err(String::from)
+        socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).")
     }
 }
 
@@ -910,7 +910,7 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
     let (rafraichissement, compte) = match Jeton::de(racine) {
         Jeton::Absent => (Ok(None), None),
         Jeton::Lu(j) => (Ok(Some(j.rafraichissement)), Some(j.compte)),
-        Jeton::Illisible(phrase) => (Err(envois::drive::ErreurGoogle::google(phrase)), None),
+        Jeton::Illisible(e) => (Err(envois::drive::ErreurGoogle::from(e.reclasser(Classe::Google))), None),
     };
     let autorisation = envois::drive::Autorisation { application, rafraichissement, compte };
     Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()))
@@ -1030,7 +1030,7 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
     let (application, _) = application?;
     match jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &jeton.rafraichissement, DELAI)? {
         Ok(_) => Ok(etat(Some(jeton.compte), true, None, accordees)),
-        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(String::from(probleme.echec)), accordees)),
+        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme.echec.phrase), accordees)),
     }
 }
 
