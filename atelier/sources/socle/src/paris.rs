@@ -416,6 +416,95 @@ impl<'de> serde::Deserialize<'de> for HeureDuJournal {
     }
 }
 
+/// UNE MINUTE UTC, `AAAA-MM-JJTHH:MMZ` : l'heure ou le serveur du filet a releve la reponse a un retour (`iso` de
+/// `infra/filet/filet_serveur.py`, `FORMAT = "%Y-%m-%dT%H:%M"` suivi de `Z`). Elle se lit et s'ecrit dans cette forme,
+/// et elle seule, octet pour octet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MinuteUtc(Naif);
+
+impl MinuteUtc {
+    /// `AAAA-MM-JJTHH:MMZ`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<MinuteUtc> {
+        MinuteEcrite::lire(texte.strip_suffix('Z')?).map(|m| MinuteUtc(m.0))
+    }
+
+    /// `AAAA-MM-JJTHH:MMZ`.
+    pub fn iso(self) -> String {
+        format!("{}Z", MinuteEcrite(self.0).iso())
+    }
+
+    /// LA PORTE DE LA REPONSE DU SERVEUR (`serde(deserialize_with)`) : `""` tant qu'il n'a pas repondu, et la, seulement,
+    /// le vide vaut « pas repondu » ; sinon une minute UTC.
+    pub fn ou_vide<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<MinuteUtc>, D::Error> {
+        let s = <String as serde::Deserialize>::deserialize(d)?;
+        if s.is_empty() {
+            return Ok(None);
+        }
+        MinuteUtc::lire(&s).map(Some).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", crate::date::repr_texte(&s))))
+    }
+}
+
+impl std::fmt::Display for MinuteUtc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.iso())
+    }
+}
+
+impl serde::Serialize for MinuteUtc {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for MinuteUtc {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteUtc, D::Error> {
+        let s = String::deserialize(d)?;
+        MinuteUtc::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", crate::date::repr_texte(&s))))
+    }
+}
+
+/// UN INSTANT ECRIT D'UN BLOC, `AAAAMMJJHHMMSS` : la date d'un depot que la plate-forme DSN liste (guide
+/// d'implementation de l'API DSN v6.8, « Date du dépôt », `depot.date`, format `yyyyMMddhhmmss`, [14,14] ;
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). Le guide ne dit
+/// pas son fuseau : c'est l'heure telle qu'elle est ecrite. Elle se lit et s'ecrit dans cette forme, octet pour octet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstantCompact(Naif);
+
+impl InstantCompact {
+    /// Quatorze chiffres `AAAAMMJJHHMMSS` d'une heure du calendrier, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<InstantCompact> {
+        if texte.len() != 14 || !texte.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let iso = format!("{}-{}-{}T{}:{}:{}", &texte[..4], &texte[4..6], &texte[6..8], &texte[8..10], &texte[10..12], &texte[12..14]);
+        InstantEcrit::lire(&iso).map(|i| InstantCompact(i.0))
+    }
+
+    /// `AAAAMMJJHHMMSS`.
+    pub fn compact(self) -> String {
+        self.0.iso().chars().filter(char::is_ascii_digit).collect()
+    }
+}
+
+impl std::fmt::Display for InstantCompact {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.compact())
+    }
+}
+
+impl serde::Serialize for InstantCompact {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.compact())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for InstantCompact {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<InstantCompact, D::Error> {
+        let s = String::deserialize(d)?;
+        InstantCompact::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAAMMJJHHMMSS", crate::date::repr_texte(&s))))
+    }
+}
+
 /// Le jour d'un jour unix qu'un `Moment` ou un `Naif` porte : il est dans le calendrier, par leur construction.
 fn dans_le_calendrier(jours: i64) -> Jour {
     Jour::depuis_jours_unix(jours).expect("un instant est dans le calendrier")

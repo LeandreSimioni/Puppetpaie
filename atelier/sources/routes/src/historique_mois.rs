@@ -707,15 +707,6 @@ fn date_lisible(d: &str) -> String {
     etats::quand_lisible(&d.chars().take(10).collect::<String>())
 }
 
-/// `JJMMAAAA` (les dates des comptes rendus des organismes complementaires) en `JJ/MM/AAAA`.
-fn date_oc(d: &str) -> String {
-    let c: Vec<char> = d.chars().collect();
-    if c.len() == 8 && c.iter().all(|x| x.is_ascii_digit()) {
-        return format!("{}/{}/{}", c[..2].iter().collect::<String>(), c[2..4].iter().collect::<String>(), c[4..].iter().collect::<String>());
-    }
-    d.to_string()
-}
-
 /// La premiere lettre en capitale.
 fn majuscule(t: &str) -> String {
     let mut c = t.chars();
@@ -966,8 +957,8 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             if let Some(c) = joint([lu(&r.corrigee), lu(&r.libelle_corrigee).map(|x| format!("({})", x)).as_deref()], " ") {
                 message.push(format!("{} « {} »", if genre == Some("information") { "pris en compte" } else { "attendu" }, c));
             }
-            if let Some(e) = lu(&r.date_evenement) {
-                message.push(format!("événement du {}", date_oc(e)));
+            if let Some(e) = r.date_evenement {
+                message.push(format!("événement du {}", e.jj_mm_aaaa()));
             }
             l.anomalies.push(Anomalie {
                 code: lu(&r.code).map(String::from),

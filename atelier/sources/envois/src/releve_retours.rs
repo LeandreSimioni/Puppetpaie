@@ -135,7 +135,6 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
 pub struct Client {
     pub adresses: Adresses,
     pub jeton: Option<String>,
-    pub expire_le: Option<String>,
     pub declarant: crate::transport::Identite,
     motdepasse: Option<String>,
     variable: &'static str,
@@ -149,7 +148,6 @@ impl Client {
         Ok(Client {
             adresses: adresses_dsn(environnement)?,
             jeton: None,
-            expire_le: None,
             declarant,
             motdepasse,
             variable: VARIABLE_MOTDEPASSE,
@@ -165,7 +163,6 @@ impl Client {
         Client {
             adresses: adresses_dpae(compte),
             jeton: None,
-            expire_le: None,
             declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
             motdepasse,
             variable: VARIABLE_MOTDEPASSE_DPAE,
@@ -198,7 +195,6 @@ impl Client {
             jeton: self.jeton.as_deref(),
         })?;
         self.jeton = Some(session.jeton);
-        self.expire_le = session.expire_le;
         Ok(())
     }
 
@@ -285,8 +281,6 @@ pub struct Releve {
     pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
-    /// L'expiration de la session ouverte, quand la plate-forme la dit.
-    pub session_jusqu_a: Option<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: i64,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
@@ -570,7 +564,7 @@ pub fn relever_retours(
         return Ok(releve);
     };
     match client.authentifier() {
-        Ok(()) => releve.session_jusqu_a = client.expire_le.clone(),
+        Ok(()) => {}
         Err(p) if p.est_api() => {
             releve.incidents.push(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);

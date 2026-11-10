@@ -121,7 +121,8 @@ pub struct Reponses {
 pub struct ReponseDuServeur {
     pub numero: String,
     pub reponse: String,
-    pub repondu_le: String,
+    #[serde(deserialize_with = "socle::paris::MinuteUtc::ou_vide")]
+    pub repondu_le: Option<socle::paris::MinuteUtc>,
 }
 
 /// `POST /paies` : ce que le serveur a recu.

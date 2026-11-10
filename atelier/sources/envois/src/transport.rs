@@ -693,11 +693,10 @@ pub struct Authentification<'a> {
     pub jeton: Option<&'a str>,
 }
 
-/// UNE SESSION OUVERTE : son jeton, et l'heure ou il expire si le service la dit (l'en-tete `Expires`).
+/// UNE SESSION OUVERTE : son jeton.
 #[derive(Debug, Clone)]
 pub struct Session {
     pub jeton: String,
-    pub expire_le: Option<String>,
 }
 
 /// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
@@ -756,9 +755,9 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
         delai: DELAI_APPEL,
         ..Default::default()
     };
-    let (brut, entetes) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
+    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
-    Ok(Session { jeton: socle::texte::strip(&jeton).to_string(), expire_le: entete(&entetes, "Expires").map(String::from) })
+    Ok(Session { jeton: socle::texte::strip(&jeton).to_string() })
 }
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,

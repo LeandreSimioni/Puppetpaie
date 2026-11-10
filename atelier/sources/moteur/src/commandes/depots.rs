@@ -73,7 +73,7 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
     }
     for (i, dep) in depots.iter().enumerate() {
         dire!("  depot {}", i + 1);
-        for (k, v) in [("idflux", &dep.idflux), ("date", &dep.date), ("statut", &dep.statut)] {
+        for (k, v) in [("idflux", dep.idflux.clone()), ("date", dep.date.compact()), ("statut", dep.statut.clone())] {
             dire!("     {:<24} {}", k, v);
         }
         dire!();

@@ -1066,7 +1066,7 @@ impl Annonce {
 #[serde(deny_unknown_fields)]
 pub struct Depot {
     pub idflux: String,
-    pub date: String,
+    pub date: socle::paris::InstantCompact,
     pub statut: String,
 }
 
@@ -1244,7 +1244,8 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
         if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
             return Err(illisible(&format!("depot.{}", autre)));
         }
-        out.push(Depot { idflux: champ("idflux")?, date: champ("date")?, statut: champ("statut")? });
+        let date = socle::paris::InstantCompact::lire(&champ("date")?).ok_or_else(|| illisible("depot.date"))?;
+        out.push(Depot { idflux: champ("idflux")?, date, statut: champ("statut")? });
     }
     Ok(out)
 }
@@ -2613,6 +2614,17 @@ const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérat
 /// attendue, date d'evenement, regroupement) avec leur `ContexteRetourMetier` (rubrique, libelle, valeur) -- d'ou le
 /// salarie (S21.G00.30.002 et .004). `None` : ce n'en est pas un, ou il ne se lit pas (il est en ISO-8859-1, qu'il
 /// declare : guide v6.8, §7.1).
+/// Un jour `JJMMAAAA`, et rien d'autre.
+fn jour_jjmmaaaa(t: &str) -> Option<socle::date::Jour> {
+    socle::date::Jour::du_texte(t).filter(|j| j.jjmmaaaa() == t)
+}
+
+/// Un attribut d'un CRM OC qui n'a pas la forme du schema : le CRM ne se lit pas.
+#[track_caller]
+fn illisible_crm_oc(attribut: &str, valeur: &str) -> Echec {
+    socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {} vaut {}, pas JJMMAAAA.", attribut, socle::date::repr_texte(valeur)), attribut).reclasser(Classe::Illisible)
+}
+
 pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
@@ -2648,7 +2660,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 libelle_valeur: at(rm, "LibelValRubriqueErreur"),
                 corrigee: at(rm, "ValeurCorrigeeAjoutee"),
                 libelle_corrigee: at(rm, "LibelValCorrigeeAjoutee"),
-                date_evenement: at(rm, "DateEvt"),
+                date_evenement: at(rm, "DateEvt").map(|t| jour_jjmmaaaa(&t).ok_or_else(|| illisible_crm_oc("DateEvt", &t))).transpose()?,
                 salarie: Some(salarie).filter(|s| !s.is_empty()),
                 contexte,
             });
@@ -2742,7 +2754,9 @@ pub struct RetourMetierOc {
     pub libelle_valeur: Option<String>,
     pub corrigee: Option<String>,
     pub libelle_corrigee: Option<String>,
-    pub date_evenement: Option<String>,
+    /// `DateEvt`, `JJMMAAAA` (schema du CRM OC v1.1.4, son motif ;
+    /// `atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`).
+    pub date_evenement: Option<socle::date::Jour>,
     pub salarie: Option<String>,
     pub contexte: Vec<ContexteOc>,
 }
