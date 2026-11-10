@@ -960,20 +960,34 @@ mod enregistreur {
             || rel.ends_with(".verrou")
     }
 
-    /// L'empreinte d'une compagnie : chaque fichier, sa taille et sa date (hors caches) ; ce que le disque refuse y entre
-    /// tel qu'il le dit.
-    type Empreinte = Result<BTreeMap<String, Result<(u64, f64), String>>, String>;
+    /// L'empreinte d'une compagnie : chaque fichier, sa taille et sa date (hors caches), ou ce que le disque en refuse ;
+    /// ou, quand ses fichiers ne se listent pas, le refus tel que la route le rendrait.
+    enum Empreinte {
+        Lue(BTreeMap<String, Result<(u64, f64), std::io::ErrorKind>>),
+        Refusee(crate::enveloppe::Refus),
+    }
+
+    impl PartialEq for Empreinte {
+        fn eq(&self, autre: &Empreinte) -> bool {
+            match (self, autre) {
+                (Empreinte::Lue(a), Empreinte::Lue(b)) => a == b,
+                // Deux refus sont les memes quand la porte les ecrit pareil.
+                (Empreinte::Refusee(a), Empreinte::Refusee(b)) => socle::ecriture::json_en_ligne(a) == socle::ecriture::json_en_ligne(b),
+                (Empreinte::Lue(_), Empreinte::Refusee(_)) | (Empreinte::Refusee(_), Empreinte::Lue(_)) => false,
+            }
+        }
+    }
 
     fn empreinte(racine: &Path) -> Empreinte {
-        Ok(fichiers_de(racine)
-            .map_err(|e| e.phrase)?
-            .into_iter()
-            .filter(|(r, _)| !hors_empreinte(r))
-            .map(|(r, p)| {
-                let lu = std::fs::metadata(&p).map(|m| (m.len(), socle::paris::mtime(&m))).map_err(|e| e.to_string());
-                (r, lu)
-            })
-            .collect())
+        match fichiers_de(racine) {
+            Ok(f) => Empreinte::Lue(
+                f.into_iter()
+                    .filter(|(r, _)| !hors_empreinte(r))
+                    .map(|(r, p)| (r, std::fs::metadata(&p).map(|m| (m.len(), socle::paris::mtime(&m))).map_err(|e| e.kind())))
+                    .collect(),
+            ),
+            Err(e) => Empreinte::Refusee(crate::enveloppe::Refus::de(None, e)),
+        }
     }
 
     impl Enregistreur {

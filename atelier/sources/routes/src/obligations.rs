@@ -1478,16 +1478,16 @@ fn jour_tape(t: &Option<String>) -> Option<Jour> {
 /// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
 /// (`imprevus::subrogation_de`), comme a l'enregistrement ; ou ce qui l'empeche encore de s'ecrire (le salarie, son
 /// contrat), en phrase : c'est `arret-enregistrer` qui le refusera.
-fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &str, dernier: Jour, debut: Jour, fin: Jour) -> R<Result<ArretSaisi, String>> {
+fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &str, dernier: Jour, debut: Jour, fin: Jour) -> R<ArretEcrit> {
     let cle = match ctx.cle_du_salarie(salarie) {
         Ok(cle) => cle,
-        Err(m) => return Ok(Err(m.phrase)),
+        Err(m) => return Ok(ArretEcrit::PasEncore(m.phrase)),
     };
     let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, tape(&c.contrat)) {
         Ok(contrat) => contrat,
-        Err(e) => return Ok(Err(e.phrase)),
+        Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };
-    let Some(motif) = tape(&c.motif) else { return Ok(Err("le motif n'est pas encore dit.".to_string())) };
+    let Some(motif) = tape(&c.motif) else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {
         cle: &cle,
         contrat: &contrat,
@@ -1500,7 +1500,13 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         note: None,
     });
     crate::imprevus::poser_la_subrogation(ctx, &mut arret)?;
-    Ok(Ok(arret))
+    Ok(ArretEcrit::Saisi(arret))
+}
+
+/// L'arret tel qu'il s'ecrirait, ou la phrase qui dit ce qui l'empeche encore de s'ecrire.
+enum ArretEcrit {
+    Saisi(ArretSaisi),
+    PasEncore(String),
 }
 
 /// `arret-obligations` : les obligations qu'un arret AINSI SAISI ferait naitre, avant d'etre enregistre (la boite de
@@ -1515,8 +1521,8 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
         _ => None,
     };
     let (saisi, pas_encore) = match ecrit {
-        Some(Ok(a)) => (Some(a), None),
-        Some(Err(m)) => (None, Some(m)),
+        Some(ArretEcrit::Saisi(a)) => (Some(a), None),
+        Some(ArretEcrit::PasEncore(m)) => (None, Some(m)),
         None => (None, None),
     };
     let a = match &saisi {

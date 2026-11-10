@@ -603,7 +603,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -
     // que quand on modifie la saisie.
     if engagement::stock::a_une_saisie(&ctx.racine, &mois.to_string())? {
         let apercu = ApercuEnregistre { mois, modifications: [] };
-        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.").map_err(Echec::from)?;
+        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.")?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let (par_engagement, bilan) = crate::etapes::les_deux_etats(ctx, mois)?;

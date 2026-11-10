@@ -1376,7 +1376,7 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> 
                 }
             }
             if let (Some((j, x)), Some(d)) = (trouve, disque.as_ref()) {
-                let v = x.valide().ok_or("engagement en saisie")?;
+                let v = x.valide().ok_or_else(|| socle::echec::refus("engagement en saisie"))?;
                 lue = Some(PaieMontree { paie: v.paie(ctx, d, j)?, recalcul: v.recalcul(mois)? });
             }
         }
@@ -1391,7 +1391,7 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> 
     for (i, l) in lues.into_iter().enumerate() {
         match l {
             Some(l) => out.push(l),
-            None => out.push(PaieMontree { paie: calculees.get(i).cloned().ok_or("le calcul du mois n'a pas cette paie")?, recalcul: None }),
+            None => out.push(PaieMontree { paie: calculees.get(i).cloned().ok_or_else(|| socle::echec::refus("le calcul du mois n'a pas cette paie"))?, recalcul: None }),
         }
     }
     Ok(out)

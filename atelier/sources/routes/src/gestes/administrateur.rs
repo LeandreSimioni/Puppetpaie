@@ -395,20 +395,20 @@ fn et_la_remise(phrase: String, remise: R<()>) -> Echec {
 /// compagnies de l'administrateur.
 pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> R<Vec<String>> {
     if compagnie::bridage::est_bride_de(inst) {
-        return Err("Le logiciel est bridé : il ne gère que des compagnies fictives.".into());
+        return Err(socle::echec::refus("Le logiciel est bridé : il ne gère que des compagnies fictives."));
     }
     if compagnies::est_fictive(racine)? {
-        return Err("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur.".into());
+        return Err(socle::echec::refus("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur."));
     }
     let Some(rel) = relatif(inst, racine)? else {
         let a_part = HorsDeLInstallation { chemin: racine.to_string_lossy().into_owned(), installation: inst.to_string_lossy().into_owned() };
         return Err(socle::echec::refus_avec("Ce dossier n'est pas une compagnie de cette installation.", socle::echec::APart::forme(a_part)));
     };
     if est_rattachee(inst, racine)? {
-        return Err("Cette compagnie est déjà gérée par l'administrateur.".into());
+        return Err(socle::echec::refus("Cette compagnie est déjà gérée par l'administrateur."));
     }
     if admin.is_empty() {
-        return Err("Tapez le mot de passe de l'administrateur. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Tapez le mot de passe de l'administrateur. Rien n'a changé."));
     }
     let groupe = rattachees(inst)?;
     let mut nouvelles: Vec<PathBuf> = Vec::new();
@@ -420,7 +420,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
             }
         }
         if candidates.is_empty() {
-            return Err("Aucune autre compagnie n'a encore de mot de passe : choisissez celui de cette compagnie.".into());
+            return Err(socle::echec::refus("Aucune autre compagnie n'a encore de mot de passe : choisissez celui de cette compagnie."));
         }
         for c in &candidates {
             if ouvre(poste, &c.racine, admin)? {
@@ -432,15 +432,15 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
             return Err(socle::refus!("Ce mot de passe n'ouvre pas {} : ce n'est pas celui de l'administrateur. Rien n'a changé.", en_liste(&noms)));
         }
     } else if !ouvre_une(poste, &groupe, admin)? {
-        return Err("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé."));
     }
     let coffre = poste.coffre(racine);
     let deja = coffre.ouverture_exigee()?;
     let actuel = actuel.filter(|a| !a.is_empty());
     if deja {
         match actuel {
-            None => return Err("Tapez aussi le mot de passe actuel de cette compagnie : c'est lui que celui de l'administrateur remplace. Rien n'a changé.".into()),
-            Some(a) if !ouvre(poste, racine, a)? => return Err("Le mot de passe actuel de cette compagnie est refusé. Rien n'a changé.".into()),
+            None => return Err(socle::echec::refus("Tapez aussi le mot de passe actuel de cette compagnie : c'est lui que celui de l'administrateur remplace. Rien n'a changé.")),
+            Some(a) if !ouvre(poste, racine, a)? => return Err(socle::echec::refus("Le mot de passe actuel de cette compagnie est refusé. Rien n'a changé.")),
             Some(_) => {}
         }
     }
@@ -474,16 +474,16 @@ struct HorsDeLInstallation {
 /// (`admin`, verifie) ne l'ouvre plus. Un refus n'ecrit rien.
 pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<()> {
     if !est_rattachee(inst, racine)? {
-        return Err("Cette compagnie n'est pas gérée par l'administrateur : elle a déjà son propre mot de passe.".into());
+        return Err(socle::echec::refus("Cette compagnie n'est pas gérée par l'administrateur : elle a déjà son propre mot de passe."));
     }
     if !ouvre(poste, racine, admin)? {
-        return Err("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé."));
     }
     if nouveau != confirmation {
-        return Err("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
     if nouveau == admin {
-        return Err("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé."));
     }
     let coffre = poste.coffre(racine);
     let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose."))))?;
@@ -504,10 +504,10 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
 pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<Vec<String>> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
-        return Err("Ce logiciel n'a pas d'administrateur : chaque compagnie a son propre mot de passe.".into());
+        return Err(socle::echec::refus("Ce logiciel n'a pas d'administrateur : chaque compagnie a son propre mot de passe."));
     }
     if nouveau != confirmation {
-        return Err("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé.".into());
+        return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
     let mut prets: Vec<(PathBuf, Vec<u8>, Option<Vec<u8>>)> = Vec::new();
     for r in &groupe {

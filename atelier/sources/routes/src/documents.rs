@@ -433,7 +433,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<&str>, fichiers: Option<&[
                 AerEchec::Autre(e) => e,
                 AerEchec::Ecarts(e) => socle::echec::refus(e.join("; ")),
             })?;
-            imprime.extend(documents::aer::lire_quantites(&champs).map_err(Echec::from)?);
+            imprime.extend(documents::aer::lire_quantites(&champs)?);
         }
         if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle)? {
             let ecarts = documents::aer::ecarts(&imprime, &attendues);
@@ -464,7 +464,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<&str>, fichiers: Option<&[
                 Err(AerEchec::Autre(e)) => return Err(e),
             }
         }
-        let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir()).map_err(Echec::from)? };
+        let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
         let cible = ctx.racine.join("sorties").join(periode).join("envoi");
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(nom_fichier("AER", &cle, &crate::dossier_salarie::etiquette(periode)?));
@@ -481,10 +481,10 @@ fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<String, Vec<&'st
     let mut out: HashMap<String, Vec<&'static str>> = HashMap::new();
     for p in paies {
         let siennes = out.entry(p.salarie.id.to_string()).or_default();
-        if documents::aer::due(p).map_err(Echec::from)? && !siennes.contains(&"aer") {
+        if documents::aer::due(p)? && !siennes.contains(&"aer") {
             siennes.push("aer");
         }
-        if documents::aer::attestation_fctu(&p.engagement).map_err(Echec::from)? && !siennes.contains(&"attestation_fctu") {
+        if documents::aer::attestation_fctu(&p.engagement)? && !siennes.contains(&"attestation_fctu") {
             siennes.push("attestation_fctu");
         }
     }
@@ -810,7 +810,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     if pieces.is_empty() {
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", Mois::en_clair(&mois))));
     }
-    let versions = journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle)).map_err(Echec::from)?;
+    let versions = journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle))?;
     let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, &mois)?;
@@ -904,7 +904,7 @@ pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: &str) -> R<HashMap<Strin
         let brut = &*v.objet().brut;
         if let Some(c) = &brut.saisie.carte.salarie {
             let contrat = brut.saisie.carte.numero.clone();
-            par_salarie.entry(c.to_string()).or_default().push((contrat, engagement::versions::depuis(ctx, v, depuis).map_err(Echec::from)?));
+            par_salarie.entry(c.to_string()).or_default().push((contrat, engagement::versions::depuis(ctx, v, depuis)?));
         }
     }
     Ok(par_salarie
@@ -928,7 +928,7 @@ pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: &str) -> R<HashMap<Strin
 /// Le choix, pour le mois `mois`, sur ses paies validees (`crate::documents::charger_le_mois`).
 pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::Paie]) -> R<Choix> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(Echec::from)?, &lignes)?;
+    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?, &lignes)?;
     let cles: Vec<String> = paies.iter().map(|p| p.salarie.id.to_string()).collect();
     let mut resumes: HashMap<String, envoi::ResumeDePaie> = HashMap::new();
     for cle in &cles {
@@ -936,7 +936,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::P
             continue;
         }
         let siennes: Vec<&engagement::calcul::Paie> = paies.iter().zip(&cles).filter(|(_, c)| *c == cle).map(|(p, _)| p).collect();
-        resumes.insert(cle.clone(), envoi::resume_de(&siennes).map_err(Echec::from)?);
+        resumes.insert(cle.clone(), envoi::resume_de(&siennes)?);
     }
     let changes = bulletins_a_refaire(ctx, mois)?;
     let mut choix = Choix { resumes, ..Choix::default() };
@@ -1067,7 +1067,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: &str, 
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     // LA VERSION SUR LAQUELLE ILS PARTENT, engagement par engagement des salaries servis.
     let servis: Vec<&str> = messages.iter().map(|m| m.cle.as_str()).collect();
-    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle)).map_err(Echec::from)?;
+    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
     verifier_preuve(ctx, Some(preuve), mois, "envoi des documents du mois aux salaries", &a_qui)?;

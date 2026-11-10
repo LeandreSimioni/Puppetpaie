@@ -481,7 +481,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         };
         let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
-        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? });
+        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste)? });
     }
     let lignes = ["Le NOUVEAU mot de passe de cette compagnie, à elle seule.".to_string(), "La frappe ne s'affiche pas.".to_string()];
     let nouveau = secret_a_poser(charge.nouveau, "PuppetPaie : son propre mot de passe", &lignes)?;
@@ -491,7 +491,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         None => nouveau.clone(),
     };
     adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(|e| e.reclasser(Classe::Refuse))?;
-    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? })
+    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste)? })
 }
 
 /// Des noms en une liste : « A », « A et B », « A, B et C ».
@@ -699,7 +699,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         *case = Some(v);
     }
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::api_dpae(Some(cfg)), Some(ctx.aujourdhui))?;
-    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE).map_err(Echec::from)?.au(&ctx.aujourdhui))
+    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?.au(&ctx.aujourdhui))
 }
 
 // ------------------------------------------------------------------ le mot de passe du logiciel
@@ -725,7 +725,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
     let inst = crate::gestes::administrateur::installation_de(&ctx.racine);
-    if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
+    if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
@@ -738,7 +738,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
+    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;

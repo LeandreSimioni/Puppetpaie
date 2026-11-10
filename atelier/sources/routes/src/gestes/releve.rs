@@ -6,7 +6,7 @@ use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
 use envois::releve_retours::{Client, Releve};
 use envois::suites::Suites;
-use socle::echec::{Echec, R};
+use socle::echec::R;
 use compagnie::consultation::{client_dpae, client_dsn};
 
 /// Fait les suites d'une releve et les reporte sur elle.
@@ -52,7 +52,7 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
     let n = envois::releve_retours::rattacher_simulation(ctx, &mut s);
     let faites = crate::gestes::suites::faire(ctx, s)?;
     if let Some(i) = faites.incidents.into_iter().next() {
-        return Err(Echec::from(i));
+        return Err(socle::echec::refus(i));
     }
     Ok((n?, faites.a_faire))
 }
