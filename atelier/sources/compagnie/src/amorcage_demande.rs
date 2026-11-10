@@ -162,7 +162,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
                 if let Err(e) = am::verifier(p, motif, am::NORMALE, None) {
                     match e {
                         declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m,
-                        declarations::fctu::Echec::Autre(m) => return Err(erreur(Classe::Refuse, m)),
+                        autre => return Err(autre.en_classe(Classe::Refuse)),
                     }
                 }
             }
@@ -191,7 +191,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, m
             envoi_test,
             date_constitution: Some(constitution),
         };
-        let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| erreur(Classe::Refuse, e.message().to_string()))?;
+        let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
         let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
         declarations::dsn::ecrire(&texte, &cible).map_err(|m| erreur(Classe::Disque, m))?;

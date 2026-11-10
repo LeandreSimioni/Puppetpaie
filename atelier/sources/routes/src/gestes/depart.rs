@@ -1328,7 +1328,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
                     envoi_test: false,
                     date_constitution: Some(jour),
                 };
-                let texte = declarations::amorcage::generer(&ctx_j, paie, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(|e| valeur(e.message().to_string()))?;
+                let texte = declarations::amorcage::generer(&ctx_j, paie, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(|e| e.en_classe(Classe::Illisible))?;
                 declarations::dsn::ecrire(&texte, cible).map_err(valeur)
             }
             declarations::fctu::NATURE => {

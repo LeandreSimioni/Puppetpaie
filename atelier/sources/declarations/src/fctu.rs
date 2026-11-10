@@ -14,8 +14,8 @@ use crate::dsn::{
     remunerations, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
 };
 use engagement::Engagement;
+use socle::echec::{Classe, R};
 use socle::fichiers::repr;
-use socle::num::Resultat;
 
 pub const NATURE: &str = "07";
 /// CCH-14 (cahier technique p. 293) : la base assujettie de prevoyance n'a
@@ -26,36 +26,27 @@ pub const ANNULE_ET_REMPLACE: &str = "03";
 pub const ANNULE: &str = "04";
 const TYPES: [(&str, &str); 3] = [(NORMALE, "normale"), (ANNULE_ET_REMPLACE, "annule et remplace integral"), (ANNULE, "annule")];
 
-/// Un refus : `Impossible` est la regle de la norme qui s'oppose, `Autre` tout le reste.
+/// Un refus d'un signalement : `Impossible` est la regle de la norme qui s'oppose, sa phrase ; `Autre` tout le reste.
 #[derive(Debug, Clone)]
 pub enum Echec {
     Impossible(String),
-    Autre(String),
+    Autre(socle::echec::Echec),
 }
 
-impl From<String> for Echec {
-    fn from(m: String) -> Echec {
-        Echec::Autre(m)
-    }
-}
-
-impl From<&str> for Echec {
-    fn from(m: &str) -> Echec {
-        Echec::Autre(m.to_string())
-    }
-}
-
-/// Le refus du socle ou du droit, par le pont du socle (`From<socle::echec::Echec> for String`).
 impl From<socle::echec::Echec> for Echec {
     fn from(e: socle::echec::Echec) -> Echec {
-        Echec::Autre(e.into())
+        Echec::Autre(e)
     }
 }
 
 impl Echec {
-    pub fn message(&self) -> &str {
+    /// Le refus, de la classe `classe` que son lecteur lui donne : la regle qui s'oppose y nait, l'autre refus garde ce
+    /// qu'il porte a part.
+    #[track_caller]
+    pub fn en_classe(self, classe: Classe) -> socle::echec::Echec {
         match self {
-            Echec::Impossible(m) | Echec::Autre(m) => m,
+            Echec::Impossible(m) => socle::echec::erreur(classe, m),
+            Echec::Autre(e) => socle::echec::Echec { classe: Some(classe), ..e },
         }
     }
 }
@@ -65,12 +56,12 @@ fn type_de_declaration(code: &str) -> Option<&'static str> {
 }
 
 /// `fctu-base.json`, lu par sa forme (`droit::preavis::base`).
-fn nomenclatures() -> Resultat<droit::preavis::BaseFctu> {
-    droit::preavis::base().map_err(String::from)
+fn nomenclatures() -> R<droit::preavis::BaseFctu> {
+    droit::preavis::base()
 }
 
 /// `FinDeContrat.libelle_preavis` : le libelle du type de preavis, « ? » s'il est inconnu.
-pub fn libelle_preavis(type_preavis: &str) -> Resultat<String> {
+pub fn libelle_preavis(type_preavis: &str) -> R<String> {
     Ok(match nomenclatures()?.types_preavis.du_code(type_preavis) {
         Some(c) => c.libelle.clone(),
         None => "?".to_string(),
@@ -78,8 +69,8 @@ pub fn libelle_preavis(type_preavis: &str) -> Resultat<String> {
 }
 
 /// Le code par defaut d'une nomenclature.
-fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> Resultat<String> {
-    n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi).into())
+fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> R<String> {
+    n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
 }
 
 /// La fin d'un contrat, telle qu'elle se declare (dates AAAA-MM-JJ). Le dernier jour travaille et paye
@@ -106,8 +97,9 @@ fn numero_dit(e: &Engagement) -> &str {
     }
 }
 
-fn d(s: &str) -> Resultat<Jour> {
-    Jour::lire(s).map_err(String::from)
+#[track_caller]
+fn d(s: &str) -> R<Jour> {
+    Jour::lire(s)
 }
 
 // ------------------------------------------------ le dernier jour travaille et paye
@@ -115,10 +107,10 @@ fn d(s: &str) -> Resultat<Jour> {
 /// Le type de preavis (S21.G00.63.001) est-il un preavis NON effectue ? Le drapeau `non_effectue` de
 /// `fctu-base.json` : 02, 03, 10, 50, 51, 61, que nomme la CCH-12 de S21.G00.62.006 (cahier technique DSN 2026.1,
 /// p. 275). Un type inconnu refuse.
-pub fn preavis_non_effectue(type_preavis: &str) -> Resultat<bool> {
+pub fn preavis_non_effectue(type_preavis: &str) -> R<bool> {
     match nomenclatures()?.types_preavis.du_code(type_preavis) {
         Some(c) => Ok(c.non_effectue == Some(true)),
-        None => Err(format!(
+        None => Err(socle::refus!(
             "Type de préavis {} inconnu de la norme (S21.G00.63.001) : le choisir dans la liste.",
             repr(type_preavis)
         )),
@@ -132,14 +124,14 @@ pub fn preavis_non_effectue(type_preavis: &str) -> Resultat<bool> {
 /// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
 /// refuse par le point de depot. Un seul endroit : la liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et
 /// `verifier` la lisent ici.
-pub fn notification_exigee(motif: &str) -> Resultat<bool> {
+pub fn notification_exigee(motif: &str) -> R<bool> {
     Ok(nomenclatures()?.notification_rupture.motifs.iter().any(|m| m == motif))
 }
 
 // ------------------------------------------------ le type de preavis et ce que la paie verse
 
 /// Les lignes d'une paie declarees en indemnite compensatrice de preavis (S21.G00.52.001), en (code, libelle).
-pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> Resultat<Vec<(String, String)>> {
+pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> R<Vec<(String, String)>> {
     let codes = droit::preavis::codes_52_de_l_indemnite_de_preavis()?;
     Ok(paie
         .remuneration
@@ -153,16 +145,16 @@ pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> Resulta
 /// (`debut` = 40.001, `fin` = 62.001) ; CCH-12, sur un preavis non effectue, il precede le debut du preavis (63.002).
 fn controler_62_006(
     jour_paye: &Jour, debut: &Jour, fin: &Jour, type_preavis: Option<&str>, debut_preavis: Option<&Jour>,
-) -> Resultat<()> {
+) -> R<()> {
     if jour_paye > fin {
-        return Err(format!(
+        return Err(socle::refus!(
             "Le dernier jour travaille et paye au salaire habituel ({}) est posterieur a la fin du contrat ({}).",
             jour_paye.iso(),
             fin.iso()
         ));
     }
     if jour_paye < debut {
-        return Err(format!(
+        return Err(socle::refus!(
             "Le dernier jour travaille et paye au salaire habituel ({}) est anterieur au debut du contrat ({}) -- CCH-15 \
 de S21.G00.62.006.",
             jour_paye.iso(),
@@ -171,7 +163,7 @@ de S21.G00.62.006.",
     }
     if let (Some(t), Some(dp)) = (type_preavis, debut_preavis) {
         if preavis_non_effectue(t)? && jour_paye >= dp {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Preavis « {} » : le dernier jour travaille et paye au salaire habituel ({}) doit preceder le debut du \
 preavis ({}) -- CCH-12 de S21.G00.62.006.",
                 libelle_preavis(t)?,
@@ -191,9 +183,9 @@ preavis ({}) -- CCH-12 de S21.G00.62.006.",
 /// Le jour que la saisie dit (`dernier_jour_paye`) ; sinon la fin du contrat, qui n'est ce jour-la que si le preavis
 /// a ete effectue ou qu'il n'y en a pas. Sur un preavis NON effectue (02, 03, 10, 50, 51, 61), le dernier jour paye au
 /// salaire habituel precede le debut du preavis (CCH-12) : sans saisie, le moteur refuse plutot que de le deviner.
-pub fn dernier_jour_paye(e: &Engagement) -> Resultat<Jour> {
+pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
     let numero = numero_dit(e);
-    let fin = e.fin.ok_or_else(|| format!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
+    let fin = e.fin.ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre.clone()).filter(|t| !t.is_empty());
     let debut_preavis = match preavis.and_then(|p| p.debut.as_deref()).filter(|v| !v.is_empty()) {
@@ -205,7 +197,7 @@ pub fn dernier_jour_paye(e: &Engagement) -> Resultat<Jour> {
         None => {
             if let Some(t) = type_preavis.as_deref() {
                 if preavis_non_effectue(t)? {
-                    return Err(format!(
+                    return Err(socle::refus!(
                         "Contrat {} : preavis « {} », et la saisie ne dit pas le dernier jour travaille et paye au salaire \
 habituel (« Dernier jour payé », S21.G00.62.006). Sur un preavis non effectue, ce n'est pas la fin du contrat ({}) : il \
 precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit ; le moteur ne le devine pas.",
@@ -219,7 +211,7 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
         }
     };
     controler_62_006(&jour_paye, &e.debut, &fin, type_preavis.as_deref(), debut_preavis.as_ref())
-        .map_err(|m| format!("Contrat {} : {}", numero, m))?;
+        .map_err(|m| m.reformuler(|m| format!("Contrat {} : {}", numero, m)))?;
     Ok(jour_paye)
 }
 
@@ -342,13 +334,13 @@ signalement sans elle. Rien n'est ecrit.",
 
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
-    let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
+    let jour_paye = dernier_jour_paye(e).map_err(|m| Echec::Impossible(String::from(m)))?;
     let debut_preavis = match debut_p {
         Some(p) => Some(d(p)?),
         None => None,
     };
     controler_62_006(&jour_paye, &e.debut, &d(&fin.fin)?, Some(&fin.type_preavis), debut_preavis.as_ref())
-        .map_err(Echec::Impossible)?;
+        .map_err(|m| Echec::Impossible(String::from(m)))?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
     let nat = e.nat()?;
@@ -377,8 +369,8 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
 
 /// La fin du contrat et son preavis, dans l'ordre de l'arborescence. `e` : le contrat, d'ou se lit S21.G00.62.006
 /// (`dernier_jour_paye`).
-pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> Resultat<()> {
-    let j = |s: &str| -> Resultat<String> { Ok(d(s)?.jjmmaaaa()) };
+pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> {
+    let j = |s: &str| -> R<String> { Ok(d(s)?.jjmmaaaa()) };
     f.add("S21.G00.62.001", j(&fin.fin)?);
     f.add("S21.G00.62.002", &fin.motif);
     if let Some(n) = &fin.notification {
@@ -570,7 +562,7 @@ ou un annule."
     f.add("S21.G00.50.003", "01");
     f.add("S21.G00.50.020", defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
-    let bornes = |q: &engagement::calcul::Paie| -> Resultat<(Jour, Jour)> {
+    let bornes = |q: &engagement::calcul::Paie| -> R<(Jour, Jour)> {
         if paie.periodes.is_empty() { Ok((debut_p, fin_p)) } else { Ok((q.engagement.debut_periode()?, q.engagement.fin_periode()?)) }
     };
     for q in paie.elementaires() {

@@ -10,7 +10,7 @@
 
 use socle::fichiers::repr;
 use crate::norme::Norme;
-use socle::num::Resultat;
+use socle::echec::{refus, refus_avec, APart, R};
 use crate::usages::{espace, lignes, strip};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -91,7 +91,7 @@ impl Lecteur {
         self.c.get(self.i).copied()
     }
 
-    fn alt(&mut self) -> Resultat<Vec<Vec<Noeud>>> {
+    fn alt(&mut self) -> R<Vec<Vec<Noeud>>> {
         let mut alts = vec![self.suite()?];
         while self.peek() == Some('|') {
             self.i += 1;
@@ -100,7 +100,7 @@ impl Lecteur {
         Ok(alts)
     }
 
-    fn suite(&mut self) -> Resultat<Vec<Noeud>> {
+    fn suite(&mut self) -> R<Vec<Noeud>> {
         let mut seq = Vec::new();
         while let Some(c) = self.peek() {
             if c == '|' || c == ')' {
@@ -113,7 +113,7 @@ impl Lecteur {
     }
 
     /// L'entier ecrit ici, `None` s'il n'y en a pas.
-    fn entier(&mut self) -> Resultat<Option<usize>> {
+    fn entier(&mut self) -> R<Option<usize>> {
         let debut = self.i;
         while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.i += 1;
@@ -122,17 +122,17 @@ impl Lecteur {
             return Ok(None);
         }
         let ecrit: String = self.c[debut..self.i].iter().collect();
-        ecrit.parse().map(Some).map_err(|_| format!("{} : nombre trop grand", ecrit))
+        ecrit.parse().map(Some).map_err(|_| socle::refus!("{} : nombre trop grand", ecrit))
     }
 
-    fn quantifie(&mut self, atome: Noeud) -> Resultat<Noeud> {
+    fn quantifie(&mut self, atome: Noeud) -> R<Noeud> {
         let (min, max) = match self.peek() {
             Some('?') => (0, 1),
             Some('*') => (0, usize::MAX),
             Some('+') => (1, usize::MAX),
             Some('{') => {
                 self.i += 1;
-                let min = self.entier()?.ok_or("accolade non prise en charge")?;
+                let min = self.entier()?.ok_or_else(|| refus("accolade non prise en charge"))?;
                 let max = if self.peek() == Some(',') {
                     self.i += 1;
                     // `{n,}` : sans borne haute.
@@ -144,7 +144,7 @@ impl Lecteur {
                     min
                 };
                 if self.peek() != Some('}') {
-                    return Err("accolade non prise en charge".into());
+                    return Err(refus("accolade non prise en charge"));
                 }
                 (min, max)
             }
@@ -152,36 +152,36 @@ impl Lecteur {
         };
         self.i += 1;
         if matches!(self.peek(), Some('?') | Some('+') | Some('*') | Some('{')) {
-            return Err("quantificateur non prise en charge".into());
+            return Err(refus("quantificateur non prise en charge"));
         }
         Ok(Noeud::Rep(Box::new(atome), min, max))
     }
 
-    fn echappe(&mut self) -> Resultat<Elt> {
-        let c = self.peek().ok_or("barre oblique finale")?;
+    fn echappe(&mut self) -> R<Elt> {
+        let c = self.peek().ok_or_else(|| refus("barre oblique finale"))?;
         self.i += 1;
         match c {
             'd' => Ok(Elt::Chiffre),
             's' => Ok(Elt::Espace),
-            c if c.is_ascii_alphanumeric() => Err(socle::echec::a_la_cle("Un format de la norme livrée ne se lit pas : le signaler au développeur.", "format", c).into()),
+            c if c.is_ascii_alphanumeric() => Err(socle::echec::a_la_cle("Un format de la norme livrée ne se lit pas : le signaler au développeur.", "format", c)),
             c => Ok(Elt::Car(c)),
         }
     }
 
-    fn atome(&mut self) -> Resultat<Noeud> {
+    fn atome(&mut self) -> R<Noeud> {
         let c = self.peek().unwrap();
         self.i += 1;
         match c {
             '(' => {
                 if self.peek() == Some('?') {
                     if self.c.get(self.i + 1) != Some(&':') {
-                        return Err("groupe special non pris en charge".into());
+                        return Err(refus("groupe special non pris en charge"));
                     }
                     self.i += 2;
                 }
                 let a = self.alt()?;
                 if self.peek() != Some(')') {
-                    return Err("parenthese non fermee".into());
+                    return Err(refus("parenthese non fermee"));
                 }
                 self.i += 1;
                 Ok(Noeud::Groupe(a))
@@ -193,7 +193,7 @@ impl Lecteur {
                 }
                 let mut elts = Vec::new();
                 loop {
-                    let c = self.peek().ok_or("crochet non ferme")?;
+                    let c = self.peek().ok_or_else(|| refus("crochet non ferme"))?;
                     self.i += 1;
                     if c == ']' && !elts.is_empty() {
                         break;
@@ -207,7 +207,7 @@ impl Lecteur {
                             let b = if b == '\\' {
                                 match self.echappe()? {
                                     Elt::Car(b) => b,
-                                    _ => return Err("plage non prise en charge".into()),
+                                    _ => return Err(refus("plage non prise en charge")),
                                 }
                             } else {
                                 b
@@ -229,7 +229,7 @@ impl Lecteur {
             '^' => Ok(Noeud::Debut),
             '$' => Ok(Noeud::Fin),
             '.' => Ok(Noeud::Tout),
-            '*' | '+' | '?' | '{' => Err("quantificateur sans objet".into()),
+            '*' | '+' | '?' | '{' => Err(refus("quantificateur sans objet")),
             c => Ok(Noeud::Car(c)),
         }
     }
@@ -291,11 +291,11 @@ fn rep(n: &Noeud, min: usize, max: usize, c: usize, s: &[char], p: usize, k: K) 
 }
 
 impl Regex {
-    pub fn compiler(motif: &str) -> Resultat<Regex> {
+    pub fn compiler(motif: &str) -> R<Regex> {
         let mut l = Lecteur { c: motif.chars().collect(), i: 0 };
-        let alts = l.alt().map_err(|e| format!("{} : {}", repr(motif), e))?;
+        let alts = l.alt().map_err(|e| e.reformuler(|e| format!("{} : {}", repr(motif), e)))?;
         if l.i != l.c.len() {
-            return Err(format!("{} : parenthese fermante sans ouvrante", repr(motif)));
+            return Err(socle::refus!("{} : parenthese fermante sans ouvrante", repr(motif)));
         }
         Ok(Regex { motif: motif.to_string(), alts })
     }
@@ -311,7 +311,7 @@ impl Regex {
 // ----------------------------------------------------------------- la table
 
 /// La table des formats de cette version de la norme.
-pub fn table_de(norme: &Norme) -> Resultat<Arc<Table>> {
+pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
     crate::norme::livree(&norme.table_formats()?)
 }
 
@@ -352,12 +352,12 @@ pub struct Format {
 }
 
 /// Le format de la rubrique dans la table de cette version, `None` si la table ne la connait pas.
-pub fn format_en(norme: &Norme, rubrique: &str) -> Resultat<Option<Format>> {
+pub fn format_en(norme: &Norme, rubrique: &str) -> R<Option<Format>> {
     Ok(table_de(norme)?.formats.get(rubrique).cloned())
 }
 
 /// Pour une saisie : le format de la premiere version livree qui en donne un, `None` si aucune.
-pub fn format_de(rubrique: &str) -> Resultat<Option<Format>> {
+pub fn format_de(rubrique: &str) -> R<Option<Format>> {
     for n in crate::norme::versions()? {
         if let Some(f) = format_en(&n, rubrique)? {
             return Ok(Some(f));
@@ -366,7 +366,7 @@ pub fn format_de(rubrique: &str) -> Resultat<Option<Format>> {
     Ok(None)
 }
 
-fn expressions(norme: &Norme, rubrique: &str) -> Resultat<Arc<Vec<Regex>>> {
+fn expressions(norme: &Norme, rubrique: &str) -> R<Arc<Vec<Regex>>> {
     static CACHE: OnceLock<Mutex<HashMap<(String, String), Arc<Vec<Regex>>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let cle = (norme.table_formats()?, rubrique.to_string());
@@ -386,7 +386,7 @@ fn expressions(norme: &Norme, rubrique: &str) -> Resultat<Arc<Vec<Regex>>> {
 
 /// Pour une saisie : pourquoi la valeur ne va pas dans l'une des versions livrees (la premiere qui la refuse) -- ""
 /// si elle va dans toutes, ou si on ne sait pas.
-pub fn mauvaise(rubrique: &str, valeur: &str) -> Resultat<String> {
+pub fn mauvaise(rubrique: &str, valeur: &str) -> R<String> {
     for n in crate::norme::versions()? {
         let m = mauvaise_en(&n, rubrique, valeur)?;
         if !m.is_empty() {
@@ -398,7 +398,7 @@ pub fn mauvaise(rubrique: &str, valeur: &str) -> Resultat<String> {
 
 /// Pour une saisie : les caracteres dont le retrait fait passer la valeur, dans la premiere version livree qui la
 /// refuse.
-pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> Resultat<Vec<char>> {
+pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> R<Vec<char>> {
     for n in crate::norme::versions()? {
         if !mauvaise_en(&n, rubrique, valeur)?.is_empty() {
             return caracteres_refuses_en(&n, rubrique, valeur);
@@ -408,7 +408,7 @@ pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> Resultat<Vec<char>> {
 }
 
 /// Pourquoi cette valeur ne va pas dans cette version -- "" si elle va, ou si on ne sait pas.
-pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> Resultat<String> {
+pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<String> {
     let Some(fmt) = format_en(norme, rubrique)? else { return Ok(String::new()) };
     let [mini, maxi] = fmt.longueur;
     let n = valeur.chars().count();
@@ -424,7 +424,7 @@ pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> Resultat<Stri
 }
 
 /// Les caracteres dont le retrait suffit a faire passer la valeur, dans cette version.
-pub fn caracteres_refuses_en(norme: &Norme, rubrique: &str, valeur: &str) -> Resultat<Vec<char>> {
+pub fn caracteres_refuses_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<Vec<char>> {
     let exprs = expressions(norme, rubrique)?;
     if exprs.is_empty() || exprs.iter().any(|e| e.fullmatch(valeur)) {
         return Ok(vec![]);
@@ -460,7 +460,7 @@ fn ligne_valeur(ligne: &str) -> Option<(&str, &str)> {
 }
 
 /// [(rubrique, valeur, pourquoi)] pour tout le fichier, dans la table de cette version.
-pub fn mauvaises(texte: &str, norme: &Norme) -> Resultat<Vec<(String, String, String)>> {
+pub fn mauvaises(texte: &str, norme: &Norme) -> R<Vec<(String, String, String)>> {
     let mut out = Vec::new();
     for ligne in lignes(texte) {
         if let Some((r, v)) = ligne_valeur(strip(ligne)) {
@@ -473,7 +473,7 @@ pub fn mauvaises(texte: &str, norme: &Norme) -> Resultat<Vec<(String, String, St
     Ok(out)
 }
 
-fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, &str, &str)>) -> Resultat<String> {
+fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, &str, &str)>) -> R<String> {
     let libelle: String = libelle.iter().map(|l| format!(" ({})", l)).collect();
     let ou = match ou {
         None => return Ok(format!("    {} = '{}' : {}{}", r, v, pourquoi, libelle)),
@@ -495,7 +495,7 @@ fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, 
 /// Refuse avant le depot ce que le point de depot refuserait, dans la table de la version que le fichier porte
 /// (S10.G00.00.006) ; puis les valeurs que cette version a retirees de leur liste (`norme::verifier_les_valeurs`). Le
 /// texte de l'erreur est celui de `ValeurHorsNorme`.
-pub fn verifier_fichier(texte: &str) -> Resultat<()> {
+pub fn verifier_fichier(texte: &str) -> R<()> {
     let norme = crate::norme::du_fichier(texte)?;
     let mauv = mauvaises(texte, &norme)?;
     if mauv.is_empty() {
@@ -523,9 +523,9 @@ pub fn verifier_fichier(texte: &str) -> Resultat<()> {
         let lib = usages.usages.get(r).map(|e| e.libelle.as_str());
         dites.push(dire(&norme, r, v, p, lib, saisies.iter().find(|s| s.0 == r).copied())?);
     }
-    Err(socle::echec::avec(
+    Err(refus_avec(
         format!("Valeur(s) qui ne suivent pas le format de la norme :\n{}\n  Formats du cahier technique NEODeS.{}", dites.join("\n"), trou),
-        socle::echec::APart { fichier: Some(norme.table_formats()?), ..socle::echec::APart::default() },
+        APart { fichier: Some(norme.table_formats()?), ..APart::default() },
     ))
 }
 
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn un_fichier_sans_version_ne_se_controle_pas() {
         let e = verifier_fichier("S20.G00.05.001,'01'\r\n").unwrap_err();
-        assert!(e.starts_with("Le fichier ne porte pas S10.G00.00.006"), "{}", e);
+        assert!(e.phrase.starts_with("Le fichier ne porte pas S10.G00.00.006"), "{}", e.phrase);
     }
 
     /// Le releve de `moteur-atelier extraire formats` sur les classeurs 2027.1.2 : les CSL de 40.070 et 41.045 s'elargissent

@@ -16,7 +16,7 @@ use crate::dsn::{
 };
 use crate::fctu::Echec;
 use socle::fichiers::repr;
-use socle::num::Resultat;
+use socle::echec::R;
 
 pub const NATURE: &str = "08";
 pub const EMBAUCHE: &str = "01";
@@ -64,12 +64,12 @@ struct Motif {
     organismes_complementaires: bool,
 }
 
-fn motifs_de_la_norme() -> Resultat<std::sync::Arc<Base>> {
+fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
     crate::norme::livree("amorcage-base.json")
 }
 
 /// Le libelle du motif, « ? » s'il est inconnu.
-pub fn libelle_motif(motif: &str) -> Resultat<String> {
+pub fn libelle_motif(motif: &str) -> R<String> {
     Ok(match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
         Some(c) => c.libelle.clone(),
         None => "?".to_string(),

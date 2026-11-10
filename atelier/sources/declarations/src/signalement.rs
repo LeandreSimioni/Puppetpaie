@@ -15,32 +15,14 @@ use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
 use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
-use socle::num::Resultat;
 
 pub const ARRET: &str = "04";
 pub const REPRISE: &str = "05";
 pub const NORMALE: &str = "01";
 pub const ANNULE_ET_REMPLACE: &str = "03";
 
-/// Un refus : `Impossible` est `SignalementImpossible`, `Autre` le reste.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Echec {
-    Impossible(String),
-    Autre(String),
-}
-
-impl From<String> for Echec {
-    fn from(m: String) -> Echec {
-        Echec::Autre(m)
-    }
-}
-
-/// Le refus du socle ou du droit, par le pont du socle (`From<socle::echec::Echec> for String`).
-impl From<socle::echec::Echec> for Echec {
-    fn from(e: socle::echec::Echec) -> Echec {
-        Echec::Autre(e.into())
-    }
-}
+/// Un refus : `Impossible` est `SignalementImpossible`, `Autre` le reste (le refus d'un signalement, `fctu::Echec`).
+pub use crate::fctu::Echec;
 
 type R<T> = Result<T, Echec>;
 
@@ -49,7 +31,7 @@ fn impossible<T>(m: String) -> R<T> {
 }
 
 /// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).
-pub fn avec_subrogation(a: &Arret) -> Resultat<bool> {
+pub fn avec_subrogation(a: &Arret) -> socle::echec::R<bool> {
     let bloc = droit::arrets::bloc_60()?;
     let oui = bloc.subrogation_oui()?;
     Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
@@ -443,7 +425,7 @@ annule-et-remplace (type 03)."
     f.add_case("S21.G00.40.019", &etab.siret, "siret")?;
 
     if ent.banque.is_none() {
-        return Err(socle::fichiers::absent("banque").into());
+        return Err(Echec::Autre(socle::fichiers::absent("banque")));
     }
     let banque = ent.banque.dite();
     if nature != REPRISE && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
@@ -467,7 +449,7 @@ annule-et-remplace (type 03)."
 /// L'avertissement d'un signalement de nature `nature` (04 ou 05) dont le motif n'est pas couvert par la DSN
 /// (`sauf_motifs.avertissement`) : la norme l'admet, le moteur ne le refuse pas (regle 7), il dit que l'Assurance Maladie
 /// ne le traite pas et ce qui se fait a la place. `None` pour un motif couvert. Appele par `verifier`.
-pub fn avertissement_hors_dsn(nature: &str, motif: &str) -> Result<Option<String>, String> {
+pub fn avertissement_hors_dsn(nature: &str, motif: &str) -> socle::echec::R<Option<String>> {
     let base = crate::obligations::base()?;
     let o = match nature {
         ARRET => base.obligations.signalement_arret,

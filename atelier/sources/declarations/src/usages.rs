@@ -5,8 +5,7 @@
 //! `S10.G00.00.006` du fichier controle (`norme::du_fichier`).
 
 use crate::norme::Norme;
-use socle::echec::APart;
-use socle::num::Resultat;
+use socle::echec::{refus_avec, APart, R};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -100,7 +99,7 @@ pub fn rubrique_valeur(ligne: &str) -> (&str, &str) {
 }
 
 /// Le tableau des usages de cette version de la norme.
-pub fn table_de(norme: &Norme) -> Resultat<Arc<Table>> {
+pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
     crate::norme::livree(&norme.table_usages()?)
 }
 
@@ -117,13 +116,13 @@ pub fn est_rubrique(r: &str) -> bool {
 }
 
 /// La rubrique est-elle au tableau des usages de cette version, quelle que soit la nature ?
-pub fn rubrique_connue(norme: &Norme, rubrique: &str) -> Resultat<bool> {
+pub fn rubrique_connue(norme: &Norme, rubrique: &str) -> R<bool> {
     Ok(table_de(norme)?.usages.contains_key(rubrique))
 }
 
 /// L'usage de la rubrique pour cette nature dans le tableau de cette version ; `None` si le tableau n'a pas la
 /// rubrique, ou pas la nature.
-pub fn usage(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<Option<Usage>> {
+pub fn usage(norme: &Norme, rubrique: &str, nature: &str) -> R<Option<Usage>> {
     Ok(table_de(norme)?.usages.get(rubrique).and_then(|e| e.pour(nature)))
 }
 
@@ -131,7 +130,7 @@ pub fn usage(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<Option<Usa
 const INCONNUE: &str = "";
 
 /// 'O', 'C', 'I', 'N' -- ou "" si la rubrique est inconnue du tableau de cette version.
-pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<String> {
+pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> R<String> {
     Ok(match usage(norme, rubrique, nature)? {
         Some(u) => u.lettre().to_string(),
         None => INCONNUE.to_string(),
@@ -139,7 +138,7 @@ pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> Resultat<String>
 }
 
 /// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage, `None` si le tableau ne la connait pas).
-pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> Resultat<Vec<(String, Option<Usage>)>> {
+pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> R<Vec<(String, Option<Usage>)>> {
     let mut vues = HashSet::new();
     let mut out = Vec::new();
     for ligne in lignes(texte) {
@@ -159,7 +158,7 @@ pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> Resultat<Vec<(Str
 }
 
 /// Refuse avant le depot ce que le point de depot refuserait (CST-04).
-pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> Resultat<()> {
+pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> R<()> {
     let mauvaises = interdites(texte, nature, norme)?;
     if mauvaises.is_empty() {
         return Ok(());
@@ -181,7 +180,7 @@ pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> Resultat<()> {
             }
         })
         .collect();
-    Err(socle::echec::avec(
+    Err(refus_avec(
         format!(
             "Rubrique(s) que la nature {} ({}) n'admet pas -- anomalie bloquante CST-04, le fichier ne declarerait rien :\n{}\n  Tableau des usages du cahier technique NEODeS.",
             nature,
@@ -220,7 +219,7 @@ const CCH_15: &str = concat!(
 const TYPES_51_FCTU: [&str; 3] = ["001", "002", "010"];
 
 /// Les deux controles que la nature 07 ajoute au tableau des usages.
-pub fn verifier_fctu(texte: &str) -> Resultat<()> {
+pub fn verifier_fctu(texte: &str) -> R<()> {
     let mut versements: Vec<HashSet<String>> = Vec::new();
     for ligne in lignes(texte) {
         let (rubrique, valeur) = rubrique_valeur(ligne);
@@ -229,7 +228,7 @@ pub fn verifier_fctu(texte: &str) -> Resultat<()> {
         } else if rubrique == "S21.G00.51.011" && !versements.is_empty() {
             versements.last_mut().unwrap().insert(valeur.to_string());
         } else if rubrique == "S21.G00.78.001" && valeur == "31" {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Base assujettie de code 31 dans un signalement de fin de contrat.\n  {}",
                 CCH_14
             ));
@@ -238,7 +237,7 @@ pub fn verifier_fctu(texte: &str) -> Resultat<()> {
     for (i, types) in versements.iter().enumerate() {
         let manquants: Vec<&str> = TYPES_51_FCTU.iter().copied().filter(|x| !types.contains(*x)).collect();
         if !manquants.is_empty() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Versement individu n\u{b0} {} : il manque le(s) bloc(s) 51 de type {}.\n  {}",
                 i + 1,
                 manquants.join(", "),
@@ -251,7 +250,7 @@ pub fn verifier_fctu(texte: &str) -> Resultat<()> {
 
 /// Confronte un fichier produit a sa propre nature, dans le tableau de sa propre version (S10.G00.00.006) : un
 /// fichier sans version, ou d'une version que le logiciel ne livre pas, refuse.
-pub fn verifier_fichier(texte: &str) -> Resultat<()> {
+pub fn verifier_fichier(texte: &str) -> R<()> {
     let norme = crate::norme::du_fichier(texte)?;
     let Some(nature) = nature_du_fichier(texte) else { return Ok(()) };
     if table_de(&norme)?.natures.contains_key(&nature) {
@@ -271,7 +270,7 @@ mod tests {
     #[test]
     fn un_fichier_sans_version_connue_ne_se_controle_pas() {
         let e = verifier_fichier("S10.G00.00.006,'P25V01'\r\nS20.G00.05.001,'01'\r\n").unwrap_err();
-        assert!(e.contains("Version de la norme DSN « P25V01 » inconnue du logiciel (versions livrées : P26V01, P27V01"), "{}", e);
+        assert!(e.phrase.contains("Version de la norme DSN « P25V01 » inconnue du logiciel (versions livrées : P26V01, P27V01"), "{}", e.phrase);
     }
 
     /// Le releve de `moteur-atelier extraire usages`, sur le PDF 2027.1.1 puis sur les classeurs

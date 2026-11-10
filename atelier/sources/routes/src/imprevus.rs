@@ -1777,7 +1777,7 @@ fn verifier(arret: &ArretSaisi) -> R<()> {
     match signalement::verifier(&declarations::dsn::Arret { saisi: arret.clone() }, signalement::ARRET, None) {
         Ok(_) => Ok(()),
         Err(signalement::Echec::Impossible(m)) => Err(erreur(Classe::Illisible, m)),
-        Err(signalement::Echec::Autre(m)) => Err(Echec { classe: None, phrase: m, a_part: None }),
+        Err(signalement::Echec::Autre(e)) => Err(e),
     }
 }
 
@@ -2000,12 +2000,10 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: &str) -> R<declarati
     })
 }
 
-/// L'echec d'un signalement de fin de contrat ou d'amorcage : une regle de la norme qui s'oppose
-/// (`FctuImpossible`, `AmorcageImpossible`, une valeur `Illisible`) ou autre chose.
+/// L'echec d'un signalement (fin de contrat, arret, reprise) : une regle de la norme qui s'oppose
+/// (`FctuImpossible`, `SignalementImpossible`, une valeur `Illisible`) ou autre chose.
 fn echec_fctu(e: declarations::fctu::Echec) -> Echec {
-    match e {
-        declarations::fctu::Echec::Impossible(m) | declarations::fctu::Echec::Autre(m) => erreur(Classe::Illisible, m),
-    }
+    e.en_classe(Classe::Illisible)
 }
 
 /// LE SIGNALEMENT DE FIN DE CONTRAT, ecrit dans `sorties/AAAA-MM/`. Rien n'est depose : le depot est un acte a part. Un
@@ -2152,7 +2150,6 @@ fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// prolongation ou une reprise saisie depuis ne la change pas. L'annule-et-remplace a son nom (`_AR<ordre>`) : le
 /// fichier parti reste tel qu'il est parti.
 pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: Option<&ArretSaisi>) -> R<ReponseSignalement> {
-    use declarations::signalement::Echec as Ech;
     let nature = c.nature.code();
     let remplace = remplace_dit(&c.remplace)?;
     let arret = match alors {
@@ -2177,10 +2174,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let type_declaration = if remplace.is_some() { signalement::ANNULE_ET_REMPLACE } else { signalement::NORMALE };
     let constitution = constitue_le(ctx, c.le);
     let dsn_arret = declarations::dsn::Arret { saisi: arret.clone() };
-    let echec = |e: Ech| match e {
-        Ech::Impossible(m) | Ech::Autre(m) => erreur(Classe::Illisible, m),
-    };
-    let mut avertissements = signalement::verifier(&dsn_arret, nature, Some(&constitution)).map_err(echec)?;
+    let mut avertissements = signalement::verifier(&dsn_arret, nature, Some(&constitution)).map_err(echec_fctu)?;
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
 
@@ -2200,7 +2194,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         envoi_test: c.test == Some(true),
         date_constitution: Some(constitution),
     };
-    let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec)?;
+    let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let fait = match c.nature {
