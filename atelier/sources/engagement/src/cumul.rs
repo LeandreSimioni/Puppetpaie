@@ -6,11 +6,11 @@ use crate::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::Declare;
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
-fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> Resultat<i64> {
+fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
     let mut heures = 0.0;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
@@ -30,7 +30,7 @@ fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> Resultat<
 /// Les contrats que l'import atteste (`importe::contrats_lus` : une AEM, un bulletin), sauf ceux des permanents, qui
 /// n'ouvrent aucun droit. Vide tant qu'on n'a rien importe. Un contrat dont l'engagement n'a pas de bornes ne se compte
 /// pas : rien ne le situe.
-pub(crate) fn lire_importes(ctx: &Contexte) -> Resultat<Vec<Declare>> {
+pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
     let mut out = Vec::new();
     for i in crate::importe::tous(&ctx.racine)?.into_iter().filter(|i| !i.permanent()) {
         let Some(c) = i.contrat_lu()? else { continue };
@@ -62,7 +62,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> Resultat<Vec<Declare>> {
 }
 
 /// Une ligne declaree par paie d'intermittent (les permanents n'ouvrent aucun droit).
-fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> Resultat<Option<Declare>> {
+fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     let e = &p.engagement;
     if e.sans_paie() || e.nat()?.mensuelle() {
         return Ok(None);
@@ -109,7 +109,7 @@ impl<'a> Passe<'a> {
     /// `paies_courantes` : les paies d'un mois deja lues par l'appelant ; elles remplacent celles de leur mois. Un mois a
     /// la fois importe et saisi compte les deux : un engagement importe ne touche aucun mois de la saisie
     /// (`stock::Objet::couvre`), aucune paie d'ici ne le declare une seconde fois.
-    pub fn engagements(&self, paies_courantes: Option<&[Paie]>) -> Resultat<Vec<Declare>> {
+    pub fn engagements(&self, paies_courantes: Option<&[Paie]>) -> R<Vec<Declare>> {
         let ctx = self.ctx;
         if self.importes.borrow().is_none() {
             *self.importes.borrow_mut() = Some(lire_importes(ctx)?);
@@ -156,6 +156,6 @@ impl<'a> Passe<'a> {
 }
 
 /// TOUT ce que la compagnie a declare (`Passe::engagements`), pour un seul cumul.
-pub fn lire_engagements(ctx: &Contexte, paies_courantes: Option<&[Paie]>, departs: &crate::departs::Departs) -> Resultat<Vec<Declare>> {
+pub fn lire_engagements(ctx: &Contexte, paies_courantes: Option<&[Paie]>, departs: &crate::departs::Departs) -> R<Vec<Declare>> {
     Passe::lire(ctx, None, None, departs).engagements(paies_courantes)
 }
