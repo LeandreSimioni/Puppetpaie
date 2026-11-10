@@ -2097,11 +2097,11 @@
    "ecran": true
   },
   {
-   "note": "L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC (article X.4.1) :\nattribue par l'employeur, il fixe le minimum de la grille. Vide, le\nmoteur compare au premier -- le plus bas.",
+   "note": "L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC (article X.4.1) :\nattribue par l'employeur, il fixe le minimum de la grille. Seule la\ncompagnie le connait : vide, le calcul refuse en nommant la case.",
    "cle": "echelon_ccneac",
    "libelle": "Échelon (CCNEAC)",
    "forme": "chiffres",
-   "aide": "Pour un emploi non artistique dans une structure de la CCNEAC : l'échelon de 1 à 12 donné par l'employeur (X.4.1), au moins un de plus tous les deux ans jusqu'au septième. Vide : le minimum lu est celui de l'échelon 1.",
+   "aide": "Pour un emploi non artistique dans une structure de la CCNEAC : l'échelon de 1 à 12 donné par l'employeur (X.4.1), au moins un de plus tous les deux ans jusqu'au septième. Le logiciel en a besoin pour calculer la paie d'un tel emploi.",
    "longueur": 2,
    "exemple": "",
    "choix": [],
@@ -2150,11 +2150,11 @@
    "ecran": true
   },
   {
-   "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Vide : aucune anciennete, le plus bas.",
+   "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Vide : aucune anciennete, le plus bas ; sauf\nla grille administrative de la 3090, ou le calcul refuse en nommant la case.",
    "cle": "poste_depuis",
    "libelle": "Dans ce poste depuis",
    "forme": "date",
-   "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention ; vide, le logiciel compare au minimum sans ancienneté.",
+   "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention ; vide, le logiciel compare au minimum sans ancienneté, sauf pour un emploi administratif de la 3090, dont il a besoin pour calculer la paie.",
    "longueur": null,
    "exemple": "",
    "choix": [],
