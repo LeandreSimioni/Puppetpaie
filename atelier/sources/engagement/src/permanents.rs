@@ -13,7 +13,7 @@ use std::sync::Arc;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::Nature;
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::stock::Objet;
 
@@ -39,7 +39,7 @@ pub struct Permanents {
 
 impl Permanents {
     /// LA REPONSE SUR `debut..=fin` : la case sur la periode, et les engagements payes au mois qui y courent.
-    pub fn de(ctx: &Contexte, debut: &Jour, fin: &Jour) -> Resultat<Permanents> {
+    pub fn de(ctx: &Contexte, debut: &Jour, fin: &Jour) -> R<Permanents> {
         let mut dus = Vec::new();
         for o in crate::stock::objets(&ctx.racine)? {
             if o.est_non_actif() || o.importe_seul() {
@@ -69,7 +69,7 @@ impl Permanents {
 
     /// LE FILTRE UNIQUE DES NATURES : celles d'un contrat d'usage toujours ; une nature payee au mois quand un permanent
     /// neuf se propose, ou qu'un engagement du l'a. Dans l'ordre de `contrats-base.json`.
-    pub fn natures(&self) -> Resultat<Vec<Arc<Nature>>> {
+    pub fn natures(&self) -> R<Vec<Arc<Nature>>> {
         Ok(droit::natures::natures()?
             .iter()
             .filter(|n| !n.mensuelle() || self.proposes || self.dus.iter().any(|d| d.nature.cle == n.cle))
@@ -79,7 +79,7 @@ impl Permanents {
 
     /// Les natures qu'une carte NEUVE peut prendre : celles d'un contrat d'usage, et celles payees au mois quand un
     /// permanent neuf se propose.
-    pub fn natures_neuves(&self) -> Resultat<Vec<Arc<Nature>>> {
+    pub fn natures_neuves(&self) -> R<Vec<Arc<Nature>>> {
         Ok(droit::natures::natures()?.iter().filter(|n| !n.mensuelle() || self.proposes).cloned().collect())
     }
 }
@@ -89,7 +89,7 @@ impl Permanents {
 /// sinon il se refuse). `None` : aucun de ses engagements n'est paye au mois ; rien de sa fiche de salarie au mois ne se
 /// lit, et sa fiche ne le montre pas (`routes::fiches::montres`). Rien n'est attache a la personne : c'est l'engagement
 /// qui ouvre la piece.
-pub fn cle_du_salarie(ctx: &Contexte, salarie: &str) -> Resultat<Option<droit::natures::AuMois>> {
+pub fn cle_du_salarie(ctx: &Contexte, salarie: &str) -> R<Option<droit::natures::AuMois>> {
     for o in crate::stock::objets(&ctx.racine)? {
         if o.est_non_actif() || o.importe_seul() || o.carte().salarie.as_ref().map(IdSalarie::as_str) != Some(salarie) {
             continue;
@@ -109,7 +109,7 @@ impl Objet {
     /// LE JOUR OU L'ENGAGEMENT EST PAYE AU MOIS, et cette nature : son debut si sa premiere carte l'est, sinon le jour de
     /// l'avenant qui lui donne une nature payee au mois ; `None` s'il ne l'est jamais, ou ne dit pas encore son debut ou
     /// sa nature (un contrat repris dont la nature est a dire, `routes::importation::nature` : rien ne le paie encore).
-    pub fn au_mois_depuis(&self) -> Resultat<Option<(Jour, Arc<Nature>)>> {
+    pub fn au_mois_depuis(&self) -> R<Option<(Jour, Arc<Nature>)>> {
         if self.carte().nature.as_deref().is_none_or(|n| n.trim().is_empty()) {
             return Ok(None);
         }
