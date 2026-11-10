@@ -94,8 +94,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
             None => par_flux.push((b.flux.clone(), vec![(b, nom.clone())])),
         }
     }
-    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)
-        .map_err(socle::echec::Echec::from)?
+    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)?
         .iter()
         .filter(|l| !l.flux().is_empty())
         .map(|l| l.flux().to_string())
@@ -224,7 +223,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
     if p.exists() {
         let retours: Vec<crate::retours::Annonce> =
-            socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))?;
+            socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| socle::echec::Echec { classe: Some(Classe::Illisible), ..m })?;
         let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
         rapport.rattaches = r.resultat?;
@@ -357,8 +356,7 @@ pub struct RepriseDpae {
 #[cfg(feature = "atelier")]
 pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> R<RepriseDpae> {
     let (attestees, inconnus) = embauches_attestees(ctx)?;
-    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)
-        .map_err(socle::echec::Echec::from)?
+    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)?
         .iter()
         .filter(|l| !l.flux().is_empty())
         .map(|l| l.flux().to_string())
