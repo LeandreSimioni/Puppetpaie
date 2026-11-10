@@ -308,6 +308,11 @@ pub enum Ecran {
     Dessine(Place),
     /// Avancee : la page de cette place l'appelle (son ecran est dessine), hors du chemin simple.
     DessineAvance(Place),
+    /// Le chemin simple : une autre route de cette place la rend en geste (sa route, sa charge, son libelle, les cases
+    /// a saisir) ; la page le dessine et fait saisir ces cases depuis sa fiche (`js/avance.js`), sans la nommer.
+    Geste(Place),
+    /// Avancee : rendue en geste, comme `Geste`, hors du chemin simple.
+    GesteAvance(Place),
     /// Avancee, sans ecran dessine : sous « Avancé » de sa place, la page l'affiche depuis sa fiche (`js/avance.js`),
     /// avec ce bouton (le `geste` est pour le LLM).
     Auto(Place, Affiche),
@@ -320,7 +325,7 @@ pub enum Ecran {
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Dessine(p) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
             Ecran::Lecture | Ecran::LectureAvancee => None,
         }
     }
@@ -328,14 +333,15 @@ impl Ecran {
     /// La route est-elle « avancee » (hors du chemin simple) ?
     pub fn avance(self) -> bool {
         match self {
-            Ecran::Dessine(_) | Ecran::Lecture => false,
-            Ecran::DessineAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
+            Ecran::Dessine(_) | Ecran::Geste(_) | Ecran::Lecture => false,
+            Ecran::DessineAvance(_) | Ecran::GesteAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
 
     fn mot(self) -> &'static str {
         match self {
             Ecran::Dessine(_) | Ecran::DessineAvance(_) => "dessine",
+            Ecran::Geste(_) | Ecran::GesteAvance(_) => "geste",
             Ecran::Auto(..) => "auto",
             Ecran::Lecture | Ecran::LectureAvancee => "lecture",
         }
@@ -345,6 +351,7 @@ impl Ecran {
     pub fn texte(self) -> String {
         match self {
             Ecran::Dessine(p) | Ecran::DessineAvance(p) => p.nom().to_string(),
+            Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
             Ecran::Lecture | Ecran::LectureAvancee => "(une lecture des écrans)".to_string(),
         }
@@ -560,7 +567,7 @@ impl Fiche {
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
                 Ecran::Auto(_, b) => Some(b.texte()),
-                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
+                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
         })
     }

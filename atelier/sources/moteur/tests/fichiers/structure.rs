@@ -668,8 +668,21 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     }
     // Une route se nomme par son nom (la page, `/api/<route>`) ou, dans le moteur, par sa variante (`Route::MoisAOuvrir`).
     let appelee = |f: &routes::catalogue::Fiche, t: &str| t.contains(&format!("\"{}\"", f.nom())) || t.contains(&format!("/api/{}", f.nom())) || t.contains(&format!("Route::{:?}", f.route));
+    // Une route rendue en geste : une route la rend (`geste(Route::…`) et la page de sa place dessine les gestes depuis la
+    // fiche de leur route (`brancherLesGestes`, `js/avance.js`).
+    let mut moteur_des_routes = String::new();
+    for p in sources(&espace().join("routes/src")) {
+        moteur_des_routes.push_str(&std::fs::read_to_string(p).unwrap());
+    }
     for f in &tout {
         match f.ecran {
+            Ecran::Geste(p) | Ecran::GesteAvance(p) => {
+                assert!(moteur_des_routes.contains(&format!("geste(Route::{:?},", f.route)), "{} : aucune route ne la rend en geste : rends-la (`geste(Route::…`), ou donne-lui un autre écran", f.nom());
+                assert!(
+                    fichiers_de(p).iter().any(|x| lu(x).contains("brancherLesGestes(")),
+                    "{} : aucune page de sa place ({}) ne dessine les gestes (brancherLesGestes, js/avance.js)", f.nom(), p.nom()
+                );
+            }
             Ecran::Dessine(p) | Ecran::DessineAvance(p) => assert!(
                 fichiers_de(p).iter().any(|x| appelee(f, &lu(x))),
                 "{} : aucune page de sa place ({}) ne l'appelle : donne à cette route sa place à l'écran (fiche, champ ecran) et appelle-la depuis cette page ({})",

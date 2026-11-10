@@ -1728,6 +1728,11 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     })
 }
 
+/// L'aide d'une case (`AIDES`), pour une route qui la rend avec un geste ; une cle absente est un defaut du logiciel.
+pub(crate) fn aide(cle: &str) -> R<&'static str> {
+    AIDES.iter().find(|(k, _)| *k == cle).map(|(_, a)| *a).ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'aide « {} » n'existe pas.", cle)))
+}
+
 /// Les aides des cases (`AIDES`), rendues comme un dictionnaire dans leur ordre.
 #[derive(Debug, Clone, Copy)]
 struct Aides(&'static [(&'static str, &'static str)]);
