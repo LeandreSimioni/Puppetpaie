@@ -98,12 +98,19 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> Resultat<Jou
     }
 }
 
-/// La duree de `debut` a `fin` (compris) en mois, un mois entame compte entier (« arrondie au nombre superieur »).
+/// La duree de `debut` a `fin` (compris) en mois de calendrier entiers comptes depuis `debut`, un mois entame compte
+/// entier (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme
+/// `n` mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit
+/// le 28/02).
 fn mois_arrondis(debut: &Jour, fin: &Jour) -> Resultat<u32> {
-    let lendemain = fin.plus_jours(1)?;
-    let mut n = (lendemain.an - debut.an) * 12 + lendemain.mois as i32 - debut.mois as i32;
-    if lendemain.jour > debut.jour {
+    let mut n = 0;
+    while n < DOUZE_MOIS {
         n += 1;
+        let meme_quantieme = debut.plus_mois(i64::from(n))?;
+        let fin_du_mois = if meme_quantieme.jour == debut.jour { meme_quantieme.plus_jours(-1)? } else { meme_quantieme };
+        if fin_du_mois >= *fin {
+            break;
+        }
     }
-    Ok(n.max(1) as u32)
+    Ok(n)
 }
