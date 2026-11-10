@@ -18,7 +18,7 @@ use crate::LignePaie;
 use droit::catalogue::rubrique;
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::num::{dec_f64, Resultat};
+use socle::{echec::R, num::dec_f64};
 use socle::texte::virgule;
 
 /// La duree quotidienne maximale de travail effectif (L. 3121-18).
@@ -29,7 +29,7 @@ const JOURNEE: f64 = 24.0;
 
 /// Les heures de travail de chaque jour des lignes `lignes` d'un engagement, et si l'une d'elles est une moyenne (une
 /// ligne qui repartit ses heures sur plusieurs jours).
-fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> Resultat<BTreeMap<Jour, (f64, bool)>> {
+fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (f64, bool)>> {
     let mut jours: BTreeMap<Jour, (f64, bool)> = BTreeMap::new();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
@@ -58,7 +58,7 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> Resultat<BTreeMap<Jo
 }
 
 /// LE REFUS : un jour de plus de 24 heures dans l'engagement `e` de `qui`. `None` quand il n'y en a pas.
-pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> Resultat<Option<String>> {
+pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<Option<String>> {
     let trop: Vec<(Jour, (f64, bool))> = heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| *h > JOURNEE + 1e-9).collect();
     let Some((j, (h, moyenne))) = trop.first() else { return Ok(None) };
     Ok(Some(format!(
@@ -73,7 +73,7 @@ pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> Re
 
 /// CE QUI SE DIT SANS SE REFUSER : les jours de l'engagement `e` de `qui` au-dela de la duree quotidienne maximale
 /// (L. 3121-18). `None` quand il n'y en a pas.
-pub fn au_dela_du_maximum(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> Resultat<Option<String>> {
+pub fn au_dela_du_maximum(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<Option<String>> {
     let longs: Vec<(Jour, (f64, bool))> =
         heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| *h > MAXIMUM_QUOTIDIEN + 1e-9 && *h <= JOURNEE + 1e-9).collect();
     if longs.is_empty() {
