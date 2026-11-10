@@ -104,15 +104,15 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, princip
     let e = l.dsn()?;
     let (mut bilan_ok, mut aer, mut anomalies) = (false, false, Vec::new());
     for r in &e.retours {
-        bilan_ok |= r.nature == "11" && r.verdict() == Some("OK");
-        aer |= r.nature == "46";
+        bilan_ok |= r.nature_retour == "11" && r.verdict() == Some("OK");
+        aer |= r.nature_retour == "46";
         if r.ko() {
             anomalies.extend(r.anomalies().into_iter().flatten().cloned());
         }
     }
     // UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la ligne
     // en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
-    let sans_bilan = !e.retours.iter().any(|r| r.nature == "11");
+    let sans_bilan = !e.retours.iter().any(|r| r.nature_retour == "11");
     let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("OK"));
     let refusee = refuse_par_un_retour(l);
     Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: (bilan_ok || repris_ok) && !refusee, refusee, anomalies, aer_recue: aer })
@@ -146,7 +146,7 @@ pub fn lettre_ou_chiffre(c: char) -> bool {
 fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
     let (mut passee, mut ko) = (false, false);
     for r in retours {
-        passee |= r.nature == NATURE_CERTIFICAT_DPAE || (r.nature == "11" && r.verdict() == Some("OK"));
+        passee |= r.nature_retour == NATURE_CERTIFICAT_DPAE || (r.nature_retour == "11" && r.verdict() == Some("OK"));
         ko |= r.ko();
     }
     (passee, ko && !passee)
@@ -174,7 +174,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         let Some(e) = l.dpae().filter(|e| e.mode == Mode::Reel && e.accepte) else { continue };
         let (passee, refusee) = verdict_dpae(&e.retours);
         let anomalies: Vec<String> = e.retours.iter().filter(|r| r.ko()).flat_map(|r| r.anomalies().into_iter().flatten().cloned()).collect();
-        let certifiees: Vec<&PersonneCertifiee> = e.retours.iter().filter(|r| r.nature == NATURE_CERTIFICAT_DPAE).flat_map(|r| r.personnes().into_iter().flatten()).collect();
+        let certifiees: Vec<&PersonneCertifiee> = e.retours.iter().filter(|r| r.nature_retour == NATURE_CERTIFICAT_DPAE).flat_map(|r| r.personnes().into_iter().flatten()).collect();
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
@@ -545,7 +545,7 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, String>, avenants: &
 fn resume_des_retours(prefixe: &str, le: &str, retours: &[RetourOrganisme]) -> String {
     let Some(dernier) = retours.last() else { return format!("{} — pas encore de retour", prefixe) };
     let refus: Vec<&RetourOrganisme> = retours.iter().filter(|r| r.ko()).collect();
-    let certificat = retours.iter().rev().find(|r| r.nature == NATURE_CERTIFICAT_DPAE);
+    let certificat = retours.iter().rev().find(|r| r.nature_retour == NATURE_CERTIFICAT_DPAE);
     if !refus.is_empty() && certificat.is_none() {
         let mut motifs: Vec<&str> = Vec::new();
         for a in refus.iter().flat_map(|r| r.anomalies().into_iter().flatten()) {
@@ -568,13 +568,13 @@ fn resume_des_retours(prefixe: &str, le: &str, retours: &[RetourOrganisme]) -> S
         }
         return format!("{}{}", prefixe, fin);
     }
-    if retours.iter().any(|r| r.nature == "11" && r.verdict() == Some("OK")) {
-        let apres = retours.iter().filter(|r| r.nature != "10" && r.nature != "11").count();
+    if retours.iter().any(|r| r.nature_retour == "11" && r.verdict() == Some("OK")) {
+        let apres = retours.iter().filter(|r| r.nature_retour != "10" && r.nature_retour != "11").count();
         let suite = if apres > 0 { format!(" ; {} compte{}-rendu{} d'organismes reçu{}", apres, pluriel(apres), pluriel(apres), pluriel(apres)) } else { String::new() };
         return format!("{} — bilan OK, aucune anomalie{}", prefixe, suite);
     }
     // Le retour se dit par son libelle, sinon sa nature ; sans l'un ni l'autre, il est seulement recu.
-    let choix = match [dernier.libelle.as_str(), dernier.nature.as_str()].into_iter().find(|t| !t.is_empty()) {
+    let choix = match [dernier.libelle.as_str(), dernier.nature_retour.as_str()].into_iter().find(|t| !t.is_empty()) {
         Some(t) => t,
         None => "retour reçu",
     };
@@ -595,7 +595,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
             if e.retours.iter().any(RetourOrganisme::ko) {
                 return true;
             }
-            let bilan = e.retours.iter().any(|r| r.nature == "11");
+            let bilan = e.retours.iter().any(|r| r.nature_retour == "11");
             !bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("KO"))
         }
         _ => false,
@@ -614,7 +614,7 @@ fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> &'static str {
         if r.ko() {
             return "ko";
         }
-        ok = ok || ((r.nature == "11" || r.nature == NATURE_CERTIFICAT_DPAE) && r.verdict() == Some("OK"));
+        ok = ok || ((r.nature_retour == "11" || r.nature_retour == NATURE_CERTIFICAT_DPAE) && r.verdict() == Some("OK"));
     }
     if ok {
         "ok"
@@ -987,7 +987,7 @@ pub type CleDuContenu = (Option<String>, String, Option<String>);
 
 /// La cle du contenu telecharge du retour `r`.
 pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
-    (r.flux.clone(), r.nature.clone(), r.publication.clone())
+    (r.flux.clone(), r.nature_retour.clone(), r.publication.clone())
 }
 
 /// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
@@ -1001,7 +1001,7 @@ fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf
         Some(f) => f,
         None => "sansflux",
     };
-    let motif = jetons(&format!("*_nature{}_{}*", r.nature, flux));
+    let motif = jetons(&format!("*_nature{}_{}*", r.nature_retour, flux));
     let mut noms = Vec::new();
     for e in std::fs::read_dir(&dossier).map_err(|e| erreur_io(&e, &dossier))? {
         let e = e.map_err(|e| erreur_io(&e, &dossier))?;
@@ -1062,7 +1062,7 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<Verdict>> {
 /// Ce que la piece du retour `r` d'un envoi `quoi` en dit : le bilan (nature 10 ou 11) ou le certificat d'une DPAE
 /// (nature 41) ; rien pour une autre nature, ou une piece absente ou illisible.
 fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Option<Verdict>> {
-    let nature = r.nature.as_str();
+    let nature = r.nature_retour.as_str();
     if nature != "10" && nature != "11" && !(quoi == Acte::Dpae && nature == NATURE_CERTIFICAT_DPAE) {
         return Ok(None);
     }
@@ -1136,7 +1136,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, conten
         return Ok(None);
     }
     let quoi = ligne.acte();
-    let anomalies: Vec<AnomalieDeRetour> = if quoi == Acte::Dpae && r.nature == NATURE_CERTIFICAT_DPAE {
+    let anomalies: Vec<AnomalieDeRetour> = if quoi == Acte::Dpae && r.nature_retour == NATURE_CERTIFICAT_DPAE {
         verdict
             .dpae
             .iter()
@@ -1178,7 +1178,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, conten
         resume,
         detail: DetailIncidentDeRetour {
             reel: ligne.reel(),
-            nature_retour: r.nature.clone(),
+            nature_retour: r.nature_retour.clone(),
             type_declaration: ligne.dsn().and_then(|e| e.detail.type_declaration.clone()),
             anomalies: uniques,
         },
@@ -1215,11 +1215,11 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
                 Ligne::Dpae(e) => &mut e.retours,
                 _ => continue,
             };
-            let neuf = RetourOrganisme { nature: r.nature.clone(), verdict: None, anomalies: None, dpae: None, libelle: libelle_nature(&r.nature, quoi), statut: r.statut.clone(), publication: r.publication.clone() };
+            let neuf = RetourOrganisme { nature_retour: r.nature_retour.clone(), verdict: None, anomalies: None, dpae: None, libelle: libelle_nature(&r.nature_retour, quoi), statut: r.statut.clone(), publication: r.publication.clone() };
             if let Some(x) = connus.iter_mut().find(|x| x.meme(&neuf)) {
                 if let Some(v) = verdict.filter(|_| x.verdict.is_none()) {
                     x.poser(v.clone());
-                    rangements.push((li, Rangement::Complement { nature: x.nature.clone(), publication: x.publication.clone(), verdict: v.clone() }));
+                    rangements.push((li, Rangement::Complement { nature_retour: x.nature_retour.clone(), publication: x.publication.clone(), verdict: v.clone() }));
                     ajoutes += 1;
                     incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
                 }
@@ -1397,7 +1397,7 @@ mod tests {
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, "eB").is_none());
-        let r = |verdict: &str| RetourOrganisme { nature: "11".into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        let r = |verdict: &str| RetourOrganisme { nature_retour: "11".into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         assert_eq!(compte_rendu_du_depot(&[r("OK"), r("KO")]), "ko");
         assert_eq!(compte_rendu_du_depot(&[]), "attendu");
     }
@@ -1418,7 +1418,7 @@ mod tests {
             production: None,
             ops: None,
             delegataire: None,
-            nature: nature.into(),
+            nature_retour: nature.into(),
             statut: Some("recu".into()),
             id: None,
             url: None,

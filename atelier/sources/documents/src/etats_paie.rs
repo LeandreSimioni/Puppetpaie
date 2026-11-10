@@ -305,7 +305,9 @@ pub struct LigneLivre {
     pub cle_salarie: String,
     /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
     pub contrat: Option<String>,
-    pub nature: String,
+    /// Le libelle de sa nature de contrat.
+    #[serde(rename = "nature")]
+    pub libelle_nature: String,
     /// Le titre du spectacle ; vide (`""`) sans spectacle, tant que `fiche_recapitulative` le lit en texte.
     pub spectacle: String,
     pub brut: Option<Decimal>,
@@ -481,7 +483,7 @@ fn lignes_du_mois(ctx: &Contexte, mois: &str, coordonnees: bool, departs: &engag
             salarie: qui(s)?,
             cle_salarie: cle_de(s)?,
             contrat: p.engagement.numero.as_deref().map(str::to_string),
-            nature: nat_libelle(p)?,
+            libelle_nature: nat_libelle(p)?,
             // `fiche_recapitulative` lit encore le titre en texte : vide sans spectacle.
             spectacle: titre_spectacle(p).into_iter().collect(),
             brut: dit("brut", p.brut),
@@ -651,7 +653,7 @@ fn cellules(l: &LigneLivre, coordonnees: bool) -> Vec<CelL> {
     if coordonnees {
         c.extend([o(&l.nir), o(&l.date_naissance), o(&l.adresse)]);
     }
-    c.extend([o(&l.contrat), t(&l.nature), t(&l.spectacle)]);
+    c.extend([o(&l.contrat), t(&l.libelle_nature), t(&l.spectacle)]);
     c.extend(CUMULABLES.iter().map(|ch| CelL::M(l.montant(ch))));
     c
 }

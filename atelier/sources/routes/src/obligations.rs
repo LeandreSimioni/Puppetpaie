@@ -726,7 +726,8 @@ fn jour_en_clair(iso: &str) -> String {
 /// (01) qui l'a reporte -- sa nature, son type, son ordre, le mois de la DSN, son fichier, quand.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnvoiDeLArret {
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_declaration: String,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     ordre: Option<i64>,
@@ -746,7 +747,7 @@ fn jour_de_l_instant(quand: &str) -> R<Jour> {
 
 /// Le premier envoi de cette nature parti pour l'arret (`ce_qui_est_parti`).
 fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> R<Option<Fait>> {
-    let Some(e) = envois.iter().filter(|e| e.nature == nature).min_by(|a, b| a.quand.cmp(&b.quand)) else { return Ok(None) };
+    let Some(e) = envois.iter().filter(|e| e.nature_declaration == nature).min_by(|a, b| a.quand.cmp(&b.quand)) else { return Ok(None) };
     let le = jour_de_l_instant(&e.quand)?;
     Ok(Some(Fait {
         le,
@@ -764,7 +765,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> R<Option<Fait>> {
 /// 03 (annule et remplace) depose apres sa saisie. L'ordre se lit sur les heures de saisie et de depot, toutes deux a
 /// l'horloge (`saisi_le`, `quand`).
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> R<Option<(Depart, Option<Fait>)>> {
-    let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature == "04").collect();
+    let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
     let Some(premier) = signalements.iter().map(|e| e.quand.as_str()).min() else { return Ok(None) };
     let Some(p) = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && p.saisi_le.as_str() > premier).last() else { return Ok(None) };
     let depart = Depart { jour: jour_ecrit(&p.le)?, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
@@ -893,7 +894,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
         let (mois, quand) = (e.mois.map(|m| m.to_string()), e.quand.clone());
         let d = &e.detail;
-        let Some(nature) = d.nature.clone() else { continue };
+        let Some(nature) = d.nature_declaration.clone() else { continue };
         let type_declaration = d.type_declaration.clone();
         let ordre = match d.ordre.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
             Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
@@ -903,10 +904,10 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let dans = |m: &str| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
         match (nature.as_str(), dj, mois) {
             ("04" | "05", Some(dj), _) if declare.is_some() && d.evenement == declare && du_salarie => {
-                partis.push(EnvoiDeLArret { fichier: dans(&dj[..7]), nature, type_declaration, ordre, mois: None, quand });
+                partis.push(EnvoiDeLArret { fichier: dans(&dj[..7]), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
             ("01", _, Some(mois)) if reporte(&mois, &quand)? => {
-                partis.push(EnvoiDeLArret { fichier: dans(&mois), nature, type_declaration, ordre, mois: Some(mois), quand });
+                partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}
         }

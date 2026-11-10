@@ -43,7 +43,7 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, 
     let siennes: Vec<&Rubrique> = cat.iter().filter(prend).collect();
     let par_defaut = match mensuelle {
         Some(true) => siennes.first(),
-        _ => siennes.iter().find(|r| r.nature == "salaire"),
+        _ => siennes.iter().find(|r| r.nature == droit::catalogue::NatureDeRubrique::Salaire),
     };
     Ok(Proposees { par_defaut: par_defaut.map(|r| r.code.clone()), rubriques: siennes.iter().map(|r| r.code.clone()).collect() })
 }

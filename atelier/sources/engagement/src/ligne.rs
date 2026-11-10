@@ -747,7 +747,7 @@ impl FormeSaisie {
     pub fn de(r: &droit::catalogue::Rubrique) -> R<Option<FormeSaisie>> {
         let mut dit: Vec<&str> = r.saisie.iter().map(String::as_str).filter(|s| *s != "jours").collect();
         dit.sort_unstable();
-        let frais = r.nature == "frais";
+        let frais = r.nature == droit::catalogue::NatureDeRubrique::Frais;
         Ok(Some(match (dit.as_slice(), frais) {
             (["quantite", "taux"], false) => FormeSaisie::Unites,
             (["quantite", "taux"], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,

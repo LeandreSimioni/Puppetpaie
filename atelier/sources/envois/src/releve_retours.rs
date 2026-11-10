@@ -341,7 +341,7 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
         Some(f) => f,
         None => "sansflux",
     };
-    let nom = format!("{}_nature{}_{}{}", horo, retour.nature, flux, ext);
+    let nom = format!("{}_nature{}_{}{}", horo, retour.nature_retour, flux, ext);
     let dest = dossier_archive(racine, canal)?.join(nom);
     if !dest.exists() {
         std::fs::write(&dest, contenu).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
@@ -434,7 +434,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             && l.nombre_de_retours() == 0
         {
             let base = |nature: &str, verdict: Option<&str>, libelle: &str| RetourOrganisme {
-                nature: nature.into(),
+                nature_retour: nature.into(),
                 verdict: verdict.map(String::from),
                 anomalies: Some(Vec::new()),
                 dpae: None,
@@ -468,7 +468,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                         production: None,
                         ops: None,
                         delegataire: None,
-                        nature: r46.nature.clone(),
+                        nature_retour: r46.nature_retour.clone(),
                         statut: r46.statut.clone(),
                         id: None,
                         url: None,
@@ -501,9 +501,9 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
         for x in &pieces {
             let retour = &x.retour;
             let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
-            if retour.nature == crate::retours::NATURE_TAUX_PAS {
+            if retour.nature_retour == crate::retours::NATURE_TAUX_PAS {
                 suites.taux_pas.push((retour.clone(), chemin));
-            } else if retour.nature == crate::retours::NATURE_TAUX_ATMP {
+            } else if retour.nature_retour == crate::retours::NATURE_TAUX_ATMP {
                 suites.taux_atmp.push((retour.clone(), chemin));
             }
             contenus.push((crate::etats::cle_du_contenu(&retour), x.contenu.clone()));
@@ -612,23 +612,23 @@ pub fn relever_retours(
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_ATMP {
+                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_ATMP {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.nature == "11" {
+                if canal.is_empty() && r.nature_retour == "11" {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
                         releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_deref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_PAS {
+                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_PAS {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
             Err(p) if p.est_api() => {
-                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature, p.echec.phrase));
+                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase));
                 rates.push(r);
             }
             Err(p) => return Err(en_echec(p)),
@@ -662,7 +662,7 @@ pub fn relever_retours(
             releve
                 .archives
                 .iter()
-                .filter(|a| a.retour.nature == crate::retours::NATURE_AER_SPECTACLE)
+                .filter(|a| a.retour.nature_retour == crate::retours::NATURE_AER_SPECTACLE)
                 .map(|a| a.chemin.clone()),
         );
     }
@@ -717,7 +717,7 @@ pub fn relever_retours_dpae(
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature, p.echec.phrase)),
+            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }
     }

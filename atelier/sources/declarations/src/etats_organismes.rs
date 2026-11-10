@@ -683,7 +683,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         };
         par_an[i].1 = add(par_an[i].1, brut);
-        if mensuelles.contains(&l.nature) {
+        if mensuelles.contains(&l.libelle_nature) {
             par_an[i].2 = add(par_an[i].2, brut);
         }
     }

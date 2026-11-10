@@ -709,7 +709,7 @@ fn avantages_du_mois(ctx: &Contexte, deja: &[LignePaie]) -> R<Vec<String>> {
     let mut out = Vec::new();
     for l in deja {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        if r.nature == "avantage_nature" {
+        if r.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
             out.push(r.libelle);
         }
     }

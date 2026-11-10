@@ -277,7 +277,7 @@ impl Ligne {
 
     /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
     pub fn nature_dsn(&self) -> Option<&str> {
-        self.dsn().and_then(|e| e.detail.nature.as_deref())
+        self.dsn().and_then(|e| e.detail.nature_declaration.as_deref())
     }
 
     /// Une DSN de signalement (arret, reprise, fin de contrat, amorcage).
@@ -321,8 +321,8 @@ pub struct DetailDsn {
     pub type_declaration: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fraction: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nature: Option<String>,
+    #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
+    pub nature_declaration: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -431,7 +431,9 @@ pub struct Verdict {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetourOrganisme {
-    pub nature: String,
+    /// La nature du retour (un compte rendu, un bilan, un certificat...).
+    #[serde(rename = "nature")]
+    pub nature_retour: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -462,7 +464,7 @@ impl RetourOrganisme {
 
     /// Le meme compte rendu (sa nature et sa publication).
     pub fn meme(&self, autre: &RetourOrganisme) -> bool {
-        self.nature == autre.nature && self.publication == autre.publication
+        self.nature_retour == autre.nature_retour && self.publication == autre.publication
     }
 
     /// Ce que sa piece en dit, pose sur lui.

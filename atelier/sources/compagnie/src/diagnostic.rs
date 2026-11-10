@@ -1575,8 +1575,8 @@ pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
                 .retours_organisme()
                 .iter()
                 .map(|r| match &r.verdict {
-                    Some(v) => format!("{} {}", r.nature, v),
-                    None => format!("{} sans verdict", r.nature),
+                    Some(v) => format!("{} {}", r.nature_retour, v),
+                    None => format!("{} sans verdict", r.nature_retour),
                 })
                 .collect(),
         })

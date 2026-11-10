@@ -754,19 +754,19 @@ fn envois_de_l_arret(ctx: &Contexte, a: &ArretSaisi) -> R<Vec<crate::obligations
 
 /// Les mois des DSN mensuelles qui ont reporte l'imprevu (nature 01).
 fn reporte_par(envois: &[crate::obligations::EnvoiDeLArret]) -> Vec<String> {
-    envois.iter().filter(|x| x.nature == "01").filter_map(|x| x.mois.clone()).collect()
+    envois.iter().filter(|x| x.nature_declaration == "01").filter_map(|x| x.mois.clone()).collect()
 }
 
 /// Un signalement de cette nature (04, 05) est-il parti pour cet arret ?
 fn envoye(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<bool> {
-    Ok(envois_de_l_arret(ctx, a)?.iter().any(|x| x.nature == nature))
+    Ok(envois_de_l_arret(ctx, a)?.iter().any(|x| x.nature_declaration == nature))
 }
 
 /// Le jour ou le signalement NORMAL (type 01) de cette nature (04, 05) est parti pour cet arret, s'il l'est
 /// (`obligations::ce_qui_est_parti` : un depot reel accepte, que le bilan n'a pas refuse).
 fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<Option<Jour>> {
     let envois = envois_de_l_arret(ctx, a)?;
-    let premier = envois.iter().filter(|x| x.nature == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand.as_str()).min().map(str::to_string);
+    let premier = envois.iter().filter(|x| x.nature_declaration == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand.as_str()).min().map(str::to_string);
     premier.map(|q| jour(&q.chars().take(10).collect::<String>())).transpose()
 }
 
@@ -1202,7 +1202,7 @@ struct ADire<'a> {
 impl Dit {
     fn de(x: ADire) -> R<Dit> {
         let deja = |nature: &str| {
-            let n = x.signalements.iter().filter(|s| s.nature == nature).count();
+            let n = x.signalements.iter().filter(|s| s.nature_declaration == nature).count();
             (n > 0).then(|| format!("Déjà signalé {} fois", n))
         };
         Ok(Dit {
@@ -1243,7 +1243,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
         parti.push(dite(format!("prolongé jusqu'au {} (avis du {})", clair(&p.fin)?, clair(&p.le)?)));
     }
     for s in signalements {
-        let quoi = if s.nature == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
+        let quoi = if s.nature_declaration == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
         parti.push(dite(format!("{} le {}", quoi, socle::ecran::quand(&s.quand))));
     }
     if !reporte_par_dit.is_empty() {
@@ -2186,7 +2186,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
-        nature: nature.to_string(),
+        nature_declaration: nature.to_string(),
         type_declaration: type_declaration.to_string(),
         ordre,
         remplace,
@@ -2227,7 +2227,7 @@ fn libelle_motif(n: &Bloc60, a: &ArretSaisi) -> R<String> {
 /// Un arret resume (`ArretResume`).
 pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<ArretResume> {
     let envois = envois_de_l_arret(ctx, a)?;
-    let (signalements, mois): (Vec<_>, Vec<_>) = envois.into_iter().filter(|e| matches!(e.nature.as_str(), "04" | "05" | "01")).partition(|e| e.nature != "01");
+    let (signalements, mois): (Vec<_>, Vec<_>) = envois.into_iter().filter(|e| matches!(e.nature_declaration.as_str(), "04" | "05" | "01")).partition(|e| e.nature_declaration != "01");
     let mois: Vec<String> = mois.into_iter().filter_map(|e| e.mois).collect();
     let motif_libelle = libelle_motif(n, a)?;
     let signale = !signalements.is_empty();

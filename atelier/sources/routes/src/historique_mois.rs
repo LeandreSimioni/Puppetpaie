@@ -257,7 +257,8 @@ struct RetourDOrganisme {
     titre_dit: String,
     nature_dit: Option<String>,
     quand_dit: Option<String>,
-    nature: String,
+    #[serde(rename = "nature")]
+    nature_retour: String,
     libelle: String,
     organisme: Option<String>,
     statut: Option<String>,
@@ -325,7 +326,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
 fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
-        Ligne::Dsn(e) => nature_dsn(e.detail.nature.as_deref(), e.detail.type_declaration.as_deref()),
+        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration.as_deref(), e.detail.type_declaration.as_deref()),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
@@ -662,7 +663,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(dit(&d.nature), dit(&d.type_declaration)),
+            nature_dsn(dit(&d.nature_declaration), dit(&d.type_declaration)),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", ordre ", dit(&d.ordre), ""),
             verdict
@@ -918,7 +919,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(lu(&d.nature), lu(&d.type_declaration)),
+            nature_dsn(lu(&d.nature_declaration), lu(&d.type_declaration)),
             morceau(" de ", lu(&d.mois), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour
@@ -992,7 +993,7 @@ enum PieceDuRetour {
 /// Un retour d'une ligne du journal, lu.
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> RetourLu {
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
-    let nature = r.nature.clone();
+    let nature = r.nature_retour.clone();
     let statut = r.statut.as_deref().and_then(dit);
     let publication = r.publication.as_deref().and_then(dit);
     let flux = dit(ligne.flux());
@@ -1091,7 +1092,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             titre_dit,
             nature_dit,
             quand_dit: quand.as_deref().map(socle::ecran::quand),
-            nature,
+            nature_retour: nature,
             libelle,
             organisme,
             statut: statut.map(String::from),

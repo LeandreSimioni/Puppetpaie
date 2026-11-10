@@ -77,7 +77,7 @@ fn absent_ou_zero(v: Option<Decimal>) -> bool {
 
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
 fn ligne_ajustable(ctx: &Contexte, ligne: &LignePaie) -> R<bool> {
-    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == "salaire" && !absent_ou_zero(ligne.taux()))
+    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !absent_ou_zero(ligne.taux()))
 }
 
 /// Une ligne dont le taux est une case vide.
@@ -108,7 +108,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == "salaire" && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
                 sans_taux.push((k, r.libelle));
             }
         }

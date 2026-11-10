@@ -900,7 +900,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
         }
         let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
         out.push(DeclarationIdentifiee {
-            nature: get("nature"),
+            nature_declaration: get("nature"),
             type_declaration: get("type"),
             ordre: get("ordre"),
             siren: get("SIREN"),
@@ -917,7 +917,8 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
 /// ne le porte pas, et les codes de ses anomalies.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationIdentifiee {
-    pub nature: Option<String>,
+    #[serde(rename = "nature")]
+    pub nature_declaration: Option<String>,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     pub ordre: Option<String>,
@@ -1040,7 +1041,8 @@ pub struct Annonce {
     pub ops: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegataire: Option<String>,
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_retour: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statut: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1055,7 +1057,7 @@ pub struct Annonce {
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
     pub fn cle(&self) -> (Option<&str>, &str, Option<&str>) {
-        (self.flux.as_deref(), self.nature.as_str(), self.publication.as_deref())
+        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication.as_deref())
     }
 }
 
@@ -1117,7 +1119,8 @@ struct RetourJson {
     production: Option<String>,
     ops: Option<String>,
     delegataire: Option<String>,
-    nature: String,
+    #[serde(rename = "nature")]
+    nature_retour: String,
     statut: Option<String>,
     id: Option<String>,
     url: Option<String>,
@@ -1175,7 +1178,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
                     production: r.production,
                     ops: r.ops,
                     delegataire: r.delegataire,
-                    nature: r.nature,
+                    nature_retour: r.nature_retour,
                     statut: r.statut,
                     id: r.id,
                     url: r.url,
@@ -1200,7 +1203,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
             if local(&r.tag) != "retour" {
                 continue;
             }
-            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
+            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
             let mut nature = None;
             for (nom, t) in enfants_textes(&arbre, r) {
                 let t = Some(t.to_string());
@@ -1216,7 +1219,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
                     autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
-            a.nature = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
+            a.nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
             out.push(a);
         }
     }
@@ -2087,7 +2090,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         let (id, bilan) = (sous_bloc("declaration_identification"), sous_bloc("declaration_bilan"));
         let mois = premier_texte(&arbre, id, &["mois"]);
         declarations.push(DeclarationDuRapport {
-            nature: premier_texte(&arbre, id, &["nature"]).to_string(),
+            nature_declaration: premier_texte(&arbre, id, &["nature"]).to_string(),
             type_declaration: premier_texte(&arbre, id, &["type"]).to_string(),
             ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
@@ -2165,7 +2168,8 @@ pub struct Rapport {
 /// Une declaration d'un rapport : nature, type, ordre, mois (quand il le dit) et etat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationDuRapport {
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_declaration: String,
     #[serde(rename = "type")]
     pub type_declaration: String,
     pub ordre: String,
@@ -2628,7 +2632,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         }
         let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
-            nature: at(d, "NatureDecla"),
+            nature_declaration: at(d, "NatureDecla"),
             type_declaration: at(d, "TypeDecla"),
             ordre: at(d, "NoOrdreDecla"),
             mois: at(d, "DateMoisDec").map(|m| mois_de_jjmmaaaa(&m)),
@@ -2666,7 +2670,8 @@ pub struct CrmOc {
 /// Une `Declaration` du compte rendu.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationOc {
-    pub nature: Option<String>,
+    #[serde(rename = "nature")]
+    pub nature_declaration: Option<String>,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     pub ordre: Option<String>,

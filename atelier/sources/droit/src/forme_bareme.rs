@@ -778,7 +778,15 @@ pub enum Effet {
     /// Le taux patronal d'une rubrique du bulletin (de sa modification, pour une nature).
     TauxPatronal { section: Section, rubrique: String, taux: f64, source: Fondement },
     /// Un composant du taux patronal d'une rubrique qu'une nature ajoute.
-    ComposantAjoute { nature: String, rubrique: String, rang: usize, taux: f64, source: Fondement },
+    ComposantAjoute {
+        /// La section `par_nature` qui ajoute la rubrique.
+        #[serde(rename = "nature")]
+        section: String,
+        rubrique: String,
+        rang: usize,
+        taux: f64,
+        source: Fondement,
+    },
     /// Un parametre de la reduction generale d'un statut.
     ReductionGenerale {
         statut: String,
@@ -853,8 +861,8 @@ impl Effet {
             Effet::TauxPatronal { section: Section::Corps, rubrique: id, .. } => rubrique(&pile.rubriques_bulletin, id),
             Effet::TauxPatronal { section: Section::Statut(s), rubrique: id, .. } => rubrique(pile.par_statut.get(s)?.rubriques_bulletin.as_deref()?, id),
             Effet::TauxPatronal { section: Section::Nature(n), rubrique: id, .. } => pile.par_nature.get(n)?.rubriques.as_ref()?.get(id)?.taux_pat.map(|t| Lu::Taux(t.0)),
-            Effet::ComposantAjoute { nature, rubrique: id, rang, .. } => {
-                pile.par_nature.get(nature)?.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == *id)?.composants.as_ref()?.get(*rang).copied().map(Lu::Taux)
+            Effet::ComposantAjoute { section, rubrique: id, rang, .. } => {
+                pile.par_nature.get(section)?.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == *id)?.composants.as_ref()?.get(*rang).copied().map(Lu::Taux)
             }
             Effet::ReductionGenerale { statut, parametre, .. } => {
                 let r = pile.par_statut.get(statut)?.reduction_generale.as_ref()?;
@@ -880,7 +888,7 @@ impl std::fmt::Display for Effet {
             Effet::TauxDsn { section, code81, .. } => write!(f, "{}cotisations_dsn[{}].taux", devant(section), code81),
             Effet::TauxPatronal { section: Section::Nature(n), rubrique, .. } => write!(f, "par_nature.{}.rubriques.{}.taux_pat", n, rubrique),
             Effet::TauxPatronal { section, rubrique, .. } => write!(f, "{}rubriques_bulletin[{}].taux_pat", devant(section), rubrique),
-            Effet::ComposantAjoute { nature, rubrique, rang, .. } => write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", nature, rubrique, rang),
+            Effet::ComposantAjoute { section, rubrique, rang, .. } => write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", section, rubrique, rang),
             Effet::ReductionGenerale { statut, parametre, .. } => write!(
                 f,
                 "par_statut.{}.reduction_generale.{}",

@@ -3445,7 +3445,7 @@ fn lignes_bordereau(
     let somme = assiettes_ctp(paies, bar)?;
     let ctps = crate::assujettissement::ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due_du_mois(ent, mois)?);
     let ctps = ctps.as_slice();
-    if !assiette(&somme, "brut_permanent").is_zero() && !ctps.iter().any(|c| c.nature.as_deref() == Some("permanent")) {
+    if !assiette(&somme, "brut_permanent").is_zero() && !ctps.iter().any(|c| c.population.as_deref() == Some("permanent")) {
         return Err(refus!(
             "La DSN de {} porte {} de brut de salariés permanents, et la table des CTP livrée avec le logiciel \
 n'a aucun CTP des permanents. Le bordereau Urssaf serait faux : un \
@@ -3460,7 +3460,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
-        if (ctp.statut.as_deref().is_some_and(|s| !s.is_empty()) || ctp.nature.as_deref().is_some_and(|s| !s.is_empty())) && valeur.is_zero() {
+        if (ctp.statut.as_deref().is_some_and(|s| !s.is_empty()) || ctp.population.as_deref().is_some_and(|s| !s.is_empty())) && valeur.is_zero() {
             continue;
         }
         let v = rond(valeur);

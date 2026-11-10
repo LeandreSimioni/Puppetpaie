@@ -23,7 +23,7 @@ struct ContratMois {
     salarie: String,
     /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
     contrat: Option<String>,
-    nature: String,
+    libelle_nature: String,
     emploi: Option<String>,
     spectacle: Option<String>,
     objet: Option<String>,
@@ -47,7 +47,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 fiche: paie.salarie.champs.clone(),
                 salarie: qui(&paie.salarie)?,
                 contrat: e.numero.as_deref().map(str::to_string),
-                nature: e.nat().map_err(|x| x.reclasser(Classe::Refuse))?.libelle.clone(),
+                libelle_nature: e.nat().map_err(|x| x.reclasser(Classe::Refuse))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
                 objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
@@ -72,7 +72,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in &contrats {
         let mut l = Ligne::nouvelle();
-        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.nature.clone());
+        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
         l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", jj(&c.debut)).ot("fin", c.fin.as_deref().map(jj));
         l.od("brut", c.brut);
         lignes.push(l);
@@ -174,7 +174,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             },
         );
         l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.portee()));
-        l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.nature.clone()).ot("contrat", c.contrat.clone());
+        l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.libelle_nature.clone()).ot("contrat", c.contrat.clone());
         l.t("entree", jj(&c.debut)).ot("sortie", c.fin.as_deref().map(jj));
         rangees.push(((c.debut.clone(), nom, c.contrat.clone()), l));
     }

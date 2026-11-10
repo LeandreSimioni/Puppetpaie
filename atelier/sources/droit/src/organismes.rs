@@ -103,7 +103,9 @@ forme_notee! {
         pub montant: Option<String>,
         pub taux_at: Option<TauxAt>,
         pub statut: Option<String>,
-        pub nature: Option<String>,
+        /// La population : `intermittent` ou `permanent` (`ParNature`).
+        #[serde(rename = "nature")]
+        pub population: Option<String>,
         pub effectif_au_moins: Option<i64>,
         pub effectif_sous: Option<i64>,
     }

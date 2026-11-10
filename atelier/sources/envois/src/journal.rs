@@ -67,8 +67,8 @@ struct Enregistrement {
     a: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     retour: Option<Retour>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nature: Option<String>,
+    #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
+    nature_retour: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     publication: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -143,7 +143,7 @@ impl Tenu {
     fn replier(&mut self, e: Enregistrement, n: usize, p: &Path) -> R<()> {
         let illisible = |quoi: &str| abime_a(p, n, quoi);
         match e {
-            Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature: None, publication: None, complete: None } => {
+            Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature_retour: None, publication: None, complete: None } => {
                 if self.index.contains_key(&id) {
                     // Le meme envoi (son `id` est l'empreinte du texte qu'il a note), lu dans deux journaux reunis, ne compte
                     // qu'une fois ; ce qui lui est revenu sur chaque poste s'est range a la suite.
@@ -155,7 +155,7 @@ impl Tenu {
                 Arc::make_mut(&mut self.journal.lignes).push(ligne);
                 Ok(())
             }
-            Enregistrement { id: None, ligne: None, a: Some(a), retour, nature, publication, complete } => {
+            Enregistrement { id: None, ligne: None, a: Some(a), retour, nature_retour: nature, publication, complete } => {
                 let i = *self.index.get(&a).ok_or_else(|| illisible("ce qui revient d'un envoi que le journal ne porte pas"))?;
                 let lignes = Arc::make_mut(&mut self.journal.lignes);
                 let avant = depend_de_ses_retours(&lignes[i]);
@@ -179,7 +179,7 @@ impl Tenu {
                         };
                         let r = retours
                             .iter_mut()
-                            .find(|r| r.nature == nature && r.publication == publication)
+                            .find(|r| r.nature_retour == nature && r.publication == publication)
                             .ok_or_else(|| illisible("le complément d'un retour que l'envoi ne porte pas"))?;
                         r.poser(v);
                     }
@@ -498,7 +498,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature: String, publication: Option<String>, verdict: Verdict },
+    Complement { nature_retour: String, publication: Option<String>, verdict: Verdict },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -510,7 +510,7 @@ pub fn ranger(racine: &Path, rangements: Vec<(usize, Rangement)>) -> R<()> {
                 let a = Some(j.ids.get(i).ok_or_else(|| socle::refus!("journal : aucune ligne {}", i))?.clone());
                 Ok(match r {
                     Rangement::Retour(retour) => Enregistrement { a, retour: Some(Retour::Organisme(retour)), ..Default::default() },
-                    Rangement::Complement { nature, publication, verdict } => Enregistrement { a, nature: Some(nature), publication, complete: Some(verdict), ..Default::default() },
+                    Rangement::Complement { nature_retour, publication, verdict } => Enregistrement { a, nature_retour: Some(nature_retour), publication, complete: Some(verdict), ..Default::default() },
                 })
             })
             .collect()
@@ -619,7 +619,7 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
     let mut dernier = 0;
     for l in lire(racine, Some(Acte::Dsn), None, true)? {
         let Some(e) = l.dsn() else { continue };
-        let signalement = match e.detail.nature.as_deref().filter(|n| !n.is_empty()) {
+        let signalement = match e.detail.nature_declaration.as_deref().filter(|n| !n.is_empty()) {
             Some(n) => declarations::norme::SIGNALEMENTS.contains(&n),
             None => e.mois.is_none(),
         };
@@ -652,7 +652,7 @@ mod tests {
     /// la DSN suivante. Rien n'a ete recu (cahier technique DSN, § 4.2, `norme-dsn/texte/chapitre-4-controles.txt`).
     #[test]
     fn une_declaration_refusee_au_bilan_n_est_pas_partie() {
-        let retour = |nature: &str, verdict: &str| RetourOrganisme { nature: nature.into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        let retour = |nature: &str, verdict: &str| RetourOrganisme { nature_retour: nature.into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::lire("2026-06").unwrap());

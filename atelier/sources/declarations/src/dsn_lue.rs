@@ -374,7 +374,7 @@ pub struct DsnLue {
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
     pub emetteur: Option<String>,
     /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon ; `NATURES`).
-    pub nature: Option<String>,
+    pub nature_declaration: Option<String>,
     /// Le mois principal declare (S20.G00.05.005) ; un signalement n'en declare pas.
     pub mois: Option<Mois>,
     /// Le type, la fraction et le numero d'ordre de la declaration (S20.G00.05.002, .003, .004), et l'identifiant de
@@ -428,16 +428,16 @@ impl DsnLue {
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
     /// qui ne la dit pas refuse, en le disant.
     pub fn nature(&self) -> R<&str> {
-        self.nature.as_deref().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
+        self.nature_declaration.as_deref().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
     }
 
     pub fn est_signalement(&self) -> bool {
-        self.nature.as_deref().is_some_and(|n| crate::norme::SIGNALEMENTS.contains(&n))
+        self.nature_declaration.as_deref().is_some_and(|n| crate::norme::SIGNALEMENTS.contains(&n))
     }
 
     /// La nature en clair ; `None` si la DSN ne la porte pas.
     pub fn nature_lisible(&self) -> Option<String> {
-        let n = self.nature.as_deref()?;
+        let n = self.nature_declaration.as_deref()?;
         Some(match NATURES.iter().find(|(c, _)| *c == n) {
             Some((_, l)) => l.to_string(),
             None => format!("nature {}", n),
@@ -457,7 +457,7 @@ impl DsnLue {
         premier(|c| c.dernier_jour_travaille)
             .or_else(|| premier(|c| c.fin_declaree))
             .or_else(|| self.contrats.first().and_then(|c| c.debut))
-            .or_else(|| self.depot.filter(|_| self.nature.as_deref() == Some(crate::amorcage::NATURE)))
+            .or_else(|| self.depot.filter(|_| self.nature_declaration.as_deref() == Some(crate::amorcage::NATURE)))
     }
 
     /// LE MOIS QUE LE FICHIER DECLARE (S20.G00.05.005) ; un signalement se date par son evenement, et se range dans le
@@ -1098,7 +1098,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         logiciel,
         nature_envoi,
         emetteur: emetteur_siren,
-        nature,
+        nature_declaration: nature,
         mois,
         type_declaration,
         fraction,

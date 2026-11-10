@@ -1302,7 +1302,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: &str, l: &envois::journal::Ligne
     let nom = socle::fichiers::nom_du(cible);
     let manque = |quoi: &str| erreur(Classe::Illisible, format!("journal : {} sans {}", nom, quoi));
     let detail = l.dsn().map(|e| e.detail.clone()).ok_or_else(|| manque("son signalement"))?;
-    let nature = detail.nature.clone().ok_or_else(|| manque("sa nature"))?;
+    let nature = detail.nature_declaration.clone().ok_or_else(|| manque("sa nature"))?;
     let ordre: i64 = detail.ordre.as_deref().ok_or_else(|| manque("son numero d'ordre"))?.trim().parse().map_err(|_| manque("numero d'ordre lisible"))?;
     if matches!(detail.type_declaration.as_deref(), Some(t) if !t.is_empty() && t != "01") {
         return Err(erreur(Classe::Refuse, format!("{} annulait et remplaçait un signalement : il ne se refait pas ; le fichier a été déplacé ou effacé.", nom)));

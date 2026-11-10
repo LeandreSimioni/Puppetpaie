@@ -1734,7 +1734,7 @@ fiche! {
     pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique {
         libelle: String,
         unite: String,
-        nature: String,
+        nature: crate::catalogue::NatureDeRubrique,
         saisie: Vec<String>,
         soumis: bool,
         imposable: bool,

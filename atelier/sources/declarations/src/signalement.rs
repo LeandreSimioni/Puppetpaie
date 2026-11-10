@@ -295,7 +295,8 @@ un fait déjà survenu ne se date pas dans le futur.",
 
 /// Les options de `generer`.
 pub struct Options {
-    pub nature: String,
+    /// La nature de la declaration (S20.G00.05.001).
+    pub nature_declaration: String,
     pub type_declaration: String,
     pub ordre: i64,
     pub remplace: Option<String>,
@@ -306,7 +307,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Options {
         Options {
-            nature: ARRET.into(),
+            nature_declaration: ARRET.into(),
             type_declaration: NORMALE.into(),
             ordre: 1,
             remplace: None,
@@ -318,7 +319,7 @@ impl Default for Options {
 
 /// Le fichier d'un signalement, pret a deposer. `departs` : ce qui est parti, pour l'identite declaree (`ntt::poser_ntt`).
 pub fn generer(ctx: &Contexte, a: &Arret, o: &Options, departs: &engagement::departs::Departs) -> R<String> {
-    let nature = o.nature.as_str();
+    let nature = o.nature_declaration.as_str();
     if nature != ARRET && nature != REPRISE {
         return impossible(nature_inconnue(nature));
     }

@@ -300,7 +300,7 @@ fn retour(nature: &str, flux: &str, publication: &str, libelle: &str, production
         production,
         ops: None,
         delegataire: None,
-        nature: nature.to_string(),
+        nature_retour: nature.to_string(),
         statut: Some("fictive".to_string()),
         id: None,
         url: None,
@@ -339,7 +339,7 @@ fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
 
 /// La nature de la DSN que la ligne porte, quand la ligne la dit.
 fn nature_dsn(l: &Ligne) -> Option<&str> {
-    l.dsn().and_then(|e| e.detail.nature.as_deref()).filter(|n| !n.is_empty())
+    l.dsn().and_then(|e| e.detail.nature_declaration.as_deref()).filter(|n| !n.is_empty())
 }
 
 fn reelle(l: &Ligne) -> bool {
@@ -502,7 +502,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
          <rang>1</rang><nature>{}</nature><type>{}</type><mois>{}</mois><SIREN>{}</SIREN><nic_affectation>{}</nic_affectation>\
          </declaration_identification><declaration_bilan><etat>OK</etat>{}</declaration_bilan></declaration></ns2:rapport>",
         echappe(flux),
-        element(d.nature.as_deref()),
+        element(d.nature_declaration.as_deref()),
         element(d.type_declaration.as_deref()),
         mois,
         element(d.entreprise.siren.as_deref()),

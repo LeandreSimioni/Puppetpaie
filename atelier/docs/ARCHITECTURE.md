@@ -13,7 +13,8 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
   qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
-  aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature est une `enum`.
+  aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
+  (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés.
 - **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
   porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
   (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par
@@ -72,7 +73,8 @@ que par la structure :
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
   `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`,
   `un_refus_n_est_jamais_un_texte` (un refus est un `socle::echec::Echec`, ce qu'il porte a part dans son `a_part`,
-  jamais un `Result<_, String>`). Les tests de structure sont
+  jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (aucun champ `nature: String`, la clé d'une
+  nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
 
 ## Compiler peu

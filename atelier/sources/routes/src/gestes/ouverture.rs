@@ -268,8 +268,8 @@ impl Ouverture {
                 .map(|a| RetourArchiveDit {
                     chemin: a.chemin.to_string_lossy().into_owned(),
                     fichier: a.chemin.file_name().map(|n| n.to_string_lossy().into_owned()),
-                    nature: a.retour.nature.clone(),
-                    libelle: envois::retours::libelle_nature(&a.retour.nature),
+                    nature_retour: a.retour.nature_retour.clone(),
+                    libelle: envois::retours::libelle_nature(&a.retour.nature_retour),
                 })
                 .collect(),
             rattaches: r.rattaches,
@@ -372,7 +372,8 @@ pub struct RetoursDits {
 pub struct RetourArchiveDit {
     pub chemin: String,
     pub fichier: Option<String>,
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_retour: String,
     pub libelle: String,
 }
 

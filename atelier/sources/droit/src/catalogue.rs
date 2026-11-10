@@ -23,8 +23,40 @@ pub const UNITES: [&str; 8] =
 /// Les natures juridiques. Elles ne commandent pas l'assujettissement (`soumis`, `imposable` le disent, rubrique par
 /// rubrique) ; d'une ligne HORS assiette, elles disent ce qu'elle est pour le montant net social
 /// (`Rubrique::hors_assiette`).
-pub const NATURES: [&str; 7] =
-    ["salaire", "frais", "avantage_nature", "indemnite", "prime", "retenue", "absence"];
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NatureDeRubrique {
+    Salaire,
+    Frais,
+    AvantageNature,
+    Indemnite,
+    Prime,
+    Retenue,
+    Absence,
+}
+
+impl NatureDeRubrique {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            NatureDeRubrique::Salaire => "salaire",
+            NatureDeRubrique::Frais => "frais",
+            NatureDeRubrique::AvantageNature => "avantage_nature",
+            NatureDeRubrique::Indemnite => "indemnite",
+            NatureDeRubrique::Prime => "prime",
+            NatureDeRubrique::Retenue => "retenue",
+            NatureDeRubrique::Absence => "absence",
+        }
+    }
+}
+
+impl std::fmt::Display for NatureDeRubrique {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.cle())
+    }
+}
+
+impl crate::fiche::FormeDeCase for NatureDeRubrique {}
 
 /// Ce qu'est une ligne hors assiette (`soumis` faux) pour le montant net social (S21.G00.58.004, type 03). Decret
 /// n° 2023-1378 du 28/12/2023 : CSS R. 844-1 II (atelier/reference/sources/code-de-la-securite-sociale/
@@ -100,7 +132,7 @@ pub struct Rubrique {
     pub code: String,
     pub libelle: String,
     pub unite: String,
-    pub nature: String,
+    pub nature: NatureDeRubrique,
     pub saisie: Vec<String>,
     pub soumis: bool,
     pub imposable: bool,
@@ -145,11 +177,6 @@ impl Rubrique {
                 "Rubrique {} : unite {} inconnue. Connues : {}.",
                 repr(code), repr(&self.unite), joindre(&UNITES)));
         }
-        if !NATURES.contains(&self.nature.as_str()) {
-            return Err(socle::refus!(
-                "Rubrique {} : nature {} inconnue. Connues : {}.",
-                repr(code), repr(&self.nature), joindre(&NATURES)));
-        }
         if !COMPTE_POUR.contains(&self.compte_pour.as_str()) {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : compte_pour {} inconnu. Connus : {}.",
@@ -187,10 +214,10 @@ impl Rubrique {
     /// (`frais`, `indemnite`, `retenue`). Une autre nature ne le dit pas d'une ligne hors assiette (une prime, un
     /// salaire exoneres sont-ils un revenu ? un avantage en nature hors assiette, quoi ?) : refus, regle 1.
     pub fn hors_assiette(&self) -> R<HorsAssiette> {
-        match self.nature.as_str() {
-            "frais" => Ok(HorsAssiette::Frais),
-            "indemnite" => Ok(HorsAssiette::Revenu),
-            "retenue" => Ok(HorsAssiette::Mouvement),
+        match self.nature {
+            NatureDeRubrique::Frais => Ok(HorsAssiette::Frais),
+            NatureDeRubrique::Indemnite => Ok(HorsAssiette::Revenu),
+            NatureDeRubrique::Retenue => Ok(HorsAssiette::Mouvement),
             autre => Err(mal_decrite(&self.code, format!(
                 "Rubrique {} : hors assiette (`soumis` faux) et de nature {}. Le montant net social \
                  (S21.G00.58.004, bulletin) ne sait pas si cette ligne est un revenu, un remboursement de frais \
@@ -198,7 +225,7 @@ impl Rubrique {
                  (remboursement de frais professionnels : hors du montant net social), `indemnite` (une somme \
                  versee a l'occasion du travail, exoneree ou non : dans le montant net social) ou `retenue` \
                  (acompte, avance, saisie : hors du montant net social).",
-                repr(&self.code), repr(autre)))),
+                repr(&self.code), repr(autre.cle())))),
         }
     }
 

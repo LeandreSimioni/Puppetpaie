@@ -33,7 +33,7 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (f6
     let mut jours: BTreeMap<Jour, (f64, bool)> = BTreeMap::new();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let travail = r.nature == "salaire"
+        let travail = r.nature == droit::catalogue::NatureDeRubrique::Salaire
             && matches!(r.unite.as_str(), "heure" | "jour" | "service")
             && r.heures_forfait.is_none()
             && !(r.arret_de_travail || r.conges_pris || r.suspension);
