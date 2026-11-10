@@ -26,7 +26,7 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
 use crate::ntt;
-use socle::num::Resultat;
+use socle::echec::{refus, refus_avec, APart, R};
 use socle::texte::ascii_nfkd;
 use crate::usages::strip;
 
@@ -160,20 +160,20 @@ pub fn normaliser(v: &str, jeu: &Jeu) -> String {
 }
 
 /// `texte` entier s'il tient dans `largeur` ; plus long, ce que son type refuse (`faute`) : rien ne se coupe.
-fn entiere(texte: &str, largeur: usize, faute: fn(&str) -> Option<String>) -> Resultat<String> {
+fn entiere(texte: &str, largeur: usize, faute: fn(&str) -> Option<String>) -> R<String> {
     let n = texte.chars().count();
     if n <= largeur {
         return Ok(texte.to_string());
     }
-    Err(match faute(texte) {
+    Err(refus(match faute(texte) {
         Some(f) => f,
         None => format!("« {} » a {} caractères : la zone de la DPAE en a {} (norme DPAE v5.3).", texte, n, largeur),
-    })
+    }))
 }
 
 /// UNE ZONE DE TEXTE de `largeur` caracteres, « cadrés à gauche, complétés par des blancs » (l. 30) : `texte` dans le
 /// jeu de la zone, entier (`entiere`).
-fn zone_texte(texte: &str, jeu: &Jeu, largeur: usize, faute: fn(&str) -> Option<String>) -> Resultat<String> {
+fn zone_texte(texte: &str, jeu: &Jeu, largeur: usize, faute: fn(&str) -> Option<String>) -> R<String> {
     Ok(ljust(&entiere(&normaliser(texte, jeu), largeur, faute)?, largeur))
 }
 
@@ -203,7 +203,7 @@ const NOM_GABARIT: &str = "due_tel_gabarit.txt";
 
 /// Les 990 premiers caractères du gabarit, lus en latin-1 : un octet, un caractère, et les fins de ligne
 /// CR LF et CR lues comme LF.
-fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> Resultat<Vec<char>> {
+fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> R<Vec<char>> {
     // Le gabarit de la compagnie s'il en a un, celui livre avec le logiciel
     // sinon (`donnees/modeles/`, un enregistrement neutre) : il ne donne plus
     // que l'entete constante, tout le reste est reecrit plus bas.
@@ -211,31 +211,31 @@ fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> Resultat<Vec<char>>
         Some(g) => modele_de(NOM_GABARIT, Some(g), &chemins.poste),
         None => chemins.defaut.clone(),
     };
-    let octets = std::fs::read(&chemin).map_err(|e| socle::fichiers::panne_fichier(&e, &chemin))?;
+    let octets = std::fs::read(&chemin).map_err(|e| refus(socle::fichiers::panne_fichier(&e, &chemin)))?;
     let texte: String = octets.iter().map(|&o| o as char).collect();
     let texte = texte.replace("\r\n", "\n").replace('\r', "\n");
     let gab: Vec<char> = texte.chars().take(LONGUEUR).collect();
     if gab.len() != LONGUEUR {
-        return Err(format!("gabarit DUE corrompu ({} != {})", gab.len(), LONGUEUR));
+        return Err(socle::refus!("gabarit DUE corrompu ({} != {})", gab.len(), LONGUEUR));
     }
     Ok(gab)
 }
 
 /// Le SIRET de la fiche, 14 chiffres, ou le refus de la DPAE.
-fn siret_de(ent: &ChampsEntreprise) -> Resultat<String> {
+fn siret_de(ent: &ChampsEntreprise) -> R<String> {
     let siret = strip(ent.siret.ecrite("siret")?).to_string();
     if siret.chars().count() != 14 || !tout_chiffres(&siret) {
-        return Err(format!("DPAE : le SIRET de la fiche entreprise ({}) ne fait pas 14 chiffres.", repr(&siret)));
+        return Err(socle::refus!("DPAE : le SIRET de la fiche entreprise ({}) ne fait pas 14 chiffres.", repr(&siret)));
     }
     Ok(siret)
 }
 
 /// Le code du centre de medecine du travail (C_MT_DCL, obligatoire hors travail temporaire) : `medecine_travail` de la
 /// fiche, que la DPAE exige (`exige_par` de `champs-base.json`) ; il ne se devine pas.
-fn medecine_de(ent: &ChampsEntreprise) -> Resultat<String> {
+fn medecine_de(ent: &ChampsEntreprise) -> R<String> {
     match ent.medecine_travail.portee() {
         Some(mt) => Ok(strip(mt).to_string()),
-        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le code du service de santé au travail, que la DPAE exige : le lire sur l'adhésion au service de santé au travail, et le saisir dans Configuration › Entreprise.", "medecine_travail").into()),
+        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le code du service de santé au travail, que la DPAE exige : le lire sur l'adhésion au service de santé au travail, et le saisir dans Configuration › Entreprise.", "medecine_travail")),
     }
 }
 
@@ -250,20 +250,20 @@ fn largeur(nom: &str) -> usize {
 /// LA RAISON SOCIALE EN DEUX LIGNES (L_RAISON_SOC_1 et L_RAISON_SOC_2, « Nom ou raison sociale (ligne 2) », 32
 /// caracteres chacune : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 249-256 et 374-379), coupees entre
 /// deux mots (`droit::fiche::RaisonSociale::en_deux_lignes`), la seconde a blanc quand tout tient sur la premiere.
-fn raison_sociale(texte: &str) -> Resultat<(String, String)> {
+fn raison_sociale(texte: &str) -> R<(String, String)> {
     let (premiere, seconde) = droit::fiche::RaisonSociale::en_deux_lignes(&normaliser(texte, &RAISON_SOCIALE))?;
     Ok((ljust(&premiere, largeur("raison_sociale")), ljust(&seconde, largeur("raison_sociale_2"))))
 }
 
 /// Le telephone (N_TEL_EMP, l. 380-385, facultatif) : les chiffres de celui du declarant DSN, sinon de celui du
 /// signataire ; sans l'un ni l'autre, la zone est a blanc ; plus de 11, ce que la fiche refuse (`droit::fiche::Telephone`).
-fn telephone(ent: &ChampsEntreprise) -> Resultat<String> {
+fn telephone(ent: &ChampsEntreprise) -> R<String> {
     let tel = ent.declarant_dsn.dite().and_then(|d| d.tel.remplie()).or_else(|| ent.signataire.dite().and_then(|s| s.tel.remplie()));
     let Some(tel) = tel else {
         return Ok(" ".repeat(largeur("tel")));
     };
     if let Some(f) = droit::fiche::Telephone::faute(tel) {
-        return Err(f);
+        return Err(refus(f));
     }
     Ok(ljust(&chiffres(tel), largeur("tel")))
 }
@@ -271,7 +271,7 @@ fn telephone(ent: &ChampsEntreprise) -> Resultat<String> {
 /// Les zones employeur de la DPAE, lues dans la fiche `ent` (le SIRET : `siret_de` ; la medecine du travail :
 /// `medecine_de`), chacune entiere dans le jeu de caracteres que la norme lui admet (`Jeu`) : la fiche les tient a leur
 /// longueur (`droit::fiche::texte_borne!`) ; une valeur que les caracteres admis allongent se refuse, elle ne se coupe pas.
-pub fn employeur(ent: &ChampsEntreprise) -> Resultat<Vec<(&'static str, String)>> {
+pub fn employeur(ent: &ChampsEntreprise) -> R<Vec<(&'static str, String)>> {
     use droit::fiche::{CodeMedecine, CodeNaf, CodePostal, CommuneEmployeur, LigneAdresse};
     let siret = siret_de(ent)?;
     let mt = medecine_de(ent)?;
@@ -302,11 +302,11 @@ pub fn employeur(ent: &ChampsEntreprise) -> Resultat<Vec<(&'static str, String)>
 /// duquel est situe l'etablissement devant employer le salarie » (code du travail, R. 1221-3, 1°,
 /// `atelier/reference/sources/code-du-travail/xml/R1221-3.xml`), lue au departement de son code postal
 /// (`urssaf-dpae-base.json`, `par_departement`). Le code de la fiche entreprise est celui du siege.
-fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> Resultat<String> {
+fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> R<String> {
     let (siret, cp) = (vue.siret.ecrite("siret")?, vue.code_postal.ecrite("code_postal")?);
     match crate::urssaf::base()?.du_code_postal(cp) {
         Some(code) => Ok(code),
-        None => Err(format!(
+        None => Err(socle::refus!(
             "La DPAE ne sait pas a quelle Urssaf aller : l'etablissement {} a le code postal {}, qu'aucune Urssaf de la table \
 ne couvre (Configuration › Entreprise › Avancé, « Autres établissements »).",
             siret,
@@ -342,16 +342,16 @@ pub struct Parametres<'a> {
     pub chemins: &'a Chemins,
 }
 
-fn poser(buf: &mut [char], nom: &str, valeur: &str) -> Resultat<()> {
+fn poser(buf: &mut [char], nom: &str, valeur: &str) -> R<()> {
     let (a, b) = champ(nom);
     ecrire_zone(buf, nom, a, b, valeur)
 }
 
 /// `valeur` en `[a, b)`, a la largeur exacte de la zone : rien ne se coupe.
-fn ecrire_zone(buf: &mut [char], nom: &str, a: usize, b: usize, valeur: &str) -> Resultat<()> {
+fn ecrire_zone(buf: &mut [char], nom: &str, a: usize, b: usize, valeur: &str) -> R<()> {
     let n = valeur.chars().count();
     if n != b - a {
-        return Err(format!("{}: {} fait {} car., attendu {}", nom, repr(valeur), n, b - a));
+        return Err(socle::refus!("{}: {} fait {} car., attendu {}", nom, repr(valeur), n, b - a));
     }
     for (i, c) in valeur.chars().enumerate() {
         buf[a + i] = c;
@@ -360,7 +360,7 @@ fn ecrire_zone(buf: &mut [char], nom: &str, a: usize, b: usize, valeur: &str) ->
 }
 
 /// Un enregistrement de 990 caracteres.
-pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resultat<String> {
+pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<String> {
     let mut buf: Vec<char> = gabarit.to_vec();
     let mut code_urssaf = p.code_urssaf.clone();
     if let Some(ent) = p.ent {
@@ -383,8 +383,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                 &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
                 "code_urssaf",
                 repr(brut),
-            )
-            .into());
+            ));
         }
         // ET LE CODE DOIT EXISTER. Trois chiffres bien formes
         // suffisaient ; le point de depot, lui, repond << Code URSSAF invalide
@@ -397,8 +396,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                 "Le code Urssaf de la fiche entreprise n'est pas celui d'un organisme de recouvrement connu : le point de dépôt le refuserait. Le code se lit sur les bordereaux Urssaf de la compagnie.",
                 "code_urssaf",
                 repr(brut),
-            )
-            .into());
+            ));
         }
         ecrire_zone(&mut buf, "code_urssaf", a, b, v)?;
     }
@@ -454,8 +452,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                     nat.libelle
                 ),
                 "fin",
-            )
-            .into());
+            ));
         };
         poser(&mut buf, "date_fin", &fin.jjmmaaaa())?;
     } else {
@@ -474,24 +471,24 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
 
 /// Les enregistrements de ces embauches, dans l'ordre. Le gabarit n'est lu
 /// qu'a la premiere (une liste vide ne lit rien).
-pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<String>> {
+pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>> {
     // CE QUE LA DPAE EXIGE DES FICHES (`exige_par` de `champs-base.json`, la liste que « Pour demarrer » lit : la naissance,
     // zones D_NAISSANCE_SAL, L_LIEU_NAISS_SAL et le departement de naissance, « O », et le sexe sans NIR, zone SEXE,
     // `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`) : tout ce qui manque, d'un coup, avant d'ecrire.
     let mut saisies: Vec<(&str, String, crate::champs::Saisie)> = Vec::new();
     if let Some(e) = p.ent {
-        saisies.push(("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", &e.fiche).map_err(String::from)?));
+        saisies.push(("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", &e.fiche)?));
     }
     for e in embauches {
         let qui = match e.salarie.nomme() {
             Some(n) => n,
             None => e.salarie.fiche.id.to_string(),
         };
-        saisies.push(("salarie", format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche("salarie", &e.salarie.champs).map_err(String::from)?));
+        saisies.push(("salarie", format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche("salarie", &e.salarie.champs)?));
     }
     let fiches: Vec<(&str, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[]).map_err(String::from)? {
-        return Err(m);
+    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[])? {
+        return Err(refus(m));
     }
     if embauches.is_empty() {
         return Ok(Vec::new());
@@ -501,7 +498,7 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<S
 }
 
 /// Le texte en latin-1 : un caractere hors de la table se refuse, et le refus le nomme.
-pub fn en_latin1(texte: &str) -> Resultat<Vec<u8>> {
+pub fn en_latin1(texte: &str) -> R<Vec<u8>> {
     let c: Vec<char> = texte.chars().collect();
     if let Some(i) = c.iter().position(|&x| x as u32 > 255) {
         let mut j = i + 1;
@@ -512,7 +509,7 @@ pub fn en_latin1(texte: &str) -> Resultat<Vec<u8>> {
             let n = x as u32;
             if n <= 0xffff { format!("\\u{:04x}", n) } else { format!("\\U{:08x}", n) }
         };
-        return Err(if j == i + 1 {
+        return Err(refus(if j == i + 1 {
             format!(
                 "'latin-1' codec can't encode character '{}' in position {}: ordinal not in range(256)",
                 ech(c[i]),
@@ -520,13 +517,13 @@ pub fn en_latin1(texte: &str) -> Resultat<Vec<u8>> {
             )
         } else {
             format!("'latin-1' codec can't encode characters in position {}-{}: ordinal not in range(256)", i, j - 1)
-        });
+        }));
     }
     Ok(c.iter().map(|&x| x as u8).collect())
 }
 
 /// Les octets qu'`ecrire` poserait sur le disque, sans rien ecrire.
-pub fn contenu(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<u8>> {
+pub fn contenu(embauches: &[Embauche], p: &Parametres) -> R<Vec<u8>> {
     en_latin1(&enregistrements(embauches, p)?.concat())
 }
 
@@ -536,14 +533,14 @@ pub fn contenu(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<u8>> {
 /// les deux, et CoolPaie deposait le zip. La date du fichier dans l'archive
 /// est la minute de l'ecriture (JJMMAAAAHHMM) : le zip est le meme a chaque
 /// ecriture du meme contenu.
-pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> Resultat<Vec<u8>> {
+pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> R<Vec<u8>> {
     use flate2::write::DeflateEncoder;
     use flate2::{Compression, Crc};
     use std::io::Write;
 
     // L'horodatage JJMMAAAAHHMM, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
-    let illisible = || format!("L'horodatage de la DPAE ({}) ne se lit pas en JJMMAAAAHHMM.", repr(horodatage));
-    let n = |a: usize, b: usize| -> Resultat<u32> {
+    let illisible = || socle::refus!("L'horodatage de la DPAE ({}) ne se lit pas en JJMMAAAAHHMM.", repr(horodatage));
+    let n = |a: usize, b: usize| -> R<u32> {
         match horodatage.get(a..b).map(str::parse::<u32>) {
             Some(Ok(x)) => Ok(x),
             _ => Err(illisible()),
@@ -558,8 +555,8 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> Resultat<Vec<u8>> {
     crc.update(donnees);
     let somme = crc.sum();
     let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-    enc.write_all(donnees).map_err(|e| e.to_string())?;
-    let comprime = enc.finish().map_err(|e| e.to_string())?;
+    enc.write_all(donnees).map_err(|e| refus(e.to_string()))?;
+    let comprime = enc.finish().map_err(|e| refus(e.to_string()))?;
     let nom_octets = nom.as_bytes();
     let drapeau: u16 = if nom.is_ascii() { 0 } else { 0x800 };
     let u16_ = |v: &mut Vec<u8>, x: u16| v.extend_from_slice(&x.to_le_bytes());
@@ -616,7 +613,7 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> Resultat<Vec<u8>> {
 /// Un enregistrement par contrat, groupes par salarie comme le faisait
 /// CoolPaie. Ecrit aussi le .zip du meme nom : net-entreprises accepte les
 /// deux, et CoolPaie deposait le zip.
-pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: bool) -> Resultat<()> {
+pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: bool) -> R<()> {
     if let Some(parent) = chemin.parent() {
         std::fs::create_dir_all(parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
     }
@@ -626,9 +623,9 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
         let nom = match chemin.file_name() {
             Some(n) => n.to_string_lossy().into_owned(),
             None => {
-                return Err(socle::echec::avec(
+                return Err(refus_avec(
                     "Le fichier de la DPAE n'a pas de nom : le signaler au développeur.",
-                    socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
+                    APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..APart::default() },
                 ))
             }
         };
@@ -641,12 +638,12 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
 
 /// La nature de contrat de cette embauche. Une nature inconnue se refuse, son
 /// message entre guillemets.
-fn nature_de(e: &Embauche) -> Resultat<std::sync::Arc<natures::Nature>> {
-    natures::nature(&e.nature).map_err(|m| repr(&String::from(m)))
+fn nature_de(e: &Embauche) -> R<std::sync::Arc<natures::Nature>> {
+    natures::nature(&e.nature).map_err(|m| m.reformuler(repr))
 }
 
 /// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.
-pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> Resultat<String> {
+pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> R<String> {
     let h: Vec<char> = heure_embauche.chars().collect();
     let heure = format!(
         "{}h{}",
@@ -953,7 +950,7 @@ mod tests {
         Parametres { horodatage: "031020261407", heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
-    fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> Resultat<String> {
+    fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {
         let c = chemins();
         enregistrements(std::slice::from_ref(e), &parametres(ent, code, &c)).map(|mut v| v.remove(0))
     }
@@ -968,7 +965,7 @@ mod tests {
     #[test]
     fn un_cdd_sans_terme_est_refuse_ici_et_non_par_l_urssaf() {
         let e = embauche("cdd", None);
-        let m = enr(&e, None, None).unwrap_err();
+        let m = enr(&e, None, None).unwrap_err().phrase;
         assert!(m.contains("date de fin"), "{}", m);
         // Avec son terme, il part, type 1 (CDD) et date de fin dans la case.
         let e = embauche("cdd", Some("2026-12-31"));
@@ -1024,11 +1021,11 @@ mod tests {
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
         let e = embauche("cdi", None);
-        let m = enr(&e, None, Some("11")).unwrap_err();
+        let m = String::from(enr(&e, None, Some("11")).unwrap_err());
         assert!(m.contains("code_urssaf") && m.contains("'11'"), "{}", m);
-        let m = enr(&e, None, Some("abc")).unwrap_err();
+        let m = enr(&e, None, Some("abc")).unwrap_err().phrase;
         assert!(m.contains("3 chiffres"), "{}", m);
-        let m = enr(&e, None, Some("999")).unwrap_err();
+        let m = String::from(enr(&e, None, Some("999")).unwrap_err());
         assert!(m.contains("code_urssaf") && m.contains("'999'"), "{}", m);
         enr(&e, None, Some(" 117 ")).unwrap();
         // Sans code, celui du gabarit reste.
@@ -1077,7 +1074,7 @@ mod tests {
         // Un SIRET qui ne fait pas 14 chiffres : refus.
         let mut mauvais = entreprise();
         mauvais.fiche.siret = Some("1234".into());
-        let m = enr(&e, Some(&mauvais), Some("117")).unwrap_err();
+        let m = enr(&e, Some(&mauvais), Some("117")).unwrap_err().phrase;
         assert!(m.contains("SIRET") && m.contains("'1234'"), "{}", m);
     }
 
