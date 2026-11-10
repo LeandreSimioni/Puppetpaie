@@ -1,10 +1,10 @@
 //! Le prelevement a la source des paies d'un mois : celui de la paie declaree, sinon celui que l'engagement a ecrit
 //! dans la paie (`engagement::etats`). Rien ne s'y calcule.
 
-
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::pas::Versement;
+use socle::echec::R;
 
 /// Le prelevement de la paie declaree (`engagement::etats::paie_declaree`), ou `None` : aucune DSN partie n'a declare
 /// le mois de sa paie pour son engagement (une paie ajoutee apres le depot, que la correction du mois suivant
@@ -16,7 +16,7 @@ use droit::pas::Versement;
 /// tard le deuxième mois suivant sa transmission ». Ce qui a ete retenu l'a ete au paiement, au taux de ce jour-la : le
 /// prelevement de la paie que la DSN a declaree (`engagement::etats::paie_declaree`), pas celui d'un recalcul au taux du
 /// jour. Le mois declare est celui de la fin de la periode de la paie, comme le declare `dsn::bloc_versement` (50.001).
-fn deja_declare(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::departs::Departs) -> Result<Option<Versement>, String> {
+fn deja_declare(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::departs::Departs) -> R<Option<Versement>> {
     let e = &pa.engagement;
     let Some(numero) = e.numero.clone() else { return Ok(None) };
     let cle = pa.salarie.id.to_string();
@@ -39,7 +39,7 @@ struct Lus {
 /// Le prelevement de chaque paie, par POSITION dans `paies` (`None` : un mois sans paie, sans bulletin). Une paie deja
 /// declaree garde le prelevement de la paie declaree (`deja_declare`) ; une autre, celui que l'engagement a ecrit ou
 /// calcule pour elle (`Paie::pas`). Aucun ne se calcule ici : une paie qui n'en porte pas se refuse.
-pub fn des_paies(ctx: &Contexte, paies: &[Paie], departs: &engagement::departs::Departs) -> Result<Vec<Option<Versement>>, String> {
+pub fn des_paies(ctx: &Contexte, paies: &[Paie], departs: &engagement::departs::Departs) -> R<Vec<Option<Versement>>> {
     let mut lus = Lus::default();
     let mut out = Vec::new();
     for pa in paies {
@@ -52,7 +52,7 @@ pub fn des_paies(ctx: &Contexte, paies: &[Paie], departs: &engagement::departs::
             continue;
         }
         let v = pa.pas.clone().ok_or_else(|| {
-            format!(
+            socle::refus!(
                 "{} : la paie de {} ne porte pas de prelevement a la source (paie ecrite illisible : `pas`). Revalider l'engagement.",
                 pa.salarie.id.to_string(),
                 pa.engagement.mois
