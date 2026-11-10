@@ -60,7 +60,7 @@ pub struct TauxPasAnnonce {
 pub struct TauxAtmpAnnonce {
     pub code_risque: String,
     pub taux: String,
-    pub date_effet: String,
+    pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bureau: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,8 +167,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         Annonce::TauxAtmp(t) => {
             let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
             let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
-            let effet_lisible = matches!(Jour::lire(&t.date_effet), Ok(j) if j.iso() == t.date_effet);
-            if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 || !effet_lisible {
+            if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
@@ -473,7 +472,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
             echappe(&t.code_risque),
             facultatif(&t.bureau, "temoin_bureau"),
             echappe(&t.taux),
-            t.date_effet.replace('-', ""),
+            t.date_effet.aaaammjj(),
             calcul
         ));
         a.rendue = Some(flux.to_string());
