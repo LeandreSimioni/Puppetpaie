@@ -251,6 +251,9 @@ pub(crate) struct VueFiche<P> {
     pastille: PastilleDeFiche,
     sans_titre: bool,
     montres: Vec<String>,
+    /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
+    /// elles.
+    ecarts: Vec<String>,
 }
 
 impl<P> VueFiche<P> {
@@ -442,6 +445,12 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
     let montres = super::fiches::montres(ctx, nom, cle, &comble, ent)?;
+    // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
+    let du_code_postal = match ctx.entreprise.code_postal.portee() {
+        Some(cp) => declarations::urssaf::base().map_err(plain)?.du_code_postal(cp),
+        None => None,
+    };
+    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&comble, du_code_postal.as_deref())).map(|c| c.cle.clone()).collect();
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -457,6 +466,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
         pastille,
         sans_titre,
         montres,
+        ecarts,
     })
 }
 
