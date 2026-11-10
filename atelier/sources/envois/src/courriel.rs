@@ -596,12 +596,12 @@ pub fn hexa_au_hasard(octets: usize) -> R<String> {
 }
 
 /// `%Y%m%d-%H%M%S-%f` de l'heure de Paris : l'ordre des noms est celui des envois.
-fn horodatage_de(t: std::time::Duration) -> R<String> {
-    let secondes = t.as_secs() as i64;
-    let local = secondes + socle::paris::decalage(secondes);
-    let j = socle::date::Jour::depuis_jours_unix(local.div_euclid(86_400)).ok_or_else(|| erreur("L'horloge du poste donne une date impossible."))?;
-    let s = local.rem_euclid(86_400);
-    Ok(format!("{:04}{:02}{:02}-{:02}{:02}{:02}-{:06}", j.an, j.mois, j.jour, s / 3600, s % 3600 / 60, s % 60, t.subsec_micros()))
+fn horodatage_de(t: socle::paris::Moment) -> String {
+    let local = t.local_naif();
+    let (j, s) = (local.jour(), local.seconde_du_jour());
+    // La fraction de seconde, exacte en flottant : ses microsecondes sont celles de l'instant entier.
+    let micros = std::time::Duration::from_secs_f64(t.secondes() - t.entieres() as f64).subsec_micros();
+    format!("{:04}{:02}{:02}-{:02}{:02}{:02}-{:06}", j.an, j.mois, j.jour, s / 3600, s % 3600 / 60, s % 60, micros)
 }
 
 impl Courriel for BoiteSimulee {
@@ -623,8 +623,7 @@ impl Courriel for BoiteSimulee {
             Some(i) => i,
             None => format!("<{}@fictive.puppetpaie>", hexa_au_hasard(8)?),
         };
-        let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
-        let nom = format!("{}_{}.eml", horodatage_de(maintenant)?, hexa_au_hasard(4)?);
+        let nom = format!("{}_{}.eml", horodatage_de(socle::temps::secondes()), hexa_au_hasard(4)?);
         let chemin = dossier.join(&nom);
         std::fs::write(&chemin, message_mime).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Courriel))?;
         Ok(ident)

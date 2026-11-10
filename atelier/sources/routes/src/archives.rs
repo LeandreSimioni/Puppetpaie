@@ -739,7 +739,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
     let vu = construire(ctx, &demande(true))?;
     adresses_de(ctx, &vu.salaries)?;
     let a_qui = format!("{} salarie(s) : {}", vu.salaries.len(), vu.salaries.iter().map(|c| ctx.nomme(c)).collect::<Vec<_>>().join(", "));
-    let aujourdhui = crate::dossier_salarie::aujourdhui_reel()?;
+    let aujourdhui = socle::temps::jour_de_paris();
     let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
     let d = construire(ctx, &demande(false))?;
     let envoi = envoyer_dossier(ctx, &d, &Preuve { donnee: Some(forme), ..Preuve::default() }, INTERFACE, ouvrir)?;
@@ -807,7 +807,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         });
     }
     let mut client = ouvrir()?;
-    let aujourdhui = crate::dossier_salarie::aujourdhui_reel()?;
+    let aujourdhui = socle::temps::jour_de_paris();
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
     let expediteur = expediteur_de(client.as_ref());
@@ -878,7 +878,7 @@ struct ChargeCasc {
 fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir: Ouvrir) -> R<CascEnvoyee> {
     let qui = INTERFACE;
     use crate::importation::casc::{ecrire, regularisation, Demande};
-    let aujourdhui = crate::dossier_salarie::aujourdhui_reel()?;
+    let aujourdhui = socle::temps::jour_de_paris();
     let mut dates: Vec<(String, String)> = Vec::new();
     for (a, texte) in &c.vire_le {
         let Some(jour) = jour_iso(texte) else {

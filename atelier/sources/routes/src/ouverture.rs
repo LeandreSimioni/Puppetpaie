@@ -686,7 +686,8 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
-                e.quand = Some(socle::paris::iso_secondes(socle::paris::mtime(&st)));
+                // Datee hors du calendrier, l'image posee se dit sans sa date.
+                e.quand = socle::paris::mtime(&st).map(socle::paris::iso_secondes);
                 e.fichier = Some(f.display().to_string());
             }
         }

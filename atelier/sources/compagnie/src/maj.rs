@@ -774,7 +774,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     let prete = Prete {
         version: version.to_string(),
-        quand: socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..16].to_string(),
+        quand: socle::paris::maintenant_naif().iso()[..16].to_string(),
         archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
         notes: d.notes.clone(),
         calcul: d.calcul.clone(),
@@ -1702,7 +1702,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
         }
         return Err(e.reformuler(|m| format!("la bascule a echoue, l'ancienne version reste en place : {}", m)));
     }
-    let quand = socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..16].to_string();
+    let quand = socle::paris::maintenant_naif().iso()[..16].to_string();
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand: quand.clone(), notes: d.notes, calcul: d.calcul, vue: false })?;
     let _ = std::fs::remove_file(maj.join(PRETE));
@@ -1837,7 +1837,7 @@ pub fn noter(inst: &Path, t: &str) {
     let d = dossier_maj(inst);
     let _ = std::fs::create_dir_all(&d);
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("journal.log")) {
-        let quand = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
+        let quand = socle::paris::maintenant_naif().iso();
         let _ = writeln!(f, "{} {}", &quand[..quand.len().min(16)], t);
     }
 }

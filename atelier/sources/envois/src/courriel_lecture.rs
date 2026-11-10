@@ -114,7 +114,7 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<Stri
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
 pub fn date_de(m: &ParsedMail, maintenant: &str) -> String {
     match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
-        Some(local) => socle::paris::iso_de_naif(local),
+        Some(local) => local.iso(),
         None => maintenant.to_string(),
     }
 }
@@ -254,8 +254,8 @@ fn parsedate_tz(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i
     Some((an, mois, jour, heure, minute, seconde, decalage))
 }
 
-/// L'en-tete `Date` lu, converti en heure locale naive en secondes, ou `None` quand il est illisible.
-fn date_lue(brut: &str) -> Option<i64> {
+/// L'en-tete `Date` lu, converti en heure locale naive, ou `None` quand il est illisible (ou hors du calendrier).
+fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
     let (an, mois, jour, h, mi, s, decalage) = parsedate_tz(brut)?;
     let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
         (Ok(a), Ok(m), Ok(j)) => (a, m, j),
@@ -266,7 +266,7 @@ fn date_lue(brut: &str) -> Option<i64> {
     if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
-    let naif = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s;
+    let naif = socle::paris::Naif::du_jour(j, h, mi, s)?;
     match decalage {
         None => Some(naif),
         Some(d) => {
@@ -274,8 +274,8 @@ fn date_lue(brut: &str) -> Option<i64> {
             if d.abs() >= 86_400 {
                 return None;
             }
-            let t = naif - d;
-            Some(t + socle::paris::decalage(t))
+            let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
+            Some(socle::paris::Moment::de_secondes(t as f64)?.local_naif())
         }
     }
 }

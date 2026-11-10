@@ -18,7 +18,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
-    let maintenant = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
+    let maintenant = socle::paris::maintenant_naif().iso();
     let d = envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier", &maintenant)?;
     for x in &d.inconnus {
         dire!("Non rattache : {}", x);

@@ -464,12 +464,12 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
         corps: corps.to_string(),
         ..Default::default()
     };
-    let t = socle::temps::secondes().floor() as i64;
+    let t = socle::temps::secondes();
     let mut frontiere = || Ok(String::new());
     let octets = crate::envoi::en_mime_avec(
         &message,
         &nu,
-        crate::envoi::Hasards { date: crate::envoi::date_de(t)?, message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
+        crate::envoi::Hasards { date: crate::envoi::date_de(t), message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
     )?;
     let entete_nu = format!("From: {}", nu);
     match rendu {

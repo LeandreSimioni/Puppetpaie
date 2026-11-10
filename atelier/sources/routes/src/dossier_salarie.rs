@@ -1022,20 +1022,16 @@ pub(crate) struct Entree {
 }
 
 /// La date et l'heure locales (Paris) au format DOS, a partir de secondes unix.
-fn horodatage_dos(secondes: i64) -> (u16, u16) {
-    let local = secondes + socle::paris::decalage(secondes);
-    let reste = local.rem_euclid(86_400);
+fn horodatage_dos(t: socle::paris::Moment) -> (u16, u16) {
+    let local = t.local_naif();
+    let reste = local.seconde_du_jour();
     let (h, m, s) = (reste / 3600, (reste % 3600) / 60, reste % 60);
-    // Le format DOS commence le 01/01/1980 : un instant d'avant (ou hors du calendrier) s'y ecrit.
-    let jour = match Jour::depuis_jours_unix(local.div_euclid(86_400)) {
-        Some(j) if j.an >= 1980 => j,
-        _ => return ((1 << 5) | 1, 0),
-    };
+    // Le format DOS commence le 01/01/1980 : un instant d'avant s'y ecrit.
+    let jour = local.jour();
+    if jour.an < 1980 {
+        return ((1 << 5) | 1, 0);
+    }
     ((((jour.an - 1980) as u16) << 9) | ((jour.mois as u16) << 5) | jour.jour as u16, ((h as u16) << 11) | ((m as u16) << 5) | (s / 2) as u16)
-}
-
-fn maintenant() -> i64 {
-    socle::temps::secondes().floor() as i64
 }
 
 /// Deflate, CRC-32, cree sous Unix.
@@ -1105,7 +1101,7 @@ pub(crate) fn zip(entrees: &[Entree]) -> R<Vec<u8>> {
 
 /// `z.writestr(nom, octets)`.
 pub(crate) fn entree_ecrite(nom: String, octets: Vec<u8>) -> Entree {
-    let (date, heure) = horodatage_dos(maintenant());
+    let (date, heure) = horodatage_dos(socle::temps::secondes());
     Entree { nom, octets, date, heure, attributs: 0o600 << 16 }
 }
 
@@ -1114,7 +1110,7 @@ pub(crate) fn entree_ecrite(nom: String, octets: Vec<u8>) -> Entree {
 pub(crate) fn entree_fichier(f: &Path, nom: String) -> R<Entree> {
     let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
     let meta = std::fs::metadata(f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
-    let (date, heure) = horodatage_dos(maintenant());
+    let (date, heure) = horodatage_dos(socle::temps::secondes());
     Ok(Entree { nom, octets, date, heure, attributs: (mode(&meta) & 0xFFFF) << 16 })
 }
 
@@ -1209,19 +1205,14 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(String, Vec<
 
 // ------------------------------------------------------------------ la route
 
-/// Le jour reel de Paris : `date.today()`, pas `ctx.aujourdhui`.
-pub(crate) fn aujourdhui_reel() -> R<Jour> {
-    let t = maintenant();
-    Jour::depuis_jours_unix((t + socle::paris::decalage(t)).div_euclid(86_400)).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : l'horloge du poste ne donne pas un jour du calendrier."))
-}
-
 /// Le dossier construit (et ecrit, sauf `apercu`). L'envoi (`archives`, `dossier-envoyer`)
 /// en a besoin tel quel : ses salaries, ses fichiers, ses pages.
 pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossier> {
     let annee = demande.annee.as_ref().map(AnneeDite::texte);
     let (ensemble, ecrire) = (demande.ensemble == Some(true), demande.apercu != Some(true));
     let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
-    let aujourdhui = aujourdhui_reel()?;
+    // Le jour reel de Paris, pas `ctx.aujourdhui`.
+    let aujourdhui = socle::temps::jour_de_paris();
     let inconnues: Vec<&str> = demande.categories.iter().flatten().map(String::as_str).filter(|c| !CATEGORIES.contains(c)).collect();
     if !inconnues.is_empty() {
         return Err(erreur_operation(format!("Catégorie inconnue : {}. Les catégories sont {}.", inconnues.join(", "), CATEGORIES.join(", "))));

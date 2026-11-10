@@ -276,7 +276,7 @@ pub struct Signalement {
     pub incidents: usize,
     pub empreinte: String,
     /// L'heure ou il s'est enregistre, en secondes (les doublons).
-    pub enregistre: i64,
+    pub enregistre: socle::paris::Naif,
     pub envoi: EnvoiDuMessage,
     pub numero: Option<String>,
     pub ticket: Option<String>,
@@ -444,7 +444,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         lu: None,
     };
     let ecrit = modifier(racine, |lignes| {
-        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant - l.enregistre < DOUBLON_SECONDES)) {
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant.depuis(l.enregistre) < DOUBLON_SECONDES)) {
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {

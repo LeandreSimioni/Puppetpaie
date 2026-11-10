@@ -55,6 +55,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{refus, R};
+use socle::paris::Moment;
 use socle::refus;
 
 use compagnie::installation::Venue;
@@ -78,7 +79,7 @@ pub struct Geste {
     pub n: Option<u64>,
     /// L'instant, en secondes UTC (le banc).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quand: Option<f64>,
+    pub quand: Option<Moment>,
     /// L'instant a Paris (`AAAA-MM-JJ`, ou `AAAA-MM-JJTHH:MM[:SS]`), ecrit a la main ou par le banc pour qui le relit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heure: Option<String>,
@@ -226,7 +227,7 @@ pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
 }
 
 /// L'heure lisible d'un instant, a Paris.
-fn heure(t: f64) -> String {
+fn heure(t: Moment) -> String {
     socle::paris::iso_secondes(t)
 }
 
@@ -275,7 +276,7 @@ pub struct Rejeu {
     /// Ce que l'horloge des fictives a joue pendant le rejeu, en phrases, precedees de l'heure du geste.
     pub horloge: Vec<String>,
     /// L'instant du dernier geste rejoue (secondes UTC) : le jour ou l'on lit la compagnie qui en sort.
-    pub fin: Option<f64>,
+    pub fin: Option<Moment>,
     /// Ce qui ne s'est pas passe comme a l'enregistrement : une route reussie qui refuse au rejeu, ou l'inverse.
     pub ecarts: Vec<String>,
 }
@@ -294,7 +295,7 @@ pub fn lire(scenario: &Path) -> R<Vec<Geste>> {
 
 /// L'instant qu'un geste ecrit : `quand`, sinon `heure` a Paris (`AAAA-MM-JJ` a 9 h, `AAAA-MM-JJTHH:MM[:SS]`), sinon le
 /// jour d'un geste `jour`, a 9 h. `None` : le geste n'en ecrit pas.
-fn instant_ecrit(g: &Geste) -> R<Option<f64>> {
+fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
     if let Some(t) = g.quand {
         return Ok(Some(t));
     }
@@ -319,15 +320,20 @@ fn instant_ecrit(g: &Geste) -> R<Option<f64>> {
     if !(0..24).contains(&h) || !(0..60).contains(&m) || !(0..60).contains(&s) {
         return Err(illisible());
     }
-    Ok(Some(socle::temps::instant_de(jour, h) + (m * 60 + s) as f64))
+    Ok(Some(Moment::a_paris(jour, h, m, s).ok_or_else(illisible)?))
+}
+
+/// L'instant d'une seconde apres `t`.
+fn seconde_apres(t: Moment) -> R<Moment> {
+    t.plus(1.0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))
 }
 
 /// Les instants de chaque geste, dans l'ordre du fichier : celui qu'il ecrit, ou une seconde apres le precedent. Un
 /// instant ecrit qui recule refuse le scenario ; un instant egal au precedent passe une seconde apres lui (deux gestes ne
 /// partagent jamais un instant : chacun tire ses aleas depuis le sien).
-fn instants(gestes: &[Geste]) -> R<Vec<f64>> {
-    let mut out: Vec<f64> = Vec::with_capacity(gestes.len());
-    let mut ecrit_avant: Option<f64> = None;
+fn instants(gestes: &[Geste]) -> R<Vec<Moment>> {
+    let mut out: Vec<Moment> = Vec::with_capacity(gestes.len());
+    let mut ecrit_avant: Option<Moment> = None;
     for (i, g) in gestes.iter().enumerate() {
         let geste = |m: String| refus!("geste {} : {}", i + 1, m);
         let precedent = out.last().copied();
@@ -338,11 +344,11 @@ fn instants(gestes: &[Geste]) -> R<Vec<f64>> {
                 }
                 ecrit_avant = Some(t);
                 match precedent {
-                    Some(p) if t <= p => p + 1.0,
+                    Some(p) if t <= p => seconde_apres(p)?,
                     _ => t,
                 }
             }
-            None => precedent.map(|p| p + 1.0).ok_or_else(|| geste("le premier geste n'a ni `quand` ni `heure`".to_string()))?,
+            None => seconde_apres(precedent.ok_or_else(|| geste("le premier geste n'a ni `quand` ni `heure`".to_string()))?)?,
         };
         out.push(t);
     }
@@ -452,7 +458,7 @@ fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>
 }
 
 /// Le jour a Paris d'un instant.
-fn jour_de(t: f64) -> Jour {
+fn jour_de(t: Moment) -> Jour {
     Jour::lire(&heure(t)[..10]).expect("un instant se lit en jour")
 }
 
@@ -462,7 +468,7 @@ fn rejouer_les_gestes(
     inst: &Path,
     travail: &Path,
     gestes: &[Geste],
-    instants: &[f64],
+    instants: &[Moment],
     options: &OptionsRejeu,
     arrets: &[Jour],
     lire_au: &mut dyn FnMut(Jour, &Rejeu),
@@ -490,9 +496,12 @@ fn rejouer_les_gestes(
             None => (g.clone(), t),
             Some(j) => match saisie_d_un_geste(g) {
                 Some(s) => {
-                    let neuf_heures = socle::temps::instant_de(j, 9);
+                    let neuf_heures = Moment::a_paris(j, 9, 0, 0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
                     (s, match r.fin {
-                        Some(f) => (f + 1.0).max(neuf_heures),
+                        Some(f) => {
+                            let apres = seconde_apres(f)?;
+                            if apres > neuf_heures { apres } else { neuf_heures }
+                        }
                         None => neuf_heures,
                     })
                 }
@@ -789,7 +798,7 @@ pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> 
 /// POSE LA COMPAGNIE REJOUEE `racine` dans `dest` (remplace), marquee fictive livree (`compagnies::MARQUE_FICTIVE` suivie
 /// du nom du dossier, sans la marque `ajoutee`) : ses envois sont joues, son horloge joue ce qui vient apres `fin`, le
 /// dernier geste rejoue.
-fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> R<()> {
+fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", dest.display()))?;
     let _ = std::fs::remove_dir_all(dest);
     for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel)) {
@@ -962,10 +971,11 @@ mod enregistreur {
             || rel.ends_with(".verrou")
     }
 
-    /// L'empreinte d'une compagnie : chaque fichier, sa taille et sa date (hors caches), ou ce que le disque en refuse ;
-    /// ou, quand ses fichiers ne se listent pas, le refus tel que la route le rendrait.
+    /// L'empreinte d'une compagnie : chaque fichier, sa taille et sa date (hors caches ; `None` : datee hors du calendrier,
+    /// ce qui se compare comme une date), ou ce que le disque en refuse ; ou, quand ses fichiers ne se listent pas, le
+    /// refus tel que la route le rendrait.
     enum Empreinte {
-        Lue(BTreeMap<String, Result<(u64, f64), std::io::ErrorKind>>),
+        Lue(BTreeMap<String, Result<(u64, Option<Moment>), std::io::ErrorKind>>),
         Refusee(crate::enveloppe::Refus),
     }
 
@@ -1009,15 +1019,15 @@ mod enregistreur {
         }
 
         /// Le dernier instant enregistre (le banc reprend apres lui).
-        pub fn dernier_instant(&self) -> R<Option<f64>> {
+        pub fn dernier_instant(&self) -> R<Option<Moment>> {
             if !self.dossier.join(GESTES).is_file() {
                 return Ok(None);
             }
-            Ok(lire(&self.dossier)?.iter().filter_map(|g| g.quand).reduce(f64::max))
+            Ok(lire(&self.dossier)?.iter().filter_map(|g| g.quand).reduce(|a, b| if b > a { b } else { a }))
         }
 
         /// Ecrit la ligne du geste `g`, au rang suivant et a son instant.
-        fn ecrire(&self, n: &mut u64, g: Geste, quand: f64) -> R<()> {
+        fn ecrire(&self, n: &mut u64, g: Geste, quand: Moment) -> R<()> {
             *n += 1;
             let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(heure(quand)), ..g };
             let f = self.dossier.join(GESTES);

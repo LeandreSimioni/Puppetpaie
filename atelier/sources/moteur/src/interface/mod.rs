@@ -150,7 +150,7 @@ enum Atelier {
         simule: bool,
         jour: String,
         heure: String,
-        secondes: f64,
+        secondes: socle::paris::Moment,
         scenario: Option<String>,
         compagnie: Option<String>,
         simulee: bool,
@@ -734,7 +734,7 @@ impl Fenetre {
                 let texte = std::str::from_utf8(corps).map_err(|e| socle::echec::refus(e.to_string()))?;
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
                 let jour = socle::date::Jour::lire(&jour)?;
-                let instant = socle::temps::instant_de(jour, 9);
+                let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
                     return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
                 }
@@ -1142,7 +1142,7 @@ impl Fenetre {
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a
 /// refuse. Ni la charge ni la reponse : seulement de quoi mesurer.
 pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> String {
-    let heure = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
+    let heure = socle::paris::maintenant_naif().iso();
     // L'heure seule (`HH:MM:SS`), apres la date de l'horodatage.
     let a_l_heure = match heure.get(11..) {
         Some(h) => h,
@@ -1286,15 +1286,19 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
         Some(e) => e.dernier_instant()?,
         None => None,
     };
+    let hors_calendrier = || socle::echec::refus(socle::date::HORS_CALENDRIER);
     let depart = match (jour, dernier) {
-        (Some(j), Some(t)) if socle::temps::instant_de(j, 9) <= t => {
-            return Err(socle::echec::refus_avec(
-                format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
-                socle::echec::Lieu { detail: Some(j.iso()), ..Default::default() },
-            ))
+        (Some(j), dernier) => {
+            let neuf_heures = socle::paris::Moment::a_paris(j, 9, 0, 0).ok_or_else(hors_calendrier)?;
+            if let Some(t) = dernier.filter(|t| neuf_heures <= *t) {
+                return Err(socle::echec::refus_avec(
+                    format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
+                    socle::echec::Lieu { detail: Some(j.iso()), ..Default::default() },
+                ));
+            }
+            Some(neuf_heures)
         }
-        (Some(j), _) => Some(socle::temps::instant_de(j, 9)),
-        (None, Some(t)) => Some(t + 60.0),
+        (None, Some(t)) => Some(t.plus(60.0).ok_or_else(hors_calendrier)?),
         (None, None) => None,
     };
     if let Some(t) = depart {

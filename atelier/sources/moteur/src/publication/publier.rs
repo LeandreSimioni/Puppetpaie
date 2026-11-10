@@ -375,7 +375,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     let windows = archives.windows.clone();
     let manifeste = Publiee {
         version,
-        publiee_le: socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..10].to_string(),
+        publiee_le: socle::paris::maintenant_naif().iso()[..10].to_string(),
         notes: notes.to_string(),
         calcul: calcul.to_string(),
         exigee: exigee.to_string(),

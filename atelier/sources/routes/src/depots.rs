@@ -388,14 +388,9 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// Les secondes unix de l'horloge.
-fn maintenant() -> f64 {
-    socle::temps::secondes()
-}
-
 /// L'heure de Paris, en `AAAA-MM-JJTHH:MM:SS`.
 fn maintenant_iso() -> String {
-    socle::paris::iso_secondes(maintenant())
+    socle::paris::maintenant()
 }
 
 fn ecrire_texte(chemin: &Path, texte: &str) -> R<()> {
@@ -833,7 +828,7 @@ impl Designation {
 pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let ChargeSuivre { quoi, flux, mois } = c;
     let dpae = quoi == Quoi::Dpae;
-    let (debut, fin) = releve_retours::derniere_journee();
+    let (debut, fin) = releve_retours::derniere_journee()?;
     let releve = if dpae {
         crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
     } else {
@@ -886,7 +881,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     let mut repetition = bilan_de_la_repetition(ctx, &d)?;
     let mut incident = String::new();
     if repetition.etat == etats::EtatDuTest::EnTest {
-        let (debut, fin) = releve_retours::derniere_journee();
+        let (debut, fin) = releve_retours::derniere_journee()?;
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();

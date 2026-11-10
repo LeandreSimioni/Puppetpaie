@@ -610,8 +610,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         }
         if reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
-            let (debut, fin) = envois::releve_retours::derniere_journee();
-            let _ = crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None);
+            let _ = envois::releve_retours::derniere_journee().and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None));
             fait = deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ());
         }
         let qui_demande = ctx.nomme(&l.salarie);

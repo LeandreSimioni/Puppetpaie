@@ -619,7 +619,7 @@ fn est_copie(racine: &Path) -> bool {
 
 /// L'heure de Paris, `JJ/MM/AAAA HH:MM`.
 fn quand_maintenant() -> String {
-    let iso = socle::paris::iso_de_naif(socle::paris::maintenant_naif());
+    let iso = socle::paris::maintenant_naif().iso();
     format!("{}/{}/{} {}:{}", &iso[8..10], &iso[5..7], &iso[0..4], &iso[11..13], &iso[14..16])
 }
 
@@ -633,8 +633,8 @@ fn age_de_la_derniere(precedente: &Trace) -> R<i64> {
     }
     let tranche = |a: usize, b: usize| -> String { c[a..b].iter().collect() };
     let iso = format!("{}-{}-{}T{}", tranche(6, 10), tranche(3, 5), tranche(0, 2), tranche(11, 16));
-    let avant = socle::paris::naif_de_iso(&iso).ok_or_else(illisible)?;
-    Ok(socle::paris::maintenant_naif() - avant)
+    let avant = socle::paris::Naif::lire(&iso).ok_or_else(illisible)?;
+    Ok(socle::paris::maintenant_naif().depuis(avant))
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
@@ -933,7 +933,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…");
             let fin = socle::paris::maintenant_naif();
-            match crate::gestes::releve::relever_retours(ctx, fin - opt.jours * 86_400, fin, false, "production", client_dsn, None) {
+            match fin.plus(-opt.jours * 86_400).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, None)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -966,13 +966,12 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "Urssaf : retours des DPAE…");
             let fin = socle::paris::maintenant_naif();
-            let debut = fin - opt.jours * 86_400;
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = match client_dpae {
+            let rel = fin.plus(-opt.jours * 86_400).and_then(|debut| match client_dpae {
                 Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
-            };
+            });
             match rel {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());

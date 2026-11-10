@@ -12,6 +12,12 @@ mod outils;
 
 use serde_json::{json, Value};
 
+/// L'instant dont les secondes depuis 1970 sont celles de l'heure naive `iso` (`AAAA-MM-JJTHH:MM:SS`).
+fn instant_naif(iso: &str) -> socle::paris::Moment {
+    let epoque = socle::paris::Naif::lire("1970-01-01").unwrap();
+    socle::paris::Moment::de_secondes(socle::paris::Naif::lire(iso).unwrap().depuis(epoque) as f64).unwrap()
+}
+
 /// LES TRETEAUX DU BANC : le petit scenario de la preuve, joue au banc. Une compagnie ajoutee par le « + »
 /// d'un logiciel bride, configuree juste assez pour payer (convention 3090), une comedienne, deux cachets les 20 et
 /// 21/11/2026 ; puis le geste d'atelier qui rend ses envois simules, et le calendrier avance au 20/11, au 01/12, au 16/12 :
@@ -278,7 +284,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let annoncer = |a: Value| {
         let a: envois::organismes_simules::Annonce = socle::forme::lire(&a, "l'annonce").unwrap();
         // Annoncee avant le depot : le 1er novembre.
-        let le = socle::paris::naif_de_iso("2026-11-01T12:00:00").unwrap() as f64;
+        let le = instant_naif("2026-11-01T12:00:00");
         socle::temps::pendant(le, || envois::organismes_simules::annoncer(&racine, compagnie::bridage::branchement(&racine).unwrap(), &a)).unwrap();
     };
     let relever = || {
@@ -317,7 +323,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     // mois est accepte.
     let de_novembre = || outils::journal(&racine).as_array().unwrap().iter().filter(|l| l["fichier"] == json!("DSN_Novembre2026.dsn")).count();
     let ouvrir = |jour: &str| {
-        let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
+        let le = instant_naif(&format!("{}T09:00:00", jour));
         socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap()
     };
     let avant = de_novembre();
@@ -384,7 +390,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
     assert_eq!(type_ecrit("FULLER"), json!("01"), "le taux arrive refait l'engagement");
 
     for jour in ["2026-11-20", "2026-12-16"] {
-        let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
+        let le = instant_naif(&format!("{}T09:00:00", jour));
         socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     let depots = outils::journal(&racine);
@@ -427,7 +433,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     outils::reussi(&outils::saisir(&racine, "2026-11", None, &carte, "2026-11-16"));
     outils::reussi(&outils::valider_la_carte(&racine, "2026-11", "FULLER", "2026-11-16"));
     for jour in ["2026-11-20", "2026-12-01"] {
-        let le = socle::paris::naif_de_iso(&format!("{}T09:00:00", jour)).unwrap() as f64;
+        let le = instant_naif(&format!("{}T09:00:00", jour));
         socle::temps::pendant(le, || routes::horloge::rattraper(&racine, Some(socle::date::Jour::lire(jour).unwrap()), true)).unwrap();
     }
     for reel in [false, true] {

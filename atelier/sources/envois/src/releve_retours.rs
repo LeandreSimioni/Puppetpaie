@@ -22,15 +22,15 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
-use socle::paris::{iso_de_naif, maintenant_naif};
+use socle::paris::{maintenant_naif, Naif};
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
 use crate::suites::Suites;
 
 /// `AAAAMMJJ-HHMMSS` d'une heure locale naive.
-fn horodatage_archive(local: i64) -> String {
-    let iso = iso_de_naif(local);
+fn horodatage_archive(local: Naif) -> String {
+    let iso = local.iso();
     format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19])
 }
 
@@ -214,13 +214,13 @@ impl Client {
     }
 
     /// La consultation d'une plage (heures locales naives).
-    fn consulter(&mut self, base: &str, debut: i64, fin: Option<i64>) -> Result<Vec<u8>, Panne> {
+    fn consulter(&mut self, base: &str, debut: Naif, fin: Option<Naif>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        let fin = fin.map(iso_de_naif);
-        Ok(crate::transport::consulter(base, self.jeton.as_deref(), &iso_de_naif(debut), fin.as_deref())?)
+        let fin = fin.map(Naif::iso);
+        Ok(crate::transport::consulter(base, self.jeton.as_deref(), &debut.iso(), fin.as_deref())?)
     }
 
-    pub fn lister_retours(&mut self, debut: i64, fin: i64) -> Result<Vec<Annonce>, Panne> {
+    pub fn lister_retours(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Annonce>, Panne> {
         let base = self.adresses.retours.clone();
         let brut = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
@@ -228,7 +228,7 @@ impl Client {
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
-    pub fn lister_depots(&mut self, debut: i64, fin: i64) -> Result<Vec<Depot>, Panne> {
+    pub fn lister_depots(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Depot>, Panne> {
         let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
         let brut = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
@@ -399,14 +399,15 @@ fn en_echec(p: Panne) -> Echec {
 }
 
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
-fn tranches(debut: i64, fin: i64) -> Vec<(i64, i64)> {
+pub fn tranches(debut: Naif, fin: Naif) -> R<Vec<(Naif, Naif)>> {
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        v.push((t, (t + 86_400).min(fin)));
-        t += 86_400;
+        let suivant = if fin.depuis(t) > 86_400 { t.plus(86_400)? } else { fin };
+        v.push((t, suivant));
+        t = suivant;
     }
-    v
+    Ok(v)
 }
 
 /// LE SIMULATEUR : pose les retours des depots joues qui les attendent, et rend le nombre de
@@ -544,8 +545,8 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: i64,
-    fin: i64,
+    debut: Naif,
+    fin: Naif,
     tout: bool,
     client: Option<Client>,
     canal: &str,
@@ -579,7 +580,7 @@ pub fn relever_retours(
     let connus = deja_vus(ctx, canal)?;
     // UN 404 SUR UNE TRANCHE VEUT DIRE << RIEN SUR CETTE TRANCHE >> ; tout autre code arrete : un 401 ne
     // s'ameliorera pas au jour suivant.
-    for (t0, t1) in tranches(debut, fin) {
+    for (t0, t1) in tranches(debut, fin)? {
         match client.lister_retours(t0, t1) {
             Ok(trouves) => {
                 for r in trouves {
@@ -676,8 +677,8 @@ pub fn relever_retours(
 pub fn relever_retours_dpae(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: i64,
-    fin: i64,
+    debut: Naif,
+    fin: Naif,
     tout: bool,
     flux: Option<&str>,
     client: Option<Client>,
@@ -731,9 +732,9 @@ pub fn relever_retours_dpae(
 }
 
 /// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
-pub fn derniere_journee() -> (i64, i64) {
+pub fn derniere_journee() -> R<(Naif, Naif)> {
     let fin = maintenant_naif();
-    (fin - 86_400, fin)
+    Ok((fin.plus(-86_400)?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif

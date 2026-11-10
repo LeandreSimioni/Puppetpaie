@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
+use socle::paris::Naif;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -203,9 +204,9 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 }
 
 /// « depuis 09:51 » le jour meme, « depuis hier », « depuis le 18/10 ».
-fn depuis_quand(depuis: i64, maintenant: i64) -> String {
-    let iso = socle::paris::iso_de_naif(depuis);
-    match maintenant.div_euclid(UNE_JOURNEE) - depuis.div_euclid(UNE_JOURNEE) {
+fn depuis_quand(depuis: Naif, maintenant: Naif) -> String {
+    let iso = depuis.iso();
+    match maintenant.jour().moins(&depuis.jour()) {
         0 => format!("depuis {}", &iso[11..16]),
         1 => "depuis hier".to_string(),
         _ => format!("depuis le {}/{}", &iso[8..10], &iso[5..7]),
@@ -213,18 +214,18 @@ fn depuis_quand(depuis: i64, maintenant: i64) -> String {
 }
 
 /// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive ; une heure qui ne se lit pas abime l'index.
-fn naif(quand: &str) -> Result<i64, ErreurGoogle> {
-    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::Lieu { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
+fn naif(quand: &str) -> Result<Naif, ErreurGoogle> {
+    Naif::lire(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::Lieu { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
-pub fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<String>, ErreurGoogle> {
+pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<String>, ErreurGoogle> {
     let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
-    let mut tous: Vec<(&String, i64, &str, bool)> = Vec::new();
+    let mut tous: Vec<(&String, Naif, &str, bool)> = Vec::new();
     for (cle, e) in echecs {
         let depuis = naif(&e.depuis)?;
-        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant - depuis >= UNE_JOURNEE));
+        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant.depuis(depuis) >= UNE_JOURNEE));
     }
     let complete = match &index.derniere_complete {
         Some(c) => Some(naif(c)?),
@@ -234,7 +235,7 @@ pub fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<Strin
     let (retenus, par_l_item): (Vec<_>, bool) = if !durent.is_empty() {
         (durent, true)
     } else {
-        match complete.filter(|c| maintenant - c >= UNE_JOURNEE) {
+        match complete.filter(|c| maintenant.depuis(*c) >= UNE_JOURNEE) {
             Some(_) => (tous.iter().collect(), false),
             None => return Ok(None),
         }
@@ -360,7 +361,15 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurG
             Err(e) => return Err(ErreurGoogle::fichier(&e, &complet)),
         };
         let relatif = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
-        trouves.push((relatif, Etat { octets: m.len(), mtime: socle::paris::mtime(&m) as i64 }));
+        // La date du fichier dit s'il a change depuis son dernier envoi : datee hors du calendrier, elle ne le dit pas, et
+        // la sauvegarde s'arrete en le nommant plutot que de l'envoyer a l'aveugle.
+        let Some(date) = socle::paris::mtime(&m) else {
+            return Err(ErreurGoogle::nouvelle(
+                Classe::Disque,
+                format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
+            ));
+        };
+        trouves.push((relatif, Etat { octets: m.len(), mtime: date.secondes() as i64 }));
     }
     Ok((trouves, ecartes))
 }

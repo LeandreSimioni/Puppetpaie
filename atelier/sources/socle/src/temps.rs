@@ -34,12 +34,13 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use sha2::{Digest, Sha256};
 
 use crate::date::Jour;
+use crate::paris::Moment;
 
 /// Le temps du processus, quand il est simule.
 #[derive(Clone, Copy)]
 struct Simule {
     /// Le temps qui coule : l'instant simule pose, et la montre a ce moment-la. `None` : on fige seulement (le rejeu).
-    coule: Option<(f64, Instant)>,
+    coule: Option<(Moment, Instant)>,
     /// Les aleas en suite fixe (le rejeu, le banc) ; sinon, les aleas du systeme.
     aleas_fixes: bool,
 }
@@ -48,7 +49,7 @@ static SIMULE: Mutex<Option<Simule>> = Mutex::new(None);
 
 thread_local! {
     /// L'instant que lit la route servie sur ce fil, tant qu'il est pose.
-    static FIGE: Cell<Option<f64>> = const { Cell::new(None) };
+    static FIGE: Cell<Option<Moment>> = const { Cell::new(None) };
     /// Les tirages deja faits par la route servie sur ce fil (aleas en suite fixe).
     static TIRAGES: Cell<u64> = const { Cell::new(0) };
     /// Le pas de l'horloge d'une compagnie fictive joue sur ce fil hors d'un rejeu (`pendant_le_pas_fictif`) : ses aleas
@@ -69,10 +70,19 @@ fn aleas_fixes_ici() -> bool {
     aleas_fixes_poses() || PAS_FICTIF.with_borrow(Option::is_some)
 }
 
-fn montre() -> f64 {
+fn montre() -> Moment {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs_f64(),
+        Ok(d) => dans_le_calendrier(Moment::de_secondes(d.as_secs_f64())),
         Err(avant_1970) => horloge_dereglee(avant_1970),
+    }
+}
+
+/// L'HORLOGE HORS DU CALENDRIER (apres l'an 9999) : la meme panne que celle d'avant 1970, a sa source. Le temps qui
+/// coule au banc depuis un instant du calendrier, ou le jour pose a l'heure de la montre, y passent aussi.
+fn dans_le_calendrier(t: Option<Moment>) -> Moment {
+    match t {
+        Some(t) => t,
+        None => panic!("L'horloge de cet ordinateur ne donne pas un jour du calendrier (années 1 à 9999) : la remettre à l'heure."),
     }
 }
 
@@ -92,12 +102,12 @@ fn horloge_dereglee(e: std::time::SystemTimeError) -> ! {
 
 /// L'instant present, en secondes depuis 1970 (UTC) : fige pour la route de ce fil, ou simule s'il coule, sinon la montre
 /// de la machine, portee au jour que `PUPPETPAIE_AUJOURDHUI` pose quand il y en a un (a la meme heure de Paris).
-pub fn secondes() -> f64 {
+pub fn secondes() -> Moment {
     if let Some(t) = FIGE.get() {
         return t;
     }
     match etat().as_ref() {
-        Some(Simule { coule: Some((depart, pose)), .. }) => depart + pose.elapsed().as_secs_f64(),
+        Some(Simule { coule: Some((depart, pose)), .. }) => dans_le_calendrier(depart.plus(pose.elapsed().as_secs_f64())),
         _ => au_jour_pose(montre()),
     }
 }
@@ -106,18 +116,22 @@ pub fn secondes() -> f64 {
 /// de Paris ou il a ete lu pour la premiere fois et le jour pose : la meme heure (a une heure pres d'un changement d'heure
 /// entre les deux), ce jour-la, et minuit passe comme a la montre. Sans jour pose (ou pose vide), `t` tel quel. Un jour
 /// pose illisible arrete le moteur : celui qui le pose (un test, un banc) le corrige, rien ne compte a la montre a sa place.
-fn au_jour_pose(t: f64) -> f64 {
+fn au_jour_pose(t: Moment) -> Moment {
     static DECALAGE: Mutex<Option<(Jour, f64)>> = Mutex::new(None);
     let Some(jour) = jour_pose() else { return t };
     let mut d = crate::memoire::tenu(&DECALAGE);
-    if let Some((_, decalage)) = d.as_ref().filter(|(lu, _)| *lu == jour) {
-        return t + decalage;
+    let decalage = match d.as_ref().filter(|(lu, _)| *lu == jour) {
+        Some((_, decalage)) => *decalage,
+        None => {
+            let decalage = jour.moins(&t.jour_de_paris()) as f64 * 86_400.0;
+            *d = Some((jour, decalage));
+            decalage
+        }
+    };
+    match t.plus(decalage) {
+        Some(t) => t,
+        None => panic!("PUPPETPAIE_AUJOURDHUI : le {} à l'heure de la montre sort du calendrier (années 1 à 9999).", jour.iso()),
     }
-    let entier = t.floor() as i64;
-    let jour_de_la_montre = (entier + crate::paris::decalage(entier)).div_euclid(86_400);
-    let decalage = ((jour.ordinal() - 719_163) - jour_de_la_montre) as f64 * 86_400.0;
-    *d = Some((jour, decalage));
-    t + decalage
 }
 
 /// LE JOUR QUE `PUPPETPAIE_AUJOURDHUI` POSE (AAAA-MM-JJ), seul endroit ou cette variable se lit ; `None` : elle n'est pas
@@ -141,7 +155,7 @@ pub fn simule() -> bool {
 
 /// LE BANC : le temps coule depuis `instant` (secondes UTC), au pas de la montre. Ce qui etait fige sur ce fil ne l'est
 /// plus.
-pub fn couler_depuis(instant: f64) {
+pub fn couler_depuis(instant: Moment) {
     let mut e = etat();
     let aleas_fixes = e.as_ref().is_some_and(|s| s.aleas_fixes);
     *e = Some(Simule { coule: Some((instant, Instant::now())), aleas_fixes });
@@ -150,7 +164,7 @@ pub fn couler_depuis(instant: f64) {
 
 /// Fige l'instant pour la route de ce fil (le rejeu d'un geste, une route servie au banc) ; le temps qui coule, s'il y en
 /// a un, reprend a `defiger`.
-pub fn figer(instant: f64) {
+pub fn figer(instant: Moment) {
     FIGE.set(Some(instant));
     // LES ALEAS DE CHAQUE GESTE repartent de zero a son instant : un geste tire la meme suite au banc et au rejeu,
     // quelles que soient les lectures (que le rejeu ecarte) tirees avant lui.
@@ -167,7 +181,7 @@ pub fn defiger() {
 /// `f`, le temps fige a `instant` sur ce fil ; puis le temps redevient ce qu'il etait (la montre, le banc qui coule,
 /// l'instant du geste rejoue), les aleas poursuivant leur suite. Un geste joue a sa date par l'horloge d'une compagnie
 /// fictive.
-pub fn pendant<T>(instant: f64, f: impl FnOnce() -> T) -> T {
+pub fn pendant<T>(instant: Moment, f: impl FnOnce() -> T) -> T {
     let avant = FIGE.replace(Some(instant));
     let r = f();
     FIGE.set(avant);
@@ -179,7 +193,7 @@ pub fn pendant<T>(instant: f64, f: impl FnOnce() -> T) -> T {
 /// sur le poste), ils sont la suite fixe du pas, tiree de `pas` (ce qui le nomme et son heure) et d'un compteur parti de
 /// zero : deux horloges qui jouent les memes pas ecrivent les memes octets (un code de signature, un nom de courriel).
 /// Une fictive n'a aucun secret : rien ne part d'elle.
-pub fn pendant_le_pas_fictif<T>(instant: f64, pas: &str, f: impl FnOnce() -> T) -> T {
+pub fn pendant_le_pas_fictif<T>(instant: Moment, pas: &str, f: impl FnOnce() -> T) -> T {
     if aleas_fixes_poses() {
         return pendant(instant, f);
     }
@@ -209,23 +223,12 @@ pub fn liberer() {
 
 /// Le jour qu'on est a Paris, au temps du moteur.
 pub fn jour_de_paris() -> Jour {
-    let t = secondes().floor() as i64;
-    let local = t + crate::paris::decalage(t);
-    Jour::depuis_jours_unix(local.div_euclid(86_400)).expect("horloge")
+    secondes().jour_de_paris()
 }
 
 /// Le jour UTC, au temps du moteur (`contexte::jour_reel`).
 pub fn jour_utc() -> Jour {
-    Jour::depuis_jours_unix(secondes().div_euclid(86_400.0) as i64).expect("horloge")
-}
-
-/// L'instant de `jour` a `heure` h, heure de Paris, en secondes UTC.
-pub fn instant_de(jour: Jour, heure: i64) -> f64 {
-    let local = (jour.ordinal() - 719_163) * 86_400 + heure * 3_600;
-    // Le decalage de Paris a cet instant : celui de l'instant local lu comme UTC, corrige une fois (un changement d'heure
-    // ne tombe jamais a 9 h).
-    let approx = local - crate::paris::decalage(local);
-    (local - crate::paris::decalage(approx)) as f64
+    secondes().jour_utc()
 }
 
 /// DES ALEAS POUR UN IDENTIFIANT (le nom d'un courriel joue, une frontiere MIME, le flux d'un depot joue) : ceux du
@@ -236,7 +239,7 @@ pub fn aleas(o: &mut [u8]) -> crate::echec::R<()> {
     let tirage = aleas_fixes_ici().then(|| {
         let rang = TIRAGES.get() + 1;
         TIRAGES.set(rang);
-        let graine: u64 = FIGE.get().into_iter().map(f64::to_bits).sum();
+        let graine: u64 = FIGE.get().into_iter().map(|t| t.secondes().to_bits()).sum();
         (rang, graine)
     });
     let Some((rang, graine)) = tirage else {

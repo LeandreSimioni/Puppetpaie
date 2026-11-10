@@ -759,7 +759,7 @@ pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> 
         None => expediteur,
     };
     let hasards = Hasards {
-        date: date_locale()?,
+        date: date_de(socle::temps::secondes()),
         message_id: nouveau_message_id(if domaine.is_empty() { "localhost.localdomain" } else { domaine })?,
         frontiere: &mut frontiere,
     };
@@ -971,29 +971,21 @@ fn frontiere_au_hasard() -> R<String> {
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
 pub fn nouveau_message_id(domaine: &str) -> R<String> {
-    let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
+    let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes().secondes());
     let centiemes = maintenant.as_millis() / 10;
     Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
-/// La date d'un en-tête de courriel, maintenant, à l'heure de Paris.
-fn date_locale() -> R<String> {
-    let t = socle::temps::secondes().floor() as i64;
-    date_de(t)
-}
-
-/// La date RFC 5322 d'un instant (secondes unix), heure de Paris.
-pub fn date_de(t: i64) -> R<String> {
+/// La date RFC 5322 d'un instant, heure de Paris.
+pub fn date_de(t: socle::paris::Moment) -> String {
     const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let decalage = socle::paris::decalage(t);
-    let local = t + decalage;
-    let jours = local.div_euclid(86_400);
-    let secondes = local.rem_euclid(86_400);
-    let j = socle::date::Jour::depuis_jours_unix(jours).ok_or_else(|| socle::echec::refus("L'horloge du poste donne une date impossible."))?;
+    let local = t.local_naif();
+    let (j, secondes) = (local.jour(), local.seconde_du_jour());
     // Le 01/01/1970 etait un jeudi.
-    let semaine = (jours + 3).rem_euclid(7) as usize;
-    Ok(format!(
+    let semaine = (j.ordinal() - 719_163 + 3).rem_euclid(7) as usize;
+    format!(
         "{}, {:02} {} {:04} {:02}:{:02}:{:02} {}{:02}{:02}",
         JOURS[semaine],
         j.jour,
@@ -1005,7 +997,7 @@ pub fn date_de(t: i64) -> R<String> {
         if decalage < 0 { '-' } else { '+' },
         decalage.abs() / 3600,
         decalage.abs() % 3600 / 60
-    ))
+    )
 }
 
 /// Le nombre de lignes d'un texte, pour le refus d'un en-tête à plusieurs lignes.

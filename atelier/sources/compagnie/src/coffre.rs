@@ -660,7 +660,7 @@ impl Coffre {
         if !self.maintenant.is_empty() {
             return self.maintenant.clone();
         }
-        socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..16].to_string()
+        socle::paris::maintenant_naif().iso()[..16].to_string()
     }
 
     pub fn chemin(&self) -> PathBuf {

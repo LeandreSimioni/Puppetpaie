@@ -193,14 +193,14 @@ fn motif_de(e: &Echec) -> String {
     message.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
-/// L'instant d'un pas, `AAAA-MM-JJTHH:MM:SS` a l'heure de Paris, en secondes UTC.
-fn instant_du_pas(quand: &str) -> R<(Jour, f64)> {
+/// L'instant d'un pas, `AAAA-MM-JJTHH:MM:SS` a l'heure de Paris.
+fn instant_du_pas(quand: &str) -> R<(Jour, socle::paris::Moment)> {
     let illisible = || erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge ne se lit pas : {}.", quand));
     let (jour, heure) = quand.split_once('T').ok_or_else(illisible)?;
     let jour = Jour::lire(jour).map_err(|_| illisible())?;
     let hms = heure.split(':').map(|x| x.parse::<i64>().map_err(|_| illisible())).collect::<R<Vec<i64>>>()?;
     let [h, m, s] = hms[..] else { return Err(illisible()) };
-    Ok((jour, socle::temps::instant_de(jour, h) + (m * 60 + s) as f64))
+    Ok((jour, socle::paris::Moment::a_paris(jour, h, m, s).ok_or_else(illisible)?))
 }
 
 /// Un pas joue -- le geste, ses lignes de journal datees, et sa phrase. Une erreur devient la phrase, sans

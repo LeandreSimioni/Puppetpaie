@@ -7,16 +7,162 @@
 //! UTC+2 du dernier dimanche de mars (1 h UTC) au dernier dimanche d'octobre
 //! (1 h UTC), UTC+1 le reste de l'annee. Avant 2002, d'autres directives
 //! reglaient la periode ; aucune date de fichier du logiciel n'y remonte.
+//!
+//! UN INSTANT EST UN `Moment` : des secondes depuis 1970, dont le jour, en UTC comme a Paris, est un jour du calendrier
+//! (`Jour` : annees 1 a 9999). Il ne se construit que par ses constructeurs, qui le verifient a sa source (l'horloge,
+//! un jour pose, un instant ecrit dans un fichier, la date d'un fichier) : les fonctions d'ici sont totales.
 
 use crate::date::Jour;
 
-/// Le jour d'un jour unix ; hors du calendrier (annees 1 a 9999), l'epoque unix, le 01/01/1970 : une horloge qui en
-/// sort n'a pas de date a dire.
-fn jour_unix(jours: i64) -> Jour {
-    match Jour::depuis_jours_unix(jours) {
-        Some(j) => j,
-        None => Jour { an: 1970, mois: 1, jour: 1 },
+/// Le premier instant : le 01/01/0001 a 0 h UTC.
+const PREMIER: i64 = (1 - 719_163) * 86_400;
+/// Le dernier instant dont l'heure de Paris, arrondie a la seconde, tombe encore le 31/12/9999 : deux heures et une
+/// seconde avant sa fin en UTC (l'heure d'ete ajoute deux heures).
+const DERNIER: i64 = (3_652_059 + 1 - 719_163) * 86_400 - 7_201;
+
+/// UN INSTANT, en secondes depuis le 01/01/1970 (UTC), dans le calendrier (le module).
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct Moment(f64);
+
+impl Moment {
+    /// L'instant de `t` secondes depuis 1970 ; `None` hors du calendrier (ou qui n'est pas un nombre).
+    pub fn de_secondes(t: f64) -> Option<Moment> {
+        (t >= PREMIER as f64 && t <= DERNIER as f64).then_some(Moment(t))
     }
+
+    /// L'instant de `jour` a `heure:minute:seconde`, heure de Paris ; `None` hors du calendrier.
+    pub fn a_paris(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Moment> {
+        let local = (jour.ordinal() - 719_163) * 86_400 + heure * 3_600;
+        // Le decalage de Paris a cet instant : celui de l'instant local lu comme UTC, corrige une fois (un changement
+        // d'heure ne tombe jamais a l'heure d'un pas).
+        let approx = local - decalage_brut(local)?;
+        Moment::de_secondes((local - decalage_brut(approx)?) as f64 + (minute * 60 + seconde) as f64)
+    }
+
+    /// Les secondes depuis 1970.
+    pub fn secondes(self) -> f64 {
+        self.0
+    }
+
+    /// Les secondes entieres depuis 1970 (l'instant arrondi a la seconde d'avant).
+    pub fn entieres(self) -> i64 {
+        self.0.floor() as i64
+    }
+
+    /// `secondes` plus tard (moins tot : negatives) ; `None` hors du calendrier.
+    pub fn plus(self, secondes: f64) -> Option<Moment> {
+        Moment::de_secondes(self.0 + secondes)
+    }
+
+    /// Le jour de Paris de cet instant.
+    pub fn jour_de_paris(self) -> Jour {
+        self.local_naif().jour()
+    }
+
+    /// Le jour UTC de cet instant.
+    pub fn jour_utc(self) -> Jour {
+        dans_le_calendrier(self.entieres().div_euclid(86_400))
+    }
+
+    /// L'heure de Paris de cet instant, en secondes d'une epoque « naive » (l'instant arrondi a la seconde d'avant).
+    pub fn local_naif(self) -> Naif {
+        let t = self.entieres();
+        Naif(t + decalage(self))
+    }
+}
+
+/// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, lues contre le calendrier.
+impl serde::Serialize for Moment {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_f64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Moment {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Moment, D::Error> {
+        let t = f64::deserialize(d)?;
+        Moment::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas un instant du calendrier (années 1 à 9999)", t)))
+    }
+}
+
+/// UNE HEURE DE PARIS, en secondes d'une epoque « naive » (l'heure locale lue comme si c'etait de l'UTC) : de quoi
+/// additionner des heures et comparer deux heures locales. Son jour est un jour du calendrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Naif(i64);
+
+impl Naif {
+    /// L'heure locale naive d'un `AAAA-MM-JJ[THH:MM[:SS]]`, ou `None` (ce qui ne se lit pas, ou qui sort du calendrier).
+    pub fn lire(iso: &str) -> Option<Naif> {
+        let c: Vec<char> = iso.chars().collect();
+        let n = |a: usize, b: usize| -> Option<i64> {
+            let t: String = c.get(a..b)?.iter().collect();
+            // Des chiffres seuls, au plus quatre : leur valeur se compte, sans lecture qui puisse echouer.
+            t.chars().all(|x| x.is_ascii_digit()).then(|| t.bytes().fold(0i64, |n, x| n * 10 + i64::from(x - b'0')))
+        };
+        let jour = Jour::nouveau(n(0, 4)? as i32, n(5, 7)? as u32, n(8, 10)? as u32)?;
+        let (h, m, s) = if c.len() >= 16 { (n(11, 13)?, n(14, 16)?, if c.len() >= 19 { n(17, 19)? } else { 0 }) } else { (0, 0, 0) };
+        Naif::du_jour(jour, h, m, s)
+    }
+
+    /// `jour` a `heure:minute:seconde` ; `None` si l'heure deborde hors du calendrier.
+    pub fn du_jour(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Naif> {
+        Naif::de_secondes((jour.ordinal() - 719_163) * 86_400 + heure * 3_600 + minute * 60 + seconde)
+    }
+
+    /// L'heure de `local` secondes naives depuis 1970 ; `None` hors du calendrier.
+    pub fn de_secondes(local: i64) -> Option<Naif> {
+        Jour::depuis_jours_unix(local.div_euclid(86_400)).map(|_| Naif(local))
+    }
+
+    /// Les secondes passees depuis minuit, ce jour-la.
+    pub fn seconde_du_jour(self) -> i64 {
+        self.0.rem_euclid(86_400)
+    }
+
+    /// `secondes` plus tard (plus tot : negatives), refuse hors du calendrier.
+    #[track_caller]
+    pub fn plus(self, secondes: i64) -> crate::echec::R<Naif> {
+        match Naif::de_secondes(self.0 + secondes) {
+            Some(n) => Ok(n),
+            None => Err(crate::echec::refus(crate::date::HORS_CALENDRIER)),
+        }
+    }
+
+    /// Les secondes de `self` depuis `avant`.
+    pub fn depuis(self, avant: Naif) -> i64 {
+        self.0 - avant.0
+    }
+
+    /// Le jour de cette heure.
+    pub fn jour(self) -> Jour {
+        dans_le_calendrier(self.0.div_euclid(86_400))
+    }
+
+    /// `AAAA-MM-JJTHH:MM:SS`.
+    pub fn iso(self) -> String {
+        let j = self.jour();
+        let reste = self.0.rem_euclid(86_400);
+        format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60, reste % 60)
+    }
+}
+
+/// UNE HEURE NAIVE ECRITE DANS UN FICHIER (l'enregistrement d'un message) : ses secondes, lues contre le calendrier.
+impl serde::Serialize for Naif {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Naif {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Naif, D::Error> {
+        let t = i64::deserialize(d)?;
+        Naif::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
+    }
+}
+
+/// Le jour d'un jour unix qu'un `Moment` ou un `Naif` porte : il est dans le calendrier, par leur construction.
+fn dans_le_calendrier(jours: i64) -> Jour {
+    Jour::depuis_jours_unix(jours).expect("un instant est dans le calendrier")
 }
 
 /// Le jour unix (nombre de jours depuis le 01/01/1970) du dernier dimanche du
@@ -28,93 +174,90 @@ fn dernier_dimanche(an: i32, mois: u32) -> i64 {
     n - (n + 4).rem_euclid(7)
 }
 
-/// Le decalage de Paris sur UTC, en secondes, a cet instant (secondes unix).
-pub fn decalage(t: i64) -> i64 {
-    let jours = t.div_euclid(86_400);
-    let an = jour_unix(jours).an;
+/// Le decalage de Paris sur UTC, en secondes, a `t` secondes unix ; `None` si son jour UTC n'est pas du calendrier.
+fn decalage_brut(t: i64) -> Option<i64> {
+    let an = Jour::depuis_jours_unix(t.div_euclid(86_400))?.an;
     let debut = dernier_dimanche(an, 3) * 86_400 + 3_600;
     let fin = dernier_dimanche(an, 10) * 86_400 + 3_600;
-    if t >= debut && t < fin {
-        7_200
-    } else {
-        3_600
+    Some(if t >= debut && t < fin { 7_200 } else { 3_600 })
+}
+
+/// Le decalage de Paris sur UTC, en secondes, a cet instant (arrondi a la seconde d'avant).
+pub fn decalage(t: Moment) -> i64 {
+    let s = t.entieres();
+    match decalage_brut(s) {
+        Some(d) => d,
+        None => unreachable!("un instant est dans le calendrier : {} s", s),
     }
 }
 
 /// L'heure de Paris d'un instant, `AAAA-MM-JJTHH:MM:SS`.
-pub fn iso_secondes(t: f64) -> String {
-    let (local, _) = local_de(t);
-    let jours = local.div_euclid(86_400);
+pub fn iso_secondes(t: Moment) -> String {
+    let local = local_arrondi(t);
+    let j = dans_le_calendrier(local.div_euclid(86_400));
     let reste = local.rem_euclid(86_400);
-    let j = jour_unix(jours);
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60, reste % 60)
 }
 
-/// Les secondes locales de Paris d'un instant, apres l'arrondi a la
-/// microseconde (au pair le plus proche).
-fn local_de(t: f64) -> (i64, i64) {
+/// Les secondes locales de Paris d'un instant, apres l'arrondi a la microseconde (au pair le plus proche) ; elles restent
+/// dans le calendrier (`DERNIER` en garde la marge).
+fn local_arrondi(t: Moment) -> i64 {
+    let t = t.0;
     let mut entier = t.trunc();
-    let mut us = ((t - entier) * 1e6).round_ties_even();
+    let us = ((t - entier) * 1e6).round_ties_even();
     if us >= 1e6 {
         entier += 1.0;
-        us -= 1e6;
     } else if us < 0.0 {
         entier -= 1.0;
-        us += 1e6;
     }
-    let _ = us;
     let utc = entier as i64;
-    (utc + decalage(utc), utc)
+    match decalage_brut(utc) {
+        Some(d) => utc + d,
+        None => unreachable!("un instant est dans le calendrier : {} s", utc),
+    }
 }
 
 /// Un instant a l'heure de
 /// Paris : `AAAA-MM-JJTHH:MM`. La fraction de seconde s'arrondit a la
 /// microseconde (au pair le plus proche) avant de tronquer aux minutes.
-pub fn iso_minutes(t: f64) -> String {
-    let mut entier = t.trunc();
-    let mut us = ((t - entier) * 1e6).round_ties_even();
-    if us >= 1e6 {
-        entier += 1.0;
-        us -= 1e6;
-    } else if us < 0.0 {
-        entier -= 1.0;
-        us += 1e6;
-    }
-    let _ = us;
-    let utc = entier as i64;
-    let local = utc + decalage(utc);
-    let jours = local.div_euclid(86_400);
+pub fn iso_minutes(t: Moment) -> String {
+    let local = local_arrondi(t);
+    let j = dans_le_calendrier(local.div_euclid(86_400));
     let reste = local.rem_euclid(86_400);
-    let j = jour_unix(jours);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}",j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60)
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60)
 }
 
-/// La date de modification d'un fichier : les secondes et la fraction
-/// en nanosecondes, additionnees en flottant.
+/// LA DATE DE MODIFICATION D'UN FICHIER, une donnee du dehors : les secondes et la fraction en nanosecondes,
+/// additionnees en flottant, lues contre le calendrier ; `None` : le systeme date le fichier hors du calendrier. Son
+/// lecteur dit ce que l'absence veut dire pour lui.
 /// Hors Unix (Windows), la meme valeur par `modified()`.
 #[cfg(unix)]
-pub fn mtime(m: &std::fs::Metadata) -> f64 {
+pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
     use std::os::unix::fs::MetadataExt;
-    m.mtime() as f64 + m.mtime_nsec() as f64 * 1e-9
+    Moment::de_secondes(m.mtime() as f64 + m.mtime_nsec() as f64 * 1e-9)
 }
 
 #[cfg(not(unix))]
-pub fn mtime(m: &std::fs::Metadata) -> f64 {
+pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
     // Windows date tout fichier (`ftLastWriteTime`) ; une date d'avant 1970 compte en secondes negatives, comme `mtime` de
     // Unix.
     let date = match m.modified() {
         Ok(t) => t,
         Err(e) => unreachable!("Windows date tout fichier : {}", e),
     };
-    match date.duration_since(std::time::UNIX_EPOCH) {
+    Moment::de_secondes(match date.duration_since(std::time::UNIX_EPOCH) {
         Ok(d) => d.as_secs() as f64 + d.subsec_nanos() as f64 * 1e-9,
         Err(avant_1970) => -avant_1970.duration().as_secs_f64(),
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn a(t: i64) -> Moment {
+        Moment::de_secondes(t as f64).unwrap()
+    }
 
     /// Directive 2000/84/CE, art. 2 : « la période de l'heure d'été commence […] à 1 heure du matin, temps universel, le
     /// dernier dimanche de mars » (`atelier/reference/sources/union-europeenne/eurlex-directive-2000-84-ce-heure-d-ete-20010202.txt`).
@@ -122,10 +265,10 @@ mod tests {
     fn l_heure_d_ete_commence_le_dernier_dimanche_de_mars_a_1_h_utc() {
         // 2026 : dimanche 29 mars. 00:59:59 UTC encore l'hiver, 01:00:00 l'ete.
         let t = Jour::nouveau(2026, 3, 29).unwrap().ordinal() - 719_163;
-        assert_eq!(decalage(t * 86_400 + 3_599), 3_600);
-        assert_eq!(decalage(t * 86_400 + 3_600), 7_200);
-        assert_eq!(iso_minutes((t * 86_400 + 3_599) as f64), "2026-03-29T01:59");
-        assert_eq!(iso_minutes((t * 86_400 + 3_600) as f64), "2026-03-29T03:00");
+        assert_eq!(decalage(a(t * 86_400 + 3_599)), 3_600);
+        assert_eq!(decalage(a(t * 86_400 + 3_600)), 7_200);
+        assert_eq!(iso_minutes(a(t * 86_400 + 3_599)), "2026-03-29T01:59");
+        assert_eq!(iso_minutes(a(t * 86_400 + 3_600)), "2026-03-29T03:00");
     }
 
     /// Directive 2000/84/CE, art. 3 : la période « se termine […] à 1 heure du matin, temps universel, le dernier dimanche
@@ -134,10 +277,10 @@ mod tests {
     fn l_heure_d_ete_finit_le_dernier_dimanche_d_octobre_a_1_h_utc() {
         // 2026 : dimanche 25 octobre.
         let t = Jour::nouveau(2026, 10, 25).unwrap().ordinal() - 719_163;
-        assert_eq!(decalage(t * 86_400 + 3_599), 7_200);
-        assert_eq!(decalage(t * 86_400 + 3_600), 3_600);
-        assert_eq!(iso_minutes((t * 86_400 + 3_599) as f64), "2026-10-25T02:59");
-        assert_eq!(iso_minutes((t * 86_400 + 3_600) as f64), "2026-10-25T02:00");
+        assert_eq!(decalage(a(t * 86_400 + 3_599)), 7_200);
+        assert_eq!(decalage(a(t * 86_400 + 3_600)), 3_600);
+        assert_eq!(iso_minutes(a(t * 86_400 + 3_599)), "2026-10-25T02:59");
+        assert_eq!(iso_minutes(a(t * 86_400 + 3_600)), "2026-10-25T02:00");
     }
 
 }
@@ -148,31 +291,8 @@ pub fn maintenant() -> String {
     iso_secondes(crate::temps::secondes())
 }
 
-/// L'heure de Paris a cet instant, en secondes d'une epoque « naive » (l'heure locale lue comme si c'etait de l'UTC) :
-/// de quoi additionner des jours et comparer deux heures locales.
-pub fn maintenant_naif() -> i64 {
-    let t = crate::temps::secondes().floor() as i64;
-    t + decalage(t)
-}
-
-/// `AAAA-MM-JJTHH:MM:SS` d'une heure locale naive.
-pub fn iso_de_naif(local: i64) -> String {
-    let jours = local.div_euclid(86_400);
-    let reste = local.rem_euclid(86_400);
-    let j = jour_unix(jours);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60, reste % 60)
-}
-
-/// L'heure locale naive d'un `AAAA-MM-JJ[THH:MM[:SS]]`, ou `None`.
-pub fn naif_de_iso(iso: &str) -> Option<i64> {
-    let c: Vec<char> = iso.chars().collect();
-    let n = |a: usize, b: usize| -> Option<i64> {
-        let t: String = c.get(a..b)?.iter().collect();
-        // Des chiffres seuls, au plus quatre : leur valeur se compte, sans lecture qui puisse echouer.
-        t.chars().all(|x| x.is_ascii_digit()).then(|| t.bytes().fold(0i64, |n, x| n * 10 + i64::from(x - b'0')))
-    };
-    let jour = Jour::nouveau(n(0, 4)? as i32, n(5, 7)? as u32, n(8, 10)? as u32)?;
-    let jours = jour.ordinal() - 719_163;
-    let (h, m, s) = if c.len() >= 16 { (n(11, 13)?, n(14, 16)?, if c.len() >= 19 { n(17, 19)? } else { 0 }) } else { (0, 0, 0) };
-    Some(jours * 86_400 + h * 3_600 + m * 60 + s)
+/// L'heure de Paris a cet instant, en secondes d'une epoque « naive » : de quoi additionner des heures et comparer deux
+/// heures locales.
+pub fn maintenant_naif() -> Naif {
+    crate::temps::secondes().local_naif()
 }

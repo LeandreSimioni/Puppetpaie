@@ -1012,7 +1012,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
         Some(c) => c,
         None => ouverte.insert(client_courriel(ctx)?).as_mut(),
     };
-    let mois = crate::dossier_salarie::aujourdhui_reel()?.mois_civil();
+    let mois = socle::temps::jour_de_paris().mois_civil();
     verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
 
     let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string();
@@ -1337,8 +1337,8 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
         // Une demande sans heure lisible n'a pas d'age : la personne fictive n'y repond pas.
-        let Some(partie) = socle::paris::naif_de_iso(&a.quand) else { continue };
-        if maintenant_naif - partie < delai {
+        let Some(partie) = socle::paris::Naif::lire(&a.quand) else { continue };
+        if maintenant_naif.depuis(partie) < delai {
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;

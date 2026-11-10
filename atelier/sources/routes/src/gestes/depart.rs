@@ -17,6 +17,7 @@
 use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use socle::mois::{Graphie, Mois};
+use socle::paris::Moment;
 use crate::dossier_salarie::cle_de;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1175,9 +1176,9 @@ fn contexte_du_jour(ctx: &Contexte, jour: socle::date::Jour) -> R<Contexte> {
     Ok(c)
 }
 
-/// L'instant `AAAA-MM-JJTHH:MM[:SS]` (heure de Paris), en secondes UTC, et son jour. Un instant qui ne se lit pas se
-/// refuse.
-fn instant_de(quand: &str) -> R<(socle::date::Jour, f64)> {
+/// L'instant `AAAA-MM-JJTHH:MM[:SS]` (heure de Paris), et son jour. Un instant qui ne se lit pas (ou hors du calendrier)
+/// se refuse.
+fn instant_de(quand: &str) -> R<(socle::date::Jour, Moment)> {
     let illisible = || erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(quand)));
     let (jour, heure) = quand.split_once('T').ok_or_else(illisible)?;
     let jour = socle::date::Jour::lire(jour).map_err(|e| e.reclasser(Classe::Illisible))?;
@@ -1187,7 +1188,7 @@ fn instant_de(quand: &str) -> R<(socle::date::Jour, f64)> {
         [h, m, s] => (*h, *m, *s),
         _ => return Err(illisible()),
     };
-    Ok((jour, socle::temps::instant_de(jour, h) + (m * 60 + s) as f64))
+    Ok((jour, Moment::a_paris(jour, h, m, s).ok_or_else(illisible)?))
 }
 
 /// LA DSN MENSUELLE QUE DIT LA LIGNE `lignes[rang]`, refaite (`dsn_partie`) au jour ou son fichier a ete ecrit (le journal
@@ -1230,7 +1231,7 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
 
 /// QUAND LA PIECE `nom` DE `mois` A ETE ECRITE : le journal des ecritures, sinon l'instant de la ligne `l` qui l'a
 /// fait partir ; `(jour, instant, AAAA-MM-JJTHH:MM:SS)`.
-fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, f64, String)> {
+fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, Moment, String)> {
     let quand = match journal_des_ecritures(&ctx.racine)?.remove(&format!("{}/{}", mois, nom)) {
         Some(n) => n.quand,
         None => l.quand().to_string(),
