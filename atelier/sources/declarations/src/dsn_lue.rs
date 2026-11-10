@@ -756,7 +756,7 @@ pub fn lire_une_dsn(chemin: &Path) -> R<Option<DsnLue>> {
     let nom = chemin.file_name().ok_or_else(|| {
         socle::echec::refus_avec(
             "Ce chemin n'est pas un fichier : le signaler au développeur.",
-            socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
+            socle::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() },
         )
     })?;
     lire(&octets, &nom.to_string_lossy()).map(Some)

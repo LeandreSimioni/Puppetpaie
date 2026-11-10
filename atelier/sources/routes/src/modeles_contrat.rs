@@ -293,7 +293,7 @@ fn numero_d_id(id: &str) -> R<u32> {
             Classe::MalFormee,
             socle::echec::avec(
                 format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", id),
-                socle::echec::APart { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() },
+                socle::echec::Lieu { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() },
             ),
         )),
     }

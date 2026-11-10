@@ -22,7 +22,7 @@ use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Mesure, Nature, TypeDeRemuneration};
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::echec::{refus, refus_avec, APart, R};
+use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::{num::{add, div, mul, pct, sub, Decimal}, refus};
 use droit::organismes::{Ctp, Organismes, Versement};
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
@@ -1136,7 +1136,7 @@ les organismes composés pour la compagnie ne disent rien d'un salarié « {} »
 permanents). Aucune saisie de la compagnie ne le dit : c'est la composition livrée qui \
 ne connaît pas ce cas. Rien n'est écrit.",
             nat.libelle, cle
-        ), APart { fichier: Some("organismes-base.json".into()), ..Default::default() }));
+        ), Lieu { fichier: Some("organismes-base.json".into()), ..Default::default() }));
     };
     if sec.references.is_empty() {
         let pourquoi = match sec.a_confirmer {
@@ -2734,7 +2734,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
                         r.mois,
                         documents::tableaux_export::qui_souple(&apres.salarie)
                     ),
-                    APart { chemin: Some(format!("sorties/{}/{}", r.mois, r.declare.fichier)), ..APart::default() },
+                    Lieu { chemin: Some(format!("sorties/{}/{}", r.mois, r.declare.fichier)), ..Lieu::default() },
                 ))
             }
         };
@@ -3385,7 +3385,7 @@ signaler au développeur. Rien n'est écrit.",
                 ctp.code.trim(),
                 QUALIFIANT_PLAFONNEE
             ),
-            APart { fichier: Some("organismes-base.json".into()), cle: Some(k[plafonnee("").len()..].to_string()), ..Default::default() },
+            Lieu { fichier: Some("organismes-base.json".into()), cle: Some(k[plafonnee("").len()..].to_string()), ..Default::default() },
         )),
         None => Err(socle::echec::livree("organismes-base.json", &k)),
     }
@@ -3901,7 +3901,7 @@ fn versement_dgfip(
 portait un versement DGFiP, celle-ci doit en porter un a 0.00 (S21.G00.20.005, norme p. 157). La DSN remplacee n'a \
 pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien n'est ecrit.",
                     mois
-                ), APart { chemin: Some(format!("sorties/{}/", mois)), ..APart::default() }))
+                ), Lieu { chemin: Some(format!("sorties/{}/", mois)), ..Lieu::default() }))
             }
         }
     } else {
@@ -4064,12 +4064,12 @@ fn verifier_affiliations(texte: &str) -> R<()> {
         }
     }
     if !doublons.is_empty() {
-        return Err(refus_avec("Le barème de l'année déclare deux fois une même affiliation de prévoyance : le signaler au développeur.", APart { detail: Some(format!(
+        return Err(refus_avec("Le barème de l'année déclare deux fois une même affiliation de prévoyance : le signaler au développeur.", Lieu { detail: Some(format!(
             "Affiliation(s) prevoyance declarees DEUX FOIS en base 31 pour un meme individu, meme periode et meme \
 signe : {} (S21.G00.78.001/SIG-23).\n  Ce n'est admis que sur un contrat de mission (S21.G00.40.007 = 03). Les \
 `cotisations_dsn` du bareme en declarent deux pour la meme affiliation.",
             doublons.into_iter().collect::<Vec<_>>().join(", ")
-        )), ..APart::default() }));
+        )), ..Lieu::default() }));
     }
     let mut manquantes: Vec<String> = affiliations
         .iter()
@@ -4080,7 +4080,7 @@ signe : {} (S21.G00.78.001/SIG-23).\n  Ce n'est admis que sur un contrat de miss
     if !manquantes.is_empty() {
         let mut dites: Vec<String> = bases.iter().map(|(_, a)| a.clone()).collect();
         dites.sort();
-        return Err(refus_avec("Le barème de l'année ne déclare pas la base de chaque affiliation de prévoyance : le signaler au développeur.", APart { detail: Some(format!(
+        return Err(refus_avec("Le barème de l'année ne déclare pas la base de chaque affiliation de prévoyance : le signaler au développeur.", Lieu { detail: Some(format!(
             "Affiliation(s) prevoyance sans base assujettie de code 31 : {} (S21.G00.78.001/CCH-13).\n  Le bloc 70 \
 declare {} affiliation(s) et le bareme ne donne de cotisation 31 que pour {}. La plate-forme refuse la declaration \
 entiere.\n  Une base 31 par affiliation, meme a 0.00, et sous chacune une et une seule cotisation 81 de code 059 \
@@ -4088,7 +4088,7 @@ entiere.\n  Une base 31 par affiliation, meme a 0.00, et sous chacune une et une
             manquantes.join(", "),
             if affiliations.is_empty() { "aucune".to_string() } else { affiliations.len().to_string() },
             if dites.is_empty() { "aucune".to_string() } else { dites.join(", ") }
-        )), ..APart::default() }));
+        )), ..Lieu::default() }));
     }
     Ok(())
 }

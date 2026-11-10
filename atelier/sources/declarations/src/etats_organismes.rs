@@ -15,7 +15,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, refus_avec, APart, Classe};
+use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
 use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
@@ -466,7 +466,7 @@ fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
     let texte = String::from_utf8_lossy(&octets).into_owned();
     let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
     let Some((entete, corps)) = rangs.split_first() else { return Ok(Vec::new()) };
-    let illisible = |quoi: &str| refus_avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::Illisible);
+    let illisible = |quoi: &str| refus_avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::Illisible);
     let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
     let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
     let mut out: Vec<(String, String)> = Vec::new();

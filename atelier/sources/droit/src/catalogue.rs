@@ -7,7 +7,7 @@
 //! range par libelle.
 
 use serde::Deserialize;
-use socle::echec::APart;
+use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
 use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
@@ -278,7 +278,7 @@ impl Rubrique {
 /// Le refus d'une rubrique qui ne se construit pas : la phrase, et ce qui ne va pas a part.
 #[track_caller]
 fn mal_decrite(code: &str, detail: String) -> socle::echec::Echec {
-    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code)), APart { detail: Some(detail), ..APart::default() })
+    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code)), Lieu { detail: Some(detail), ..Lieu::default() })
 }
 
 /// `rubriques-base.json`, entier : ses notes, les annexes VIII et X, les rubriques livrees (chacune une fiche que la
@@ -331,7 +331,7 @@ fn base() -> R<Base> {
     if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
-            socle::echec::APart {
+            socle::echec::Lieu {
                 fichier: Some("rubriques-base.json".into()),
                 cle: Some("au_mois".into()),
                 detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),

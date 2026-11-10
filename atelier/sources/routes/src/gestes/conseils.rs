@@ -234,7 +234,7 @@ impl Banque {
     /// une banque mal ecrite.
     fn reference_de(&self, s: &Source) -> Resultat<String> {
         let titre = self.documents.get(s.fichier.texte()).ok_or_else(|| {
-            socle::echec::avec(ILLISIBLE, socle::echec::APart { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
+            socle::echec::avec(ILLISIBLE, socle::echec::Lieu { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
         })?;
         Ok(match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {
             (None, _) => titre.clone(),

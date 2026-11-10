@@ -18,7 +18,7 @@ use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
 use crate::conges_spectacles::chemin_texte;
 use droit::contexte::Contexte;
-use socle::echec::{erreur, refus, Classe, R};
+use socle::echec::{erreur, refus, APart, Classe, Echec, R};
 use crate::contrat_ecrit::ModeleDuContrat;
 use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
 
@@ -120,24 +120,25 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
     let qui = valeurs.get(&Marqueur::SalarieNomComplet).ok_or_else(|| refus("Le contrat ne nomme pas son salarié."))?;
     let lu = &modele.lu;
     if valeurs.get(&TAUX).is_none() && lu.cite(TAUX) {
-        return Err(erreur(
-            Classe::ModeleIncomplet,
-            socle::echec::avec(
+        return Err(Echec {
+            a_part: Some(APart::forme(MarqueurAPart { modele: modele.nom.clone(), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()) })),
+            ..erreur(
+                Classe::ModeleIncomplet,
                 format!(
                     "{} cite le taux du cachet, et le contrat de {} n'a aucun taux de cachet : il ne paie aucun cachet, et ni l'engagement ni le mois n'en écrivent. Le moteur n'en invente pas. Écrire la rémunération de ce modèle par le détail de la rémunération, qui la dit quelle que soit sa forme (le modèle de base le fait), ou porter le taux sur une ligne de cachet de l'engagement. Rien n'est écrit.",
                     modele.nom,
                     qui,
                 ),
-                MarqueurAPart { modele: modele.nom.clone(), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()) },
-            ),
-        ));
+            )
+        });
     }
     for cle in A_CITER {
         let Some(valeur) = valeurs.get(&cle).filter(|v| !v.trim().is_empty()) else { continue };
         if !lu.cite(cle) {
-            return Err(erreur(
-                Classe::ModeleIncomplet,
-                socle::echec::avec(
+            return Err(Echec {
+                a_part: Some(APart::forme(MarqueurAPart { modele: modele.nom.clone(), marqueur: cle.to_string(), a_ecrire: None })),
+                ..erreur(
+                    Classe::ModeleIncomplet,
                     format!(
                         "{} ne cite pas ce que le contrat de {} lui verse hors brut ({}) : le contrat le tairait. Ajouter à l'article « Rémunération » de ce modèle un alinéa [si {}] qui le cite (le modèle de base le fait). Rien n'est écrit.",
                         modele.nom,
@@ -145,9 +146,8 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
                         valeur.trim(),
                         cle.nom()
                     ),
-                    MarqueurAPart { modele: modele.nom.clone(), marqueur: cle.to_string(), a_ecrire: None },
-                ),
-            ));
+                )
+            });
         }
     }
     Ok(())

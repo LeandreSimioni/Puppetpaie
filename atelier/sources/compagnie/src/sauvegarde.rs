@@ -214,7 +214,7 @@ fn depuis_quand(depuis: i64, maintenant: i64) -> String {
 
 /// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive ; une heure qui ne se lit pas abime l'index.
 fn naif(quand: &str) -> Result<i64, ErreurGoogle> {
-    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::APart { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
+    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::Lieu { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
@@ -399,7 +399,7 @@ pub struct EchecIndexe {
 }
 
 /// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
-fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
+fn index_illisible(a_part: socle::echec::Lieu) -> ErreurGoogle {
     ErreurGoogle::from(socle::echec::refus_avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part).reclasser(Classe::Illisible))
 }
 

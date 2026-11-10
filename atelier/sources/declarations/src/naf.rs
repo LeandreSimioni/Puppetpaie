@@ -29,7 +29,7 @@ use serde::Deserialize;
 use droit::fiche::Lue as _;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use crate::norme::Norme;
-use socle::echec::{refus, refus_avec, APart, R};
+use socle::echec::{refus, refus_avec, Lieu, R};
 
 const BASE: &str = "naf-base.json";
 
@@ -180,7 +180,7 @@ en norme {} demande (net-entreprises, 08/10/2026). Saisir dans Configuration ›
 l'INSEE a notifie, sans le point. Rien n'est ecrit.",
                 ou, code, norme.version
             ),
-            APart { fichier: Some(BASE.into()), ..Default::default() },
+            Lieu { fichier: Some(BASE.into()), ..Default::default() },
         ));
     }
     Ok(())

@@ -333,7 +333,7 @@ fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
 /// Le nom du dossier d'une compagnie.
 pub fn nom_dossier(p: &Path) -> R<String> {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-        socle::echec::refus_avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
+        socle::echec::refus_avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
     })
 }
 

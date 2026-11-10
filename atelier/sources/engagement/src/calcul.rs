@@ -17,7 +17,7 @@ use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration};
-use socle::echec::{refus, refus_avec, APart, Echec, R};
+use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, dec_f64, div, eur, mul, pct, round3, sub, Decimal};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
@@ -630,7 +630,7 @@ pub struct OptionDfs {
 /// UN REFUS DU CALCUL QUI PORTE A PART le champ a dire, quand il y en a un, et le detail, pour le developpeur.
 #[track_caller]
 fn refus_detaille(phrase: impl Into<String>, cle: Option<&str>, detail: String) -> Echec {
-    refus_avec(phrase, APart { cle: cle.map(str::to_string), detail: Some(detail), ..APart::default() })
+    refus_avec(phrase, Lieu { cle: cle.map(str::to_string), detail: Some(detail), ..Lieu::default() })
 }
 
 /// La DFS que la fiche exerce, ou `None`. La decision vit ici (regle 2) : la profession de la fiche salarie

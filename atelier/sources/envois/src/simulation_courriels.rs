@@ -26,7 +26,7 @@ fn du_disque(chemin: &Path, e: &std::io::Error) -> Echec {
 
 /// Un courriel joue que `mailparse` ne lit pas : il a ete ecrit par la boite simulee, c'est un defaut du logiciel.
 fn illisible(e: mailparse::MailParseError) -> Echec {
-    socle::echec::refus_avec("Un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() })
+    socle::echec::refus_avec("Un courriel joué ne se lit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..socle::echec::Lieu::default() })
 }
 
 /// Les courriels joues, du plus ancien au plus recent : (nom, octets). Aucun encore : le dossier n'existe pas.
@@ -313,7 +313,7 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
         return Ok(None);
     }
     let octets = f.get_body_raw().map_err(illisible)?;
-    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| socle::echec::refus_avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
+    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| socle::echec::refus_avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..socle::echec::Lieu::default() }))?;
     Ok(Some(pdf.get_pages().len()))
 }
 

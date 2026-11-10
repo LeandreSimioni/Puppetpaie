@@ -24,7 +24,7 @@ use socle::texte::{euros, virgule};
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
-use socle::echec::{erreur, refus, Classe, R};
+use socle::echec::{erreur, Classe, R};
 use socle::num::Decimal;
 
 /// Un texte de l'engagement, non vide (ses blancs ote).
@@ -257,7 +257,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     );
     // LES ORGANISMES : le nom ET l'adresse (L1242-12, 8°) ; une adresse que la donnee ne porte pas ne se devine pas.
     let org = Organismes::lire(ctx, ent)?;
-    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::APart { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
+    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
     let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
     let (cle_prevoyance, cle_sante) = if nat.permanent() { ("prevoyance_permanents", "sante_permanents") } else { ("interbranche", "tsintermittents") };
@@ -318,9 +318,9 @@ const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqu
 
 /// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
 #[derive(Serialize)]
-struct MentionAPart<'a> {
+struct MentionAPart {
     fichier: &'static str,
-    marqueur: &'a str,
+    marqueur: String,
 }
 
 /// Les mentions que la loi exige d'un contrat de cette nature (`Nature::mentions_obligatoires`), chacune par son
@@ -330,7 +330,7 @@ pub fn mentions(nat: &Nature) -> R<Vec<(Marqueur, String, bool)>> {
         .into_iter()
         .flatten()
         .map(|x| {
-            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| refus(socle::echec::avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), MentionAPart { fichier: "contrats-base.json", marqueur: &x.marqueur })))?;
+            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| socle::echec::refus_avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), socle::echec::APart::forme(MentionAPart { fichier: "contrats-base.json", marqueur: x.marqueur.clone() })))?;
             Ok((m, x.texte.clone(), x.si_dite == Some(true)))
         })
         .collect()

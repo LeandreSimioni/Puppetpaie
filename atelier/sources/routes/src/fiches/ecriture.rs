@@ -903,8 +903,8 @@ impl Forcer {
 
 /// Ce qu'un refus de fiche porte a part : ses anomalies, et leur nombre en mots.
 #[derive(Serialize)]
-struct FicheRefusee<'a> {
-    anomalies: &'a [Anomalie],
+struct FicheRefusee {
+    anomalies: Vec<Anomalie>,
     erreurs_dit: String,
 }
 
@@ -919,7 +919,7 @@ fn fiche_refusee(nom: &str, anomalies: &[Anomalie]) -> R<Echec> {
     }
     let erreurs_dit = if phrases.len() > 1 { format!("{} erreurs", phrases.len()) } else { "Une erreur".to_string() };
     let message = format!("La fiche n'est pas écrite : {}", phrases.join(" ; "));
-    Ok(Echec { classe: Some(Classe::FicheRefusee), phrase: socle::echec::avec(message, FicheRefusee { anomalies, erreurs_dit }), a_part: None })
+    Ok(Echec { classe: Some(Classe::FicheRefusee), phrase: message, a_part: Some(socle::echec::APart::forme(FicheRefusee { anomalies: anomalies.to_vec(), erreurs_dit })) })
 }
 
 /// Pose sur chaque anomalie le libelle de sa case, celui que la fiche montre.

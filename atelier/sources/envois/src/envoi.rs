@@ -817,7 +817,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
     for piece in &message.pieces {
         let octets = std::fs::read(piece).map_err(|e| socle::echec::du_disque(&piece, &e))?;
         let nom = piece.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-            socle::echec::refus_avec("Une pièce jointe n'a pas de nom.", socle::echec::APart { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::APart::default() })
+            socle::echec::refus_avec("Une pièce jointe n'a pas de nom.", socle::echec::Lieu { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() })
         })?;
         let genre = genre_de(&nom);
         pieces.push(Noeud {

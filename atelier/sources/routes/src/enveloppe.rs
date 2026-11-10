@@ -52,7 +52,7 @@ impl Demande {
     /// (`MalFormee`), ou si elle nomme une route qui n'existe pas (`RouteInconnue`, le nom a part).
     pub fn lire(texte: &str) -> R<Demande> {
         let v: Value = serde_json::from_str(texte).map_err(|e| {
-            erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))
+            erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() }))
         })?;
         let d: DemandeEcrite = socle::forme::lire(&v, "La demande est mal formée : elle porte sa route et sa charge.").map_err(|m| erreur(Classe::MalFormee, m))?;
         Ok(Demande { route: route_nommee(&d.route)?, charge: d.charge })
@@ -114,7 +114,7 @@ impl Charge {
         if corps.is_empty() {
             return Ok(Charge::vide());
         }
-        let texte = std::str::from_utf8(corps).map_err(|e| erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() })))?;
+        let texte = std::str::from_utf8(corps).map_err(|e| erreur(Classe::DemandeIllisible, socle::echec::avec("La demande ne se lit pas : ce n'est pas du JSON.", socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() })))?;
         Charge::de(socle::forme::lire_texte(texte, "La demande ne se lit pas : ce n'est pas du JSON.").map_err(|m| erreur(Classe::DemandeIllisible, m))?)
     }
 
@@ -241,7 +241,7 @@ impl Rendu {
         match serde_json::to_value(t) {
             Ok(v @ Value::Object(_)) => Ok(Rendu(v)),
             Ok(_) => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet.")),
-            Err(e) => Err(erreur(Classe::DefautDuLogiciel, socle::echec::avec("Défaut du logiciel : la réponse de la route ne s'écrit pas.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))),
+            Err(e) => Err(erreur(Classe::DefautDuLogiciel, socle::echec::avec("Défaut du logiciel : la réponse de la route ne s'écrit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() }))),
         }
     }
 
@@ -335,8 +335,8 @@ pub struct Refus {
 }
 
 /// CE QU'UN REFUS PORTE A PART : ce que la couche qui refuse a mis hors de la phrase, ecrit avec elle
-/// (`socle::echec::avec`), en sa forme : celle du socle (`socle::echec::APart` : un chemin, un fichier, une cle, un
-/// detail), ou celle de la couche qui refuse. Cette forme-ci les reunit toutes, chaque case une fois : la porte la lit
+/// (`socle::echec::avec`) ou porte par le refus (`socle::echec::APart`), en sa forme : celle du socle
+/// (`socle::echec::Lieu` : un chemin, un fichier, une cle, un detail), ou celle de la couche qui refuse. Cette forme-ci les reunit toutes, chaque case une fois : la porte la lit
 /// entiere, la rend, la fenetre l'ouvre, le LLM la lit. Une cle qu'aucune couche n'ecrit la refuse : c'est un defaut du
 /// logiciel (`Refus::de`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

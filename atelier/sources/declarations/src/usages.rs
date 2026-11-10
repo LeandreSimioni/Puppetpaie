@@ -5,7 +5,7 @@
 //! `S10.G00.00.006` du fichier controle (`norme::du_fichier`).
 
 use crate::norme::Norme;
-use socle::echec::{refus_avec, APart, R};
+use socle::echec::{refus_avec, Lieu, R};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -187,7 +187,7 @@ pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> R<()> {
             libelle,
             lignes.join("\n")
         ),
-        APart { fichier: Some(table), ..APart::default() },
+        Lieu { fichier: Some(table), ..Lieu::default() },
     ))
 }
 

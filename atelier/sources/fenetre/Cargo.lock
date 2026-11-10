@@ -4074,6 +4074,7 @@ dependencies = [
 name = "socle"
 version = "0.1.0"
 dependencies = [
+ "erased-serde",
  "getrandom 0.3.4",
  "roxmltree 0.20.0",
  "rust_decimal",

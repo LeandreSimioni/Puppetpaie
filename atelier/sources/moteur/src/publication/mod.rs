@@ -75,5 +75,5 @@ fn phrase_publiee(dite: Option<String>) -> String {
 
 /// Le refus d'une commande a qui manquent des options : la phrase, et les options a part.
 fn options_manquantes(phrase: &str, options: &str) -> String {
-    socle::echec::avec(phrase, socle::echec::APart { detail: Some(options.to_string()), ..Default::default() })
+    socle::echec::avec(phrase, socle::echec::Lieu { detail: Some(options.to_string()), ..Default::default() })
 }

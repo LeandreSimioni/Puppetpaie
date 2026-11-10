@@ -80,13 +80,13 @@ pub fn racine(dev: bool) -> Result<PathBuf, String> {
         if !mode_actif()? {
             return Err(socle::echec::avec(
                 "Le mode développeur est éteint sur ce poste : la copie de développement ne s'y ouvre pas.",
-                socle::echec::APart { chemin: Some(chemin_mode().to_string_lossy().into_owned()), detail: Some("{\"actif\": true} l'allume".to_string()), ..Default::default() },
+                socle::echec::Lieu { chemin: Some(chemin_mode().to_string_lossy().into_owned()), detail: Some("{\"actif\": true} l'allume".to_string()), ..Default::default() },
             ));
         }
         if !copie_faite()? {
             return Err(socle::echec::avec(
                 "Ce poste n'a pas de copie de développement.",
-                socle::echec::APart { chemin: Some(dossier_dev().join(MARQUEUR).to_string_lossy().into_owned()), ..Default::default() },
+                socle::echec::Lieu { chemin: Some(dossier_dev().join(MARQUEUR).to_string_lossy().into_owned()), ..Default::default() },
             ));
         }
         let d = dossier_dev();

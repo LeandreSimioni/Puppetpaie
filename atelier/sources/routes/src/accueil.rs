@@ -326,10 +326,10 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         if !r.join(droit::contexte::ENTREPRISE).is_file() {
             return Err(operation(socle::echec::avec(
                 "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
-                socle::echec::APart {
+                socle::echec::Lieu {
                     chemin: Some(r.to_string_lossy().into_owned()),
                     detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
-                    ..socle::echec::APart::default()
+                    ..socle::echec::Lieu::default()
                 },
             )));
         }

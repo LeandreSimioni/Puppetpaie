@@ -10,7 +10,7 @@
 //! se demande a lui, par la table de sa version (`Norme::admet`), en un seul endroit.
 
 use socle::date::Jour;
-use socle::echec::{refus_avec, APart, R};
+use socle::echec::{refus_avec, Lieu, R};
 use crate::usages::{lignes, rubrique_valeur};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -30,7 +30,7 @@ pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom
     let chemin = socle::fichiers::dossier_du_code().join(nom);
     let lue = socle::forme::partagee::<T>(&chemin, "Une donnée livrée avec le logiciel ne se lit pas : le signaler au développeur.")?;
     socle::fichiers::noter_si_besoin(&chemin);
-    lue.ok_or_else(|| refus_avec("Une donnée livrée avec le logiciel manque : le signaler au développeur.", APart { fichier: Some(nom.to_string()), ..APart::default() }))
+    lue.ok_or_else(|| refus_avec("Une donnée livrée avec le logiciel manque : le signaler au développeur.", Lieu { fichier: Some(nom.to_string()), ..Lieu::default() }))
 }
 
 /// `norme-dsn-base.json`.
@@ -133,7 +133,7 @@ impl Norme {
         }
         Err(refus_avec(
             format!("Version de la norme DSN « {} » inconnue du logiciel (versions livrées : {}). Rien n'est écrit.", version, liste_des_versions()?),
-            APart { fichier: Some(BASE.to_string()), ..APart::default() },
+            Lieu { fichier: Some(BASE.to_string()), ..Lieu::default() },
         ))
     }
 
@@ -198,7 +198,7 @@ impl Norme {
 (S21.G00.81.001) sous lequel elle se declare n'est pas tranche. {} Rien n'est ecrit.",
                     self.version, e.note
                 ),
-                APart { fichier: Some(BASE.to_string()), cle: Some("cotisation_cet_patronale".to_string()), ..APart::default() },
+                Lieu { fichier: Some(BASE.to_string()), cle: Some("cotisation_cet_patronale".to_string()), ..Lieu::default() },
             )),
         })?
     }
@@ -237,7 +237,7 @@ pub fn de_la_mensuelle(mois: &str) -> R<Norme> {
 La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
                 mois
             ),
-            APart { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.mensuelle)?), ..APart::default() },
+            Lieu { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.mensuelle)?), ..Lieu::default() },
         )),
     }
 }
@@ -253,7 +253,7 @@ pub fn du_signalement(constitution: &Jour) -> R<Norme> {
 La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
                 constitution.jj_mm_aaaa()
             ),
-            APart { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.signalements)?), ..APart::default() },
+            Lieu { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.signalements)?), ..Lieu::default() },
         )),
     }
 }
@@ -300,7 +300,7 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
     if !a_ne_pas.is_empty() {
         return Err(refus_avec(
             format!("Rubrique(s) que la norme {} dit « à ne pas renseigner » :\n{}\n  Rien n'est écrit.", norme.version, a_ne_pas.join("\n")),
-            APart { fichier: Some(BASE.to_string()), cle: Some("rubriques_a_ne_pas_renseigner".to_string()), ..APart::default() },
+            Lieu { fichier: Some(BASE.to_string()), cle: Some("rubriques_a_ne_pas_renseigner".to_string()), ..Lieu::default() },
         ));
     }
     if refus.is_empty() {
@@ -312,6 +312,6 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
             norme.version,
             refus.join("\n")
         ),
-        APart { fichier: Some(BASE.to_string()), cle: Some("valeurs_retirees".to_string()), ..APart::default() },
+        Lieu { fichier: Some(BASE.to_string()), cle: Some("valeurs_retirees".to_string()), ..Lieu::default() },
     ))
 }

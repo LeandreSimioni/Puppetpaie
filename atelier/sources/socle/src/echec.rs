@@ -162,7 +162,7 @@ impl std::fmt::Display for Classe {
 }
 
 /// UN REFUS : sa classe (`None` pour un refus ordinaire), sa phrase, en mots, pour l'ecran, et ce qu'il porte a part
-/// (`APart` : un chemin, une cle, un fichier livre, ce que le systeme a dit), dans sa forme, jamais dans la phrase. Il ne
+/// (`APart` : un lieu, ou la forme de la couche qui refuse), dans sa forme, jamais dans la phrase. Il ne
 /// se construit que par ses constructeurs (`refus`, `refus_avec`, `erreur`, `noter_et`, ceux de ce module), qui notent
 /// l'endroit ou il nait (`noter_echec`).
 #[derive(Debug, Clone)]
@@ -201,10 +201,15 @@ impl Echec {
         }
     }
 
-    /// Le meme refus, survenu en lisant le fichier `chemin` : son chemin va a part, s'il n'en porte pas deja un.
+    /// Le meme refus, survenu en lisant le fichier `chemin` : son chemin va a part, s'il n'en porte pas deja un. Un refus
+    /// qui porte la forme de sa couche (`APart::Forme`) la garde telle quelle : elle dit ce que sa couche veut dire.
     pub fn au_fichier(mut self, chemin: &std::path::Path) -> Echec {
-        let a = self.a_part.get_or_insert_with(APart::default);
-        a.chemin = a.chemin.take().or_else(|| Some(chemin.to_string_lossy().into_owned()));
+        let chemin = || Some(chemin.to_string_lossy().into_owned());
+        match &mut self.a_part {
+            None => self.a_part = Some(APart::Lieu(Lieu { chemin: chemin(), ..Lieu::default() })),
+            Some(APart::Lieu(a)) => a.chemin = a.chemin.take().or_else(chemin),
+            Some(APart::Forme(_)) => {}
+        }
         self
     }
 }
@@ -217,10 +222,11 @@ pub fn refus(phrase: impl Into<String>) -> Echec {
 
 /// UN REFUS ORDINAIRE QUI PORTE QUELQUE CHOSE A PART : sa phrase se lit a l'ecran, en mots ; ce qui n'est pas fait pour
 /// l'ecran (le chemin d'un fichier, la cle d'une donnee, le nom d'un fichier livre, ce que le systeme a dit) va dans
-/// `a_part`, que la reponse de la route rend a cote de la phrase.
+/// `a_part` (un `Lieu`, ou la forme de la couche qui refuse, `APart::forme`), que la reponse de la route rend a cote de
+/// la phrase.
 #[track_caller]
-pub fn refus_avec(phrase: impl Into<String>, a_part: APart) -> Echec {
-    Echec { a_part: Some(a_part), ..noter_et(None, phrase) }
+pub fn refus_avec(phrase: impl Into<String>, a_part: impl Into<APart>) -> Echec {
+    Echec { a_part: Some(a_part.into()), ..noter_et(None, phrase) }
 }
 
 /// LE PONT DES COUCHES QUI REFUSENT ENCORE EN TEXTE (`num::Resultat`) : le refus tel qu'elles le lisent, sa phrase et, ce
@@ -339,11 +345,55 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
 /// Entre la phrase d'un refus et ce qu'il porte a part : un chemin, une cle, un fichier, une donnee pour la page.
 pub const A_PART: char = '\u{1e}';
 
+/// CE QU'UN REFUS PORTE A PART, ecrit sans etiquette : l'objet rendu est celui de la variante. Un `Lieu` (un chemin, un
+/// fichier, une cle, ce qui a ete lu), ou la forme que declare la couche qui refuse (l'etat d'un depot, les anomalies
+/// d'une fiche, l'archive alteree), gardee typee jusqu'a la porte, qui l'ecrit une fois ; personne ne la relit.
+#[derive(Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum APart {
+    Lieu(Lieu),
+    Forme(#[serde(serialize_with = "forme_ecrite")] std::sync::Arc<dyn erased_serde::Serialize + Send + Sync>),
+}
+
+impl APart {
+    /// Ce que porte a part la couche qui refuse, dans sa forme declaree.
+    pub fn forme(f: impl serde::Serialize + Send + Sync + 'static) -> APart {
+        APart::Forme(std::sync::Arc::new(f))
+    }
+
+    /// Le lieu que le refus porte a part, s'il en porte un.
+    pub fn lieu(&self) -> Option<&Lieu> {
+        match self {
+            APart::Lieu(l) => Some(l),
+            APart::Forme(_) => None,
+        }
+    }
+}
+
+impl From<Lieu> for APart {
+    fn from(l: Lieu) -> APart {
+        APart::Lieu(l)
+    }
+}
+
+/// Une forme d'une couche, ecrite telle qu'elle se declare.
+fn forme_ecrite<S: serde::Serializer>(f: &std::sync::Arc<dyn erased_serde::Serialize + Send + Sync>, s: S) -> Result<S::Ok, S::Error> {
+    erased_serde::serialize(f.as_ref(), s)
+}
+
+impl std::fmt::Debug for APart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            APart::Lieu(l) => f.debug_tuple("Lieu").field(l).finish(),
+            APart::Forme(_) => f.debug_tuple("Forme").field(&crate::ecriture::json_en_ligne(self)).finish(),
+        }
+    }
+}
+
 /// CE QUE LE SOCLE MET A PART D'UN REFUS : le chemin d'un fichier, le nom d'un fichier livre, la cle d'une donnee, ce
-/// qui a ete lu ou ce que le systeme a dit. Ce qui n'est pas dit ne s'ecrit pas. Une couche du dessus porte a part ce
-/// qu'elle a d'autre (l'etat d'un mois, les anomalies d'une fiche) dans sa propre forme (`avec`).
+/// qui a ete lu ou ce que le systeme a dit. Ce qui n'est pas dit ne s'ecrit pas.
 #[derive(Debug, Default, Clone, serde::Serialize)]
-pub struct APart {
+pub struct Lieu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chemin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -389,7 +439,7 @@ impl Echec {
 /// phrase, `String`) garde sa phrase, et le chemin va a part.
 #[track_caller]
 pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E) -> Echec {
-    let a_part = |detail: Option<String>| APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail, ..APart::default() };
+    let a_part = |detail: Option<String>| Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail, ..Lieu::default() };
     let e_ = e as &dyn std::any::Any;
     if let Some(phrase) = e_.downcast_ref::<String>() {
         return refus_avec(phrase.as_str(), a_part(None));
@@ -409,7 +459,7 @@ pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E
 #[track_caller]
 pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> Echec {
     let detail = detail.to_string();
-    refus_avec(quoi, APart { cle: Some(cle.to_string()), detail: Some(detail).filter(|d| !d.is_empty()), ..APart::default() })
+    refus_avec(quoi, Lieu { cle: Some(cle.to_string()), detail: Some(detail).filter(|d| !d.is_empty()), ..Lieu::default() })
 }
 
 /// UNE DONNEE LIVREE AVEC LE LOGICIEL QUI MANQUE OU NE SE LIT PAS (un referentiel de `donnees/`) : rien que la compagnie
@@ -418,7 +468,7 @@ pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> Echec 
 pub fn livree(fichier: &str, cle: &str) -> Echec {
     refus_avec(
         "Une donnée livrée avec le logiciel manque ou ne se lit pas : le signaler au développeur.",
-        APart { fichier: Some(fichier.to_string()), cle: Some(cle.to_string()), ..APart::default() },
+        Lieu { fichier: Some(fichier.to_string()), cle: Some(cle.to_string()), ..Lieu::default() },
     )
 }
 
@@ -432,7 +482,7 @@ pub fn charge(cle: &str, attendu: &str) -> Echec {
 /// Un refus en mots, et la cle de la donnee qu'il vise, a part.
 #[track_caller]
 pub fn cle(phrase: impl Into<String>, cle: &str) -> Echec {
-    refus_avec(phrase, APart { cle: Some(cle.to_string()), ..APart::default() })
+    refus_avec(phrase, Lieu { cle: Some(cle.to_string()), ..Lieu::default() })
 }
 
 /// Une paie ecrite (ce que la validation d'un engagement a garde) qui ne se relit pas : la cle va a part (`a_la_cle`).
@@ -444,6 +494,6 @@ pub const PAIE_ILLISIBLE: &str = "Une paie écrite ne se relit pas : revalider l
 pub fn abime(chemin: &std::path::Path, detail: impl std::fmt::Display) -> Echec {
     refus_avec(
         "Un fichier de la compagnie ne se lit pas : il est abîmé.",
-        APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail.to_string()), ..APart::default() },
+        Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail.to_string()), ..Lieu::default() },
     )
 }

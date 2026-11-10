@@ -7,7 +7,7 @@ use super::{alsace_moselle, arrondi4, deux_virgule, nom_du_salarie, ChampsEntrep
 use socle::echec::R;
 use crate::fiche::{ExtensionT2, Lue};
 use crate::natures::AuMois;
-use socle::echec::APart;
+use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::Nombre;
 use socle::num::div;
@@ -269,7 +269,7 @@ pub fn regime(idcc: &str) -> R<Regime> {
         let connues: Vec<&str> = c.conventions.iter().map(|(k, _)| k.as_str()).collect();
         return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention collective n'est pas relevée : le signaler au développeur.",
-            APart {
+            Lieu {
                 detail: Some(format!(
                     "Prevoyance des permanents : la convention collective {} n'est pas \
 relevee.\n  \
@@ -285,14 +285,14 @@ decouvre le jour ou le salarie en a besoin.",
                     if idcc.is_empty() { "(non renseignee dans config/entreprise.json)" } else { idcc },
                     if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") }
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     };
     if reg.applicable == Some(false) {
         return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention n'est pas encore vérifiée : le signaler au développeur.",
-            APart {
+            Lieu {
                 detail: Some(format!(
                     "Prevoyance des permanents, convention {} ({}) : les taux sont \
 RELEVES mais pas confirmes, le moteur ne paie donc pas.\n  \
@@ -308,7 +308,7 @@ donnees/prevoyance-conventionnelle-base.json.",
                     },
                     resume(reg)
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     }
@@ -487,7 +487,7 @@ pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Op
     if reg.contrat_requis == Some(true) && !contrat {
         return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention suit le contrat de la compagnie : poser ses taux dans la fiche entreprise, « Prévoyance des permanents ».",
-            APart {
+            Lieu {
                 detail: Some(format!(
                     "Prevoyance des permanents, convention {} : {} fixe les garanties \
 et leur repartition, pas le taux -- c'est celui du contrat que \
@@ -497,7 +497,7 @@ regime « contrat », avec ses taux (t1_non_cadre, t1_cadre), \
 lus sur le contrat ou l'appel de cotisations. Rien n'est calcule.",
                     idcc, reg.texte
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     }

@@ -88,7 +88,7 @@ pub fn genre(inst: &Path, racine: &Path) -> Result<Genre, String> {
     if !de_l_installation(inst, racine)? {
         return Err(socle::echec::avec(
             "Ce dossier n'est pas une compagnie de ce logiciel : rien n'a été supprimé.",
-            socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
         ));
     }
     if installation::est_ajoutee(racine)? {
@@ -247,7 +247,7 @@ fn effacer(racine: &Path) -> Result<(), String> {
     std::fs::rename(racine, &cache).map_err(|e| {
         socle::echec::avec(
             "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.",
-            socle::echec::APart { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
         )
     })?;
     // Ce qui resiste reste cache, et part au lancement suivant (`effacer_les_restes`).
@@ -316,9 +316,9 @@ fn garder(inst: &Path, racine: &Path) -> Result<Compagnie, String> {
     }
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.
-    let a_part = || socle::echec::APart { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
+    let a_part = || socle::echec::Lieu { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
     std::fs::remove_file(cible.join(installation::MARQUEUR))
-        .map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", socle::echec::APart { detail: Some(e.to_string()), ..a_part() }))?;
+        .map_err(|e| socle::echec::avec("Le marqueur de la fictive ne s'efface pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..a_part() }))?;
     let gardee = absolu(&cible)?;
     for c in installation::liste_de(inst)? {
         if absolu(&c.racine)? == gardee {

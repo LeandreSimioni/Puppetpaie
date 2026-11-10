@@ -811,7 +811,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
         if a.client_id.is_empty() || a.client_secret.is_empty() {
             return Err(erreur_google(socle::echec::avec(
                 "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.",
-                socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
+                socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() },
             )));
         }
         return Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, p.to_string_lossy().into_owned()));
@@ -820,11 +820,11 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
     if !livre.exists() {
         return Err(erreur_google(socle::echec::avec(
             "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.",
-            socle::echec::APart {
+            socle::echec::Lieu {
                 chemin: Some(p.to_string_lossy().into_owned()),
                 fichier: Some(livre.to_string_lossy().into_owned()),
                 detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
-                ..socle::echec::APart::default()
+                ..socle::echec::Lieu::default()
             },
         )));
     }

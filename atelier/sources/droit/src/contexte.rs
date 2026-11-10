@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
-use socle::echec::APart;
+use socle::echec::Lieu;
 use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
@@ -380,7 +380,7 @@ fn convention<'a>(pile: &'a Pile, idcc: &str) -> R<Option<&'a CoucheConvention>>
     if idcc.is_empty() {
         return Err(socle::echec::refus_avec(
             "La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.",
-            APart {
+            Lieu {
                 cle: Some("idcc".into()),
                 detail: Some(format!(
                     "Bareme {} : la fiche entreprise ne dit pas son `idcc`, et les \
@@ -390,14 +390,14 @@ cotisations conventionnelles en dependent.\n\
                     annee,
                     connues.join(", ")
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     }
     let Some(couche) = pile.par_convention.get(idcc) else {
         return Err(socle::echec::refus_avec(
             "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
-            APart {
+            Lieu {
                 detail: Some(format!(
                     "Bareme {} : la convention collective {} n'a pas de couche dans le \
 socle, et le moteur refuse de payer avec celle d'une autre \
@@ -412,7 +412,7 @@ de ses intermittents cadres), a relever puis a ajouter dans \
                     connues.join(", "),
                     annee
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     };
@@ -658,13 +658,13 @@ l'effectif qu'il y emploie (CGCT, L. 2333-64, I) : son taux et le code INSEE de 
     }
     Err(socle::echec::refus_avec(
         "Les établissements de la fiche entreprise se mêlent : chacun se déclare dans sa propre DSN, avec ce qui est à lui.",
-        APart {
+        Lieu {
             detail: Some(format!(
                 "config/entreprise.json, etablissements : chaque etablissement se \
 declare dans sa propre DSN, avec ce qui est a lui.\n  - {}",
                 griefs.join("\n  - ")
             )),
-            ..APart::default()
+            ..Lieu::default()
         },
     ))
 }
@@ -702,7 +702,7 @@ fn controler_organisation_patronale(pile: &Pile, fiche: &ChampsEntreprise) -> R<
     let Some(couche) = crate::bareme::couche_organisation(pile, &nom) else {
         return Err(socle::echec::refus_avec(
             "L'organisation patronale de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
-            APart {
+            Lieu {
                 detail: Some(format!(
                     "Bareme {} : la fiche entreprise declare une adhesion a \
 l'organisation patronale {}, et le socle n'a pas de couche pour \
@@ -719,7 +719,7 @@ ne change pour elle.",
                     if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") },
                     annee
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     };
@@ -1611,7 +1611,7 @@ depuis le plus recent.",
             Some(mh) => Ok(mh),
             None => Err(socle::echec::refus_avec(
                 "Le barème de l'année n'a pas le plafond de la Sécurité sociale : le signaler au développeur.",
-                APart {
+                Lieu {
                     detail: Some(format!(
                         "Pas de plafond de Securite sociale pour {} dans \
 config/baremes/{}.json : ajouter la section \
@@ -1620,7 +1620,7 @@ relevee sur la table des parametres du BOSS (PSS_M_METROP, \
 PSS_H_METROP).",
                         annee, annee
                     )),
-                    ..APart::default()
+                    ..Lieu::default()
                 },
             )),
         }
@@ -1799,7 +1799,7 @@ PSS_H_METROP).",
                 c.starts_with(&q) || levenshtein(&q, &c) <= 3
             });
             if ressemble {
-                return Err(socle::echec::refus_avec(format!("{} ressemble à {} {}, dont la fiche est archivée : pour l'embaucher à nouveau, rendre sa fiche active dans Configuration › Salariés.", repr_texte(nom), n, p), APart { cle: Some(cle.to_string()), detail: Some(format!(
+                return Err(socle::echec::refus_avec(format!("{} ressemble à {} {}, dont la fiche est archivée : pour l'embaucher à nouveau, rendre sa fiche active dans Configuration › Salariés.", repr_texte(nom), n, p), Lieu { cle: Some(cle.to_string()), detail: Some(format!(
                     "Salarie archive : {} ressemble a {} {} (cle {}), dont la fiche porte \
 `actif: false`. L'appeler par sa cle exacte pour rejouer \
 une paie passee ; pour l'embaucher a nouveau, remettre \
@@ -1808,7 +1808,7 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
                     n,
                     p,
                     repr_texte(cle)
-                )), ..APart::default() }));
+                )), ..Lieu::default() }));
             }
         }
         Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.join(", ")))

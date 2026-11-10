@@ -437,7 +437,7 @@ date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.avant.engagement.debut.jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
-            socle::echec::APart { fichier: Some(r.declare.fichier.clone()), ..socle::echec::APart::default() },
+            socle::echec::Lieu { fichier: Some(r.declare.fichier.clone()), ..socle::echec::Lieu::default() },
         ));
     };
     if ancienne == nouveau.jjmmaaaa() {

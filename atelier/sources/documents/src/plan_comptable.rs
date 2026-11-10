@@ -387,7 +387,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
             Classe::Illisible | Classe::Manque => {}
             Classe::FormeNonPortee => {
                 return Refus::Autre(Echec {
-                    a_part: Some(socle::echec::APart { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::APart::default() }),
+                    a_part: Some(socle::echec::Lieu { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::Lieu::default() }.into()),
                     ..erreur(
                         Classe::Refuse,
                         format!(

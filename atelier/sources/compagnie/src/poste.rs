@@ -34,7 +34,7 @@ fn pas_ouvert(chemin: &Path, e: &std::io::Error) -> R<String> {
     if !chemin.exists() {
         return Err(socle::echec::refus_avec(
             "Ce fichier n'existe pas : rien à ouvrir.",
-            socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
         ));
     }
     let quoi = if chemin.is_dir() {
@@ -133,7 +133,7 @@ pub fn choisir_dossier(titre: &str) -> R<Option<String>> {
 pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String> {
     let p = Path::new(chemin.trim());
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {
-        return Err(socle::echec::refus_avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::APart { chemin: Some(chemin.to_string()), ..Default::default() }));
+        return Err(socle::echec::refus_avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::Lieu { chemin: Some(chemin.to_string()), ..Default::default() }));
     }
     let f = if p.is_absolute() { p.to_path_buf() } else { racine.join(p) };
     let dans = f.starts_with(racine);
@@ -141,7 +141,7 @@ pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String
         std::fs::create_dir_all(&f).map_err(|e| socle::echec::du_disque(&f, &e))?;
     }
     if !dans && !f.is_dir() {
-        return Err(socle::echec::refus_avec("Ce n'est pas un dossier : rien à ouvrir.", socle::echec::APart { chemin: Some(f.to_string_lossy().into_owned()), ..Default::default() }));
+        return Err(socle::echec::refus_avec("Ce n'est pas un dossier : rien à ouvrir.", socle::echec::Lieu { chemin: Some(f.to_string_lossy().into_owned()), ..Default::default() }));
     }
     ouvrir(&f)
 }

@@ -71,8 +71,8 @@ pub fn est_essai(racine: &Path) -> R<bool> {
 }
 
 /// Ce qu'un refus porte a part : le chemin `p`.
-fn a_part(p: &Path) -> socle::echec::APart {
-    socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
+fn a_part(p: &Path) -> socle::echec::Lieu {
+    socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
 }
 
 // ------------------------------------------------------------------ l'identite
@@ -147,7 +147,7 @@ fn chiffres(t: &str, n: usize) -> bool {
 fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> Echec {
     refus_avec(
         format!("L'identité de la compagnie d'essai ({}) porte une valeur mal formée. Rien n'est écrit.", VARIABLE),
-        socle::echec::APart { cle: Some(cle.to_string()), detail: Some(ce_qu_il_faut.to_string()), ..Default::default() },
+        socle::echec::Lieu { cle: Some(cle.to_string()), detail: Some(ce_qu_il_faut.to_string()), ..Default::default() },
     )
 }
 
@@ -214,7 +214,7 @@ impl Variable {
         if !vides.is_empty() {
             return Err(refus_avec(
                 format!("L'identité de la compagnie d'essai ({}) a des valeurs vides. Rien n'est écrit.", VARIABLE),
-                socle::echec::APart { cle: Some(vides.join(", ")), ..Default::default() },
+                socle::echec::Lieu { cle: Some(vides.join(", ")), ..Default::default() },
             ));
         }
         let (siren, nic, siret_dpae) = (&self.siren.0, &self.nic.0, &self.api_dpae.siret.0);
@@ -419,7 +419,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
     if let Some(d) = depot_englobant(dossier)? {
         return Err(refus_avec(
             "Ce dossier est dans un dépôt Git ou une installation de PuppetPaie : la compagnie d'essai porte l'identité d'une vraie compagnie, elle se monte hors de tout dépôt (par exemple dans le dossier temporaire, le défaut). Rien n'est écrit.",
-            socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.to_string_lossy())), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.to_string_lossy())), ..Default::default() },
         ));
     }
     let existe = dossier.exists();

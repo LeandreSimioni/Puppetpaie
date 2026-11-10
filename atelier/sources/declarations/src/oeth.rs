@@ -6,7 +6,7 @@
 use droit::contexte::Contexte;
 use serde::Deserialize;
 use socle::date::Jour;
-use socle::echec::{refus_avec, APart, R};
+use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
@@ -317,7 +317,7 @@ connait pas s'applique. Rien n'est ecrit.",
         let Some(sans_action) = donnees.aucune_action_depuis_plus_de_trois_ans else {
             return Err(refus_avec(
                 "La déclaration OETH de l'année ne dit pas depuis quand la compagnie n'a ni bénéficiaire ni sous-traitance : le dire, depuis plus de trois ans ou non.",
-                APart {
+                Lieu {
                     fichier: Some(OETH.into()),
                     detail: Some(format!(
                         "{} : aucun beneficiaire et aucune sous-traitance cette annee. La contribution passe a 1 500 \
@@ -387,7 +387,7 @@ pub fn declaration(ctx: &Contexte, mois: &str) -> R<Option<Declaration>> {
         if !assujetti_selon_l_effectif(ctx, millesime)? {
             return Ok(None);
         }
-        return Err(refus_avec("La compagnie doit la déclaration OETH de l'année, et ses chiffres ne sont pas saisis : y écrire ceux que l'Urssaf transmet avant le 15 mars.", APart {
+        return Err(refus_avec("La compagnie doit la déclaration OETH de l'année, et ses chiffres ne sont pas saisis : y écrire ceux que l'Urssaf transmet avant le 15 mars.", Lieu {
             fichier: Some(OETH.into()),
             detail: Some(format!(
                 "DSN de {} : l'entreprise a atteint {} salaries cinq annees de suite, elle doit la declaration \
@@ -403,7 +403,7 @@ l'Urssaf transmet avant le 15 mars : \"{}\": {{\"effectif_assujettissement\": ..
         if donnees.pourquoi.as_deref().is_none_or(|p| p.trim().is_empty()) {
             return Err(refus_avec(
                 "La déclaration OETH de l'année dit la compagnie non assujettie sans dire pourquoi : dire la raison.",
-                APart {
+                Lieu {
                     fichier: Some(OETH.into()),
                     detail: Some(format!(
                         "config/oeth.json, {} : \"assujetti\": false sans \"pourquoi\". Dire la raison (delai de cinq \

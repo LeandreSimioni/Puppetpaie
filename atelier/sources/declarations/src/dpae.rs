@@ -26,7 +26,7 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
 use crate::ntt;
-use socle::echec::{refus, refus_avec, APart, R};
+use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
 use crate::usages::strip;
 
@@ -625,7 +625,7 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
             None => {
                 return Err(refus_avec(
                     "Le fichier de la DPAE n'a pas de nom : le signaler au développeur.",
-                    APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..APart::default() },
+                    Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..Lieu::default() },
                 ))
             }
         };
@@ -1021,11 +1021,11 @@ mod tests {
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
         let e = embauche("cdi", None);
-        let a = enr(&e, None, Some("11")).unwrap_err().a_part.unwrap_or_default();
+        let a = enr(&e, None, Some("11")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().unwrap_or_default();
         assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'11'")), "{:?}", a);
         let m = enr(&e, None, Some("abc")).unwrap_err().phrase;
         assert!(m.contains("3 chiffres"), "{}", m);
-        let a = enr(&e, None, Some("999")).unwrap_err().a_part.unwrap_or_default();
+        let a = enr(&e, None, Some("999")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().unwrap_or_default();
         assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'999'")), "{:?}", a);
         enr(&e, None, Some(" 117 ")).unwrap();
         // Sans code, celui du gabarit reste.

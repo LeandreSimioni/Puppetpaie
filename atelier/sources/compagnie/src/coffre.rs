@@ -172,7 +172,7 @@ impl Usage {
 
 // ------------------------------------------------------------------ les refus
 
-use socle::echec::{erreur as echec, APart, Echec, R};
+use socle::echec::{erreur as echec, Lieu, Echec, R};
 
 /// `Coffre` : le coffre refuse, la phrase est ecrite pour etre lue.
 #[track_caller]
@@ -183,7 +183,7 @@ fn refus(message: impl Into<String>) -> Echec {
 /// Le refus du coffre, son chemin a part.
 #[track_caller]
 fn refus_a(message: impl Into<String>, p: &Path) -> Echec {
-    Echec { a_part: Some(APart { chemin: Some(affiche(p)), ..APart::default() }), ..refus(message) }
+    Echec { a_part: Some(Lieu { chemin: Some(affiche(p)), ..Lieu::default() }.into()), ..refus(message) }
 }
 
 #[track_caller]
@@ -780,8 +780,8 @@ impl Coffre {
     /// pas a part.
     #[track_caller]
     fn refus_de_format(&self, detail: String) -> Echec {
-        let a_part = APart { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..APart::default() };
-        Echec { a_part: Some(a_part), ..refus(
+        let a_part = Lieu { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..Lieu::default() };
+        Echec { a_part: Some(a_part.into()), ..refus(
             "Le coffre n'est pas au format de cette version -- il est plus \
              ancien, ou abime. Il ne se convertit pas : le supprimer, avec \
              le jeton Google et la cle de signature qui sont fermes de la \
@@ -1178,7 +1178,7 @@ impl Coffre {
             return Ok(None);
         }
         let illisible = |detail: String| Echec {
-            a_part: Some(APart { detail: Some(detail), ..APart::default() }),
+            a_part: Some(Lieu { detail: Some(detail), ..Lieu::default() }.into()),
             ..echec(Classe::CoffreIllisible, "La seance gardee ne se lit pas.")
         };
         let clair = match lire_octets(&p).and_then(|o| desceller(&cle, &o, AAD_GARDEE)) {

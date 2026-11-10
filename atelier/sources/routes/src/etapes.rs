@@ -1788,7 +1788,7 @@ impl<'a> Moteur<'a> {
                 Classe::Illisible,
                 socle::echec::avec(
                     format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois),
-                    socle::echec::APart { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() },
+                    socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() },
                 ),
             )
         };
@@ -1812,7 +1812,7 @@ impl<'a> Moteur<'a> {
                     Classe::Illisible,
                     socle::echec::avec(
                         format!("Un dépôt réel de la DSN de {} ne dit pas son type (S20.G00.05.002) dans le journal des envois ; le signaler au développeur.", mois),
-                        socle::echec::APart { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("type_declaration".to_string()), ..Default::default() },
+                        socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("type_declaration".to_string()), ..Default::default() },
                     ),
                 ));
             };

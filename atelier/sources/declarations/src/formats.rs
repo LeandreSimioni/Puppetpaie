@@ -10,7 +10,7 @@
 
 use socle::fichiers::repr;
 use crate::norme::Norme;
-use socle::echec::{refus, refus_avec, APart, R};
+use socle::echec::{refus, refus_avec, Lieu, R};
 use crate::usages::{espace, lignes, strip};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -525,7 +525,7 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
     }
     Err(refus_avec(
         format!("Valeur(s) qui ne suivent pas le format de la norme :\n{}\n  Formats du cahier technique NEODeS.{}", dites.join("\n"), trou),
-        APart { fichier: Some(norme.table_formats()?), ..APart::default() },
+        Lieu { fichier: Some(norme.table_formats()?), ..Lieu::default() },
     ))
 }
 

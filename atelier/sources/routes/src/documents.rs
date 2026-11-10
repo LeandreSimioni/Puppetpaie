@@ -226,7 +226,7 @@ fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
     let relatif = f.strip_prefix(&ctx.racine).map_err(|e| {
         erreur(
             Classe::DefautDuLogiciel,
-            socle::echec::avec("Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }),
+            socle::echec::avec("Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.", socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() }),
         )
     })?;
     Ok(PiecePartie { phrase: "La pièce partie, telle qu'elle est partie.", chemin: relatif.to_string_lossy().replace('\\', "/") })
@@ -699,7 +699,7 @@ fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
                 erreur(Classe::Manque, "Le compte de la boîte courriel n'est pas posé : route coffre-poser, service courriel, compte <adresse>.")
             })?
         }
-        Err(e) => return Err(erreur(Classe::Illisible, socle::echec::avec("Le compte de la boîte courriel posé dans l'environnement ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..Default::default() }))),
+        Err(e) => return Err(erreur(Classe::Illisible, socle::echec::avec("Le compte de la boîte courriel posé dans l'environnement ne se lit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() }))),
     };
     Ok(a.trim().to_string())
 }

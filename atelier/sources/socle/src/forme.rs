@@ -3,7 +3,7 @@
 //! `moteur/tests/fichiers/structure.rs`) : une cle que la forme ne connait pas est refusee. Seule la reponse d'un tiers
 //! (`ReponseDUnTiers`, Google) peut porter en plus des cles qu'on ignore a la porte (`lire_reponse_tiers`). `lire` est la
 //! seule fonction qui la lit ; son refus est une phrase du moteur, la cle fautive (son chemin dans la donnee) et ce qui ne
-//! va pas a part (`echec::APart`).
+//! va pas a part (`echec::Lieu`).
 //!
 //! C'est un des trois modules du BORD (avec `ecriture` et `json_ascii`, qui ecrivent) : le seul endroit d'une couche
 //! fermee ou le JSON se manipule sans forme (`moteur/tests/fichiers/structure.rs`, `une_couche_fermee_ne_lit_que_des_formes`).
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::echec::{refus_avec, APart, Echec, R};
+use crate::echec::{refus_avec, Lieu, Echec, R};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -113,7 +113,7 @@ fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> Echec
         }
         _ => Some(format!("ce n'est pas un JSON lisible (ligne {}, colonne {})", e.line(), e.column())),
     };
-    refus_avec(phrase, APart { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..APart::default() })
+    refus_avec(phrase, Lieu { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..Lieu::default() })
 }
 
 /// La longueur, en octets, de l'objet JSON qui ouvre `texte` (ce qu'un refus porte a part, `echec::avec`), s'il en
@@ -132,11 +132,11 @@ fn refus(phrase: &str, fichier: Option<&Path>, e: &serde_path_to_error::Error<se
     let detail = en_clair(&e.inner().to_string());
     refus_avec(
         phrase,
-        APart {
+        Lieu {
             chemin: fichier.map(|f| f.to_string_lossy().into_owned()),
             cle: Some(if cle == "." { String::new() } else { cle }),
             detail: Some(detail).filter(|d| !d.is_empty()),
-            ..APart::default()
+            ..Lieu::default()
         },
     )
 }
@@ -471,7 +471,7 @@ fn refus_en_phrase(phrase: &impl Fn(&str, &str) -> String, e: &serde_path_to_err
     let chemin = e.path().to_string();
     let chemin = if chemin == "." { String::new() } else { chemin };
     let detail = en_clair(&e.inner().to_string());
-    refus_avec(phrase(&chemin, &detail), APart { cle: Some(chemin), detail: Some(detail).filter(|d| !d.is_empty()), ..APart::default() })
+    refus_avec(phrase(&chemin, &detail), Lieu { cle: Some(chemin), detail: Some(detail).filter(|d| !d.is_empty()), ..Lieu::default() })
 }
 
 // ------------------------------------------------------------------ les formes partagees

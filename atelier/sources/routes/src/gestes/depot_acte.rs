@@ -39,13 +39,13 @@ use compagnie::preuve::{motdepasse_organisme, verifier_preuve, Preuve};
 
 /// UN REFUS DE DEPOT QUI PORTE OU EN EST CE QUI LE REFUSE (la DSN du mois, le test du fichier) : sa phrase, et l'etat a
 /// part (`routes::enveloppe::APart`, case `etat`).
-fn avec_etat<T: serde::Serialize>(classe: Classe, message: impl Into<String>, etat: &T) -> Echec {
+fn avec_etat<T: serde::Serialize + Clone + Send + Sync + 'static>(classe: Classe, message: impl Into<String>, etat: &T) -> Echec {
     /// Ce que le refus porte a part : l'etat.
     #[derive(serde::Serialize)]
-    struct Etat<'a, T> {
-        etat: &'a T,
+    struct Etat<T> {
+        etat: T,
     }
-    Echec { classe: Some(classe), phrase: socle::echec::avec(message, Etat { etat }), a_part: None }
+    Echec { classe: Some(classe), phrase: message.into(), a_part: Some(socle::echec::APart::forme(Etat { etat: etat.clone() })) }
 }
 
 // -------------------------------------------------------- la repetition avant l'irreversible
@@ -162,7 +162,7 @@ fn ordre_dit(o: Option<&str>) -> R<i64> {
 
 /// Un ordre de declaration (S20.G00.05.004) lu en nombre ; illisible, il se refuse.
 fn ordre_lu(o: &str) -> R<i64> {
-    o.trim().parse::<i64>().map_err(|e| erreur(Classe::Illisible, socle::echec::avec("L'ordre d'une DSN ne se lit pas.", socle::echec::APart { cle: Some("S20.G00.05.004".into()), detail: Some(format!("« {} » : {}", o, e)), ..socle::echec::APart::default() })))
+    o.trim().parse::<i64>().map_err(|e| erreur(Classe::Illisible, socle::echec::avec("L'ordre d'une DSN ne se lit pas.", socle::echec::Lieu { cle: Some("S20.G00.05.004".into()), detail: Some(format!("« {} » : {}", o, e)), ..socle::echec::Lieu::default() })))
 }
 
 /// `prochain_ordre_de_test` : l'ordre a donner au prochain essai de ce mois, ou `None` pour le premier. Les

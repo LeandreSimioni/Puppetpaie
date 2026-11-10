@@ -371,7 +371,7 @@ fn echapper(nom: &str) -> String {
 
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
 fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
-    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() }).reclasser(Classe::Illisible)))
+    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::Lieu { detail: Some(format!("{} : {}", t, e)), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))
 }
 
 /// Des aleas du systeme ; un systeme qui n'en donne pas refuse.
@@ -461,7 +461,7 @@ impl Drive for Client {
             None => fichier
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
-                .ok_or_else(|| ErreurGoogle::from(socle::echec::refus_avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() }).reclasser(Classe::Illisible)))?,
+                .ok_or_else(|| ErreurGoogle::from(socle::echec::refus_avec("Un fichier à déposer n'a pas de nom.", socle::echec::Lieu { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))?,
         };
         // Un type que l'extension ne dit pas : des octets (RFC 2046, `application/octet-stream`).
         let type_mime = match crate::envoi::type_devine(&nom) {

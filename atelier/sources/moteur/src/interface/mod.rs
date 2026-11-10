@@ -1282,7 +1282,7 @@ fn poser_le_banc(args: &[String]) -> Result<Vec<String>, String> {
         (Some(j), Some(t)) if socle::temps::instant_de(j, 9) <= t => {
             return Err(socle::echec::avec(
                 format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
-                socle::echec::APart { detail: Some(j.iso()), ..Default::default() },
+                socle::echec::Lieu { detail: Some(j.iso()), ..Default::default() },
             ))
         }
         (Some(j), _) => Some(socle::temps::instant_de(j, 9)),

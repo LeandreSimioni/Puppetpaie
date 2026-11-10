@@ -100,14 +100,14 @@ fn tenir(logiciel: &str, quoi: &str, v: &str, n: usize) -> R<String> {
         let (porte, conseil) = ce_que_porte(quoi);
         /// Ce que le refus porte a part : la zone, et le fichier ou la raccourcir.
         #[derive(Serialize)]
-        struct Zone<'a> {
-            zone: &'a str,
-            fichier: &'a str,
+        struct Zone {
+            zone: String,
+            fichier: &'static str,
         }
-        return Err(refus(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             format!("{} : « {} » a {} caractères, {} en prend {} au plus dans ce logiciel. {}.", logiciel, t, c, porte, n, conseil),
-            Zone { zone: quoi, fichier: crate::plan_comptable::PLAN_COMPTABLE },
-        )));
+            socle::echec::APart::forme(Zone { zone: quoi.to_string(), fichier: crate::plan_comptable::PLAN_COMPTABLE }),
+        ));
     }
     Ok(t)
 }
@@ -316,14 +316,14 @@ impl Envoi<'_> {
         };
         /// Ce que le refus porte a part : le format des libelles courts a poser, et combien.
         #[derive(Serialize)]
-        struct APoser<'a> {
-            libelles_courts: &'a str,
+        struct APoser {
+            libelles_courts: String,
             nombre: usize,
         }
-        Err(refus(socle::echec::avec(
+        Err(socle::echec::refus_avec(
             format!("{} trop long{} pour {} : les raccourcir (Exports, « Libellés courts »).", if n > 1 { format!("{} libellés", n) } else { "1 libellé".to_string() }, if n > 1 { "s" } else { "" }, nom),
-            APoser { libelles_courts: format, nombre: n },
-        )))
+            socle::echec::APart::forme(APoser { libelles_courts: format.to_string(), nombre: n }),
+        ))
     }
 
     /// `Envoi.section` : le code de section d'une ligne -- seules les lignes de salaires bruts en ont une.

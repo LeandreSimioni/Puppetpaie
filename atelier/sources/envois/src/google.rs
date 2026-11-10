@@ -42,7 +42,7 @@ impl socle::forme::ReponseDUnTiers for ReponseJeton {}
 /// Le texte d'une reponse de Google lu en sa forme `T`, par la porte des tiers ; une reponse qui ne se lit pas rend
 /// `phrase`.
 pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> R<T> {
-    let texte = String::from_utf8(brut).map_err(|e| socle::echec::refus_avec(phrase, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
+    let texte = String::from_utf8(brut).map_err(|e| socle::echec::refus_avec(phrase, socle::echec::Lieu { detail: Some(e.to_string()), ..socle::echec::Lieu::default() }))?;
     socle::forme::lire_reponse_tiers(&texte, phrase)
 }
 

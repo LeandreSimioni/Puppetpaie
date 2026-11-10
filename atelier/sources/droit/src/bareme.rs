@@ -14,7 +14,7 @@ use crate::forme_bareme::{
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
-use socle::echec::{APart, Echec, R};
+use socle::echec::{Lieu, Echec, R};
 use socle::num::{add, dec_f64, div, mul, sub, Decimal};
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
@@ -58,7 +58,7 @@ fn annee(bar: &Pile) -> String {
 /// Un refus en mots, son detail a part.
 #[track_caller]
 fn refus(phrase: impl Into<String>, detail: String) -> Echec {
-    socle::echec::refus_avec(phrase, APart { detail: Some(detail), ..APart::default() })
+    socle::echec::refus_avec(phrase, Lieu { detail: Some(detail), ..Lieu::default() })
 }
 
 /// L'indice de la rubrique d'identifiant `id`.
@@ -596,7 +596,7 @@ fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, nivea
     if assure < mini {
         return Err(socle::echec::refus_avec(
             format!("{} : la complémentaire santé de son niveau est sous le minimum de la convention : vérifier le niveau souscrit sur sa fiche.", nom_du_salarie(sal)),
-            APart {
+            Lieu {
                 cle: Some("sante_svp.niveau".into()),
                 detail: Some(format!(
                     "{} : complementaire sante au niveau {}, {} % du PMSS pour le \
@@ -613,7 +613,7 @@ n'est calcule.",
                     deux_virgule(flt(mini)),
                     origine
                 )),
-                ..APart::default()
+                ..Lieu::default()
             },
         ));
     }
@@ -741,7 +741,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
                 nom_du_salarie(sal),
                 quoi
             ),
-            APart { cle: Some(format!("sante_svp.{}", cle)), ..APart::default() },
+            Lieu { cle: Some(format!("sante_svp.{}", cle)), ..Lieu::default() },
         )
     };
     let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;

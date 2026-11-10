@@ -6,7 +6,7 @@ use socle::echec::Classe;
 use std::path::Path;
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, APart, Echec, R};
+use socle::echec::{erreur, Lieu, Echec, R};
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
 #[derive(Default, Clone)]
@@ -30,8 +30,8 @@ impl Preuve {
 /// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse.
 fn cle_de_version(v: &str) -> R<Vec<i64>> {
     v.trim().split('.').map(|x| x.trim().parse::<i64>()).collect::<Result<Vec<i64>, _>>().map_err(|e| {
-        let a_part = APart { detail: Some(format!("« {} » : {}", v, e)), ..APart::default() };
-        Echec { a_part: Some(a_part), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
+        let a_part = Lieu { detail: Some(format!("« {} » : {}", v, e)), ..Lieu::default() };
+        Echec { a_part: Some(a_part.into()), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
     })
 }
 

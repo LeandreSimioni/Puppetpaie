@@ -70,7 +70,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use socle::echec::{refus, refus_avec, APart, Echec, R};
+use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
 
 
 /// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
@@ -185,7 +185,7 @@ pub fn dossier_installe() -> R<PathBuf> {
 /// Les nombres d'une version (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`), de gauche a droite. Une version qui n'en est pas une se
 /// refuse.
 fn cle_de_version(v: &str) -> R<Vec<u64>> {
-    v.trim().split('.').map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", APart { detail: Some(v.to_string()), ..Default::default() }))).collect()
+    v.trim().split('.').map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() }))).collect()
 }
 
 /// `candidate` est-elle plus recente que `reference` ?
@@ -475,7 +475,7 @@ const PUBLIEE_ILLISIBLE: &str = "La version publiée ne se lit pas : la mise à 
 /// La version publiee (`derniere.json`) qui ne se lit pas : la phrase en mots, la cle a part.
 #[track_caller]
 fn publiee_illisible(cle: &str, detail: impl std::fmt::Display) -> Echec {
-    refus_avec(PUBLIEE_ILLISIBLE, APart { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
+    refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
 }
 
 /// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`), puis ce qu'elle ne dit pas d'elle-meme : une version, au
@@ -623,8 +623,8 @@ fn deballer_ce_qui(octets: &[u8], neuf: &Path, garder: &dyn Fn(&str) -> bool) ->
 }
 
 /// Ce qu'un refus porte a part : le chemin `p`.
-fn a_part_chemin(p: &Path) -> APart {
-    APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
+fn a_part_chemin(p: &Path) -> Lieu {
+    Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }
 }
 
 /// Le nouveau code demarre-t-il, et lit-il NOS donnees ? Son programme, sur la racine de cette compagnie.
@@ -674,7 +674,7 @@ fn archive_verifiee(depot: &str, (nom, attendu, signature): (&str, &str, &str), 
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = condensat(&octets);
     if sha != attendu {
-        return Err((ALTEREE, refus(socle::echec::avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", Alteree { fichier: nom, condensat: &sha, attendu }))));
+        return Err((ALTEREE, refus_avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", APart::forme(Alteree { fichier: nom.to_string(), condensat: sha, attendu: attendu.to_string() }))));
     }
     if !signee_par_l_une(&octets, signature, cles) {
         return Err((SIGNATURE_REFUSEE, socle::refus!("la signature de {} n'est pas celle de l'editeur", nom)));
@@ -684,10 +684,10 @@ fn archive_verifiee(depot: &str, (nom, attendu, signature): (&str, &str, &str), 
 
 /// Ce que le refus d'une archive alteree porte a part : le fichier, son condensat, celui qu'annonce `derniere.json`.
 #[derive(Serialize)]
-struct Alteree<'a> {
-    fichier: &'a str,
-    condensat: &'a str,
-    attendu: &'a str,
+struct Alteree {
+    fichier: String,
+    condensat: String,
+    attendu: String,
 }
 
 /// LES SYSTEMES D'UNE INSTALLATION : celui de ce programme, puis ceux dont la fenetre est posee dans `logiciel/`
@@ -723,7 +723,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
         let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", systemes.join(", "));
-        return Err((INTROUVABLE, refus_avec(phrase, APart { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
+        return Err((INTROUVABLE, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
     }
     let mut manquees = Vec::new();
     let mut mot = INTROUVABLE;

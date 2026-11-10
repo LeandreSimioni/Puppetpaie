@@ -117,7 +117,7 @@ pub struct Tri {
 /// (cree s'il manque ; s'il est sous `dossier`, il n'est pas parcouru), et donne a chaque fichier sa sorte.
 pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     if !dossier.is_dir() {
-        let a_part = socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
+        let a_part = socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
         return Err(socle::echec::refus_avec("Le dossier à trier n'existe pas.", a_part).reclasser(socle::echec::Classe::Refuse));
     }
     std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;

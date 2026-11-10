@@ -14,7 +14,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::echec::{refus, refus_avec, APart, R};
+use crate::echec::{refus, refus_avec, Lieu, R};
 
 const NS_M: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -66,7 +66,7 @@ impl Classeur {
     fn ouvrir(chemin: &Path) -> R<Classeur> {
         let f = std::fs::File::open(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))?;
         let archive = zip::ZipArchive::new(f)
-            .map_err(|e| refus_avec("Ce fichier n'est pas un classeur Excel lisible.", APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..APart::default() }))?;
+            .map_err(|e| refus_avec("Ce fichier n'est pas un classeur Excel lisible.", Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Lieu::default() }))?;
         Ok(Classeur { archive, nom: chemin.display().to_string() })
     }
 
@@ -145,13 +145,13 @@ pub fn feuilles(chemin: &Path) -> R<Vec<String>> {
 fn noms_des_feuilles(nom: &str, texte: &str) -> R<Vec<(String, Option<String>)>> {
     let doc = analyser(nom, "xl/workbook.xml", texte)?;
     let sheets = enfant(doc.root_element(), "sheets")
-        .ok_or_else(|| refus_avec("Ce classeur Excel n'a aucune feuille lisible.", APart { chemin: Some(nom.to_string()), ..APart::default() }))?;
+        .ok_or_else(|| refus_avec("Ce classeur Excel n'a aucune feuille lisible.", Lieu { chemin: Some(nom.to_string()), ..Lieu::default() }))?;
     sheets
         .children()
         .filter(|n| n.is_element())
         .map(|f| match f.attribute("name") {
             Some(n) => Ok((n.to_string(), f.attribute((NS_R, "id")).map(str::to_string))),
-            None => Err(refus_avec("Une feuille de ce classeur Excel n'a pas de nom.", APart { chemin: Some(nom.to_string()), ..APart::default() })),
+            None => Err(refus_avec("Une feuille de ce classeur Excel n'a pas de nom.", Lieu { chemin: Some(nom.to_string()), ..Lieu::default() })),
         })
         .collect()
 }

@@ -13,7 +13,7 @@ use std::str::FromStr;
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 
-use socle::echec::{refus, refus_avec, APart, Echec, R};
+use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::Decimal;
 
 /// Les rubriques d'un versement que l'annulation reprend, et si elles portent un montant (a changer de signe).
@@ -111,7 +111,7 @@ pub fn est_un_montant(rubrique: &str) -> Option<bool> {
 pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> Echec {
     refus_avec(
         format!("La DSN déposée porte un montant illisible en {}.", k),
-        APart { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..APart::default() },
+        Lieu { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..Lieu::default() },
     )
 }
 

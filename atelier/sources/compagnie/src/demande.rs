@@ -615,7 +615,7 @@ mod terminal_windows {
 #[cfg(unix)]
 mod terminal_unix {
     use super::{Canal, Question, Reponse};
-    use socle::echec::{refus_avec, APart};
+    use socle::echec::{refus_avec, Lieu};
     use std::fs::{File, OpenOptions};
     use std::io::{BufRead, BufReader, Write};
     use std::process::{Command, Stdio};
@@ -652,7 +652,7 @@ mod terminal_unix {
     /// Le refus du terminal, et ce qu'il a dit a part.
     #[track_caller]
     fn refus_du_terminal(phrase: &str, detail: impl std::fmt::Display) -> Reponse {
-        Reponse::Refus(refus_avec(phrase, APart { detail: Some(detail.to_string()), ..APart::default() }))
+        Reponse::Refus(refus_avec(phrase, Lieu { detail: Some(detail.to_string()), ..Lieu::default() }))
     }
 
     /// Le refus d'un terminal qui ne masque pas la saisie, et ce qu'il a dit a part.
