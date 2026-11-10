@@ -406,8 +406,8 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
     let permanents = match (mois.first(), mois.last()) {
         (Some(premier), Some(dernier)) => {
-            let (premier, dernier) = (Mois::lire(premier).map_err(Echec::from)?, Mois::lire(dernier).map_err(Echec::from)?);
-            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()).map_err(Echec::from)?.ouverts()
+            let (premier, dernier) = (Mois::lire(premier)?, Mois::lire(dernier)?);
+            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour())?.ouverts()
         }
         _ => false,
     };
@@ -509,7 +509,7 @@ struct CascNotee {
 fn en_euros(t: &str) -> R<String> {
     match t.trim().replace(',', ".").parse() {
         Ok(d) => Ok(socle::texte::euros(d)),
-        Err(e) => Err(erreur(Classe::Illisible, socle::echec::a_la_cle("Le montant viré ne se lit pas.", "montant", e))),
+        Err(e) => Err(socle::echec::a_la_cle("Le montant viré ne se lit pas.", "montant", e).reclasser(Classe::Illisible)),
     }
 }
 
@@ -544,8 +544,8 @@ pub(crate) struct ChargeExporter {
 fn choisi(quoi: &str, dit: &Option<String>, permis: &[String]) -> R<String> {
     match dit {
         Some(v) if permis.contains(v) => Ok(v.clone()),
-        Some(v) => Err(erreur(Classe::SaisieIncomplete, socle::echec::cle(format!("{} « {} » : cet état se fait en {}.", quoi, v, permis.join(", ")), quoi))),
-        None => Err(erreur(Classe::SaisieIncomplete, socle::echec::cle(format!("Choisir le {} de cet état : {}.", quoi, permis.join(", ")), quoi))),
+        Some(v) => Err(socle::echec::cle(format!("{} « {} » : cet état se fait en {}.", quoi, v, permis.join(", ")), quoi).reclasser(Classe::SaisieIncomplete)),
+        None => Err(socle::echec::cle(format!("Choisir le {} de cet état : {}.", quoi, permis.join(", ")), quoi).reclasser(Classe::SaisieIncomplete)),
     }
 }
 
@@ -747,7 +747,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
 fn adresses_de(ctx: &Contexte, cles: &[String]) -> R<Vec<String>> {
     cles.iter()
         .map(|cle| {
-            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
+            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
             s.email.dite().filter(|e| !e.is_empty()).cloned().ok_or_else(|| {
                 refus(format!("Pas d'adresse e-mail pour {} : compléter sa fiche avant d'envoyer. Rien n'est parti.", ctx.nomme(cle)))
             })
@@ -769,10 +769,10 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let mut messages: Vec<Message> = Vec::new();
     let adresses = adresses_de(ctx, &d.salaries)?;
     for ((cle, f), email) in d.salaries.iter().zip(&d.fichiers).zip(adresses) {
-        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
-        let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("prenom")))?.to_string();
-        let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("signataire")))?;
-        let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("prenom")))?;
+        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
+        let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?.to_string();
+        let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
+        let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?;
         let ses_pages = d.pages.get(cle);
         let liste = d
             .categories
@@ -810,7 +810,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
         categories: d.categories.iter().map(|c| c.to_string()).collect(),
-        salaries: messages.iter().map(|m| Ok(journal::DossierServi { cle: droit::contexte::IdSalarie::lire(&m.cle)?, piece: m.pieces.first().map(|p| nom_du(p)) })).collect::<Result<_, String>>()?,
+        salaries: messages.iter().map(|m| Ok(journal::DossierServi { cle: droit::contexte::IdSalarie::lire(&m.cle)?, piece: m.pieces.first().map(|p| nom_du(p)) })).collect::<R<_>>()?,
         expediteur: expediteur.clone(),
         partis: None,
         echec_a: None,
@@ -818,7 +818,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None) {
         Ok(p) => p,
         Err(e) => {
-            noter_echec_d_envoi(ctx, journal::Ligne::DossierSalarie, None, qui, &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, None)?;
+            noter_echec_d_envoi(ctx, journal::Ligne::DossierSalarie, None, qui, &e.partis, &e.echoue, &e.echec.phrase, detail, None)?;
             return Err(e.echec);
         }
     };
@@ -828,7 +828,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
 
 /// Les actes du journal des envois, tels que le journal des declarations les montre.
 fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJournal>> {
-    let lignes = journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?.lignes;
+    let lignes = journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Disque))?.lignes;
     Ok(lignes
         .iter()
         .map(|l| documents::etats_personnel::ActeDuJournal {
@@ -942,7 +942,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             .iter()
             .find(|(k, _)| k == a)
             .map(|(_, d)| d.clone())
-            .ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::a_la_cle("Défaut du logiciel : une année régularisée n'a pas la date de son virement.", "annee", a)))
+            .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une année régularisée n'a pas la date de son virement.", "annee", a).reclasser(Classe::DefautDuLogiciel))
     };
     let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
     let mut detail = journal::DetailCasc {
@@ -958,20 +958,20 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
         Err(e) => {
-            noter_echec_d_envoi(ctx, journal::Ligne::RegularisationCasc, None, qui, &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, None)?;
+            noter_echec_d_envoi(ctx, journal::Ligne::RegularisationCasc, None, qui, &e.partis, &e.echoue, &e.echec.phrase, detail, None)?;
             return Err(e.echec);
         }
     };
 
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
     let garde = std::path::Path::new(&r.dossier).join("envoyes");
-    std::fs::create_dir_all(&garde).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&garde, &e)))?;
+    std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
     let iso = socle::paris::maintenant();
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut emls: Vec<String> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {
         let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.cle));
-        std::fs::write(&p, brut).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         emls.push(nom_du(&p));
     }
     detail.eml = emls.clone();

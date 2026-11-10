@@ -23,20 +23,25 @@ use sha2::{Digest, Sha256};
 use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::num::{zero2, Decimal};
-use socle::echec::Echec;
+use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, zip, Entree};
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
 use documents::plan_comptable::plan_comptable;
 use crate::rappels::mois_de_l_annee;
 
-type R<T> = Result<T, Echec>;
-
+#[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
+/// Un refus de la saisie, rendu `Refuse`.
+fn refuse(e: Echec) -> Echec {
+    e.reclasser(Classe::Refuse)
+}
+
+#[track_caller]
 fn en_os(e: &std::io::Error, p: &Path) -> Echec {
-    erreur(Classe::Disque, socle::echec::du_disque(p, e))
+    socle::echec::du_disque(p, e).reclasser(Classe::Disque)
 }
 
 /// Une erreur d'operation, que l'appelant rattrape : celles que le moteur nomme, et
@@ -169,7 +174,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
     let mut mois: Vec<String> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = socle::mois::Mois::lire(&m)?.numero();
-        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, &m).map_err(refus)? {
+        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, &m).map_err(refuse)? {
             mois.push(m);
         }
     }
@@ -219,8 +224,8 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(refus)?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
-        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, &mois, None).map_err(refus)? {
+    for mois in engagement::stock::mois_saisis(racine).map_err(refuse)?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
+        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, &mois, None).map_err(refuse)? {
             m.insert(mois, e);
         }
     }
@@ -334,7 +339,7 @@ impl Exercices {
 /// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
 pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
     let p = racine.join(EXERCICES);
-    match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))? {
+    match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(e) => Ok((*e).clone()),
         None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
     }
@@ -342,7 +347,7 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
 
 fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
     let chemin = ctx.racine.join(EXERCICES);
-    socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| erreur(Classe::Disque, m))
+    socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// Les fichiers sous `d`, triés par chemin (les chemins se comparent composant par composant). Un dossier absent n'en a
@@ -379,7 +384,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mois = mois_de_l_annee(ctx, annee)?;
     let mut sans_dsn: Vec<String> = Vec::new();
     for m in &mois {
-        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(refus)? && !dsn_acceptee(ctx, m)? {
+        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(refuse)? && !dsn_acceptee(ctx, m)? {
             sans_dsn.push(m.clone());
         }
     }
@@ -393,7 +398,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     // L'export compta fait partie de ce qu'on garde : on l'ecrit si absent.
     let (fichier_export, manques) = match export_compta(ctx, annee, 1, 12, true) {
         Ok(e) => (e.fichier, Vec::new()),
-        Err(e) if est_une_erreur_d_operation(&e) => (None, vec![format!("export compta : {}", String::from(e))]),
+        Err(e) if est_une_erreur_d_operation(&e) => (None, vec![format!("export compta : {}", e.phrase)]),
         Err(e) => return Err(e),
     };
 
@@ -406,7 +411,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mut fichiers_engagements: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for m in &mois {
         fichiers_engagements.insert(m.clone());
-        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(refus)? {
+        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(refuse)? {
             fichiers_engagements.insert(o.fichier);
         }
     }

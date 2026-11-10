@@ -81,7 +81,7 @@ fn phrase_repetition(quoi: &str, etat: &etats::Repetition) -> String {
 /// DE SECOURS EST VOULUE, et elle est tracee : un motif ECRIT (dix caracteres au moins) passe outre ; ce
 /// qu'on refuse, c'est le contournement SILENCIEUX.
 fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement: &str) -> R<Ouverture> {
-    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     let nom = socle::fichiers::nom_du(chemin);
     let etat = etats::repetition(lignes, quoi, &envois::journal::empreinte(&octets), &nom);
     // UN REEL NE PART QUE SUR LE BILAN LU DE SON TEST : l'accuse d'enregistrement dit
@@ -112,8 +112,7 @@ fn versions_du_signalement(ctx: &Contexte, mois: Mois, octets: &[u8]) -> R<Vec<V
     let texte = String::from_utf8_lossy(octets);
     let numeros: Vec<String> =
         texte.lines().filter_map(|l| l.strip_prefix("S21.G00.40.009,")).map(|v| v.trim().trim_matches('\'').to_string()).collect();
-    envois::journal::versions_du_mois(ctx, &mois.to_string(), &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.iter().any(|n| n == numero)).map_err(Echec::from)
-}
+    envois::journal::versions_du_mois(ctx, &mois.to_string(), &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.iter().any(|n| n == numero))}
 
 /// La derniere porte -- une copie de developpement ne declare rien en reel.
 fn refuser_si_copie(ctx: &Contexte, quoi: &str) -> R<()> {
@@ -132,7 +131,7 @@ fn refuser_si_copie(ctx: &Contexte, quoi: &str) -> R<()> {
 /// deja. `None` reste `None`.
 fn ordre_d_essai_du_fichier(calcule: Option<i64>, chemin: &Path) -> R<Option<i64>> {
     let Some(c) = calcule else { return Ok(None) };
-    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     Ok(Some(match rang_dans_le_fichier(&octets)? {
         Some(m) => c.max(m),
         None => c,
@@ -156,13 +155,16 @@ fn rang_dans_le_fichier(octets: &[u8]) -> R<Option<i64>> {
 
 /// L'ordre qu'une DSN a deposer porte (S20.G00.05.004) : absent ou illisible, elle se refait.
 fn ordre_dit(o: Option<&str>) -> R<i64> {
-    let o = o.ok_or_else(|| erreur(Classe::Illisible, socle::echec::cle("Cette DSN ne dit pas son ordre : la refaire. Rien n'est parti.", "S20.G00.05.004")))?;
+    let o = o.ok_or_else(|| socle::echec::cle("Cette DSN ne dit pas son ordre : la refaire. Rien n'est parti.", "S20.G00.05.004").reclasser(Classe::Illisible))?;
     ordre_lu(o)
 }
 
 /// Un ordre de declaration (S20.G00.05.004) lu en nombre ; illisible, il se refuse.
 fn ordre_lu(o: &str) -> R<i64> {
-    o.trim().parse::<i64>().map_err(|e| erreur(Classe::Illisible, socle::echec::avec("L'ordre d'une DSN ne se lit pas.", socle::echec::Lieu { cle: Some("S20.G00.05.004".into()), detail: Some(format!("« {} » : {}", o, e)), ..socle::echec::Lieu::default() })))
+    o.trim().parse::<i64>().map_err(|e| {
+        let lieu = socle::echec::Lieu { cle: Some("S20.G00.05.004".into()), detail: Some(format!("« {} » : {}", o, e)), ..socle::echec::Lieu::default() };
+        Echec { a_part: Some(lieu.into()), ..erreur(Classe::Illisible, "L'ordre d'une DSN ne se lit pas.") }
+    })
 }
 
 /// `prochain_ordre_de_test` : l'ordre a donner au prochain essai de ce mois, ou `None` pour le premier. Les
@@ -175,7 +177,7 @@ fn ordre_lu(o: &str) -> R<i64> {
 /// rien ; trop petit, c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
 fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, constitution: &str) -> R<Option<i64>> {
     let mois = &le_mois.to_string();
-    let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), false).map_err(|m| erreur(Classe::Disque, m))?;
+    let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.reel() && !l.signalement()).collect();
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, true, constitution, mois)?;
     if essais.is_empty() && !vues.du_mois_acceptee {
@@ -189,7 +191,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, cons
         if let Some(nom) = l.fichier().filter(|f| !f.is_empty()) {
             let p = ctx.racine.join("sorties").join(mois).join(nom);
             if p.exists() {
-                let octets = std::fs::read(&p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&p, &e)))?;
+                let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
                 if let Some(n) = rang_dans_le_fichier(&octets)? {
                     connus.push(n);
                 }
@@ -317,7 +319,7 @@ pub fn deposer_dsn_dans(
     // (p. 14). Deux signalements ecrits avant que le premier parte portent le meme : le second se refait. Refuse
     // avant la preuve : aucun mot de passe n'y change rien.
     if reel && apercu.est_signalement() {
-        let dernier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))?;
+        let dernier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
         let ordre = ordre_dit(apercu.ordre.as_deref())?;
         if ordre <= dernier {
             return Err(erreur(
@@ -528,14 +530,13 @@ pub(crate) fn deposer_dpae_avec(
         .iter()
         .map(|l| {
             Ok(EmbaucheDeclaree {
-                salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| format!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
+                salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
                 numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
                 debut: l.debut.clone(),
                 fin: l.fin.clone(),
             })
         })
-        .collect::<Result<_, String>>()
-        .map_err(Echec::from)?;
+        .collect::<R<_>>()?;
     // La version de chaque engagement dont l'embauche part : une date d'embauche qui change ensuite le dit.
     let declare = |cle: &str, n: &str| embauches.iter().any(|x| x.salarie.as_str() == cle && x.numero.as_deref() == Some(n));
     let versions = envois::journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, n, _| declare(cle, n)).map_err(Echec::from)?;
@@ -568,11 +569,11 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
     let mode = if reel { "" } else { " en test" };
     let paies = match paies_des_embauches(ctx, mois, embauches) {
         Ok(p) => p,
-        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase())],
+        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase)],
     };
     let lignes = match ad::a_combler(ctx, &paies, declarations::amorcage::EMBAUCHE, false) {
         Ok(l) => l,
-        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase())],
+        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase)],
     };
     let (retenues, ecartees): (Vec<ad::Ligne>, Vec<ad::Ligne>) = lignes.into_iter().partition(|l| l.pourquoi_pas.is_empty());
     // UNE PHRASE PAR RAISON, pas par salarie : la phrase du depot tient dans sa place quel que soit le nombre d'embauches.
@@ -591,7 +592,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
     let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, mois, ctx.aujourdhui, false) {
         Ok(f) => f,
         Err(e) => {
-            dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase()));
+            dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase));
             return dit;
         }
     };
@@ -617,7 +618,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {
             Ok(_) => parties.push(qui_demande),
-            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, mode, e.phrase())),
+            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, mode, e.phrase)),
         }
     }
     if !parties.is_empty() {
@@ -628,16 +629,16 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
 
 /// Les engagements valides de `mois` que nomment les embauches d'une DPAE (`salarie`, `numero`), vus comme des embauches.
 fn paies_des_embauches(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
-    let o = |m: String| erreur(Classe::Refuse, m);
-    let departs = envois::journal::lu(&ctx.racine).map_err(String::from).map_err(o)?.departs;
-    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(String::from).map_err(o)? else { return Ok(Vec::new()) };
+    let o = |m: Echec| m.reclasser(Classe::Refuse);
+    let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
+    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)? else { return Ok(Vec::new()) };
     let declaree = |p: &engagement::calcul::Paie| {
         let cle = p.salarie.id.to_string();
         embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())
     };
     let mut paies = Vec::new();
-    for e in engagement::engagements_de_la_saisie(ctx, &data).map_err(String::from).map_err(o)? {
-        let p = engagement::embauche(ctx, &e).map_err(String::from).map_err(o)?;
+    for e in engagement::engagements_de_la_saisie(ctx, &data).map_err(o)? {
+        let p = engagement::embauche(ctx, &e).map_err(o)?;
         if declaree(&p) {
             paies.push(p);
         }
