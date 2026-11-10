@@ -124,6 +124,19 @@ struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
+    /// LA CASE `cle` DE LA FICHE DU SALARIE qu'une condition de grille nomme (`droit::minima::case_lue`) : une case de la
+    /// piece d'un permanent (le forfait en jours) ne se lit que pour un contrat paye au mois ; pour un autre, elle ne dit
+    /// rien.
+    fn case_du_salarie(&self, cle: &str) -> Resultat<Option<CaseLue>> {
+        if let Some(lue) = case_lue(&self.fiche.champs, cle)? {
+            return Ok(Some(lue));
+        }
+        match self.paie.engagement.nat()?.au_mois() {
+            Some(au) => case_lue(self.fiche.permanent.ouvrir(&au), cle),
+            None => Ok(None),
+        }
+    }
+
     /// Les lignes de minima du metier dans la 3090, annexe par annexe (hors catalogue : aucune).
     fn refs(&self) -> &'a std::collections::BTreeMap<String, String> {
         static AUCUNE: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -475,7 +488,7 @@ impl<'a> Cx<'a> {
             }
         }
         for (cl, attendu) in c.si_salarie.into_iter().flatten() {
-            if !case_lue(&self.fiche.champs, cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
+            if !self.case_du_salarie(cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
                 return Ok(false);
             }
         }
@@ -488,7 +501,7 @@ impl<'a> Cx<'a> {
         // L'anciennete, en dernier : elle ne se demande que si tout le reste vise la ligne. Seule la compagnie sait depuis
         // quand ; sans la case, le calcul refuse en la nommant.
         if let Some(a) = c.anciennete {
-            let Some(depuis) = case_lue(&self.fiche.champs, &a.champ)? else {
+            let Some(depuis) = self.case_du_salarie(&a.champ)? else {
                 return Err(socle::echec::cle(
                     format!(
                         "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",

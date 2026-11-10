@@ -914,10 +914,10 @@ macro_rules! fiche {
             }
         }
 
+        /// Ses cases hors de ses pieces : celles d'une piece se regardent dans la piece ouverte (`$cases`, `Cases`).
         impl Cases for $plate {
             fn voir<V: VoirCase>(&self, v: &mut V) {
                 $( v.case(stringify!($champ), &self.$champ); )*
-                $( $( v.case(stringify!($pchamp), &self.$piece.cases.$pchamp); )* )*
             }
         }
 
