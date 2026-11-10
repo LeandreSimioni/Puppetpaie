@@ -14,6 +14,15 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature est une `enum`.
+- **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
+  porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
+  (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par
+  `socle::forme::lire_reponse_tiers` : stricte sur les clés qu'elle déclare (une clé exigée qui manque, ou d'un autre
+  type, refuse la réponse) ; une clé que Google ajoute et qu'on ne lit pas n'est ni lue, ni gardée, ni transmise. Rien
+  d'inconnu n'entre dans le logiciel. **Pourquoi** : Google ajoute des clés à ses réponses sans prévenir ; en strict, la
+  connexion du compte ou le Drive tomberaient jusqu'à une nouvelle version. Ne l'empruntent que le jeton, l'erreur, le
+  compte et le Drive (`envois::google`, `google_autorisation`, `drive`). Nos propres formes et les retours de la norme
+  (net-entreprises, Urssaf) restent stricts : un format de la norme ne change pas sans nouvelle version de la norme.
 - **Pourquoi** : aucun calcul ne se demande si une case est vide ou mal écrite ; le compilateur oblige chaque calcul à
   traiter chaque cas, et suit chaque lecteur quand une forme change. Et la vitesse : avant, ouvrir une page prenait
   jusqu'à 5 s parce que la même carte se relisait 40 à 50 fois ; lue une fois à la porte, elle se passe ensuite en type
@@ -34,6 +43,8 @@ que par la structure :
   `engagement`.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
+  `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
+  tiers : « Le corps et ses portes »),
   `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
   `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`. Les tests de structure sont
@@ -52,10 +63,12 @@ seule vérification, à l'arrivée », « On compile peu »).
 **L'argent est hors du logiciel.** Il dit combien et à qui ; la compagnie vire ; la DSN porte les ordres de
 prélèvement.
 
-**Deux acteurs, une porte.** La personne (la page) et un LLM (`moteur route`) passent par les mêmes routes, reçoivent
-les mêmes phrases et les mêmes refus. Chaque route porte sa fiche dans son code (`routes/src/catalogue.rs`) ; `moteur
-routes` tire le catalogue de ces fiches. La route rend ce qui se lit (phrase, état, geste) ; la page met en page et ne
-décide rien. Un manque du LLM est un manque du moteur.
+**Un seul logiciel : le moteur et ses routes.** Cliquer dans la page ou appeler `moteur route` en ligne de commande,
+c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. La route rend ce qui se lit
+(phrase, état, geste) ; la page n'est qu'une façon de lire cette réponse : elle la met en page, ne décide rien et n'a rien en propre. Il n'y a donc **ni « côté écran », ni
+« côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit. Une chose
+est faite quand la route la fait ; un manque, où qu'on le voie, est un manque de la route. Chaque route porte sa fiche
+dans son code (`routes/src/catalogue.rs`) ; `moteur routes` tire le catalogue de ces fiches.
 
 **Tout est daté.** Barèmes, configuration entière de la compagnie, engagements et leurs versions, journal : chaque
 valeur porte sa date, et le moteur lit à la date de la période payée, jamais « à aujourd'hui ». Une donnée non datée
@@ -484,7 +497,11 @@ convention de ce jour. On écrit par `contexte::dater`, et seulement par lui : l
 première valeur d'un champ s'y écrit de tout temps, quelle que soit la date
 donnée ; changer une valeur existante exige sa date d'effet
 (`routes::fiches::ecrire_datee`, l'écran la demande alors) ; ce qui précède
-garde l'ancienne valeur.
+garde l'ancienne valeur. Ce qu'une case datée dit à un jour (sa valeur en vigueur, la dernière d'avant, la prochaine à
+venir, chacune avec sa note, et toutes) se lit par `fiche::temps_au`, seule (la valeur d'avant dit un changement : jamais une case vide, ni la même valeur
+réécrite) : la route de chaque fiche le rend à la date du jour sous chaque case (`historique` de la fiche, les autres
+établissements case par case), les contrats de la DSN saisis (`organismes-contrats`) et le taux AT/MP (`taux-atmp`) de
+même, mis en phrases par `routes::temps`.
 
 Trois subtilités, chacune trouvée en cherchant pourquoi un centime manquait.
 
@@ -597,6 +614,30 @@ Le bulletin se compte lui-même : `documents::bulletin` passe les paies qu'il
 imprime à `lire_engagements(ctx, Some(paies))`, qui les substitue à celles de
 leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
 (`service::droits`) lisent la même chose.
+
+### Le modèle d'un contrat, et le contrat parti
+
+Un modèle de contrat est un texte `.modele` : ses `ARTICLE:` sont les paragraphes du contrat, dans l'ordre ; un alinéa
+qui commence par `[si un.champ]` ne s'écrit que si ce champ a une valeur (`fabrique_pdf::modele::retenu`), ce qui
+remplace tout morceau de phrase vide calculé dans le code (le numéro d'objet, la personne remplacée, le hors-brut, les
+clauses particulières) ; un paragraphe dont aucun alinéa ne s'écrit se tait, titre compris. Un modèle est **un contrat
+et son avenant**. Chaque nature a sa **base**, livrée (`contrat_ecrit.modele` et `.avenant` de `contrats-base.json`),
+qui suit les mises à jour et ne se modifie pas ; la compagnie en copie des **modèles spéciaux**
+(`gabarits/contrats/modeles.json` : chacun sa nature, son contrat et son avenant, chacun avec le texte de la base au
+jour de la copie, d'où la route dit quels paragraphes de la base ont changé depuis), choisit le défaut de chaque
+nature, et un engagement en choisit un (sa case `modele_contrat`). Un spécial s'écrit **paragraphe par paragraphe**,
+contrat ou avenant (`partie`), une route par geste (écrire, ajouter, déplacer, supprimer un paragraphe ; renommer) ;
+chaque geste passe par le vérificateur de sa partie (`documents::contrat_ecrit::manques`, `manques_de_l_avenant`), qui
+dit, article par article, le champ inconnu, la condition fausse ou la mention exigée qui manque : un geste qui
+laisserait le modèle faux n'écrit rien. Un spécial supprimé garde son id dans `supprimes` : un id ne sert qu'une fois,
+et l'engagement qui l'avait choisi suit le défaut de sa nature. **Une seule façon de personnaliser** : la compagnie
+écrit ses clauses dans un paragraphe de son spécial ; celles d'un engagement (sa case `clauses_particulieres`) ne
+s'impriment que par un alinéa `[si contrat.clauses_particulieres]`, que le vérificateur exige de tout modèle comme une
+mention : elles ne se perdent jamais en silence. L'aperçu fait le contrat ou l'avenant d'un modèle, rempli avec un
+engagement de la compagnie (l'avenant cite le premier article du contrat sans le changer). **Un contrat parti garde son texte** : au
+départ, son contrat et son avenant se figent sous une empreinte (`gabarits/contrats/partis/`), que la ligne du journal
+note (`ContratParti::modele`) ; le refaire ou lui faire un avenant relit ces textes-là ; l'avenant d'un contrat signé
+ailleurs suit le modèle que son engagement suit (`routes::modeles_contrat`).
 
 ### Les conseils « Le saviez-vous ? »
 

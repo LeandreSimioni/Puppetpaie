@@ -4,9 +4,9 @@
 //! `atelier/reference/sources/code-du-travail/xml/L1242-12.xml`) ; tout salarie recoit par ecrit les informations
 //! principales de sa relation de travail (L. 1221-5-1 ; leur liste, R. 1221-34 ; le renvoi aux textes, R. 1221-35 :
 //! `xml/L1221-5-1.xml`, `xml/R1221-34.xml`, `xml/R1221-35.xml`) ; le contrat a temps partiel dit sa duree et sa
-//! repartition (L. 3123-6, `xml/L3123-6.xml`). Chaque nature de `contrats-base.json` dit son modele livre et ses
-//! mentions obligatoires, chacune par son marqueur (`contrat_ecrit`) : un modele -- le livre ou celui que la compagnie
-//! pose dans son dossier `gabarits/` -- qui n'en cite pas une ne fait pas de contrat (`refuser_les_mentions_absentes`).
+//! repartition (L. 3123-6, `xml/L3123-6.xml`). Chaque nature de `contrats-base.json` dit son modele de base et ses
+//! mentions obligatoires, chacune par son marqueur (`contrat_ecrit`) : un modele -- la base ou un modele special de la
+//! compagnie -- qui n'en cite pas une ne fait pas de contrat (le verificateur, `manques`).
 //!
 //! Ici, les valeurs propres au contrat d'un permanent (`marqueurs_au_mois` : son salaire au mois, sa duree du travail,
 //! son motif et son terme), celles que tout contrat ecrit porte (`poser_les_mentions` : la categorie d'emploi, la
@@ -15,7 +15,6 @@
 
 use droit::fiche::Lue as _;
 use serde::Serialize;
-use std::path::Path;
 
 use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
 
@@ -76,9 +75,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             let qui_remplace = ecrit(eng, |c| c.personne_remplacee.as_deref()).ok_or_else(|| {
                 format!("Le contrat de {} est conclu pour un remplacement : il comporte « le nom et la qualification professionnelle de la personne remplacée » (L. 1242-12, 1°). L'écrire dans l'engagement (Plus d'options › Personne remplacée). Rien n'est écrit.", nom)
             })?;
-            m.insert(Marqueur::ContratPersonneRemplacee, format!(", en remplacement de {}", qui_remplace));
-        } else {
-            m.insert(Marqueur::ContratPersonneRemplacee, String::new());
+            m.insert(Marqueur::ContratPersonneRemplacee, qui_remplace);
         }
     }
     // LE LIEU DE TRAVAIL (R1221-34, 2°) : celui que l'engagement dit ; sans lui, le siege de l'employeur (INFERENCE : un
@@ -116,7 +113,9 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         return Err(format!("Le contrat de {} ne dit aucune rémunération : la paie de son premier mois n'a pas de salaire de base. Rien n'est écrit.", nom));
     }
     m.insert(Marqueur::RemunerationDetail, et(&morceaux));
-    m.insert(Marqueur::RemunerationHorsBrut, remuneration_hors_brut(&paie.remuneration));
+    if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
+        m.insert(Marqueur::RemunerationHorsBrut, h);
+    }
     m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
     m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
     // LA PERIODICITE DU PAIEMENT (R1221-34, 11°) : une fois par mois (L3242-1). INFERENCE : par virement, comme le contrat
@@ -225,8 +224,8 @@ impl Organismes {
 /// Les valeurs que tout contrat ecrit porte, quelle que soit sa nature : la categorie d'emploi (R1221-34, 3°), le motif
 /// d'un contrat d'usage, la periode d'essai (L1242-12, 6° ; R1221-34, 7°), les organismes de retraite complementaire et
 /// de prevoyance (L1242-12, 8° ; R1221-34, 14°), les mentions de renvoi (R1221-34, 8° a 10° et 14°, que R1221-35 permet
-/// de dire par un renvoi aux textes), et les clauses particulieres -- celles de l'engagement, sinon celles que la
-/// compagnie ecrit une fois dans sa configuration.
+/// de dire par un renvoi aux textes), et les clauses particulieres de l'engagement, s'il en dit (le modele les imprime
+/// par un alinea `[si contrat.clauses_particulieres]`).
 pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &FormeDEngagement, nat: &Nature, m: &mut Valeurs) -> Resultat<()> {
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
@@ -293,27 +292,28 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     }
     protection.push('.');
     m.insert(Marqueur::MentionsProtectionSociale, protection);
-    let clauses = ecrit(eng, |c| c.clauses_particulieres.as_deref()).or_else(|| texte(ent.clauses_particulieres.remplie()).map(str::to_string));
-    // Le contrat dit qu'il n'en a aucune.
-    m.insert(
-        Marqueur::ContratClausesParticulieres,
-        match clauses {
-            Some(c) => c,
-            None => "Aucune.".to_string(),
-        },
-    );
+    if let Some(c) = ecrit(eng, |c| c.clauses_particulieres.as_deref()) {
+        m.insert(Marqueur::ContratClausesParticulieres, c);
+    }
     Ok(())
 }
 
-/// Le nom du modele livre du contrat ecrit de cette nature.
-pub fn nom_du_modele(nat: &Nature) -> Resultat<String> {
-    nat.modele_contrat().ok_or_else(|| format!("La nature {} n'a pas de contrat écrit.", nat.libelle))
+/// UN MODELE DE CONTRAT TEL QU'IL SERT A UN CONTRAT : comment une phrase le nomme (« le modèle de base « … » », « le
+/// modèle « Tournée » »), s'il est la base de sa nature, son texte lu, et celui de son avenant.
+#[derive(Debug, Clone)]
+pub struct ModeleDuContrat {
+    pub nom: String,
+    pub base: bool,
+    pub lu: ModeleLu,
+    pub avenant: ModeleLu,
 }
 
-/// Le modele est-il celui de la compagnie (son dossier `gabarits/`) plutot que celui du logiciel ?
-pub fn est_propre(chemin: &Path) -> bool {
-    !chemin.starts_with(socle::fichiers::dossier_du_code())
-}
+/// La phrase de L. 1221-3 que le verificateur rappelle : il ne detecte aucune langue, il dit la regle
+/// (`atelier/reference/sources/legifrance-versions-datees/legifrance-ct-L1221-3-20080501.txt`).
+pub const EN_FRANCAIS: &str = "Le contrat de travail écrit est rédigé en français (code du travail, L. 1221-3) : une traduction peut s'ajouter au texte français, jamais le remplacer.";
+
+/// Les valeurs qui peuvent etre vides : un modele ne les cite que dans un alinea qui commence par `[si ce.marqueur]`.
+const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqueur::RemunerationPeriode, Marqueur::RemunerationHorsBrut, Marqueur::ContratPersonneRemplacee, Marqueur::ContratClausesParticulieres];
 
 /// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
 #[derive(Serialize)]
@@ -335,39 +335,115 @@ pub fn mentions(nat: &Nature) -> Result<Vec<(Marqueur, String, bool)>, String> {
         .collect()
 }
 
-/// LES MENTIONS QUE LA LOI EXIGE (`contrat_ecrit.mentions` de la nature) : un modele qui ne cite pas le marqueur de
-/// l'une d'elles ferait un contrat qui la tait. Une mention `si_dite` n'est due que si sa valeur n'est pas vide (la
-/// personne remplacee, pour un remplacement). `Err` : la phrase du refus, qui dit chaque
-/// mention absente, le texte qui l'exige, et quoi faire.
-pub fn refuser_les_mentions_absentes(modele: &Path, lu: &ModeleLu, nat: &Nature, valeurs: &Valeurs) -> Result<(), String> {
-    let absentes: Vec<String> = mentions(nat)?
-        .into_iter()
-        .filter(|(cle, _, si_dite)| !*si_dite || valeurs.get(cle).is_some_and(|v| !v.trim().is_empty()))
-        .filter(|(cle, _, _)| !lu.cite(*cle))
-        .map(|(cle, pourquoi, _)| format!("{} ({})", cle, pourquoi))
-        .collect();
-    if absentes.is_empty() {
+/// LE VERIFICATEUR D'UN MODELE DE CONTRAT, paragraphe par paragraphe : sa grammaire ; dans chaque article (et le
+/// preambule, le titre, les signatures), chaque champ cite connu du logiciel et permis a un contrat, chaque condition
+/// `[si …]` sur un champ connu, chaque valeur qui peut etre vide dans un alinea conditionne par elle ; puis chaque mention
+/// que la loi exige de sa nature (`contrat_ecrit.mentions`) citee dans un alinea qui s'ecrit (sans condition, ou
+/// conditionne par elle-meme), et de meme les clauses particulieres de l'engagement (`CLAUSES_EXIGEES`). Une mention
+/// `si_dite` (la personne remplacee, les clauses) n'est due que si sa valeur est dite :
+/// `valeurs` celles d'un contrat ; `None`, un modele qu'on ecrit, ou chacune se demande comme si elle l'etait. Rend les
+/// manques, chacun une phrase qui nomme le paragraphe ou la donnee ; vide : le modele est bon.
+pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<Vec<String>, String> {
+    let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle") {
+        Ok(m) => m,
+        Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.0)]),
+    };
+    let (mut dits, ecrits) = champs_cites(&m, &crate::marqueurs::DU_REMPLACEMENT, &[]);
+    for (cle, pourquoi, si_dite) in mentions(nat)? {
+        let due = !si_dite || valeurs.is_none_or(|v| v.get(&cle).is_some_and(|x| !x.trim().is_empty()));
+        if due && !ecrits.iter().any(|(x, c)| *x == cle && c.is_none_or(|c| c == cle)) {
+            dits.push(format!("Il manque {}, que la loi exige d'un {} ({}).", cle, nat.nom_du_contrat(), pourquoi));
+        }
+    }
+    // Les clauses de l'engagement, exigees de tout modele comme une mention due si elle est dite.
+    let cle = Marqueur::ContratClausesParticulieres;
+    let dites = valeurs.is_none_or(|v| v.get(&cle).is_some_and(|x| !x.trim().is_empty()));
+    if dites && !ecrits.iter().any(|(x, c)| *x == cle && c.is_none_or(|c| c == cle)) {
+        dits.push(format!("Il manque {} : {}.", cle, CLAUSES_EXIGEES));
+    }
+    Ok(dits)
+}
+
+/// Pourquoi tout modele de contrat cite les clauses particulieres de l'engagement : un choix de l'editeur (une seule
+/// facon de personnaliser un contrat), pas un texte de loi. Elles ne s'impriment que par lui ; un modele qui ne le
+/// citerait pas les tairait sans le dire.
+const CLAUSES_EXIGEES: &str = "les clauses particulières qu'un engagement dit ne s'impriment que par lui, dans un alinéa [si contrat.clauses_particulieres] ; un modèle qui ne le cite pas les perdrait sans le dire";
+
+/// LES CHAMPS QU'UN MODELE CITE, lieu par lieu (le titre, le preambule, la phrase d'annulation, le bloc de modification,
+/// chaque article, les signatures) : les manques de grammaire des champs (un champ inconnu, ou que ce modele ne porte
+/// pas ; une condition sur un champ inconnu ; une valeur qui peut etre vide hors de son alinea `[si …]`), et chaque champ
+/// cite avec la condition de son alinea. Un contrat porte les champs de `CHAMPS` ; `annulation` : ceux que sa phrase
+/// d'annulation ajoute ; `partout` : ceux qu'un avenant ajoute.
+fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], partout: &[Marqueur]) -> (Vec<String>, Vec<(Marqueur, Option<Marqueur>)>) {
+    let permis = |c: &Marqueur| CHAMPS.iter().any(|(k, _, _)| k == c) || partout.contains(c);
+    let mut lieux: Vec<(String, &[String], &[Marqueur])> = vec![
+        ("le titre".into(), std::slice::from_ref(&m.titre), &[]),
+        ("le sous-titre".into(), std::slice::from_ref(&m.soustitre), &[]),
+        ("le préambule".into(), &m.preambule, &[]),
+        ("la phrase d'annulation".into(), &m.annule, annulation),
+        ("le bloc de modification".into(), &m.modification, &[]),
+    ];
+    for (n, (titre, alineas)) in m.articles.iter().enumerate() {
+        lieux.push((format!("l'article {} « {} »", n + 1, titre), alineas, &[]));
+    }
+    lieux.push(("les signatures".into(), &m.signatures, &[]));
+    let (mut dits, mut ecrits) = (Vec::new(), Vec::new());
+    for (ou, alineas, en_plus) in &lieux {
+        for a in alineas.iter() {
+            let (condition, corps) = match fabrique_pdf::modele::condition(a) {
+                Some((c, t)) => match Marqueur::lire(c).filter(|x| permis(x)) {
+                    Some(x) => (Some(x), t),
+                    None => {
+                        dits.push(format!("Dans {}, la condition [si {}] ne nomme pas un champ du logiciel.", ou, c));
+                        continue;
+                    }
+                },
+                None => (None, a.as_str()),
+            };
+            for cite in crate::marqueurs::cites(corps) {
+                match cite {
+                    Ok(x) if permis(&x) || en_plus.contains(&x) => {
+                        if PEUVENT_ETRE_VIDES.contains(&x) && condition != Some(x) {
+                            dits.push(format!("Dans {}, {} peut être vide : l'écrire dans un alinéa qui commence par [si {}].", ou, x, x.nom()));
+                        }
+                        ecrits.push((x, condition));
+                    }
+                    Ok(x) => dits.push(format!("Dans {}, {} n'est pas un champ de ce modèle.", ou, x)),
+                    Err(inconnu) => dits.push(format!("Dans {}, {{{{{}}}}} n'est pas un champ du logiciel : le corriger d'après la liste des champs, ou l'écrire en texte.", ou, inconnu)),
+                }
+            }
+        }
+    }
+    (dits, ecrits)
+}
+
+/// LE VERIFICATEUR D'UN MODELE D'AVENANT, le meme que celui du contrat (`champs_cites`), ses champs en plus
+/// (`CHAMPS_DE_L_AVENANT`) : il a un bloc MODIFICATION:, qui dit ce qui change (R. 1221-40 pour un permanent :
+/// `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`), et ce bloc porte `modification.phrase`, seul a s'ecrire
+/// pour un contrat signe hors du logiciel, dont aucun article ne se cite. Rend les manques ; vide : le modele est bon.
+pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
+    let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle d'avenant") {
+        Ok(m) => m,
+        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.0)],
+    };
+    let (mut dits, _) = champs_cites(&m, &[], &CHAMPS_DE_L_AVENANT.map(|(c, _)| c));
+    if m.modification.is_empty() {
+        dits.push("L'avenant n'a pas de bloc MODIFICATION: : c'est lui qui dit, article par article, ce qui change.".into());
+    } else if !m.modification.iter().any(|b| crate::marqueurs::cites(b).contains(&Ok(Marqueur::ModificationPhrase))) {
+        dits.push(format!("Le bloc de modification de l'avenant ne cite pas {} : un contrat signé hors du logiciel n'a pas d'article à citer, l'avenant y dit ce qui change en clair.", Marqueur::ModificationPhrase));
+    }
+    dits
+}
+
+/// LE MODELE `m` FAIT-IL CE CONTRAT ? (`manques`, avec ses valeurs). `Err` : la phrase du refus, qui dit chaque manque et
+/// quoi faire.
+pub fn refuser_un_modele_incomplet(m: &ModeleDuContrat, nat: &Nature, valeurs: &Valeurs) -> Result<(), String> {
+    let dits = manques(nat, &m.lu.texte, Some(valeurs))?;
+    if dits.is_empty() {
         return Ok(());
     }
-    let nom = match modele.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => modele.to_string_lossy().into_owned(),
-    };
-    let (quel, quoi_faire) = if est_propre(modele) {
-        (
-            format!("Le modèle de contrat de la compagnie « {} » (dossier gabarits)", nom),
-            "Ajouter ces champs à son texte (Configuration › Modèles de contrat dit lesquels et comment), ou retirer ce modèle pour reprendre celui du logiciel.",
-        )
-    } else {
-        (format!("Le modèle de contrat livré « {} »", nom), "C'est un défaut du logiciel : le signaler.")
-    };
-    Err(format!(
-        "{} ne porte pas ce que la loi exige d'un {} : {}. {} Rien n'est écrit.",
-        quel,
-        nat.nom_du_contrat(),
-        absentes.join(" ; "),
-        quoi_faire
-    ))
+    let quoi_faire = if m.base { "C'est un défaut du logiciel : le signaler." } else { "Corriger ce modèle (Configuration › Modèles de contrat), ou choisir un autre modèle pour ce contrat." };
+    Err(format!("{} ne fait pas ce contrat : {} {} Rien n'est écrit.", m.nom, dits.join(" "), quoi_faire))
 }
 
 /// LES CHAMPS QU'UN MODELE PEUT CITER, et ce que chacun imprime : ce que l'ecran montre a qui ecrit le modele de sa
@@ -402,23 +478,23 @@ pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
     (Marqueur::ContratDebut, "la date d'embauche", "tous"),
     (Marqueur::ContratFin, "la date du terme", "cddu_spectacle cdd"),
     (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", "cddu_spectacle cdd"),
-    (Marqueur::ContratPersonneRemplacee, "« , en remplacement de » et la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
+    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
     (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", "cddu_spectacle"),
     (Marqueur::ContratLieu, "le lieu de travail", "tous"),
     (Marqueur::ContratDatePaiement, "la date du paiement", "tous"),
     (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", "cdd cdi"),
     (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", "cdd cdi"),
     (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", "tous"),
-    (Marqueur::ContratClausesParticulieres, "les clauses particulières (celles de l'engagement, sinon celles de la configuration), ou « Aucune. »", "tous"),
+    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", "tous"),
     (Marqueur::RemunerationDetail, "la rémunération et ses composantes", "tous"),
-    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements), vide sinon", "tous"),
+    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", "tous"),
     (Marqueur::RemunerationBrut, "le brut du (premier) mois", "tous"),
     (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", "tous"),
-    (Marqueur::RemunerationPeriode, "« pour le mois de … » quand le contrat se poursuit après le mois", "cddu_spectacle"),
+    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", "cddu_spectacle"),
     (Marqueur::RemunerationCachets, "le nombre de cachets", "cddu_spectacle"),
     (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", "cddu_spectacle"),
     (Marqueur::SpectacleTitre, "le titre du spectacle", "cddu_spectacle"),
-    (Marqueur::SpectacleObjet, "son numéro d'objet, entre parenthèses (vide sans numéro)", "cddu_spectacle"),
+    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", "cddu_spectacle"),
     (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", "tous"),
     (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", "tous"),
     (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", "tous"),
@@ -427,21 +503,35 @@ pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
     (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", "tous"),
 ];
 
-/// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige.
-pub fn champs_des_modeles(nat: &Nature) -> Result<Vec<ChampDeModele>, String> {
-    let mentions = mentions(nat)?;
-    Ok(CHAMPS
-        .iter()
-        .filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle))
-        .map(|(cle, quoi, _)| {
-            let exige = mentions.iter().find(|(m, _, _)| *m == *cle);
-            ChampDeModele {
-                marqueur: cle.to_string(),
-                quoi,
-                obligatoire: exige.is_some(),
-                texte: exige.map(|(_, t, _)| t.clone()),
-                si_dite: exige.is_some_and(|(_, _, s)| *s),
-            }
+/// Ce que l'avenant ajoute aux champs du contrat, et ce que chacun imprime : les siens, et ceux de chaque modification
+/// (le bloc MODIFICATION: se repete pour chacune).
+pub const CHAMPS_DE_L_AVENANT: [(Marqueur, &str); 10] = [
+    (Marqueur::AvenantNumero, "le numéro de l'avenant (1, 2… par contrat)"),
+    (Marqueur::AvenantDateContrat, "le jour où le contrat modifié a été signé"),
+    (Marqueur::AvenantReference, "le contrat modifié : « n° … du … », ou « commencé le … » s'il a été signé ailleurs"),
+    (Marqueur::AvenantEffet, "la date d'effet de l'avenant"),
+    (Marqueur::AvenantDate, "le jour où l'avenant est établi"),
+    (Marqueur::ModificationNumero, "le numéro de l'article modifié"),
+    (Marqueur::ModificationArticle, "le titre de l'article modifié"),
+    (Marqueur::ModificationAvant, "un alinéa du contrat signé, tel qu'il s'y lit"),
+    (Marqueur::ModificationApres, "le même alinéa, à jour"),
+    (Marqueur::ModificationPhrase, "ce qui change en clair, pour un contrat signé ailleurs"),
+];
+
+/// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige ;
+/// ceux d'un avenant (`avenant`) : les memes, aucun obligatoire, et les siens.
+pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> Result<Vec<ChampDeModele>, String> {
+    let mut mentions = if avenant { Vec::new() } else { mentions(nat)? };
+    if !avenant {
+        mentions.push((Marqueur::ContratClausesParticulieres, CLAUSES_EXIGEES.to_string(), true));
+    }
+    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
+    let siens = CHAMPS_DE_L_AVENANT.iter().filter(|_| avenant).copied();
+    Ok(du_contrat
+        .chain(siens)
+        .map(|(cle, quoi)| {
+            let exige = mentions.iter().find(|(m, _, _)| *m == cle);
+            ChampDeModele { marqueur: cle.to_string(), quoi, obligatoire: exige.is_some(), texte: exige.map(|(_, t, _)| t.clone()), si_dite: exige.is_some_and(|(_, _, s)| *s) }
         })
         .collect())
 }

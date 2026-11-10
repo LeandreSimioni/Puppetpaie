@@ -5,16 +5,13 @@
 
 use std::path::Path;
 
+use documents::contrat_ecrit::manques;
 use documents::marqueurs::{Marqueur, ModeleLu, Valeurs};
 
 const MODELES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../logiciel/donnees/modeles");
 
-fn modele(nom: &str) -> ModeleLu {
-    ModeleLu::lire(&std::fs::read_to_string(Path::new(MODELES).join(nom)).unwrap(), nom).unwrap()
-}
-
-fn sans(lu: &ModeleLu, de: &str, par: &str) -> ModeleLu {
-    ModeleLu::lire(&lu.texte.replace(de, par), "le modèle modifié").unwrap()
+fn texte(nom: &str) -> String {
+    std::fs::read_to_string(Path::new(MODELES).join(nom)).unwrap()
 }
 
 #[test]
@@ -28,32 +25,27 @@ fn chaque_modele_livre_se_lit_et_porte_les_mentions_de_l1242_12_et_r1221_34() {
     for nature in ["cddu_spectacle", "cdd", "cdi"] {
         let nat = droit::natures::nature(nature).unwrap();
         let nom = nat.modele_contrat().unwrap();
-        let chemin = Path::new(MODELES).join(&nom);
         assert!(nat.mentions_obligatoires().unwrap().len() >= 15, "{} : ses mentions", nature);
-        documents::contrat_ecrit::refuser_les_mentions_absentes(&chemin, &modele(&nom), &nat, &Valeurs::new())
-            .unwrap_or_else(|e| panic!("{} : {}", nom, e));
+        let dits = manques(&nat, &texte(&nom), None).unwrap();
+        assert!(dits.is_empty(), "{} : {:?}", nom, dits);
     }
 }
 
 #[test]
 fn un_modele_de_cdd_sans_son_motif_ni_le_terme_est_refuse() {
     let nat = droit::natures::nature("cdd").unwrap();
-    let lu = modele("contrat-cdd.modele");
-    let lu = sans(&sans(&lu, "{{contrat.motif}}", "un surcroît"), "{{contrat.fin}}", "la fin du projet");
-    let propre = Path::new("/compagnie/gabarits/contrat-cdd.modele");
-    let refus = documents::contrat_ecrit::refuser_les_mentions_absentes(propre, &lu, &nat, &Valeurs::new()).unwrap_err();
-    assert!(refus.contains("{{contrat.motif}}") && refus.contains("L. 1242-12, premier alinéa"), "{}", refus);
-    assert!(refus.contains("{{contrat.fin}}") && refus.contains("L. 1242-12, 2°"), "{}", refus);
+    let t = texte("contrat-cdd.modele").replace("{{contrat.motif}}", "un surcroît").replace("{{contrat.fin}}", "la fin du projet");
+    let dits = manques(&nat, &t, None).unwrap().join(" ");
+    assert!(dits.contains("{{contrat.motif}}") && dits.contains("L. 1242-12, premier alinéa"), "{}", dits);
+    assert!(dits.contains("{{contrat.fin}}") && dits.contains("L. 1242-12, 2°"), "{}", dits);
 }
 
 #[test]
 fn la_personne_remplacee_n_est_due_que_pour_un_remplacement() {
     let nat = droit::natures::nature("cdd").unwrap();
-    let lu = sans(&modele("contrat-cdd.modele"), "{{contrat.personne_remplacee}}", "");
-    let propre = Path::new("/compagnie/gabarits/contrat-cdd.modele");
-    let vide = Valeurs::from([(Marqueur::ContratPersonneRemplacee, String::new())]);
-    assert!(documents::contrat_ecrit::refuser_les_mentions_absentes(propre, &lu, &nat, &vide).is_ok());
-    let avec = Valeurs::from([(Marqueur::ContratPersonneRemplacee, ", en remplacement de Mme X, chargée de production".to_string())]);
-    let refus = documents::contrat_ecrit::refuser_les_mentions_absentes(propre, &lu, &nat, &avec).unwrap_err();
-    assert!(refus.contains("L. 1242-12, 1°"), "{}", refus);
+    let t = texte("contrat-cdd.modele").replace("{{contrat.personne_remplacee}}", "");
+    assert!(manques(&nat, &t, Some(&Valeurs::new())).unwrap().is_empty());
+    let avec = Valeurs::from([(Marqueur::ContratPersonneRemplacee, "Mme X, chargée de production".to_string())]);
+    let dits = manques(&nat, &t, Some(&avec)).unwrap().join(" ");
+    assert!(dits.contains("L. 1242-12, 1°"), "{}", dits);
 }

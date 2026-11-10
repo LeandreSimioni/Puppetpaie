@@ -211,8 +211,12 @@ function dessinerConfig() {
         if (k.startsWith("_") || k === "historique" || k === "actif") return;
         ajouter(libelleDe(k), v, k);
       });
-    (f.donnees.historique || []).forEach((h) =>
-      ajouter(libelleDe(h.champ), h.valeur, h.champ, true));
+    const autresDates = (h) => (h.valeurs || []).filter((e) => !e.en_vigueur)
+      .forEach((e) => ajouter(libelleDe(h.champ), e.valeur, h.champ, true));
+    (f.donnees.historique || []).forEach((h) => {
+      autresDates(h);
+      (h.lignes || []).forEach((l) => l.cases.forEach((c) => autresDates({ ...c, champ: h.champ })));
+    });
     return out.map((x) => ({ ...x, cle: plat(x.quoi), serre: plat(x.quoi).replace(/\s+/g, "") }));
   };
   const chercher = (f, mots) => {
@@ -928,15 +932,17 @@ function aideCorps(cle, aide) {
  *  avec un « + » pour en ajouter une et une croix pour en retirer une. Ce
  *  que la table ne nomme pas n'est pas affiche, et n'est pas perdu.
  */
-function structureHtml(c, v, sous, a) {
+function structureHtml(c, v, sous, a, temps) {
   const tete = `<label class="titre-structure">${echapper(c.libelle)}
       ${aideHtml(c.cle, c.aide)}</label>
     ${aideCorps(c.cle, c.aide)}`;
   let corps;
   if (sous.liste) {
     const lignes = Array.isArray(v) ? v : (v ? [v] : []);
+    // Les temps des cases de chaque ligne, que le moteur range par la clé de la ligne (le NIC d'un établissement).
+    const deLaLigne = (l) => ((temps || {}).lignes || []).find((x) => l && x.cle === l.nic);
     corps = `<div class="liste-structure" data-liste="${echapper(c.cle)}">
-        ${lignes.map((l, i) => ligneStructure(c.cle, sous, l, i)).join("")}
+        ${lignes.map((l, i) => ligneStructure(c.cle, sous, l, i, deLaLigne(l))).join("")}
       </div>
       <button type="button" class="secondaire ajouter-ligne"
         data-ajouter="${echapper(c.cle)}">${echapper(sous.ajouter || "+")}</button>`;
@@ -1026,8 +1032,17 @@ function cocherUnBouton(e) {
 }
 document.addEventListener("input", cocherUnBouton, true);
 
-function ligneStructure(cle, sous, ligne, i) {
+/* Une ligne d'une liste. `temps` : ceux de ses cases (`lignes` des temps de la liste) ; chacune montre sous elle sa
+ * valeur d'avant et celle à venir, une case faite de cases (« versement_mobilite ») sous la première des siennes. */
+function ligneStructure(cle, sous, ligne, i, temps) {
   const o = ligne && typeof ligne === "object" ? ligne : {};
+  const montres = new Set();
+  const sousLaCase = (k) => {
+    const t = ((temps || {}).cases || []).find((x) => (x.champ === k || k.startsWith(x.champ + ".")) && !montres.has(x.champ));
+    if (!t) return "";
+    montres.add(t.champ);
+    return lignesDuTemps(t, valeurLisible);
+  };
   return `<div class="ligne-structure" data-index="${i}">
     ${sous.champs.filter(([, , , genre = {}]) => !genre.si || (ETAT.configuration || {})[genre.si]).map(([k, lib, aide, genre = {}]) => {
       const val = valeurEn(o, k);
@@ -1039,7 +1054,7 @@ function ligneStructure(cle, sous, ligne, i) {
         : genre.codesAtmp ? `<input ${attrs} list="codes-atmp" maxlength="7" value="${v}">`
         : genre.decimal ? `<input ${attrs} inputmode="decimal" value="${v}">`
         : `<input ${attrs} value="${v}">`;
-      return `<label>${echapper(lib)} ${champ}</label>`;
+      return `<label>${echapper(lib)} ${champ}${sousLaCase(k)}</label>`;
     }).join("")}
     <button type="button" class="retirer-ligne" title="retirer cette ligne">✕</button>
     ${o.nic ? `<p class="aide ligne-dit" data-ligne-nic="${echapper(o.nic)}"></p>` : ""}
@@ -1176,11 +1191,18 @@ async function dessinerOrganismes(cible) {
     ? `<span>${echapper(c[k]) || "—"}</span>`
     : `<input type="text" data-contrat="${echapper(c.cle)}" data-champ="${k}" value="${echapper(c[k])}"
          placeholder="${place}" maxlength="${k === "libelle" ? 30 : 9}">`;
+  // Ce qui est saisi d'un contrat, à une date : sa référence et son organisme.
+  const saisi = (v) => v ? [v.libelle, v.organisme].filter(Boolean).join(" · ") : "—";
+  // Sous le contrat, sa valeur d'avant et celle à venir ; toutes ses valeurs datées, repliées.
+  const temps = (c) => c.temps ? `${lignesDuTemps(c.temps, saisi)}${(c.temps.valeurs || []).length ? `
+        <details class="historique-fiche"><summary>${aideDe("historique_titre")}</summary>
+          <div class="histoire">${lignesDHistoire(c.temps, c.quoi, saisi)}</div></details>` : ""}` : "";
   const ligne = (c) => `
     <tr>
       <td><b>${echapper(c.quoi)}</b>
         ${c.periode ? `<div class="note">${echapper(c.periode)}</div>` : ""}
-        ${c.note ? `<div class="note">${echapper(c.note)}</div>` : ""}</td>
+        ${c.note ? `<div class="note">${echapper(c.note)}</div>` : ""}
+        ${temps(c)}</td>
       <td>${echapper(c.beneficiaires)}</td>
       <td>${champ(c, "organisme", c.organisme_fixe, "P0983")}</td>
       <td>${champ(c, "libelle", c.libelle_fixe, "référence du contrat")}</td>
@@ -1257,15 +1279,16 @@ function ATMP_HTML() {
   </div>`;
 }
 
-/* Les lignes d'une case (avant, en vigueur, à venir), telles que le moteur
- * les dit, dans `ou`. */
+/* Les lignes d'une case (en vigueur, à venir, avant), telles que le moteur
+ * les dit, chacune avec d'où elle vient quand sa ligne le dit, dans `ou`. */
 function peindreLignesAtmp(ou, r) {
+  const ligne = (l, forme) => l ? [[l.dit, forme], [l.note, "aide discret"]] : [];
   ou.replaceChildren(...[
     [r.phrase, "b"],
     [r.risque ? `« ${r.risque.libelle} »` : "", ""],
-    [r.maintenant && r.maintenant.dit, ""],
-    [r.a_venir && r.a_venir.dit, ""],
-    [r.avant && r.avant.dit, "aide"],
+    ...ligne(r.maintenant, ""),
+    ...ligne(r.a_venir, ""),
+    ...ligne(r.avant, "aide"),
     [r.explication, "aide"],
   ].filter(([t]) => t).map(([t, forme]) => {
     const p = document.createElement("p");

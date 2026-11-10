@@ -131,8 +131,9 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
   sous sa fonction (voir `image`, flottante). Sans elle, la case reste vide.
 - `modifications` (style `avenant`, obligatoire et non vide) : les articles du
   contrat que l'avenant modifie, `[{"numero": 4, "article": "Rémunération",
-  "avant": ["…"], "apres": ["…"]}]` ; `avant` et `apres` ont le même nombre de
-  paragraphes. Le bloc `MODIFICATION:` du modèle s'y répète pour chaque article
+  "avant": ["…"], "apres": ["…"]}]` ; un alinéa qui n'était pas écrit n'a pas
+  de texte dans `avant`, celui qui ne l'est plus pas de texte dans `apres` : les
+  deux n'ont pas toujours autant de paragraphes. Le bloc `MODIFICATION:` du modèle s'y répète pour chaque article
   (intitulé « Article n — Modification de l'article … ») ; ses marqueurs
   `{{modification.numero}}` et `{{modification.article}}` ne valent que là, et
   un paragraphe qui porte `{{modification.avant}}` ou `{{modification.apres}}`

@@ -21,37 +21,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
-use serde::de::IgnoredAny;
 use sha2::{Digest, Sha256};
 
 use socle::echec::Echec;
 use crate::google::{encoder, lue, phrase_de_panne, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
 use crate::transport::{envoyer, Requete};
 
-/// CE QUE GOOGLE DIT DU COMPTE (`userinfo`) : son adresse. Les autres cles que Google ecrit sont declarees, sans servir.
+/// CE QUE GOOGLE DIT DU COMPTE (`userinfo`) : son adresse. Une reponse de Google : les autres cles qu'il ecrit sont
+/// ignorees a la porte (`socle::forme::lire_reponse_tiers`).
 #[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ReponseCompte {
     email: Option<String>,
-    #[serde(rename = "sub")]
-    _sujet: Option<IgnoredAny>,
-    #[serde(rename = "picture")]
-    _image: Option<IgnoredAny>,
-    #[serde(rename = "email_verified")]
-    _verifie: Option<IgnoredAny>,
-    #[serde(rename = "name")]
-    _nom: Option<IgnoredAny>,
-    #[serde(rename = "given_name")]
-    _prenom: Option<IgnoredAny>,
-    #[serde(rename = "family_name")]
-    _nom_de_famille: Option<IgnoredAny>,
-    #[serde(rename = "hd")]
-    _domaine: Option<IgnoredAny>,
-    #[serde(rename = "locale")]
-    _langue: Option<IgnoredAny>,
-    #[serde(rename = "profile")]
-    _profil: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for ReponseCompte {}
 
 /// `google.AUTORISATION`, `google.USERINFO`, `google.DELAI_AUTORISATION`.
 const AUTORISATION: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -204,7 +186,7 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
 }
 
 /// La reponse de Google lue en sa forme `T`, ou la phrase de la panne.
-fn appeler<T: serde::de::DeserializeOwned>(requete: &Requete) -> Result<T, Echec> {
+fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Echec> {
     match envoyer(requete) {
         Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(refus),
         Err(panne) => match phrase_de_panne(panne) {

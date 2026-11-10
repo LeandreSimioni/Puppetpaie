@@ -1,11 +1,11 @@
 //! Le contrat ecrit, tel qu'il s'ecrit : le contrat d'engagement d'un spectacle, le CDD et le CDI d'un permanent, et
 //! leurs avenants.
 //!
-//! Le texte du contrat n'est PAS dans ce module : il vit dans le modele de sa nature (`contrat_ecrit.modele` de
-//! `contrats-base.json` : `contrat-cddu.modele`, `contrat-cdd.modele`, `contrat-cdi.modele`), un fichier de donnees, que la
-//! compagnie remplace par le sien dans son dossier `gabarits/`. Ce module envoie a la fabrique le TEXTE du modele (lu
-//! maintenant : `fabrique.figer`) et les VALEURS de la paie (`avenant::valeurs_de_la_paie`) ; c'est elle qui le met en
-//! page. Un modele qui tairait une mention que la loi exige se refuse (`contrat_ecrit::refuser_les_mentions_absentes`).
+//! Le texte du contrat n'est PAS dans ce module : il vit dans son modele (`contrat_ecrit::ModeleDuContrat`), la base de
+//! sa nature ou un modele special de la compagnie, que les routes choisissent et figent au depart
+//! (`routes::modeles_contrat`). Ce module envoie a la fabrique le TEXTE du modele et les VALEURS de la paie
+//! (`avenant::valeurs_de_la_paie`) ; c'est elle qui le met en page. Un modele qui tairait une mention que la loi exige
+//! se refuse (`contrat_ecrit::refuser_un_modele_incomplet`).
 
 use std::path::Path;
 
@@ -19,6 +19,7 @@ use engagement::calcul::Paie;
 use crate::conges_spectacles::chemin_texte;
 use droit::contexte::Contexte;
 use socle::echec::{Classe, Echec};
+use crate::contrat_ecrit::ModeleDuContrat;
 use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
 
 type R<T> = Result<T, Echec>;
@@ -62,45 +63,43 @@ pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> 
     Ok(valeurs_de_la_paie(ctx, ent, &p.canon(ctx)?, None)?)
 }
 
-/// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire, ou apres quoi.
+/// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire a sa place.
 #[derive(Serialize)]
 struct MarqueurAPart {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    chemin: Option<String>,
+    modele: String,
     marqueur: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     a_ecrire: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    apres: Option<String>,
 }
 
 /// Les contrats qui en annulent un autre : `{(salarie, premier jour, numero du contrat): (numero remplace, date)}`.
 pub type Remplacements = [((String, String, String), (String, String))];
 
 /// `contrat.description` puis `fabrique.figer` : la description de ces contrats, un document par
-/// paie, le modele en texte. `remplacements` : ces contrats-la annulent et remplacent celui qui est parti avant
-/// eux, et le disent en tete.
-pub fn description(ctx: &Contexte, paies: &[Paie], ent: &EntrepriseDuDocument, remplacements: &Remplacements) -> R<Description> {
+/// paie, son modele (`modeles`, un par paie, dans leur ordre) en texte. `remplacements` : ces contrats-la annulent et
+/// remplacent celui qui est parti avant eux, et le disent en tete.
+pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], ent: &EntrepriseDuDocument, remplacements: &Remplacements) -> R<Description> {
+    if paies.len() != modeles.len() {
+        return Err(Echec::from("description illisible : chaque contrat a son modèle"));
+    }
     let signature = identite_de(&ent.gabarits, "signature");
     let mut documents = Vec::new();
-    for p in paies {
+    for (p, modele) in paies.iter().zip(modeles) {
         let nat = p.engagement.nat()?;
-        let modele = socle::fichiers::modele_de(&crate::contrat_ecrit::nom_du_modele(&nat)?, Some(&ent.gabarits), &ctx.gabarits());
-        let lu = ModeleLu::du_fichier(&modele)?;
+        let lu = &modele.lu;
         let v = valeurs_de_paie(ctx, ent, p)?;
         if v.values().any(|t| t.contains("VALEUR-SANS-TEXTE")) {
             return Err(Echec::from("description illisible : une valeur du modele de contrat n'est pas un texte"));
         }
-        let mut un = document_modele(&lu, &v);
+        let mut un = document_modele(lu, &v);
         let (salarie, debut) = (p.salarie.id.to_string(), p.engagement.debut.iso());
         let remplace = p.engagement.numero.as_deref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| *s == salarie && *d == debut && k == n));
         if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.clone() });
         }
         un.signature = signature.as_deref().map(chemin_texte);
-        refuser_ce_que_le_modele_tairait(&modele, &lu, &v)?;
-        crate::contrat_ecrit::refuser_les_mentions_absentes(&modele, &lu, &nat, &v)
-            .map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
+        refuser_ce_que_le_modele_tairait(modele, &v)?;
+        crate::contrat_ecrit::refuser_un_modele_incomplet(modele, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
         documents.push(Document::Modele(un));
     }
     Ok(enveloppe(Style::Contrat, ent, documents))
@@ -118,23 +117,20 @@ const A_CITER: [Marqueur; 1] = [Marqueur::RemunerationHorsBrut];
 /// l'engagement ni le mois n'ecrivent de taux, n'en a pas ; le moteur prenait 130 EUR, un chiffre qu'aucun texte ne fixe.
 /// Un modele qui cite `{{remuneration.taux_cachet}}` ne fait pas ce contrat-la (la fabrique dirait « marqueur
 /// inconnu », sans dire pourquoi).
-fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Valeurs) -> R<()> {
+fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs) -> R<()> {
     const TAUX: Marqueur = Marqueur::RemunerationTauxCachet;
     let qui = valeurs.get(&Marqueur::SalarieNomComplet).ok_or_else(|| Echec::from("Le contrat ne nomme pas son salarié."))?;
-    let modele_nom = || match modele.file_stem() {
-        Some(s) => s.to_string_lossy().into_owned(),
-        None => modele.to_string_lossy().into_owned(),
-    };
+    let lu = &modele.lu;
     if valeurs.get(&TAUX).is_none() && lu.cite(TAUX) {
         return Err(Echec {
             classe: Some(Classe::ModeleIncomplet),
             message: socle::echec::avec(
                 format!(
-                    "Le modèle de contrat « {} » cite le taux du cachet, et le contrat de {} n'a aucun taux de cachet : il ne paie aucun cachet, et ni l'engagement ni le mois n'en écrivent. Le moteur n'en invente pas. Écrire la rémunération de ce modèle par le détail de la rémunération, qui la dit quelle que soit sa forme (le modèle livré le fait), ou porter le taux sur une ligne de cachet de l'engagement. Rien n'est écrit.",
-                    modele_nom(),
+                    "{} cite le taux du cachet, et le contrat de {} n'a aucun taux de cachet : il ne paie aucun cachet, et ni l'engagement ni le mois n'en écrivent. Le moteur n'en invente pas. Écrire la rémunération de ce modèle par le détail de la rémunération, qui la dit quelle que soit sa forme (le modèle de base le fait), ou porter le taux sur une ligne de cachet de l'engagement. Rien n'est écrit.",
+                    modele.nom,
                     qui,
                 ),
-                MarqueurAPart { chemin: Some(modele.to_string_lossy().into_owned()), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()), apres: None },
+                MarqueurAPart { modele: modele.nom.clone(), marqueur: TAUX.to_string(), a_ecrire: Some(Marqueur::RemunerationDetail.to_string()) },
             ),
         });
     }
@@ -145,12 +141,13 @@ fn refuser_ce_que_le_modele_tairait(modele: &Path, lu: &ModeleLu, valeurs: &Vale
                 classe: Some(Classe::ModeleIncomplet),
                 message: socle::echec::avec(
                     format!(
-                        "Le modèle de contrat « {} » ne cite pas ce que le contrat de {} lui verse hors brut ({}) : le contrat le tairait. Ajouter son marqueur à l'article « Rémunération » de ce modèle (le modèle livré l'y place juste après la période). Rien n'est écrit.",
-                        modele_nom(),
+                        "{} ne cite pas ce que le contrat de {} lui verse hors brut ({}) : le contrat le tairait. Ajouter à l'article « Rémunération » de ce modèle un alinéa [si {}] qui le cite (le modèle de base le fait). Rien n'est écrit.",
+                        modele.nom,
                         qui,
-                        valeur.trim().trim_start_matches(',').trim()
+                        valeur.trim(),
+                        cle.nom()
                     ),
-                    MarqueurAPart { chemin: Some(modele.to_string_lossy().into_owned()), marqueur: cle.to_string(), a_ecrire: None, apres: Some(Marqueur::RemunerationPeriode.to_string()) },
+                    MarqueurAPart { modele: modele.nom.clone(), marqueur: cle.to_string(), a_ecrire: None },
                 ),
             });
         }
@@ -166,20 +163,16 @@ pub fn mention_signature(nom: &str, quand: &str, adresse: &str, code: &str) -> S
 /// Le contrat de `paies` (un par page), ecrit a `chemin`. Le contrat parti se refait ainsi, depuis la version de
 /// l'engagement qui est partie ; son exemplaire contresigne est ce PDF-la, plus la mention de l'artiste
 /// (`fabrique_pdf::marquage::contresigner`).
-pub fn ecrire_contrat(ctx: &Contexte, paies: &[Paie], ent: &EntrepriseDuDocument, chemin: &Path, remplacements: &Remplacements) -> R<()> {
-    crate::fabrique::ecrire_pdf(&description(ctx, paies, ent, remplacements)?, chemin).map_err(Echec::from)
+pub fn ecrire_contrat(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], ent: &EntrepriseDuDocument, chemin: &Path, remplacements: &Remplacements) -> R<()> {
+    crate::fabrique::ecrire_pdf(&description(ctx, paies, modeles, ent, remplacements)?, chemin).map_err(Echec::from)
 }
 
-
-/// Le modele livre de l'avenant du contrat ecrit de cette nature (`contrat_ecrit.avenant` de `contrats-base.json`).
-fn nom_de_l_avenant(nat: &droit::natures::Nature) -> R<String> {
-    nat.modele_avenant().ok_or_else(|| Echec::from(format!("La nature {} n'a pas d'avenant écrit.", nat.libelle)))
-}
 
 /// `avenant.description` puis `fabrique.figer` : le modele de l'avenant (`lu`) en texte, les valeurs du contrat et les
-/// siennes (`extra`), et les articles modifies avec l'ancien texte et le nouveau. Un avenant au contrat signe ailleurs
-/// (`ailleurs`) ne cite aucun article du modele de contrat : les refus qui gardent ces articles ne le regardent pas.
-fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu: &ModeleLu, modifs: &[forme::Modification], extra: Valeurs, ailleurs: bool) -> R<Description> {
+/// siennes (`extra`), et les articles modifies avec l'ancien texte et le nouveau. `du_contrat` : le modele du contrat
+/// qu'il modifie, celui avec lequel ce contrat est parti ; `None`, un contrat signe ailleurs, dont l'avenant ne cite
+/// aucun article : les refus qui gardent ces articles ne le regardent pas.
+fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu: &ModeleLu, modifs: &[forme::Modification], extra: Valeurs, du_contrat: Option<&ModeleDuContrat>) -> R<Description> {
     let nat = p.engagement.nat()?;
     let mut v = valeurs_de_paie(ctx, ent, p)?;
     // Les memes refus que le contrat : ses articles modifies sont ceux du modele de CONTRAT de la compagnie,
@@ -188,11 +181,9 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
         return Err(Echec::from("description illisible : une valeur du modele de contrat n'est pas un texte"));
     }
     v.extend(extra);
-    if !ailleurs {
-        let contrat = socle::fichiers::modele_de(&crate::contrat_ecrit::nom_du_modele(&nat)?, Some(&ent.gabarits), &ctx.gabarits());
-        let du_contrat = ModeleLu::du_fichier(&contrat)?;
-        refuser_ce_que_le_modele_tairait(&contrat, &du_contrat, &v)?;
-        crate::contrat_ecrit::refuser_les_mentions_absentes(&contrat, &du_contrat, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
+    if let Some(contrat) = du_contrat {
+        refuser_ce_que_le_modele_tairait(contrat, &v)?;
+        crate::contrat_ecrit::refuser_un_modele_incomplet(contrat, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
     }
     let mut un = document_modele(lu, &v);
     un.modifications = Some(modifs.to_vec());
@@ -212,9 +203,10 @@ fn reference_du_contrat(p: &Paie, date_contrat: &str, ailleurs: bool) -> String 
 }
 
 /// L'avenant en PDF, a l'identite de la compagnie, la signature de l'employeur posee comme sur
-/// le contrat. Les dates en JJ/MM/AAAA. `modifs` : ce que
-/// `avenant-apercu` rend ; `ailleurs` : le contrat a ete signe hors du logiciel, ses modifications se disent en clair
-/// (`avenant::changements_en_clair`), par le paragraphe `{{modification.phrase}}` du bloc MODIFICATION:.
+/// le contrat. Les dates en JJ/MM/AAAA. `modifs` : ce que `avenant-apercu` rend ; `modele` : le modele du contrat, dont
+/// l'avenant suit le sien -- celui avec lequel le contrat est parti, ou, signe hors du logiciel (`ailleurs`), celui que
+/// son engagement suit : ses modifications se disent alors en clair (`avenant::changements_en_clair`), par le paragraphe
+/// `{{modification.phrase}}` du bloc MODIFICATION:.
 #[allow(clippy::too_many_arguments)]
 pub fn ecrire_avenant(
     ctx: &Contexte,
@@ -226,29 +218,16 @@ pub fn ecrire_avenant(
     date_contrat: &str,
     effet: &str,
     date: &str,
+    modele: &ModeleDuContrat,
     ailleurs: bool,
 ) -> R<()> {
     if modifs.is_empty() {
         return Err(Echec { classe: Some(Classe::Illisible), message: "Rien n'a changé : pas d'avenant à écrire.".into() });
     }
-    let nom = nom_de_l_avenant(&*p.engagement.nat()?)?;
-    let fichier = socle::fichiers::modele_de(&nom, Some(&ent.gabarits), &ctx.gabarits());
-    let lu = ModeleLu::du_fichier(&fichier)?;
-    let m = lu.decoupe(&fichier.to_string_lossy()).map_err(|r| Echec { classe: Some(Classe::Illisible), message: r })?;
-    if m.modification.is_empty() {
-        return Err(Echec { classe: Some(Classe::Illisible), message: format!("{} n'a pas de bloc MODIFICATION:.", nom) });
-    }
-    if ailleurs && !m.modification.iter().any(|b| b.contains(Marqueur::ModificationPhrase.nom())) {
-        return Err(Echec {
-            classe: Some(Classe::ModeleIncomplet),
-            message: socle::echec::avec(
-                format!(
-                    "Le modèle d'avenant {} ne dit pas une modification en clair : un contrat signé hors du logiciel n'a pas d'article à citer. Ajoutez à son bloc de modification un paragraphe qui porte la phrase de la modification (Configuration › Modèles de contrat). Rien n'est parti.",
-                    nom
-                ),
-                MarqueurAPart { chemin: None, marqueur: Marqueur::ModificationPhrase.to_string(), a_ecrire: None, apres: None },
-            ),
-        });
+    let dits = crate::contrat_ecrit::manques_de_l_avenant(&modele.avenant.texte);
+    if !dits.is_empty() {
+        let quoi_faire = if modele.base { "C'est un défaut du logiciel : le signaler." } else { "Corriger l'avenant de ce modèle (Configuration › Modèles de contrat)." };
+        return Err(Echec { classe: Some(Classe::ModeleIncomplet), message: format!("L'avenant de {} ne se fait pas : {} {} Rien n'est parti.", modele.nom, dits.join(" "), quoi_faire) });
     }
     let extra = Valeurs::from([
         (Marqueur::AvenantNumero, numero.to_string()),
@@ -257,6 +236,6 @@ pub fn ecrire_avenant(
         (Marqueur::AvenantEffet, effet.to_string()),
         (Marqueur::AvenantDate, date.to_string()),
     ]);
-    let d = description_avenant(ctx, p, ent, &lu, modifs, extra, ailleurs)?;
+    let d = description_avenant(ctx, p, ent, &modele.avenant, modifs, extra, (!ailleurs).then_some(modele))?;
     crate::fabrique::ecrire_pdf(&d, chemin).map_err(Echec::from)
 }

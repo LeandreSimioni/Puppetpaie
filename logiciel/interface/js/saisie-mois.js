@@ -235,7 +235,8 @@ async function calculerApercu(lu) {
         div.querySelector(".resolu").innerHTML = "";
         // Les cases du contrat écrit se disent avant que le reste soit complet (la période d'essai d'un CDD).
         div._ecrits = p && p.contrat && p.contrat.ecrits;
-        montrerEcrit(div, div._ecrits);
+        div._modeles = p && p.contrat && p.contrat.modeles;
+        montrerEcrit(div, div._ecrits, div._modeles);
         div.querySelector(".avis").innerHTML = `<div class="encart attention avis-engagement"><b>À compléter</b>${
           manques.map((x) => `<div>${erreurEnClair(x.a_completer)}</div>`).join("")}</div>`;
         return;
@@ -268,7 +269,7 @@ async function calculerApercu(lu) {
       // la case, d'après ce que le moteur rend (`poserChevrons`).
       if (p) poserChevrons(div, p.contrat, p.debut, p.fin);
       // Les cases du contrat écrit que le moteur demande pour cet engagement.
-      montrerEcrit(div, p && p.contrat && p.contrat.ecrits);
+      montrerEcrit(div, p && p.contrat && p.contrat.ecrits, p && p.contrat && p.contrat.modeles);
       montrerFaitsAvances(div, p && p.faits_avances);
       // Ce que le moteur a compris de la carte (`resolu_dit`) ; un mois sans cachet dit, dessous, pourquoi.
       div.querySelector(".resolu").innerHTML = p

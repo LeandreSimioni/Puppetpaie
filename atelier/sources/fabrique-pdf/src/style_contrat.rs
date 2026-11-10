@@ -64,7 +64,8 @@ pub enum Variante {
 }
 
 /// Un article du contrat modifié par l'avenant : son numéro et son titre dans le contrat, et les
-/// paragraphes cités, l'ancien texte puis le nouveau, dans le même ordre.
+/// paragraphes cités, l'ancien texte puis le nouveau, dans le même ordre ; un alinéa qui n'était pas écrit, ou ne l'est
+/// plus, n'a pas de texte à citer de ce côté-là.
 pub struct Modification {
     pub numero: i64,
     pub article: String,

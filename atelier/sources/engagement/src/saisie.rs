@@ -156,6 +156,8 @@ carte! {
         pub repartition_horaire: Option<String>,
         #[champ(Terme, ClausesParticulieres)]
         pub clauses_particulieres: Option<String>,
+        #[champ(Terme, ModeleContrat)]
+        pub modele_contrat: Option<String>,
         #[champ(Fait, Lignes)]
         /// Les lignes de paie de la carte (`ligne::LignePaie`).
         pub lignes: Option<Vec<LignePaie>>,

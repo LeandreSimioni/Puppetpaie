@@ -57,8 +57,11 @@ function champDeFiche(c, fiche, nom) {
     const html = champHtmlBrut(c);
     if (!html) return html;
     const ok = !montres || montres.has(c.cle);
+    // Sous la case datée, sa valeur d'avant et celle à venir (`tempsDeLaCase`), dans son cadre.
+    const temps = c.forme === "histoire" ? "" : tempsDeLaCase(c.cle, fiche.donnees);
     return html.replace(/^(\s*<div class="champ)([^"]*)"([^>]*)>/, (m, debut, classes, reste) =>
-      `${debut}${classes}"${reste.replace(/\s+hidden\b/g, "")} data-montre="${echapper(c.cle)}"${ok ? "" : " hidden"}>`);
+      `${debut}${classes}"${reste.replace(/\s+hidden\b/g, "")} data-montre="${echapper(c.cle)}"${ok ? "" : " hidden"}>`)
+      .replace(/<\/div>\s*$/, () => `${temps}</div>`);
   };
   const champHtmlBrut = (c) => {
     const v = fiche.donnees[c.cle];
@@ -67,7 +70,7 @@ function champDeFiche(c, fiche, nom) {
     // est reellement parti aux organismes, et on ne reecrit pas une
     // declaration deposee. La montrer en JSON editable inviterait a la
     // corriger, ce qui est exactement ce qu'il ne faut pas.
-    if (c.forme === "histoire") return histoireDuChamp(v, desc, fiche.donnees);
+    if (c.forme === "histoire") return histoireDuChamp(v, desc);
     // Ce que la machine deduit : present, mais pas a l'ecran.
     if (caches.includes(c.cle)) {
       // Une structure cachee repart telle quelle : en JSON, relu par
@@ -80,7 +83,7 @@ function champDeFiche(c, fiche, nom) {
                 value="${echapper(v ?? "")}">`;
     }
     const sous = sousChamps(c);
-    if (sous) return structureHtml(c, v, sous, a);
+    if (sous) return structureHtml(c, v, sous, a, tempsDuChamp(c.cle, fiche.donnees));
     // LA CONVENTION SE CHOISIT, ELLE NE SE TAPE PAS : l'IDCC seul ; son
     // libelle et le code convention DSN, le moteur les tire de lui (voir
     // `routes::fiches::deriver`). Les champs propres a une convention suivent leur condition (`si`). La liste vient du moteur
@@ -603,7 +606,8 @@ function brancherListes(fiche) {
     const sous = structureDecrite(cle);
     const boite = document.querySelector(
       `#config-formulaire [data-liste="${CSS.escape(cle)}"]`);
-    boite.innerHTML = lignes.map((l, i) => ligneStructure(cle, sous, l, i)).join("");
+    const temps = (tempsDuChamp(cle, (fiche || {}).donnees) || {}).lignes || [];
+    boite.innerHTML = lignes.map((l, i) => ligneStructure(cle, sous, l, i, temps.find((x) => x.cle === l.nic))).join("");
     boite.querySelectorAll("input").forEach((c) => {
       c.oninput = () => { marquerModifie();
         clearTimeout(verifierFormulaire._t);
@@ -941,40 +945,65 @@ async function remplirDepuisMetier(code) {
 /*  L'HISTOIRE D'UNE FICHE
  *
  *  Une fiche n'est pas un etat, c'est une suite d'etats : on demenage, on
- *  change de telephone, et une valeur declaree se corrige. Chaque ligne dit
- *  ce qu'un champ valait et jusqu'a quel jour -- au-dela, la valeur courante
- *  du formulaire reprend la main.
- *
- *  C'est ce qui permet de rejouer une declaration deja deposee : la DSN de
- *  juillet est partie avec l'adresse de juillet, et elle doit pouvoir se
- *  recalculer a l'identique apres un demenagement en septembre.
+ *  change de telephone, une valeur declaree se corrige, un taux change au
+ *  1er janvier. Pour chaque case qui a plus d'une valeur, toutes ses valeurs,
+ *  passees et a venir, telles que le moteur les date (`historique` de la
+ *  fiche : `valeurs`, avec de quand a quand et d'ou elles viennent) ; celle
+ *  d'aujourd'hui en gras. REPLIEE : elle sert a qui la cherche ; sous chaque
+ *  case, la valeur d'avant et celle a venir suffisent (`tempsDeLaCase`).
  */
-function histoireDuChamp(lignes, desc, donnees) {
-  if (!Array.isArray(lignes) || !lignes.length) return "";
+function histoireDuChamp(cases, desc) {
+  if (!Array.isArray(cases) || !cases.length) return "";
   const libelle = (cle) => (desc.find((c) => c.cle === cle) || {}).libelle || cle;
-  const rangees = [...lignes].sort((a, b) =>
-    a.champ === b.champ ? b.jusqu_au.localeCompare(a.jusqu_au)
-                        : a.champ.localeCompare(b.champ));
-  // Ce qui a remplace une valeur : la ligne suivante du meme champ, ou la
-  // valeur courante de la fiche pour la plus recente.
-  const remplacante = (e) => {
-    const plus_tard = rangees.filter((x) => x.champ === e.champ
-      && x.jusqu_au > e.jusqu_au).sort((a, b) => a.jusqu_au.localeCompare(b.jusqu_au));
-    return plus_tard.length ? plus_tard[0].valeur : (donnees || {})[e.champ];
-  };
-  // REPLIEE : elle sert a qui la cherche, et elle
-  // montrait a tout le monde, en bas de chaque fiche, les formes declarees.
+  // Les cases d'une liste (les autres établissements) : chaque ligne, nommée par le moteur, case par case.
+  const rangees = (t) => (t.lignes || []).length
+    ? t.lignes.map((l) => l.cases.map((c) => lignesDHistoire(c,
+        `${l.dit} · ${sousLibelle(t.champ, c.champ)}`, valeurLisible)).join("")).join("")
+    : lignesDHistoire(t, libelle(t.champ), (v) => valeurHistorique(t.champ, v));
   return `<details class="champ pleine historique-fiche">
-    <summary>Historique des modifications</summary>
+    <summary>${aideDe("historique_titre")}</summary>
     <div class="aide">${aideDe("historique_fiche")}</div>
-    <div class="histoire">${rangees.map((e) => `
-      <div class="histoire-ligne">
-        <span class="histoire-champ">${echapper(libelle(e.champ))}</span>
-        <span class="histoire-valeur">${echapper(valeurHistorique(e.champ, e.valeur, remplacante(e)))}</span>
-        <span class="histoire-date">${echapper(e.jusqu_au_dit || "")}</span>
-        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
-      </div>`).join("")}</div>
+    <div class="histoire">${cases.map(rangees).join("")}</div>
   </details>`;
+}
+
+/* Toutes les valeurs d'une case datée (`valeurs` de ses temps), une rangée chacune, celle d'aujourd'hui en gras. */
+function lignesDHistoire(t, nom, dire) {
+  return (t.valeurs || []).map((e) => `
+      <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
+        <span class="histoire-champ">${echapper(nom)}</span>
+        <span class="histoire-valeur">${echapper(dire(e.valeur))}</span>
+        <span class="histoire-date">${echapper(e.dit || "")}</span>
+        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
+      </div>`).join("");
+}
+
+/* Le libellé d'une case d'une structure `cle` (« adresse_affichage » des établissements), tel que la description le
+ * dit ; une case faite de cases (« versement_mobilite ») se nomme par sa première. */
+function sousLibelle(cle, sous) {
+  const champs = (structureDecrite(cle) || {}).champs || [];
+  const c = champs.find(([k]) => k === sous) || champs.find(([k]) => k.startsWith(sous + "."));
+  return c ? c[1] : sous;
+}
+
+/* SOUS UNE CASE DATÉE, au plus deux lignes, telles que le moteur les dit (ses temps : `avant`, `a_venir`) : la valeur
+ * d'avant (« jusqu'au … ») et la prochaine à venir (« à partir du … »), chacune avec d'où elle vient quand sa ligne le
+ * dit. `dire` rend une valeur lisible. */
+function lignesDuTemps(t, dire) {
+  if (!t) return "";
+  const ligne = (l) => l ? `<div class="aide temps-case">${echapper(dire(l.valeur))} · ${
+    echapper(l.dit)}${l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "";
+  return ligne(t.avant) + ligne(t.a_venir);
+}
+
+/* Les temps de la case `cle` d'une fiche (`historique` de ses données). */
+function tempsDuChamp(cle, donnees) {
+  return ((donnees || {}).historique || []).find((h) => h.champ === cle);
+}
+
+/* Sous une case de fiche, ses deux lignes. */
+function tempsDeLaCase(cle, donnees) {
+  return lignesDuTemps(tempsDuChamp(cle, donnees), (v) => valeurHistorique(cle, v));
 }
 
 /* MODIFIER, C'EST TOUJOURS LE MEME BOUTON : un crayon et le
@@ -1295,28 +1324,19 @@ function structureLisible(champ, v) {
   }).filter(Boolean).join(" · ");
 }
 
-/* L'HISTORIQUE D'UN BLOC. `declarant_dsn` est une structure :
- * l'historique affichait « [object Object] » quand on avait seulement passe
- * le courriel en minuscules. On ne montre que ce qui a CHANGE, avec le
- * libelle de la case -- « Courriel : CONTACT@EXEMPLE.FR ». Une cle que
- * l'ancienne valeur ne portait pas n'est pas un changement : elle est nee
- * depuis. Les cles `note` et `_…` sont des notes, pas des valeurs. Chaque case se nomme par son libellé de
- * `champs-base.json`, celles que la fiche ne montre pas comprises ; une case faite de cases (« taux.t1_cadre »)
- * se dit case par case. */
-function valeurHistorique(champ, avant, apres) {
-  if (avant === null || typeof avant !== "object" || Array.isArray(avant)) {
-    return valeurLisible(avant);
+/* UNE VALEUR DATÉE D'UNE CASE, lisible : une structure (`declarant_dsn`) se dit case par case, chacune par son libellé
+ * de `champs-base.json` -- « Courriel : CONTACT@EXEMPLE.FR » ; une case faite de cases (« taux.t1_cadre ») se dit
+ * case par case. Les clés `note` et `_…` sont des notes, pas des valeurs. */
+function valeurHistorique(champ, v) {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) {
+    return valeurLisible(v);
   }
   const decrit = ((ETAT.configuration || {}).description[FICHE_ACTIVE] || []).find((c) => c.cle === champ) || {};
   const libelles = Object.fromEntries((decrit.champs || []).map((s) => [s.cle, s.libelle]));
-  const dire = (k, v) => v && typeof v === "object" && !Array.isArray(v) && !libelles[k]
-    ? Object.entries(v).map(([s, x]) => dire(`${k}.${s}`, x)).join(" · ")
-    : `${libelles[k] || k} : ${valeurLisible(v)}`;
-  const courant = apres && typeof apres === "object" ? apres : {};
-  const cles = Object.keys(avant).filter((k) => !k.startsWith("_") && k !== "note");
-  const changees = cles.filter((k) =>
-    JSON.stringify(avant[k]) !== JSON.stringify(courant[k]));
-  return (changees.length ? changees : cles).map((k) => dire(k, avant[k])).join(" · ");
+  const dire = (k, x) => x && typeof x === "object" && !Array.isArray(x) && !libelles[k]
+    ? Object.entries(x).map(([s, y]) => dire(`${k}.${s}`, y)).join(" · ")
+    : `${libelles[k] || k} : ${valeurLisible(x)}`;
+  return Object.keys(v).filter((k) => !k.startsWith("_") && k !== "note").map((k) => dire(k, v[k])).join(" · ");
 }
 
 /* RIEN DE ROUGE. « On a le droit de changer de métier, je ne sais

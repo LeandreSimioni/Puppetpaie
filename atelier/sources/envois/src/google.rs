@@ -3,7 +3,6 @@
 //! d'une reponse d'erreur et le jeton d'acces obtenu pour un jeton de rafraichissement. Rien ici ne lit le poste : le
 //! jeton, les identifiants et les adresses viennent de l'appelant.
 
-use serde::de::IgnoredAny;
 use serde::Deserialize;
 
 use socle::echec::{erreur, Classe, Echec};
@@ -31,39 +30,31 @@ pub struct Application {
 }
 
 /// CE QUE GOOGLE REND A UNE DEMANDE DE JETON (`/token`) : le jeton d'acces, et pour un premier code d'autorisation le
-/// jeton de rafraichissement et les permissions accordees. Les autres cles que Google ecrit sont declarees, sans servir.
+/// jeton de rafraichissement et les permissions accordees. Une reponse de Google : les autres cles qu'il ecrit sont
+/// ignorees a la porte (`socle::forme::lire_reponse_tiers`).
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ReponseJeton {
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
     pub scope: Option<String>,
-    #[serde(rename = "expires_in")]
-    _expire_dans: Option<IgnoredAny>,
-    #[serde(rename = "token_type")]
-    _sorte: Option<IgnoredAny>,
-    #[serde(rename = "id_token")]
-    _identite: Option<IgnoredAny>,
-    #[serde(rename = "refresh_token_expires_in")]
-    _rafraichissement_expire_dans: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for ReponseJeton {}
 
-/// Le texte d'une reponse de Google lu en sa forme `T` ; une reponse qui ne se lit pas rend `phrase`.
-pub fn lue<T: serde::de::DeserializeOwned>(brut: Vec<u8>, phrase: &str) -> Result<T, String> {
+/// Le texte d'une reponse de Google lu en sa forme `T`, par la porte des tiers ; une reponse qui ne se lit pas rend
+/// `phrase`.
+pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> Result<T, String> {
     let texte = String::from_utf8(brut).map_err(|e| socle::echec::avec(phrase, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
-    socle::forme::lire_texte(&texte, phrase)
+    socle::forme::lire_reponse_tiers(&texte, phrase)
 }
 
 /// L'ERREUR QUE GOOGLE REND : celle de l'autorisation (`{"error": "invalid_grant", "error_description": …}`) ou celle d'une
-/// API (`{"error": {"code", "message", "status", …}}`).
+/// API (`{"error": {"code", "message", "status", …}}`). Une reponse de Google : les autres cles sont ignorees a la porte.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ReponseDErreur {
     error: ErreurDite,
     error_description: Option<String>,
-    #[serde(rename = "error_uri")]
-    _adresse: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for ReponseDErreur {}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -72,18 +63,13 @@ enum ErreurDite {
     Api(ErreurDApi),
 }
 
+/// L'erreur d'une API de Google, dans `ReponseDErreur` : les autres cles sont ignorees a la porte.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ErreurDApi {
     message: Option<String>,
     status: Option<String>,
-    #[serde(rename = "code")]
-    _code: Option<IgnoredAny>,
-    #[serde(rename = "errors")]
-    _erreurs: Option<IgnoredAny>,
-    #[serde(rename = "details")]
-    _details: Option<IgnoredAny>,
 }
+impl socle::forme::ReponseDUnTiers for ErreurDApi {}
 
 impl ReponseDErreur {
     /// Le code de Google (`invalid_grant`, `PERMISSION_DENIED`…) et sa phrase, quand il la dit.
@@ -113,7 +99,7 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
 /// Le message lisible d'une reponse d'erreur de Google. Un corps qui n'est pas une erreur de Google (la page d'un relais,
 /// un corps vide) se cite tel quel.
 pub fn traduire(code: u16, corps: &str) -> String {
-    let (code_g, detail) = match socle::forme::lire_texte::<ReponseDErreur>(corps, "Google a rendu une erreur.") {
+    let (code_g, detail) = match socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, "Google a rendu une erreur.") {
         Ok(e) => e.code_et_detail(),
         Err(pas_de_google) => {
             drop(pas_de_google);

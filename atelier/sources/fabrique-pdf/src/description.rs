@@ -900,13 +900,6 @@ fn lire_modele(
             if x.phrase.is_none() && x.numero.is_none() {
                 return refus(format!("{} : modification {} : ni \"numero\" ni \"phrase\"", ou, i + 1));
             }
-            if x.avant.len() != x.apres.len() {
-                return refus(format!(
-                    "{} : modification {} : \"avant\" et \"apres\" n'ont pas le même nombre de paragraphes",
-                    ou,
-                    i + 1
-                ));
-            }
         }
     }
     let modifications: Vec<style_contrat::Modification> = dites
@@ -920,6 +913,7 @@ fn lire_modele(
         })
         .collect();
     let valeurs: &BTreeMap<String, String> = &mb.valeurs;
+    let m = m.retenir(valeurs);
     let c = style_contrat::Contrat {
         variante,
         valeurs,

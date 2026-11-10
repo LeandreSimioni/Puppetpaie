@@ -1408,7 +1408,8 @@ fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize,
 /// LE CONTRAT OU L'AVENANT `pdf` QU'A FAIT PARTIR LA LIGNE `lignes[rang]` (une demande de signature ou une impression),
 /// ecrit a `vers`. Il est
 /// refait par ce qui l'a ecrit (`documents::contrat::ecrire_contrat`, `ecrire_avenant`) :
-/// chaque contrat dans la version de l'engagement que la ligne a emportee, au jour et a l'heure de son depart ; un contrat
+/// chaque contrat dans la version de l'engagement que la ligne a emportee, avec le modele fige a son depart
+/// (`modeles_contrat::du_contrat_parti`), au jour et a l'heure de son depart ; un contrat
 /// qui en remplacait un autre le dit en tete, d'apres le contrat parti avant lui ; un avenant cite ce que sa ligne a
 /// note (articles modifies, effet), date du contrat qu'il modifie. Verifie par les clauses que la ligne a notees de chaque
 /// contrat : la piece refaite qui ne les redit pas s'efface et se refuse.
@@ -1442,17 +1443,18 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let ecrire = || -> R<()> {
         if premier.est_avenant() {
             let numero_av = premier.avenant.ok_or_else(|| valeur(format!("journal : {} sans numero d'avenant", nom)))?;
-            // Le contrat qu'il modifie : parti avant lui, ou signe hors du logiciel (`ailleurs`), date de son premier jour.
-            let date_contrat = if premier.ailleurs {
-                premier.debut.clone()
+            // Le contrat qu'il modifie : parti avant lui, avec son modele fige ; ou signe hors du logiciel (`ailleurs`),
+            // date de son premier jour, avec le modele que son engagement suit.
+            let (date_contrat, modele) = if premier.ailleurs {
+                (premier.debut.clone(), crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
-                envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero_dit())
-                    .ok_or_else(|| valeur(format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?
-                    .date()
+                let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero_dit())
+                    .ok_or_else(|| valeur(format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
+                (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?)
             };
             let modifs = crate::gestes::signature::pour_la_piece(premier.modifications.as_deref().ok_or_else(|| valeur(format!("journal : {} sans les articles qu'il modifie", nom)))?);
             let effet = premier.effet.as_deref().ok_or_else(|| valeur(format!("journal : {} sans sa date d'effet", nom)))?;
-            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, &jj(&date_contrat)?, &jj(effet)?, &jour.jj_mm_aaaa(), premier.ailleurs)
+            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, &jj(&date_contrat)?, &jj(effet)?, &jour.jj_mm_aaaa(), &modele, premier.ailleurs)
                 .map_err(Echec::from);
         }
         let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();
@@ -1468,7 +1470,12 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                 remplacements.push(((c.salarie.to_string(), c.debut.clone(), le_sien.to_string()), (numero, jj(&parti.date())?)));
             }
         }
-        documents::contrat::ecrire_contrat(&ctx_j, &paies, &ent, vers, &remplacements).map_err(Echec::from)
+        // Chaque contrat avec le modele qu'il suivait a son depart.
+        let mut modeles = Vec::new();
+        for (c, p) in contrats.iter().zip(&paies) {
+            modeles.push(crate::modeles_contrat::du_contrat_parti(&ctx_j, c.modele.as_deref(), p)?);
+        }
+        documents::contrat::ecrire_contrat(&ctx_j, &paies, &modeles, &ent, vers, &remplacements).map_err(Echec::from)
     };
     socle::temps::pendant(instant, ecrire)?;
     let mut pareils = Ok(true);

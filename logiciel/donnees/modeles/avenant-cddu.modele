@@ -1,8 +1,9 @@
 # Modèle d'avenant au contrat d'engagement à durée déterminée d'usage.
 #
 # CE FICHIER EST UNE DONNÉE, PAS DU CODE, comme contrat-cddu.modele : même
-# format, mêmes marqueurs, et chaque compagnie peut garder sa version dans
-# son dossier gabarits/.
+# format, mêmes marqueurs. C'est l'avenant du modèle de base ; un modèle
+# spécial en copie un, qu'il écrit comme son contrat (Configuration ›
+# Modèles de contrat).
 #
 # L'avenant cite l'ancien texte du contrat et le nouveau, article par
 # article. Le bloc MODIFICATION: s'écrit UNE FOIS PAR ARTICLE MODIFIÉ, sous

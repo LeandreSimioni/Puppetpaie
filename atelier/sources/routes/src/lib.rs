@@ -73,6 +73,7 @@ mod metiers;
 pub mod bulletin;
 mod etablissements;
 mod atmp;
+mod temps;
 pub mod import;
 mod imprevus;
 pub mod filet;

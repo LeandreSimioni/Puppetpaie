@@ -70,7 +70,7 @@ marqueurs! {
     RemunerationBrut = "remuneration.brut",
     RemunerationNetEstime = "remuneration.net_estime",
     SpectacleTitre = "spectacle.titre",
-    SpectacleObjet = "spectacle.objet",
+    SpectacleNumeroObjet = "spectacle.numero_objet",
     CertificatDate = "certificat.date",
     ContratClausesParticulieres = "contrat.clauses_particulieres",
     ContratDureeTravail = "contrat.duree_travail",
@@ -117,26 +117,29 @@ impl std::fmt::Display for Marqueur {
 /// (bloc `MODIFICATION:`).
 pub const DU_REMPLACEMENT: [Marqueur; 2] = [Marqueur::RemplaceNumero, Marqueur::RemplaceDate];
 
-/// Ce que l'avenant ajoute aux champs du contrat : les siens, et ceux de chaque modification.
-pub const DE_L_AVENANT: [Marqueur; 10] = [
-    Marqueur::AvenantNumero,
-    Marqueur::AvenantDateContrat,
-    Marqueur::AvenantReference,
-    Marqueur::AvenantEffet,
-    Marqueur::AvenantDate,
-    Marqueur::ModificationNumero,
-    Marqueur::ModificationArticle,
-    Marqueur::ModificationAvant,
-    Marqueur::ModificationApres,
-    Marqueur::ModificationPhrase,
-];
-
 /// LES VALEURS D'UN DOCUMENT, par marqueur.
 pub type Valeurs = BTreeMap<Marqueur, String>;
 
 /// Les valeurs telles que la fabrique de PDF les lit, par leur nom.
 pub fn pour_la_fabrique(v: &Valeurs) -> fabrique_pdf::modele::Valeurs {
     v.iter().map(|(k, x)| (k.nom().to_string(), x.clone())).collect()
+}
+
+/// Les champs que ce texte cite, dans l'ordre : chacun connu (`Ok`) ou non (`Err`, son nom).
+pub fn cites(texte: &str) -> Vec<Result<Marqueur, String>> {
+    let mut sortie = Vec::new();
+    let mut i = 0;
+    while let Some(k) = texte[i..].find("{{") {
+        let a = i + k;
+        match fabrique_pdf::modele::marqueur_en(texte, a) {
+            Some((cle, fin)) => {
+                sortie.push(Marqueur::lire(cle).ok_or_else(|| cle.to_string()));
+                i = fin;
+            }
+            None => i = a + 2,
+        }
+    }
+    sortie
 }
 
 /// UN MORCEAU D'UN MODELE : du texte, ou un marqueur.

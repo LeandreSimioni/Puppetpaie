@@ -2,8 +2,9 @@
 #
 # CE FICHIER EST UNE DONNÉE, PAS DU CODE, comme avenant-cddu.modele : même
 # format, mêmes marqueurs que le contrat (contrat-cdd.modele,
-# contrat-cdi.modele), et chaque compagnie peut garder sa version dans son
-# dossier gabarits/.
+# contrat-cdi.modele). C'est l'avenant du modèle de base ; un modèle spécial
+# en copie un, qu'il écrit comme son contrat (Configuration › Modèles de
+# contrat).
 #
 # L'avenant dit ce qui change (code du travail R. 1221-40 : « un document
 # indiquant ces modifications »). Le bloc MODIFICATION: s'écrit une fois par
