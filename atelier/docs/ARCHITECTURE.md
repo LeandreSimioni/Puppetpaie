@@ -923,6 +923,17 @@ Le calcul, la déclaration, le signalement de fin de contrat et l'écran d'un pe
 avec ce que la nature du contrat change. La prévoyance des permanents est un taux que **la convention fixe, donc le
 logiciel le livre**.
 
+**La case « emploie des permanents » ne règle que ce que le moteur propose.** Elle est datée (l'historique de la fiche
+Entreprise) et se lit par une seule fonction, à la date qui compte : `Contexte::emploie_des_permanents_pendant(debut,
+fin)`. Ce que le moteur propose et ce qui est dû sur une période, une seule réponse le dit,
+`engagement::permanents::Permanents::de` : `proposes` (la case sur la période : un CDI ou un CDD neuf s'y propose) et
+`dus` (les engagements payés au mois qui y courent et ont commencé la case cochée). Les natures d'une carte neuve
+(route `saisie` du mois), les modèles de contrat, les cases des fiches (`montres`), les contrats des organismes,
+« Pour démarrer » et les états d'export la lisent. **Ce qui est dû se montre toujours** : un permanent engagé avant
+que la case se décoche se paie, se termine et reçoit ses documents (la portabilité de ses garanties comprise) comme
+avant ; seul un contrat payé au mois qui **commence** sans la case se refuse (au calcul, à son début ; l'avenant qui y
+ferait passer un contrat, à l'écriture).
+
 ### Le taux d'une branche n'est pas une donnée de compagnie
 
 `logiciel/donnees/prevoyance-conventionnelle-base.json` porte la prévoyance des

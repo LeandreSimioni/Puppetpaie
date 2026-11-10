@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, importes, ferme_aux_neufs, defauts, phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         avance: false,
@@ -129,7 +129,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Changer des cases du brouillon d'une carte, et l'écrire.",
         charge: &[
             MOIS,
-            Champ { nom: "carte", libelle: Affiche::new("Carte"), forme: Forme::Objet, sens: "{\"neuve\": sa nature (`nouvelle_carte` de la route etat)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}", avance: false },
+            Champ { nom: "carte", libelle: Affiche::new("Carte"), forme: Forme::Objet, sens: "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}", avance: false },
             super::engagement::CHANGEMENTS,
         ],
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":1,"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
@@ -172,7 +172,7 @@ pub(crate) struct ModificationEnCours {
     pub(crate) changements: Changements,
 }
 
-/// LA CARTE QU'UN CHANGEMENT VISE : une carte neuve, nee dans sa nature (`nouvelle_carte` de la route etat), ou celle
+/// LA CARTE QU'UN CHANGEMENT VISE : une carte neuve, nee dans sa nature (`nouvelle_carte` de la route saisie), ou celle
 /// d'un engagement ecrit, par son identite.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -247,6 +247,21 @@ struct Defauts {
     taux_cachet: Option<f64>,
 }
 
+/// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
+/// intermittents, un permanent s'ajoute rarement. Les natures qu'elle peut prendre sont celles que le mois propose
+/// (`engagement::permanents::Permanents::natures_neuves`) : un CDI ou un CDD neuf seulement quand la fiche Entreprise dit
+/// employer des permanents ce mois-la ; sinon rien ne se choisit, et la carte n'a pas de case nature. Une carte qui a
+/// deja sa nature la garde. Changer de nature change la carte de variante (`engagement::carte::CarteValide`).
+#[derive(Debug, Serialize)]
+struct NouvelleCarte {
+    nature: &'static str,
+    natures: Vec<String>,
+    nature_au_choix: bool,
+    /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
+    /// propose ou en paie un.
+    aide_vide: &'static str,
+}
+
 /// LE MOIS TEL QUE L'ECRAN L'OUVRE (`saisie`).
 #[derive(Debug, Serialize)]
 struct SaisieDuMois {
@@ -258,6 +273,7 @@ struct SaisieDuMois {
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
     defauts: Defauts,
+    nouvelle_carte: NouvelleCarte,
     /// La vue du mois (`engagement::stock::vue_du_mois`), les lignes des permanents calculees (`avec_les_lignes_calculees_des_permanents`).
     saisie: VueDuMois,
     /// L'identite de chaque engagement de `saisie.engagements`, dans son ordre : ce par quoi sa carte le designe.
@@ -562,6 +578,15 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         (None, true) => "Saisie chargée. L'enregistrement est automatique.".to_string(),
         (None, false) => "Nouveau mois — l'enregistrement est automatique dès la première saisie.".to_string(),
     };
+    // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
+    let p = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour()).map_err(Echec::from)?;
+    let neuves: Vec<String> = p.natures_neuves().map_err(Echec::from)?.iter().map(|n| n.cle.clone()).collect();
+    let nouvelle_carte = NouvelleCarte {
+        nature: engagement::carte::CDDU,
+        nature_au_choix: neuves.len() > 1,
+        natures: neuves,
+        aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
+    };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
     Ok(SaisieDuMois {
@@ -572,6 +597,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         importes,
         ferme_aux_neufs: ferme,
         defauts,
+        nouvelle_carte,
         saisie: avec_les_lignes_calculees_des_permanents(ctx, saisie)?,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, &texte_mois).map_err(Echec::from)?),
     })

@@ -375,8 +375,15 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
 
 /// La fiche telle que l'ecran la montre. Ses cases sont COMBLEES : une fiche d'avant ne porte que la forme declaree, et
 /// l'ecran doit proposer une forme lisible de depart. Rien n'est ecrit pour autant. `montres` : les cases que la page en
-/// montre (`fiches::montres`, que la fiche de l'entreprise `ent` commande).
-fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::Plate, historique: Vec<TempsDeLaCase<Valeur>>, ent: &champs::Saisie) -> R<VueFiche<F::Plate>> {
+/// montre (`fiches::montres`, que la fiche de l'entreprise `ent` et les permanents du jour `p` commandent).
+fn fiche_verifiee<F: SorteDeFiche>(
+    ctx: &Contexte,
+    cle: Option<&str>,
+    plate: F::Plate,
+    historique: Vec<TempsDeLaCase<Valeur>>,
+    ent: &champs::Saisie,
+    p: &engagement::permanents::Permanents,
+) -> R<VueFiche<F::Plate>> {
     let nom = F::NOM;
     let lue = vue::<F>(&plate)?;
     let anomalies = champs::verifier_fiche(nom, &lue)?;
@@ -445,7 +452,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
-    let montres = super::fiches::montres(ctx, nom, &comble, ent)?;
+    let montres = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -519,29 +526,6 @@ fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String
         Ok(b) => (matches!(b.versement_mobilite, Some(droit::forme_bareme::VersementMobiliteEcrit::Ecrit(_))), None),
         Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", socle::echec::phrase_de(&e)))),
     }
-}
-
-/// `salaries_au_mois` : les salaries qui ont, ou ont eu, un contrat paye au mois. Lu dans les engagements : la nature se
-/// dit sur l'engagement (ou sur un de ses mois), pas sur la fiche. L'ecran n'ouvre le bloc « Salarie au mois » qu'a eux.
-fn salaries_au_mois(ctx: &Contexte) -> R<Vec<String>> {
-    let mensuelles: BTreeSet<String> = natures::natures().map_err(plain)?.iter().filter(|n| n.mensuelle()).map(|n| n.cle.clone()).collect();
-    let mut trouves: BTreeSet<String> = BTreeSet::new();
-    let mut lus = Vec::new();
-    for f in engagement::stock::fichiers(&ctx.racine) {
-        lus.extend(engagement::stock::lire_fichier(&ctx.racine, &f).map_err(plain)?);
-    }
-    for e in lus.into_iter().flat_map(|m| m.engagements) {
-        // La nature du premier mois, et chaque nature qu'un avenant lui donne ensuite.
-        let s = &e.saisie;
-        let natures = std::iter::once(&s.carte.nature).chain(s.avenants.iter().map(|a| &a.termes.nature));
-        if !natures.flatten().any(|n| mensuelles.contains(n)) {
-            continue;
-        }
-        if let Some(c) = &s.carte.salarie {
-            trouves.insert(c.to_string());
-        }
-    }
-    Ok(trouves.into_iter().collect())
 }
 
 /// La racine des donnees du poste (`contexte.RACINE`) : `PUPPETPAIE_DONNEES`,
@@ -819,15 +803,13 @@ pub(crate) struct ConfigurationDeLaPage {
     compteurs: documents::ecrire_documents::Compteurs,
     erreurs: Option<socle::ecran::Pastille>,
     description: Descriptions,
-    /// CE QUE LA CASE « Emploie des permanents » COMMANDE A L'ECRAN : les champs `si_permanents` restent dans la
-    /// description -- les retirer, ce serait les effacer au premier enregistrement. La page les replie.
-    permanents: bool,
     /// Ce que la liste des etablissements commande.
     etablissements: Option<Vec<ChoixEtablissement>>,
     versement_mobilite_des_etablissements: bool,
     /// Pourquoi le bareme du jour ne se compose pas, s'il ne se compose pas.
     bareme: Option<String>,
-    /// Parmi les salaries, ceux qui sont payes au mois.
+    /// Parmi les salaries, ceux qu'un engagement paye au mois emploie au jour de l'ecran (`engagement::permanents`) :
+    /// l'ecran n'ouvre le bloc « Salarie au mois » qu'a eux.
     salaries_au_mois: Vec<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
@@ -868,22 +850,24 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let montree = droit::fiche::ChampsEntreprise { etablissements: (!autres.is_empty()).then_some(autres), ..ctx.entreprise.clone() };
     let mut temps = temps_de(Some(ctx.entreprise_brute()), &jour)?;
     temps.extend(temps_des_etablissements(ctx, &jour)?);
-    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent)?;
+    // LES PERMANENTS DU JOUR DE L'ECRAN : ce qui ne vaut que pour eux se montre s'ils se proposent ce jour-la, ou qu'un
+    // permanent est du (`engagement::permanents`).
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(plain)?;
+    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent, &p)?;
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
     let erreurs: usize = entreprise.erreurs() + salaries.iter().map(VueFiche::erreurs).sum::<usize>() + spectacles.iter().map(VueFiche::erreurs).sum::<usize>();
     let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
-    let permanents = ctx.emploie_des_permanents();
     // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
     // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
     let description_entreprise = champs::description("entreprise")?;
@@ -949,11 +933,10 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         compteurs,
         erreurs,
         description: Descriptions { entreprise: description_entreprise, salarie: champs::description("salarie")?, spectacle: champs::description("spectacle")? },
-        permanents,
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
         bareme,
-        salaries_au_mois: if permanents { salaries_au_mois(ctx)? } else { vec![] },
+        salaries_au_mois: p.dus.iter().map(|d| d.salarie.to_string()).collect::<BTreeSet<_>>().into_iter().collect(),
         identite: identite(ctx, &ctx.gabarits())?,
         invitation: Invitation {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
@@ -1379,16 +1362,6 @@ fn faits_de_rupture(n: &Nature, m: &str) -> R<Vec<&'static str>> {
     Ok(faits)
 }
 
-/// UNE CARTE NEUVE S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des intermittents, un
-/// permanent s'ajoute rarement. Sa nature ne se change que dans une compagnie qui emploie des salaries au mois (sa fiche
-/// Entreprise, `Contexte::emploie_des_permanents`) ; ailleurs, rien ne se choisit, et la carte n'a pas de case nature.
-/// Changer de nature change la carte de variante (`engagement::carte::CarteValide`) : ses cases sont celles de la nouvelle.
-#[derive(Debug, Clone, serde::Serialize)]
-struct NouvelleCarte {
-    nature: &'static str,
-    nature_au_choix: bool,
-}
-
 /// UNE NATURE DE CONTRAT telle que l'ecran la propose : ce que `contrats-base.json` en dit, et ce que la page en tire sans
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1421,14 +1394,14 @@ struct NatureDeLaPage {
     unite_quotite: String,
 }
 
-/// Les natures de contrat, telles que l'ecran doit les proposer. Tout vient de `contrats-base.json`. SAUF LES NATURES
-/// PAYEES AU MOIS : elles ne descendent que si la fiche entreprise dit employer des permanents.
-fn natures(ctx: &Contexte) -> R<Vec<NatureDeLaPage>> {
+/// Les natures de contrat, telles que l'ecran les DECRIT : toutes, pour que toute carte se dessine (celle d'un permanent
+/// engage avant que la case des permanents se decoche aussi). Tout vient de `contrats-base.json`. Ce qu'une carte neuve
+/// PROPOSE se dit au mois (`mois::NouvelleCarte`, `engagement::permanents::Permanents::natures_neuves`).
+fn natures() -> R<Vec<NatureDeLaPage>> {
     let toutes = natures::natures().map_err(plain)?;
-    let permanents = ctx.emploie_des_permanents();
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
-    for n in toutes.iter().filter(|n| permanents || !n.mensuelle()) {
+    for n in toutes.iter() {
         let motifs = n.motifs_rupture();
         let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
         for m in motifs {
@@ -1593,7 +1566,6 @@ pub(crate) struct EtatDeLaPage {
     familles_emplois: Vec<String>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
-    nouvelle_carte: NouvelleCarte,
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
     transaction: Vec<droit::preavis::Code>,
@@ -1705,8 +1677,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // ils n'y sont pas d'office.
         emplois_autres: super::metiers::metiers_autres_conventions(ctx)?,
         // LES NATURES DE CONTRAT : celles que la compagnie engage (une carte dit toujours la sienne).
-        natures: natures(ctx)?,
-        nouvelle_carte: NouvelleCarte { nature: engagement::carte::CDDU, nature_au_choix: ctx.emploie_des_permanents() },
+        natures: natures()?,
         types_preavis,
         aides: Aides(AIDES),
         transaction,

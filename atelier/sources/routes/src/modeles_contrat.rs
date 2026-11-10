@@ -733,16 +733,13 @@ dites!(Modeles, ModeleRendu, Apercu);
 
 // ------------------------------------------------------------------ les gestes
 
-/// Les natures dont la compagnie fait les contrats : le contrat d'usage toujours ; celles d'un permanent quand elle en
-/// emploie (`emploie_des_permanents` de sa fiche).
+/// Les natures dont la compagnie fait les contrats au jour de l'ecran : le contrat d'usage toujours ; celles d'un
+/// permanent quand elle en propose ce jour-la, ou qu'un permanent de cette nature est du (son avenant :
+/// `engagement::permanents::Permanents::natures`).
 fn natures_de(ctx: &Contexte) -> R<Vec<std::sync::Arc<Nature>>> {
-    let permanents = ctx.emploie_des_permanents();
-    Ok(droit::natures::natures()
-        .map_err(Echec::from)?
-        .iter()
-        .filter(|n| n.modele_contrat().is_some() && (permanents || !n.permanent()))
-        .cloned()
-        .collect())
+    let jour = ctx.aujourdhui;
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(Echec::from)?;
+    Ok(p.natures().map_err(Echec::from)?.into_iter().filter(|n| n.modele_contrat().is_some()).collect())
 }
 
 /// Ce qui manque au contrat et a l'avenant d'un modele, l'avenant nomme.

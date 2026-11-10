@@ -62,10 +62,15 @@ fn chemin(ctx: &Contexte) -> std::path::PathBuf {
 
 
 /// Une ligne se montre-t-elle a cette compagnie ? Un contrat des permanents (`role` : prevoyance ou sante, les
-/// affiliations d'un salarie paye au mois) ne se montre qu'a une compagnie qui en emploie (rien a remplir pour qui
-/// n'emploie pas de permanent) : le curseur est `Contexte::emploie_des_permanents`, le meme que partout.
-fn se_montre(ctx: &Contexte, spec: &Attendu) -> bool {
-    spec.role.as_deref().is_none_or(|r| r.trim().is_empty()) || ctx.emploie_des_permanents()
+/// affiliations d'un salarie paye au mois) ne se montre que sur une periode ou un permanent se propose ou est du
+/// (`permanents` : `engagement::permanents::Permanents::ouverts`, la meme reponse que partout).
+fn se_montre(spec: &Attendu, permanents: bool) -> bool {
+    spec.role.as_deref().is_none_or(|r| r.trim().is_empty()) || permanents
+}
+
+/// Les contrats des permanents se montrent-ils sur la periode regardee (`engagement::permanents`) ?
+fn permanents_ouverts(ctx: &Contexte, (debut, fin): &(Jour, Jour)) -> R<bool> {
+    Ok(engagement::permanents::Permanents::de(ctx, debut, fin).map_err(plain)?.ouverts())
 }
 
 /// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.
@@ -91,8 +96,9 @@ pub fn lire(ctx: &Contexte, mois: Option<&str>) -> R<Lus> {
     let periode = periode(ctx, mois)?;
     let ctx = &ctx.au(&periode.1).map_err(plain)?;
     let (saisi, _) = saisis(ctx).map_err(plain)?;
+    let permanents = permanents_ouverts(ctx, &periode)?;
     let lignes: Vec<droit::organismes::Ligne> =
-        attendus(ctx).map_err(plain)?.iter().filter(|s| se_montre(ctx, s) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
+        attendus(ctx).map_err(plain)?.iter().filter(|s| se_montre(s, permanents) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
     let a_saisir = lignes.iter().any(|l| l.libelle.is_none() || l.organisme.is_none());
     Ok(Lus { idcc: ctx.entreprise.idcc.portee().map(|i| i.trim().to_string()), a_saisir, mois: periode.0.mois_civil().to_string(), lignes })
 }
@@ -106,7 +112,7 @@ pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
     let periode = periode(ctx, charge.mois.as_deref())?;
     let du_mois = ctx.au(&periode.1).map_err(plain)?;
     let (saisi, prises) = saisis(&du_mois).map_err(plain)?;
-    let compose = composer(&du_mois, &saisi, prises, &saisies, Some(&periode)).map_err(refus)?;
+    let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(refus)?;
     // Ce qu'un texte donne entier (sa reference de contrat et son identifiant) ne s'ecrit pas : il se recompose a la
     // date de chaque mois, sous la convention de ce mois.
     let fixes: Vec<String> = attendus(&du_mois).map_err(plain)?.iter().filter(|s| s.libelle_donne().is_some()).map(|s| s.cle.trim().to_string()).collect();
