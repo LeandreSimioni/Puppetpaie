@@ -23,7 +23,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
 
 /// Une lecture sans charge.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, avance: false, phrase: 0, ecran: ECRAN }
+    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN }
 }
 
 /// Les routes de ce module, et leurs fiches.
@@ -42,7 +42,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "annee, archive, fichiers, empreinte, manques (ce qui n'a pu s'archiver) ; rouverte : etait_clos_depuis",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -59,7 +58,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "les fichiers de l'export, ou ce qu'ils porteraient",
         refus: &[MANQUE, OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -76,9 +74,8 @@ pub const ROUTES: &[Fiche] = &[
             OPERATION,
         ],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Historique),
     },
     Fiche {
         route: Route::JournalReprise,
@@ -88,9 +85,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "ce qui se reprend, ligne par ligne, et ses pastilles",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Historique),
     },
 ];
 

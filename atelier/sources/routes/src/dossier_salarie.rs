@@ -57,7 +57,6 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     rend: "les fichiers écrits (ou à écrire, en aperçu), par salarié et par sorte",
     refus: &[OPERATION, MANQUE, ILLISIBLE, FORME],
     acte: Acte::Ecrit,
-    avance: false,
     phrase: 0,
     ecran: ECRAN,
 }];

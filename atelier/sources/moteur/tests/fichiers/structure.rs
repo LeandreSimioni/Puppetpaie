@@ -670,7 +670,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     let appelee = |f: &routes::catalogue::Fiche, t: &str| t.contains(&format!("\"{}\"", f.nom())) || t.contains(&format!("/api/{}", f.nom())) || t.contains(&format!("Route::{:?}", f.route));
     for f in &tout {
         match f.ecran {
-            Ecran::Dessine(p) => assert!(
+            Ecran::Dessine(p) | Ecran::DessineAvance(p) => assert!(
                 fichiers_de(p).iter().any(|x| appelee(f, &lu(x))),
                 "{} : aucune page de sa place ({}) ne l'appelle : donne à cette route sa place à l'écran (fiche, champ ecran) et appelle-la depuis cette page ({})",
                 f.nom(), p.nom(), fichiers_de(p).join(", ")
@@ -679,13 +679,12 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
                 assert!(f.charge.iter().all(|c| c.forme != routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
                 let porte = format!("data-auto=\"{}\"", p.nom());
                 let configuration = p.nom().starts_with("Configuration › ") && html.contains("id=\"config-avance\"");
-                assert!(f.avance, "{} s'affiche sous « Avancé » de sa place : sa fiche est avancée", f.nom());
                 assert!(
                     configuration || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
                     "{} : sa place ({}) n'a pas son « Avancé » (data-auto) : appelle js/avance.js là où la page l'ouvre", f.nom(), p.nom()
                 );
             }
-            Ecran::Lecture => {
+            Ecran::Lecture | Ecran::LectureAvancee => {
                 assert!(f.acte == Acte::Lit, "{} écrit : donne à cette route sa place à l'écran (fiche, champ ecran)", f.nom());
                 assert!(appelee(f, &page) || appelee(f, &fenetre), "{} : ni la page ni la fenêtre ne la lisent : donne-lui sa place à l'écran, ou retire-la", f.nom());
             }

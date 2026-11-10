@@ -36,7 +36,7 @@ const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), form
 
 /// Une lecture sans charge de l'Historique ou des Exports.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, avance: false, phrase: 0, ecran: ECRAN }
+    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN }
 }
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -54,7 +54,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "le logiciel retenu",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -70,9 +69,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Exports),
     },
     Fiche {
         route: Route::Exporter,
@@ -88,7 +86,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "le tableau, ou le fichier écrit",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -108,7 +105,6 @@ pub const ROUTES: &[Fiche] = &[
             OPERATION,
         ],
         acte: Acte::Engage,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -120,7 +116,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "salaries (chacun : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau), phrase (ce que vaut ce compte)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -139,9 +134,8 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::Refuse, corriger: "la date du virement fait, ou l'année que la phrase nomme ; rien n'est parti" },
         ],
         acte: Acte::Engage,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Exports),
     },
 ];
 

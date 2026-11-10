@@ -53,7 +53,7 @@ const BASE_CHANGEE: &str = "Le modèle de base a changé depuis la copie : ouvri
 
 /// Une fiche de ce module (elles se voient toutes sur l'ecran des modeles de contrat, sous « Avance »).
 const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte) -> Fiche {
-    Fiche { route, geste, charge, exemple, rend, refus, acte, avance: true, phrase: 0, ecran: Ecran::Dessine(Place::ModelesContrat) }
+    Fiche { route, geste, charge, exemple, rend, refus, acte, phrase: 0, ecran: Ecran::DessineAvance(Place::ModelesContrat) }
 }
 
 /// Une fiche d'un geste qui ecrit un modele et rend la liste, comme modeles-contrat.

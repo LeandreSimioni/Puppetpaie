@@ -59,7 +59,6 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     rend: "mois (celui à ouvrir), courant, reste (les étapes qui restent)",
     refus: &[crate::catalogue::ILLISIBLE],
     acte: Acte::Lit,
-    avance: false,
     phrase: 0,
     ecran: ECRAN,
 }];

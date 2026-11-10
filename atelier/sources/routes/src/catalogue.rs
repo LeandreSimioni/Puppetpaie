@@ -300,40 +300,53 @@ impl Place {
     }
 }
 
-/// OU LA ROUTE SE VOIT A L'ECRAN.
+/// OU LA ROUTE SE VOIT A L'ECRAN, et si elle est « avancee » : hors du chemin simple (le catalogue sans `avance` ne la
+/// dit pas ; la porte qui l'ouvre va dans le groupe « Avancé » de sa barre, `js/tuyau.js`). L'ecran seul le dit.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Ecran {
-    /// La page de cette place l'appelle (son ecran est dessine).
+    /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine).
     Dessine(Place),
-    /// Sans ecran dessine : sous « Avancé » de sa place, la page l'affiche depuis sa fiche (`js/avance.js`), avec ce
-    /// bouton (le `geste` est pour le LLM).
+    /// Avancee : la page de cette place l'appelle (son ecran est dessine), hors du chemin simple.
+    DessineAvance(Place),
+    /// Avancee, sans ecran dessine : sous « Avancé » de sa place, la page l'affiche depuis sa fiche (`js/avance.js`),
+    /// avec ce bouton (le `geste` est pour le LLM).
     Auto(Place, Affiche),
-    /// Une lecture qui nourrit les ecrans (l'etat, la configuration, le mois) : elle n'a pas de place.
+    /// Le chemin simple : une lecture qui nourrit les ecrans (l'etat, la configuration, le mois) ; elle n'a pas de place.
     Lecture,
+    /// Avancee : une lecture qui nourrit les ecrans, hors du chemin simple.
+    LectureAvancee,
 }
 
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::Auto(p, _) => Some(p),
-            Ecran::Lecture => None,
+            Ecran::Dessine(p) | Ecran::DessineAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Lecture | Ecran::LectureAvancee => None,
+        }
+    }
+
+    /// La route est-elle « avancee » (hors du chemin simple) ?
+    pub fn avance(self) -> bool {
+        match self {
+            Ecran::Dessine(_) | Ecran::Lecture => false,
+            Ecran::DessineAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
 
     fn mot(self) -> &'static str {
         match self {
-            Ecran::Dessine(_) => "dessine",
+            Ecran::Dessine(_) | Ecran::DessineAvance(_) => "dessine",
             Ecran::Auto(..) => "auto",
-            Ecran::Lecture => "lecture",
+            Ecran::Lecture | Ecran::LectureAvancee => "lecture",
         }
     }
 
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
-            Ecran::Dessine(p) => p.nom().to_string(),
+            Ecran::Dessine(p) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
-            Ecran::Lecture => "(une lecture des écrans)".to_string(),
+            Ecran::Lecture | Ecran::LectureAvancee => "(une lecture des écrans)".to_string(),
         }
     }
 }
@@ -502,10 +515,9 @@ pub struct Fiche {
     pub rend: &'static str,
     pub refus: &'static [Refus],
     pub acte: Acte,
-    pub avance: bool,
     /// La place, en caracteres, de la phrase que la route rend pour l'affichage (`phrase`) ; 0 : elle n'en rend pas.
     pub phrase: usize,
-    /// Ou la route se voit a l'ecran.
+    /// Ou la route se voit a l'ecran, et si elle est avancee.
     pub ecran: Ecran,
 }
 
@@ -542,19 +554,19 @@ impl Fiche {
                 Acte::Ecrit => "ecrit",
                 Acte::Engage => "engage",
             },
-            avance: self.avance,
+            avance: self.ecran.avance(),
             phrase: self.phrase,
             ecran: self.ecran.place().map(Place::nom),
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
                 Ecran::Auto(_, b) => Some(b.texte()),
-                Ecran::Dessine(_) | Ecran::Lecture => None,
+                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
         })
     }
 
     pub fn en_texte(&self) -> String {
-        let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.avance { " (avancé)" } else { "" }, self.geste, self.acte.mot());
+        let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
         for c in self.charge {
             t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
         }
@@ -609,9 +621,8 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     rend: "routes : la fiche de chaque route (nom, geste, charge, exemple, rend, refus, acte, avance, phrase)",
     refus: &[FORME],
     acte: Acte::Lit,
-    avance: true,
     phrase: 0,
-    ecran: Ecran::Lecture,
+    ecran: Ecran::LectureAvancee,
 }];
 
 /// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
@@ -641,7 +652,7 @@ pub fn route(charge: &Charge) -> R<Rendu> {
 }
 
 fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
-    let fiches: Vec<Fiche> = catalogue().into_iter().filter(|f| c.avance == Some(true) || !f.avance).collect();
+    let fiches: Vec<Fiche> = catalogue().into_iter().filter(|f| c.avance == Some(true) || !f.ecran.avance()).collect();
     let phrases: Vec<String> = fiches.iter().map(|f| format!("{} : {}", f.nom(), f.geste)).collect();
     Ok(LeCatalogue { phrase: format!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
 }
@@ -726,7 +737,7 @@ pub fn commande(args: &[String]) -> i32 {
             }
         };
     }
-    let montrees: Vec<&Fiche> = tout.iter().filter(|f| avance || !f.avance).collect();
+    let montrees: Vec<&Fiche> = tout.iter().filter(|f| avance || !f.ecran.avance()).collect();
     dire!("Les routes (echo '{{\"route\":NOM,\"charge\":{{…}}}}' | moteur route ; la fiche : moteur routes NOM ; toutes : --avance)\n");
     let large = montrees.iter().map(|f| f.nom().len()).fold(0, usize::max);
     for f in &montrees {

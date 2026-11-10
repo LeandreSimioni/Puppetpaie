@@ -47,7 +47,6 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
     refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le journal des envois ou une liste des bulletins repris, que la phrase dit illisible" }],
     acte: Acte::Lit,
-    avance: false,
     phrase: 0,
     ecran: ECRAN,
 }];
