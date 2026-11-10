@@ -95,7 +95,10 @@ zéro).
 **Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
 se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran
 fait main de cette place l'appelle), `Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
-depuis sa fiche : son nom n'est écrit dans aucun JS), `Lecture` (elle nourrit un écran, n'écrit rien). Les pages sont
+depuis sa fiche : son nom n'est écrit dans aucun JS), `Geste(place)` (une route de cette place la rend en geste : route,
+charge, libellé, cases ; `js/avance.js` en dessine le bouton et la boîte depuis sa fiche), `Lecture` (elle nourrit un
+écran, n'écrit rien) ; `DessineAvance(place)`, `GesteAvance(place)` et `LectureAvancee` : les mêmes, hors du chemin
+simple. L'avancé se calcule depuis l'écran (`Ecran::avance()`), nulle part ailleurs. Les pages sont
 `logiciel/interface/` et `atelier/sources/moteur/src/interface/pages/` (l'accueil). On ne cherche donc jamais une route
 par son nom dans le JS : on lit sa fiche.
 
