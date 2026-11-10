@@ -52,7 +52,7 @@ le cinéma.
 
 - Le certificat de travail d'un intermittent : sa prévoyance de l'accord est une garantie collective et obligatoire
   (CSS L. 911-1), donc maintenue après la fin du contrat dans les conditions de L. 911-8, que le certificat signale
-  (`documents::fin_de_contrat::portabilite`). Les avenants déposés (5, 7, 9) ne disent rien de la portabilité ; le
+  (`engagement::portabilite`, `documents::fin_de_contrat::mention`). Les avenants déposés (5, 7, 9) ne disent rien de la portabilité ; le
   texte de base de l'accord (20/12/2006) et ses avenants 1 à 4 ne sont pas déposés : s'ils prévoient autre chose,
   c'est là.
 

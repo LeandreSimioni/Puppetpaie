@@ -15,7 +15,9 @@
 # sociale, L911-8, 6° : « L'employeur signale le maintien de ces garanties
 # dans le certificat de travail »). Le moteur l'écrit dans le marqueur
 # certificat.portabilite, vide quand rien n'est maintenu (aucune garantie
-# collective, ou une fin pour faute lourde).
+# collective, ou une fin pour faute lourde). Une copie de ce modèle dans
+# les gabarits de la compagnie doit le garder : sans lui, le certificat
+# d'un salarié dont les garanties se maintiennent se refuse.
 #
 # Les marqueurs {{...}} sont remplacés à l'édition ; un marqueur inconnu
 # arrête la génération plutôt que d'imprimer un trou.

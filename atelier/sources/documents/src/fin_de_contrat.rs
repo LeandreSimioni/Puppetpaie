@@ -2,7 +2,7 @@
 //! compagnie remet au salarié, rien ne part nulle part. Ils se fabriquent depuis la paie validée de l'engagement.
 //!
 //! Le certificat se délivre à l'expiration du contrat (L1234-19) et porte les mentions de D1234-6, et le maintien des
-//! garanties collectives de prévoyance et de santé que CSS L. 911-8, 6° lui fait signaler (`portabilite`) ; le reçu
+//! garanties collectives de prévoyance et de santé que CSS L. 911-8, 6° lui fait signaler (`mention`, `engagement::portabilite`) ; le reçu
 //! fait l'inventaire des sommes versées (L1234-20), ligne à ligne, et s'établit en double exemplaire (D1234-7).
 
 use droit::fiche::Lue as _;
@@ -26,43 +26,31 @@ pub const AVIS: &[&str] = &[
     "L'organisme assureur apprend la fin du contrat par la DSN (sa fin dans la mensuelle, et le signalement de fin de contrat quand il part) : rien d'autre à lui envoyer.",
 ];
 
-/// LES MOTIFS DE FIN POUR FAUTE LOURDE (S21.G00.62.002, `contrats-base.json` : « 088 - Licenciement pour faute lourde »,
-/// « 096 - Rupture anticipée pour faute lourde ») : la seule fin que L. 911-8 exclut et que l'employeur connaît. Le droit
-/// à l'assurance chômage, l'autre condition, se décide à France Travail, et l'ancien salarié en justifie à l'organisme
-/// (5°) : il se dit dans la mention, il ne se devine pas du motif (une démission peut être légitime : règlement général
-/// de l'assurance chômage, art. 2, § 2, `atelier/reference/sources/chomage-permanents/`).
-const FAUTE_LOURDE: [&str; 2] = ["088", "096"];
-
 /// LE MAINTIEN DES GARANTIES QUE LE CERTIFICAT SIGNALE (CSS L. 911-8,
 /// `atelier/reference/sources/code-de-la-securite-sociale/xml/L911-8.xml`, 6° : « L'employeur signale le maintien de ces
 /// garanties dans le certificat de travail » ; les accords santé des permanents de la 1285 et de la 3090 le redisent :
 /// `kali-1285-accord-frais-de-sante-20260130-20261011.md`, l. 201, `kali-3090-accord-sante-permanents-20240719-20261011.md`,
-/// l. 153). Les garanties sont celles que sa dernière paie cotise, collectives et obligatoires : la prévoyance
-/// (`prevoyance…` : celle de la convention ou de l'accord interbranche des intermittents) et la complémentaire santé
-/// (`mutuelle` : celle des permanents ; la garantie santé des intermittents est une adhésion individuelle). Vide : aucune
-/// garantie collective, ou une fin pour faute lourde.
-fn portabilite(p: &Paie, nom: &str, fin: &Jour) -> String {
-    if p.engagement.motif_rupture.as_deref().is_some_and(|m| FAUTE_LOURDE.contains(&m)) {
-        return String::new();
-    }
-    let prevoyance = p.lignes.iter().any(|l| l.id.as_deref().is_some_and(|i| i == "prevoyance" || i.starts_with("prevoyance_")));
-    let sante = p.lignes.iter().any(|l| l.est("mutuelle"));
-    let garanties = match (prevoyance, sante) {
+/// l. 153), en mots, depuis ce que l'engagement en dit (`engagement::portabilite`). La garantie santé des intermittents
+/// est une adhésion individuelle, hors de L. 911-8 : seule leur prévoyance s'y lit.
+fn mention(m: &engagement::portabilite::Portabilite, nom: &str, fin: &Jour) -> String {
+    let garanties = match (m.prevoyance, m.sante) {
         (true, true) => "de prévoyance (décès, incapacité de travail, invalidité) et de complémentaire santé",
         (true, false) => "de prévoyance (décès, incapacité de travail, invalidité)",
-        (false, true) => "de complémentaire santé",
-        (false, false) => return String::new(),
+        _ => "de complémentaire santé",
     };
+    let contrats = if m.consecutifs { "de ses derniers contrats consécutifs dans l'entreprise, depuis le " } else { "de son dernier contrat de travail, depuis le " };
     format!(
         "Maintien des garanties (article L. 911-8 du code de la sécurité sociale) : si la cessation de son contrat de \
 travail lui ouvre droit à une prise en charge par l'assurance chômage, {} bénéficie du maintien à titre gratuit des \
 garanties collectives {} en vigueur dans l'entreprise, à compter du {} et pendant la durée de son indemnisation, dans \
-la limite de la durée de son dernier contrat de travail (ou de ses derniers contrats consécutifs dans l'entreprise), \
-appréciée en mois et arrondie au mois supérieur, sans pouvoir excéder douze mois. Il en justifie auprès de l'organisme \
-assureur, à l'ouverture et au cours de la période de maintien.",
+la limite de {} mois (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
+l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
         nom,
         garanties,
-        fin.jj_mm_aaaa()
+        fin.jj_mm_aaaa(),
+        m.mois,
+        contrats,
+        m.depuis.jj_mm_aaaa()
     )
 }
 
@@ -87,11 +75,35 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| erreur(Classe::Manque, m))?, p.salarie.nom.ecrite("nom").map_err(|m| erreur(Classe::Manque, m))?);
-    valeurs_cert.insert(Marqueur::CertificatPortabilite, portabilite(p, &nom, &fin));
+    let maintien = engagement::portabilite::de(&ctx.racine, p, numero, &fin)?;
+    // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
+    // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
+    let chemin_cert = socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste);
+    let lu_cert = ModeleLu::du_fichier(&chemin_cert)?;
+    if maintien.is_some() && !lu_cert.cite(Marqueur::CertificatPortabilite) {
+        return Err(erreur(
+            Classe::ModeleIncomplet,
+            format!(
+                "Le modèle du certificat de travail ({}) ne cite pas {} : le maintien des garanties de {} (code de la \
+sécurité sociale, L911-8, 6°) se tairait. Ajouter {} au modèle, sur sa propre ligne avant les signatures (le modèle livré le \
+fait). Rien n'est écrit.",
+                socle::fichiers::nom_du(&chemin_cert),
+                Marqueur::CertificatPortabilite,
+                nom,
+                Marqueur::CertificatPortabilite
+            ),
+        ));
+    }
+    let dite = match &maintien {
+        Some(m) => mention(m, &nom, &fin),
+        None => String::new(),
+    };
+    valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
-    ecrire_papier(&socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste), valeurs_cert, &certificat, &ent, true)?;
-    if let Err(e) = ecrire_papier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste), valeurs, &recu, &ent, false) {
+    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
+    ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
+    if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
         let _ = std::fs::remove_file(&certificat);
         return Err(e);
     }
@@ -150,11 +162,10 @@ fn inventaire(p: &Paie) -> String {
     lignes.join("\n")
 }
 
-/// Le papier de `modele`, par la fabrique (style « attestation »). `signe` : le certificat s'établit signé de
+/// Le papier du modèle lu `lu`, par la fabrique (style « attestation »). `signe` : le certificat s'établit signé de
 /// l'employeur.
-fn ecrire_papier(modele: &Path, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
-    let lu = ModeleLu::du_fichier(modele)?;
-    let mut un = crate::contrat::document_modele(&lu, &valeurs);
+fn ecrire_papier(lu: &ModeleLu, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
+    let mut un = crate::contrat::document_modele(lu, &valeurs);
     if signe {
         un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }
