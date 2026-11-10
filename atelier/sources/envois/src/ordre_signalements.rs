@@ -117,7 +117,7 @@ fn ordre_lu(ordre: Option<&str>, ou: &Path) -> Result<Option<i64>, Echec> {
 /// Le plus grand ordre des signalements d'ESSAI que ce dossier a deposes (`detail.ordre` des lignes `dsn` en test) :
 /// la base d'essai les garde, et le meme fichier part ensuite en reel. Une ligne qui ne dit pas son ordre n'en donne pas.
 fn dernier_ordre_des_essais(racine: &Path) -> Result<i64, Echec> {
-    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| erreur(Classe::Refuse, m))?;
+    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
     let mut dernier = 0;
     for e in lignes.iter().filter_map(crate::journal::Ligne::dsn).filter(|e| e.mode == crate::journal::Mode::Test) {
         if !e.detail.nature.as_deref().is_some_and(|n| crate::depot::SIGNALEMENTS.contains(&n)) {
@@ -136,7 +136,7 @@ fn dernier_ordre_des_essais(racine: &Path) -> Result<i64, Echec> {
 /// ordre ; essais). `client` : le client net-entreprises, avec le mot de passe de consultation que `moteur` a pris (un test
 /// le pointe sur un faux serveur) ; `None` : aucun mot de passe, la plate-forme ne se lit pas et cela se dit.
 pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Option<Client>, suites: &mut Suites) -> Result<OrdreConnu, Echec> {
-    let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))?;
+    let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
     let journal = reels.max(dernier_ordre_des_essais(&ctx.racine)?);
     let mut avertissements = Vec::new();
 

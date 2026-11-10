@@ -218,7 +218,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
         e.flux = d.flux.clone();
         e.quand = quand;
         e.origine = format!("retours/{}", piece);
-        journal::noter(&ctx.racine, Ligne::Dsn(e), None, maintenant).map_err(socle::echec::Echec::from)?;
+        journal::noter(&ctx.racine, Ligne::Dsn(e), None, maintenant)?;
     }
     // Les retours deja archives se rangent en face des lignes qui viennent d'apparaitre -- par le flux.
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
@@ -418,7 +418,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
                 e.quand = q.clone();
             }
             e.origine = format!("retours/dpae/{}", a.piece);
-            journal::noter(&ctx.racine, Ligne::Dpae(e), None, maintenant).map_err(socle::echec::Echec::from)?;
+            journal::noter(&ctx.racine, Ligne::Dpae(e), None, maintenant)?;
         }
     }
     Ok(rapport)

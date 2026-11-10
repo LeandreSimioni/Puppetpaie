@@ -511,7 +511,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             faits += 1;
         }
     }
-    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur(Classe::Disque, m))?;
+    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })?;
     crate::organismes_simules::garder(&ctx.racine, &avant, &memoire)?;
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.

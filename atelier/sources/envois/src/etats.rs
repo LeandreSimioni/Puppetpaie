@@ -1235,7 +1235,7 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
             ajoutes += 1;
         }
     }
-    crate::journal::ranger(racine, rangements).map_err(|m| erreur(socle::echec::Classe::Disque, m))?;
+    crate::journal::ranger(racine, rangements).map_err(|m| Echec { classe: Some(socle::echec::Classe::Disque), ..m })?;
     Ok(ajoutes)
 }
 

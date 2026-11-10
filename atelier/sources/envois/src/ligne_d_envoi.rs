@@ -26,7 +26,7 @@ pub fn par_courriel<D, Rt>(mois: Option<Mois>, qui: &str, accepte: bool, destina
 
 /// La ligne d'un envoi par courriel, a la fin de `journal/depots.jsonl`.
 pub fn noter(ctx: &Contexte, ligne: Ligne) -> R<Ligne> {
-    journal::noter(&ctx.racine, ligne, None, &socle::paris::maintenant()).map_err(|m| erreur(Classe::Disque, m))
+    journal::noter(&ctx.racine, ligne, None, &socle::paris::maintenant()).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })
 }
 
 /// La ligne d'un envoi qui a echoue en route. Le destinataire est celui des messages REELLEMENT partis (`partis`, vide si

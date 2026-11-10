@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use socle::mois::Mois;
-use socle::num::Resultat;
+use socle::echec::{refus, Echec, R};
 
 pub use crate::ligne::*;
 
@@ -50,8 +50,8 @@ pub fn empreinte(contenu: &[u8]) -> String {
 }
 
 /// L'empreinte d'un fichier, comme le journal l'écrit.
-pub fn empreinte_fichier(chemin: &Path) -> Resultat<String> {
-    std::fs::read(chemin).map(|b| empreinte(&b)).map_err(|e| socle::echec::du_disque(&chemin, &e).into())
+pub fn empreinte_fichier(chemin: &Path) -> R<String> {
+    std::fs::read(chemin).map(|b| empreinte(&b)).map_err(|e| socle::echec::du_disque(&chemin, &e))
 }
 
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
@@ -117,7 +117,7 @@ fn tenus() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Tenu>> {
 }
 
 /// Ce que le systeme de fichiers dit du journal `p` (taille, date).
-fn vu(meta: &std::fs::Metadata, p: &Path) -> Resultat<(u64, std::time::SystemTime)> {
+fn vu(meta: &std::fs::Metadata, p: &Path) -> R<(u64, std::time::SystemTime)> {
     Ok((meta.len(), meta.modified().map_err(|e| socle::echec::du_disque(&p, &e))?))
 }
 
@@ -134,13 +134,13 @@ fn abime(n: usize) -> String {
 
 /// Le refus du journal `p` dont la ligne `n` ne se lit pas : la phrase dit ce qui ne va pas (`quoi`), le chemin va a
 /// part (`echec::du_disque`).
-fn abime_a(p: &Path, n: usize, quoi: &str) -> String {
-    socle::echec::du_disque(&p, &format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, quoi)).into()
+fn abime_a(p: &Path, n: usize, quoi: &str) -> Echec {
+    socle::echec::du_disque(&p, &format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, quoi))
 }
 
 impl Tenu {
     /// Replie un enregistrement (`n` : sa ligne dans le fichier, pour le dire s'il ne se lit pas).
-    fn replier(&mut self, e: Enregistrement, n: usize, p: &Path) -> Resultat<()> {
+    fn replier(&mut self, e: Enregistrement, n: usize, p: &Path) -> R<()> {
         let illisible = |quoi: &str| abime_a(p, n, quoi);
         match e {
             Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature: None, publication: None, complete: None } => {
@@ -196,7 +196,7 @@ impl Tenu {
 
     /// Replie les lignes completes de `octets` (le texte qui suit `self.octets`) ; une ligne que rien ne termine encore
     /// (un ajout en train de s'ecrire) attend la lecture suivante.
-    fn replier_le_texte(&mut self, octets: &[u8], p: &Path) -> Resultat<()> {
+    fn replier_le_texte(&mut self, octets: &[u8], p: &Path) -> R<()> {
         let Some(fin) = octets.iter().rposition(|&o| o == b'\n') else { return Ok(()) };
         let mut n = self.octets.iter().filter(|&&o| o == b'\n').count();
         for texte in octets[..fin].split(|&o| o == b'\n') {
@@ -213,9 +213,9 @@ impl Tenu {
 }
 
 /// L'enregistrement de la ligne `n` du fichier `p`, lu strictement.
-fn lire_enregistrement(texte: &[u8], p: &Path, n: usize) -> Resultat<Enregistrement> {
+fn lire_enregistrement(texte: &[u8], p: &Path, n: usize) -> R<Enregistrement> {
     let texte = std::str::from_utf8(texte).map_err(|_| abime_a(p, n, "elle n'est pas du texte"))?;
-    socle::forme::lire_texte(texte, &abime(n)).map_err(|e| e.au_fichier(p).into())
+    socle::forme::lire_texte(texte, &abime(n)).map_err(|e| e.au_fichier(p))
 }
 
 /// Un compte rendu d'organisme de plus, ou ce qu'il apporte au meme (sa nature, sa publication) deja range.
@@ -234,7 +234,7 @@ fn ranger_une_fois<T: PartialEq>(retours: &mut Vec<T>, r: T) {
 }
 
 /// Le journal de `p` replie a jour de ce que porte le fichier ; vide (`vu` a `None`) s'il n'existe pas.
-fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<&'t mut Tenu> {
+fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> R<&'t mut Tenu> {
     let meta = match std::fs::metadata(p) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -242,7 +242,7 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<&'t m
             *t = Tenu::default();
             return Ok(t);
         }
-        Err(e) => return Err(socle::echec::du_disque(&p, &e).into()),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     };
     let vu = Some(vu(&meta, p)?);
     if tenus.get(p).is_some_and(|t| t.vu == vu) {
@@ -262,7 +262,7 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<&'t m
 }
 
 /// `journal/depots.jsonl` lu (`Journal`) ; vide s'il n'existe pas.
-pub fn lu(racine: &Path) -> Resultat<Journal> {
+pub fn lu(racine: &Path) -> R<Journal> {
     let p = chemin(racine);
     let mut tenus = tenus();
     let t = a_jour(&mut tenus, &p)?;
@@ -274,7 +274,7 @@ pub fn lu(racine: &Path) -> Resultat<Journal> {
 
 /// LE SEUL ENDROIT QUI ECRIT LE JOURNAL : les enregistrements que `faire` tire du journal a jour s'ajoutent a la fin du
 /// fichier, d'une seule ecriture, et se replient tels qu'ils se reliront.
-fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) -> Resultat<Vec<Enregistrement>>) -> Resultat<()> {
+fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) -> R<Vec<Enregistrement>>) -> R<()> {
     let p = chemin(racine);
     let mut tenus = tenus();
     let t = a_jour(&mut tenus, &p)?;
@@ -310,12 +310,12 @@ fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) 
 /// Ne garde du journal de `racine` que les envois que `garder` retient, et ce qui leur est revenu : le journal d'une
 /// compagnie montee depuis une autre (`compagnie::essai`). Le fichier se remplace d'un coup ; sans journal, rien
 /// n'est a garder.
-pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat<()> {
+pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
     let p = chemin(racine);
     let octets = match std::fs::read(&p) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(socle::echec::du_disque(&p, &e).into()),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     };
     let mut gardes: std::collections::HashSet<String> = Default::default();
     let mut texte = String::new();
@@ -330,7 +330,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat
             _ => false,
         };
         if garde {
-            texte.push_str(std::str::from_utf8(l).map_err(|x| x.to_string())?);
+            texte.push_str(std::str::from_utf8(l).map_err(|x| refus(x.to_string()))?);
             texte.push('\n');
         }
     }
@@ -363,7 +363,7 @@ pub fn filtrer<'a>(lignes: &'a [Ligne], quoi: Option<Acte>, mois: Option<Mois>, 
 }
 
 /// Les lignes du journal de `racine`, les plus recentes en dernier (`filtrer`).
-pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulement: bool) -> Resultat<Vec<Ligne>> {
+pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulement: bool) -> R<Vec<Ligne>> {
     Ok(filtrer(&lu(racine)?.lignes, quoi, mois, reel_seulement).cloned().collect())
 }
 
@@ -394,10 +394,10 @@ impl<D, R> Envoi<D, R> {
 /// (une reprise : `origine` doit alors la justifier), celle de `dater_pendant`, sinon `maintenant` (l'heure locale que
 /// l'appelant donne : le moteur ne connait pas le fuseau). `fichier` : le fichier parti, dont la ligne garde le nom et
 /// l'empreinte (s'il existe).
-pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: &str) -> Resultat<Ligne> {
+pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: &str) -> R<Ligne> {
     let (quand, origine) = commun_mut(&mut ligne);
     if !quand.is_empty() && origine.is_empty() {
-        return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine").into());
+        return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine"));
     }
     match DATE.with(|d| d.borrow().clone()) {
         Some((q, o)) => {
@@ -472,13 +472,13 @@ pub enum Revenu {
 
 /// CE QUI REVIENT D'UN ENVOI (un contrat signe, la mention retiree, une fiche) : `retour` se range dans les `retours` de
 /// la derniere ligne que `envoi` reconnait, et la rend. `None` : aucune ligne ne la porte, rien n'est ecrit.
-pub fn rattacher(racine: &Path, envoi: impl Fn(&Ligne) -> bool, retour: Revenu) -> Resultat<Option<Ligne>> {
+pub fn rattacher(racine: &Path, envoi: impl Fn(&Ligne) -> bool, retour: Revenu) -> R<Option<Ligne>> {
     let mut trouvee = None;
     ajouter(racine, |j, _| {
         let Some(i) = j.lignes.iter().rposition(|l| envoi(l)) else { return Ok(Vec::new()) };
         let sien = matches!((&j.lignes[i], &retour), (Ligne::ContratSignature(_), Revenu::Contrat(_)) | (Ligne::FicheDemande(_), Revenu::Fiche(_)));
         if !sien {
-            return Err(format!("journal : ce retour ne revient pas d'un envoi {}", j.lignes[i].acte().nom()));
+            return Err(socle::refus!("journal : ce retour ne revient pas d'un envoi {}", j.lignes[i].acte().nom()));
         }
         trouvee = Some(i);
         let r = match &retour {
@@ -502,12 +502,12 @@ pub enum Rangement {
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
-pub fn ranger(racine: &Path, rangements: Vec<(usize, Rangement)>) -> Resultat<()> {
+pub fn ranger(racine: &Path, rangements: Vec<(usize, Rangement)>) -> R<()> {
     ajouter(racine, |j, _| {
         rangements
             .into_iter()
             .map(|(i, r)| {
-                let a = Some(j.ids.get(i).ok_or_else(|| format!("journal : aucune ligne {}", i))?.clone());
+                let a = Some(j.ids.get(i).ok_or_else(|| socle::refus!("journal : aucune ligne {}", i))?.clone());
                 Ok(match r {
                     Rangement::Retour(retour) => Enregistrement { a, retour: Some(Retour::Organisme(retour)), ..Default::default() },
                     Rangement::Complement { nature, publication, verdict } => Enregistrement { a, nature: Some(nature), publication, complete: Some(verdict), ..Default::default() },
@@ -571,7 +571,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
 /// LES VERSIONS QU'UN ENVOI EMPORTE : pour chaque engagement valide que `mois` montre et que `garder` retient (la cle du
 /// salarie, le numero du contrat, l'engagement), sa version. Ce que la ligne du journal de l'envoi porte : elles se lisent
 /// AVANT l'envoi, qui ne part pas d'un engagement a revalider (`Valide::a_revalider`).
-pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> Resultat<Vec<Version>> {
+pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
     let mut out = Vec::new();
     for e in engagement::etats::du_mois(ctx, mois, departs)? {
         let Some(v) = e.valide() else { continue };
@@ -579,7 +579,7 @@ pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &e
         let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };
         if garder(cle, numero, brut) {
             if let Some(phrase) = v.a_revalider(ctx) {
-                return Err(phrase);
+                return Err(refus(phrase));
             }
             let version = v.version().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "version"))?;
             out.push(Version { salarie: cle.clone(), numero: engagement::numeros::NumeroContrat::lire(numero)?, version, mois: None });
@@ -589,7 +589,7 @@ pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &e
 }
 
 /// `versions_du_mois` des contrats qui partent, chacun lu dans le mois qu'il nomme.
-pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[ContratParti], departs: &engagement::departs::Departs) -> Resultat<Vec<Version>> {
+pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[ContratParti], departs: &engagement::departs::Departs) -> R<Vec<Version>> {
     let mut mois: Vec<Mois> = contrats.iter().map(|c| c.mois).collect();
     mois.sort();
     mois.dedup();
@@ -615,7 +615,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 /// Un signalement se reconnait a `detail.nature` (04, 05, 07, 08) ; une ligne reprise des retours, qui ne la porte pas,
 /// a son mois : le bilan d'une mensuelle le dit, celui d'un signalement non. Une ligne non acceptee (le point de depot
 /// n'a rien recu) ne consomme pas de numero.
-pub fn dernier_ordre_des_signalements(racine: &Path) -> Resultat<i64> {
+pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
     let mut dernier = 0;
     for l in lire(racine, Some(Acte::Dsn), None, true)? {
         let Some(e) = l.dsn() else { continue };
@@ -627,7 +627,7 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> Resultat<i64> {
             continue;
         }
         let sans_ordre = || {
-            socle::echec::avec(
+            socle::echec::refus_avec(
                 format!(
                     "Le journal des envois note le signalement reel du {} sans son numero d'ordre, lu en S20.G00.05.004 du fichier envoye. Le numero d'ordre d'un signalement ne se remet jamais a zero (cahier technique DSN, p. 136) : sans lui, le suivant ne se numerote pas. Le signaler au developpeur. Rien n'est ecrit.",
                     e.quand,

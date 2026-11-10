@@ -61,7 +61,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     texte.push_str(&texte.lines().next().unwrap().replace("\"flux\":", "\"fluxx\":").replace("\"id\":\"", "\"id\":\"autre-"));
     texte.push('\n');
     std::fs::write(journal::chemin(&f), texte).unwrap();
-    let refus = journal::lu(&f).unwrap_err();
+    let refus = String::from(journal::lu(&f).unwrap_err());
     assert!(refus.starts_with("Le journal des envois de la compagnie ne se lit pas : sa ligne 6 est abîmée"), "{refus}");
     assert!(refus.contains("fluxx"), "{refus}");
 }

@@ -288,5 +288,5 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     let detail = DetailContresigne { salarie: a.salarie.clone(), nom, code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
     let mut e = Envoi::nouveau(Mode::Reel, qui, true, c.de, "contrat contresigne renvoye au salarie", detail);
     e.mois = a.mois;
-    journal::noter(racine, Ligne::ContratContresigne(e), Some(&c.signes[0]), &maintenant()).map(|_| ()).map_err(socle::echec::Echec::from)
+    journal::noter(racine, Ligne::ContratContresigne(e), Some(&c.signes[0]), &maintenant()).map(|_| ())
 }

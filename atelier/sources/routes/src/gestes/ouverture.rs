@@ -517,7 +517,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) {
         match envois::journal::lu(&ctx.racine) {
             Ok(j) => etats::flux_de_test(&j.lignes),
             Err(e) => {
-                r.incidents.push(format!("Journal : {}", e));
+                r.incidents.push(format!("Journal : {}", String::from(e)));
                 Vec::new()
             }
         }

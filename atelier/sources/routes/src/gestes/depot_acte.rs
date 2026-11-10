@@ -629,7 +629,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
 /// Les engagements valides de `mois` que nomment les embauches d'une DPAE (`salarie`, `numero`), vus comme des embauches.
 fn paies_des_embauches(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
     let o = |m: String| erreur(Classe::Refuse, m);
-    let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
+    let departs = envois::journal::lu(&ctx.racine).map_err(String::from).map_err(o)?.departs;
     let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(String::from).map_err(o)? else { return Ok(Vec::new()) };
     let declaree = |p: &engagement::calcul::Paie| {
         let cle = p.salarie.id.to_string();
