@@ -263,8 +263,8 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
             if nb == 1 { "ton contrat d'engagement".to_string() } else { format!("tes {} contrats d'engagement (un par page)", nb) },
         )
     };
-    let prenom = a.prenom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("prenom")))?;
-    let nom = a.nom.clone().ok_or_else(|| socle::echec::Echec::from(socle::fichiers::absent("nom")))?;
+    let prenom = a.prenom.clone().ok_or_else(|| socle::fichiers::absent("prenom"))?;
+    let nom = a.nom.clone().ok_or_else(|| socle::fichiers::absent("nom"))?;
     let message = Message {
         cle: a.salarie.to_string(),
         nom: nom.clone(),
