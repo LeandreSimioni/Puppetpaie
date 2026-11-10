@@ -1532,7 +1532,9 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let bar = ctx.bareme(&jour).map_err(socle::echec::Echec::from)?;
     // Les plafonds de la franchise, que la conclusion nomme : ceux du bareme de l'annee.
     let plafonds = crate::taxe_sur_les_salaires::plafonds_franchise(Some(&*bar));
-    let regime = crate::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise, plafonds);
+    // La fiche telle qu'elle est au 31 decembre de l'annee : celle qu'`exports-periodes` lit pour proposer l'etat.
+    let fin = socle::date::Jour::lire(&format!("{}-12-31", annee)).map_err(|x| erreur(Classe::Illisible, x))?;
+    let regime = crate::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), plafonds);
     let p = Periode::nouvelle(ctx, None, Some(annee), false, true)?;
     let mut avert: Vec<String> = Vec::new();
     let part = match &regime.decision {

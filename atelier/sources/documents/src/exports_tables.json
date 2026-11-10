@@ -674,6 +674,9 @@
  "si_permanents": [
   "provision-conges"
  ],
+ "si_taxe_sur_les_salaires": [
+  "taxe-sur-les-salaires"
+ ],
  "formats": [
   {
    "format": "csv",

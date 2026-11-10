@@ -32,6 +32,8 @@ pub struct Tables {
     pub si_convention: BTreeMap<String, Vec<String>>,
     /// Les etats qui ne servent qu'a qui emploie des permanents.
     pub si_permanents: Vec<String>,
+    /// Les etats qui ne servent qu'a une compagnie qui doit la taxe sur les salaires une des annees a exporter.
+    pub si_taxe_sur_les_salaires: Vec<String>,
     pub formats: Vec<FormatLivre>,
     pub regroupements: Vec<RegroupementLivre>,
     pub logiciels: Vec<Logiciel>,
