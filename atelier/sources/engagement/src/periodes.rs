@@ -22,7 +22,7 @@ use socle::num::{dec_f64, eur2, Decimal};
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
 fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul

@@ -83,7 +83,7 @@ pub struct Engagement {
     pub jours_contrat: i64,
     /// Le jour du versement que la saisie dit pour CET engagement (« Payé le » : un paiement fait un autre jour), ou
     /// `None` : celui que la compagnie a choisi (`versement`).
-    pub date_paiement: Option<String>,
+    pub date_paiement: Option<Jour>,
     /// Le jour du versement que la compagnie a choisi dans sa configuration (`droit::versement`), lu au dernier jour du
     /// mois de la paie (`engagements`) ; `Engagement::nouveau` seul : le dernier jour du mois.
     pub versement: droit::versement::Versement,
@@ -113,16 +113,16 @@ pub struct Engagement {
     pub modalite_temps_travail_saisie: Option<String>,
     pub motif_recours: Option<String>,
     pub motif_rupture: Option<String>,
-    pub notification_rupture: Option<String>,
+    pub notification_rupture: Option<Jour>,
     pub preavis: Option<saisie::Preavis>,
     /// Le dernier jour travaille et paye au salaire habituel que la saisie dit (`dernier_jour_paye`, AAAA-MM-JJ) ;
     /// ce que la DSN en declare se lit par `fctu::dernier_jour_paye`.
-    pub dernier_jour_paye: Option<String>,
+    pub dernier_jour_paye: Option<Jour>,
     /// Le jour ou prend effet ce que la saisie de CE mois change au contrat (avenant : nature, motif, duree du
     /// travail, emploi, date de debut ; AAAA-MM-JJ) : la « Date de la modification » du bloc 41 (`dsn::changements_contrat`).
     /// Il ne se recopie pas d'un mois a l'autre (`routes::mois::DEFINIT_LE_MENSUEL`) : le mois suivant declare deja
     /// la nouvelle valeur.
-    pub date_modification: Option<String>,
+    pub date_modification: Option<Jour>,
     pub transaction: Option<String>,
     pub suspensions: Vec<imprevus::Suspension>,
     /// Les termes du contrat AVANT l'avenant que `date_modification` date en cours de mois (`salaire_mensuel`,
@@ -177,7 +177,7 @@ pub struct Assemble {
     pub taux_cachet: Option<Chiffre>,
     pub jours: Option<Chiffre>,
     pub jours_contrat: Option<Chiffre>,
-    pub date_paiement: Option<String>,
+    pub date_paiement: Option<Jour>,
     pub lieu: Option<String>,
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
@@ -192,10 +192,10 @@ pub struct Assemble {
     pub modalite_temps_travail_saisie: Option<String>,
     pub motif_recours: Option<String>,
     pub motif_rupture: Option<String>,
-    pub notification_rupture: Option<String>,
+    pub notification_rupture: Option<Jour>,
     pub preavis: Option<saisie::Preavis>,
-    pub dernier_jour_paye: Option<String>,
-    pub date_modification: Option<String>,
+    pub dernier_jour_paye: Option<Jour>,
+    pub date_modification: Option<Jour>,
     pub transaction: Option<String>,
     pub avant: Option<saisie::Avant>,
     pub periode_essai_jours: Option<Chiffre>,
@@ -534,8 +534,8 @@ impl Engagement {
             motif_rupture: v.motif_rupture.clone(),
             notification_rupture: v.notification_rupture.clone(),
             preavis: v.preavis.clone(),
-            dernier_jour_paye: v.dernier_jour_paye.clone().filter(|t| !t.is_empty()),
-            date_modification: v.date_modification.clone().filter(|t| !t.trim().is_empty()),
+            dernier_jour_paye: v.dernier_jour_paye,
+            date_modification: v.date_modification,
             transaction: v.transaction.clone(),
             suspensions: Vec::new(),
             avant: v.avant.clone(),
@@ -663,8 +663,8 @@ impl Engagement {
     /// retenue a la source (CGI, art. 1671, 1, `atelier/reference/sources/code-general-des-impots/articles-20261021.md`),
     /// donc celui ou se lit le taux de PAS du salarie.
     pub fn date_du_versement(&self) -> R<Jour> {
-        match self.date_paiement.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
-            Some(d) => Jour::lire(d.chars().take(10).collect::<String>().as_str()),
+        match self.date_paiement {
+            Some(d) => Ok(d),
             None => self.versement.jour(&self.mois, self.fin_periode()?),
         }
     }
@@ -1046,7 +1046,7 @@ pub(crate) fn engagements(
             jours_contrat: nombre(&carte.jours_contrat).or(continue_),
             planning: carte.planning(),
             lignes,
-            date_paiement: carte.date_paiement.clone(),
+            date_paiement: jour_saisi(&carte.date_paiement)?,
             lieu: carte.lieu.clone(),
             emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
             pcs_ese: ecrit(&carte.pcs_ese).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
@@ -1067,8 +1067,8 @@ pub(crate) fn engagements(
             // La fin du contrat telle que la saisie la dit : la mensuelle et le FCTU en tirent le meme S21.G00.62.006
             // (`fctu::dernier_jour_paye`).
             preavis: carte.preavis.clone(),
-            dernier_jour_paye: carte.dernier_jour_paye.clone(),
-            date_modification: carte.date_modification.clone(),
+            dernier_jour_paye: jour_saisi(&carte.dernier_jour_paye)?,
+            date_modification: jour_saisi(&carte.date_modification)?,
             avant: carte.avant.clone(),
             periode_essai_jours: nombre(&carte.periode_essai_jours),
             personne_remplacee: termes.personne_remplacee,
@@ -1148,6 +1148,14 @@ fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {
 /// (`routes::etapes::classer_saisie`, `routes::mois::refus_du_calcul`) ; leur message s'ouvre sur le
 /// salarie, puis dit quoi faire.
 pub(crate) const PAS_DE_NATURE: &str = " : choisissez la nature du contrat, sur sa carte.";
+
+/// Un jour que la carte ecrit (`AAAA-MM-JJ`, ou un instant par ses dix premiers caracteres) ; vide : rien n'est dit.
+fn jour_saisi(t: &Option<String>) -> R<Option<Jour>> {
+    match t.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => Ok(Some(Jour::lire(d.chars().take(10).collect::<String>().as_str())?)),
+        None => Ok(None),
+    }
+}
 const PAS_DE_JOUR: &str = " : cochez les jours joués sur sa ligne de paie.";
 const LIGNE_A_DIRE: &str = " : saisissez ";
 const QUANTITE_SANS_COMPTE: &str = " : saisissez un nombre plus grand que zéro";

@@ -196,8 +196,8 @@ pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
         Some(v) => Some(Jour::lire(v)?),
         None => None,
     };
-    let jour_paye = match e.dernier_jour_paye.as_deref() {
-        Some(s) => d(s)?,
+    let jour_paye = match e.dernier_jour_paye {
+        Some(j) => j,
         None => {
             if let Some(t) = type_preavis.as_deref() {
                 if preavis_non_effectue(t)? {

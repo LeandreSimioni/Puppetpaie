@@ -265,8 +265,8 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
     // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`, que la paie ecrite porte).
-    let paiement = e.f.date_paiement.as_deref().filter(|p| !p.is_empty()).ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
-    poser(Marqueur::ContratDatePaiement, Jour::lire(paiement)?.jj_mm_aaaa());
+    let paiement = e.f.date_paiement.ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
+    poser(Marqueur::ContratDatePaiement, paiement.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
     if let Some(p) = periode_remuneration(e)? {
         poser(Marqueur::RemunerationPeriode, p);

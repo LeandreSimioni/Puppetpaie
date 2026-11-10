@@ -123,8 +123,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());
     m.insert(Marqueur::SalarieCaseSignature, "Le salarié".into());
-    if let Some(p) = texte(eng.date_paiement.as_deref()) {
-        m.insert(Marqueur::ContratDatePaiement, socle::date::Jour::lire(p)?.jj_mm_aaaa());
+    if let Some(p) = eng.date_paiement {
+        m.insert(Marqueur::ContratDatePaiement, p.jj_mm_aaaa());
     }
     // LA DUREE DU TRAVAIL (R1221-34, 12°) : la quotite du contrat, en heures par mois ; sans elle, celle que la DSN
     // declare (S21.G00.40.013, `quotite`). Sous la duree de reference, c'est un temps partiel, dont le contrat dit la

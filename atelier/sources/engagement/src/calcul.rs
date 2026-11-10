@@ -2001,7 +2001,7 @@ impl Paie {
     pub(crate) fn forme<A>(&self, ctx: &Contexte, avis: &dyn Fn(&Avis) -> A, ecrite: bool) -> R<FormeDePaie<A>> {
         let mut engagement = self.engagement.canon()?;
         // Le jour du versement que la paie declare et imprime (`Engagement::date_du_versement`) : le contrat le dit.
-        engagement.date_paiement = Some(self.engagement.date_du_versement()?.iso());
+        engagement.date_paiement = Some(self.engagement.date_du_versement()?);
         if ecrite {
             // Telles qu'elles s'ecrivent : sans ce que le moteur pose pour l'ecran (`ligne::Marques`), qui ne s'ecrit pas.
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();

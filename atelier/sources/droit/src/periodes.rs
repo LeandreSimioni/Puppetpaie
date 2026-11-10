@@ -46,7 +46,7 @@ pub struct TermesDAvant {
 /// Le jour ou un avenant decoupe la paie de la periode [`debut`, `fin`] : sa `date_modification`, quand le contrat dit
 /// les termes d'avant (`avant`) et qu'elle tombe apres le premier jour de la periode payee. Sans `avant`, rien ; un
 /// `avant` incomplet, sans date, ou qui ne decoupe rien refuse. `qui` nomme le contrat dans un refus.
-pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<&str>, debut: Jour, fin: Jour, qui: &str) -> R<Option<Jour>> {
+pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<Jour>, debut: Jour, fin: Jour, qui: &str) -> R<Option<Jour>> {
     let Some(avant) = avant else { return Ok(None) };
     let dits = [avant.salaire_mensuel, avant.quotite_contrat];
     if let Some((k, _)) = TERMES_D_AVANT.iter().zip(dits).find(|(_, dit)| !dit) {
@@ -55,10 +55,9 @@ pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<
             &format!("avant.{}", k),
         ));
     }
-    let Some(texte) = date_modification else {
+    let Some(j) = date_modification else {
         return Err(socle::echec::cle(format!("{} : l'avenant ne dit pas quand il prend effet : remplir « À partir de » dans « Modifier l'engagement ».", qui), "date_modification"));
     };
-    let j = Jour::lire(texte).map_err(|_| socle::echec::a_la_cle(&format!("{} : la date de l'avenant ne se lit pas.", qui), "date_modification", texte))?;
     if j <= debut || j > fin {
         return Err(socle::echec::cle(
             format!(

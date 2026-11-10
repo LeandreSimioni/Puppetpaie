@@ -599,7 +599,7 @@ impl Importe {
             planning_lieux: BTreeMap::new(),
             jours: 0,
             jours_contrat: 0,
-            date_paiement: p.verse_le.map(|j| j.iso()),
+            date_paiement: p.verse_le,
             versement: Default::default(),
             taux_cachet: None,
             cachets: 0,

@@ -216,7 +216,7 @@ pub struct FormeDEngagement {
     pub jours: i64,
     #[serde(with = "entier")]
     pub jours_contrat: i64,
-    pub date_paiement: Option<String>,
+    pub date_paiement: Option<Jour>,
     #[serde(with = "nombre_opt")]
     pub taux_cachet: Option<Decimal>,
     #[serde(with = "entier")]
@@ -241,7 +241,7 @@ pub struct FormeDEngagement {
     pub modalite_temps_travail_saisie: Option<String>,
     pub motif_recours: Option<String>,
     pub motif_rupture: Option<String>,
-    pub notification_rupture: Option<String>,
+    pub notification_rupture: Option<Jour>,
     pub preavis: Option<crate::saisie::Preavis>,
     pub transaction: Option<String>,
     pub suspensions: Vec<crate::imprevus::Suspension>,

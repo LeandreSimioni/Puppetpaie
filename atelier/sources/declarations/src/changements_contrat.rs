@@ -172,9 +172,8 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
     let fin_p = p.engagement.fin_periode()?;
     let mut candidats: Vec<(Jour, String)> = Vec::new();
     if md.saisie {
-        if let Some(t) = &p.engagement.date_modification {
-            let j = Jour::lire(t).map_err(|_| socle::echec::a_la_cle(&format!("{} : la date de l'avenant de la saisie de {} ne se lit pas.", qui(p), mois), "date_modification", t))?;
-            candidats.push((j, "la date de modification de la saisie du mois (`date_modification`)".into()));
+        if let Some(j) = p.engagement.date_modification {
+            candidats.push((j,"la date de modification de la saisie du mois (`date_modification`)".into()));
         }
     }
     // Sans fiche datee, aucun changement date.
@@ -306,8 +305,8 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
     }
     let (avant, apres) = (debut_declare(&decl.bloc, "la DSN deposee", p)?, debut_declare(ecrit, "le bloc contrat ecrit", p)?);
     if avant != apres {
-        let date = match e.date_modification.as_deref() {
-            Some(t) => Jour::lire(t).map_err(|_| socle::echec::a_la_cle(&format!("{} : la date de l'avenant ne se lit pas.", qui(p)), "date_modification", t))?,
+        let date = match e.date_modification {
+            Some(j) => j,
             // Sans avenant date : le dernier jour du mois declare (§ 2.1.2.3.2, ci-dessus).
             None => fin_m,
         };
@@ -327,11 +326,7 @@ p. 217).",
         let fin_b = Mois::lire(&decl.mois)?.dernier_jour();
         // L'etablissement est celui que l'engagement dit (`engagement::calcul::etablissement_du_contrat`) ; le jour ou il
         // change est celui de l'avenant (`date_modification`).
-        let date = match p.engagement.date_modification.as_deref() {
-            Some(d) => Some(Jour::lire(d)?),
-            None => None,
-        }
-        .filter(|j| *j > fin_b && *j <= fin_m);
+        let date = p.engagement.date_modification.filter(|j| *j > fin_b && *j <= fin_m);
         let Some(date) = date.as_ref() else {
             return Err(socle::refus!(
                 "{} : le contrat etait declare par l'etablissement {} (DSN de {}) et l'est maintenant par l'etablissement {}. \
