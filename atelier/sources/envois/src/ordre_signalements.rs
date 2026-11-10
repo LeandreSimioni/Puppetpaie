@@ -55,7 +55,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
     match (ent.siren.portee(), ent.siret.portee()) {
         (Some(s), _) => Ok(s.to_string()),
         (None, Some(siret)) => Ok(siret.chars().take(9).collect()),
-        (None, None) => Err(Echec::from(socle::fichiers::absent("siren"))),
+        (None, None) => Err(socle::fichiers::absent("siren")),
     }
 }
 
@@ -142,14 +142,15 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
 
     // LA PLATE-FORME : une compagnie fictive n'en a pas ; ailleurs, ce qui empeche de la lire se dit.
     let joue = client.is_none() && branchement.joue();
-    let lue: Result<(), String> = if joue {
-        Ok(())
+    // Ce qui empeche de la lire, en une phrase ; `None` : elle est lue.
+    let pas_lue: Option<String> = if joue {
+        None
     } else {
         let fin = socle::paris::maintenant_naif();
         match releve_retours::relever_retours(ctx, branchement, fin - JOURS_DE_RELEVE * 86_400, fin, false, client, releve_retours::CANAL_DSN, suites) {
-            Ok(r) if r.incidents.is_empty() => Ok(()),
-            Ok(r) => Err(releve_retours::incidents_en_phrase(&r)),
-            Err(e) => Err(e.into()),
+            Ok(r) if r.incidents.is_empty() => None,
+            Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
+            Err(e) => Some(String::from(e)),
         }
     };
 
@@ -158,7 +159,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
         Some((plateforme, _)) => journal.max(*plateforme),
         None => journal,
     };
-    if let Err(pourquoi) = lue {
+    if let Some(pourquoi) = pas_lue {
         avertissements.push(format!(
             "La plate-forme n'a pas pu etre consultee ({}) : l'ordre {} suit le journal de ce dossier et les retours deja archives, qui ne savent que ce que ce dossier a depose et releve. Un signalement depose d'ailleurs sous le meme SIREN (un autre poste, une copie, un essai) peut avoir pris cet ordre : la plate-forme le refuserait (B1-208-10). Pour en etre sur : relever les retours, puis refaire le signalement.",
             pourquoi.trim_end_matches('.'),
