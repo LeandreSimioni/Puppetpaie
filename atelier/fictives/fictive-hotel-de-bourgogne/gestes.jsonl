@@ -336,7 +336,7 @@
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_CLAIRON_20260702.dsn"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_CLAIRON_20260702.dsn","reel":true}}
 {"route":"fin-contrat-documents","charge":{"mois":"2026-07","salarie":"CLAIRON"}}
-{"heure":"2026-07-31T10:00","route":"modifier-engagement","charge":{"mois":"2026-07","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"salaire_mensuel","valeur":6500},{"case":"quotite_contrat","valeur":121.33},{"case":"heures_complementaires","valeur":6}],"confirme":false,"jour":null}}
+{"heure":"2026-07-31T10:00","route":"modifier-engagement","charge":{"mois":"2026-07","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"salaire_mensuel","valeur":6500},{"case":"quotite_contrat","valeur":121.33},{"case":"heures_complementaires","valeur":6}],"confirme":true,"jour":null}}
 {"heure":"2026-08-03T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-07"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-07","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-07"}}
