@@ -742,8 +742,8 @@ fn neores_lu(crm: &Neores) -> Lecture {
     if crm.essai_reel.as_deref() == Some("01") {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
-    if let Some(debut) = lu(&crm.debut) {
-        l.phrases.push(match lu(&crm.fin).filter(|f| *f != debut) {
+    if let Some(debut) = lu(&crm.debut.map(|j| j.iso())) {
+        l.phrases.push(match lu(&crm.fin.map(|j| j.iso())).filter(|f| *f != debut) {
             None => format!("Période : {}.", date_lisible(debut)),
             Some(fin) => format!("Période : du {} au {}.", date_lisible(debut), date_lisible(fin)),
         });
@@ -845,12 +845,12 @@ fn neores_lu(crm: &Neores) -> Lecture {
             Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
             None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
         };
-        let periode = match (lu(&p.effet), lu(&p.fin)) {
+        let periode = match (lu(&p.effet.map(|j| j.iso())), lu(&p.fin.map(|j| j.iso()))) {
             (Some(e), Some(f)) => format!(", du {} au {}", date_lisible(e), date_lisible(f)),
             (Some(e), None) => format!(", à partir du {}", date_lisible(e)),
             (None, _) => String::new(),
         };
-        let calcul = morceau(" (calculé le ", lu(&p.calcule_le).map(date_lisible).as_deref(), ")");
+        let calcul = morceau(" (calculé le ", lu(&p.calcule_le.map(|j| j.iso())).map(date_lisible).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
     if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {

@@ -377,8 +377,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         }
         // Tronque au centieme (R. 130-1, I).
         let x = (x * 100.0).trunc() / 100.0;
-        let le = ctx.aujourdhui.iso();
-        if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, &le)? {
+        if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
         pose = Some(format!("Effectif de {} : {}.", an, en_clair(x)?));

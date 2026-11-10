@@ -669,8 +669,9 @@ mod tests {
         std::fs::create_dir_all(racine.join(crate::retours::RETOURS)).unwrap();
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
-        assert!(crate::releve_retours::poser_effectif(&racine, 2026, 3.0, "2027-01-05").unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, 2025, 2.0, "2027-01-05").unwrap());
+        let j = |t: &str| socle::date::Jour::lire(t).unwrap();
+        assert!(crate::releve_retours::poser_effectif(&racine, 2026, 3.0, j("2027-01-05")).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, 2025, 2.0, j("2027-01-05")).unwrap());
         let p = crm_effectif(2026, 11.42, "FICTIF-000000000001", "20270215100000");
         let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
@@ -679,7 +680,7 @@ mod tests {
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
         assert_eq!(e.annees.get(&2026), Some(&11.42));
         assert_eq!(e.annees.get(&2025), Some(&2.0));
-        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, 3.0, "2027-03-01").unwrap());
+        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, 3.0, j("2027-03-01")).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

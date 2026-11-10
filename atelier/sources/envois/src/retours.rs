@@ -2280,13 +2280,30 @@ fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
     rubrique_de(a, e, nom).map(str::to_string)
 }
 
+/// `rubrique_de`, une date : `AAAA-MM-JJ`, la forme d'une rubrique de nature date du cahier technique NEOReS (CSL 00,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`, l. 482) ; une autre forme
+/// se refuse.
+fn rubrique_jour(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::date::Jour>> {
+    rubrique_de(a, e, nom)
+        .map(|t| socle::date::Jour::du_texte(t).filter(|j| j.iso() == t).ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas une date AAAA-MM-JJ", nom, socle::date::repr_texte(t)))))
+        .transpose()
+}
+
+/// `rubrique_de`, un instant : `AAAA-MM-JJTHH:MM:SS`, la forme des dates de production d'un retour et de calcul d'un
+/// parametre ([19,19], meme cahier, RO.B002.R011 et RO.B008.R006) ; une autre forme se refuse.
+fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::InstantEcrit>> {
+    rubrique_de(a, e, nom)
+        .map(|t| socle::paris::InstantEcrit::lire(t).ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un instant AAAA-MM-JJTHH:MM:SS", nom, socle::date::repr_texte(t)))))
+        .transpose()
+}
+
 /// UN INDIVIDU D'UN COMPTE RENDU NEOReS (`RO.B006`, `RO.B012`) : nom, prenom, matricule, debut et numero du contrat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IndividuNeores {
     pub nom: Option<String>,
     pub prenom: Option<String>,
     pub matricule: Option<String>,
-    pub debut_contrat: Option<String>,
+    pub debut_contrat: Option<socle::date::Jour>,
     pub contrat: Option<String>,
 }
 
@@ -2298,8 +2315,8 @@ pub struct DonneeNeores {
     pub declaree: Option<String>,
     pub attendue: Option<String>,
     pub cumul: bool,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
     pub resultat: Option<&'static str>,
     pub acceptees: Vec<String>,
 }
@@ -2308,8 +2325,8 @@ pub struct DonneeNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DetailNeores {
     pub atypie: Option<String>,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
     pub montant: Option<String>,
     pub substituable: Option<&'static str>,
     pub rappel: Option<String>,
@@ -2347,10 +2364,10 @@ pub struct ParametreNeores {
     pub type_parametre: Option<String>,
     pub libelle: Option<&'static str>,
     pub valeur: Option<String>,
-    pub effet: Option<String>,
-    pub fin: Option<String>,
+    pub effet: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
     pub rubrique: Option<String>,
-    pub calcule_le: Option<String>,
+    pub calcule_le: Option<socle::paris::InstantEcrit>,
 }
 
 /// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
@@ -2389,9 +2406,9 @@ pub struct Neores {
     pub libelle: Option<String>,
     pub remplace: bool,
     pub organisme: Option<String>,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
-    pub produit_le: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
+    pub produit_le: Option<socle::paris::InstantEcrit>,
     pub mois: Option<socle::mois::Mois>,
     pub essai_reel: Option<String>,
     pub ordre: Option<String>,
@@ -2437,12 +2454,14 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
     let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
     let declencheur = r(b001, "RO_B001_R001");
-    let individu = |b: &Noeud, p: &str| IndividuNeores {
-        nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
-        prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
-        matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
-        debut_contrat: rubrique_texte(&a, b, &format!("{}_R006", p)),
-        contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
+    let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
+        Ok(IndividuNeores {
+            nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
+            prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
+            matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
+            debut_contrat: rubrique_jour(&a, b, &format!("{}_R006", p))?,
+            contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
+        })
     };
     let mut actions = Vec::new();
     for c in a.tous().filter(|x| local(&x.tag) == "RO_B004") {
@@ -2450,24 +2469,26 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         let mut details = Vec::new();
         for d in blocs_sous(&a, c, "RO_B005") {
             let rd = |nom: &str| rubrique_texte(&a, d, nom);
-            let individus = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect();
+            let individus = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect::<R<_>>()?;
             let donnees = blocs_sous(&a, d, "RO_B007")
                 .into_iter()
-                .map(|b| DonneeNeores {
-                    rubrique: rubrique_texte(&a, b, "RO_B007_R001"),
-                    declaree: rubrique_texte(&a, b, "RO_B007_R002"),
-                    attendue: rubrique_texte(&a, b, "RO_B007_R003"),
-                    cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
-                    debut: rubrique_texte(&a, b, "RO_B007_R005"),
-                    fin: rubrique_texte(&a, b, "RO_B007_R006"),
-                    resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
-                    acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
+                .map(|b| {
+                    Ok(DonneeNeores {
+                        rubrique: rubrique_texte(&a, b, "RO_B007_R001"),
+                        declaree: rubrique_texte(&a, b, "RO_B007_R002"),
+                        attendue: rubrique_texte(&a, b, "RO_B007_R003"),
+                        cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
+                        debut: rubrique_jour(&a, b, "RO_B007_R005")?,
+                        fin: rubrique_jour(&a, b, "RO_B007_R006")?,
+                        resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
+                        acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
+                    })
                 })
-                .collect();
+                .collect::<R<_>>()?;
             details.push(DetailNeores {
                 atypie: rd("RO_B005_R001"),
-                debut: rd("RO_B005_R002"),
-                fin: rd("RO_B005_R003"),
+                debut: rubrique_jour(&a, d, "RO_B005_R002")?,
+                fin: rubrique_jour(&a, d, "RO_B005_R003")?,
                 montant: rd("RO_B005_R004"),
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
                 substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
@@ -2499,16 +2520,18 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let parametres = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B008")
-        .map(|p| ParametreNeores {
-            type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
-            libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
-            valeur: rubrique_texte(&a, p, "RO_B008_R002"),
-            effet: rubrique_texte(&a, p, "RO_B008_R003"),
-            fin: rubrique_texte(&a, p, "RO_B008_R004"),
-            rubrique: rubrique_texte(&a, p, "RO_B008_R005"),
-            calcule_le: rubrique_texte(&a, p, "RO_B008_R006"),
+        .map(|p| {
+            Ok(ParametreNeores {
+                type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
+                libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
+                valeur: rubrique_texte(&a, p, "RO_B008_R002"),
+                effet: rubrique_jour(&a, p, "RO_B008_R003")?,
+                fin: rubrique_jour(&a, p, "RO_B008_R004")?,
+                rubrique: rubrique_texte(&a, p, "RO_B008_R005"),
+                calcule_le: rubrique_instant(&a, p, "RO_B008_R006")?,
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let identites = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B009")
@@ -2532,17 +2555,17 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B011")
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
-            InformationNeores {
+            Ok(InformationNeores {
                 code: x("RO_B011_R001"),
                 libelle: x("RO_B011_R002"),
                 numero: x("RO_B011_R003"),
                 information: x("RO_B011_R004"),
                 reference: x("RO_B011_R005"),
                 aide: x("RO_B011_R006"),
-                individus: blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect(),
-            }
+                individus: blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect::<R<_>>()?,
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     Ok(Some(Neores {
         version,
         declencheur_libelle: dans_table(&DECLENCHEURS_NEORES, declencheur.as_deref()),
@@ -2551,9 +2574,9 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         libelle: r(b002, "RO_B002_R003"),
         remplace: r(b002, "RO_B002_R004").as_deref() == Some("02"),
         organisme: r(b002, "RO_B002_R005"),
-        debut: r(b002, "RO_B002_R008"),
-        fin: r(b002, "RO_B002_R009"),
-        produit_le: r(b002, "RO_B002_R011"),
+        debut: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R008")).transpose()?.flatten(),
+        fin: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R009")).transpose()?.flatten(),
+        produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
         mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
         essai_reel: r(b000, "RO_B000_R013"),
         ordre: r(b000, "RO_B000_R012"),

@@ -22,7 +22,8 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
-use socle::paris::{maintenant_naif, Naif};
+use socle::date::Jour;
+use socle::paris::{maintenant_naif, InstantEcrit, Naif};
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
@@ -757,9 +758,9 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 struct Mesure118 {
     code: String,
     valeur: f64,
-    debut: Option<String>,
-    fin: Option<String>,
-    calcule_le: Option<String>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
+    calcule_le: Option<InstantEcrit>,
 }
 
 /// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
@@ -786,11 +787,11 @@ type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<Stri
 struct EffectifEcrit {
     valeur: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    calcule_le: Option<String>,
+    calcule_le: Option<InstantEcrit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    dit_le: Option<String>,
+    dit_le: Option<Jour>,
 }
 
 fn chemin_des_effectifs(racine: &Path) -> PathBuf {
@@ -855,12 +856,8 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
-            let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };
-            let an: String = ref_an.chars().take(4).collect();
-            if an.is_empty() || !an.chars().all(|c| c.is_ascii_digit()) {
-                continue;
-            }
-            let codes = annees.entry(an).or_default();
+            let Some(ref_an) = m.debut.or(m.fin) else { continue };
+            let codes = annees.entry(format!("{:04}", ref_an.an)).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }
@@ -881,14 +878,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`, « L'effectif au sens de la sécurité sociale ») :
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
-pub fn poser_effectif(racine: &Path, an: i32, valeur: f64, le: &str) -> R<bool> {
+pub fn poser_effectif(racine: &Path, an: i32, valeur: f64, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
     let codes = annees.entry(an.to_string()).or_default();
     if codes.get(A01).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }
-    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le.to_string()) });
+    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
 }
