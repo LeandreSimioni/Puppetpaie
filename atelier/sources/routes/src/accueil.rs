@@ -165,10 +165,6 @@ pub fn installation(o: &Options) -> PathBuf {
     }
 }
 
-fn operation(m: String) -> Echec {
-    erreur(Classe::Refuse, m)
-}
-
 /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -324,21 +320,22 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
     if let Some(r) = &o.racine {
         if !r.join(droit::contexte::ENTREPRISE).is_file() {
-            return Err(operation(socle::echec::avec(
-                "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
-                socle::echec::Lieu {
-                    chemin: Some(r.to_string_lossy().into_owned()),
-                    detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
-                    ..socle::echec::Lieu::default()
-                },
-            )));
+            let lieu = socle::echec::Lieu {
+                chemin: Some(r.to_string_lossy().into_owned()),
+                detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
+                ..socle::echec::Lieu::default()
+            };
+            return Err(Echec {
+                a_part: Some(lieu.into()),
+                ..erreur(Classe::Refuse, "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.")
+            });
         }
     }
     let inst = installation(o);
     match nom {
         Route::Compagnies => {
             let super::SansCharge {} = charge.lire()?;
-            let compagnies: Liste = liste(&inst).map_err(operation)?;
+            let compagnies: Liste = liste(&inst).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(compagnies)
         }
         Route::CompagnieAjouter => {
@@ -364,7 +361,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::CompagniesGarder => {
             let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
-            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(operation)?;
+            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
             let mut phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).", reponse.gardees.len(), reponse.supprimees.len());
             for e in &reponse.erreurs {
                 phrase.push(' ');
@@ -401,7 +398,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
 }
 
 /// Les compagnies de l'installation, dans l'ordre des tuiles de l'accueil, et ce que l'accueil en dit.
-pub fn liste(inst: &std::path::Path) -> Result<Liste, String> {
+pub fn liste(inst: &std::path::Path) -> R<Liste> {
     let mut cies: Vec<Tuile> = Vec::new();
     for c in compagnies::liste_de(inst)? {
         cies.push(Tuile {
