@@ -1114,7 +1114,7 @@ fn imprevus_tiennent(ctx: &Contexte, f: &PaieEcrite) -> R<bool> {
     let magasin = format!("racine:{}", crate::imprevus::DOSSIER);
     let entrees: BTreeMap<String, String> =
         f.empreinte.entrees.iter().filter(|(k, _)| k.split_once(' ').is_some_and(|(_, c)| c.starts_with(&magasin))).map(|(k, v)| (k.clone(), v.clone())).collect();
-    Ok(empreinte::tient(ctx, &entrees, &mut empreinte::Relues::default())?)
+    empreinte::tient(ctx, &entrees, &mut empreinte::Relues::default())
 }
 
 /// Ce que la revalidation d'un engagement, apres un imprevu change (`apres_un_imprevu`), a donne.

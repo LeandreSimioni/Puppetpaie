@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::paie_ecrite::PaieEcrite;
 use crate::stock::{self, Dossier, FichierDuStock, Objet, Tenu};
 use socle::mois::Mois;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Le dossier des paies, sous les donnees de la compagnie.
 pub const DOSSIER: &str = "paies";
@@ -65,12 +65,12 @@ fn cle(o: &Objet) -> Option<(String, String)> {
 
 /// LA LECTURE D'UN FICHIER DE PAIES : celui de `mois`, en sa forme, tel que le geste l'a lu ou que le brouillon le tient
 /// (`stock::lire_dans` : la meme forme tant que ses octets sont les memes).
-fn fichier(racine: &std::path::Path, mois: &str) -> Resultat<Option<Arc<FichierDesPaies>>> {
-    stock::lire_dans(racine, mois).map_err(String::from)
+fn fichier(racine: &std::path::Path, mois: &str) -> R<Option<Arc<FichierDesPaies>>> {
+    stock::lire_dans(racine, mois)
 }
 
 /// L'entree de l'engagement `o` dans le fichier de `mois`, telle qu'elle est ecrite.
-fn entree(o: &Objet, mois: &str) -> Resultat<Option<Entree>> {
+fn entree(o: &Objet, mois: &str) -> R<Option<Entree>> {
     let Some(cle) = cle(o) else { return Ok(None) };
     Ok(fichier(&o.racine, mois)?.and_then(|f| f.paies.iter().find(|e| (&e.salarie, &e.numero) == (&cle.0, &cle.1)).cloned()))
 }
@@ -78,8 +78,8 @@ fn entree(o: &Objet, mois: &str) -> Resultat<Option<Entree>> {
 /// L'ECRITURE D'UNE PAIE : l'entree de `o` dans le fichier de `mois` (neuve s'il n'en a pas) passe par `change` ; une
 /// entree qui ne porte plus rien s'en va. Le fichier ne s'ecrit que s'il change. Refus : un engagement sans numero de
 /// contrat.
-fn ecrire(o: &Objet, mois: &str, change: impl FnOnce(&mut Entree)) -> Resultat<()> {
-    let (salarie, numero) = cle(o).ok_or_else(|| format!("{} : un engagement sans numero de contrat n'a pas de paie", mois))?;
+fn ecrire(o: &Objet, mois: &str, change: impl FnOnce(&mut Entree)) -> R<()> {
+    let (salarie, numero) = cle(o).ok_or_else(|| socle::refus!("{} : un engagement sans numero de contrat n'a pas de paie", mois))?;
     let lu = fichier(&o.racine, mois)?;
     let mut f = match &lu {
         Some(f) => (**f).clone(),
@@ -108,17 +108,17 @@ fn ecrire(o: &Objet, mois: &str, change: impl FnOnce(&mut Entree)) -> Resultat<(
 }
 
 /// La paie ecrite de `mois` de l'engagement `o`, celle de sa version presente ; `None` s'il n'en a pas.
-pub fn presente(o: &Objet, mois: &str) -> Resultat<Option<Arc<PaieEcrite>>> {
+pub fn presente(o: &Objet, mois: &str) -> R<Option<Arc<PaieEcrite>>> {
     Ok(entree(o, mois)?.and_then(|e| e.presente).map(Arc::new))
 }
 
 /// La paie de `mois` que la version passee `n` de l'engagement `o` avait ecrite ; `None` si elle n'en a pas.
-pub fn de_la_version(o: &Objet, n: u64, mois: &str) -> Resultat<Option<PaieEcrite>> {
+pub fn de_la_version(o: &Objet, n: u64, mois: &str) -> R<Option<PaieEcrite>> {
     Ok(entree(o, mois)?.and_then(|mut e| e.versions.remove(&n.to_string())))
 }
 
 /// Toutes les paies ecrites de `mois` de l'engagement `o` : la presente, puis celles des versions passees.
-pub fn ecrites(o: &Objet, mois: &str) -> Resultat<Vec<PaieEcrite>> {
+pub fn ecrites(o: &Objet, mois: &str) -> R<Vec<PaieEcrite>> {
     let Some(e) = entree(o, mois)? else { return Ok(Vec::new()) };
     Ok(e.presente.into_iter().chain(e.versions.into_values()).collect())
 }
@@ -129,7 +129,7 @@ pub(crate) fn mois_payes(racine: &std::path::Path) -> Vec<String> {
 }
 
 /// Les mois ou l'engagement `o` a une paie ecrite (presente ou d'une version passee), du premier au dernier.
-pub fn mois_ecrits(o: &Objet) -> Resultat<Vec<String>> {
+pub fn mois_ecrits(o: &Objet) -> R<Vec<String>> {
     let mut out = Vec::new();
     for m in stock::fichiers_dans(&o.racine, Dossier::Paies).into_iter().filter(|m| m.as_str() >= o.fichier.as_str()) {
         if entree(o, &m)?.is_some() {
@@ -140,7 +140,7 @@ pub fn mois_ecrits(o: &Objet) -> Resultat<Vec<String>> {
 }
 
 /// Les paies ecrites de la version presente de l'engagement `o`, par mois (`mois_ecrits`).
-pub fn presentes(o: &Objet) -> Resultat<BTreeMap<String, PaieEcrite>> {
+pub fn presentes(o: &Objet) -> R<BTreeMap<String, PaieEcrite>> {
     let mut out = BTreeMap::new();
     for m in mois_ecrits(o)? {
         if let Some(p) = presente(o, &m)? {
@@ -151,18 +151,18 @@ pub fn presentes(o: &Objet) -> Resultat<BTreeMap<String, PaieEcrite>> {
 }
 
 /// Le nombre de paies ecrites de `mois`, celles des versions presentes des engagements.
-pub fn nombre(racine: &std::path::Path, mois: &str) -> Resultat<usize> {
+pub fn nombre(racine: &std::path::Path, mois: &str) -> R<usize> {
     Ok(fichier(racine, mois)?.iter().flat_map(|f| &f.paies).filter(|e| e.presente.is_some()).count())
 }
 
 /// La paie ecrite de `mois` de l'engagement `o` devient `paie` ; `None` la retire (les versions passees restent).
-pub(crate) fn poser(o: &Objet, mois: &str, paie: Option<PaieEcrite>) -> Resultat<()> {
+pub(crate) fn poser(o: &Objet, mois: &str, paie: Option<PaieEcrite>) -> R<()> {
     ecrire(o, mois, |e| e.presente = paie)
 }
 
 /// LA VERSION `n` DE L'ENGAGEMENT `o` DEVIENT PASSEE : la paie presente de chaque mois ou il en a une se garde sous son
 /// numero (`de_la_version`).
-pub(crate) fn garder_la_version(o: &Objet, n: u64) -> Resultat<()> {
+pub(crate) fn garder_la_version(o: &Objet, n: u64) -> R<()> {
     for m in mois_ecrits(o)? {
         if let Some(p) = presente(o, &m)? {
             ecrire(o, &m, |e| {
@@ -174,7 +174,7 @@ pub(crate) fn garder_la_version(o: &Objet, n: u64) -> Resultat<()> {
 }
 
 /// Les paies de l'engagement `o`, presentes et passees, s'effacent de tous ses mois.
-pub(crate) fn effacer(o: &Objet) -> Resultat<()> {
+pub(crate) fn effacer(o: &Objet) -> R<()> {
     for m in mois_ecrits(o)? {
         ecrire(o, &m, |e| {
             e.presente = None;
