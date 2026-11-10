@@ -639,7 +639,8 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
 }
 
 /// L'HOTEL DE BOURGOGNE (`atelier/fictives/fictive-hotel-de-bourgogne/`) : une compagnie de theatre (convention 1285),
-/// trois permanents en CDI et cinq intermittents ; l'arret de Marivaux et son maintien subroge, ses heures
+/// trois permanents en CDI et six intermittents, dont un metteur en scene cadre paye tres au-dessus du plafond (la tranche 2
+/// journaliere, l'Apec et la CET d'un cadre intermittent) ; l'arret de Marivaux et son maintien subroge, ses heures
 /// supplementaires, la demission de Clairon, les conges d'ete, l'augmentation de Champmesle et son avenant, une date
 /// ajoutee a des contrats partis et leurs avenants, aout sans intermittent, la tournee de mai et ses frais.
 #[test]

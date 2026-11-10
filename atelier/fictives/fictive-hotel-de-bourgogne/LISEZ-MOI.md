@@ -2,7 +2,8 @@
 
 Une compagnie de théâtre, **fictive** (tout ce qui suit est inventé ; NIR, SIRET et IBAN ont une forme valide et la marque
 d'un numéro inventé). Convention 1285 (entreprises artistiques et culturelles), trois permanents en CDI et cinq
-intermittents, venue d'un logiciel précédent (sPAIEctacle) au 1er janvier 2026 avec ses papiers de 2025.
+intermittents, venue d'un logiciel précédent (sPAIEctacle) au 1er janvier 2026 avec ses papiers de 2025 ; un sixième
+intermittent, un metteur en scène cadre, arrive en avril 2026.
 
 ## Ce que ce dossier porte
 
@@ -80,6 +81,7 @@ Tous de nationalité française, nés en France.
 | intermittent | Lemaître Octavien | 27/05/1975 à Bordeaux (33) | 1 75 05 33 999 006 20 | comédien |
 | intermittent | Lekain Barnabé | 30/08/1982 à Dijon (21) | 1 82 08 21 999 007 48 | technicien lumière |
 | intermittente | Talma Capucine | 16/03/1993 à Strasbourg (67) | 2 93 03 67 999 008 76 | technicienne de plateau |
+| intermittent, cadre, depuis avril 2026 | Copeau Théodore | 04/04/1968 à Marseille (13) | 1 68 04 13 999 009 11 | metteur en scène |
 
 - **Hortense Champmeslé** : temps plein (151,67 h par mois), depuis le 01/03/2022, 3 943,42 € brut par mois (26,00 € de
   l'heure).
@@ -91,7 +93,13 @@ Tous de nationalité française, nés en France.
   par jour de jeu (le moteur refuse un service pour un technicien) : les textes de la 1285 ne définissent le service que pour les artistes
   (`atelier/reference/sources/chomage-intermittents/kali-1285-organisation-travail-repetitions-representations-20261020.md`), le titre VI ne
   compte les techniciens qu'en heures (`atelier/reference/sources/kali-1285-titre-vi-duree-du-travail-20261102.md`).
-- Numéros Congés Spectacles : Molière M8001423, Dorval D8711207, Lemaître L7505316, Lekain L8208554, Talma T9303098.
+- **Théodore Copeau** : metteur en scène (MET040), artiste au cachet et cadre pour la retraite complémentaire (DSN
+  40.002 = 04, 40.003 = 01) ; 1 500 € le cachet, payé très au-dessus du plafond : la tranche A journalière (220 € par
+  jour) et le plafond de la sécurité sociale du contrat sont dépassés. Seul cadre intermittent des deux
+  fictives, il éprouve la tranche 2 journalière, l'Apec et la CET fondue dans la T1 et la T2
+  (`cet_si_depasse`). Il n'apparaît pas dans les papiers de 2025 : sa fiche se crée par la route, en avril 2026.
+- Numéros Congés Spectacles : Molière M8001423, Dorval D8711207, Lemaître L7505316, Lekain L8208554, Talma T9303098,
+  Copeau C6804139.
 - Courriels : `<prénom>.<nom>@exemple.invalid`, sans accents (hortense.champmesle@exemple.invalid…).
 
 ## L'année 2025
@@ -151,6 +159,8 @@ Août : les permanents seuls.
   signalement d'arrêt (test puis réel) ; la prolongation au 3 avril, reçue le 20 ; le 30, les indemnités journalières
   du relevé de la CPAM : **40,89 € brut, 38,15 € net par jour** (la moitié du salaire journalier de base, 3 × 2 487,39 /
   91,25, CSS R323-4 ; net de CSG et CRDS, 6,7 %). La compagnie est subrogée et maintient le salaire (1285, X.4.6).
+- **Avril** : le 14, la fiche de Théodore Copeau se crée, et son engagement pour les répétitions des Plaideurs (20 au
+  24 avril, 5 cachets de 1 500 €) se valide avec ceux des comédiens ; sa DPAE et son contrat partent avec les leurs.
 - **Mai** : la tournée de Bretagne, le 13 à Rennes, le 14 à Lorient, les 15 et 16 à Quimper ; huit repas (le dîner du
   13, déjeuner et dîner des 14, 15 et 16, le déjeuner du 17) et quatre nuitées par personne, au tarif de la convention,
   chacun à sa date ; le repas du 17 ne fait pas un jour du contrat. Les 8 heures supplémentaires de Marivaux, saisies
@@ -168,7 +178,7 @@ Août : les permanents seuls.
 ## Le calendrier 2026
 
 Une représentation par jour, le soir ; deux services de répétition par jour, à la salle de la compagnie (Paris). Chacun
-rentre dormir chez soi, sauf pendant la tournée de mai.
+rentre dormir chez soi, sauf pendant la tournée de mai. Les lettres sont celles de 2025, et C = Copeau (mise en scène).
 
 | dates | quoi | où | qui |
 |---|---|---|---|
@@ -180,7 +190,7 @@ rentre dormir chez soi, sauf pendant la tournée de mai.
 | ven. 13 au dim. 15 mars | Le Barbier de Séville, 3 représentations | Paris, théâtre du Marais-Neuf | M, D, L, K, T |
 | ven. 20, sam. 21 mars | Le Barbier de Séville, 2 représentations | Créteil | M, D, L, K, T |
 | ven. 10 au dim. 12 avril | Les Fausses Confidences, 3 représentations | Paris, théâtre du Marais-Neuf | M, D, L, K, T |
-| lun. 20 au ven. 24 avril | répétitions, Les Plaideurs | Paris | M, D, L |
+| lun. 20 au ven. 24 avril | répétitions, Les Plaideurs ; Copeau les met en scène, 5 cachets | Paris | M, D, L, C |
 | mer. 13 au sam. 16 mai | Les Fausses Confidences, tournée de Bretagne | Rennes, Lorient, Quimper | M, D, L, K, T |
 | ven. 22, sam. 23 mai | Le Barbier de Séville, 2 représentations | Paris, théâtre du Marais-Neuf | M, D, K |
 | ven. 5 au dim. 7, ven. 12 au dim. 14 juin | Le Barbier de Séville, festival, 6 représentations | Paris, parc de Bagatelle | M, D, L, K, T |
