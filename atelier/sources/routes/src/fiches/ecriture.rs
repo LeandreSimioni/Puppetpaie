@@ -414,7 +414,7 @@ macro_rules! saisie_de {
 }
 saisie_de!(SaisieEntreprise = "entreprise", SaisieSalarie = "salarie", SaisieSpectacle = "spectacle");
 
-/// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`, `permanents`) : `{"nom": …, "donnees": {…}}`.
+/// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`) :`{"nom": …, "donnees": {…}}`.
 #[derive(Deserialize)]
 #[serde(tag = "nom", content = "donnees", deny_unknown_fields)]
 pub(crate) enum SaisieDeFiche {
@@ -433,6 +433,31 @@ impl SaisieDeFiche {
             SaisieDeFiche::Entreprise(s) => ("entreprise", s.0),
             SaisieDeFiche::Salarie(s) => ("salarie", s.0),
             SaisieDeFiche::Spectacle(s) => ("spectacle", s.0),
+        }
+    }
+}
+
+/// LA FICHE QUE L'ECRAN MONTRE EN CE MOMENT (`permanents`) : `{"nom": …, "donnees": {…}}`, et pour un salarie deja
+/// enregistre sa cle (`cle`) : les cases que le metier d'un de ses engagements demande se montrent
+/// (`fiches::montres`).
+#[derive(Deserialize)]
+#[serde(tag = "nom", deny_unknown_fields)]
+pub(crate) enum FicheEnCours {
+    #[serde(rename = "entreprise")]
+    Entreprise { donnees: SaisieEntreprise },
+    #[serde(rename = "salarie")]
+    Salarie { cle: Option<IdSalarie>, donnees: SaisieSalarie },
+    #[serde(rename = "spectacle")]
+    Spectacle { donnees: SaisieSpectacle },
+}
+
+impl FicheEnCours {
+    /// Le nom de la fiche, la cle du salarie quand elle est dite, et sa saisie.
+    pub(crate) fn ouverte(self) -> (&'static str, Option<IdSalarie>, Saisie) {
+        match self {
+            FicheEnCours::Entreprise { donnees } => ("entreprise", None, donnees.0),
+            FicheEnCours::Salarie { cle, donnees } => ("salarie", cle, donnees.0),
+            FicheEnCours::Spectacle { donnees } => ("spectacle", None, donnees.0),
         }
     }
 }

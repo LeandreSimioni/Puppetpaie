@@ -17,7 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
@@ -32,7 +32,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, Forcer, SaisieDeFiche, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -53,6 +53,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les cases que montre la fiche en cours de saisie.",
         charge: &[
             NOM_FICHE,
+            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "pour un salarié déjà enregistré, sa clé : les cases que le métier d'un de ses engagements demande se montrent ; absente sinon", avance: false },
             Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche en cours de saisie ; pour un salarié ou un spectacle, l'entreprise est celle de la compagnie", avance: false },
         ],
         exemple: r#"{"nom":"entreprise","donnees":{}}"#,
@@ -430,14 +431,14 @@ pub(crate) struct Permanents {
 
 /// `permanents` : rend le curseur (`contexte::emploie_des_permanents`) : la page montre ou replie ce qui ne vaut que
 /// pour les permanents selon cette reponse, et ne le decide pas elle-meme quand on coche la case.
-fn permanents(ctx: &Contexte, charge: SaisieDeFiche) -> R<Permanents> {
-    let (nom, donnees) = charge.ouverte();
+fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
+    let (nom, cle, donnees) = charge.ouverte();
     let entreprise = if nom == "entreprise" { donnees.clone() } else { Saisie::de_la_fiche("entreprise", &ctx.entreprise)? };
     let p = permanents_de(&entreprise);
     Ok(Permanents {
         phrase: if p { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
         permanents: p,
-        montres: montres(ctx, nom, &donnees, &entreprise)?,
+        montres: montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise)?,
     })
 }
 
@@ -446,14 +447,77 @@ fn permanents_de(entreprise: &Saisie) -> bool {
     entreprise.case("emploie_des_permanents") == Some(&champs::Valeur::OuiNon(true))
 }
 
-/// CE QUE LA FICHE `nom` MONTRE pour `donnees` : chaque case que `champs::Champ::montre` dit a l'ecran, d'apres la
-/// fiche, l'entreprise `entreprise` (ses permanents, ses conditions) et les etablissements de la compagnie. La page ne
+/// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
+/// `champs::Champ::montre` dit a l'ecran, d'apres la fiche, l'entreprise `entreprise` (ses permanents, ses conditions) et
+/// les etablissements de la compagnie, et dont le fait que le calcul lit tient (`si_fait` : `fait_tenu`). La page ne
 /// montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, donnees: &Saisie, entreprise: &Saisie) -> R<Vec<String>> {
+pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie) -> R<Vec<String>> {
     let permanents = permanents_de(entreprise);
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
-    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, permanents, etablissements)).map(|c| c.cle.clone()).collect())
+    let faits = FaitsDeLaFiche::lus(ctx, nom, cle, donnees)?;
+    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, permanents, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
+}
+
+/// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : les cases que le metier de
+/// chaque engagement du salarie demande, et si l'effectif connu de la compagnie est sous onze salaries.
+struct FaitsDeLaFiche {
+    du_metier: std::collections::BTreeSet<String>,
+    sous_onze: bool,
+}
+
+impl FaitsDeLaFiche {
+    fn lus(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<FaitsDeLaFiche> {
+        let du_metier = match (nom, cle) {
+            ("salarie", Some(c)) => cases_des_metiers(ctx, c, donnees)?,
+            _ => std::collections::BTreeSet::new(),
+        };
+        // L'effectif que la representation du personnel lit (`Contexte::entreprise_lue`) : celui de l'annee d'avant.
+        let sous_onze = ctx.effectif().map_err(plain)?.valeur(ctx.aujourdhui.an).is_some_and(|e| e < 11.0);
+        Ok(FaitsDeLaFiche { du_metier, sous_onze })
+    }
+
+    /// Le fait de la case `c` de la fiche `donnees` tient-il ? Une case sans fait tient toujours. Sous onze salaries, la
+    /// representation du personnel que la fiche dit se lit encore (`representation_du_personnel` la prend d'abord), et
+    /// l'exemption cochee se refuse en se nommant (`casc_exemptee`) : dites, elles restent montrees.
+    fn tient(&self, c: &champs::Champ, donnees: &Saisie) -> bool {
+        match c.si_fait {
+            None => true,
+            Some(champs::Fait::MetierQuiLaLit) => self.du_metier.contains(&c.cle),
+            Some(champs::Fait::OnzeSalaries) => !self.sous_onze || donnees.dite(&c.cle).is_some(),
+        }
+    }
+}
+
+/// LES CASES DE LA FICHE DU SALARIE `cle` QUE LE METIER DE CHACUN DE SES ENGAGEMENTS DEMANDE
+/// (`engagement::minima::cases_du_metier`), au premier jour de chacun : le metier de la carte ou d'un avenant, sinon
+/// l'emploi de la fiche en cours de saisie (`donnees`), comme la paie le lit. Un engagement qui n'est plus actif ne
+/// demande rien ; un salarie sans engagement, rien.
+fn cases_des_metiers(ctx: &Contexte, cle: &str, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
+    let de_la_fiche = donnees.mot("code_emploi_ft").map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let mut metiers: std::collections::BTreeSet<(String, Jour)> = std::collections::BTreeSet::new();
+    for f in engagement::stock::fichiers(&ctx.racine) {
+        let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, &f).map_err(plain)? else { continue };
+        for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
+            let s = &e.saisie;
+            if s.carte.salarie.as_ref().map(IdSalarie::as_str) != Some(cle) {
+                continue;
+            }
+            let jour = lu.mois.premier_jour();
+            let termes = std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes));
+            for t in termes {
+                let dit = |x: &Option<String>| x.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
+                if let Some(code) = dit(&t.code_emploi_ft).or_else(|| dit(&t.metier)).or_else(|| de_la_fiche.clone()) {
+                    metiers.insert((code, jour.clone()));
+                }
+            }
+        }
+    }
+    let mut cases = std::collections::BTreeSet::new();
+    for (code, jour) in &metiers {
+        cases.extend(engagement::minima::cases_du_metier(ctx, code, jour).map_err(plain)?);
+    }
+    Ok(cases)
 }
 
 // ------------------------------------------------------- taxe-sur-les-salaires-regime

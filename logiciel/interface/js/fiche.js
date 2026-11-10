@@ -809,7 +809,9 @@ function brancherConditions() {
   const appliquer = async () => {
     const n = ++demande;
     let r;
-    try { r = await api("permanents", { nom: FICHE_ACTIVE, donnees: lireFormulaire() }); } catch (e) { dire(e.message, "erreur"); return; }
+    const charge = { nom: FICHE_ACTIVE, donnees: lireFormulaire() };
+    if (FICHE_ACTIVE === "salarie" && FICHE_COURANTE && FICHE_COURANTE.cle) charge.cle = FICHE_COURANTE.cle;
+    try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== demande || !form.isConnected) return;
     PERMANENTS_A_L_ECRAN = !!r.permanents;
     const montres = new Set(r.montres || []);

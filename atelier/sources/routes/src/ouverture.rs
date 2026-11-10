@@ -441,7 +441,7 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
-    let montres = super::fiches::montres(ctx, nom, &comble, ent)?;
+    let montres = super::fiches::montres(ctx, nom, cle, &comble, ent)?;
     Ok(VueFiche {
         quoi_dit,
         geste_dit,

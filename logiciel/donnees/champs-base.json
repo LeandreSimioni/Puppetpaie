@@ -825,6 +825,7 @@
   {
    "note": "LA REPRESENTATION DU PERSONNEL, que la CCNEAC lit (23/09/2026) : son\nFNAS en depend (article III.3.1). En 3090, il ne sert qu'a l'exemption de la CASC-SVP\n(`droit::bareme::casc_exemptee`). Sous onze salaries, sans objet ; au-dela, `droit::bareme::representation_du_personnel` la demande\nplutot que de supposer une carence.",
    "cle": "representation_personnel",
+   "si_fait": "onze_salaries",
    "libelles": {"aucune": "Pas de CSE (carence constatée)", "csec": "CSE conventionnel (11 à 49 salariés)", "cse_adherent_fnas": "CSE de 50 salariés et plus, adhérent au FNAS", "cse": "CSE qui n'adhère pas au FNAS"},
    "libelle": "Comité social et économique (CSE)",
    "forme": "choix",
@@ -864,6 +865,7 @@
   {
    "note": "L'EXEMPTION DE LA CASC-SVP (3090, article 4.22 B) : un fait que\nl'entreprise declare, et que `droit::bareme::casc_exemptee` confronte au CSE.",
    "cle": "casc_svp_exemptee",
+   "si_fait": "onze_salaries",
    "libelle": "Exemptée de la CASC-SVP (50 salariés et plus)",
    "forme": "booleen",
    "aide": "Seulement pour une compagnie d'au moins 50 salariés dont le CSE verse aux activités sociales et culturelles au moins autant que la CASC-SVP (article 4.22 B de la convention). Sinon, laisser décoché : la contribution est due.",
@@ -2099,6 +2101,7 @@
   {
    "note": "L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC (article X.4.1) :\nattribue par l'employeur, il fixe le minimum de la grille. Seule la\ncompagnie le connait : vide, le calcul refuse en nommant la case.",
    "cle": "echelon_ccneac",
+   "si_fait": "metier_qui_la_lit",
    "libelle": "Échelon (CCNEAC)",
    "forme": "chiffres",
    "aide": "Pour un emploi non artistique dans une structure de la CCNEAC : l'échelon de 1 à 12 donné par l'employeur (X.4.1), au moins un de plus tous les deux ans jusqu'au septième. Le logiciel en a besoin pour calculer la paie d'un tel emploi.",
@@ -2152,6 +2155,7 @@
   {
    "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Seule la compagnie la connait : vide, la ou\nun minimum en depend, le calcul refuse en nommant la case.",
    "cle": "poste_depuis",
+   "si_fait": "metier_qui_la_lit",
    "libelle": "Dans ce poste depuis",
    "forme": "date",
    "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention : quand un minimum en dépend, le logiciel en a besoin pour calculer la paie.",
@@ -2178,6 +2182,7 @@
   {
    "note": "L'ARTISTE STAGIAIRE DE LA CCNEAC (accord du 02/05/2024, art. 1.1.1) : le minimum mensuel d'un artiste dramatique ou\nchoregraphique est abattu de 30 % la 1re annee, de 15 % la 2e.",
    "cle": "stagiaire_ccneac",
+   "si_fait": "metier_qui_la_lit",
    "libelle": "Artiste stagiaire (CCNEAC)",
    "forme": "choix",
    "aide": "Entreprises artistiques et culturelles : 1 ou 2 pour un artiste dramatique ou chorégraphique stagiaire en 1re ou 2e année (son minimum mensuel est abattu de 30 % ou de 15 %). Vide : pas stagiaire.",
@@ -2205,6 +2210,7 @@
   {
    "note": "LE CDDU EXPERIMENTE DE LA 3241 : M2 = M1 + 5 %\napres 350 jours ou 2 800 heures dans la fonction, sur quatre branches\n(accord du 22/12/2006, art. 4.3) -- un cumul de carriere, que le moteur\nne voit pas.",
    "cle": "experimente_3241",
+   "si_fait": "metier_qui_la_lit",
    "libelle": "Expérimenté dans la fonction (M2)",
    "forme": "booleen",
    "aide": "Télédiffusion : à cocher si la personne a exercé cette fonction au moins 350 jours ou 2 800 heures (télédiffusion, production audiovisuelle ou cinématographique, prestation technique). Son minimum est alors le M2 (+5 %).",
