@@ -169,6 +169,6 @@ fn ecrire_papier(lu: &ModeleLu, valeurs: Valeurs, chemin: &Path, ent: &droit::co
         un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }
     let d = crate::contrat::enveloppe(Style::Attestation, ent, vec![Document::Modele(un)]);
-    crate::fabrique::ecrire(&d, chemin).map_err(|m| erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string()))?;
+    crate::fabrique::ecrire_pdf(&d, chemin)?;
     Ok(())
 }

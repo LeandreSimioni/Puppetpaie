@@ -255,7 +255,7 @@ pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Descrip
 
 /// Le PDF de la paie fictive sous `modele`.
 pub(crate) fn apercu_pdf(modele: Modele) -> Result<Vec<u8>, String> {
-    documents::fabrique::fabriquer_octets(&apercu_description(modele)?)
+    Ok(documents::fabrique::fabriquer_octets(&apercu_description(modele)?)?)
 }
 
 // ------------------------------------------------------------------ bulletin-modele-choisir

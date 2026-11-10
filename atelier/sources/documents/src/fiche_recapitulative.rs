@@ -188,7 +188,7 @@ impl<'a> Recapitulatifs<'a> {
             return Ok(None);
         }
         let chemin = tmp.join(format!("R_{}.pdf", cle));
-        let octets = crate::fabrique::fusion_octets(&morceaux, tmp).map_err(Echec::from)?;
+        let octets = crate::fabrique::fusion_octets(&morceaux, tmp)?;
         std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
         Ok(Some(chemin))
     }
