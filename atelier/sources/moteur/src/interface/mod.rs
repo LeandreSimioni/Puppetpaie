@@ -792,7 +792,7 @@ impl Fenetre {
                 };
             }
             let tableau = routes::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
-                let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(String::from))).collect();
+                let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau())).collect();
                 routes::gestes::administrateur::tableau_de(&inst, par)
             });
             return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));

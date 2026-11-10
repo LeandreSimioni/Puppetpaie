@@ -1098,7 +1098,7 @@ impl FileDesEtats {
         let tableau = match crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&self.racine), &self.racine) {
             Ok(t) => t,
             Err(m) => {
-                noter("le registre de l'administrateur ne se lit pas", &m);
+                noter("le registre de l'administrateur ne se lit pas", &String::from(m));
                 false
             }
         };
