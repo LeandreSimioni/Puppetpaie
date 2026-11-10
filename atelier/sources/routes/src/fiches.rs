@@ -18,7 +18,7 @@ use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::{Contexte, IdSalarie};
-use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee};
+use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -449,21 +449,26 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 
 /// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
 /// `champs::Champ::montre` dit a l'ecran, d'apres la fiche, l'entreprise `entreprise` (ses conditions), les
-/// etablissements de la compagnie, et ce que `p` dit des permanents : une case qui ne vaut que pour eux se montre quand
-/// l'entreprise dit en employer (telle qu'elle est saisie), ou qu'un permanent est du -- sur la fiche de l'entreprise,
-/// n'importe lequel ; sur celle d'un salarie, lui (`engagement::permanents::Permanents`) ; et dont le fait que le calcul
-/// lit tient (`si_fait` : `FaitsDeLaFiche`). La page ne montre que ces cases-la.
+/// etablissements de la compagnie, et la piece de la case (`droit::fiche::Piece`) : elle ne se montre que si la fiche
+/// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par un engagement paye au mois : elle se montre
+/// quand l'entreprise dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose), ou
+/// qu'un engagement paye au mois est du -- sur la fiche de l'entreprise, n'importe lequel ; sur celle d'un salarie, le
+/// sien (`engagement::permanents::Permanents`). Et le fait que le calcul lit doit tenir (`si_fait` : `FaitsDeLaFiche`).
+/// La page ne montre que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Vec<String>> {
     let dus = match (nom, cle) {
         ("entreprise", _) => !p.dus.is_empty(),
         ("salarie", Some(c)) => p.dus.iter().any(|d| d.salarie.as_str() == c),
         _ => false,
     };
-    let permanents = permanents_de(entreprise) || dus;
+    let au_mois = permanents_de(entreprise) || dus;
+    let ouverte = |piece: Piece| match piece {
+        Piece::Permanent => au_mois,
+    };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
     let faits = FaitsDeLaFiche::lus(ctx, nom, cle, donnees)?;
-    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, permanents, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
+    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
 }
 
 /// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : les cases que le metier de

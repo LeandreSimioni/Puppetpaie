@@ -41,6 +41,13 @@ que par la structure :
   `atelier` l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
+- **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
+  (`droit::fiche::PieceFermee`), qui ne s'ouvre que par sa clé. Les cases d'un salarié au mois
+  (`ChampsSalarie::permanent`) ne s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé
+  au mois donne : un calcul qui n'a pas cette nature en main ne les lit pas, il ne compile pas. Ce que la fiche montre
+  s'en déduit (`routes::fiches::montres`) : une pièce qu'aucun engagement ne peut ouvrir ne pose aucune question. Le
+  fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans `champs-base.json`. La fiche Entreprise
+  garde encore son étiquette `si_permanents`.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un

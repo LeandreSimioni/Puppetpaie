@@ -20,6 +20,7 @@ use std::sync::OnceLock;
 use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
+use droit::fiche::Piece;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::dossier_du_code;
@@ -234,7 +235,13 @@ pub struct Champ {
     pub declare: bool,
     pub derive_de: Option<String>,
     pub rubrique: Option<String>,
-    pub si_permanents: bool,
+    /// L'ETIQUETTE QUI RESTE a la fiche Entreprise tant que ses cases d'un permanent ne sont pas rangees dans leur piece
+    /// (`droit::fiche::Piece`) : celles du salarie le sont, et une case du salarie ne la porte pas (`table`).
+    si_permanents: Option<bool>,
+    /// LA PIECE DE LA CASE, tiree de sa forme (`droit::fiche::ChampsSalarie::piece_de`), sinon de l'etiquette qui reste
+    /// (`si_permanents`) ; `None` : tout calcul la lit. Posee a la lecture de la table (`table`).
+    #[serde(skip)]
+    pub piece: Option<Piece>,
     pub si: Option<Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<Condition>,
@@ -337,15 +344,15 @@ impl Champ {
 
     /// Le champ de la fiche `donnees` est-il A L'ECRAN ? Il se saisit (ni deduit, ni hors de l'ecran), sa condition `si`
     /// est remplie par la fiche, celle de l'entreprise (`si_entreprise`, pour la fiche d'un salarie ou d'un spectacle :
-    /// `entreprise`) aussi, la compagnie emploie des permanents s'il ne vaut que pour eux (`si_permanents`) et a plusieurs
-    /// etablissements s'il les nomme (`si_etablissements`). La page montre ce que cette fonction dit (`routes::
-    /// fiches::montres`), et rien d'autre.
-    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, permanents: bool, etablissements: bool) -> bool {
+    /// `entreprise`) aussi, sa piece est ouverte (`ouverte` : la fiche peut avoir un calcul qui la lit,
+    /// `routes::fiches::montres`) et la compagnie a plusieurs etablissements s'il les nomme (`si_etablissements`). La
+    /// page montre ce que cette fonction dit (`routes::fiches::montres`), et rien d'autre.
+    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, ouverte: impl Fn(Piece) -> bool, etablissements: bool) -> bool {
         self.ecran
             && !self.calcule()
             && condition_remplie(self.si.as_ref(), donnees)
             && entreprise.is_none_or(|e| condition_remplie(self.si_entreprise.as_ref(), e))
-            && !(self.si_permanents && !permanents)
+            && self.piece.is_none_or(ouverte)
             && !(self.si_etablissements && !etablissements)
     }
 
@@ -405,7 +412,7 @@ impl Champ {
             calcule: self.calcule(),
             derive_de: self.derive_de.as_deref(),
             rubrique: self.rubrique.as_deref(),
-            si_permanents: self.si_permanents,
+            piece: self.piece,
             si: self.si.as_ref(),
             si_etablissements: self.si_etablissements,
             si_entreprise: self.si_entreprise.as_ref(),
@@ -484,9 +491,10 @@ pub struct Description<'a> {
     /// « commune ».
     pub derive_de: Option<&'a str>,
     pub rubrique: Option<&'a str>,
-    /// Ce qui ne se montre qu'a une compagnie qui emploie des permanents : le champ reste dans la description, c'est
-    /// l'ecran qui le replie.
-    pub si_permanents: bool,
+    /// La piece de la case (`Champ::piece`) : elle reste dans la description, l'ecran replie le bloc dont aucune case
+    /// n'est montree (`montres`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piece: Option<Piece>,
     pub si: Option<&'a Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<&'a Condition>,
@@ -556,11 +564,35 @@ struct Table {
 
 static TABLE: OnceLock<Result<Table, String>> = OnceLock::new();
 
+/// CHAQUE CASE DANS SA PIECE : celle que sa forme lui donne (`droit::fiche`), sinon l'etiquette qui reste a la fiche
+/// Entreprise. Une case dont la forme dit la piece ne porte pas d'etiquette, et aucune case du salarie n'en pose une :
+/// sa piece se lit dans sa forme, nulle part ailleurs.
+fn ranger(mut t: Table) -> Result<Table, String> {
+    let fiches: [(&str, &mut Vec<Champ>, fn(&str) -> Option<Piece>); 3] = [
+        ("entreprise", &mut t.entreprise, droit::fiche::ChampsEntreprise::piece_de),
+        ("salarie", &mut t.salarie, droit::fiche::ChampsSalarie::piece_de),
+        ("spectacle", &mut t.spectacle, droit::fiche::ChampsSpectacle::piece_de),
+    ];
+    for (nom, champs, piece_de) in fiches {
+        for c in champs.iter_mut() {
+            let de_la_forme = piece_de(&c.cle);
+            if (c.si_permanents.is_some() && de_la_forme.is_some()) || (c.si_permanents == Some(true) && nom == "salarie") {
+                return Err(format!(
+                    "champs-base.json, fiche {}, case {} : `si_permanents` n'a pas lieu d'être, sa pièce se lit dans sa forme (droit::fiche) : le signaler au développeur.",
+                    nom, c.cle
+                ));
+            }
+            c.piece = de_la_forme.or((c.si_permanents == Some(true)).then_some(Piece::Permanent));
+        }
+    }
+    Ok(t)
+}
+
 /// Les champs de la fiche `nom` (`entreprise`, `salarie`, `spectacle`), tels que la table livree les decrit.
 fn table(nom: &str) -> R<&'static [Champ]> {
     let chemin = dossier_du_code().join("champs-base.json");
     let t = TABLE
-        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur."))
+        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").and_then(ranger))
         .as_ref()
         .map_err(|m| plain(m.clone()))?;
     // Lu une fois par processus (le code livre ne change pas sous la fenetre), mais note a chaque usage : un calcul

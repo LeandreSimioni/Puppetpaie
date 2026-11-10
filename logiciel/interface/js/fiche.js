@@ -336,9 +336,9 @@ function dessinerFormulaire(fiche) {
       // rend rien avant).
       const dedansHtml = dedans.map(champHtml).join("");
       if (!dedansHtml.trim()) return "";
-      // La section des permanents se replie quand le moteur n'en montre
-      // aucune case (`montres`, `montrerBlocsPermanents`).
-      const toute = dedans.every((c) => c.si_permanents);
+      // La section d'une pièce (les cases d'un permanent : `piece`) se replie
+      // quand le moteur n'en montre aucune case (`montres`, `montrerBlocsPermanents`).
+      const toute = dedans.every((c) => c.piece === "permanent");
       if ((options || {}).avance) {
         // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
         const ecarts = new Set(fiche.ecarts || []);
