@@ -258,29 +258,18 @@ impl<'a> Cx<'a> {
     /// L'echelon de la CCNEAC, celui de la fiche (1 a 12) : « Lors de son embauche (ou lorsqu'il est promu dans un nouvel
     /// emploi au sein de l'entreprise) chaque salarié bénéficie d'un échelon qui lui est attribué par l'employeur »
     /// (art. X.4.1, `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Seule la compagnie le
-    /// connait : sans lui, ou hors 1 a 12, le calcul refuse en nommant la case.
+    /// connait : sans lui, le calcul refuse en nommant la case (son type le borne a 1..12, `droit::fiche::EchelonCcneac`).
     fn echelon_ccneac(&self) -> Resultat<(usize, String)> {
-        let qui = crate::qui_de(self.fiche)?;
-        let Some(v) = self.fiche.echelon_ccneac.portee().map(str::trim) else {
+        let Some(e) = self.fiche.echelon_ccneac.dite() else {
             return Err(socle::echec::cle(
                 format!(
                     "La fiche de {} ne dit pas son échelon de la CCNEAC, et le minimum de son emploi en dépend : l'employeur l'attribue, de 1 à 12 (art. X.4.1). Le dire sur sa fiche (« Échelon (CCNEAC) »).",
-                    qui
+                    crate::qui_de(self.fiche)?
                 ),
                 "echelon_ccneac",
             ));
         };
-        match socle::num::entier_de_chiffres(v).filter(|n| (1..=12).contains(n)) {
-            Some(n) => Ok((n as usize, format!("échelon {} de la fiche", n))),
-            None => Err(socle::echec::cle(
-                format!(
-                    "La fiche de {} dit l'échelon de la CCNEAC {} : il n'existe pas, la convention en compte douze, de 1 à 12 (art. X.4.1). Le corriger sur sa fiche (« Échelon (CCNEAC) »).",
-                    qui,
-                    repr_texte(v)
-                ),
-                "echelon_ccneac",
-            )),
-        }
+        Ok((e.rang(), format!("échelon {} de la fiche", e)))
     }
 
     /// Le taux horaire minimum d'un emploi autre qu'artistique de la CCNEAC.
