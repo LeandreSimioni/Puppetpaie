@@ -62,7 +62,7 @@ fn un_montant_negatif_s_arrondit_comme_son_oppose_par_inference() {
 
 #[test]
 fn un_ctp_inconnu_fait_refuser() {
-    let e = montant(&[l("000", "920", "100.00", "")], &jour("2026-09-01")).unwrap_err();
+    let e = montant(&[l("000", "920", "100.00", "")], &jour("2026-09-01")).unwrap_err().phrase;
     assert!(e.contains("000") && e.contains("Rien n'est ecrit"), "{}", e);
 }
 
@@ -94,7 +94,7 @@ fn les_75_bordereaux_preleves_se_recalculent_au_centime_sauf_octobre_2025() {
         let le_jour = b.jour.as_str();
         let declare = b.declare.as_str();
         let lignes: Vec<LigneBordereau> = b.lignes.iter().map(ligne).collect();
-        let calcule = montant(&lignes, &jour(le_jour)).unwrap_or_else(|e| panic!("{} : {}", le_jour, e));
+        let calcule = montant(&lignes, &jour(le_jour)).unwrap_or_else(|e| panic!("{} : {}", le_jour, e.phrase));
         if calcule != dec(declare) {
             ecarts.push((le_jour, declare, calcule.to_string()));
         }

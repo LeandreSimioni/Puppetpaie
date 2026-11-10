@@ -36,7 +36,8 @@
 
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
-use socle::num::{div, mul, Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::{div, mul, Decimal};
 use socle::texte::euros;
 use rust_decimal::RoundingStrategy;
 use std::collections::HashMap;
@@ -73,17 +74,17 @@ type Table = HashMap<String, Vec<Ligne>>;
 
 /// Une date de la table : AAAA-JJ-MM, sauf quand le jour depasse 12 (alors
 /// AAAA-MM-JJ) ; vide, rien.
-fn date_table(texte: &str) -> Resultat<Option<Jour>> {
+fn date_table(texte: &str) -> R<Option<Jour>> {
     let texte = texte.trim();
     if texte.is_empty() {
         return Ok(None);
     }
     let p: Vec<&str> = texte.split('-').collect();
     if p.len() != 3 {
-        return Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", texte).into());
+        return Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", texte));
     }
-    let n = |s: &str| -> Resultat<i64> {
-        s.trim().parse::<i64>().map_err(|_| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", s).into())
+    let n = |s: &str| -> R<i64> {
+        s.trim().parse::<i64>().map_err(|_| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", s))
     };
     let (an, x, y) = (n(p[0])?, n(p[1])?, n(p[2])?);
     let (mois, jour) = if y > 12 { (x, y) } else { (y, x) };
@@ -92,15 +93,15 @@ fn date_table(texte: &str) -> Resultat<Option<Jour>> {
     } else {
         None
     };
-    j.map(Some).ok_or_else(|| socle::date::date_impossible(an, mois, jour))
+    j.map(Some).ok_or_else(|| refus(socle::date::date_impossible(an, mois, jour)))
 }
 
-fn taux(texte: &str) -> Resultat<Option<Decimal>> {
+fn taux(texte: &str) -> R<Option<Decimal>> {
     let texte = texte.trim();
     if texte.is_empty() {
         return Ok(None);
     }
-    Decimal::from_str(texte).map(Some).map_err(|_| socle::num::illisible(texte))
+    Decimal::from_str(texte).map(Some).map_err(|_| refus(socle::num::illisible(texte)))
 }
 
 /// Les enregistrements d'un CSV a point-virgule (guillemets doubles admis).
@@ -158,7 +159,7 @@ fn enregistrements(texte: &str) -> Vec<Vec<String>> {
 }
 
 /// Code -> lignes de la table.
-fn lire(chemin: &Path) -> Resultat<Table> {
+fn lire(chemin: &Path) -> R<Table> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     let texte = String::from_utf8(octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
     // Le BOM d'un fichier enregistre par un tableur n'est pas une donnee.
@@ -195,7 +196,7 @@ fn lire(chemin: &Path) -> Resultat<Table> {
 }
 
 /// La table, lue une fois tant que le fichier ne change pas.
-fn table() -> Resultat<Arc<Table>> {
+fn table() -> R<Arc<Table>> {
     type Cache = Mutex<HashMap<PathBuf, ((u128, u64), Arc<Table>)>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -238,10 +239,10 @@ pub fn euro(x: Decimal) -> Decimal {
 }
 
 /// Le montant d'une ligne 23, a l'euro.
-pub fn montant_ligne(l: &LigneBordereau, jour: &Jour) -> Resultat<Decimal> {
+pub fn montant_ligne(l: &LigneBordereau, jour: &Jour) -> R<Decimal> {
     let t = table()?;
     let Some(t) = ligne_de_table(&t, &l.code, jour) else {
-        return Err(format!(
+        return Err(socle::refus!(
             "CTP {} absent de la table de l'Urssaf au {} : le montant du \
 bordereau ne peut pas se calculer. Mettre a jour la table (source \
 urssaf-codes-types-personnel). Rien n'est ecrit.",
@@ -252,7 +253,7 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
     let at = if l.taux_at.is_empty() {
         Decimal::ZERO
     } else {
-        Decimal::from_str(l.taux_at.trim()).map_err(|_| socle::num::illisible(&l.taux_at))?
+        Decimal::from_str(l.taux_at.trim()).map_err(|_| refus(socle::num::illisible(&l.taux_at)))?
     };
     let cent = Decimal::ONE_HUNDRED;
     match t.format.as_str() {
@@ -269,7 +270,7 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
         "A" | "C" | "D" | "E" | "K" => {
             let plafonne = l.qualifiant == "921";
             let Some(tx) = (if plafonne { t.plafonne } else { t.deplafonne }) else {
-                return Err(format!(
+                return Err(socle::refus!(
                     "CTP {} ({}), qualifiant {} : la table de l'Urssaf ne donne pas de taux {}. \
 Rien n'est ecrit.",
                     l.code,
@@ -281,7 +282,7 @@ Rien n'est ecrit.",
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
             Ok(euro(div(mul(a, tx), cent)) + euro(div(mul(a, at), cent)))
         }
-        fmt => Err(format!(
+        fmt => Err(socle::refus!(
             "CTP {} ({}) : format {} de la table de l'Urssaf, que le moteur ne sait pas \
 valoriser. Rien n'est ecrit.",
             l.code, t.libelle, fmt
@@ -290,7 +291,7 @@ valoriser. Rien n'est ecrit.",
 }
 
 /// Le montant du bordereau (S21.G00.22.005) : la somme de ses lignes, a deux decimales.
-pub fn montant(lignes: &[LigneBordereau], jour: &Jour) -> Resultat<Decimal> {
+pub fn montant(lignes: &[LigneBordereau], jour: &Jour) -> R<Decimal> {
     let mut s = Decimal::ZERO;
     for l in lignes {
         s += montant_ligne(l, jour)?;
