@@ -644,7 +644,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
                 sortes: x.pieces.iter().map(|p| crate::historique_mois::sorte_de(&nom_du(p))).collect(),
                 renvoi: renvoi.is_some(),
                 // Un renvoi : des documents corriges, qui remplacent ceux deja partis (a faire partir).
-                pastille: renvoi.map(|r| Pastille::de("a_faire", &format!("documents corrigés — remplacent ceux du {}", r.envoye_le))),
+                pastille: renvoi.map(|r| Pastille::de("a_faire", &format!("documents corrigés — remplacent ceux du {}", r.envoye_le.jj_mm_aaaa()))),
                 changements: renvoi.into_iter().flat_map(changements_dits).collect(),
                 cle: x.cle,
                 nom: x.nom,
@@ -953,8 +953,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
             .quand
             .get(..10)
             .and_then(jour_iso)
-            .ok_or_else(|| socle::echec::a_la_cle("Le jour d'un envoi du journal ne se lit pas.", "quand", &parti.quand).reclasser(Classe::Illisible))?
-            .jj_mm_aaaa();
+            .ok_or_else(|| socle::echec::a_la_cle("Le jour d'un envoi du journal ne se lit pas.", "quand", &parti.quand).reclasser(Classe::Illisible))?;
         let changements = envoi::ce_qui_a_change(faits, parti.resume.as_ref(), choix.resumes.get(cle));
         let declaration = declaration.as_ref().map(|d| d(cle)).into_iter().collect();
         choix.renvois.insert(cle.clone(), envoi::Renvoi { envoye_le, changements, declaration });

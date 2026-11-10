@@ -217,8 +217,7 @@ impl Client {
     /// La consultation d'une plage (heures locales naives).
     fn consulter(&mut self, base: &str, debut: Naif, fin: Option<Naif>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        let fin = fin.map(Naif::iso);
-        Ok(crate::transport::consulter(base, self.jeton.as_deref(), &debut.iso(), fin.as_deref())?)
+        Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
     }
 
     pub fn lister_retours(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Annonce>, Panne> {

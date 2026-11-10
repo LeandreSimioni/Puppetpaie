@@ -86,7 +86,7 @@ pub struct RefusAnnonce {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AnnonceGardee {
-    le: String,
+    le: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     taux_pas: Option<TauxPasAnnonce>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,12 +99,6 @@ struct AnnonceGardee {
     rendue: Option<String>,
 }
 
-impl AnnonceGardee {
-    /// Son jour.
-    fn jour(&self) -> R<Jour> {
-        jour_iso(&self.le)
-    }
-}
 
 /// LA MEMOIRE DU SIMULATEUR (`organismes-simules/annonces.json`) : les annonces du scenario, et les annees dont
 /// l'effectif est deja rendu. Aucun fichier : rien n'est encore annonce ni rendu.
@@ -160,7 +154,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         return Err(erreur(Classe::Refuse, "Seuls les organismes d'une compagnie fictive s'annoncent : ceux d'une vraie repondent d'eux-memes."));
     }
     let mut gardee = AnnonceGardee {
-        le: socle::paris::maintenant().chars().take(10).collect::<String>(),
+        le: socle::paris::InstantEcrit::maintenant().jour(),
         taux_pas: None,
         taux_atmp: None,
         refus: None,
@@ -355,7 +349,7 @@ fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnn
         if a.servi_par.is_some() {
             continue;
         }
-        if a.jour()? <= depot && r.mois.is_none_or(|m| m == mois) {
+        if a.le <= depot && r.mois.is_none_or(|m| m == mois) {
             a.servi_par = Some(flux.to_string());
             return Ok(Some(r));
         }
@@ -414,7 +408,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
     let mut taux: BTreeMap<String, String> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
-        if a.jour()? <= depot {
+        if a.le <= depot {
             taux.insert(t.salarie.clone(), t.taux.clone());
         }
     }
@@ -474,7 +468,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
     let mut taux = String::new();
     for a in memoire.annonces.iter_mut() {
         let Some(t) = a.taux_atmp.clone() else { continue };
-        if a.rendue.is_some() || a.jour()? > depot {
+        if a.rendue.is_some() || a.le > depot {
             continue;
         }
         taux.push_str(&format!(

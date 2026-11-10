@@ -233,9 +233,9 @@ pub const CORPS_RENVOI: &str = "Bonjour {prenom},\n\nTa paie {de_mois} {annee} a
 
 /// Ce qu'un renvoi sait de l'envoi precedent : son jour (« 21/10/2026 ») et ce qui a change depuis
 /// (`ce_qui_a_change`, une ligne par fait).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Renvoi {
-    pub envoye_le: String,
+    pub envoye_le: socle::date::Jour,
     pub changements: Vec<String>,
     /// La phrase de la declaration de la correction, son paragraphe compris, ou rien (`routes::documents::choisir`).
     pub declaration: String,
@@ -255,10 +255,10 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let heures = e.heures.filter(|h| *h != 0.0).map(|h| heures_en_decimal(h).map(fmt_heures)).transpose()?;
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
-            debut: e.debut.iso(),
-            fin: e.fin.map(|f| f.iso()),
+            debut: e.debut,
+            fin: e.fin,
             spectacle,
-            jours: dates.iter().map(|d| d.iso()).collect(),
+            jours: dates,
             cachets: e.cachets,
             heures,
             brut: fmt_eur(p.brut),
@@ -283,10 +283,10 @@ pub struct ResumeDePaie {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratResume {
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: socle::date::Jour,
+    pub fin: Option<socle::date::Jour>,
     pub spectacle: Option<String>,
-    pub jours: Vec<String>,
+    pub jours: Vec<socle::date::Jour>,
     pub cachets: i64,
     /// Ses heures, s'il en a.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -418,7 +418,7 @@ pub fn preparer_avec(
         ];
         let (sujet, corps) = match renvois.get(&cle) {
             Some(r) => {
-                champs.push(("envoye_le", r.envoye_le.clone()));
+                champs.push(("envoye_le", r.envoye_le.jj_mm_aaaa()));
                 champs.push(("declaration", r.declaration.clone()));
                 champs.push(("changements", if r.changements.is_empty() { RIEN_DANS_LE_RESUME.to_string() } else { r.changements.join("\n") }));
                 (format!("{} {} — documents corrigés : {}", capitaliser(nom_mois), an, enumerer(&courts)), formater(CORPS_RENVOI, &champs))
