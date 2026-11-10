@@ -40,7 +40,7 @@ use envois::releve_signatures::ReleveDite;
 use socle::date::{jour_iso, Jour};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::repr;
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisOuJour};
 
 
 const CONTRATS: Champ = Champ { nom: "contrats", libelle: Affiche::new("Contrats"), forme: Forme::Objet, sens: "les contrats choisis : [{salarie, debut, numero}]", avance: false };
@@ -748,7 +748,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         } else {
             "demande de signature de contrat"
         };
-        preuve = Preuve { donnee: Some(verifier_preuve(ctx, Some(&preuve), &c.mois.to_string(), quoi, &a_qui)?), ..Preuve::default() };
+        preuve = Preuve { donnee: Some(verifier_preuve(ctx, Some(&preuve), MoisOuJour::Mois(c.mois), quoi, &a_qui)?), ..Preuve::default() };
         r = crate::gestes::signature::demander_signature(ctx, &demande, client.as_mut())?;
         r.avertissements.splice(0..0, verifiee.avertissements);
     }
@@ -910,7 +910,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &
     };
     let a_qui = format!("{} salarie(s) : {}", par_salarie.len(), par_salarie.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(", "));
     let quoi = if par_salarie.iter().any(|(_, aa)| aa.iter().any(UnAvenant::rappel)) { "relance d'avenant(s) a signer" } else { "envoi d'avenant(s) a signer" };
-    verifier_preuve(ctx, Some(preuve), &premier_mois.to_string(), quoi, &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(premier_mois), quoi, &a_qui)?;
     Ok((crate::gestes::signature::envoyer_avenants(ctx, &par_salarie, client.as_mut())?, avertissements))
 }
 

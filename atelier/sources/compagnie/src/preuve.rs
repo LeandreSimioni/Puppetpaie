@@ -7,12 +7,12 @@ use std::path::Path;
 
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Lieu, Echec, R};
+use socle::mois::MoisOuJour;
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
 #[derive(Default, Clone)]
 pub struct Preuve {
     pub motdepasse: Option<String>,
-    pub mois_recopie: Option<String>,
     /// La preuve deja donnee pour ce geste (sa forme), quand un acte en emporte d'autres : la demande de taux de PAS part
     /// avec la DPAE sous la meme preuve, sans redemander. Jamais lue d'une charge.
     pub donnee: Option<String>,
@@ -58,22 +58,22 @@ pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
 /// DEUX FACONS DE LE PROUVER, et aucune autre : le mot de passe que la fenetre ou la page a fait taper et qui
 /// arrive dans la charge (`Preuve`) ; sinon LE MOTEUR LE DEMANDE LUI-MEME (`demande::autoriser_acte` : fenetre, terminal,
 /// ou refus). Ni la seance (`garder_ouverture`), ni `PUPPETPAIE_MOTDEPASSE`, ni le mot de passe retenu pour ouvrir le
-/// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `quoi` et `a_qui` disent a l'humain ce qui
-/// va partir ; `mois_attendu` est le mois que la preuve recopiee devrait porter.
-pub fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
+/// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `quand`, `quoi` et `a_qui` disent a l'humain
+/// ce qui va partir.
+pub fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, quand: MoisOuJour, quoi: &str, a_qui: &str) -> R<String> {
     // Le binaire de l'ATELIER refuse tout acte reel, avant toute autre question (`atelier::redirection`). Un depot reel, un envoi,
     // une signature passent tous par ici.
     if let Some(forme) = preuve.and_then(|p| p.donnee.clone()) {
         return Ok(forme);
     }
     #[cfg(feature = "atelier")]
-    return refus_atelier(ctx, preuve, mois_attendu, quoi, a_qui);
+    return refus_atelier(ctx, preuve, quand, quoi, a_qui);
     #[cfg(not(feature = "atelier"))]
-    verifier_preuve_du_logiciel(ctx, preuve, mois_attendu, quoi, a_qui)
+    verifier_preuve_du_logiciel(ctx, preuve, quand, quoi, a_qui)
 }
 
 #[cfg(feature = "atelier")]
-fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, _quoi: &str, _a_qui: &str) -> R<String> {
+fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _quand: MoisOuJour, _quoi: &str, _a_qui: &str) -> R<String> {
     // UNE COMPAGNIE FICTIVE AUX ENVOIS SIMULES : son « acte reel » est joue (`FICTIF-…`), rien ne part -- comme dans le
     // binaire livre (`verifier_preuve_du_logiciel`). Le banc d'essai en vit : l'horloge y depose la DSN et la DPAE
     // « en reel ». Toute autre compagnie : refuse, mot de passe ou non (la commande `signatures` fait de meme).
@@ -84,7 +84,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _mois_attendu: &str, 
 }
 
 #[cfg_attr(feature = "atelier", allow(dead_code))]
-fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_attendu: &str, quoi: &str, a_qui: &str) -> R<String> {
+fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: MoisOuJour, quoi: &str, a_qui: &str) -> R<String> {
     // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
     if crate::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
@@ -103,17 +103,12 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
     }
     let Some(preuve) = preuve.filter(|p| p.motdepasse.as_deref().is_some_and(|m| !m.is_empty())) else {
         // Rien n'a ete tape pour cette charge : c'est le moteur qui demande, a un humain, ou il refuse.
-        let acte = crate::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
+        let acte = crate::demande::Acte::nouveau(quoi, Some(quand), a_qui);
         return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
             crate::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
             crate::demande::Verdict::Refuse(e) => Err(e.reclasser(Classe::PreuveInsuffisante)),
         };
     };
-    if let Some(m) = preuve.mois_recopie.as_deref().filter(|m| !m.is_empty()) {
-        if m.trim() != mois_attendu {
-            return Err(erreur(Classe::PreuveInsuffisante, format!("Mois confirme '{}' alors que le fichier declare '{}'. Rien n'est parti.", m.trim(), mois_attendu)));
-        }
-    }
     // Aucun mot de passe tape n'ouvre rien.
     let ouvre = preuve.motdepasse.as_deref().map(|m| coffre.verifier_ouverture(m)).transpose()?;
     if ouvre != Some(true) {

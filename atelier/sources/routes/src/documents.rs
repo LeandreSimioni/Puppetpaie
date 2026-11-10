@@ -29,7 +29,7 @@ use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use socle::date::jour_iso;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::nom_du;
-use socle::mois::{Graphie, Mois};
+use socle::mois::{Graphie, Mois, MoisOuJour};
 use crate::catalogue::{Ecran, Place};
 
 pub(crate) type R<T> = Result<T, Echec>;
@@ -1008,8 +1008,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[Str
             format!("{} : aucun engagement validé, aucun document à envoyer. Rien ne part d'un engagement en saisie.", mois.libelle(Graphie::Accentuee)),
         ));
     }
-    let texte = &mois.to_string();
-    let dossier = ctx.racine.join("sorties").join(texte).join("envoi");
+    let dossier = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
     let choix = choisir(ctx, mois, &paies)?;
     // LES DOCUMENTS SE FABRIQUENT ICI, pour ceux a qui ils partent : depuis les paies ecrites, a leurs numeros.
     let mut cles: Vec<String> = Vec::new();
@@ -1039,7 +1038,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[Str
     let preuve = match preuve {
         Some(p) => {
             let a_qui = format!("{} salarie(s) : {}", cles.len(), cles.iter().map(|c| nom_de_la_paie(&paies, c)).collect::<Vec<_>>().join(", "));
-            Some(Preuve { donnee: Some(verifier_preuve(ctx, Some(p), texte, "envoi des documents du mois aux salaries", &a_qui)?), ..Preuve::default() })
+            Some(Preuve { donnee: Some(verifier_preuve(ctx, Some(p), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?), ..Preuve::default() })
         }
         None => None,
     };
@@ -1074,7 +1073,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
-    verifier_preuve(ctx, Some(preuve), &mois.to_string(), "envoi des documents du mois aux salaries", &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?;
     let preuve_ms = socle::temps::duree(t_preuve).as_millis();
     let t_envoi = std::time::Instant::now();
     let envoye = envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None);

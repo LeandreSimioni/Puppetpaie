@@ -31,7 +31,7 @@ use envois::suites::Suites;
 use envois::journal::{Acte, EmbaucheDeclaree, Ligne, Ouverture, Version};
 use droit::contexte::IdSalarie;
 use engagement::numeros::NumeroContrat;
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisOuJour};
 
 pub use envois::depot_acte::DepotFait;
 use socle::echec::Echec;
@@ -345,7 +345,7 @@ pub fn deposer_dsn_dans(
         ));
     }
     if reel {
-        forme = verifier_preuve(ctx, preuve, &apercu.confirmation_attendue()?, "depot REEL d'une DSN", "net-entreprises (la declaration part a l'Urssaf et aux organismes)")?;
+        forme = verifier_preuve(ctx, preuve, apercu.confirmation_attendue()?, "depot REEL d'une DSN", "net-entreprises (la declaration part a l'Urssaf et aux organismes)")?;
         // PAS DEUX FOIS SANS LE VOULOIR. Une DSN reelle deja partie pour ce mois, et pas refusee, ne repart pas.
         // UN SIGNALEMENT N'EST PAS CONCERNE : plusieurs peuvent partir le meme mois.
         if !apercu.est_signalement() {
@@ -477,7 +477,6 @@ pub(crate) fn deposer_dpae_avec(
     let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin.to_string_lossy())?;
     let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
     let le_mois = apercu.mois.ok_or_else(|| erreur(Classe::Refuse, "Ce fichier ne déclare aucune embauche datée : il ne dit pas son mois. Rien n'est parti."))?;
-    let mois = le_mois.to_string();
 
     if reel && !apercu.reel {
         return Err(erreur(
@@ -491,7 +490,7 @@ pub(crate) fn deposer_dpae_avec(
 
     let (mut forme, mut repetition) = (String::new(), None);
     if reel {
-        forme = verifier_preuve(ctx, preuve, &mois, "depot REEL d'une DPAE", "l'Urssaf (declaration d'embauche)")?;
+        forme = verifier_preuve(ctx, preuve, MoisOuJour::Mois(le_mois), "depot REEL d'une DPAE", "l'Urssaf (declaration d'embauche)")?;
         // LA REPETITION, apres la preuve : le fichier sur le disque porte toujours l'indicateur reel, et c'est
         // NOUS qui le basculons en test juste en dessous.
         let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
@@ -551,7 +550,7 @@ pub(crate) fn deposer_dpae_avec(
     let mut fait = fait?;
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
     // UN ACTE, UNE PREUVE : la demande de taux part sous celle de la DPAE.
-    let meme = reel.then(|| Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()), mois_recopie: preuve.and_then(|p| p.mois_recopie.clone()) });
+    let meme = reel.then(|| Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()) });
     fait.suites.extend(deposer_les_amorcages(ctx, le_mois, &embauches, reel, meme.as_ref().or(preuve), qui, contournement));
     Ok(fait)
 }

@@ -159,9 +159,8 @@ pub struct Cadre5 {
     pub prenom: String,
     pub qualite: String,
     pub lieu: String,
-    pub jour: String,
-    pub mois: String,
-    pub annee: String,
+    /// Le jour de la signature, imprime en trois cases (jour, mois, annee).
+    pub le: Jour,
     pub correspondant: String,
     pub telephone: String,
     pub courriel: String,
@@ -186,9 +185,7 @@ impl Cadre5 {
             prenom: req(&sig.prenom, "prenom")?,
             qualite: req(&sig.fonction, "fonction")?,
             lieu,
-            jour: format!("{:02}", aujourdhui.jour),
-            mois: format!("{:02}", aujourdhui.mois),
-            annee: format!("{:04}", aujourdhui.an),
+            le: *aujourdhui,
             // << Personne a joindre concernant cette attestation >> : c'est le
             // declarant DSN, pas le signataire. France Travail rappelle pour
             // une question de declaration, et c'est l'employeur qui les depose.
@@ -200,18 +197,18 @@ impl Cadre5 {
 
     pub fn valeurs(&self) -> Vec<(&'static str, String)> {
         let v = [
-            &self.nom,
-            &self.prenom,
-            &self.qualite,
-            &self.lieu,
-            &self.jour,
-            &self.mois,
-            &self.annee,
-            &self.correspondant,
-            &self.telephone,
-            &self.courriel,
+            self.nom.clone(),
+            self.prenom.clone(),
+            self.qualite.clone(),
+            self.lieu.clone(),
+            format!("{:02}", self.le.jour),
+            format!("{:02}", self.le.mois),
+            format!("{:04}", self.le.an),
+            self.correspondant.clone(),
+            self.telephone.clone(),
+            self.courriel.clone(),
         ];
-        CHAMPS_TEXTE.iter().copied().zip(v.into_iter().cloned()).collect()
+        CHAMPS_TEXTE.iter().copied().zip(v).collect()
     }
 }
 

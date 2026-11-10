@@ -2392,7 +2392,7 @@ pub struct Neores {
     pub debut: Option<String>,
     pub fin: Option<String>,
     pub produit_le: Option<String>,
-    pub mois: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
     pub essai_reel: Option<String>,
     pub ordre: Option<String>,
     pub metier: Option<String>,
@@ -2554,7 +2554,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         debut: r(b002, "RO_B002_R008"),
         fin: r(b002, "RO_B002_R009"),
         produit_le: r(b002, "RO_B002_R011"),
-        mois: r(b000, "RO_B000_R006"),
+        mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
         essai_reel: r(b000, "RO_B000_R013"),
         ordre: r(b000, "RO_B000_R012"),
         metier: r(b003, "RO_B003_R001"),
@@ -2635,7 +2635,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             nature_declaration: at(d, "NatureDecla"),
             type_declaration: at(d, "TypeDecla"),
             ordre: at(d, "NoOrdreDecla"),
-            mois: at(d, "DateMoisDec").map(|m| mois_de_jjmmaaaa(&m)),
+            mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: at(d, "CodeOC"),
             code_delegataire: at(d, "CodeDELEG"),
             producteur: at(d, "NomProducteurCRM"),
@@ -2675,7 +2675,7 @@ pub struct DeclarationOc {
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     pub ordre: Option<String>,
-    pub mois: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
     pub code_oc: Option<String>,
     pub code_delegataire: Option<String>,
     pub producteur: Option<String>,
@@ -2733,11 +2733,10 @@ pub struct ContexteOc {
     pub libelle_valeur: Option<String>,
 }
 
-/// `DateMoisDec` est le dernier jour du mois au format JJMMAAAA (exemples de la fiche 692 : « 31032023 ») : `AAAA-MM` ;
-/// une autre forme se montre telle qu'ecrite.
-fn mois_de_jjmmaaaa(brut: &str) -> String {
-    match socle::date::Jour::lire(brut) {
-        Ok(j) if brut.len() == 8 => j.mois_civil().to_string(),
-        _ => brut.to_string(),
-    }
+/// Le mois d'un jour que la norme ecrit : `DateMoisDec` d'un compte rendu d'organisme complementaire, au format
+/// JJMMAAAA (schema CRM DSN OC v1.1.4, `atelier/reference/sources/gip-mds-api-dsn/`), et `RO.B000.R006` d'un NEOReS,
+/// `AAAA-MM-01` (cahier technique 2027.1.0, `atelier/reference/sources/neores/`) ; un jour qui ne se lit pas refuse le
+/// compte rendu.
+fn mois_du_jour(brut: &str) -> R<socle::mois::Mois> {
+    socle::date::Jour::lire(brut).map(|j| j.mois_civil()).map_err(|m| m.reclasser(Classe::Illisible))
 }

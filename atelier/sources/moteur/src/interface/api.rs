@@ -117,7 +117,7 @@ struct RefusDeLaPage<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<compagnie::diagnostic::EtatDuMois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mois_illisible: Option<String>,
+    etat_illisible: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     refus: Option<&'a routes::enveloppe::APart>,
 }
@@ -158,7 +158,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             // DE QUOI REJOUER LA ROUTE : sa charge mise en forme,
             // sa duree, l'etat du mois qu'elle touche, ce que le refus portait pour la page ; et la trace -- l'endroit du
             // code et la chaine des echecs. Le fil et la machine s'y ajoutent dans `incidents::noter`.
-            let (mois, mois_illisible) = match charge.mois() {
+            let (mois, etat_illisible) = match charge.mois() {
                 Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, m) {
                     Ok(etat) => (Some(etat), None),
                     Err(e) => (None, Some(e.en_lignes())),
@@ -171,7 +171,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
                 charge,
                 duree_ms: duree.as_millis() as u64,
                 mois,
-                mois_illisible,
+                etat_illisible,
                 refus: r.a_part.as_ref(),
             };
             let trace = compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);

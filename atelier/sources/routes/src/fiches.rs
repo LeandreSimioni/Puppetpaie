@@ -1012,7 +1012,8 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
         Some(c) => c,
         None => ouverte.insert(client_courriel(ctx)?).as_mut(),
     };
-    verifier_preuve(ctx, Some(preuve), &socle::paris::maintenant()[..7], "demande de fiche (« Remplir ma fiche »)", &adresse)?;
+    let mois = crate::dossier_salarie::aujourdhui_reel()?.mois_civil();
+    verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
 
     let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string();
     let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;

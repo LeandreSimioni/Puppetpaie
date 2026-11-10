@@ -336,7 +336,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 numero: b.numero.clone(),
                 debut: Some(b.debut.iso()),
                 fin: Some(b.fin.iso()),
-                mois: Some(mois.to_string()),
+                mois: Some(mois),
                 ..InfosPage::default()
             };
             let refus = |sort: Sort, raison: String, infos: InfosPage| PageCr { page: l.page, sort, raison, infos };
@@ -1474,7 +1474,7 @@ fn infos_de(l: &Lu, salarie: Option<&str>) -> InfosPage {
         salarie: salarie.map(String::from),
         debut: Some(l.b.debut.iso()),
         fin: Some(l.b.fin.iso()),
-        mois: Some(l.mois.to_string()),
+        mois: Some(l.mois),
         ..InfosPage::default()
     }
 }
@@ -2080,8 +2080,8 @@ impl Attestee {
     }
 
     /// Le mois dont elle parle : celui de l'AEM, celui de la fin du certificat.
-    fn mois(&self) -> Option<String> {
-        self.aem.as_ref().and_then(|a| a.mois).or_else(|| self.c.fin.map(|f| f.mois_civil())).map(|m| m.to_string())
+    fn mois(&self) -> Option<Mois> {
+        self.aem.as_ref().and_then(|a| a.mois).or_else(|| self.c.fin.map(|f| f.mois_civil()))
     }
 }
 

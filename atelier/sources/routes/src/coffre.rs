@@ -520,7 +520,7 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
     let Some(mdp) = motdepasse else {
         // Rien n'a ete tape pour cette charge : le moteur demande lui-meme a un humain (fenetre, terminal), ou il refuse.
         // Un « oui » ne laisse que l'ouverture du coffre pour la suite de la commande ; la seance ne vaut pas ici.
-        let acte = compagnie::demande::Acte::nouveau(quoi, "", "");
+        let acte = compagnie::demande::Acte::nouveau(quoi, None, "");
         return match compagnie::demande::autoriser_acte(racine, &acte) {
             compagnie::demande::Verdict::Accepte => Ok(()),
             compagnie::demande::Verdict::Refuse(e) => Err(e

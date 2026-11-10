@@ -920,7 +920,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         l.phrases.push(format!(
             "{}{}{} : {}.",
             nature_dsn(lu(&d.nature_declaration), lu(&d.type_declaration)),
-            morceau(" de ", lu(&d.mois), ""),
+            morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour
         ));

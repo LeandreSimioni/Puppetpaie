@@ -1131,13 +1131,11 @@ fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[Mois]) -> Vec<GesteDIm
     g
 }
 
-/// Un jour paye pendant l'imprevu (`imprevus::cachets_dans`, tel qu'il le rend), avec son mois et chacun de ses jours en
-/// phrases.
+/// Un jour paye pendant l'imprevu (`imprevus::cachets_dans`, tel qu'il le rend), et chacun de ses jours en phrases.
 #[derive(Debug, Clone, Serialize)]
 struct Cachet {
     #[serde(flatten)]
     lu: imprevus::CachetPaye,
-    mois_dit: String,
     jours: Vec<JourPaye>,
 }
 
@@ -1221,7 +1219,7 @@ impl Dit {
     }
 }
 
-/// Un cachet paye pendant l'imprevu : son mois tel que l'ecran le lit (« de novembre 2026 »), et chacun de ses jours.
+/// Un cachet paye pendant l'imprevu, et chacun de ses jours, dit dans son mois (« de novembre 2026 »).
 fn cachet_dit(c: imprevus::CachetPaye) -> R<Cachet> {
     let mois_dit = crate::regularisation::de_mois_en_clair(c.mois);
     let mut jours = Vec::new();
@@ -1229,7 +1227,7 @@ fn cachet_dit(c: imprevus::CachetPaye) -> R<Cachet> {
         let le = format!("{} le {}", c.libelle, clair(iso)?);
         jours.push(JourPaye { iso: iso.clone(), phrase_du_mois: format!("{}, {}", le, mois_dit), phrase: le });
     }
-    Ok(Cachet { lu: c, mois_dit, jours })
+    Ok(Cachet { lu: c, jours })
 }
 
 /// CE QUI EST PARTI D'UN IMPREVU, ET CE QUI EN RESTE DU : une ligne courte par morceau, dans l'ordre ou l'ecran les lit --

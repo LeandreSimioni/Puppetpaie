@@ -213,7 +213,7 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) ->
     let tape = match motdepasse.filter(|m| !m.is_empty()) {
         Some(m) => m.to_string(),
         None => {
-            let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), "", "");
+            let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), None, "");
             compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été supprimé.", p)))?
         }
     };

@@ -32,6 +32,7 @@ use std::rc::Rc;
 
 use crate::coffre::{retenir_mot_de_passe_tape, Coffre};
 use socle::echec::{refus, Echec, R};
+use socle::mois::MoisOuJour;
 
 /// Combien de fois on laisse retaper un mot de passe refuse avant de renoncer.
 const ESSAIS: u8 = 3;
@@ -43,13 +44,13 @@ pub const HEURES_SEANCE: i64 = 12;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Acte {
     pub quoi: String,
-    pub mois: String,
+    pub quand: Option<MoisOuJour>,
     pub a_qui: String,
 }
 
 impl Acte {
-    pub fn nouveau(quoi: impl Into<String>, mois: impl Into<String>, a_qui: impl Into<String>) -> Acte {
-        Acte { quoi: quoi.into(), mois: mois.into(), a_qui: a_qui.into() }
+    pub fn nouveau(quoi: impl Into<String>, quand: Option<MoisOuJour>, a_qui: impl Into<String>) -> Acte {
+        Acte { quoi: quoi.into(), quand, a_qui: a_qui.into() }
     }
 }
 
@@ -134,8 +135,8 @@ Un acte reel ne se fait pas sans lui : le lancer depuis la fenetre PuppetPaie, o
 
 fn question_de_l_acte(acte: &Acte, essai: u8, precedent_refuse: bool) -> Question {
     let mut lignes = vec![format!("Acte : {}", acte.quoi)];
-    if !acte.mois.trim().is_empty() {
-        lignes.push(format!("Mois : {}", acte.mois.trim()));
+    if let Some(quand) = acte.quand {
+        lignes.push(format!("Mois : {}", quand));
     }
     if !acte.a_qui.trim().is_empty() {
         lignes.push(format!("A : {}", acte.a_qui.trim()));
@@ -725,6 +726,11 @@ mod tests {
     const NET: &str = "SecretNet-fictif-4471";
     const BOITE: &str = "boite-fictive-9921";
 
+    /// Le mois des actes de ces tests.
+    fn septembre() -> MoisOuJour {
+        MoisOuJour::Mois(socle::mois::Mois::lire("2026-09").unwrap())
+    }
+
     // `PUPPETPAIE_CLE` est une variable du processus : un test a la fois y touche.
     static TOUR: Mutex<()> = Mutex::new(());
 
@@ -782,7 +788,7 @@ mod tests {
 
     /// La phrase du refus d'un acte reel demande sans preuve.
     fn proteger_un_acte(m: &Monde) -> String {
-        crate::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").unwrap_err().phrase
+        crate::preuve::verifier_preuve(&m.ctx(), None, septembre(), "depot REEL d'une DSN", "net-entreprises").unwrap_err().phrase
     }
 
     // ------------------------------------------------------------ le mot de passe tape ouvre tout
@@ -835,7 +841,7 @@ mod tests {
         let m = monde();
         let f = Rc::new(Fausse::mot(LOGICIEL));
         let _g = installer(f.clone());
-        let acte = Acte::nouveau("envoi des documents", "2026-09", "3 salaries : Ana, Bo, Cy");
+        let acte = Acte::nouveau("envoi des documents", Some(septembre()), "3 salaries : Ana, Bo, Cy");
         assert!(matches!(autoriser_acte(&m.racine, &acte), Verdict::Accepte));
         let q = &f.questions()[0];
         let texte = format!("{} {}", q.titre, q.lignes.join(" | "));
@@ -860,10 +866,10 @@ mod tests {
         }
         assert!(proteger_un_acte(&m).contains("aucun humain"));
         // Et la charge de la route, elle, reste une preuve (la fenetre Tk, la page) : le mot de passe tape y arrive.
-        let preuve = crate::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), "2026-09", "x", "y").is_ok());
-        let mauvaise = crate::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), mois_recopie: None, ..Default::default() };
-        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), "2026-09", "x", "y").is_err());
+        let preuve = crate::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), ..Default::default() };
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), septembre(), "x", "y").is_ok());
+        let mauvaise = crate::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), ..Default::default() };
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), septembre(), "x", "y").is_err());
     }
 
     // ------------------------------------------------------------ la seance
@@ -897,7 +903,7 @@ mod tests {
     }
 
     fn q() -> Question {
-        question_de_l_acte(&Acte::nouveau("x", "2026-09", "y"), 1, false)
+        question_de_l_acte(&Acte::nouveau("x", Some(septembre()), "y"), 1, false)
     }
 
     #[test]

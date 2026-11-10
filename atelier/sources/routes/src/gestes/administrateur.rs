@@ -1127,7 +1127,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
             None => {
                 let acte = compagnie::demande::Acte::nouveau(
                     format!("depot REEL de {} declaration(s), dans {} compagnie(s)", a_faire.len(), groupe.len()),
-                    "",
+                    None,
                     "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
                 );
                 compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|e| e.reclasser(Classe::PreuveInsuffisante))?

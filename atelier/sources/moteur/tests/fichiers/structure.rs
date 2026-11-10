@@ -955,6 +955,32 @@ fn une_nature_de_contrat_est_une_enum() {
     assert!(fautes.is_empty(), "une nature de contrat est une `NatureDeContrat`, sa cle ne s'ecrit qu'une fois :\n{}", fautes.join("\n"));
 }
 
+/// UN MOIS EST UN `socle::mois::Mois`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis)
+/// n'a de champ ni de parametre dont le nom dit un mois (`mois`, `premier_mois`, `mois_attendu`...) en `String`, `&str`,
+/// `Option<String>`, `Vec<String>` ou `impl Into<String>`. Un nom ou le mois n'est qu'un complement (`phrase_du_mois`,
+/// `jours_du_mois`) dit autre chose qu'un mois : une phrase, des jours. Une variable locale (`let`) n'est ni un champ ni
+/// une signature.
+#[test]
+fn un_mois_est_un_mois() {
+    let champ = regex::Regex::new(
+        r"(\blet\s+(?:mut\s+)?)?\b_*((?:[a-z0-9]+_)*)mois(?:_[a-z0-9]+)*\s*:\s*(?:impl\s+(?:Into\s*<\s*String\s*>|AsRef\s*<\s*str\s*>)|&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|String\b|(?:Option|Vec)\s*<\s*(?:&\s*(?:'[a-z_]+\s+)?str|String)\s*>)",
+    )
+    .unwrap();
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
+            for c in champ.captures_iter(l) {
+                let complement = c[2].trim_end_matches('_').rsplit('_').next().is_some_and(|d| ["du", "de", "des", "d"].contains(&d));
+                if c.get(1).is_none() && !complement {
+                    fautes.push(format!("{}:{} : `{}`", rel, n + 1, c[0].trim()));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un mois est un `socle::mois::Mois`, jamais un texte :\n{}", fautes.join("\n"));
+}
+
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
 /// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
 /// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le

@@ -196,6 +196,22 @@ impl Mois {
     }
 }
 
+/// Le mois dont parle un acte, ou le jour qui le date (l'evenement d'un signalement) : ecrit `AAAA-MM` ou `AAAA-MM-JJ`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoisOuJour {
+    Mois(Mois),
+    Jour(Jour),
+}
+
+impl std::fmt::Display for MoisOuJour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MoisOuJour::Mois(m) => m.fmt(f),
+            MoisOuJour::Jour(j) => f.write_str(&j.iso()),
+        }
+    }
+}
+
 impl std::fmt::Display for Mois {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:04}-{:02}", self.an, self.numero)

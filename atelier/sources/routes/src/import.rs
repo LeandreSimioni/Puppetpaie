@@ -486,7 +486,6 @@ pub(crate) fn apercu_lu(
                 None => "?".to_string(),
             };
             let fiche = proposee::de("entreprise", &ctx.entreprise)?;
-            let dernier_mois = lecture.dernier_mois.map(|m| m.to_string()).unwrap_or_default();
             // L'entreprise ne se lit que dans les DSN : sans DSN, rien a quoi comparer la fiche.
             let ec = match lecture.dernier_mois {
                 Some(m) => ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?,
@@ -494,7 +493,7 @@ pub(crate) fn apercu_lu(
             };
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer("entreprise", &fiche, &e)?;
-            f.noter(&champs, &Origine::dsn(&dernier_mois));
+            f.noter(&champs, &Origine::dsn(lecture.dernier_mois));
             entreprise = Some(f);
             crate::importation::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
         }
@@ -518,7 +517,7 @@ pub(crate) fn apercu_lu(
             let ec = ecarts("salarie", &fiche, &decl.fiche()?, decl.mois)?;
             let mut entree = FicheImportee::new("salarie", Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
-            entree.noter(&champs, &Origine::dsn(&decl.mois.to_string()));
+            entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
             crate::importation::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
             salaries.push(entree);
             continue;
@@ -677,8 +676,8 @@ pub(crate) fn apercu_lu(
         source: source.to_string(),
         dsn: lecture.fichiers,
         aem: n_aem,
-        premier_mois: lecture.premier_mois.map(|m| m.to_string()).unwrap_or_default(),
-        dernier_mois: lecture.dernier_mois.map(|m| m.to_string()).unwrap_or_default(),
+        premier_mois: lecture.premier_mois,
+        dernier_mois: lecture.dernier_mois,
         entreprise,
         salaries,
         spectacles,

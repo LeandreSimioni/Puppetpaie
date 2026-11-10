@@ -12,7 +12,7 @@ use declarations::champs::{Anomalie, Saisie, Valeur};
 
 use socle::ecran::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
-use socle::mois::Mois;
+use socle::mois::{Graphie, Mois};
 
 // ------------------------------------------------------------------ les sorts
 
@@ -190,12 +190,12 @@ pub struct Origine {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
 }
 
 impl Origine {
-    pub fn dsn(mois: &str) -> Origine {
-        Origine { source: Source::Dsn, fichier: None, page: None, mois: Some(mois.to_string()) }
+    pub fn dsn(mois: Option<Mois>) -> Origine {
+        Origine { source: Source::Dsn, fichier: None, page: None, mois }
     }
 
     /// Un bulletin : son fichier et sa page, quand on les sait.
@@ -204,7 +204,7 @@ impl Origine {
     }
 
     /// Une piece : ce qu'elle est, son fichier, sa page, son mois.
-    pub fn piece(source: Source, fichier: String, page: usize, mois: Option<String>) -> Origine {
+    pub fn piece(source: Source, fichier: String, page: usize, mois: Option<Mois>) -> Origine {
         Origine { source, fichier: Some(fichier), page: Some(page), mois }
     }
 
@@ -215,7 +215,7 @@ impl Origine {
             (Some(f), None) => format!(" ({})", f),
             _ => String::new(),
         };
-        let de_mois: String = self.mois.iter().filter(|m| !m.is_empty()).map(|m| format!(" {}", socle::texte::de(&Mois::en_clair(m)))).collect();
+        let de_mois: String = self.mois.iter().map(|m| format!(" {}", socle::texte::de(&m.libelle(Graphie::Accentuee)))).collect();
         match self.source {
             Source::Aem => format!("l'AEM{}{}", de_mois, fichier),
             Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois, fichier),
@@ -458,7 +458,7 @@ pub struct InfosPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paie: Option<EtatPaie>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -532,8 +532,8 @@ impl FichierVu {
         let nb = self.pages.len();
         self.pages_dit = socle::ecran::compte(nb, "page", "pages");
         for p in &mut self.pages {
-            p.page_dit = match p.infos.mois.as_deref().filter(|m| !m.is_empty()) {
-                Some(m) => format!("page {} ({})", p.page, Mois::en_clair(m)),
+            p.page_dit = match p.infos.mois {
+                Some(m) => format!("page {} ({})", p.page, m.libelle(Graphie::Accentuee)),
                 None => format!("page {}", p.page),
             };
             p.ou_dit = if nb > 1 { format!("{}, page {}", self.chemin, p.page) } else { self.chemin.clone() };
@@ -625,8 +625,8 @@ pub struct Importation {
     /// Les DSN lues, les fichiers d'AEM lus.
     pub dsn: usize,
     pub aem: usize,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub premier_mois: Option<Mois>,
+    pub dernier_mois: Option<Mois>,
     pub entreprise: Option<FicheImportee>,
     pub salaries: Vec<FicheImportee>,
     pub spectacles: Vec<FicheImportee>,
@@ -698,7 +698,10 @@ impl Importation {
         let s = |k: usize| if k > 1 { "s" } else { "" };
         let creer = |k: usize| if ecrit { if k > 1 { " créées" } else { " créée" } } else { " à créer" };
         // Les declarations.
-        let periode = if self.premier_mois.is_empty() { String::new() } else { format!(" ({} → {})", Mois::en_clair(&self.premier_mois), Mois::en_clair(&self.dernier_mois)) };
+        let periode = match (self.premier_mois, self.dernier_mois) {
+            (Some(p), Some(d)) => format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee)),
+            _ => String::new(),
+        };
         let contrats_du_au = match (&self.contrats_du, &self.contrats_au) {
             (Some(du), Some(au)) => format!(" du {} au {}", jour(du), jour(au)),
             _ => String::new(),

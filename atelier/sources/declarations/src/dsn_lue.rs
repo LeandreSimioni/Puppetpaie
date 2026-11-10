@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisOuJour};
 use socle::num::Decimal;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
@@ -472,12 +472,12 @@ impl DsnLue {
 
     /// Ce qu'on fait recopier pour prouver qu'on a regarde : le jour de l'evenement d'un signalement (`AAAA-MM-JJ`), le
     /// mois sinon. Un fichier qui ne dit ni l'un ni l'autre refuse : il n'y a rien a recopier.
-    pub fn confirmation_attendue(&self) -> R<String> {
+    pub fn confirmation_attendue(&self) -> R<MoisOuJour> {
         let refuse = |phrase: &str| erreur(Classe::Refuse, phrase);
         if self.est_signalement() {
-            self.evenement().map(|j| j.iso()).ok_or_else(|| refuse("Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer."))
+            self.evenement().map(MoisOuJour::Jour).ok_or_else(|| refuse("Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer."))
         } else {
-            self.mois_declare().map(|m| m.to_string()).ok_or_else(|| refuse(SANS_MOIS))
+            self.mois_declare().map(MoisOuJour::Mois).ok_or_else(|| refuse(SANS_MOIS))
         }
     }
 

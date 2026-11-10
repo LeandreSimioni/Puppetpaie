@@ -14,7 +14,7 @@ use crate::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnv
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisOuJour};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
@@ -740,7 +740,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
     adresses_de(ctx, &vu.salaries)?;
     let a_qui = format!("{} salarie(s) : {}", vu.salaries.len(), vu.salaries.iter().map(|c| ctx.nomme(c)).collect::<Vec<_>>().join(", "));
     let aujourdhui = crate::dossier_salarie::aujourdhui_reel()?;
-    let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), &aujourdhui.mois_civil().to_string(), "envoi du dossier aux salaries", &a_qui)?;
+    let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
     let d = construire(ctx, &demande(false))?;
     let envoi = envoyer_dossier(ctx, &d, &Preuve { donnee: Some(forme), ..Preuve::default() }, INTERFACE, ouvrir)?;
     let phrase = format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
@@ -809,7 +809,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let mut client = ouvrir()?;
     let aujourdhui = crate::dossier_salarie::aujourdhui_reel()?;
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
-    verifier_preuve(ctx, Some(preuve), &aujourdhui.mois_civil().to_string(), "envoi du dossier aux salaries", &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
     let expediteur = expediteur_de(client.as_ref());
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
@@ -912,7 +912,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
 
     let mut client = ouvrir()?;
     let dernier_mois = r.mois.last().map(|m| m.mois).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de la régularisation")))?;
-    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), &dernier_mois.to_string(), "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
+    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), MoisOuJour::Mois(dernier_mois), "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
 
     // La liste nominative est la premiere chose qu'ecrit le dossier (`casc::ecrire`) : si elle ne peut s'ecrire, le refus
     // tombe avant tout autre fichier, et rien ne part.
