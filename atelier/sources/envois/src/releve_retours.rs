@@ -387,7 +387,7 @@ fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
     if !p.exists() {
         return Ok(Vec::new());
     }
-    socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.").map_err(Echec::from)
+    socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.")
 }
 
 /// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
@@ -400,7 +400,7 @@ fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
             deja.push(e.clone());
         }
     }
-    socle::ecriture::ecrire_json(&p, &deja, 2).map_err(Echec::from)
+    socle::ecriture::ecrire_json(&p, &deja, 2)
 }
 
 /// La cle d'un retour : son flux, sa nature, sa publication.
@@ -557,7 +557,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))),
     };
-    crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui).map_err(Echec::from)
+    crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui)
 }
 
 /// Telecharge et archive ce que les organismes ont publie. `debut` et `fin` : heures locales naives
@@ -825,14 +825,14 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur(Classe::Disque, m))?;
+        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })?;
     }
     Ok(())
 }

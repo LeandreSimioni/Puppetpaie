@@ -37,7 +37,8 @@ use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Descript
 use declarations::dsn_lue::{ContratDeclare, DsnLue, IndividuDeclare, Mesures};
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::num::{Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::Decimal;
 
 /// Le « code » du nom d'archive (`AER_<siret>__<MMAAAA>_<code>_<JJMMAAAA>_<NOM>_<rang>_<id>.pdf`) : celui d'une fictive.
 const CODE: &str = "FICTIVE";
@@ -56,8 +57,8 @@ const BLANC: &str = "#FFFFFF";
 // ------------------------------------------------------------------ ce que la DSN dit
 
 /// Une rubrique que la DSN doit porter (`quoi` la dit en mots, `rubrique` va a part).
-fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> Resultat<&'a str> {
-    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique).into())
+fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> R<&'a str> {
+    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique))
 }
 
 /// Le contrat releve-t-il de l'attestation Cinema Spectacle ? Ce que France Travail lit de la DSN : un CDD (40.007 = 02)
@@ -88,12 +89,12 @@ struct Periode {
 
 /// La DSN reelle deposee pour `m` (le journal), lue ; `None` si le mois n'en a pas. Un fichier depose qui ne se relit
 /// pas refuse.
-fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> Resultat<Option<DsnLue>> {
+fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> R<Option<DsnLue>> {
     let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic_principal()) else { return Ok(None) };
     let Some(fichier) = l.fichier.filter(|f| !f.is_empty()) else { return Ok(None) };
     let p = std::path::Path::new(&fichier);
     let chemin = if p.is_absolute() { p.to_path_buf() } else { ctx.racine.join("sorties").join(m.to_string()).join(&fichier) };
-    declarations::dsn_lue::lire_une_dsn(&chemin).map_err(String::from)
+    declarations::dsn_lue::lire_une_dsn(&chemin)
 }
 
 /// Le jour du premier versement de l'individu `nir` dans la DSN `d`.
@@ -102,10 +103,10 @@ fn paiement_de(d: &DsnLue, nir: &str) -> Option<Jour> {
 }
 
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
-fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> Resultat<Vec<Periode>> {
+fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<Periode>> {
     let numero = exigee(&c.numero, "le numéro d'un contrat", "S21.G00.40.009")?;
     let (Some(debut), Some(fin)) = (c.debut, c.fin) else {
-        return Err(format!("contrat {} : dates illisibles dans la DSN", numero));
+        return Err(socle::refus!("contrat {} : dates illisibles dans la DSN", numero));
     };
     let mut out = Vec::new();
     // Les mois du contrat avant celui-ci.
@@ -246,9 +247,9 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: &str, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> Resultat<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: &str, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> R<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
-        return Err(format!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
+        return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
     let premier_contrat = d.contrats_de(&ind.nir).find(|c| cinema_spectacle(c));
     let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
@@ -507,7 +508,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     };
     let dessin = documents::fabrique::fabriquer_octets(&description)?;
     let champs = AjoutDeChamps { format: fabrique_pdf::FORMAT, champs: f.0 };
-    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs).map_err(|r| r.0.replace('\n', " "))
+    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs).map_err(|r| refus(r.0.replace('\n', " ")))
 }
 
 /// Le nom d'un PDF dans l'archive, au motif de France Travail (`retours::nom_aer`) : le SIRET, la periode `MMAAAA`, le
@@ -533,9 +534,9 @@ fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom:
 /// L'archive de nature 46 que France Travail publierait pour la DSN `dsn` du mois `mois` : un PDF par salarie dont la
 /// DSN declare la fin d'un contrat d'usage (cinq periodes par PDF, les mois anterieurs du contrat lus dans les DSN
 /// reelles deposees). `None` : aucune AER Cinema Spectacle n'est due ce mois-ci, France Travail ne publie rien.
-pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> Resultat<Option<Vec<u8>>> {
-    let d = declarations::dsn_lue::lire(dsn, "").map_err(String::from)?;
-    let le_mois = d.mois.ok_or("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)")?;
+pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> R<Option<Vec<u8>>> {
+    let d = declarations::dsn_lue::lire(dsn, "")?;
+    let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
     let mois = socle::mois::Mois::lire(mois)?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
     let remplace = match d.type_declaration.as_deref() {
@@ -571,9 +572,9 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> Result
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for (nom, octets) in &pdfs {
-        z.start_file(nom.as_str(), options).map_err(|e| e.to_string())?;
-        z.write_all(octets).map_err(|e| e.to_string())?;
+        z.start_file(nom.as_str(), options).map_err(|e| refus(e.to_string()))?;
+        z.write_all(octets).map_err(|e| refus(e.to_string()))?;
     }
-    Ok(Some(z.finish().map_err(|e| e.to_string())?.into_inner()))
+    Ok(Some(z.finish().map_err(|e| refus(e.to_string()))?.into_inner()))
 }
 
