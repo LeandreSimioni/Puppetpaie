@@ -9,12 +9,13 @@ use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, Lign
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
 /// engagement telles quelles (celles d'un permanent, deduites) et le plafond d'un temps partiel.
-pub fn ecrire(ctx: &Contexte, p: &Paie) -> Resultat<FormeDePaie<Avis>> {
-    p.forme(ctx, &Avis::clone, true).map_err(String::from)
+pub fn ecrire(ctx: &Contexte, p: &Paie) -> R<FormeDePaie<Avis>> {
+    p.forme(ctx, &Avis::clone, true)
 }
 
 /// Le flottant d'un decimal ecrit.
@@ -26,7 +27,7 @@ fn en_f64(x: Decimal) -> f64 {
 /// (quand l'engagement n'en porte pas),
 /// les jours du contrat, les suspensions, et, pour un permanent, les lignes et les jours que le moteur a deduits. `paies` : la forme
 /// ecrite de chaque paie, dans l'ordre de la saisie.
-pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies: &[&FormeDePaie<Avis>]) -> Resultat<Vec<Engagement>> {
+pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies: &[&FormeDePaie<Avis>]) -> R<Vec<Engagement>> {
     let mut mensuels: Vec<usize> = Vec::new();
     for (i, e) in data.engagements.iter().enumerate() {
         if e.mensuelle()? {
@@ -34,7 +35,7 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
         }
     }
     let appel = Cell::new(0usize);
-    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: &str| -> socle::echec::R<(Vec<LignePaie>, Vec<Avis>, Option<i64>)> {
+    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: &str| -> R<(Vec<LignePaie>, Vec<Avis>, Option<i64>)> {
         let rang = *mensuels.get(appel.get()).ok_or_else(|| socle::echec::refus("rang d'engagement inconnu"))?;
         appel.set(appel.get() + 1);
         let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "lignes"))?.engagement;
@@ -42,7 +43,7 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
     };
     let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {
-        return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paies").into());
+        return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paies"));
     }
     for (e, p) in engs.iter_mut().zip(paies) {
         // Le numero est celui de l'engagement, pose quand le contrat part ; une paie validee avant ne le porte pas.
@@ -56,7 +57,7 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
 }
 
 /// Une `Paie` du moteur, sur l'engagement `eng`, depuis sa forme ecrite `v`.
-pub fn paie(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>) -> Resultat<Paie> {
+pub fn paie(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>) -> R<Paie> {
     paie_lue(ctx, eng, v, None, &[])
 }
 
@@ -84,11 +85,11 @@ impl FichesDuCalcul {
 
 /// Une `Paie` du moteur, sur l'engagement `eng`, depuis sa forme ecrite `v`, sur les fiches du salarie telles que son
 /// calcul les a lues plutot que sur la fiche d'aujourd'hui.
-pub fn paie_sur_ses_fiches(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiches: &FichesDuCalcul) -> Resultat<Paie> {
+pub fn paie_sur_ses_fiches(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiches: &FichesDuCalcul) -> R<Paie> {
     paie_lue(ctx, eng, v, Some(&fiches.paie), &fiches.periodes)
 }
 
-fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Option<&droit::fiche::SalarieDuContrat>, periodes: &[droit::fiche::SalarieDuContrat]) -> Resultat<Paie> {
+fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Option<&droit::fiche::SalarieDuContrat>, periodes: &[droit::fiche::SalarieDuContrat]) -> R<Paie> {
     let sal = match fiche {
         Some(f) => f.clone(),
         None => fiche_de_l_engagement(ctx, &eng)?,
@@ -133,13 +134,13 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
 }
 
 /// Les paies ecrites d'une saisie de mois, dans son ordre : `ecrites[i]` est la forme ecrite de l'engagement `i`.
-pub fn paies(ctx: &Contexte, data: &crate::saisie::VueDuMois, ecrites: &[&FormeDePaie<Avis>]) -> Resultat<Vec<Paie>> {
+pub fn paies(ctx: &Contexte, data: &crate::saisie::VueDuMois, ecrites: &[&FormeDePaie<Avis>]) -> R<Vec<Paie>> {
     let engs = engagements_ecrits(ctx, data, ecrites)?;
     engs.into_iter().zip(ecrites).map(|(e, v)| paie(ctx, e, v)).collect()
 }
 
 /// La saisie `data` reduite a son engagement `i` : ce que la relecture d'une seule paie lit.
-pub fn saisie_d_un_engagement(data: &crate::saisie::VueDuMois, i: usize) -> Resultat<crate::saisie::VueDuMois> {
+pub fn saisie_d_un_engagement(data: &crate::saisie::VueDuMois, i: usize) -> R<crate::saisie::VueDuMois> {
     let e = data.engagements.get(i).cloned().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "engagements"))?;
     Ok(crate::saisie::VueDuMois { mois: data.mois, taux_cachet: data.taux_cachet.clone(), engagements: vec![e] })
 }
