@@ -223,7 +223,7 @@
     ]
   },
   "contrats": {
-    "quoi": "Les adhésions (bloc S21.G00.15) qu'une compagnie déclare : celles de toutes (`tous`), puis celles de sa convention (`conventions`). `libelle` : la référence du contrat chez l'organisme (S21.G00.15.001), telle que sa fiche de paramétrage DSN l'écrit ; donnée ici quand elle est la même pour tous, sinon à saisir. `organisme` : son code (S21.G00.15.002) ; `organisme_fixe` quand la branche le désigne. `reference` : l'identifiant de l'adhésion dans nos DSN (S21.G00.15.005), fixe pour ceux qui le donnent ; les autres sont attribués à partir de 104 et ne bougent plus. `si_permanents` : exigé seulement le jour où la compagnie emploie un permanent -- sans lui, la DSN refuse le permanent, pas la compagnie. `note` se montre sous le contrat, dans Configuration › Organismes et contrats. Les contributions de branche en DSN (FNAS, FCAP, APPAV...) viennent du barème (`contributions_dsn`), la CASC-SVP de casc-svp-base.json : elles ne se recopient pas ici.",
+    "quoi": "Les adhésions (bloc S21.G00.15) qu'une compagnie déclare : celles de toutes (`tous`), puis celles de sa convention (`conventions`). `libelle` : la référence du contrat chez l'organisme (S21.G00.15.001), telle que sa fiche de paramétrage DSN l'écrit ; donnée ici quand elle est la même pour tous, sinon à saisir. `organisme` : son code (S21.G00.15.002) ; `organisme_fixe` quand la branche le désigne. `reference` : l'identifiant de l'adhésion dans nos DSN (S21.G00.15.005), fixe pour ceux qui le donnent ; les autres sont attribués à partir de 104 et ne bougent plus. `role` (prévoyance, santé) : une affiliation d'un salarié payé au mois, rangée dans sa pièce (`Attendu::piece`) ; exigée seulement le jour où la compagnie emploie un permanent -- sans elle, la DSN refuse le permanent, pas la compagnie. `note` se montre sous le contrat, dans Configuration › Organismes et contrats. Les contributions de branche en DSN (FNAS, FCAP, APPAV...) viennent du barème (`contributions_dsn`), la CASC-SVP de casc-svp-base.json : elles ne se recopient pas ici.",
     "note": "La 2642 et la 3097 n'ont pas de contrat des permanents ici (la 3097 n'a pas de régime ; celui de la 2642 n'est pas relevé) : un permanent y est refusé par la DSN.",
     "tous": [
       {
@@ -295,7 +295,6 @@
           "quoi": "Prévoyance des permanents",
           "organisme": "P0983",
           "organisme_fixe": true,
-          "si_permanents": true,
           "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3090", "emetteur": "convention", "article": "KALIARTI000028157444", "citation": "les partenaires sociaux ont décidé de confier la garantie des risques décès, incapacité et invalidité à l'institution de prévoyance Audiens Prévoyance"}
         }
       ],
@@ -308,7 +307,6 @@
           "quoi": "Prévoyance des permanents",
           "organisme": "P0983",
           "organisme_fixe": true,
-          "si_permanents": true,
           "note": "Audiens designe par la branche (XII.2.3.2)."
         },
         {
@@ -319,7 +317,6 @@
           "quoi": "Frais de santé des permanents",
           "organisme": "P0983",
           "organisme_fixe": true,
-          "si_permanents": true,
           "note": "Audiens designe par la branche (XII.2.3.2)."
         }
       ],
@@ -332,7 +329,6 @@
           "quoi": "Prévoyance des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens designe par l'annexe (art. 7), designation exclue de l'extension : l'entreprise peut s'assurer ailleurs."
         },
         {
@@ -343,7 +339,6 @@
           "quoi": "Frais de santé des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens designe par l'annexe (art. 7), designation exclue de l'extension : l'entreprise peut s'assurer ailleurs."
         }
       ],
@@ -356,7 +351,6 @@
           "quoi": "Prévoyance des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens et l'OCIRP RECOMMANDES (art. 11), pas designes."
         },
         {
@@ -367,7 +361,6 @@
           "quoi": "Frais de santé des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens et l'OCIRP RECOMMANDES (art. 11), pas designes."
         }
       ],
@@ -380,7 +373,6 @@
           "quoi": "Prévoyance des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens Sante Prevoyance RECOMMANDE (art. 8), pas designe."
         },
         {
@@ -391,7 +383,6 @@
           "quoi": "Frais de santé des permanents",
           "organisme": "P0983",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Audiens Sante Prevoyance RECOMMANDE (art. 8), pas designe."
         }
       ],
@@ -403,7 +394,6 @@
           "beneficiaires": "permanents",
           "quoi": "Prévoyance des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Aucun designe (8.4.2 B, 8.4.3 A) : dispositif de branche ou contrat d'entreprise equivalent."
         },
         {
@@ -413,7 +403,6 @@
           "beneficiaires": "permanents",
           "quoi": "Frais de santé des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Aucun designe (8.4.2 B, 8.4.3 A) : dispositif de branche ou contrat d'entreprise equivalent."
         }
       ],
@@ -425,7 +414,6 @@
           "beneficiaires": "permanents",
           "quoi": "Prévoyance des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Aucun designe (art. 54.1) : au choix de l'entreprise."
         },
         {
@@ -435,7 +423,6 @@
           "beneficiaires": "permanents",
           "quoi": "Frais de santé des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Aucun designe (art. 54.1) : au choix de l'entreprise."
         }
       ],
@@ -447,7 +434,6 @@
           "beneficiaires": "permanents",
           "quoi": "Prévoyance des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Libre (avenant n. 68)."
         },
         {
@@ -457,7 +443,6 @@
           "beneficiaires": "permanents",
           "quoi": "Frais de santé des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Libre (avenant n. 68)."
         }
       ],
@@ -469,7 +454,6 @@
           "beneficiaires": "permanents",
           "quoi": "Prévoyance des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Non releve dans prevoyance-conventionnelle-base.json : l'organisme se saisit, il ne se devine pas."
         },
         {
@@ -479,7 +463,6 @@
           "beneficiaires": "permanents",
           "quoi": "Frais de santé des permanents",
           "organisme_fixe": false,
-          "si_permanents": true,
           "note": "Non releve dans prevoyance-conventionnelle-base.json : l'organisme se saisit, il ne se devine pas."
         }
       ]

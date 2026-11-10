@@ -29,7 +29,7 @@ use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::num::Resultat;
 
 use crate::contexte::{Contexte, ORGANISMES};
-use crate::fiche::{Datee, Lue};
+use crate::fiche::{Datee, Lue, Piece};
 use crate::source::{forme_notee, Fondement};
 
 /// Audiens, delegataire des contrats de branche du spectacle (S21.G00.15.002).
@@ -136,7 +136,6 @@ pub struct Contrat {
     pub quoi: String,
     pub organisme: Option<String>,
     pub organisme_fixe: bool,
-    pub si_permanents: Option<bool>,
     pub options: Option<Options>,
     pub note: Option<String>,
     pub source: Option<Fondement>,
@@ -310,7 +309,6 @@ pub struct Attendu {
     pub quoi: String,
     pub organisme: Option<String>,
     pub organisme_fixe: bool,
-    pub si_permanents: bool,
     pub contribution: Option<String>,
     pub note: Option<String>,
 }
@@ -329,7 +327,6 @@ impl From<&Contrat> for Attendu {
             quoi: c.quoi.clone(),
             organisme: c.organisme.clone(),
             organisme_fixe: c.organisme_fixe,
-            si_permanents: c.si_permanents == Some(true),
             note: c.note.clone(),
             ..Attendu::default()
         }
@@ -345,6 +342,13 @@ impl Attendu {
     /// La reference donnee par le texte, sans ses blancs ; `None` s'il n'en donne pas.
     pub fn libelle_donne(&self) -> Option<String> {
         net(&self.libelle)
+    }
+
+    /// SA PIECE : un contrat qui a un role (`prevoyance`, `sante`) est une affiliation d'un salarie paye au mois, que
+    /// seul son calcul rattache (`par_nature.permanent`, dans l'ordre de ses roles) : la piece d'un permanent. Son role la
+    /// dit ; aucune etiquette.
+    pub fn piece(&self) -> Option<Piece> {
+        self.role.as_deref().map(str::trim).filter(|r| !r.is_empty()).map(|_| Piece::Permanent)
     }
 
     /// Le contrat vaut-il pour la periode (`adhesions::en_vigueur`) ?
@@ -418,7 +422,9 @@ pub struct Ligne {
     /// `None` : ni le texte ni la compagnie ne le disent encore.
     pub organisme: Option<String>,
     pub organisme_fixe: bool,
-    pub si_permanents: bool,
+    /// Sa piece (`Attendu::piece`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piece: Option<Piece>,
     pub depuis: Option<String>,
     pub jusqu_a: Option<String>,
     pub note: Option<String>,
@@ -447,7 +453,7 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
         libelle_fixe,
         organisme,
         organisme_fixe: spec.organisme_fixe,
-        si_permanents: spec.si_permanents,
+        piece: spec.piece(),
         depuis: spec.depuis.map(|j| j.iso()),
         jusqu_a: spec.jusqu_a.map(|j| j.iso()),
         note: net(&spec.note),
@@ -562,7 +568,7 @@ pub fn composer(
             // Un contrat vide ne se reclame pas quand l'ecran ne l'a pas propose : un contrat des permanents a une
             // compagnie qui n'en emploie pas, un contrat que la periode regardee ne couvre pas.
             let Some((periode, permanents)) = exiger else { continue };
-            if (spec.si_permanents && !permanents) || !spec.couvre(periode) {
+            if (spec.piece() == Some(Piece::Permanent) && !permanents) || !spec.couvre(periode) {
                 continue;
             }
             return Err(format!(

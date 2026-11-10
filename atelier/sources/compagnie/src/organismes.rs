@@ -61,11 +61,11 @@ fn chemin(ctx: &Contexte) -> std::path::PathBuf {
 }
 
 
-/// Une ligne se montre-t-elle a cette compagnie ? Un contrat des permanents (`role` : prevoyance ou sante, les
-/// affiliations d'un salarie paye au mois) ne se montre que sur une periode ou un permanent se propose ou est du
-/// (`permanents` : `engagement::permanents::Permanents::ouverts`, la meme reponse que partout).
+/// Une ligne se montre-t-elle a cette compagnie ? Un contrat de la piece d'un permanent (`Attendu::piece` : son role,
+/// prevoyance ou sante, les affiliations d'un salarie paye au mois) ne se montre que sur une periode ou un permanent se
+/// propose ou est du (`permanents` : `engagement::permanents::Permanents::ouverts`, la meme reponse que partout).
 fn se_montre(spec: &Attendu, permanents: bool) -> bool {
-    spec.role.as_deref().is_none_or(|r| r.trim().is_empty()) || permanents
+    spec.piece().is_none() || permanents
 }
 
 /// Les contrats des permanents se montrent-ils sur la periode regardee (`engagement::permanents`) ?
