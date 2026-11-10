@@ -335,7 +335,7 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
 /// dit, ni la dette de conges a qui n'a pas de permanent sur les mois a exporter (`permanents` :
 /// `engagement::permanents::Permanents::ouverts`), ni la taxe sur les salaires a qui ne la doit aucune des annees a
 /// exporter (`taxe_due`).
-fn etat_concerne(ctx: &Contexte, etat: &str, permanents: bool, taxe_due: bool) -> bool {
+fn etat_concerne(ctx: &Contexte, etat: &str, piece: Option<droit::fiche::Piece>, permanents: bool, taxe_due: bool) -> bool {
     let idcc = ctx.entreprise.idcc.portee();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
@@ -343,7 +343,8 @@ fn etat_concerne(ctx: &Contexte, etat: &str, permanents: bool, taxe_due: bool) -
             return false;
         }
     }
-    if t.si_permanents.iter().any(|e| e == etat) {
+    // Un etat de la piece d'un salarie au mois (`plan_comptable::Tables::etats`).
+    if piece.is_some() {
         return permanents;
     }
     if t.si_taxe_sur_les_salaires.iter().any(|e| e == etat) {
@@ -412,7 +413,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     };
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
-    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat, permanents, taxe_due)).cloned().collect();
+    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, &e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
     let dossier = ctx.racine.join("exports").display().to_string();
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
@@ -634,7 +635,7 @@ pub(crate) enum Exporte {
 pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     use documents::etats_paie::Demande;
     let etat = c.etat.clone();
-    let etats = &documents::plan_comptable::tables().etats;
+    let etats: Vec<&documents::plan_comptable::EtatLivre> = documents::plan_comptable::tables().etats().map(|(e, _)| e).collect();
     let Some(forme) = etats.iter().find(|e| e.etat == etat) else {
         let mut noms: Vec<&str> = etats.iter().map(|e| e.etat.as_str()).collect();
         noms.sort_unstable();

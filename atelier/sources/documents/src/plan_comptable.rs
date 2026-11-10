@@ -27,11 +27,12 @@ use socle::fichiers::repr;
 #[serde(deny_unknown_fields)]
 pub struct Tables {
     pub quoi: String,
-    pub etats: Vec<EtatLivre>,
+    etats: Vec<EtatLivre>,
+    /// LA PIECE D'UN SALARIE AU MOIS (`droit::fiche::Piece::Permanent`) : les etats qui ne lisent que ses paies (la dette
+    /// de conges payes : `engagement::conges::provision_conges_de`), ranges a part. Leur place dit leur piece.
+    au_mois: Vec<EtatLivre>,
     /// L'etat -> les conventions (IDCC) qui le demandent.
     pub si_convention: BTreeMap<String, Vec<String>>,
-    /// Les etats qui ne servent qu'a qui emploie des permanents.
-    pub si_permanents: Vec<String>,
     /// Les etats qui ne servent qu'a une compagnie qui doit la taxe sur les salaires une des annees a exporter.
     pub si_taxe_sur_les_salaires: Vec<String>,
     pub formats: Vec<FormatLivre>,
@@ -39,6 +40,13 @@ pub struct Tables {
     pub logiciels: Vec<Logiciel>,
     /// Le format -> les largeurs de ses zones.
     pub limites: BTreeMap<String, Limite>,
+}
+
+impl Tables {
+    /// Chaque etat livre, dans l'ordre, avec sa piece : celle d'un salarie au mois pour ceux de `au_mois`.
+    pub fn etats(&self) -> impl Iterator<Item = (&EtatLivre, Option<droit::fiche::Piece>)> {
+        self.etats.iter().map(|e| (e, None)).chain(self.au_mois.iter().map(|e| (e, Some(droit::fiche::Piece::Permanent))))
+    }
 }
 
 /// Un etat que la page propose : ce qu'il demande (`questions`), ses formats, ses regroupements, ses periodes.
