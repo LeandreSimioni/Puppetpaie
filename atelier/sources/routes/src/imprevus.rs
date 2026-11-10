@@ -579,10 +579,6 @@ fn jour(t: &str) -> R<Jour> {
     Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Un jour ecrit, tel qu'une phrase le dit (« 02/11/2026 »).
-fn clair(t: &str) -> R<String> {
-    Ok(jour(t)?.jj_mm_aaaa())
-}
 
 /// Un numero de contrat tel qu'une phrase le dit.
 fn numero_dit(n: &Option<String>) -> String {
@@ -1223,9 +1219,9 @@ impl Dit {
 fn cachet_dit(c: imprevus::CachetPaye) -> R<Cachet> {
     let mois_dit = crate::regularisation::de_mois_en_clair(c.mois);
     let mut jours = Vec::new();
-    for iso in &c.dates {
-        let le = format!("{} le {}", c.libelle, clair(iso)?);
-        jours.push(JourPaye { iso: iso.clone(), phrase_du_mois: format!("{}, {}", le, mois_dit), phrase: le });
+    for j in &c.dates {
+        let le = format!("{} le {}", c.libelle, j.jj_mm_aaaa());
+        jours.push(JourPaye { iso: j.iso(), phrase_du_mois: format!("{}, {}", le, mois_dit), phrase: le });
     }
     Ok(Cachet { lu: c, jours })
 }
@@ -1250,8 +1246,8 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
     for o in obligations {
         let libelle = minuscule(o.libelle.clone());
         match &o.fait {
-            Some(f) if !f.le().is_empty() && matches!(o.ou, Some(crate::obligations::Ou::Lieux(_))) => {
-                parti.push(dite(format!("{}, faite le {}", libelle, socle::ecran::quand(f.le()))));
+            Some(f) if matches!(o.ou, Some(crate::obligations::Ou::Lieux(_))) => {
+                parti.push(dite(format!("{}, faite le {}", libelle, socle::ecran::quand(&f.le().iso()))));
             }
             // Une obligation due sans date butoir (son delai ne se compte pas) dit son etat, pas une butoir absente.
             _ if o.du => {

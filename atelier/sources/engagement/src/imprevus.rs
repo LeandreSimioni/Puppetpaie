@@ -949,7 +949,7 @@ pub struct CachetPaye {
     pub ligne: usize,
     pub rubrique: String,
     pub libelle: String,
-    pub dates: Vec<String>,
+    pub dates: Vec<Jour>,
     pub quantite: Option<Decimal>,
     pub taux: Option<Decimal>,
 }
@@ -961,7 +961,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &s
             continue;
         }
         for (j, l) in e.lignes().iter().enumerate() {
-            let dedans: Vec<String> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).map(|x| x.iso()).collect();
+            let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).collect();
             if dedans.is_empty() {
                 continue;
             }
@@ -1006,7 +1006,7 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
         let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
         for c in cachets_de_la_saisie(ctx, data, imp.salarie(), &premier, &dernier)? {
             let i = c.engagement;
-            let dates: Vec<String> = c.dates.iter().map(|x| Jour::lire(x).map(|j| j.jj_mm_aaaa())).collect::<socle::echec::R<_>>()?;
+            let dates: Vec<String> = c.dates.iter().map(Jour::jj_mm_aaaa).collect();
             let quoi = if est_un_arret(imp) {
                 let motif = droit::arrets::motif_d_arret(imp.motif())?;
                 format!(
