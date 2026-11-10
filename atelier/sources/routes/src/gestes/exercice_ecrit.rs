@@ -86,7 +86,7 @@ pub(crate) struct EcritureRendue {
     debit: String,
     credit: String,
     analytique: Option<String>,
-    mois: String,
+    mois: socle::mois::Mois,
     auxiliaire: Option<String>,
     auxiliaire_libelle: Option<String>,
 }
@@ -141,7 +141,7 @@ impl ExportCompta {
                     debit: e.debit.to_string(),
                     credit: e.credit.to_string(),
                     analytique: e.analytique,
-                    mois: e.mois.to_string(),
+                    mois: e.mois,
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })

@@ -71,15 +71,15 @@ pub struct Due {
 }
 
 /// LES CORRECTIONS DUES DE `mois` dans la DSN de `porteur` : chaque engagement valide du mois dont la paie presente n'est
-/// plus celle que les DSN anterieures a `porteur` ont declaree, ou qu'aucune n'a declare (`engagement::etats::
-/// correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit a cote de lui, et un
-/// engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
-pub fn corrections_dues(ctx: &Contexte, mois: Mois, porteur: Mois, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
+/// plus celle que les DSN anterieures a `porteur` ont declaree (`None` : toutes les DSN parties), ou qu'aucune n'a
+/// declare (`engagement::etats::correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit
+/// a cote de lui, et un engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
+pub fn corrections_dues(ctx: &Contexte, mois: Mois, porteur: Option<Mois>, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
     let mut out = Vec::new();
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
         if let Some(declarees) =
-            engagement::etats::correction_due(ctx, &v, departs, mois, Some(porteur)).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
+            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
         {
             out.push(Due { valide: v, rang, declarees });
         }
@@ -102,7 +102,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
         }
         out.extend(annulations(ctx, departs, mois, mois_courant)?);
         let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { continue };
-        for d in corrections_dues(ctx, mois, mois_courant, departs)? {
+        for d in corrections_dues(ctx, mois, Some(mois_courant), departs)? {
             let apres = d.valide.paie(ctx, &data, d.rang)?;
             let version = d.valide.version().ok_or_else(|| {
                 erreur(

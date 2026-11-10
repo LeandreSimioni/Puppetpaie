@@ -355,7 +355,7 @@ pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<Correcti
     }
     let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok((Vec::new(), Vec::new())) };
     let mut a_porter = Vec::new();
-    for d in declarations::produire_regularisations::corrections_dues(ctx, mois, Mois::lire("9999-12")?, &departs)? {
+    for d in declarations::produire_regularisations::corrections_dues(ctx, mois, None, &departs)? {
         let apres = d.valide.paie(ctx, &data, d.rang)?;
         a_porter.push(avant_apres(mois, d.declarees.last().map(|x| &x.paie), &apres)?);
     }

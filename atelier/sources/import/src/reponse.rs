@@ -266,7 +266,7 @@ pub struct Completee {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum DitPar {
-    Dsn { dsn: Valeur, mois: String },
+    Dsn { dsn: Valeur, mois: Mois },
     Bulletin { bulletin: String, fichier: String, page: usize },
     Certificat { certificat: String, fichier: String, page: usize },
     Aem { aem: String, fichier: String, page: usize },
@@ -289,7 +289,7 @@ impl Ecart {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
             DitPar::Bulletin { bulletin, fichier, page } => (format!("le bulletin ({}, page {}) disait", fichier, page), bulletin.clone()),
-            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&Mois::en_clair(mois))), en_mots(dsn)),
+            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), en_mots(dsn)),
         };
         let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
         Ecart { champ: champ.to_string(), fiche, par, dit }
