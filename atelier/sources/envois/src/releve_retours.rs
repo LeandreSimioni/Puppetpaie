@@ -532,7 +532,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))),
+        Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&chemin, &e) }),
     };
     crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui)
 }
@@ -838,11 +838,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) }),
     };
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &x) })?.file_name().to_string_lossy().into_owned();
         if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
             noms.push(nom);
         }
@@ -851,7 +851,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut annees = Annees::new();
     for nom in &noms {
         let p = dossier.join(nom);
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
             let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };

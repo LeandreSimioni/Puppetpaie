@@ -135,7 +135,7 @@ fn jour_iso(t: &str) -> R<Jour> {
 /// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
 fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<f64> {
     let t = taux.replace(',', ".");
-    t.parse::<f64>().map_err(|e| erreur(Classe::Illisible, socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e))))
+    t.parse::<f64>().map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e)) })
 }
 
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
@@ -171,7 +171,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         Annonce::TauxPas(t) => {
             let n = taux_annonce(&t.taux, "taux_pas.taux", "Le taux de prélèvement annoncé ne se lit pas.")?;
             if t.salarie.is_empty() || !(0.0..=100.0).contains(&n) {
-                return Err(erreur(Classe::Illisible, socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas")));
+                return Err(Echec { classe: Some(Classe::Illisible), ..socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas") });
             }
             gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: format!("{:.2}", n) });
         }
@@ -180,7 +180,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
             let effet_lisible = matches!(Jour::lire(&t.date_effet), Ok(j) if j.iso() == t.date_effet);
             if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 || !effet_lisible {
-                return Err(erreur(Classe::Illisible, socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp")));
+                return Err(Echec { classe: Some(Classe::Illisible), ..socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp") });
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
                 code_risque: code,

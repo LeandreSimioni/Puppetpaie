@@ -65,7 +65,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i64, String)>, Echec> {
     let mut dernier: Option<(i64, String)> = None;
     for (nom, p) in bilans_archives(racine)? {
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
         // Le flux suit la nature dans le nom, avant l'extension.
         let Some(apres) = nom.splitn(3, '_').nth(2) else { continue };
         let flux = match apres.rsplit_once('.') {
@@ -92,11 +92,11 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) }),
     };
     let mut noms = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &x) })?.file_name().to_string_lossy().into_owned();
         let p = dossier.join(&nom);
         if crate::retours::archive_de_nature(&nom, "11") && p.is_file() {
             noms.push((nom, p));
@@ -110,7 +110,7 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
 /// lit pas (son fichier a part).
 fn ordre_lu(ordre: Option<&str>, ou: &Path) -> Result<Option<i64>, Echec> {
     ordre
-        .map(|o| o.trim().parse::<i64>().map_err(|_| erreur(Classe::Illisible, socle::echec::du_disque(&ou, &format!("Un numéro d'ordre de déclaration ne se lit pas : {}.", o)))))
+        .map(|o| o.trim().parse::<i64>().map_err(|_| Echec { classe: Some(Classe::Illisible), ..socle::echec::du_disque(&ou, &format!("Un numéro d'ordre de déclaration ne se lit pas : {}.", o)) }))
         .transpose()
 }
 
@@ -234,7 +234,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     let mut vues = MensuellesVues::default();
     for (_, p) in bilans_archives(racine)? {
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
         let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };
         if bilan.essai_reel.as_deref() != Some(base) {
             continue;

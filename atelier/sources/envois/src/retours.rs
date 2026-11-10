@@ -1149,6 +1149,12 @@ struct DepotsDuDeclarant {
 
 const LISTE_ILLISIBLE: &str = "La liste que la plate-forme rend ne se lit pas.";
 
+/// La liste illisible, la cle qui ne va pas a part.
+#[track_caller]
+fn illisible(cle: &str) -> Echec {
+    Echec { classe: Some(Classe::Illisible), ..socle::echec::cle(LISTE_ILLISIBLE, cle) }
+}
+
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
 fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
     a.enfants(e).map(|c| (local(&c.tag), c.texte_net())).filter(|(_, t)| !t.is_empty()).collect()
@@ -1207,10 +1213,10 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
                     "statut" => a.statut = t,
                     "id" => a.id = t,
                     "url" => a.url = t,
-                    autre => return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("flux.retour.{}", autre)))),
+                    autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
-            a.nature = nature.ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, "flux.retour.nature")))?;
+            a.nature = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
             out.push(a);
         }
     }
@@ -1230,10 +1236,10 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
     for el in arbre.tous().filter(|el| local(&el.tag) == "depot") {
         let champs = enfants_textes(&arbre, el);
         let champ = |k: &str| {
-            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", k))))
+            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| illisible(&format!("depot.{}", k)))
         };
         if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
-            return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", autre))));
+            return Err(illisible(&format!("depot.{}", autre)));
         }
         out.push(Depot { idflux: champ("idflux")?, date: champ("date")?, statut: champ("statut")? });
     }

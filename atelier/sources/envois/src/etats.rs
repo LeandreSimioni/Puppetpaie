@@ -13,7 +13,7 @@ use socle::mois::Mois;
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
 use crate::retours::{self, Annonce};
-use socle::echec::{erreur, Echec, R};
+use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
 
 pub const DSN: &str = "dsn";
@@ -50,7 +50,7 @@ pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero
 // ------------------------------------------------------------------ les etats
 
 pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    erreur(socle::echec::Classe::du_disque(e), socle::echec::du_disque(p, e))
+    Echec { classe: Some(socle::echec::Classe::du_disque(e)), ..socle::echec::du_disque(p, e) }
 }
 
 // ------------------------------------------------------------ les embauches
