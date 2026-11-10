@@ -2094,7 +2094,7 @@ pub fn lue_sans_paie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Vec<calcul::
 /// convention, et laquelle s'applique (`solde::duree_du_preavis`).
 #[cfg(feature = "ecran")]
 pub fn preavis(ctx: &Contexte, e: &saisie::Carte, anciennete: Decimal, motif: Option<&str>) -> R<solde::Preavis> {
-    Ok(solde::duree_du_preavis(ctx, e, anciennete, motif)?)
+    solde::duree_du_preavis(ctx, e, anciennete, motif)
 }
 
 /// LES LIGNES `presentes` SONT-ELLES CELLES DE `partie` ARRETEES A LA `fin` (AAAA-MM-JJ) d'un contrat rompu
