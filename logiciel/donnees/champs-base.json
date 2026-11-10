@@ -2150,11 +2150,11 @@
    "ecran": true
   },
   {
-   "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Vide : aucune anciennete, le plus bas ; sauf\nla grille administrative de la 3090, ou le calcul refuse en nommant la case.",
+   "note": "L'ANCIENNETE DANS LE POSTE : la 1922 ajoute\ndes points apres 3 et 6 ans dans la fonction, la 3252 majore ses minima\nde 3 % et 8 % apres 3 et 8 ans dans l'entreprise ET le poste, la 3090\nclasse ses administratifs en echelons (5, 10, 15, 20 ans dans\nl'entreprise et la fonction), la CCNEAC ses artistes de choeur en CDI\n(tous les trois ans). Seule la compagnie la connait : vide, la ou\nun minimum en depend, le calcul refuse en nommant la case.",
    "cle": "poste_depuis",
    "libelle": "Dans ce poste depuis",
    "forme": "date",
-   "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention ; vide, le logiciel compare au minimum sans ancienneté, sauf pour un emploi administratif de la 3090, dont il a besoin pour calculer la paie.",
+   "aide": "La date à laquelle la personne a commencé dans cette fonction chez vous (contrats antérieurs compris). Elle fixe les minimums d'ancienneté de la convention : quand un minimum en dépend, le logiciel en a besoin pour calculer la paie.",
    "longueur": null,
    "exemple": "",
    "choix": [],

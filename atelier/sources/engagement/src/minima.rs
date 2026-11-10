@@ -2,8 +2,9 @@
 //! `avertissements` lit la grille de la convention ; `sous_le_smic` lit la loi.
 //!
 //! Chaque minimum prend, quand la paie ne dit pas tout, l'hypothese la plus basse : un avertissement qui crie a tort ne
-//! se lit plus. Sauf l'echelon, que seule la compagnie connait (celui de la CCNEAC, l'anciennete de la grille
-//! administrative de la 3090) : sans la case de la fiche, le calcul refuse en la nommant.
+//! se lit plus. Sauf l'echelon et l'anciennete, que seule la compagnie connait (l'echelon de la CCNEAC, l'anciennete
+//! que demandent la grille administrative de la 3090 et les conditions `anciennete` des grilles) : sans la case de la
+//! fiche, le calcul refuse en la nommant.
 
 use std::collections::BTreeSet;
 
@@ -478,17 +479,30 @@ impl<'a> Cx<'a> {
                 return Ok(false);
             }
         }
-        if let Some(a) = c.anciennete {
-            let Some(depuis) = case_lue(&self.fiche.champs, &a.champ)? else { return Ok(false) };
-            match ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) {
-                Some(n) if n >= a.ans => {}
-                _ => return Ok(false),
-            }
-        }
         if let Some(max) = c.duree_contrat_max_jours {
             match jours_du_contrat(&self.paie.engagement) {
                 Some(j) if j <= max => {}
                 _ => return Ok(false),
+            }
+        }
+        // L'anciennete, en dernier : elle ne se demande que si tout le reste vise la ligne. Seule la compagnie sait depuis
+        // quand ; sans la case, le calcul refuse en la nommant.
+        if let Some(a) = c.anciennete {
+            let Some(depuis) = case_lue(&self.fiche.champs, &a.champ)? else {
+                return Err(socle::echec::cle(
+                    format!(
+                        "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
+                        crate::qui_de(self.fiche)?,
+                        a.ans
+                    ),
+                    &a.champ,
+                ));
+            };
+            let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) else {
+                return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
+            };
+            if n < a.ans {
+                return Ok(false);
             }
         }
         Ok(true)
