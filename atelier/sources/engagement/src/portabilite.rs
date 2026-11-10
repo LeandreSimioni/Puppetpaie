@@ -18,7 +18,7 @@
 
 use droit::fiche::Lue as _;
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::calcul::Paie;
 use crate::stock::Objet;
@@ -45,7 +45,7 @@ pub struct Portabilite {
 
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
 /// n'est maintenu (une faute lourde, ou aucune garantie collective).
-pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> Resultat<Option<Portabilite>> {
+pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
     if p.engagement.motif_rupture.as_deref().is_some_and(|m| FAUTE_LOURDE.contains(&m)) {
         return Ok(None);
     }
@@ -73,7 +73,7 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> Resul
 /// contrat du salarie qui finit au plus tard la veille de ce debut, sans jour entre les deux (ou qui le chevauche),
 /// s'y ajoute. INFERENCE : L. 911-8 ne definit pas « consecutifs » ; on le lit au mot, des contrats qui se suivent
 /// sans interruption. Un contrat dont la fin ne se lit pas (ni dite, ni jour joue) n'y entre pas.
-fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> Resultat<Jour> {
+fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
     let mut bornes = Vec::new();
     for o in siens {
         let c = o.carte();
@@ -104,7 +104,7 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> Resultat<Jou
 /// entier (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme
 /// `n` mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit
 /// le 28/02).
-fn mois_arrondis(debut: &Jour, fin: &Jour) -> Resultat<u32> {
+fn mois_arrondis(debut: &Jour, fin: &Jour) -> R<u32> {
     let mut n = 0;
     while n < DOUZE_MOIS {
         n += 1;
