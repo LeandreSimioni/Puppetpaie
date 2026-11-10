@@ -1782,14 +1782,18 @@ fn salarie_propose(s: SalarieLu, metier: &EmploiImprime) -> R<Saisie> {
 pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme: bool, idcc: Option<&str>) -> R<EmploiImprime> {
     let mut f = EmploiImprime { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiImprime::default() };
     let mots: Vec<String> = statut.into_iter().flat_map(bulletin_lu::jetons).collect();
-    f.statut = mots.iter().find(|m| *m == "artiste" || *m == "technicien").cloned();
+    f.statut = mots.iter().find_map(|m| match m.as_str() {
+        "artiste" => Some(droit::fiche::Statut::Artiste),
+        "technicien" => Some(droit::fiche::Statut::Technicien),
+        _ => None,
+    });
     if let Some(i) = mots.iter().position(|m| m == "cadre" || m == "noncadre") {
         let non = mots[i] == "noncadre" || (i > 0 && mots[i - 1] == "non");
-        f.statut_categoriel_rc = Some(if non { "04" } else { "01" }.to_string());
+        f.statut_categoriel_rc = Some(if non { droit::fiche::StatutCategorielRc::NonCadre } else { droit::fiche::StatutCategorielRc::Cadre });
     }
     let Some(intitule) = f.emploi.clone() else { return Ok(f) };
     if let Some((code, feminin)) = droit::emplois::par_intitule(&intitule, compare).map_err(|m| m.reclasser(Classe::Refuse))? {
-        let cadre = f.statut_categoriel_rc.as_deref().map(|s| s == "01");
+        let cadre = f.statut_categoriel_rc.map(|s| s == droit::fiche::StatutCategorielRc::Cadre);
         let r = droit::emplois::resoudre(&code, cadre, feminin || femme, idcc).map_err(|m| m.reclasser(Classe::Refuse))?;
         // Ce que le choix du metier donne ; le statut imprime prime.
         f.emploi = Some(r.emploi);
@@ -1798,7 +1802,7 @@ pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme
         f.code_emploi_ft = r.code_emploi_ft.or(f.code_emploi_ft);
         f.statut = f.statut.or(Some(r.statut));
         f.statut_conventionnel = r.statut_conventionnel.or(f.statut_conventionnel);
-        f.statut_categoriel_rc = Some(r.statut_categoriel_rc.to_string());
+        f.statut_categoriel_rc = Some(r.statut_categoriel_rc);
     }
     Ok(f)
 }
@@ -2143,7 +2147,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACree
         return Ok(Some(s));
     }
     let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");
-    Ok(statut_et_metier(None, c.emploi.as_deref(), femme, idcc)?.statut)
+    Ok(statut_et_metier(None, c.emploi.as_deref(), femme, idcc)?.statut.map(|s| s.as_str().to_string()))
 }
 
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,

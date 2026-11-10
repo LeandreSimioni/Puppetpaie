@@ -39,8 +39,8 @@ fn resolution(c: &CasResolu) -> Resolution {
             emploi_affichage: r.emploi_affichage,
             pcs_ese: r.pcs_ese,
             code_emploi_ft: r.code_emploi_ft,
-            statut: r.statut,
-            statut_conventionnel: r.statut_conventionnel,
+            statut: r.statut.to_string(),
+            statut_conventionnel: r.statut_conventionnel.map(|s| s.to_string()),
             statut_categoriel_rc: r.statut_categoriel_rc.to_string(),
         },
         Err(m) => Resolution::Refus(m.phrase),
@@ -57,6 +57,6 @@ fn resoudre_un_metier() {
     // Le dramaturge est cadre dans la 1285 (groupe B de la filiere artistique, art. XI.2.1) ; la grille 3090 ne le
     // nomme pas, le defaut du catalogue vaut.
     let cadre = |idcc| resoudre("DRA010", None, false, Some(idcc)).unwrap();
-    assert_eq!((cadre("1285").statut_conventionnel.as_deref(), cadre("1285").statut_categoriel_rc), (Some("04"), "01"));
-    assert_eq!((cadre("3090").statut_conventionnel.as_deref(), cadre("3090").statut_categoriel_rc), (Some("05"), "04"));
+    assert_eq!((cadre("1285").statut_conventionnel.map(|s| s.as_str()), cadre("1285").statut_categoriel_rc.as_str()), (Some("04"), "01"));
+    assert_eq!((cadre("3090").statut_conventionnel.map(|s| s.as_str()), cadre("3090").statut_categoriel_rc.as_str()), (Some("05"), "04"));
 }

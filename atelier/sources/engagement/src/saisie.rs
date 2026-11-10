@@ -141,11 +141,11 @@ carte! {
         #[champ(Terme, CodeEmploiFt)]
         pub code_emploi_ft: Option<String>,
         #[champ(Terme, Statut)]
-        pub statut: Option<String>,
+        pub statut: Option<droit::fiche::Statut>,
         #[champ(Terme, StatutConventionnel)]
-        pub statut_conventionnel: Option<String>,
+        pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
         #[champ(Terme, StatutCategorielRc)]
-        pub statut_categoriel_rc: Option<String>,
+        pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
         #[champ(Terme, PeriodeEssaiJours)]
         pub periode_essai_jours: Option<NombreLu>,
         #[champ(Terme, PersonneRemplacee)]
@@ -264,6 +264,11 @@ impl Simple for droit::natures::NatureDeContrat {
         Some(Valeur::Nature(*self))
     }
 }
+
+macro_rules! choix_simple {
+    ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
+}
+choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc);
 
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {

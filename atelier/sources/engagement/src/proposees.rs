@@ -64,6 +64,6 @@ pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
         None => None,
     };
     let de_la_fiche = fiche.and_then(|f| f.statut.dite()).map(|s| s.as_str().to_string());
-    let statut = dit(&carte.statut).or(du_metier).or(de_la_fiche);
+    let statut = carte.statut.map(|s| s.as_str().to_string()).or(du_metier).or(de_la_fiche);
     proposees(ctx, mensuelle, statut.as_deref(), metier.as_deref(), jour)
 }

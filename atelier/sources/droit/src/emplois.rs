@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::Contexte;
-use crate::fiche::{FicheSalarie, Lue, Statut};
+use crate::fiche::{FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -47,7 +47,7 @@ pub struct FicheDuCatalogue {
     /// Le defaut cadre d'une convention qui le dit autrement (le dramaturge, cadre dans la 1285).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cadre_selon_la_convention: Option<BTreeMap<String, bool>>,
-    pub statut_conventionnel: String,
+    pub statut_conventionnel: StatutConventionnel,
     pub minima: Minima,
     pub emploi: String,
     pub annexe: u8,
@@ -287,18 +287,18 @@ impl Metier {
     /// Le statut conventionnel DSN (40.002) du metier declare NON cadre. L'artiste-interprete : 05, par inference
     /// (`statut_conventionnel` dans la `note` de `emplois-base.json` : « Non-cadres » de la 3090, art. 6.3, hors de la categorie
     /// cadre de la 1285, art. XI.2.1 ; 05 par l'exemple de la fiche net-entreprises 3344, l. 364-366).
-    pub fn statut_non_cadre(&self) -> Option<String> {
-        if let Some(st) = self.au_catalogue().map(|f| f.statut_conventionnel.as_str()).filter(|s| !s.is_empty() && *s != "04") {
-            return Some(st.to_string());
+    pub fn statut_non_cadre(&self) -> Option<StatutConventionnel> {
+        if let Some(st) = self.au_catalogue().map(|f| f.statut_conventionnel).filter(|s| *s != StatutConventionnel::Cadre04) {
+            return Some(st);
         }
         if self.statut() == Statut::Artiste {
-            return Some("05".into());
+            return Some(StatutConventionnel::AgentDeMaitrise);
         }
         let c = self.classification_3090()?;
         if c.niveau.starts_with("cadre") || c.niveau.starts_with("agent") {
-            return Some("05".into());
+            return Some(StatutConventionnel::AgentDeMaitrise);
         }
-        Some(if c.grille == "administratif" { "06" } else { "07" }.into())
+        Some(if c.grille == "administratif" { StatutConventionnel::Employe06 } else { StatutConventionnel::Employe07 })
     }
 }
 
@@ -324,9 +324,9 @@ pub struct ChampsDuMetier {
     pub emploi_affichage: String,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: String,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: &'static str,
+    pub statut: Statut,
+    pub statut_conventionnel: Option<StatutConventionnel>,
+    pub statut_categoriel_rc: StatutCategorielRc,
 }
 
 /// Les sept champs declares pour ce metier (`emploi_affichage` compris).
@@ -349,9 +349,9 @@ pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&st
         emploi_affichage: libelle,
         pcs_ese: m.pcs_ese().map(str::to_string),
         code_emploi_ft: Some(m.code.clone()),
-        statut: m.statut().as_str().to_string(),
-        statut_conventionnel: if est_cadre { Some("04".into()) } else { m.statut_non_cadre() },
-        statut_categoriel_rc: if est_cadre { "01" } else { "04" },
+        statut: m.statut(),
+        statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre() },
+        statut_categoriel_rc: if est_cadre { StatutCategorielRc::Cadre } else { StatutCategorielRc::NonCadre },
     })
 }
 
@@ -449,9 +449,9 @@ pub struct EmploiEngagement {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<Statut>,
+    pub statut_conventionnel: Option<StatutConventionnel>,
+    pub statut_categoriel_rc: Option<StatutCategorielRc>,
 }
 
 /// La fiche salarie `sal` (lue a la date de la periode) telle qu'elle vaut POUR CET ENGAGEMENT : ce que l'engagement
@@ -459,16 +459,10 @@ pub struct EmploiEngagement {
 pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
-    // Un choix que l'engagement dit se lit comme la fiche le lirait (`fiche::Statut`...) : hors de la liste, il se refuse.
-    fn choix<T: serde::de::DeserializeOwned>(v: &str, cle: &str) -> R<T> {
-        use serde::de::IntoDeserializer;
-        let ecrit: serde::de::value::StrDeserializer<serde::de::value::Error> = v.into_deserializer();
-        T::deserialize(ecrit)
-            .map_err(|_| socle::refus!("L'engagement dit « {} » pour {}, qui n'est pas un choix de la fiche du salarié.", v, cle.replace('_', " ")))
-    }
-    let pris = [&eng.emploi, &eng.pcs_ese, &eng.code_emploi_ft, &eng.statut, &eng.statut_conventionnel, &eng.statut_categoriel_rc];
+    let pris = [&eng.emploi, &eng.pcs_ese, &eng.code_emploi_ft];
     let affichage = dit(&eng.emploi_affichage);
-    if pris.iter().all(|v| dit(v).is_none()) && affichage.is_none() {
+    let statuts_dits = eng.statut.is_some() || eng.statut_conventionnel.is_some() || eng.statut_categoriel_rc.is_some();
+    if pris.iter().all(|v| dit(v).is_none()) && !statuts_dits && affichage.is_none() {
         return Ok(out);
     }
     if let Some(v) = dit(&eng.emploi) {
@@ -480,14 +474,14 @@ pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> 
     if let Some(v) = dit(&eng.code_emploi_ft) {
         out.code_emploi_ft = Some(v);
     }
-    if let Some(v) = dit(&eng.statut) {
-        out.statut = Some(choix(&v, "statut")?);
+    if let Some(v) = eng.statut {
+        out.statut = Some(v);
     }
-    if let Some(v) = dit(&eng.statut_conventionnel) {
-        out.statut_conventionnel = Some(choix(&v, "statut_conventionnel")?);
+    if let Some(v) = eng.statut_conventionnel {
+        out.statut_conventionnel = Some(v);
     }
-    if let Some(v) = dit(&eng.statut_categoriel_rc) {
-        out.statut_categoriel_rc = Some(choix(&v, "statut_categoriel_rc")?);
+    if let Some(v) = eng.statut_categoriel_rc {
+        out.statut_categoriel_rc = Some(v);
     }
     // Un metier choisi sur la ligne : son libelle lisible aussi, tel que
     // l'engagement l'a resolu (au feminin si la fiche le dit) ; a defaut, le

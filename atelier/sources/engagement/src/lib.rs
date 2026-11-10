@@ -52,6 +52,7 @@ use socle::forme::NombreLu;
 
 use droit::catalogue::rubrique;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
+use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
 use droit::natures::{Nature, NatureDeContrat};
 pub use ligne::{Chiffre, DateDeLigne, LignePaie};
 use socle::date::Jour;
@@ -99,9 +100,9 @@ pub struct Engagement {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<Statut>,
+    pub statut_conventionnel: Option<StatutConventionnel>,
+    pub statut_categoriel_rc: Option<StatutCategorielRc>,
     /// L'etablissement (NIC) ou le salarie est rattache pour CE contrat, quand la compagnie en a plusieurs ; `None` : le
     /// principal. La fiche du salarie le porte pour la paie et les declarations du contrat (`calcul::fiche_de_l_engagement`).
     pub etablissement: Option<String>,
@@ -182,9 +183,9 @@ pub struct Assemble {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<Statut>,
+    pub statut_conventionnel: Option<StatutConventionnel>,
+    pub statut_categoriel_rc: Option<StatutCategorielRc>,
     pub etablissement: Option<String>,
     pub quotite_contrat: Option<Chiffre>,
     pub quotite_reference_saisie: Option<Chiffre>,
@@ -1050,9 +1051,9 @@ pub(crate) fn engagements(
             emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
             pcs_ese: ecrit(&carte.pcs_ese).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
             code_emploi_ft: ecrit(&carte.code_emploi_ft).or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
-            statut: ecrit(&carte.statut).or_else(|| d.map(|d| d.statut.clone())),
-            statut_conventionnel: ecrit(&carte.statut_conventionnel).or_else(|| d.and_then(|d| d.statut_conventionnel.clone())),
-            statut_categoriel_rc: ecrit(&carte.statut_categoriel_rc).or_else(|| d.map(|d| d.statut_categoriel_rc.to_string())),
+            statut: carte.statut.or_else(|| d.map(|d| d.statut)),
+            statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),
+            statut_categoriel_rc: carte.statut_categoriel_rc.or_else(|| d.map(|d| d.statut_categoriel_rc)),
             // Le libelle que `resoudre` a donne a CE metier, feminin compris ; un `emploi` ecrit a la main dirait un autre
             // metier que lui.
             emploi_affichage: if ecrit(&carte.emploi).is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },

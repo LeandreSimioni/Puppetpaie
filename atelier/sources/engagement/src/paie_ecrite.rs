@@ -229,9 +229,9 @@ pub struct FormeDEngagement {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<droit::fiche::Statut>,
+    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
+    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
     pub etablissement: Option<String>,
     pub nature: droit::natures::NatureDeContrat,
     #[serde(with = "nombre_opt")]

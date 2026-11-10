@@ -453,9 +453,9 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         emploi_affichage: texte(&eng.emploi_affichage),
         pcs_ese: texte(&eng.pcs_ese),
         code_emploi_ft: texte(&eng.code_emploi_ft),
-        statut: texte(&eng.statut),
-        statut_conventionnel: texte(&eng.statut_conventionnel),
-        statut_categoriel_rc: texte(&eng.statut_categoriel_rc),
+        statut: eng.statut,
+        statut_conventionnel: eng.statut_conventionnel,
+        statut_categoriel_rc: eng.statut_categoriel_rc,
     };
     let lue = emploi_de(&ctx.salarie_au(fiche.id.as_str(), &eng.debut)?, &emploi)?;
     let mut m = match &eng.spectacle {

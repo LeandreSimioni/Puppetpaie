@@ -214,9 +214,9 @@ pub struct EmploiImprime {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<droit::fiche::Statut>,
+    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
+    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
 }
 
 /// Le bulletin qui a complete la paie : sa copie, sa page, le logiciel qui l'a fait, son numero, le numero du contrat
@@ -610,9 +610,9 @@ impl Importe {
             emploi_affichage: imprime(|i| &i.emploi_affichage),
             pcs_ese: imprime(|i| &i.pcs_ese),
             code_emploi_ft: imprime(|i| &i.code_emploi_ft),
-            statut: imprime(|i| &i.statut),
-            statut_conventionnel: imprime(|i| &i.statut_conventionnel),
-            statut_categoriel_rc: imprime(|i| &i.statut_categoriel_rc),
+            statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
+            statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
+            statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
             etablissement: None,
             nature,
             quotite_contrat: quotite,

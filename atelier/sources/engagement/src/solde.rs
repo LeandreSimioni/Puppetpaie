@@ -104,7 +104,7 @@ pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
         }
         None => None,
     };
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut })
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut.map(|s| s.as_str().to_string()), metier: dite(&e.metier), cadre: e.cadre, debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.

@@ -1683,7 +1683,7 @@ metiers, ou saisir « Cadre ou non cadre » et « Classement conventionnel (DSN)
         Some(sc) => Some(sc),
         None => m.as_ref().and_then(|m| match rc.as_str() {
             "01" => Some("04".to_string()),
-            "04" => m.statut_non_cadre(),
+            "04" => m.statut_non_cadre().map(|s| s.as_str().to_string()),
             _ => None,
         }),
     };

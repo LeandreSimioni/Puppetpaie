@@ -221,8 +221,9 @@ fn comparer_une(
     // chaque fois sous le sien.
     let dit = |v: &Option<String>| v.clone().filter(|x| !x.is_empty());
     let imprime = |champ: fn(&crate::importe::EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| dit(champ(i)));
-    c.statut = imprime(|i| &i.statut).or_else(|| fiche.statut.dite().map(|s| s.as_str().to_string()));
-    c.cadre = imprime(|i| &i.statut_categoriel_rc).map(|s| s == "01").or_else(|| fiche.statut_categoriel_rc.dite().map(|s| *s == droit::fiche::StatutCategorielRc::Cadre));
+    let imprimes = p.emploi_imprime.as_ref();
+    c.statut = imprimes.and_then(|i| i.statut).or_else(|| fiche.statut.dite().copied()).map(|s| s.as_str().to_string());
+    c.cadre = imprimes.and_then(|i| i.statut_categoriel_rc).map(|s| s == droit::fiche::StatutCategorielRc::Cadre).or_else(|| fiche.statut_categoriel_rc.dite().map(|s| *s == droit::fiche::StatutCategorielRc::Cadre));
     let Some(cotisations) = &p.cotisations else {
         return Err(refus("la paie importée n'a pas de bulletin : la DSN seule ne porte pas ses lignes de cotisation"));
     };
@@ -335,9 +336,9 @@ fn comparer_une(
         emploi: imprime(|i| &i.emploi),
         pcs_ese: imprime(|i| &i.pcs_ese),
         code_emploi_ft: imprime(|i| &i.code_emploi_ft),
-        statut: imprime(|i| &i.statut),
-        statut_conventionnel: imprime(|i| &i.statut_conventionnel),
-        statut_categoriel_rc: imprime(|i| &i.statut_categoriel_rc),
+        statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
+        statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
+        statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
         lignes: Some(saisies),
         // Le jour ou l'ancien logiciel a verse : un fait (`Carte::importe`).
         date_paiement: p.verse_le.map(|j| j.iso()),
