@@ -430,11 +430,10 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
     };
     let mut entrees: Vec<&droit::forme_bareme::Datee> = liste.iter().collect();
     // Une valeur sans `depuis` est celle de tout temps (`droit::forme_bareme::Datee`) : elle vient avant les autres.
-    entrees.sort_by_key(|e| e.depuis.clone());
+    entrees.sort_by_key(|e| e.depuis);
     let mut val = None;
     for e in entrees {
-        let depuis = e.depuis.as_deref().map(Jour::lire).transpose()?;
-        if depuis.is_none_or(|d| d <= jour) {
+        if e.depuis.is_none_or(|d| d <= jour) {
             val = Some(e.valeur);
         }
     }

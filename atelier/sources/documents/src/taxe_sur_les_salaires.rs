@@ -269,12 +269,8 @@ art. 293 B) : ils se lisent dans cet article, pour le chiffre d'affaires de {}. 
             plafonds: None,
         });
     };
-    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03) ; une date du bareme qui ne se
-    // lit pas est un bareme fautif.
-    let vigueur = match pf {
-        Some(pf) => Some(socle::date::Jour::lire(&pf.en_vigueur_depuis)?),
-        None => None,
-    };
+    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03).
+    let vigueur = pf.map(|pf| pf.en_vigueur_depuis);
     let depuis = if let Some(j) = vigueur.filter(|j| j.an == annee && (j.mois, j.jour) != (1, 1)) {
         format!(", en vigueur depuis le {}", j.jj_mm_aaaa())
     } else {

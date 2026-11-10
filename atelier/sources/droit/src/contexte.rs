@@ -208,11 +208,11 @@ struct FichierEffectifs {
 struct EffectifEcrit {
     valeur: f64,
     #[serde(rename = "calcule_le")]
-    _calcule_le: Option<String>,
+    _calcule_le: Option<socle::paris::InstantEcrit>,
     #[serde(rename = "source")]
     _source: Option<String>,
     #[serde(rename = "dit_le")]
-    _dit_le: Option<String>,
+    _dit_le: Option<Jour>,
 }
 
 /// Lit `config/effectifs.json` (absent : vide).
@@ -911,8 +911,8 @@ fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &Effectif, ou: &str) ->
 fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Option<(Jour, Decimal)>> {
     let mut entrees: Vec<(Jour, Decimal)> = Vec::new();
     for e in liste {
-        let depuis = e.depuis.as_deref().ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "smic_horaire.depuis", ""))?;
-        entrees.push((Jour::lire(depuis)?, e.valeur));
+        let depuis = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "smic_horaire.depuis", ""))?;
+        entrees.push((depuis, e.valeur));
     }
     entrees.sort_by_key(|(j, _)| *j);
     Ok(entrees.into_iter().filter(|(j, _)| j <= jour).last())

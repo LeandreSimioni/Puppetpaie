@@ -211,7 +211,7 @@ forme_notee! {
         pub socle: Decimal,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub part_au_dela: Decimal,
-        pub depuis: String,
+        pub depuis: Jour,
     }
 }
 
@@ -581,11 +581,9 @@ pub fn iso(s: &str) -> Option<Jour> {
     }
 }
 
-/// Les annees revolues de `depuis` au `jour` (une anciennete, un age) ; `None` si l'une des dates ne se lit pas.
-pub fn ans_revolus(depuis: &str, jour: Option<&str>) -> Option<i64> {
-    let a = iso(depuis)?;
-    let b = iso(jour?)?;
-    Some(b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour)))
+/// Les annees revolues de `a` au `b` (une anciennete, un age).
+pub fn ans_revolus(a: Jour, b: Jour) -> i64 {
+    b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour))
 }
 
 /// Un minimum : le montant, d'ou il vient, et s'il se compare a l'unite.

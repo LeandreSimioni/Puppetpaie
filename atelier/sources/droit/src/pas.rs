@@ -86,20 +86,6 @@ pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
     Jour::nouveau(nombre_de(&c[..4]) as i32, nombre_de(&c[4..6]), nombre_de(&c[6..8]))
 }
 
-/// Une date `AAAA-MM-JJ` stricte.
-fn depuis_iso(s: &str) -> R<Jour> {
-    let faux = || refus(format!("date illisible : {}", repr(s)));
-    let c: Vec<char> = s.chars().collect();
-    if c.len() != 10 || c[4] != '-' || c[7] != '-' {
-        return Err(faux());
-    }
-    let tranche = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-    match (chiffres(&tranche(0, 4), 4), chiffres(&tranche(5, 7), 2), chiffres(&tranche(8, 10), 2)) {
-        (Some(a), Some(m), Some(j)) => Jour::nouveau(nombre_de(&a) as i32, nombre_de(&m), nombre_de(&j)).ok_or_else(faux),
-        _ => Err(faux()),
-    }
-}
-
 /// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
 pub fn fin_de_validite(e: &TauxPas) -> Option<Jour> {
     let debut = mise_a_disposition(e)?;
@@ -214,7 +200,7 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
     let mut meilleure: Option<&GrillePas> = None;
     for g in grilles.iter().filter(|g| g.zone == zone) {
         if let Some(l) = le {
-            if depuis_iso(&g.depuis)? > l {
+            if g.depuis > l {
                 continue;
             }
         }

@@ -26,6 +26,17 @@ macro_rules! forme {
             pub note: Option<String>,
         }
     };
+    // Une forme qui porte un jour exige : elle n'a pas de valeur vide.
+    (sans_vide $(#[$m:meta])* pub struct $nom:ident { $($corps:tt)* }) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        pub struct $nom {
+            $($corps)*
+            pub source: Option<Fondement>,
+            pub note: Option<String>,
+        }
+    };
 }
 
 /// Un decimal qui se date, lu seul : un champ `Option<NombreDate>` n'a besoin d'aucun attribut (absent ou nul : vide).
@@ -88,7 +99,7 @@ impl<'de> Deserialize<'de> for TauxDate {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Datee {
-    pub depuis: Option<String>,
+    pub depuis: Option<socle::date::Jour>,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub valeur: Decimal,
     pub source: Fondement,
@@ -109,7 +120,7 @@ enum Ecrite<T> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Entree<T> {
-    depuis: Option<String>,
+    depuis: Option<socle::date::Jour>,
     valeur: T,
     accord: Option<String>,
     #[allow(dead_code)]
@@ -180,13 +191,12 @@ pub(crate) mod datee {
     fn retenir<T>(entrees: Vec<Entree<T>>, lecture: &mut super::Lecture) -> socle::echec::R<T> {
         let mut datees: Vec<(Option<Jour>, T)> = Vec::new();
         for e in entrees {
-            let depuis = e.depuis.as_deref().map(Jour::lire).transpose()?;
             let depuis = match e.accord {
-                None => depuis,
+                None => e.depuis,
                 Some(source) => {
                     let t = crate::minima::table()?;
                     let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", &source))?;
-                    let ecrit = depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
+                    let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
                     match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), ecrit) {
                         Some(j) => Some(j),
                         None => continue,
@@ -353,6 +363,7 @@ forme! {
 }
 
 forme! {
+    sans_vide
     pub struct TaxeSurLesSalaires {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub taux_normal: Decimal,
@@ -375,12 +386,13 @@ forme! {
 }
 
 forme! {
+    sans_vide
     pub struct PlafondsFranchise {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub prestations_de_services: Decimal,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub total: Decimal,
-        pub en_vigueur_depuis: String,
+        pub en_vigueur_depuis: socle::date::Jour,
     }
 }
 
@@ -399,9 +411,10 @@ forme! {
 }
 
 forme! {
+    sans_vide
     /// Une grille du taux par defaut (CGI 204 H, III) : ses tranches `[jusqu'a, taux]`.
     pub struct GrillePas {
-        pub depuis: String,
+        pub depuis: socle::date::Jour,
         pub zone: String,
         #[serde(rename = "type")]
         pub genre: String,

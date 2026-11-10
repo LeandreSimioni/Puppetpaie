@@ -428,8 +428,8 @@ pub struct Ligne {
     /// Sa piece (`Attendu::piece`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub piece: Option<Piece>,
-    pub depuis: Option<String>,
-    pub jusqu_a: Option<String>,
+    pub depuis: Option<socle::date::Jour>,
+    pub jusqu_a: Option<socle::date::Jour>,
     pub note: Option<String>,
 }
 
@@ -457,8 +457,8 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
         organisme,
         organisme_fixe: spec.organisme_fixe,
         piece: spec.piece(),
-        depuis: spec.depuis.map(|j| j.iso()),
-        jusqu_a: spec.jusqu_a.map(|j| j.iso()),
+        depuis: spec.depuis,
+        jusqu_a: spec.jusqu_a,
         note: net(&spec.note),
     }
 }

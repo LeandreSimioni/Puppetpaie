@@ -150,15 +150,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     if lu.a_saisir {
         encarts.push(crate::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
-    let en_clair = |j: &Option<String>| -> R<Option<String>> {
-        match j.as_deref().filter(|j| !j.is_empty()) {
-            Some(j) => {
-                let tete = j.get(..10).ok_or_else(|| socle::refus!("jour illisible : {}", socle::fichiers::repr(j)))?;
-                Ok(Some(Jour::lire(tete)?.jj_mm_aaaa()))
-            }
-            None => Ok(None),
-        }
-    };
+    let en_clair = |j: &Option<Jour>| -> R<Option<String>> { Ok(j.map(|j| j.jj_mm_aaaa())) };
     let mut contrats = Vec::new();
     for ligne in lu.lignes {
         let periode = match (en_clair(&ligne.depuis)?, en_clair(&ligne.jusqu_a)?) {

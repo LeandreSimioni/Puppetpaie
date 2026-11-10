@@ -518,7 +518,7 @@ impl<'a> Cx<'a> {
                     &a.champ,
                 ));
             };
-            let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie).iso())) else {
+            let Some(n) = droit::minima::iso(&depuis.texte).map(|d| ans_revolus(d, jour_de_paie(self.paie))) else {
                 return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
             };
             if n < a.ans {
