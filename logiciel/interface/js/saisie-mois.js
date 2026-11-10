@@ -222,6 +222,11 @@ async function calculerApercu(lu) {
       div._bornes = p ? { debut: p.debut || "", fin: p.fin || "" } : null;
       div._contratDit = p ? p.contrat_dit : null;
       majContrat(div);
+      // CE QUE SA CARTE PROPOSE, le moteur le dit pour cet engagement (`propose` : ses rubriques, celle d'une ligne
+      // neuve) ; les déroulants le suivent.
+      div._propose = (p && p.propose) || null;
+      div._proposePour = salarieDuBloc(div);
+      reposerRubriques(div);
       // Un engagement auquel il manque un fait est enregistré tel quel : la carte dit ce qui manque, sans montant.
       const manques = part.filter((x) => x && x.a_completer);
       if (manques.length) {

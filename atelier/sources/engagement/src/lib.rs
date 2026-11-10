@@ -36,6 +36,7 @@ pub mod paie_ecrite;
 pub mod paies;
 pub mod permanents;
 pub mod portabilite;
+pub mod proposees;
 pub mod stock;
 pub mod versions;
 #[cfg(feature = "ecran")]

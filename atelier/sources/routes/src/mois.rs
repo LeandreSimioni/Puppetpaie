@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -75,7 +75,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -253,6 +253,9 @@ struct NouvelleCarte {
     /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
     /// propose ou en paie un.
     aide_vide: &'static str,
+    /// Les rubriques qu'une carte neuve propose avant de nommer son salarie, nature par nature (`natures`) : celles de sa
+    /// nature (`engagement::proposees`).
+    propose: std::collections::BTreeMap<String, engagement::proposees::Proposees>,
 }
 
 /// LE MOIS TEL QUE L'ECRAN L'OUVRE (`saisie`).
@@ -574,11 +577,17 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour()).map_err(Echec::from)?;
     let neuves: Vec<String> = p.natures_neuves().map_err(Echec::from)?.iter().map(|n| n.cle.clone()).collect();
+    let mut propose = std::collections::BTreeMap::new();
+    for n in &neuves {
+        let mensuelle = droit::natures::nature(n).map_err(Echec::from)?.mensuelle();
+        propose.insert(n.clone(), engagement::proposees::proposees(ctx, Some(mensuelle), None, &mois.premier_jour())?);
+    }
     let nouvelle_carte = NouvelleCarte {
         nature: engagement::carte::CDDU,
         nature_au_choix: neuves.len() > 1,
         natures: neuves,
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
+        propose,
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
@@ -1604,6 +1613,8 @@ pub(crate) struct VuePaie {
     taux_cachet: Option<socle::forme::NombreLu>,
     heures: Option<f64>,
     faits_avances: Vec<&'static str>,
+    /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).
+    propose: engagement::proposees::Proposees,
     cases: Vec<CaseDeFrais>,
     remuneration: Vec<LigneVue>,
     /// Les jours que la carte declare, sinon ceux du calcul ; le lieu qu'elle ecrit.
@@ -1755,6 +1766,9 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
         // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == "20")? } else { Vec::new() },
+        // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut de la fiche telle que la paie la lit (le metier de
+        // la carte par-dessus celle du salarie).
+        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), &data.mois.premier_jour())?,
         // LES CASES QU'UNE LIGNE DE FRAIS APPELLE : le lieu d'une nuitée, le restaurant d'un repas, le justificatif d'un
         // frais au-delà de sa limite (`engagement::frais_au_dela`).
         cases: e
@@ -1897,6 +1911,8 @@ struct PaieACompleter {
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,
+    /// Les rubriques que sa carte propose deja, lues sur sa saisie (`engagement::proposees::de_la_carte`).
+    propose: engagement::proposees::Proposees,
 }
 
 /// Le salarie tel que la carte le nomme.
@@ -2140,6 +2156,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     avertissements: [],
                     informations: [],
                     contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: e.nature.as_deref().filter(|n| !n.trim().is_empty()).map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
+                    propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.
                 r.blocs.push(None);

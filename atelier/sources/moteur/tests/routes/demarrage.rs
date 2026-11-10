@@ -8,8 +8,6 @@
 //!   La reponse sur la TVA (la taxe sur les salaires de la DSN de decembre) se demande d'avance.
 //! - Le SIREN et le NIC se deduisent du SIRET a l'enregistrement de la fiche (`routes::fiches::deriver`) : un SIRET est un
 //!   SIREN de 9 chiffres suivi d'un NIC de 5.
-//! - La rubrique d'une ligne de paie neuve (`etat.rubrique_par_defaut`, `catalogue::par_defaut`) : une rubrique de
-//!   salaire, jamais la premiere du catalogue trie (« Absence » dans une compagnie ou rien n'est coche).
 //!
 //! Chaque test cree sa compagnie par `compagnies::ajouter_venant`, comme le « + » d'un logiciel bride.
 

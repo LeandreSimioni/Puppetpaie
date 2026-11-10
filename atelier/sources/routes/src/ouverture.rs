@@ -1177,14 +1177,6 @@ const GENRES_EN_CLAIR: [(&str, &str); 5] = [("02", "repas"), ("03", "logement"),
 /// L'aide du choix « Lieu » d'une ligne de frais.
 const LIEU_AIDE: &str = "Où dort et mange le salarié : hors de la métropole, la limite exonérée change ; à l'étranger, c'est l'indemnité du pays pour la nuitée et les repas du jour.";
 
-/// `rubriques` : le catalogue qui PAIE, dans l'ordre ou le proposer.
-/// Les formes de paie dont la carte propose une ligne de la rubrique `r` (`"activite"`, `"mensuelle"`).
-fn formes_de(r: &Rubrique) -> Vec<&'static str> {
-    let activite = r.reservee_a() != Some("mensuelle");
-    let mensuelle = engagement::a_une_limite(&r.code);
-    [("activite", activite), ("mensuelle", mensuelle)].into_iter().filter(|(_, oui)| *oui).map(|(f, _)| f).collect()
-}
-
 /// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Choix {
@@ -1233,11 +1225,6 @@ pub(crate) struct RubriqueDeLaPage {
     plafond_mensuel: Option<i64>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: String,
-    /// Les cartes qui la proposent en ligne (« activite », « mensuelle ») : un contrat paye au mois ne porte en ligne que
-    /// ses repas et ses nuitees (`engagement::a_une_limite`), un contrat d'usage tout ce qui n'est pas reserve au mois.
-    formes: Vec<&'static str>,
-    /// Le statut du salarie auquel elle est reservee (« artiste »), ou rien : `statut` de `salaries` de la route etat.
-    reservee_au_statut: Option<&'static str>,
     genres: Vec<Choix>,
     /// CE QUE LA RUBRIQUE PROMET SANS QUE RIEN NE LE TIENNE.
     non_appliques: Vec<&'static str>,
@@ -1309,8 +1296,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> Resultat<RubriqueDeLaPage> {
         plafond_mensuel: r.plafond_mensuel,
         plafond_annuel_heures: r.plafond_annuel_heures,
         origine: r.origine.clone(),
-        formes: formes_de(r),
-        reservee_au_statut: r.reservee_au_statut(),
         genres,
         non_appliques,
         source: r.source.clone(),
@@ -1509,12 +1494,12 @@ fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
 
 // -------------------------------------------------------------------- l'etat
 
-/// Un salarie des listes ou l'on choisit : sa cle, son nom, et son statut comme la paie le lit.
+/// Un salarie des listes ou l'on choisit : sa cle et son nom. Ce que sa carte propose, la carte le dit
+/// (`engagement::proposees`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct SalarieDeLaListe {
     cle: String,
     libelle: String,
-    statut: String,
 }
 
 /// Un spectacle des listes ou l'on choisit : sa cle, son titre et son numero d'objet, tels que sa fiche les porte.
@@ -1523,20 +1508,6 @@ struct SpectacleDeLaListe {
     cle: String,
     titre: String,
     numero_objet: Option<String>,
-}
-
-/// La rubrique d'une ligne neuve, par statut du salarie.
-#[derive(Debug, Clone, serde::Serialize)]
-struct ParStatut {
-    artiste: Option<String>,
-    technicien: Option<String>,
-}
-
-/// La rubrique d'une ligne neuve sur la carte d'un contrat d'usage (`activite`) et d'un contrat paye au mois.
-#[derive(Debug, Clone, serde::Serialize)]
-struct RubriqueParDefaut {
-    activite: ParStatut,
-    mensuelle: ParStatut,
 }
 
 /// Un organisme de recouvrement que la DPAE fait choisir.
@@ -1567,7 +1538,6 @@ pub(crate) struct EtatDeLaPage {
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
-    rubrique_par_defaut: RubriqueParDefaut,
     emplois: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<String>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
@@ -1600,14 +1570,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     cles.sort();
     let salaries = cles
         .into_iter()
-        .map(|k| {
-            // Son statut, comme la paie le lit (vide, un artiste) : les rubriques `reservee_au_statut` s'y comparent.
-            let statut = match ctx.salaries.get(k).and_then(|f| f.statut.dite()) {
-                Some(s) => s.as_str().to_string(),
-                None => droit::fiche::Statut::Artiste.as_str().to_string(),
-            };
-            SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k), statut }
-        })
+        .map(|k| SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k) })
         .collect();
     let spectacles = ctx
         .spectacles_actifs()
@@ -1623,16 +1586,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let cat = catalogue::catalogue(&ctx.racine, &ctx.lue_au).map_err(plain)?;
     // Une rubrique que le moteur pose (`saisie` vide) ne se propose pas.
     let rubriques: Vec<RubriqueDeLaPage> = cat.iter().filter(|r| !r.saisie.is_empty()).map(rubrique_de_la_page).collect::<Resultat<_>>().map_err(plain)?;
-    // La rubrique d'une ligne neuve, par forme de paie et par statut du salarie (sans salarie, celui d'un artiste, comme
-    // la paie le lit) : le moteur la choisit, la page la pose. Sur la carte d'un contrat d'usage, la premiere rubrique de
-    // salaire qu'il propose (`catalogue::par_defaut`) ; sur celle d'un contrat paye au mois, son premier frais
-    // (`engagement::a_une_limite`), dans l'ordre du catalogue.
-    let activite = |statut: &str| catalogue::par_defaut(&cat, "activite", statut).map(|r| r.code.clone());
-    let au_mois = cat.iter().find(|r| !r.saisie.is_empty() && engagement::a_une_limite(&r.code)).map(|r| r.code.clone());
-    let rubrique_par_defaut = RubriqueParDefaut {
-        activite: ParStatut { artiste: activite("artiste"), technicien: activite("technicien") },
-        mensuelle: ParStatut { artiste: au_mois.clone(), technicien: au_mois },
-    };
     // LA FIN D'UN CONTRAT, telle qu'elle se saisit. Les types de preavis
     // SAISISSABLES seulement.
     let fctu = droit::preavis::base().map_err(plain)?;
@@ -1675,7 +1628,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         salaries,
         spectacles,
         rubriques,
-        rubrique_par_defaut,
         // Le catalogue des metiers, deja dans l'ordre des familles.
         emplois: super::metiers::metiers(ctx)?,
         familles_emplois: emplois::familles().map_err(plain)?,
