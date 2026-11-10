@@ -261,7 +261,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
     for r in regs {
         let s = &r.apres.salarie;
         if s.nom.is_none() {
-            return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
+            return Err(Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent("nom") });
         }
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",

@@ -1487,7 +1487,7 @@ contrat). Rien n'est ecrit.",
 
 /// La rubrique est-elle admise pour cette nature dans le tableau des usages de la version du fichier ?
 pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: &str) -> R<bool> {
-    Ok(f.norme()?.admet(rubrique, nature_dsn)?)
+    f.norme()?.admet(rubrique, nature_dsn)
 }
 
 /// LA LICENCE D'ENTREPRENEUR DE SPECTACLES d'un contrat (S21.G00.40.049). « La licence est obligatoire pour toute

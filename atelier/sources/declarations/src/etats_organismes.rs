@@ -15,12 +15,17 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe};
+use socle::echec::{erreur, refus_avec, APart, Classe, Echec};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
 use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
+
+/// Le refus, de la classe `classe` : ce qu'il porte a part reste a part.
+fn en(classe: Classe) -> impl Fn(Echec) -> Echec {
+    move |m| Echec { classe: Some(classe), ..m }
+}
 
 /// `min(a, b)` : le premier des deux quand ils sont egaux.
 fn plus_petit(a: Decimal, b: Decimal) -> Decimal {
@@ -81,11 +86,11 @@ fn annees_du_socle(ctx: &Contexte) -> Vec<i32> {
 /// Ce que la convention `idcc` fait payer hors du bulletin (`hors_bulletin`), dans le socle livre de l'annee `an`, a
 /// defaut dans le plus recent livre.
 fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &str) -> R<Option<droit::forme_bareme::HorsBulletin>> {
-    let socle = match droit::contexte::socle_livre_lu(an).map_err(|m| erreur(Classe::Disque, m))? {
+    let socle = match droit::contexte::socle_livre_lu(an).map_err(en(Classe::Disque))? {
         Some(s) => s,
         None => {
             let derniere = annees_du_socle(ctx).into_iter().max().ok_or_else(|| erreur(Classe::Illisible, "max() arg is an empty sequence"))?;
-            match droit::contexte::socle_livre_lu(derniere).map_err(|m| erreur(Classe::Disque, m))? {
+            match droit::contexte::socle_livre_lu(derniere).map_err(en(Classe::Disque))? {
                 Some(s) => s,
                 None => return Ok(None),
             }
@@ -100,7 +105,7 @@ fn annee_entiere(an: &str) -> R<i32> {
 
 /// L'IDCC de la fiche entreprise, que chacun de ces etats exige.
 fn idcc_de(ctx: &Contexte) -> R<String> {
-    ctx.entreprise.idcc.ecrite("idcc").map(str::to_string).map_err(refus)
+    ctx.entreprise.idcc.ecrite("idcc").map(str::to_string).map_err(en(Classe::Refuse))
 }
 
 // ===================================== 6. les cotisations par organisme
@@ -193,7 +198,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {
                             if !part.is_zero() {
-                                let o = org_de(id_org).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(id_org)))?;
+                                let o = org_de(id_org).ok_or_else(|| en(Classe::Manque)(socle::fichiers::absent(id_org)))?;
                                 ajouter(&m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, zero, None, -part);
                                 reparti = add(reparti, part);
                             }
@@ -273,7 +278,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(String, Vec<engagement::calcul::Paie>)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
     for m in &p.mois {
-        let paies = engagement::etats::paies_du_mois(ctx, m, departs).map_err(refus)?;
+        let paies = engagement::etats::paies_du_mois(ctx, m, departs).map_err(en(Classe::Refuse))?;
         if paies.is_empty() {
             sans.push(m.clone());
         } else {
@@ -311,9 +316,9 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
     let principal = ctx.entreprise.nic_principal();
     for m in p.mois.iter().filter(|m| !importes.contains(m)) {
         let mut une = false;
-        for nic in ctx.entreprise.nics().map_err(refus)? {
+        for nic in ctx.entreprise.nics().map_err(en(Classe::Refuse))? {
             let etablissement = if Some(nic.as_str()) == principal { None } else { Some(nic.as_str()) };
-            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| refus(String::from(e)))? {
+            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(en(Classe::Refuse))? {
                 out.push((m.clone(), nic, f, partie));
                 une = true;
             }
@@ -462,11 +467,11 @@ fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
     if !p.exists() {
         return Ok(Vec::new());
     }
-    let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+    let octets = std::fs::read(&p).map_err(|e| en(Classe::Disque)(socle::echec::du_disque(&p, &e)))?;
     let texte = String::from_utf8_lossy(&octets).into_owned();
     let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
     let Some((entete, corps)) = rangs.split_first() else { return Ok(Vec::new()) };
-    let illisible = |quoi: &str| erreur(Classe::Illisible, socle::echec::avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }));
+    let illisible = |quoi: &str| en(Classe::Illisible)(refus_avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }));
     let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
     let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
     let mut out: Vec<(String, String)> = Vec::new();
@@ -556,7 +561,7 @@ fn refuse_un_mois(quoi: &str, d: &Demande) -> R<()> {
 pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     refuse_un_mois("Le FCAP-SVP est une contribution annuelle : il se demande pour une année, ou pour toutes les années.", d)?;
     let idcc = idcc_de(ctx)?;
-    let Some(fp) = droit::bareme::prevoyance::financement(&idcc).map_err(refus)? else {
+    let Some(fp) = droit::bareme::prevoyance::financement(&idcc).map_err(en(Classe::Refuse))? else {
         return Err(refus(format!(
             "Le FCAP-SVP est la contribution de la convention 3090 (titre V) ; la fiche entreprise dit IDCC {}. Il n'y a rien à calculer.",
             idcc
@@ -567,15 +572,15 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let (taux, plancher, plafond) = (fp.taux.0, fp.plancher.0, fp.plafond.0);
     let mut par_an: Vec<(String, i64, Decimal)> = Vec::new();
     let zero = zero2();
-    let orgs = ctx.organismes().map_err(refus)?;
+    let orgs = ctx.organismes().map_err(en(Classe::Refuse))?;
     for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
         let mut ta = zero;
         for q in &paies {
-            let nic = droit::bareme::etablissement_de(&ctx.entreprise, &q.salarie).map_err(refus)?;
-            let bar = crate::dsn::bar_du(&ctx.du_mois(&m).map_err(refus)?, &ctx.entreprise, &orgs, &nic, &m).map_err(refus)?;
+            let nic = droit::bareme::etablissement_de(&ctx.entreprise, &q.salarie).map_err(en(Classe::Refuse))?;
+            let bar = crate::dsn::bar_du(&ctx.du_mois(&m).map_err(en(Classe::Refuse))?, &ctx.entreprise, &orgs, &nic, &m).map_err(en(Classe::Refuse))?;
             for e in q.elementaires() {
-                ta = add(ta, crate::dsn::base_declaree(e, &bar, "02").map_err(refus)?);
+                ta = add(ta, crate::dsn::base_declaree(e, &bar, "02").map_err(en(Classe::Refuse))?);
             }
         }
         let an: String = m.chars().take(4).collect();
@@ -601,7 +606,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         // UNE ANNEE QUE LE LOGICIEL NE TIENT PAS EN ENTIER : la compagnie n'y a de paies (ecrites ou importees) qu'a
         // partir d'un mois apres janvier ; les mois d'avant manquent, la tranche A et la contribution sont partielles.
-        let premier = p.dispo.keys().next().map(|m| socle::mois::Mois::lire(m)).transpose().map_err(|e| erreur(Classe::Illisible, e))?.filter(|m| m.annee().to_string() == an);
+        let premier = p.dispo.keys().next().map(|m| socle::mois::Mois::lire(m)).transpose().map_err(en(Classe::Illisible))?.filter(|m| m.annee().to_string() == an);
         let regle = if let Some(premier) = premier.filter(|m| m.numero() > 1) {
             let titre = |m: socle::mois::Mois| m.libelle(socle::mois::Graphie::Titre);
             let (janvier, avant) = (socle::mois::Mois::nouveau(premier.annee(), 1)?, premier.precedent());
@@ -671,7 +676,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut par_an: Vec<(String, Decimal, Decimal)> = Vec::new();
     let zero = zero2();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
-    let mensuelles: Vec<String> = droit::natures::natures().map_err(|m| erreur(Classe::Refuse, m))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
+    let mensuelles: Vec<String> = droit::natures::natures().map_err(en(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
         let an: String = l.mois.chars().take(4).collect();
@@ -696,13 +701,13 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut cpnef = zero;
         if let Some(c) = &hb.cpnef_dialogue_social {
             let brut_cpnef = eur2(div(mul(masse, c.taux), Decimal::ONE_HUNDRED));
-            let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)));
+            let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| en(Classe::Manque)(socle::fichiers::absent(cle)));
             cpnef = plus_grand(borne(c.plancher.map(|n| n.0), "plancher")?, plus_petit(borne(c.plafond.map(|n| n.0), "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
-            .ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("contribution_conventionnelle_permanents")))?
+            .ok_or_else(|| en(Classe::Manque)(socle::fichiers::absent("contribution_conventionnelle_permanents")))?
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
@@ -711,7 +716,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 tranches
                     .iter()
                     .find(|x| x.jusqu_a.is_none_or(|j| eff <= j as f64))
-                    .ok_or_else(|| erreur(Classe::Manque, socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?
+                    .ok_or_else(|| en(Classe::Manque)(socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches")))?
                     .taux,
             ),
             None if masse_permanents.is_zero() => None,
