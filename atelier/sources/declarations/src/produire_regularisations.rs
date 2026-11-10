@@ -48,7 +48,7 @@ pub struct Reg {
 /// corrige toujours ailleurs : sa DSN n'a pas ete faite ici et ne se refait pas ici (regle 4).
 pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str) -> R<bool> {
     use engagement::departs::Envoi;
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(refus_valeur)?.is_some() {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(String::from).map_err(refus_valeur)?.is_some() {
         return Ok(true);
     }
     let partie = departs

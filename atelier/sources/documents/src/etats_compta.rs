@@ -1306,7 +1306,7 @@ fn provision_d_une_annee_importee(
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
     let continuent: BTreeSet<String> = engagement::importe::contrats_lus(&ctx.racine)
-        .map_err(ko)?
+        .map_err(|e| ko(e.into()))?
         .into_iter()
         .filter(|c| c.fin.as_deref().is_none_or(|f| f.is_empty() || f > fin.iso().as_str()))
         .map(|c| c.salarie)
