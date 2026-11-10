@@ -293,13 +293,6 @@ fn rond(x: Decimal) -> Decimal {
     bordereau::euro(x)
 }
 
-/// Une date `AAAA-MM-JJ` en JJMMAAAA.
-pub fn jj(v: &str) -> R<String> {
-    Ok(Jour::lire(v)?.jjmmaaaa())
-}
-
-
-
 fn tuple(j: Jour) -> (i32, u32, u32) {
     (j.an, j.mois, j.jour)
 }
@@ -461,7 +454,7 @@ pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: &str, banque: Option<&droit::
     f.add("S21.G00.60.001", &v.motif);
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
     f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
-    f.add("S21.G00.60.003", jj(&v.fin_previsionnelle)?);
+    f.add("S21.G00.60.003", v.fin_previsionnelle.jjmmaaaa());
     let subrogation = if usage_admet(f, "S21.G00.60.004", nature)? { dite(&v.subrogation) } else { None };
     if let Some(subrogation) = subrogation {
         f.add("S21.G00.60.004", subrogation);
@@ -470,29 +463,24 @@ pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: &str, banque: Option<&droit::
                 return Err(refus("Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont \
 obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."));
             };
-            f.add("S21.G00.60.005", jj_exige(&v.subrogation_debut, "subrogation_debut")?);
-            f.add("S21.G00.60.006", jj_exige(&v.subrogation_fin, "subrogation_fin")?);
+            f.add("S21.G00.60.005", v.subrogation_debut.ok_or_else(|| socle::fichiers::absent("subrogation_debut"))?.jjmmaaaa());
+            f.add("S21.G00.60.006", v.subrogation_fin.ok_or_else(|| socle::fichiers::absent("subrogation_fin"))?.jjmmaaaa());
             f.add("S21.G00.60.007", iban);
             f.add("S21.G00.60.008", bic);
         }
     }
-    if let Some(reprise) = dite(&v.reprise) {
-        f.add("S21.G00.60.010", jj(reprise)?);
+    if let Some(reprise) = v.reprise {
+        f.add("S21.G00.60.010", reprise.jjmmaaaa());
         if let Some(motif) = dite(&v.reprise_motif) {
             f.add("S21.G00.60.011", motif);
         }
     }
     if usage_admet(f, "S21.G00.60.012", nature)? {
-        if let Some(accident) = dite(&v.date_accident) {
-            f.add("S21.G00.60.012", jj(accident)?);
+        if let Some(accident) = v.date_accident {
+            f.add("S21.G00.60.012", accident.jjmmaaaa());
         }
     }
     Ok(())
-}
-
-/// La date `AAAA-MM-JJ` d'une case de l'arret que la rubrique exige, en JJMMAAAA ; vide, le refus la nomme.
-fn jj_exige(case: &Option<String>, cle: &str) -> R<String> {
-    jj(dite(case).ok_or_else(|| socle::fichiers::absent(cle))?)
 }
 
 /// Une correction d'un mois depose : ce qui a ete declare, et la paie corrigee.
@@ -4469,15 +4457,15 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
             .iter()
             .map(|a| {
                 let s = &a.saisi;
-                let fin = match dite(&s.reprise) {
+                let fin = match s.reprise {
                     Some(r) => r,
-                    None => s.fin_previsionnelle.as_str(),
+                    None => s.fin_previsionnelle,
                 };
                 let numero = match dite(&s.contrat_numero) {
                     Some(n) => n,
                     None => "sans numero",
                 };
-                format!("{} contrat {} ({} -> {})", s.salarie, numero, s.dernier_jour_travaille, fin)
+                format!("{} contrat {} ({} -> {})", s.salarie, numero, s.dernier_jour_travaille.iso(), fin.iso())
             })
             .collect();
         return Err(refus!(
@@ -4527,8 +4515,8 @@ retirer la ligne. Rien n'est ecrit.",
                 s.salarie,
                 s.contrat_numero.iter().map(|n| format!(" {}", n)).collect::<String>(),
                 s.motif,
-                s.debut,
-                s.fin
+                s.debut.iso(),
+                s.fin.iso()
             ));
         }
     }
@@ -5275,20 +5263,21 @@ mod tests {
     // ------------------------------------------------------------ l'arret de travail
 
     fn arret(reprise: Option<&str>, fin_previsionnelle: &str) -> Arret {
+        let j = |t: &str| Jour::lire(t).unwrap();
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 genre: engagement::imprevus::GenreArret::Arret,
                 salarie: "Audinot".into(),
-                contrat_debut: "2025-09-01".into(),
+                contrat_debut: j("2025-09-01"),
                 contrat_numero: Some("AU.25.01".into()),
                 motif: "01".into(),
-                dernier_jour_travaille: "2026-06-20".into(),
-                debut: "2026-06-21".into(),
-                fin_previsionnelle: fin_previsionnelle.into(),
+                dernier_jour_travaille: j("2026-06-20"),
+                debut: j("2026-06-21"),
+                fin_previsionnelle: j(fin_previsionnelle),
                 subrogation: Some("02".into()),
                 subrogation_debut: None,
                 subrogation_fin: None,
-                reprise: reprise.map(String::from),
+                reprise: reprise.map(j),
                 reprise_motif: reprise.map(|_| "01".to_string()),
                 date_accident: None,
                 jours_deja_indemnises: None,

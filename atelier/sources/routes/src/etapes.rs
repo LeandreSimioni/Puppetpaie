@@ -175,7 +175,7 @@ pub(crate) enum ChargeDuGeste {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChargeObligationDArret {
     pub(crate) salarie: String,
-    pub(crate) dernier_jour: String,
+    pub(crate) dernier_jour: socle::date::Jour,
 }
 
 /// La charge du geste d'une echeance de l'annee (`cloture`, `export-compta`) : l'annee.

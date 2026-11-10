@@ -189,11 +189,6 @@ fn jour_ecrit(t: &str) -> R<Jour> {
     Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Un jour facultatif que le magasin ou le suivi ecrit : vide s'il n'est pas dit, lu sinon.
-fn jour_facultatif(t: &Option<String>) -> R<Option<Jour>> {
-    t.as_deref().filter(|j| !j.is_empty()).map(jour_ecrit).transpose()
-}
-
 fn plus(j: Jour, n: i64) -> R<Jour> {
     j.plus_jours(n).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
@@ -768,7 +763,7 @@ fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> 
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
     let Some(premier) = signalements.iter().map(|e| e.quand.as_str()).min() else { return Ok(None) };
     let Some(p) = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && p.saisi_le.as_str() > premier).last() else { return Ok(None) };
-    let depart = Depart { jour: jour_ecrit(&p.le)?, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
+    let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
     let rectificatif = signalements
         .iter()
         .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && e.quand >= p.saisi_le)
@@ -863,7 +858,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let (lignes, departs) = (journal.lignes, journal.departs);
     let salarie = lu.salarie();
     // Seul un arret a un dernier jour travaille, un jour declare et des mois traverses.
-    let dj = lu.arret().map(|a| a.dernier_jour_travaille.as_str()).filter(|d| d.len() == 10);
+    let dj = lu.arret().map(|a| a.dernier_jour_travaille);
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
     let declare = declare_lu.map(|j| j.iso());
@@ -904,7 +899,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
         match (nature.as_str(), dj, mois) {
             ("04" | "05", Some(dj), _) if declare.is_some() && d.evenement == declare && du_salarie => {
-                partis.push(EnvoiDeLArret { fichier: dans(&&dj[..7]), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
+                partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
             ("01", _, Some(mois)) if reporte(mois, &quand)? => {
                 partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
@@ -919,7 +914,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
 /// comptees au jour `aujourdhui` d'apres ce qui en est parti (`ce_qui_est_parti`).
 pub fn de_l_arret(ctx: &Contexte, a: &ArretSaisi, suivi: &Suivi, aujourdhui: Jour) -> R<Vec<Obligation>> {
     let envois = ce_qui_est_parti(ctx, &Imprevu::Arret(a.clone()))?;
-    obligations_de(ctx, &ArretLu::de(a)?, &envois, suivi.de(&a.salarie, &a.dernier_jour_travaille), aujourdhui)
+    obligations_de(ctx, &ArretLu::de(a)?, &envois, suivi.de(&a.salarie, &a.dernier_jour_travaille.iso()), aujourdhui)
 }
 
 /// CE QUE LES OBLIGATIONS LISENT D'UN ARRET : chaque fait, s'il est dit. Un arret du magasin les dit tous (`de`) ; un
@@ -943,12 +938,12 @@ impl<'a> ArretLu<'a> {
         let premier = engagement::imprevus::premier_jour(&Imprevu::Arret(a.clone())).map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(ArretLu {
             motif: Some(&a.motif),
-            dernier: Some(jour_ecrit(&a.dernier_jour_travaille)?),
+            dernier: Some(a.dernier_jour_travaille),
             debut: Some(premier),
-            fin: Some(jour_ecrit(&a.fin_previsionnelle)?),
-            reprise: jour_facultatif(&a.reprise)?,
+            fin: Some(a.fin_previsionnelle),
+            reprise: a.reprise,
             subrogation: a.subrogation.as_deref(),
-            date_accident: jour_facultatif(&a.date_accident)?,
+            date_accident: a.date_accident,
             prolongations: &a.prolongations,
         })
     }
@@ -1204,7 +1199,7 @@ fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(String, ArretSais
     let cle = ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))?.to_string();
     for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         if let Imprevu::Arret(a) = imp {
-            if a.salarie == cle && a.dernier_jour_travaille == dernier.iso() {
+            if a.salarie == cle && a.dernier_jour_travaille == *dernier {
                 return Ok((cle, a));
             }
         }
@@ -1287,10 +1282,10 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
     let heure = heure_saisie(dite.heure.as_deref())?;
     // Une heure dite sans jour : le jour de l'accident, celui que la saisie pre-remplit (`ConnaissanceDemandee`).
     let j = match (jour_saisi(ctx, &dite.jour, "La connaissance")?, &heure, de) {
-        (None, Some(_), DeQuoi::Accident) => jour_facultatif(&a.date_accident)?,
+        (None, Some(_), DeQuoi::Accident) => a.date_accident,
         (j, _, _) => j,
     };
-    if let (Some(j), DeQuoi::Accident, Some(acc)) = (j, de, jour_facultatif(&a.date_accident)?) {
+    if let (Some(j), DeQuoi::Accident, Some(acc)) = (j, de, a.date_accident) {
         if j < acc {
             return Err(refus(format!(
                 "Connu le {}, avant l'accident lui-meme (le {}) : ce n'est pas possible. Rien n'est ecrit.",
@@ -1304,7 +1299,7 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
 
 /// Ecrit dans la fiche de suivi de l'arret `a` ce que `connaissance_saisie` a controle.
 pub(crate) fn connaissance_ecrire(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, saisie: Option<ConnaissanceSaisie>) -> R<()> {
-    Suivi::lire(ctx)?.ecrire(ctx, &a.salarie, &a.dernier_jour_travaille, |f| match de {
+    Suivi::lire(ctx)?.ecrire(ctx, &a.salarie, &a.dernier_jour_travaille.iso(), |f| match de {
         DeQuoi::Arret => f.connaissance_arret = saisie,
         DeQuoi::Accident => f.connaissance_accident = saisie,
     })
@@ -1385,7 +1380,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     if !motif_appelle(f.obligation, &a.motif)? {
         return Err(refus(format!("L'arret de {} (motif {}) {}. Rien n'est ecrit.", cle, a.motif, f.hors_motif)));
     }
-    let dernier = a.dernier_jour_travaille.clone();
+    let dernier = a.dernier_jour_travaille.iso();
     let le = jour_saisi(ctx, &charge.le, f.quoi)?;
     let faite = match le {
         None => None,
@@ -1408,7 +1403,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 }
             }
             if f.accident {
-                if let Some(acc) = jour_facultatif(&a.date_accident)? {
+                if let Some(acc) = a.date_accident {
                     if le < acc {
                         return Err(refus(format!(
                             "Declaree le {}, avant l'accident lui-meme (le {}) : ce n'est pas possible. Rien n'est ecrit.",

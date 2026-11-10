@@ -545,22 +545,21 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     // LES ARRETS DE TRAVAIL : la DSN mensuelle REPORTE ceux que `Arret::a_reporter` y met, signales ou non.
     let arrets = &lu.arrets;
     let nomenclature = crate::metier::imprevus::nomenclatures()?;
-    let jour = |t: &str| -> R<String> { socle::date::Jour::lire(t).map(|j| j.jj_mm_aaaa()).map_err(|e| e.reclasser(Classe::Illisible)) };
     let mut non_signales = 0;
     for a in arrets {
         let a = &a.saisi;
         let resume = crate::imprevus::resume_arret(ctx, &nomenclature, a)?;
-        let reprise = a.reprise.as_deref().filter(|r| !r.is_empty());
+        let reprise = a.reprise;
         let fin = match reprise {
             Some(r) => r,
-            None => a.fin_previsionnelle.as_str(),
+            None => a.fin_previsionnelle,
         };
         avertissements.push(info(format!(
             "Arret de travail reporte dans la DSN : {}, {}, du {} au {}{}.",
             a.salarie,
             resume.motif_libelle,
             engagement::imprevus::dernier_jour_declare(a).map_err(|e| e.reclasser(Classe::Illisible))?.jj_mm_aaaa(),
-            jour(fin)?,
+            fin.jj_mm_aaaa(),
             if reprise.is_some() { " (reprise)" } else { " (fin previsionnelle)" }
         )));
         if !resume.signale {
@@ -570,7 +569,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     // LES SUSPENSIONS (bloc 65) : chacune se declare entiere dans la DSN de chaque mois qu'elle traverse.
     for s in crate::metier::imprevus::magasin(engagement::imprevus::du_mois(&ctx.racine, le_mois, Some(engagement::imprevus::SUSPENSION)))? {
         let engagement::imprevus::Imprevu::Suspension(s) = s else { continue };
-        avertissements.push(info(format!("Suspension declaree dans la DSN : {}, motif {}, du {} au {}.", s.salarie, s.motif, jour(&s.debut)?, jour(&s.fin)?)));
+        avertissements.push(info(format!("Suspension declaree dans la DSN : {}, motif {}, du {} au {}.", s.salarie, s.motif, s.debut.jj_mm_aaaa(), s.fin.jj_mm_aaaa())));
     }
     if non_signales > 0 {
         avertissements.push(avertissement(format!(

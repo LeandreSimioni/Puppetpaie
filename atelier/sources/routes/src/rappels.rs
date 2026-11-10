@@ -433,7 +433,7 @@ impl Echeance {
         use crate::imprevus::{ChargeArretSignaler, ChargeFinContratSignaler, NatureSignalement};
         // L'arret sur lequel porte l'obligation : son salarie et son dernier jour travaille.
         let arret = || match &self.objet {
-            Some(Objet::Arret(a)) => Some((a.salarie().to_string(), a.dernier_jour_travaille().to_string())),
+            Some(Objet::Arret(a)) => Some((a.salarie().to_string(), a.dernier_jour_travaille())),
             _ => None,
         };
         let salarie = || self.objet.as_ref().map(Objet::salarie);
@@ -452,8 +452,7 @@ impl Echeance {
                         action(Route::FinContratSignaler, ChargeFinContratSignaler::de(mois, s), Some(Route::Deposer), "Signaler…".into())
                     }
                     cle @ (C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise) => {
-                        let Some((s, dernier)) = arret() else { return Ok(None) };
-                        let dernier_jour = Jour::lire(&dernier).map_err(|m| m.reclasser(Classe::Illisible))?;
+                        let Some((s, dernier_jour)) = arret() else { return Ok(None) };
                         let nature = if cle == C::SignalementReprise { NatureSignalement::Reprise } else { NatureSignalement::Arret };
                         action(Route::ArretSignaler, ChargeArretSignaler::de(s, dernier_jour, nature), Some(Route::Deposer), "Signaler…".into())
                     }
@@ -1270,11 +1269,11 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
             }
             let resume = crate::imprevus::resume_d_arret_complet(st.ctx, &n, a, &suivi, st.aujourdhui)?;
             let nom = st.ctx.nomme(&a.salarie);
-            let dernier = Jour::lire(&a.dernier_jour_travaille)?;
+            let dernier = a.dernier_jour_travaille;
             for o in obligations.iter().filter(|o| du(o)) {
                 let mut r = rappel_d_obligation(
                     o,
-                    format!("{}:{}:{}", o.cle, a.salarie, a.dernier_jour_travaille),
+                    format!("{}:{}:{}", o.cle, a.salarie, dernier.iso()),
                     format!("{} — {}", o.libelle, nom),
                     format!("{}.", resume.en_clair()),
                     Objet::Arret(Box::new(resume.clone())),

@@ -77,18 +77,18 @@ pub enum GenreSuspension {
 pub struct ArretSaisi {
     pub genre: GenreArret,
     pub salarie: String,
-    pub contrat_debut: String,
+    pub contrat_debut: Jour,
     pub contrat_numero: Option<String>,
     pub motif: String,
-    pub dernier_jour_travaille: String,
-    pub debut: String,
-    pub fin_previsionnelle: String,
+    pub dernier_jour_travaille: Jour,
+    pub debut: Jour,
+    pub fin_previsionnelle: Jour,
     pub subrogation: Option<String>,
-    pub subrogation_debut: Option<String>,
-    pub subrogation_fin: Option<String>,
-    pub reprise: Option<String>,
+    pub subrogation_debut: Option<Jour>,
+    pub subrogation_fin: Option<Jour>,
+    pub reprise: Option<Jour>,
     pub reprise_motif: Option<String>,
-    pub date_accident: Option<String>,
+    pub date_accident: Option<Jour>,
     pub jours_deja_indemnises: Option<Chiffre>,
     pub ij_brute: Option<Chiffre>,
     pub ij_nette: Option<Chiffre>,
@@ -106,25 +106,25 @@ pub struct ArretSaisi {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prolongation {
-    pub le: String,
+    pub le: Jour,
     pub saisi_le: String,
     pub qui: String,
-    pub fin_avant: String,
-    pub fin: String,
-    pub subrogation_fin_avant: Option<String>,
-    pub subrogation_fin: Option<String>,
+    pub fin_avant: Jour,
+    pub fin: Jour,
+    pub subrogation_fin_avant: Option<Jour>,
+    pub subrogation_fin: Option<Jour>,
 }
 
 /// UNE REPRISE NOTEE OU EFFACEE : quand, et la reprise et son motif d'avant et d'apres.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepriseNotee {
-    pub le: String,
+    pub le: Jour,
     pub saisi_le: String,
     pub qui: String,
-    pub reprise_avant: Option<String>,
+    pub reprise_avant: Option<Jour>,
     pub reprise_motif_avant: Option<String>,
-    pub reprise: Option<String>,
+    pub reprise: Option<Jour>,
     pub reprise_motif: Option<String>,
 }
 
@@ -135,11 +135,11 @@ pub struct RepriseNotee {
 pub struct SuspensionSaisie {
     pub genre: GenreSuspension,
     pub salarie: String,
-    pub contrat_debut: String,
+    pub contrat_debut: Jour,
     pub contrat_numero: Option<String>,
     pub motif: String,
-    pub debut: String,
-    pub fin: String,
+    pub debut: Jour,
+    pub fin: Jour,
     pub saisi_le: String,
     pub qui: String,
     pub note: Option<String>,
@@ -166,7 +166,7 @@ struct FichierDesImprevus {
 /// (S21.G00.40.001) et son numero (40.009), tels que l'imprevu les ecrit.
 pub trait Suspend {
     fn salarie(&self) -> &str;
-    fn contrat_debut(&self) -> &str;
+    fn contrat_debut(&self) -> Jour;
     fn contrat_numero(&self) -> Option<&str>;
 }
 
@@ -174,8 +174,8 @@ impl Suspend for ArretSaisi {
     fn salarie(&self) -> &str {
         &self.salarie
     }
-    fn contrat_debut(&self) -> &str {
-        &self.contrat_debut
+    fn contrat_debut(&self) -> Jour {
+        self.contrat_debut
     }
     fn contrat_numero(&self) -> Option<&str> {
         self.contrat_numero.as_deref()
@@ -186,8 +186,8 @@ impl Suspend for SuspensionSaisie {
     fn salarie(&self) -> &str {
         &self.salarie
     }
-    fn contrat_debut(&self) -> &str {
-        &self.contrat_debut
+    fn contrat_debut(&self) -> Jour {
+        self.contrat_debut
     }
     fn contrat_numero(&self) -> Option<&str> {
         self.contrat_numero.as_deref()
@@ -201,7 +201,7 @@ impl Suspend for Imprevu {
             Imprevu::Suspension(s) => s.salarie(),
         }
     }
-    fn contrat_debut(&self) -> &str {
+    fn contrat_debut(&self) -> Jour {
         match self {
             Imprevu::Arret(a) => a.contrat_debut(),
             Imprevu::Suspension(s) => s.contrat_debut(),
@@ -241,11 +241,11 @@ impl Imprevu {
         }
     }
 
-    /// Son debut, tel qu'il s'ecrit (le debut prescrit d'un arret, le premier jour d'une suspension).
-    pub fn debut(&self) -> &str {
+    /// Son debut (le debut prescrit d'un arret, le premier jour d'une suspension).
+    pub fn debut(&self) -> Jour {
         match self {
-            Imprevu::Arret(a) => &a.debut,
-            Imprevu::Suspension(s) => &s.debut,
+            Imprevu::Arret(a) => a.debut,
+            Imprevu::Suspension(s) => s.debut,
         }
     }
 }
@@ -390,8 +390,8 @@ de chaque DSN mensuelle dont le mois le croise, et, pour un arret, son signaleme
 /// Le jour qui range un imprevu dans le magasin : le dernier jour travaille d'un arret, le premier jour d'une suspension.
 pub fn jour_de_rangement(imp: &Imprevu) -> R<Jour> {
     match imp {
-        Imprevu::Arret(a) => Jour::lire(&a.dernier_jour_travaille),
-        Imprevu::Suspension(s) => Jour::lire(&s.debut),
+        Imprevu::Arret(a) => Ok(a.dernier_jour_travaille),
+        Imprevu::Suspension(s) => Ok(s.debut),
     }
 }
 
@@ -406,7 +406,7 @@ pub fn jour_de_rangement(imp: &Imprevu) -> R<Jour> {
 /// date de debut de l'arret reelle en DSN » (fiche consigne 568, `atelier/reference/sources/net-entreprises-base-connaissances/
 /// net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 1683).
 pub fn dernier_jour_declare(arret: &ArretSaisi) -> R<Jour> {
-    let (travaille, debut) = (Jour::lire(&arret.dernier_jour_travaille)?, Jour::lire(&arret.debut)?);
+    let (travaille, debut) = (arret.dernier_jour_travaille, arret.debut);
     Ok(if debut <= travaille { travaille } else { debut.plus_jours(-1)? })
 }
 
@@ -417,9 +417,9 @@ pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
 pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
-    match arret.reprise.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()? {
+    match arret.reprise {
         Some(r) => r.plus_jours(-1),
-        None => Jour::lire(&arret.fin_previsionnelle),
+        None => Ok(arret.fin_previsionnelle),
     }
 }
 
@@ -429,7 +429,7 @@ pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
 pub fn premier_jour(imp: &Imprevu) -> R<Jour> {
     match imp {
         Imprevu::Arret(a) => premier_jour_d_arret(a),
-        Imprevu::Suspension(s) => Jour::lire(&s.debut),
+        Imprevu::Suspension(s) => Ok(s.debut),
     }
 }
 
@@ -445,7 +445,7 @@ fn par_premier_jour(v: Vec<Imprevu>) -> R<Vec<Imprevu>> {
 pub fn dernier_jour(imp: &Imprevu) -> R<Jour> {
     match imp {
         Imprevu::Arret(a) => dernier_jour_d_arret(a),
-        Imprevu::Suspension(s) => Jour::lire(&s.fin),
+        Imprevu::Suspension(s) => Ok(s.fin),
     }
 }
 
@@ -491,7 +491,7 @@ fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<&str>) -> R<
 /// (S21.G00.40.001), et le meme numero (40.009) quand l'un et l'autre en ont un : un contrat saisi avant sa premiere
 /// production n'a pas encore de numero (il se fige a la production), et c'est sa date de debut qui le designe.
 pub fn du_contrat<I: Suspend>(imp: &I, cle: &str, numero: Option<&str>, debut: &Jour) -> R<bool> {
-    if imp.salarie() != cle || Jour::lire(imp.contrat_debut())? != *debut {
+    if imp.salarie() != cle || imp.contrat_debut() != *debut {
         return Ok(false);
     }
     Ok(numeros_compatibles(imp.contrat_numero(), numero))
@@ -557,7 +557,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
             siennes.push(imp);
         }
     }
-    siennes.sort_by_key(|i| i.debut().to_string());
+    siennes.sort_by_key(Imprevu::debut);
     for imp in siennes {
         let code = imp.motif().to_string();
         let motif = verifier_motif_de_suspension(&code, &qui)?;
@@ -751,7 +751,7 @@ fn taux_exact(montant: Decimal, quantite: Decimal) -> Decimal {
 pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContrat> {
     let fiche = SalarieDuContrat::de(ctx.salarie(imp.salarie())?);
     let cle = fiche.id.to_string();
-    let debut = Jour::lire(imp.contrat_debut())?;
+    let debut = imp.contrat_debut();
     let Some(data) = crate::stock::vue_du_mois(&ctx.racine, debut.mois_civil())? else { return Ok(fiche) };
     for e in &data.engagements {
         if e.debut != Some(debut) ||e.salarie.as_deref() != Some(cle.as_str()) {

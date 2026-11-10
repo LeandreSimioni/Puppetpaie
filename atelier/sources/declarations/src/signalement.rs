@@ -84,11 +84,11 @@ moteur n'ecrit pas.",
         ));
     }
 
-    let travaille = Jour::lire(&v.dernier_jour_travaille)?;
-    let debut = Jour::lire(&v.debut)?;
-    let fin_prev = Jour::lire(&v.fin_previsionnelle)?;
-    let debut_contrat = Jour::lire(&v.contrat_debut)?;
-    let (accident, subrogation, reprise, reprise_motif) = (dite(&v.date_accident), dite(&v.subrogation), dite(&v.reprise), dite(&v.reprise_motif));
+    let travaille = v.dernier_jour_travaille;
+    let debut = v.debut;
+    let fin_prev = v.fin_previsionnelle;
+    let debut_contrat = v.contrat_debut;
+    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, dite(&v.subrogation), v.reprise, dite(&v.reprise_motif));
 
     // Le dernier jour travaille est la veille du debut prescrit, ou ce jour meme quand il a ete travaille
     // (S21.G00.60.002) : un arret ne commence pas avant un jour travaille.
@@ -112,7 +112,7 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
         return impossible(format!(
             "Dernier jour travaille ({}) posterieur a la fin previsionnelle de l'arret ({}) -- CCH-12.",
             dernier.jj_mm_aaaa(),
-            v.fin_previsionnelle
+            v.fin_previsionnelle.iso()
         ));
     }
     if dernier < debut_contrat {
@@ -120,7 +120,7 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
             "Dernier jour travaille ({}) anterieur au debut du contrat ({}) -- CCH-18. Ce n'est pas ce \
 contrat-la qui est suspendu.",
             dernier.jj_mm_aaaa(),
-            v.contrat_debut
+            v.contrat_debut.iso()
         ));
     }
 
@@ -132,11 +132,11 @@ obligatoire -- CCH-11.",
                 m_s, libelle
             ));
         };
-        if Jour::lire(accident)? < debut_contrat {
+        if accident < debut_contrat {
             return impossible(format!(
                 "Date de l'accident ({}) anterieure au debut du contrat ({}) -- SIG-14.",
-                accident,
-                v.contrat_debut
+                accident.iso(),
+                v.contrat_debut.iso()
             ));
         }
     } else if accident.is_some() {
@@ -168,7 +168,7 @@ et a maintenir le salaire."
                 liste.join(", ")
             ));
         }
-        let (sub_debut, sub_fin) = (dite(&v.subrogation_debut), dite(&v.subrogation_fin));
+        let (sub_debut, sub_fin) = (v.subrogation_debut, v.subrogation_fin);
         if avec_subrogation(a)? {
             let (Some(sub_debut), Some(sub_fin)) = (sub_debut, sub_fin) else {
                 return impossible(
@@ -177,11 +177,11 @@ obligatoires -- CCH-11."
                         .into(),
                 );
             };
-            if Jour::lire(sub_fin)? < Jour::lire(sub_debut)? {
+            if sub_fin < sub_debut {
                 return impossible(format!(
                     "Fin de subrogation ({}) anterieure a son debut ({}) -- CCH-12.",
-                    sub_fin,
-                    sub_debut
+                    sub_fin.iso(),
+                    sub_debut.iso()
                 ));
             }
         } else if sub_debut.is_some() || sub_fin.is_some() {
@@ -192,15 +192,14 @@ obligatoires -- CCH-11."
         }
     }
 
-    if let Some(reprise) = reprise {
-        let rep = Jour::lire(reprise)?;
+    if let Some(rep) = reprise {
         if rep < dernier || rep < debut_contrat {
             return impossible(format!(
                 "Date de reprise ({}) anterieure au dernier jour travaille ({}) ou au debut du contrat ({}) -- \
 CCH-11.",
-                reprise,
+                rep.iso(),
                 dernier.jj_mm_aaaa(),
-                v.contrat_debut
+                v.contrat_debut.iso()
             ));
         }
         if rep > fin_prev {
@@ -209,8 +208,8 @@ CCH-11.",
 reprise anticipee, et la rubrique ne doit alors pas etre valorisee (S21.G00.60.010). Si l'arret s'est \
 prolonge, c'est sa fin previsionnelle qui change (S21.G00.60.003, sans nouveau signalement : fiche net-entreprises \
 1983) : prolonger l'arret d'abord.",
-                reprise,
-                v.fin_previsionnelle
+                rep.iso(),
+                v.fin_previsionnelle.iso()
             ));
         }
     }
@@ -222,12 +221,12 @@ qu'en cas de reprise ANTICIPEE par rapport a la fin previsionnelle."
                     .into(),
             );
         };
-        if Jour::lire(reprise)? == fin_prev {
+        if reprise == fin_prev {
             return impossible(format!(
                 "Reprise le {}, soit la fin previsionnelle de l'arret : le signalement de reprise ne s'emet \
 qu'en cas de reprise ANTICIPEE (cahier technique §5.4). Rien n'est a declarer ; la DSN mensuelle portera la \
 reprise.",
-                reprise
+                reprise.iso()
             ));
         }
         if reprise_motif.is_none() {
@@ -267,13 +266,12 @@ CCH-12.",
         None => aujourdhui()?,
     };
     for (libelle, case) in [
-        ("Dernier jour travaillé", Some(v.dernier_jour_travaille.as_str()).filter(|c| !c.is_empty())),
-        ("Début de subrogation", dite(&v.subrogation_debut)),
+        ("Dernier jour travaillé", Some(v.dernier_jour_travaille)),
+        ("Début de subrogation", v.subrogation_debut),
         ("Date de reprise", reprise),
         ("Date de l'accident", accident),
     ] {
-        let Some(case) = case else { continue };
-        let le = Jour::lire(case)?;
+        let Some(le) = case else { continue };
         if le > jour {
             avertissements.push(format!(
                 "{} le {}, après le jour où le fichier est fait ({}) : le cahier technique (§4.4.13) le signale sans bloquer, \
@@ -422,7 +420,7 @@ annule-et-remplace (type 03)."
     crate::ntt::poser_ntt(&mut f, ent, &fiche,crate::changements_individu::derniere_declaree(ctx, &fiche, &engagement::imprevus::dernier_jour_declare(arret)?, departs)?.as_ref())?;
 
     // -------------------------------------------------------- S21 contrat
-    f.add("S21.G00.40.001", Jour::lire(&arret.contrat_debut)?.jjmmaaaa());
+    f.add("S21.G00.40.001", arret.contrat_debut.jjmmaaaa());
     f.add_opt("S21.G00.40.009", arret.contrat_numero.as_deref())?;
     f.add_case("S21.G00.40.019", &etab.siret, "siret")?;
 

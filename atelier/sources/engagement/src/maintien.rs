@@ -64,10 +64,6 @@ fn entier(c: &Chiffre) -> R<i64> {
     }
 }
 
-/// Un jour de l'arret dit et non vide, lu.
-fn jour_dit(x: &Option<String>) -> R<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()
-}
 
 /// Les deux textes qu'un arret met en jeu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,7 +114,7 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits
     let fiche = ctx.salarie(&imp.salarie)?;
     let depuis = match fiche.date_anciennete.dite() {
         Some(j) => *j,
-        None => Jour::lire(&imp.contrat_debut)?,
+        None => imp.contrat_debut,
     };
     let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, fiche.id.as_str(), &depuis, &premier)?;
     let anciennete_mois = droit::permanents::anciennete_mois(&depuis, &premier);
@@ -360,7 +356,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     let taux_horaire = div(m.salaire_du_mois, heures_du_mois);
     let n = dernier.moins(&premier) + 1;
     let subroge = imp.subrogation.as_deref() == Some("01");
-    let (sub_debut, sub_fin) = (jour_dit(&imp.subrogation_debut)?, jour_dit(&imp.subrogation_fin)?);
+    let (sub_debut, sub_fin) = (imp.subrogation_debut, imp.subrogation_fin);
     let regles = droit::permanents::regles()?;
     let rij = &regles.indemnites_journalieres;
     let (csg_ded, pas_jours, pas_accident) = (rij.csg_deductible, rij.pas.maladie_jours, rij.pas.accident);
@@ -618,7 +614,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
         }
         Some(Origine::AccidentDuTravail | Origine::Trajet | Origine::MaladieProfessionnelle) => {
             let p = &regles.principe_accident;
-            let accident = match jour_dit(&imp.date_accident)? {
+            let accident = match imp.date_accident {
                 Some(x) => x,
                 None => return Ok(AuReleve(IJ_AU_RELEVE.to_string())),
             };

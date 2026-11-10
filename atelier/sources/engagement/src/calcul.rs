@@ -1202,7 +1202,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                     debut.jj_mm_aaaa(),
                     fin.jj_mm_aaaa(),
                     motifs.join(", "),
-                    Jour::lire(premiere.debut())?.jj_mm_aaaa(),
+                    premiere.debut().jj_mm_aaaa(),
                     match idcc {
                         Some(i) => i,
                         None => "de la compagnie",
