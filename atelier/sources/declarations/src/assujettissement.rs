@@ -103,7 +103,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &s
             continue;
         }
         if montants {
-            let declarees = crate::dsn::paies_declarees_du_mois(ctx, &m, Some(nic), departs).map_err(|e| format!("{} : {}", m, e))?;
+            let declarees = crate::dsn::paies_declarees_du_mois(ctx, &m, Some(nic), departs).map_err(|e| e.reformuler(|e| format!("{} : {}", m, e)))?;
             out.push(MoisDeLAnnee::Calcules(m, declarees));
         } else {
             let mut garde = Vec::new();
