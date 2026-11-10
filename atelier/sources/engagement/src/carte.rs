@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
 use socle::forme::NombreLu;
-use socle::num::Resultat;
+use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
 use crate::saisie::{Carte, Champ, CongePris, Groupe, Preavis, Prime, Valeur};
@@ -93,7 +93,7 @@ macro_rules! nature {
             pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), )* ];
 
             /// Ce que la carte `c` dit de cette nature ; `None` s'il lui manque une case obligatoire (`manques` les nomme).
-            fn tiree(c: &Carte) -> Resultat<Option<$nom>> {
+            fn tiree(c: &Carte) -> R<Option<$nom>> {
                 Ok(Some($nom {
                     $( $o: match nature!(@lit c, $o $(, $lo)?) { Some(v) => v, None => return Ok(None) }, )*
                     $( $f: c.$f.clone(), )*
@@ -309,7 +309,7 @@ impl Recours {
         &[("01", true), ("02", false), ("03", false), ("06", false), ("09", false), ("10", false), ("12", true), ("13", true)];
 
     /// Le motif que la carte dit (`None` : elle n'en dit pas) ; un code que la liste n'offre pas se refuse.
-    fn de_la_carte(c: &Carte) -> Resultat<Option<Recours>> {
+    fn de_la_carte(c: &Carte) -> R<Option<Recours>> {
         let Some(code) = c.motif_recours.as_deref().filter(|m| !m.trim().is_empty()) else { return Ok(None) };
         let p = c.personne_remplacee.clone();
         Ok(Some(match code {
@@ -323,7 +323,7 @@ impl Recours {
             "13" => Recours::AttenteDeSuppression { personne_remplacee: p },
             autre => {
                 let codes: Vec<&str> = Recours::TOUS.iter().map(|(c, _)| *c).collect();
-                return Err(format!("« {} » n'est pas un motif de recours d'un CDD : {}.", autre, codes.join(", ")));
+                return Err(socle::refus!("« {} » n'est pas un motif de recours d'un CDD : {}.", autre, codes.join(", ")));
             }
         }))
     }
@@ -438,19 +438,19 @@ impl CarteValide {
     /// LA CARTE DU MOIS `c`, VALIDE : sa nature dite, chaque case obligatoire remplie, aucune case que sa nature n'a pas.
     /// Le refus nomme chaque case a remplir (`A_REMPLIR`), ou chaque case a retirer ; `qui` : le salarie qu'il nomme. Ce
     /// que la vue deduit (`Groupe::Deduit`) et ce qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases.
-    pub fn depuis(c: &Carte, qui: &str) -> Resultat<CarteValide> {
+    pub fn depuis(c: &Carte, qui: &str) -> R<CarteValide> {
         let Some(nature) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
-            return Err(format!("{}{}", qui, crate::PAS_DE_NATURE));
+            return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
         };
         let Some(cases) = CarteValide::cases_de(nature) else {
             let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-            return Err(format!("{} : « {} » n'est pas une nature de contrat : {}.", qui, nature, cles.join(", ")));
+            return Err(socle::refus!("{} : « {} » n'est pas une nature de contrat : {}.", qui, nature, cles.join(", ")));
         };
         let nat = droit::natures::nature(nature)?;
         let libelle_nature = nat.libelle.clone();
         // Un motif que la nature n'offre pas se refuse en disant ceux qu'elle offre (`contrats-base.json`).
-        if let Some(refus) = c.motif_recours.as_deref().and_then(|m| nat.motif_recours_refuse(m, qui)) {
-            return Err(refus);
+        if let Some(phrase) = c.motif_recours.as_deref().and_then(|m| nat.motif_recours_refuse(m, qui)) {
+            return Err(refus(phrase));
         }
         // Ce que porte un motif de recours est une case du CDD (son motif dit ensuite s'il la porte).
         let du_motif: &[Champ] = if nature == "cdd" { Recours::CASES } else { &[] };
@@ -462,7 +462,7 @@ impl CarteValide {
             .map(libelle)
             .collect();
         if !de_trop.is_empty() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} {} pas une case d'un {} ; retirez-{} de sa carte. Rien n'est écrit.",
                 qui,
                 guillemets(&de_trop),
@@ -473,16 +473,16 @@ impl CarteValide {
         }
         let manques: Vec<&str> = cases.iter().filter(|(x, e)| *e == Exige::Obligatoire && !remplie(c, *x)).map(|(x, _)| libelle(*x)).collect();
         if !manques.is_empty() {
-            return Err(format!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature));
+            return Err(socle::refus!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature));
         }
-        let manquante = || format!("{}{}({})", qui, A_REMPLIR, libelle_nature);
+        let manquante = || socle::refus!("{}{}({})", qui, A_REMPLIR, libelle_nature);
         Ok(match nature {
             "cddu_spectacle" => CarteValide::CdduSpectacle(Cddu::tiree(c)?.ok_or_else(manquante)?),
             "cdi" => CarteValide::Cdi(Cdi::tiree(c)?.ok_or_else(manquante)?),
             _ => {
                 let v = Cdd::tiree(c)?.ok_or_else(manquante)?;
                 if c.personne_remplacee.is_some() && !v.motif_recours.remplace() {
-                    return Err(format!(
+                    return Err(socle::refus!(
                         "{} : {} n'est pas une case d'un CDD conclu pour ce motif ({}) ; retirez-la de sa carte. Rien n'est écrit.",
                         qui,
                         guillemets(&[libelle(Champ::PersonneRemplacee)]),
@@ -572,9 +572,9 @@ impl Brouillon {
     /// LE BROUILLON QUE LA CARTE `c` ECRIT (la vue d'un mois d'un engagement en saisie, `stock::Objet::vue`) : sa nature
     /// dite, et aucune case que sa nature n'a pas (le refus les nomme). Ce que la vue deduit (`Groupe::Deduit`) et ce
     /// qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases. `qui` : le salarie que le refus nomme.
-    pub fn de_la_carte(c: &Carte, qui: &str) -> Resultat<Brouillon> {
+    pub fn de_la_carte(c: &Carte, qui: &str) -> R<Brouillon> {
         let Some(cle) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
-            return Err(format!("{}{}", qui, crate::PAS_DE_NATURE));
+            return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
         };
         let n = match cle {
             "cddu_spectacle" => NatureDeContrat::CdduSpectacle,
@@ -582,7 +582,7 @@ impl Brouillon {
             "cdd" => NatureDeContrat::Cdd,
             autre => {
                 let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-                return Err(format!("{} : « {} » n'est pas une nature de contrat : {}.", qui, autre, cles.join(", ")));
+                return Err(socle::refus!("{} : « {} » n'est pas une nature de contrat : {}.", qui, autre, cles.join(", ")));
             }
         };
         let cases = Brouillon::cases(n);
@@ -593,7 +593,7 @@ impl Brouillon {
             .map(libelle)
             .collect();
         if !de_trop.is_empty() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} {} pas une case d'un {}. Rien n'est écrit.",
                 qui,
                 guillemets(&de_trop),
@@ -623,7 +623,7 @@ impl Brouillon {
     /// l'ancienne disparaissent, celles propres a la nouvelle naissent vides, et une case des deux (le salarie, le metier,
     /// les bornes, les lignes...) garde ce qu'elle dit : c'est la meme case, et l'ecran la montre telle quelle. Refus :
     /// une case que sa nature n'a pas, un motif de recours que sa nature n'offre pas ; rien ne change.
-    pub fn changer(&mut self, ch: Changement, qui: &str) -> Resultat<()> {
+    pub fn changer(&mut self, ch: Changement, qui: &str) -> R<()> {
         let mut c = self.en_carte();
         if let Changement::Nature(n) = ch {
             let mut neuve = Carte { nature: Some(n.cle().to_string()), ..Carte::default() };
@@ -636,12 +636,12 @@ impl Brouillon {
         let x = ch.champ();
         if !Brouillon::cases(self.nature()).contains(&x) {
             let nat = droit::natures::nature(self.nature().cle())?;
-            return Err(format!("{} : {} n'est pas une case d'un {}. Rien n'est écrit.", qui, guillemets(&[libelle(x)]), nat.libelle));
+            return Err(socle::refus!("{} : {} n'est pas une case d'un {}. Rien n'est écrit.", qui, guillemets(&[libelle(x)]), nat.libelle));
         }
         if let Changement::MotifRecours(Some(m)) = &ch {
             let nat = droit::natures::nature(self.nature().cle())?;
-            if let Some(refus) = nat.motif_recours_refuse(m, qui) {
-                return Err(refus);
+            if let Some(phrase) = nat.motif_recours_refuse(m, qui) {
+                return Err(refus(phrase));
             }
         }
         ch.poser(&mut c);
@@ -690,10 +690,10 @@ macro_rules! changements {
             /// (`salarie`, `spectacle`) ; une autre case telle quelle.
             pub fn ranger(
                 self,
-                ranger: &dyn Fn(Vec<LigneDonnee>) -> Resultat<Vec<LignePaie>>,
-                salarie: &dyn Fn(&str) -> Resultat<IdSalarie>,
-                spectacle: &dyn Fn(&str) -> Resultat<IdSpectacle>,
-            ) -> Resultat<Changement> {
+                ranger: &dyn Fn(Vec<LigneDonnee>) -> R<Vec<LignePaie>>,
+                salarie: &dyn Fn(&str) -> R<IdSalarie>,
+                spectacle: &dyn Fn(&str) -> R<IdSpectacle>,
+            ) -> R<Changement> {
                 Ok(match self {
                     Changement::Nature(n) => Changement::Nature(n),
                     Changement::Salarie(x) => Changement::Salarie(x.map(|nom| salarie(&nom)).transpose()?),
@@ -788,11 +788,11 @@ impl Changements {
     /// rien : ses lignes se rangent d'abord, chacune lue au catalogue de la compagnie (`racine`, `ligne::ranger`) ; le
     /// premier refus (il nomme sa case, ou sa ligne) laisse `b` tel qu'il etait. `qui` : le salarie que le refus nomme,
     /// tel que le brouillon le dit au moment du changement.
-    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> Resultat<()> {
+    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> R<()> {
         let mut essai = b.clone();
         for ch in self.0 {
             let q = qui(&essai);
-            let ch = ch.ranger(&|l| Ok(crate::ligne::ranger(&ctx.racine, mois, l, &q)?), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
+            let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
             essai.changer(ch, &q)?;
         }
         *b = essai;
@@ -802,11 +802,11 @@ impl Changements {
 
 /// LE SALARIE QU'UN NOM TAPE DESIGNE, retrouve une fois a la porte (`Contexte::cle_du_salarie`) : la carte ne porte
 /// que sa cle. Un nom vide ne designe personne ; aucun salarie, ou plusieurs, se refuse en disant quoi corriger.
-pub fn salarie_nomme(ctx: &droit::contexte::Contexte, nom: &str) -> Resultat<IdSalarie> {
+pub fn salarie_nomme(ctx: &droit::contexte::Contexte, nom: &str) -> R<IdSalarie> {
     if nom.trim().is_empty() {
-        return Err("Le nom du salarié est vide : écrire son nom, ou vider la case. Rien n'est écrit.".to_string());
+        return Err(refus("Le nom du salarié est vide : écrire son nom, ou vider la case. Rien n'est écrit."));
     }
-    ctx.cle_du_salarie(nom).map_err(String::from)
+    ctx.cle_du_salarie(nom)
 }
 
 /// Le debut du refus d'une carte a qui il manque des cases (`crate::SAISIE_INCOMPLETE`).
