@@ -320,10 +320,63 @@ pub struct Annexes {
 
 /// LA SEULE LECTURE DE `rubriques-base.json` : sa forme.
 fn base() -> Resultat<Base> {
-    socle::forme::lire_fichier(
+    let b: Base = socle::forme::lire_fichier(
         &dossier_du_code().join("rubriques-base.json"),
         "Les rubriques livrées avec le logiciel ne se lisent pas : le signaler au développeur.",
-    )
+    )?;
+    // La piece d'un salarie au mois est celle que le calcul compose (`RubriqueDuMois`) : ni plus, ni moins.
+    let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
+    let du_calcul: Vec<&str> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
+        return Err(format!(
+            "rubriques-base.json : la section `au_mois` porte {:?}, et le calcul d'un salarié au mois compose {:?} (`RubriqueDuMois`) : le signaler au développeur.",
+            rangees, du_calcul
+        ));
+    }
+    Ok(b)
+}
+
+/// LES RUBRIQUES DE LA PIECE D'UN SALARIE AU MOIS (`au_mois` de `rubriques-base.json`) : seul le calcul d'un contrat
+/// paye au mois les compose, avec sa cle (`engagement::LignePaie::du_mois`, qui exige `natures::AuMois`) ; une carte ne
+/// les saisit pas (`rubrique_a_saisir`). Leur code ne s'ecrit en Rust qu'ici (`structure.rs`,
+/// `une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RubriqueDuMois {
+    /// L'indemnite des conges payes pris (L3141-24 ; la caisse des Conges Spectacles paie ceux d'un intermittent,
+    /// D. 7121-38).
+    IndemniteCongesPayes,
+    /// Les indemnites journalieres que la compagnie subrogee reverse (la subrogation est une case des permanents).
+    IjssNettes,
+}
+
+impl RubriqueDuMois {
+    pub const TOUTES: [RubriqueDuMois; 2] = [RubriqueDuMois::IndemniteCongesPayes, RubriqueDuMois::IjssNettes];
+
+    /// Le code `code` d'une ligne ecrite est-il le sien ? (Lire une ligne ne la compose pas.)
+    pub fn nomme(self, code: &str) -> bool {
+        self.code() == code
+    }
+
+    /// Son code au catalogue : ne le prennent que les lignes qui la composent, avec la cle (`engagement::LignePaie`).
+    pub fn code(self) -> &'static str {
+        match self {
+            RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
+            RubriqueDuMois::IjssNettes => "ijss_nettes",
+        }
+    }
+}
+
+/// UNE RUBRIQUE QU'UNE CARTE SAISIT, telle qu'elle vaut a `jour` : celle de la piece d'un salarie au mois ne se saisit
+/// pas, le calcul qui tient sa cle la compose (`RubriqueDuMois`).
+pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> Resultat<Rubrique> {
+    let r = rubrique(racine, code, jour)?;
+    if r.piece.is_some() {
+        return Err(format!(
+            "La rubrique {} ne se saisit pas : le calcul d'un contrat payé au mois la pose lui-même.",
+            repr(code)
+        ));
+    }
+    Ok(r)
 }
 
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant

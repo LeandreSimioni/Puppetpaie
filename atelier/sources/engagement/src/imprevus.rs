@@ -814,7 +814,7 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSala
 ///
 /// Rend aussi les jours travailles que les absences retirees ote du mois (un arret, une suspension non remuneree) :
 /// `conges::lignes_du_mois` en tire les jours travailles du mois.
-pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &MoisDuContrat) -> Resultat<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
+pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &MoisDuContrat, au: &droit::natures::AuMois) -> Resultat<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
     let qui = crate::conges::qui(ctx, e);
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), 0i64);
     let nat = e.nature_lue()?;
@@ -906,7 +906,7 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    lignes.extend(crate::maintien::lignes(&maintien, mois));
+    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents))
 }

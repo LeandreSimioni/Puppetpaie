@@ -45,8 +45,8 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::num::{div, eur2, mul, Decimal, Resultat};
 
-/// La rubrique des indemnites journalieres nettes que la compagnie subrogee reverse, et celle des brutes qu'elle deduit.
-pub const IJ_NETTES: &str = "ijss_nettes";
+/// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
+/// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
 pub const IJ_BRUTES: &str = "ijss_brutes";
 /// Les cles de `Paie::bases` : ces indemnites nettes, et leur assiette du prelevement a la source.
 pub const IJ_SUBROGEES: &str = "ij_subrogees_nettes";
@@ -667,7 +667,8 @@ fn net_de_csg_crds(brute: Decimal, csg: Decimal, crds: Decimal) -> Decimal {
 /// Les lignes du mois : le maintien (le plus favorable des complements, plus les indemnites subrogees qu'il avance), et,
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
-pub fn lignes(dmois: &DuMois, mois: &str) -> Vec<LignePaie> {
+/// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose.
+pub fn lignes(dmois: &DuMois, mois: &str, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
     let plancher = eur2(dmois.ij_subrogees_brutes);
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -701,7 +702,8 @@ pub fn lignes(dmois: &DuMois, mois: &str) -> Vec<LignePaie> {
             LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: rubrique.to_string(), jours: j, taux: div(montant, j).normalize(), assiette_pas })
         };
         out.push(ij(IJ_BRUTES, plancher, None));
-        out.push(ij(IJ_NETTES, eur2(dmois.ij_subrogees_nettes), Some(eur2(dmois.assiette_pas))));
+        let nettes = eur2(dmois.ij_subrogees_nettes);
+        out.push(LignePaie::ij_nettes(au, j, div(nettes, j).normalize(), eur2(dmois.assiette_pas)));
     }
     out
 }
@@ -905,7 +907,8 @@ mod tests {
                 ij_subrogees_jours: if ij > 0 { 10 } else { 0 },
                 ..DuMois::default()
             };
-            let l = lignes(&m, "2026-03");
+            let au = droit::natures::nature("cdi").unwrap().au_mois().unwrap();
+            let l = lignes(&m, "2026-03", &au);
             l[0].taux().unwrap()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));

@@ -1069,7 +1069,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<
         let maintien = eur2(mul(taux_jour_ouvrable, pris));
         let ind = indemnite_des_jours(&cpt, pris, maintien)?;
         lignes.push(LignePaie::composee("absence_conges_payes", dec_f64(flot(pris))?, dec_f64(flot(taux_jour_ouvrable))?));
-        lignes.push(LignePaie::composee("indemnite_conges_payes", dec_f64(flot(pris))?, dec_f64(flot(taux_au_montant(ind.retenu, pris)))?));
+        lignes.push(LignePaie::du_mois(au, droit::catalogue::RubriqueDuMois::IndemniteCongesPayes, dec_f64(flot(pris))?, dec_f64(flot(taux_au_montant(ind.retenu, pris)))?));
         avert.push(info(format!(
             "{} : {} jour(s) ouvrable(s) de conges. Indemnite retenue : {} \
              ({}) -- le dixieme donnait {}, le maintien {} (L3141-24). \
@@ -1102,6 +1102,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<
         e,
         mois,
         &crate::imprevus::MoisDuContrat { debut, fin, fin_mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire, taux_jour_ouvrable },
+        au,
     )?;
     lignes.extend(l);
     avert.extend(a);

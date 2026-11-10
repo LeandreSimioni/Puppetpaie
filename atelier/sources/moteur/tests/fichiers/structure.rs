@@ -948,6 +948,39 @@ fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
     assert!(fautes.is_empty(), "une case d'une piece se lit par la piece ouverte, avec sa cle :\n{}", fautes.join("\n"));
 }
 
+/// UNE RUBRIQUE D'UN SALARIE AU MOIS NE SE COMPOSE QUE PAR SA CLE (`droit::catalogue::RubriqueDuMois`, la section
+/// `au_mois` de `rubriques-base.json`) : une ligne d'une de ces rubriques n'entre sur une paie que par
+/// `engagement::LignePaie::du_mois` ou `ij_nettes`, qui exigent `natures::AuMois` ; une carte ne les saisit pas
+/// (`catalogue::rubrique_a_saisir`). Hors des tests, leur code ne s'ecrit qu'a son enum (`droit/src/catalogue.rs`), et ne
+/// se prend (`.code()`) que la et dans les lignes qui la composent (`engagement/src/ligne.rs`) : ailleurs, on lit
+/// (`nomme`).
+#[test]
+fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
+    let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/rubriques-base.json")).unwrap()).unwrap();
+    let codes: Vec<String> = base["au_mois"].as_object().unwrap().keys().cloned().collect();
+    assert!(!codes.is_empty(), "rubriques-base.json n'a pas de section au_mois");
+    let enumeration = espace().join("droit/src/catalogue.rs");
+    let composition = espace().join("engagement/src/ligne.rs");
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
+        let tout = std::fs::read_to_string(&p).unwrap();
+        // Les tests d'un fichier lisent ce qu'ils veulent.
+        let t = tout.split("#[cfg(test)]").next().unwrap_or("");
+        if p != enumeration {
+            fautes.extend(codes.iter().filter(|c| t.contains(&format!("\"{}\"", c))).map(|c| format!("{} ecrit le code {}", rel, c)));
+        }
+        if p != enumeration && p != composition {
+            for v in ["IndemniteCongesPayes", "IjssNettes"] {
+                if t.contains(&format!("{}.code()", v)) {
+                    fautes.push(format!("{} prend le code de {} hors de la ligne qui la compose", rel, v));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une rubrique d'un salarie au mois se compose par sa cle (`LignePaie::du_mois`) :\n{}", fautes.join("\n"));
+}
+
 /// LES FICHES N'ONT QU'UNE FORME : chaque cle de `champs-base.json` (`entreprise`, `salarie`) est un champ de sa structure
 /// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
 /// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en

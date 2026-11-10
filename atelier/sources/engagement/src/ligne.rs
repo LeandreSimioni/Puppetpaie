@@ -389,6 +389,20 @@ fn canon(x: Decimal) -> Resultat<Decimal> {
 
 impl LignePaie {
     /// LA LIGNE QUE LE MOTEUR COMPOSE de `rubrique`, `quantite` x `taux`, sans heures, sans precision, sans jour.
+    /// UNE LIGNE D'UNE RUBRIQUE DE LA PIECE D'UN SALARIE AU MOIS (`droit::catalogue::RubriqueDuMois`), que seul le calcul
+    /// qui tient la cle d'un contrat paye au mois (`droit::natures::AuMois`) compose : sur la paie d'un intermittent, elle
+    /// ne compile pas.
+    pub fn du_mois(_cle: &droit::natures::AuMois, rubrique: droit::catalogue::RubriqueDuMois, quantite: Decimal, taux: Decimal) -> LignePaie {
+        LignePaie::composee(rubrique.code(), quantite, taux)
+    }
+
+    /// LE REVERSEMENT DES INDEMNITES JOURNALIERES NETTES d'une compagnie subrogee (`maintien::lignes`) : une rubrique de la
+    /// piece d'un salarie au mois (`RubriqueDuMois::IjssNettes`), que seul le calcul qui tient sa cle compose.
+    pub fn ij_nettes(_cle: &droit::natures::AuMois, jours: Decimal, taux: Decimal, assiette_pas: Decimal) -> LignePaie {
+        let rubrique = droit::catalogue::RubriqueDuMois::IjssNettes.code().to_string();
+        LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours, taux, assiette_pas: Some(assiette_pas) })
+    }
+
     pub fn composee(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
         LignePaie::Composee(Composee { rubrique: rubrique.to_string(), quantite, taux, heures: None, precision: None, dates: Vec::new() })
     }
@@ -977,7 +991,7 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
         let Some(code) = l.rubrique.clone() else {
             return Err(refus("elle dit sa rubrique (« rubrique »).".to_string()));
         };
-        let r = droit::catalogue::rubrique(racine, &code, &l.jour(mois).map_err(refus)?).map_err(refus)?;
+        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(refus)?).map_err(refus)?;
         out.push(l.ranger(&r).map_err(refus)?);
     }
     Ok(out)

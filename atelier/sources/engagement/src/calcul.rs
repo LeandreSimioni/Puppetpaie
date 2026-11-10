@@ -1337,7 +1337,8 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     let soumises: Vec<&LigneBrut> = lb.iter().filter(|l| l.soumis).collect();
     if caisse {
         // La caisse paie ses conges (D. 7121-41) : l'employeur ne les paie pas en plus.
-        if let Some(l) = lb.iter().find(|l| matches!(l.code.as_str(), "absence_conges_payes" | "indemnite_conges_payes" | "indemnite_compensatrice_conges")) {
+        let conges = |c: &str| matches!(c, "absence_conges_payes" | "indemnite_compensatrice_conges") || droit::catalogue::RubriqueDuMois::IndemniteCongesPayes.nomme(c);
+        if let Some(l) = lb.iter().find(|l| conges(&l.code)) {
             return Err(socle::echec::avec("Cette ligne paie des congés à un salarié déclaré à la caisse des Congés Spectacles : c'est la caisse qui les lui verse ; retirer la ligne.", crate::Detail::du(None, format!(
                 "{} : la ligne << {} >> paie des conges a un salarie que l'employeur declare a la caisse des \
 Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'est la caisse qui les lui verse. Les payer aussi au bulletin serait les payer deux fois. Refus.",
@@ -1723,7 +1724,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // compte, la DSN les dit en S21.G00.58 de type 10, et le prelevement a la source les prend pour assiette, a cote du
     // net imposable (`etats::prelevement`).
     for (l, b) in eng.lignes.iter().zip(lb.iter()) {
-        if b.code == crate::maintien::IJ_NETTES {
+        if droit::catalogue::RubriqueDuMois::IjssNettes.nomme(&b.code) {
             *bases.entry(crate::maintien::IJ_SUBROGEES.into()).or_insert(zero) += b.montant;
             *bases.entry(crate::maintien::IJ_ASSIETTE_PAS.into()).or_insert(zero) += l.assiette_pas().ok_or_else(|| socle::fichiers::absent("assiette_pas"))?;
         }
@@ -2066,7 +2067,7 @@ mod tests {
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
         assert_eq!((a.percue, a.habituelle), (dec_de("1000"), dec_de("2000")));
         assert_eq!(eur(mul(dec_de("11.65"), a.heures.unwrap())), dec_de("883.46"));
-        let subrogee = ligne("ijss_nettes", "300", "0", false, false, false);
+        let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code(), "300", "0", false, false, false);
         assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, dec_de("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();
