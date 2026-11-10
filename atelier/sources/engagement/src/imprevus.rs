@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::conges::{avertir, flot, info};
+use crate::conges::{avertir, flot, info, jour_dit};
 use crate::Chiffre;
 use droit::permanents::MotifDeSuspension;
 use droit::contexte::Contexte;
@@ -30,7 +30,8 @@ use droit::fiche::SalarieDuContrat;
 use socle::date::Jour;
 use crate::Avis;
 use socle::fichiers::repr;
-use socle::num::{div, eur2, mul, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{div, eur2, mul, Decimal};
 
 /// Le genre d'un arret de travail (bloc S21.G00.60).
 pub const ARRET: &str = "arret";
@@ -213,15 +214,6 @@ impl Suspend for Imprevu {
     }
 }
 
-/// Un jour ecrit, lu.
-fn jour(x: &str) -> Resultat<Jour> {
-    Jour::lire(x).map_err(String::from)
-}
-
-/// Un jour dit et non vide, lu.
-fn jour_dit(x: &Option<String>) -> Resultat<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose().map_err(String::from)
-}
 
 impl Imprevu {
     /// Son genre, tel qu'il s'ecrit (`ARRET`, `SUSPENSION`).
@@ -266,12 +258,12 @@ pub fn est_une_suspension(imp: &Imprevu) -> bool {
 }
 
 /// CE QU'UN IMPREVU DOIT TENIR AU-DELA DE SA FORME : les indemnites journalieres d'un arret, par jour, sont positives.
-pub fn verifier(imp: &Imprevu) -> Resultat<()> {
+pub fn verifier(imp: &Imprevu) -> R<()> {
     let Imprevu::Arret(a) = imp else { return Ok(()) };
     for (k, x) in [("ij_brute", &a.ij_brute), ("ij_nette", &a.ij_nette), ("ij_brute_majoree", &a.ij_brute_majoree), ("ij_nette_majoree", &a.ij_nette_majoree)] {
         if let Some(x) = x.as_ref().filter(|x| x.vrai()) {
             if x.dec_avec_echelle()? <= Decimal::ZERO {
-                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()).into());
+                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()));
             }
         }
     }
@@ -290,21 +282,21 @@ fn chemin(racine: &Path, mois: &str) -> PathBuf {
 }
 
 /// Les imprevus d'un fichier deja lu, verifies (`verifier`).
-fn du_contenu(contenu: &FichierDesImprevus, chemin: &Path) -> Resultat<Vec<Imprevu>> {
+fn du_contenu(contenu: &FichierDesImprevus, chemin: &Path) -> R<Vec<Imprevu>> {
     for imp in &contenu.imprevus {
-        verifier(imp).map_err(|e| socle::echec::du_disque(chemin, &e))?;
+        verifier(imp).map_err(|e| e.au_fichier(chemin))?;
     }
     Ok(contenu.imprevus.clone())
 }
 
 /// Le fichier `f` du magasin, lu en sa forme ; la lecture se note au registre du calcul (`socle::forme::lire_fichier`).
-fn lu(f: &Path) -> Resultat<Vec<Imprevu>> {
+fn lu(f: &Path) -> R<Vec<Imprevu>> {
     du_contenu(&socle::forme::lire_fichier(f, ABIME)?, f)
 }
 
 /// Tous les imprevus de la compagnie, dans l'ordre des mois du magasin puis de leur saisie, verifies. La lecture se note
 /// au registre du calcul (`fichiers::lister`, `lu`) : un imprevu saisi refait la paie.
-pub fn tous(racine: &Path) -> Resultat<Vec<Imprevu>> {
+pub fn tous(racine: &Path) -> R<Vec<Imprevu>> {
     let Some(fichiers) = socle::fichiers::lister(&dossier(racine))? else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     for f in fichiers {
@@ -321,7 +313,7 @@ pub fn tous(racine: &Path) -> Resultat<Vec<Imprevu>> {
 /// et rien d'autre. La lecture se note au registre du calcul en une entree, `imprevus racine:imprevus <cle>`, qui vaut
 /// l'empreinte de ces seuls imprevus (`empreinte_du_salarie`) : un imprevu saisi pour un autre salarie ne refait pas
 /// ses paies.
-pub fn du_salarie(racine: &Path, cle: &str) -> Resultat<Vec<Imprevu>> {
+pub fn du_salarie(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
     let siens = siens_sans_noter(racine, cle)?;
     socle::fichiers::noter_valeur(&entree_du_salarie(cle), empreinte_de(&siens));
     Ok(siens)
@@ -338,7 +330,7 @@ pub fn salarie_de_l_entree(k: &str) -> Option<&str> {
 }
 
 /// Ce que vaut aujourd'hui l'entree `du_salarie` de `cle` : l'empreinte de ses imprevus, relus sans rien noter.
-pub fn empreinte_du_salarie(racine: &Path, cle: &str) -> Resultat<String> {
+pub fn empreinte_du_salarie(racine: &Path, cle: &str) -> R<String> {
     Ok(empreinte_de(&siens_sans_noter(racine, cle)?))
 }
 
@@ -347,12 +339,12 @@ fn empreinte_de(imprevus: &[Imprevu]) -> String {
 }
 
 /// Les imprevus de `cle`, lus mois par mois du magasin sans se noter (`socle::forme::partagee`).
-fn siens_sans_noter(racine: &Path, cle: &str) -> Resultat<Vec<Imprevu>> {
+fn siens_sans_noter(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
     // Un magasin sans dossier n'a aucun imprevu.
     if !dossier(racine).is_dir() {
         return Ok(Vec::new());
     }
-    let illisible = |e: std::io::Error| format!("{} ne se lit pas : {}", repr(&dossier(racine).display().to_string()), e);
+    let illisible = |e: std::io::Error| socle::refus!("{} ne se lit pas : {}", repr(&dossier(racine).display().to_string()), e);
     let mut fichiers: Vec<PathBuf> = Vec::new();
     for f in std::fs::read_dir(dossier(racine)).map_err(illisible)? {
         let p = f.map_err(illisible)?.path();
@@ -370,12 +362,12 @@ fn siens_sans_noter(racine: &Path, cle: &str) -> Resultat<Vec<Imprevu>> {
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) d'un salarie (`du_salarie`) qui croisent le mois `AAAA-MM`.
-pub fn du_mois_du_salarie(racine: &Path, mois: &str, genre_voulu: Option<&str>, cle: &str) -> Resultat<Vec<Imprevu>> {
+pub fn du_mois_du_salarie(racine: &Path, mois: &str, genre_voulu: Option<&str>, cle: &str) -> R<Vec<Imprevu>> {
     croisant(du_salarie(racine, cle)?, mois, genre_voulu)
 }
 
 /// Les imprevus que le fichier d'un mois du magasin range, verifies ; vide s'il n'existe pas.
-pub fn du_fichier(racine: &Path, mois: &str) -> Resultat<Vec<Imprevu>> {
+pub fn du_fichier(racine: &Path, mois: &str) -> R<Vec<Imprevu>> {
     let p = chemin(racine, mois);
     if !socle::fichiers::existe(&p) {
         return Ok(Vec::new());
@@ -384,21 +376,21 @@ pub fn du_fichier(racine: &Path, mois: &str) -> Resultat<Vec<Imprevu>> {
 }
 
 /// Ecrit le fichier d'un mois du magasin.
-pub fn ecrire(racine: &Path, mois: &str, imprevus: Vec<Imprevu>) -> Resultat<()> {
+pub fn ecrire(racine: &Path, mois: &str, imprevus: Vec<Imprevu>) -> R<()> {
     let quoi = format!(
         "Les imprevus ranges en {} : arrets de travail (au mois du dernier jour travaille) et suspensions (au mois \
 de leur premier jour). Chacun se saisit une fois ; le moteur en tire la ligne de paie d'un permanent, le bloc 60 ou 65 \
 de chaque DSN mensuelle dont le mois le croise, et, pour un arret, son signalement (nature 04, 05).",
         mois
     );
-    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois: mois.to_string(), imprevus }, 2).map_err(String::from)
+    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois: mois.to_string(), imprevus }, 2)
 }
 
 /// Le jour qui range un imprevu dans le magasin : le dernier jour travaille d'un arret, le premier jour d'une suspension.
-pub fn jour_de_rangement(imp: &Imprevu) -> Resultat<Jour> {
+pub fn jour_de_rangement(imp: &Imprevu) -> R<Jour> {
     match imp {
-        Imprevu::Arret(a) => jour(&a.dernier_jour_travaille),
-        Imprevu::Suspension(s) => jour(&s.debut),
+        Imprevu::Arret(a) => Jour::lire(&a.dernier_jour_travaille),
+        Imprevu::Suspension(s) => Jour::lire(&s.debut),
     }
 }
 
@@ -412,47 +404,47 @@ pub fn jour_de_rangement(imp: &Imprevu) -> Resultat<Jour> {
 /// le debut de l'arret, « Date du dernier jour travaille S21.G00.60.002 + 1 [...] Aucune autre donnee ne permet d'avoir la
 /// date de debut de l'arret reelle en DSN » (fiche consigne 568, `atelier/reference/sources/net-entreprises-base-connaissances/
 /// net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 1683).
-pub fn dernier_jour_declare(arret: &ArretSaisi) -> Resultat<Jour> {
-    let (travaille, debut) = (jour(&arret.dernier_jour_travaille)?, jour(&arret.debut)?);
+pub fn dernier_jour_declare(arret: &ArretSaisi) -> R<Jour> {
+    let (travaille, debut) = (Jour::lire(&arret.dernier_jour_travaille)?, Jour::lire(&arret.debut)?);
     Ok(if debut <= travaille { travaille } else { debut.plus_jours(-1)? })
 }
 
 /// Le premier jour d'absence d'un arret (`premier_jour`).
-pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> Resultat<Jour> {
-    dernier_jour_declare(arret)?.plus_jours(1).map_err(String::from)
+pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
+    dernier_jour_declare(arret)?.plus_jours(1)
 }
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
-pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> Resultat<Jour> {
+pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
     match jour_dit(&arret.reprise)? {
-        Some(r) => r.plus_jours(-1).map_err(String::from),
-        None => jour(&arret.fin_previsionnelle),
+        Some(r) => r.plus_jours(-1),
+        None => Jour::lire(&arret.fin_previsionnelle),
     }
 }
 
 /// Le premier jour d'absence : le lendemain du dernier jour que la DSN declare d'un arret (`dernier_jour_declare`) -- le
 /// debut que l'avis prescrit, ou son lendemain quand il est prescrit un jour travaille --, d'ou se compte « le quatrieme
 /// jour de l'incapacite de travail » (CSS R323-1, 1°) ; le debut d'une suspension (S21.G00.65.002).
-pub fn premier_jour(imp: &Imprevu) -> Resultat<Jour> {
+pub fn premier_jour(imp: &Imprevu) -> R<Jour> {
     match imp {
         Imprevu::Arret(a) => premier_jour_d_arret(a),
-        Imprevu::Suspension(s) => jour(&s.debut),
+        Imprevu::Suspension(s) => Jour::lire(&s.debut),
     }
 }
 
 /// Les imprevus `v`, dans l'ordre de leur premier jour (celui de leur saisie a premier jour egal).
-fn par_premier_jour(v: Vec<Imprevu>) -> Resultat<Vec<Imprevu>> {
-    let mut dates = v.into_iter().map(|i| Ok((premier_jour(&i)?, i))).collect::<Resultat<Vec<(Jour, Imprevu)>>>()?;
+fn par_premier_jour(v: Vec<Imprevu>) -> R<Vec<Imprevu>> {
+    let mut dates = v.into_iter().map(|i| Ok((premier_jour(&i)?, i))).collect::<R<Vec<(Jour, Imprevu)>>>()?;
     dates.sort_by_key(|(j, _)| j.iso());
     Ok(dates.into_iter().map(|(_, i)| i).collect())
 }
 
 /// Le dernier jour d'absence : la veille de la reprise d'un arret, « premier jour travaille et paye suite a l'arret »
 /// (S21.G00.60.010, p. 269), sinon sa fin previsionnelle (60.003) ; la fin d'une suspension (65.003).
-pub fn dernier_jour(imp: &Imprevu) -> Resultat<Jour> {
+pub fn dernier_jour(imp: &Imprevu) -> R<Jour> {
     match imp {
         Imprevu::Arret(a) => dernier_jour_d_arret(a),
-        Imprevu::Suspension(s) => jour(&s.fin),
+        Imprevu::Suspension(s) => Jour::lire(&s.fin),
     }
 }
 
@@ -462,7 +454,7 @@ pub fn dernier_jour(imp: &Imprevu) -> Resultat<Jour> {
 /// court du dernier jour travaille qu'il declare (S21.G00.60.002, `dernier_jour_declare`) a son dernier jour d'absence (`dernier_jour`) : la veille de la
 /// reprise, qui est le « premier jour travaille et paye suite a l'arret de travail » (S21.G00.60.010, p. 269), sinon la
 /// fin previsionnelle (S21.G00.60.003, p. 267). Un arret repris le 1er du mois n'a donc aucun jour commun avec ce mois.
-pub fn croise(imp: &Imprevu, debut: &Jour, fin: &Jour) -> Resultat<bool> {
+pub fn croise(imp: &Imprevu, debut: &Jour, fin: &Jour) -> R<bool> {
     if let Imprevu::Arret(a) = imp {
         return arret_croise(a, debut, fin);
     }
@@ -470,17 +462,17 @@ pub fn croise(imp: &Imprevu, debut: &Jour, fin: &Jour) -> Resultat<bool> {
 }
 
 /// La meme regle pour un arret de travail (un arret de la DSN, `dsn::Arret`).
-pub fn arret_croise(arret: &ArretSaisi, debut: &Jour, fin: &Jour) -> Resultat<bool> {
+pub fn arret_croise(arret: &ArretSaisi, debut: &Jour, fin: &Jour) -> R<bool> {
     let dernier = dernier_jour_d_arret(arret)?;
     Ok(dernier_jour_declare(arret)? <= *fin && dernier >= *debut)
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) qui croisent le mois `AAAA-MM`.
-pub fn du_mois(racine: &Path, mois: &str, genre_voulu: Option<&str>) -> Resultat<Vec<Imprevu>> {
+pub fn du_mois(racine: &Path, mois: &str, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
     croisant(tous(racine)?, mois, genre_voulu)
 }
 
-fn croisant(imprevus: Vec<Imprevu>, mois: &str, genre_voulu: Option<&str>) -> Resultat<Vec<Imprevu>> {
+fn croisant(imprevus: Vec<Imprevu>, mois: &str, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
     let (debut, fin) = (socle::mois::Mois::lire(mois)?.premier_jour(), socle::mois::Mois::lire(mois)?.dernier_jour());
     let mut out = Vec::new();
     for imp in imprevus {
@@ -497,7 +489,7 @@ fn croisant(imprevus: Vec<Imprevu>, mois: &str, genre_voulu: Option<&str>) -> Re
 /// L'imprevu suspend-il CE contrat ? Le meme salarie (la cle de sa fiche), la meme date de debut du contrat
 /// (S21.G00.40.001), et le meme numero (40.009) quand l'un et l'autre en ont un : un contrat saisi avant sa premiere
 /// production n'a pas encore de numero (il se fige a la production), et c'est sa date de debut qui le designe.
-pub fn du_contrat<I: Suspend>(imp: &I, cle: &str, numero: Option<&str>, debut: &Jour) -> Resultat<bool> {
+pub fn du_contrat<I: Suspend>(imp: &I, cle: &str, numero: Option<&str>, debut: &Jour) -> R<bool> {
     if imp.salarie() != cle || Jour::lire(imp.contrat_debut())? != *debut {
         return Ok(false);
     }
@@ -513,12 +505,12 @@ fn numeros_compatibles(a: Option<&str>, b: Option<&str>) -> bool {
 // ------------------------------------------------------------- les motifs de suspension
 
 /// Le motif de suspension (`permanents-base.json`, section `suspensions`), s'il existe.
-pub fn motif_de_suspension(code: &str) -> Resultat<Option<MotifDeSuspension>> {
-    droit::permanents::motif_de_suspension(code).map_err(String::from)
+pub fn motif_de_suspension(code: &str) -> R<Option<MotifDeSuspension>> {
+    droit::permanents::motif_de_suspension(code)
 }
 
 /// Ce que le motif d'une suspension interdit de declarer : un motif inconnu, ou le 200 (conges payes).
-pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> Resultat<MotifDeSuspension> {
+pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> R<MotifDeSuspension> {
     let Some(m) = motif_de_suspension(code)? else {
         return Err(socle::echec::cle(
             format!(
@@ -527,11 +519,10 @@ pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> Resultat<MotifDeSu
                 if code.is_empty() { "absent".to_string() } else { format!("inconnu ({})", repr(code)) }
             ),
             "motif",
-        )
-        .into());
+        ));
     };
     if let Some(pourquoi) = &m.ne_se_declare_pas {
-        return Err(format!(
+        return Err(socle::refus!(
             "Motif de suspension {} ({}) : {} Les conges payes pris se saisissent dans le mois (« conges pris »).",
             code, m.libelle, pourquoi
         ));
@@ -554,7 +545,7 @@ pub struct Suspension {
 /// Les blocs S21.G00.65 d'une paie : chaque suspension du magasin qui suspend CE contrat et croise le mois que la DSN
 /// declare, avec son motif et ses DEUX dates entieres (65.002 et 65.003) -- la meme dans chaque mois qu'elle traverse,
 /// sans recopie (cahier technique DSN 2026.1, bloc S21.G00.65 p. 281, `atelier/reference/norme-dsn/texte/bloc-S21.G00.65.txt`).
-pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: &str) -> Resultat<Vec<Suspension>> {
+pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: &str) -> R<Vec<Suspension>> {
     let cle = paie.salarie.id.to_string();
     let e = &paie.engagement;
     let qui = ctx.nomme(&cle);
@@ -571,7 +562,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: &st
         let motif = verifier_motif_de_suspension(&code, &qui)?;
         let (debut, fin) = (premier_jour(&imp)?, dernier_jour(&imp)?);
         if fin < debut {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : corrigez les dates de son absence « {} », dans « Les imprévus » : elle finit le {}, avant son \
                  premier jour, le {}.",
                 qui,
@@ -596,7 +587,7 @@ pub fn suspendu_sans_remuneration(
     contrat_debut: &Jour,
     debut: &Jour,
     fin: &Jour,
-) -> Resultat<Vec<Imprevu>> {
+) -> R<Vec<Imprevu>> {
     let mut siennes = Vec::new();
     for imp in du_salarie(racine, cle)? {
         if !est_une_suspension(&imp) || !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, debut, fin)? {
@@ -634,7 +625,7 @@ pub fn jours_de_conges_non_acquis(
     contrat_debut: &Jour,
     debut: &Jour,
     fin: &Jour,
-) -> Resultat<Decimal> {
+) -> R<Decimal> {
     let mut total = Decimal::ZERO;
     for imp in du_salarie(racine, cle)? {
         if !est_une_suspension(&imp) || !du_contrat(&imp, cle, numero, contrat_debut)? {
@@ -666,7 +657,7 @@ pub fn jours_de_conges_non_acquis(
 /// - une suspension remuneree (637) compte entiere ; un arret de travail n'est pas touche ici.
 ///
 /// Tous les contrats du salarie comptent : l'anciennete est celle de l'entreprise (`date_anciennete`).
-pub fn anciennete_depuis(racine: &Path, cle: &str, depuis: &Jour, a: &Jour) -> Resultat<(Jour, Vec<Avis>)> {
+pub fn anciennete_depuis(racine: &Path, cle: &str, depuis: &Jour, a: &Jour) -> R<(Jour, Vec<Avis>)> {
     let mut retranches = 0i64;
     let mut dit = Vec::new();
     for imp in du_salarie(racine, cle)? {
@@ -714,7 +705,7 @@ la compte, a reprendre a la main.",
 }
 
 /// Les arrets du magasin qui suspendent ce contrat et croisent [debut, fin] (le FCTU les reporte, bloc 60).
-pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jour, fin: &Jour) -> Resultat<Vec<ArretSaisi>> {
+pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jour, fin: &Jour) -> R<Vec<ArretSaisi>> {
     let cle = paie.salarie.id.to_string();
     let mut out = Vec::new();
     for imp in du_salarie(&ctx.racine, &cle)? {
@@ -756,7 +747,7 @@ fn taux_exact(montant: Decimal, quantite: Decimal) -> Decimal {
 /// LA FICHE DU SALARIE D'UN IMPREVU, rattachee a l'etablissement du contrat qu'il suspend (`calcul::etablissement_du_contrat`) :
 /// un signalement d'arret porte l'etablissement de la derniere DSN mensuelle du contrat (cahier technique DSN 2026.1,
 /// § 2.5.1, p. 67). Le contrat se lit dans la saisie du mois ou il commence ; introuvable, la fiche telle quelle.
-pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> Resultat<SalarieDuContrat> {
+pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContrat> {
     let fiche = SalarieDuContrat::de(ctx.salarie(imp.salarie())?);
     let cle = fiche.id.to_string();
     let debut = Jour::lire(imp.contrat_debut())?;
@@ -779,7 +770,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> Resultat<Salarie
 
 /// Les imprevus du contrat qui croisent le mois, du premier au dernier jour : le contrat de `salarie` (la cle que la carte
 /// ecrit) commence le `debut`, de numero `numero` (vide avant la validation).
-pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSalarie, debut: &Jour, numero: Option<&str>, mois: &str) -> Resultat<Vec<Imprevu>> {
+pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSalarie, debut: &Jour, numero: Option<&str>, mois: &str) -> R<Vec<Imprevu>> {
     crate::fiche_du_salarie(ctx, salarie)?;
     let cle = salarie.to_string();
     let mut out = Vec::new();
@@ -815,7 +806,7 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSala
 ///
 /// Rend aussi les jours travailles que les absences retirees ote du mois (un arret, une suspension non remuneree) :
 /// `conges::lignes_du_mois` en tire les jours travailles du mois.
-pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &MoisDuContrat, au: &droit::natures::AuMois) -> Resultat<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
+pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
     let qui = crate::conges::qui(ctx, e);
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), 0i64);
     let nat = e.nature_lue()?;
@@ -840,7 +831,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &
         };
         let heures = eur2(mul(m.heures_par_jour, Decimal::from(jours)));
         // Les heures retirees et leur taux, quand le mois en retire.
-        let retenue = || -> Resultat<Option<(Decimal, Decimal)>> {
+        let retenue = || -> R<Option<(Decimal, Decimal)>> {
             match taux_horaire {
                 Some(t) if heures > Decimal::ZERO => Ok(Some((socle::num::dec_f64(flot(heures))?, t))),
                 _ => Ok(None),
@@ -866,7 +857,7 @@ nomme cette absence. Rien n'est calcule.",
                     dernier.jj_mm_aaaa(),
                     code,
                     libelle_du_motif(&motif)
-                ), "arrets-base.json").into());
+                ), "arrets-base.json"));
             };
             lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, quantite, taux })));
             absents += jours;
@@ -923,7 +914,7 @@ fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60>) -> &str {
 }
 
 /// Le libelle d'une rubrique, que le catalogue connait.
-fn libelle_rubrique(racine: &Path, code: &str, jour: &Jour) -> Resultat<String> {
+fn libelle_rubrique(racine: &Path, code: &str, jour: &Jour) -> R<String> {
     Ok(droit::catalogue::rubrique(racine, code, jour)?.libelle)
 }
 
@@ -932,7 +923,7 @@ fn libelle_rubrique(racine: &Path, code: &str, jour: &Jour) -> Resultat<String> 
 /// peut exercer son activite », bloc S21.G00.60 p. 265) dont une date tombe entre son premier et son dernier jour
 /// d'absence. Une ligne par ligne de saisie, avec les seules dates qui tombent dedans, pour qu'on les retire une a une.
 /// Le moteur ne retire rien (regle 1).
-pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> Resultat<Vec<CachetPaye>> {
+pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> R<Vec<CachetPaye>> {
     let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
     let cle = imp.salarie().to_string();
     let mut out = Vec::new();
@@ -963,7 +954,7 @@ pub struct CachetPaye {
     pub taux: Option<Decimal>,
 }
 
-fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, mois: &str, cle: &str, premier: &Jour, dernier: &Jour) -> Resultat<Vec<CachetPaye>> {
+fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, mois: &str, cle: &str, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
     for (i, e) in data.engagements.iter().enumerate() {
         if e.salarie.as_deref() != Some(cle) {
@@ -997,7 +988,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, mois: &
 /// un arret de travail est une suspension « durant laquelle le salarie ne peut exercer son activite » (bloc S21.G00.60,
 /// cahier technique DSN 2026.1 p. 265), une autre suspension, une raison « pour laquelle le contrat est suspendu »
 /// (bloc S21.G00.65, p. 281).
-pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) -> Resultat<Vec<Vec<Avis>>> {
+pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) -> R<Vec<Vec<Avis>>> {
     let engagements = &data.engagements;
     let mut out: Vec<Vec<Avis>> = vec![Vec::new(); engagements.len()];
     // Les imprevus des seuls salaries de la saisie (`du_salarie`).
@@ -1059,8 +1050,8 @@ mod tests {
         format!("{{{}}}", cles.iter().map(|(k, v)| format!(r#""{}":{}"#, k, v)).collect::<Vec<_>>().join(","))
     }
 
-    fn lu(cles: &Cles) -> socle::num::Resultat<Imprevu> {
-        socle::forme::lire_texte(&texte(cles), ILLISIBLE).map_err(String::from)
+    fn lu(cles: &Cles) -> R<Imprevu> {
+        socle::forme::lire_texte(&texte(cles), ILLISIBLE)
     }
 
     fn pose(cles: &mut Cles, cle: &str, valeur: &str) {

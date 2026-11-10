@@ -391,7 +391,7 @@ impl Arret {
 
     /// Une periode commune avec [debut, fin] : la regle du bloc 60 (`imprevus::arret_croise`).
     pub fn couvre(&self, debut: &Jour, fin: &Jour) -> Resultat<bool> {
-        engagement::imprevus::arret_croise(&self.saisi, debut, fin)
+        engagement::imprevus::arret_croise(&self.saisi, debut, fin).map_err(String::from)
     }
 
     /// L'arret se reporte-t-il dans la DSN mensuelle de `mois` ? Celle de chaque mois qu'il croise ; et, s'il a fini avant
@@ -433,7 +433,7 @@ impl Arret {
     /// L'arret suspend-il le contrat de cette paie ? La regle des imprevus (`imprevus::du_contrat`) : le meme salarie, la
     /// meme date de debut du contrat, le meme numero quand l'un et l'autre en ont un.
     fn du_contrat(&self, p: &Paie) -> Resultat<bool> {
-        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut)
+        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut).map_err(String::from)
     }
 }
 
