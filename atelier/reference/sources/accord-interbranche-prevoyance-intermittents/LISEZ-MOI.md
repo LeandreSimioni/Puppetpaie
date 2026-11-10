@@ -6,6 +6,9 @@ relevées le 25/09/2026 (journal §137). Scans (sauf l'avenant 6) ; les avenants
 sont transcrits en entier, d'après les images des pages, le 04/11/2026
 (`accord-interbranche-prevoyance-avenant5-20121218.md`,
 `accord-interbranche-prevoyance-avenant7-20210906.md`, sans les noms des signataires) ;
+les avenants 6 et 8 le 10/11/2026 (`accord-interbranche-prevoyance-avenant6-20200414.md`, par `pdftotext` ;
+`accord-interbranche-prevoyance-avenant8-20250521.md`, d'après les images) ; aucun ne parle du maintien des garanties
+après la fin du contrat (CSS L. 911-8). Le texte de base du 20/12/2006 et les avenants 1 à 4 ne sont pas déposés ;
 c'est là que le vérificateur des sources lit leurs citations.
 
 Ils tranchent l'**article 45 du titre II de la CCN 3097** (production
