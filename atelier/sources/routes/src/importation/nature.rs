@@ -357,7 +357,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 };
             }
             Demande::Numero => {
-                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| refus(format!("{} Rien n'a été écrit.", m)))?;
+                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| refus(format!("{} Rien n'a été écrit.", String::from(m))))?;
                 contrat.numero = Some(n.to_string());
             }
         }

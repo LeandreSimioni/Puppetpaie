@@ -789,7 +789,7 @@ pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: &str, num
 pub fn numero_declare(o: &Objet) -> Resultat<Option<NumeroContrat>> {
     let Some(pieces) = o.pieces() else { return Ok(None) };
     let declare = pieces.paies.values().rev().filter(|p| p.declare_par == Declaration::Dsn).map(|p| p.contrat.as_str()).find(|n| !n.trim().is_empty());
-    declare.map(NumeroContrat::lire).transpose()
+    declare.map(NumeroContrat::lire).transpose().map_err(String::from)
 }
 
 /// Une DSN de l'ancien logiciel a-t-elle declare le numero du contrat de `salarie` commence le `debut`
