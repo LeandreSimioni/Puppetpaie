@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use socle::echec::R;
 use socle::fichiers::dossier_du_code;
 
 /// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
@@ -107,11 +108,11 @@ pub fn poser_l_installation_du_rejeu(inst: Option<PathBuf>) {
 }
 
 /// Le fichier `p` lu en sa forme, s'il est la : `None` sans fichier.
-fn lire_s_il_est_la<T: DeserializeOwned>(p: &Path, phrase: &str) -> Result<Option<T>, String> {
+fn lire_s_il_est_la<T: DeserializeOwned>(p: &Path, phrase: &str) -> R<Option<T>> {
     if !p.is_file() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(p, phrase).map(Some).map_err(String::from)
+    socle::forme::lire_fichier(p, phrase).map(Some)
 }
 
 /// La vraie compagnie : `prive/` a cote du code, sinon le code lui-meme.
@@ -154,17 +155,17 @@ pub struct Marqueur {
 }
 
 /// Le marqueur de `racine` : `None` si elle n'en a pas (elle n'est pas une copie).
-pub fn marqueur(racine: &Path) -> Result<Option<Marqueur>, String> {
+pub fn marqueur(racine: &Path) -> R<Option<Marqueur>> {
     lire_s_il_est_la(&racine.join(MARQUEUR), "Le marqueur de la compagnie (COPIE-DE-DEVELOPPEMENT.json) ne se lit pas.")
 }
 
 /// Ce que le marqueur d'une copie dit qu'elle copie (`copie_de`) ; `None` hors d'une copie.
-pub fn copie_de(racine: &Path) -> Result<Option<String>, String> {
+pub fn copie_de(racine: &Path) -> R<Option<String>> {
     Ok(marqueur(racine)?.map(|m| m.copie_de))
 }
 
 /// Une COMPAGNIE FICTIVE : son marqueur le dit (ses envois sont joues, rien n'en part).
-pub fn est_fictive(racine: &Path) -> Result<bool, String> {
+pub fn est_fictive(racine: &Path) -> R<bool> {
     Ok(copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_FICTIVE)))
 }
 
@@ -177,7 +178,7 @@ pub fn est_fictive(racine: &Path) -> Result<bool, String> {
 ///
 /// UN DOSSIER DE `fictives/` SANS MARQUEUR DE FICTIVE (un marqueur retire) se lit aussi comme ajoute : l'accueil le
 /// propose parmi les fictives, rien ne doit en partir, et rien n'en est joue.
-pub fn est_ajoutee(racine: &Path) -> Result<bool, String> {
+pub fn est_ajoutee(racine: &Path) -> R<bool> {
     let m = marqueur(racine)?;
     let marque = m.as_ref().is_some_and(|m| m.ajoutee == Some(true));
     let fictive = m.as_ref().is_some_and(|m| m.copie_de.starts_with(MARQUE_FICTIVE));
@@ -187,7 +188,7 @@ pub fn est_ajoutee(racine: &Path) -> Result<bool, String> {
 
 /// UNE FICTIVE LIVREE : une fictive qui n'est pas ajoutee. Ses envois sont joues ; elle a sa photo d'origine et sa remise
 /// a zero.
-pub fn est_fictive_livree(racine: &Path) -> Result<bool, String> {
+pub fn est_fictive_livree(racine: &Path) -> R<bool> {
     Ok(est_fictive(racine)? && !est_ajoutee(racine)?)
 }
 
@@ -197,7 +198,7 @@ pub fn est_fictive_livree(racine: &Path) -> Result<bool, String> {
 pub const PREFIXE_AJOUTEE: &str = "ajoutee-";
 
 /// La fiche entreprise telle qu'elle vaut aujourd'hui.
-fn fiche(racine: &Path) -> Result<droit::fiche::ChampsEntreprise, String> {
+fn fiche(racine: &Path) -> R<droit::fiche::ChampsEntreprise> {
     let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?;
     Ok(f.au(&droit::contexte::jour_reel()))
 }
@@ -210,16 +211,16 @@ fn dit(t: Option<&str>) -> Option<String> {
 /// Le nom d'une compagnie tel que sa tuile le dit : `nom_affichage`, sinon la raison sociale, sinon son dossier.
 /// UNE FICHE QUI NE SE LIT PAS n'enleve pas la compagnie de l'accueil : elle se nomme par son dossier (on peut encore
 /// l'ouvrir, qui dit pourquoi, ou la supprimer).
-pub fn nom_de(racine: &Path) -> Result<String, String> {
+pub fn nom_de(racine: &Path) -> R<String> {
     Ok(nom_et_lieu(racine)?.0)
 }
 
 /// Le nom et le lieu de la tuile de `racine` ; une fiche qui ne se lit pas : le nom de son dossier, et pour lieu ce qui
 /// ne se lit pas.
-fn nom_et_lieu(racine: &Path) -> Result<(String, String), String> {
+fn nom_et_lieu(racine: &Path) -> R<(String, String)> {
     let ent = match fiche(racine) {
         Ok(ent) => ent,
-        Err(pourquoi) => return Ok((nom_dossier(racine)?, socle::echec::phrase_de(&pourquoi))),
+        Err(pourquoi) => return Ok((nom_dossier(racine)?, pourquoi.phrase)),
     };
     let nom = match dit(ent.nom_affichage.as_deref()).or_else(|| dit(ent.raison_sociale.as_deref())) {
         Some(n) => n,
@@ -266,11 +267,11 @@ struct Affichage {
 }
 
 /// La couleur d'une compagnie (`config/affichage.json`) ; celle de la charte tant qu'elle n'en a pas choisi.
-pub fn couleur(racine: &Path) -> Result<String, String> {
+pub fn couleur(racine: &Path) -> R<String> {
     let p = racine.join(AFFICHAGE);
     match lire_s_il_est_la::<Affichage>(&p, "La couleur de la compagnie (config/affichage.json) ne se lit pas.")? {
         Some(a) if couleur_valide(&a.couleur) => Ok(a.couleur),
-        Some(a) => Err(socle::echec::abime(&p, format!("la couleur « {} » n'a pas la forme #RRGGBB", a.couleur)).into()),
+        Some(a) => Err(socle::echec::abime(&p, format!("la couleur « {} » n'a pas la forme #RRGGBB", a.couleur))),
         None => Ok(COULEUR_DE_LA_CHARTE.to_string()),
     }
 }
@@ -294,7 +295,7 @@ pub struct Compagnie {
 const NATURES_DITES: [&str; 3] = [" (fictive)", " (démonstration)", " (demonstration)"];
 
 /// La tuile de la compagnie `racine` (`nom_et_lieu`).
-pub fn entree(id: String, racine: &Path, reelle: bool) -> Result<Compagnie, String> {
+pub fn entree(id: String, racine: &Path, reelle: bool) -> R<Compagnie> {
     let (mut n, lieu) = nom_et_lieu(racine)?;
     if !reelle {
         // Le nom d'une fictive porte parfois sa nature, entre parentheses : la tuile la dit deja.
@@ -312,11 +313,11 @@ pub fn est_cache(p: &Path) -> bool {
 }
 
 /// Les compagnies sous `dossier` (celles qui ont leur fiche entreprise), par ordre de dossier ; aucune s'il n'existe pas.
-fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
+fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let entrees = match std::fs::read_dir(dossier) {
         Ok(it) => it,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(socle::echec::du_disque(dossier, &e).into()),
+        Err(e) => return Err(socle::echec::du_disque(dossier, &e)),
     };
     let mut v = Vec::new();
     for e in entrees {
@@ -330,15 +331,15 @@ fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Le nom du dossier d'une compagnie.
-pub fn nom_dossier(p: &Path) -> Result<String, String> {
+pub fn nom_dossier(p: &Path) -> R<String> {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-        socle::echec::avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
+        socle::echec::refus_avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
     })
 }
 
 /// Les compagnies de l'installation `b` (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`, `fictives/`), dans
 /// l'ordre des tuiles. L'administrateur (`administrateur.rs`) lit celles de l'installation qu'on lui donne.
-pub fn liste_de(b: &Path) -> Result<Vec<Compagnie>, String> {
+pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
     let mut out = Vec::new();
     if !crate::bridage::est_bride_de(b) {
         let reel = if b == base() { dossier_reel() } else { b.join("prive") };
@@ -358,14 +359,14 @@ pub fn liste_de(b: &Path) -> Result<Vec<Compagnie>, String> {
 /// LES COMPAGNIES QUE LA FENETRE TIENT A JOUR EN FOND des son lancement (`Fenetre::prechauffer`) : les
 /// vraies compagnies de l'installation `b` (pas les fictives), la derniere ouverte d'abord -- la date de son journal de
 /// la fenetre (`journal/interface.log`), que chaque ouverture recommence ; jamais ouverte (sans journal), a la fin.
-pub fn a_tenir_a_jour(b: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn a_tenir_a_jour(b: &Path) -> R<Vec<PathBuf>> {
     let mut datees = Vec::new();
     for c in liste_de(b)?.into_iter().filter(|c| c.reelle) {
         let journal = c.racine.join(JOURNAL_INTERFACE);
         let date = match std::fs::metadata(&journal).and_then(|m| m.modified()) {
             Ok(d) => Some(d),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(socle::echec::du_disque(&journal, &e).into()),
+            Err(e) => return Err(socle::echec::du_disque(&journal, &e)),
         };
         datees.push((date, c.racine));
     }
@@ -374,19 +375,19 @@ pub fn a_tenir_a_jour(b: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Le dossier d'une tuile -- et seulement d'une tuile : l'identifiant ne designe jamais un chemin qu'on n'a pas propose.
-pub fn racine_choisie(inst: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn racine_choisie(inst: &Path, id: &str) -> R<PathBuf> {
     liste_de(inst)?
         .into_iter()
         .find(|c| c.id == id)
         .map(|c| c.racine)
-        .ok_or_else(|| format!("Compagnie inconnue ou absente de cette version : {}", id))
+        .ok_or_else(|| socle::refus!("Compagnie inconnue ou absente de cette version : {}", id))
 }
 
-pub fn poser_couleur(inst: &Path, id: &str, valeur: &str) -> Result<String, String> {
+pub fn poser_couleur(inst: &Path, id: &str, valeur: &str) -> R<String> {
     if !couleur_valide(valeur) {
-        return Err(format!("Couleur attendue sous la forme #RRGGBB : '{}'", valeur));
+        return Err(socle::refus!("Couleur attendue sous la forme #RRGGBB : '{}'", valeur));
     }
-    let c = liste_de(inst)?.into_iter().find(|c| c.id == id && c.reelle).ok_or("Seule une compagnie reelle a une couleur a choisir.")?;
+    let c = liste_de(inst)?.into_iter().find(|c| c.id == id && c.reelle).ok_or_else(|| socle::echec::refus("Seule une compagnie reelle a une couleur a choisir."))?;
     let v = valeur.to_uppercase();
     socle::ecriture::ecrire_json(&c.racine.join(AFFICHAGE), &Affichage { couleur: v.clone() }, 2)?;
     Ok(v)
@@ -444,12 +445,12 @@ pub struct Creation {
     pub quoi: String,
 }
 
-fn creation(racine: &Path) -> Result<Option<Creation>, String> {
+fn creation(racine: &Path) -> R<Option<Creation>> {
     lire_s_il_est_la(&racine.join(socle::fichiers::CONFIG).join(FICHIER_CREATION), "Le jour d'ajout de la compagnie (config/creation.json) ne se lit pas.")
 }
 
 /// Le jour ou la compagnie a ete ajoutee ; `None` pour une compagnie d'avant.
-pub fn cree_le(racine: &Path) -> Result<Option<socle::date::Jour>, String> {
+pub fn cree_le(racine: &Path) -> R<Option<socle::date::Jour>> {
     Ok(creation(racine)?.map(|c| c.le))
 }
 
@@ -475,11 +476,11 @@ impl Venue {
 }
 
 /// Le chemin du « + » par lequel la compagnie est venue ; `None` pour une compagnie d'avant.
-pub fn venue(racine: &Path) -> Result<Option<Venue>, String> {
+pub fn venue(racine: &Path) -> R<Option<Venue>> {
     Ok(creation(racine)?.map(|c| c.venue))
 }
 
-fn origine(racine: &Path) -> Result<PathBuf, String> {
+fn origine(racine: &Path) -> R<PathBuf> {
     Ok(dessus(racine).join(DOSSIER_ORIGINE).join(nom_dossier(racine)?))
 }
 
@@ -502,16 +503,16 @@ fn copier_arbre(de: &Path, vers: &Path, rel: &Path, sauf: &[&str]) -> std::io::R
 }
 
 /// Le dossier `d` retire, s'il est la.
-fn retirer_dossier(d: &Path) -> Result<(), String> {
+fn retirer_dossier(d: &Path) -> R<()> {
     match std::fs::remove_dir_all(d) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(socle::echec::du_disque(d, &e).into()),
+        Err(e) => Err(socle::echec::du_disque(d, &e)),
     }
 }
 
 /// La photo d'origine d'une fictive, prise avant le premier geste (un dossier `.origine/<nom>/`).
-pub fn figer_origine(racine: &Path) -> Result<(), String> {
+pub fn figer_origine(racine: &Path) -> R<()> {
     if !est_fictive_livree(racine)? {
         return Ok(());
     }
@@ -522,18 +523,18 @@ pub fn figer_origine(racine: &Path) -> Result<(), String> {
     let provisoire = o.with_extension("part");
     retirer_dossier(&provisoire)?;
     copier_arbre(racine, &provisoire, Path::new(""), &PROPRES_AU_POSTE).map_err(|e| socle::echec::du_disque(&provisoire, &e))?;
-    std::fs::rename(&provisoire, &o).map_err(|e| socle::echec::du_disque(&o, &e).into())
+    std::fs::rename(&provisoire, &o).map_err(|e| socle::echec::du_disque(&o, &e))
 }
 
 /// La fictive revient a sa photo d'origine ; ce qui appartient au poste est garde. Rend (nom, deja).
-pub fn remettre_a_zero(inst: &Path, id: &str) -> Result<(String, bool), String> {
+pub fn remettre_a_zero(inst: &Path, id: &str) -> R<(String, bool)> {
     let mut trouvee = None;
     for c in liste_de(inst)? {
         if c.id == id && !c.reelle && est_fictive_livree(&c.racine)? {
             trouvee = Some(c);
         }
     }
-    let c = trouvee.ok_or("Seule une compagnie fictive livrée se remet à zéro.")?;
+    let c = trouvee.ok_or_else(|| socle::echec::refus("Seule une compagnie fictive livrée se remet à zéro."))?;
     let o = origine(&c.racine)?;
     if !o.is_dir() {
         return Ok((c.nom, true));
@@ -551,7 +552,7 @@ pub fn remettre_a_zero(inst: &Path, id: &str) -> Result<(String, bool), String> 
         let octets = match std::fs::read(&source) {
             Ok(o) => o,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(socle::echec::du_disque(&source, &e).into()),
+            Err(e) => return Err(socle::echec::du_disque(&source, &e)),
         };
         let cible = neuve.join(rel);
         let d = dessus(&cible);
@@ -565,7 +566,7 @@ pub fn remettre_a_zero(inst: &Path, id: &str) -> Result<(String, bool), String> 
 }
 
 /// L'etiquette du bandeau d'une compagnie qui n'est pas reelle (deja en HTML).
-pub fn texte_copie(racine: &Path) -> Result<String, String> {
+pub fn texte_copie(racine: &Path) -> R<String> {
     if est_ajoutee(racine)? {
         return Ok("compagnie fictive &mdash; version d&eacute;mo, rien ne part".into());
     }

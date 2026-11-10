@@ -514,7 +514,7 @@ fn rejouer_les_gestes(
                     Some(v) => v,
                     None => Venue::Neuve,
                 };
-                let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, m))?;
+                let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, String::from(m)))?;
                 let rel = relatif(inst, &c.racine).map_err(|m| format!("geste {} : {}", n, m))?;
                 let nomme = match compagnie {
                     Some(c) if c != rel => {
@@ -534,7 +534,7 @@ fn rejouer_les_gestes(
             Some(Genre::Annoncer) => {
                 let racine = racine_nommee(&racines, &derniere, compagnie).ok_or(format!("geste {} : `annoncer` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
                 let annonce = g.annonce.as_ref().ok_or(format!("geste {} : `annoncer` sans annonce", n))?;
-                let b = compagnie::bridage::branchement(&racine).map_err(|m| format!("geste {} : {}", n, m))?;
+                let b = compagnie::bridage::branchement(&racine).map_err(|m| format!("geste {} : {}", n, String::from(m)))?;
                 envois::organismes_simules::annoncer(&racine, b, annonce).map_err(|e| format!("geste {} : {}", n, String::from(e)))?;
             }
             Some(Genre::Etat) => {

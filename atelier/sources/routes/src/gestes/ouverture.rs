@@ -755,7 +755,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let (branchement, fictive) = match compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, compagnie::installation::est_fictive(&ctx.racine)?))) {
         Ok(x) => x,
         Err(e) => {
-            r.incidents.push(e);
+            r.incidents.push(String::from(e));
             return r;
         }
     };
@@ -887,7 +887,7 @@ fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>
     let joue = match compagnie::bridage::branchement(&ctx.racine) {
         Ok(b) => b.joue(),
         Err(e) => {
-            r.incidents.push(e);
+            r.incidents.push(String::from(e));
             return r;
         }
     };

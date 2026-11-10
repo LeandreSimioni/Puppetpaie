@@ -1522,7 +1522,7 @@ pub fn machine(racine: &Path) -> Machine {
         compagnie: match crate::installation::est_fictive(racine) {
             Ok(true) => "fictive".to_string(),
             Ok(false) => "réelle (non nommée)".to_string(),
-            Err(e) => socle::echec::phrase_de(&e),
+            Err(e) => e.phrase,
         },
         langue_systeme: langue,
         lance_depuis: duree_lisible(demarrage().elapsed()),

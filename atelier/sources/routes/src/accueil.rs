@@ -169,6 +169,11 @@ fn operation(m: String) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
+/// Un refus de l'installation : le geste est refuse.
+fn refuse(m: Echec) -> Echec {
+    Echec { classe: Some(Classe::Refuse), ..m }
+}
+
 /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -343,7 +348,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieAjouter => {
             let a: ChargeAjouter = charge.lire()?;
-            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(operation)?;
+            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(refuse)?;
             let phrase = if c.reelle {
                 format!("{} est ajoutée.", c.nom)
             } else {
@@ -353,12 +358,12 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieCouleur => {
             let c: ChargeCouleur = charge.lire()?;
-            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(operation)?;
+            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(refuse)?;
             en_json(Couleur { phrase: format!("Couleur posée : {}.", couleur), couleur })
         }
         Route::CompagnieRemettreAZero => {
             let c: ChargeCompagnie = charge.lire()?;
-            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(operation)?;
+            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(refuse)?;
             en_json(Dit { phrase: format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
         Route::CompagniesGarder => {
@@ -433,10 +438,10 @@ impl Dite for compagnie::maj::PortableComplete {
 ///
 /// LOGICIEL BRIDE : la compagnie ajoutee est une FICTIVE AJOUTEE (`installation::est_ajoutee`) -- sous `fictives/`, dans
 /// un dossier `ajoutee-…`, avec le marqueur d'une fictive et sa marque. Debloque : une compagnie reelle, sous `compagnies/`.
-pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie, String> {
+pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     let nom = nom.split_whitespace().collect::<Vec<_>>().join(" ");
     if nom.chars().count() < 2 {
-        return Err("Le nom de la compagnie, s'il vous plait.".into());
+        return Err(socle::echec::refus("Le nom de la compagnie, s'il vous plait."));
     }
     let bride = compagnie::bridage::est_bride_de(inst);
     let (parent, racine_nom) = if bride {
@@ -456,7 +461,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration.
     let mut saisie = declarations::champs::Saisie::default();
     saisie.poser("nom_affichage", declarations::champs::Valeur::Texte(nom.clone()));
-    crate::fiches::deriver("entreprise", &mut saisie, false, &|_| true).map_err(String::from)?;
+    crate::fiches::deriver("entreprise", &mut saisie, false, &|_| true)?;
     // Toute la configuration est datee (`droit::fiche::dater`) : la premiere valeur vaut de tout temps.
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());

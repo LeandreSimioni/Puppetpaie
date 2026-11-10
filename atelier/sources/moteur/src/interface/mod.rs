@@ -563,7 +563,7 @@ impl Fenetre {
             let reelles = match installation::a_tenir_a_jour(&installation::base()) {
                 Ok(r) => r,
                 Err(e) => {
-                    f.ecrire(&format!("Calcul en fond non lance : {}\n", socle::echec::phrase_de(&e)));
+                    f.ecrire(&format!("Calcul en fond non lance : {}\n", e.phrase));
                     return;
                 }
             };
@@ -588,7 +588,7 @@ impl Fenetre {
     /// La compagnie choisie devient celle de la fenetre ; une fictive s'ouvre sans mot de passe.
     fn prendre(&self, racine: PathBuf) -> Result<(), String> {
         if let Err(e) = installation::figer_origine(&racine) {
-            self.ecrire(&format!("Photo d'origine non prise : {}\n", e));
+            self.ecrire(&format!("Photo d'origine non prise : {}\n", String::from(e)));
         }
         // Aucune variable du processus ne dit la compagnie : chaque route la recoit (`--racine`, `o["racine"]`,
         // le `Contexte`), et la fenetre pourra en servir plusieurs a la fois.
@@ -1029,7 +1029,7 @@ impl Fenetre {
         let joue = match compagnie::bridage::branchement(&racine) {
             Ok(b) => b.joue(),
             Err(e) => {
-                self.ecrire(&format!("{}\n", socle::echec::phrase_de(&e)));
+                self.ecrire(&format!("{}\n", e.phrase));
                 return interdit;
             }
         };

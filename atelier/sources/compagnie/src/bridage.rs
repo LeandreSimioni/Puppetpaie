@@ -104,7 +104,7 @@ pub const REFUS_D_ENVOI: &str = "L'envoi n'est pas possible depuis la version d�
 ///
 /// Chaque envoi vers un organisme ou une personne l'ouvre avant que rien ne s'ecrive (`Branchement::ouvrir`). Ce qui va
 /// a l'editeur (incidents, « Un probleme, une idee ? ») et la verification d'un mot de passe ne sont pas des envois.
-pub fn branchement(racine: &Path) -> Result<envois::branchement::Branchement, String> {
+pub fn branchement(racine: &Path) -> socle::echec::R<envois::branchement::Branchement> {
     use crate::installation::{est_ajoutee, est_fictive};
     use envois::branchement::{Branchement, Refus};
     Ok(if est_ajoutee(racine)? {
@@ -126,18 +126,18 @@ pub fn etat() -> &'static str {
 }
 
 /// Le geste secret de l'accueil : bride <-> debloque, retenu sur le poste. Sans effet sur un paquet soude.
-pub fn basculer() -> Result<(), String> {
+pub fn basculer() -> socle::echec::R<()> {
     basculer_de(&crate::installation::base())
 }
 
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
 /// d'un scenario (`routes::scenario`).
-pub fn brider(inst: &Path) -> Result<(), String> {
-    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2).map_err(String::from)
+pub fn brider(inst: &Path) -> socle::echec::R<()> {
+    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
 }
 
 /// Le geste, sur l'installation `inst`.
-pub fn basculer_de(inst: &Path) -> Result<(), String> {
+pub fn basculer_de(inst: &Path) -> socle::echec::R<()> {
     if paquet_soude_de(inst) {
         return Ok(());
     }
@@ -150,5 +150,4 @@ pub fn basculer_de(inst: &Path) -> Result<(), String> {
         },
         2,
     )
-    .map_err(String::from)
 }
