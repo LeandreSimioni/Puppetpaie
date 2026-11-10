@@ -6,7 +6,6 @@
 use super::dit;
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
-use compagnie::taux_pas::ko;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -77,11 +76,11 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
 /// Les taux recus (la fiche de chaque salarie, `droit::pas::recus`), et ce qu'il faudrait demander a la DGFiP.
 fn lire(cadre: &Cadre) -> Result<i32, Echec> {
     let ctx = &cadre.ctx;
-    let diag =droit::pas::diagnostic(ctx, None, None, None).map_err(ko)?;
+    let diag = droit::pas::diagnostic(ctx, None, None, None)?;
     dire!("Taux de prelevement a la source recus\n{}", "-".repeat(62));
     for s in &diag {
         let cle = &s.salarie;
-        let recus = droit::pas::recus(ctx, cle).map_err(ko)?;
+        let recus = droit::pas::recus(ctx, cle)?;
         let Some(e) = recus.last() else {
             dire!("  {:<12} aucun taux recu", cle);
             continue;
