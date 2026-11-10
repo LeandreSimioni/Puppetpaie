@@ -37,7 +37,7 @@ pub struct BulletinRepris {
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
 pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
     let mut out: Vec<BulletinRepris> = Vec::new();
-    for p in engagement::importe::paies_lues(racine).map_err(Echec::from)? {
+    for p in engagement::importe::paies_lues(racine)? {
         if p.mois != mois {
             continue;
         }
@@ -56,10 +56,10 @@ pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
 
 /// Les mois que les engagements importes touchent, qu'aucun engagement de la saisie ne touche.
 pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
-    let mois: BTreeSet<String> = engagement::importe::tous(racine).map_err(Echec::from)?.iter().flat_map(Importe::mois).collect();
+    let mois: BTreeSet<String> = engagement::importe::tous(racine)?.iter().flat_map(Importe::mois).collect();
     let mut out = Vec::new();
     for m in mois {
-        if !engagement::stock::a_une_saisie(racine, &m).map_err(Echec::from)? {
+        if !engagement::stock::a_une_saisie(racine, &m)? {
             out.push(m);
         }
     }
@@ -74,7 +74,7 @@ pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`). La DSN de l'ancien logiciel ne se
 /// refait pas ici (regle 4).
 pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAncienLogiciel>> {
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(Echec::from)?.is_none() {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois)?.is_none() {
         return Ok(None);
     }
     let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
@@ -83,7 +83,7 @@ pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAn
     for e in engagement::etats::du_mois(ctx, mois, &departs)? {
         // Un engagement valide ne s'y declare que si sa correction est due ; un engagement en saisie, toujours.
         if let Some(v) = e.valide() {
-            if engagement::etats::correction_due(ctx, v, &departs, mois, &porteur).map_err(Echec::from)?.is_none() {
+            if engagement::etats::correction_due(ctx, v, &departs, mois, &porteur)?.is_none() {
                 continue;
             }
         }
@@ -582,8 +582,8 @@ pub fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
     let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
     let mut cartes = Vec::new();
     for i in importes {
-        let contrat = i.contrat_lu().map_err(Echec::from)?;
-        let paie = i.paies_lues().map_err(Echec::from)?.into_iter().find(|p| p.mois == mois);
+        let contrat = i.contrat_lu()?;
+        let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let salarie = brut.salarie.as_ref().map(ToString::to_string);
         let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut.as_deref());
