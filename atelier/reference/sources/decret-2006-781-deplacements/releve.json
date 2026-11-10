@@ -3,12 +3,12 @@
  "global": "Freemium_legi_global_20250713-140000.tar.gz",
  "texte": "Decret n° 2006-781 du 3 juillet 2006 fixant les conditions et les modalites de reglement des frais occasionnes par les deplacements temporaires des personnels civils de l'Etat",
  "legitext": "JORFTEXT000000242359",
- "livraisons_lues": 483,
- "livraisons_totales": 483,
- "complet": true,
- "derniere_livraison": "20261102-213929",
+ "livraisons_lues": 485,
+ "livraisons_totales": 2,
+ "complet": false,
+ "derniere_livraison": "20261109-212854",
  "changes_depuis_le_global": [],
- "releve_le": "2026-11-03",
+ "releve_le": "2026-11-10",
  "articles": {
   "3": {
    "debut": "2024-07-08",
