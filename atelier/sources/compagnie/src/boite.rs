@@ -30,21 +30,21 @@ pub fn adresse(racine: &Path) -> R<Option<String>> {
         Ok(v) if !v.is_empty() => return Ok(Some(v.trim().to_lowercase())),
         Ok(_) | Err(std::env::VarError::NotPresent | std::env::VarError::NotUnicode(_)) => {}
     }
-    let du_coffre = coffre_de(racine).compte_pose(SERVICE).map_err(crate::en(Classe::Courriel))?;
+    let du_coffre = coffre_de(racine).compte_pose(SERVICE).map_err(|e| e.reclasser(Classe::Courriel))?;
     Ok(du_coffre.map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()))
 }
 
 /// Peut-on ouvrir la boite sans rien demander ? Adresse ET secret ; ce qui ne se lit pas le refuse.
 pub fn disponible(racine: &Path) -> R<bool> {
     match adresse(racine)? {
-        Some(_) => coffre_de(racine).disponible(SERVICE).map_err(crate::en(Classe::Courriel)),
+        Some(_) => coffre_de(racine).disponible(SERVICE).map_err(|e| e.reclasser(Classe::Courriel)),
         None => Ok(false),
     }
 }
 
 /// Le mot de passe, lu en CONSULTATION.
 pub fn mot_de_passe(racine: &Path) -> R<String> {
-    let lu = coffre_de(racine).lire(SERVICE, CONSULTATION, false, None).map_err(crate::en(Classe::Courriel))?;
+    let lu = coffre_de(racine).lire(SERVICE, CONSULTATION, false, None).map_err(|e| e.reclasser(Classe::Courriel))?;
     match lu {
         Some(m) if !m.is_empty() => Ok(m.replace(' ', "")),
         _ => Err(refus("Aucun mot de passe de boite courriel dans le coffre.\n  route coffre-poser, service courriel, compte adresse@...")),

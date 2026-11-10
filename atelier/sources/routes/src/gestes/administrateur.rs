@@ -798,7 +798,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
     let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, &ctx.aujourdhui.iso());
-    let rappels = crate::rappels::rappels(ctx).map_err(|e| Echec { classe: Some(Classe::Refuse), ..e })?;
+    let rappels = crate::rappels::rappels(ctx).map_err(|e| e.reclasser(Classe::Refuse))?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
     for r in &rappels.rappels {
@@ -1128,7 +1128,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
                     "",
                     "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
                 );
-                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|e| Echec { classe: Some(Classe::PreuveInsuffisante), ..e })?
+                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|e| e.reclasser(Classe::PreuveInsuffisante))?
             }
         };
         if !ouvre_une(&Poste::de_ce_poste(), &groupe, &m)? {

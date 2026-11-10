@@ -19,7 +19,7 @@ use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, Sa
 use socle::date::Jour;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
-use socle::echec::{Echec, R};
+use socle::echec::R;
 
 /// La charge de `organismes-enregistrer` : ce que la compagnie saisit de chaque contrat (`{cle: {libelle, organisme}}`,
 /// rien sans lui), et le mois a partir duquel ils valent (le mois en cours sans lui).
@@ -42,11 +42,6 @@ impl Lus {
     pub fn lignes(&self) -> &[droit::organismes::Ligne] {
         &self.lignes
     }
-}
-
-/// Un refus de la composition : le geste est refuse.
-fn refuse(e: Echec) -> Echec {
-    Echec { classe: Some(socle::echec::Classe::Refuse), ..e }
 }
 
 fn chemin(ctx: &Contexte) -> std::path::PathBuf {
@@ -105,7 +100,7 @@ pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
     let periode = periode(ctx, charge.mois.as_deref())?;
     let du_mois = ctx.au(&periode.1)?;
     let (saisi, prises) = saisis(&du_mois)?;
-    let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(refuse)?;
+    let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(|e| e.reclasser(socle::echec::Classe::Refuse))?;
     // Ce qu'un texte donne entier (sa reference de contrat et son identifiant) ne s'ecrit pas : il se recompose a la
     // date de chaque mois, sous la convention de ce mois.
     let fixes: Vec<String> = attendus(&du_mois)?.iter().filter(|s| s.libelle_donne().is_some()).map(|s| s.cle.trim().to_string()).collect();

@@ -2463,7 +2463,7 @@ fn le_jour(t: &str) -> R<String> {
         Some(x) => x,
         None => t,
     };
-    let jour = Jour::lire(tete).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Un instant du journal des envois ne se lit pas.", "quand", String::from(e)) })?;
+    let jour = Jour::lire(tete).map_err(|e| socle::echec::a_la_cle("Un instant du journal des envois ne se lit pas.", "quand", String::from(e)).reclasser(Classe::Illisible))?;
     Ok(format!("le {}", jour.jj_mm_aaaa()))
 }
 

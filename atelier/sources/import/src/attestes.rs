@@ -20,7 +20,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, ContratLu};
-use socle::echec::{Classe, Echec, R};
+use socle::echec::{Classe, R};
 use socle::num::Decimal;
 
 /// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
@@ -256,7 +256,7 @@ impl Registre {
                 continue;
             }
             for (mois, p) in i.paies() {
-                let m = socle::mois::Mois::lire(mois).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })?;
+                let m = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
                 let (premier, dernier) = (m.premier_jour().iso(), m.dernier_jour().iso());
                 let mut a = lu(nir, &c, "historique");
                 a.debut = Some(match &debut {

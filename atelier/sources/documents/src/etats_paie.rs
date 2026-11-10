@@ -19,7 +19,7 @@ use serde::{Serialize, Serializer};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::{erreur, Classe};
 use socle::num::{eur2, zero2, Decimal};
 use droit::pas::Versement;
 use crate::tableaux_export::{
@@ -130,7 +130,7 @@ pub struct Periode {
 /// Les mois qu'il y a matiere a exporter : ceux que la saisie touche (`SAISIE`), et ceux ou seuls des engagements
 /// importes ont ete payes (`IMPORTE`).
 pub fn mois_disponibles(ctx: &Contexte) -> R<BTreeMap<String, &'static str>> {
-    let mois = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+    let mois = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mut dispo: BTreeMap<String, &'static str> = mois_importes(ctx)?.into_iter().map(|m| (m, IMPORTE)).collect();
     dispo.extend(mois.into_iter().map(|m| (m.to_string(), SAISIE)));
     Ok(dispo)
@@ -138,7 +138,7 @@ pub fn mois_disponibles(ctx: &Contexte) -> R<BTreeMap<String, &'static str>> {
 
 /// Les mois ou un engagement importe a ete paye : ce que l'import a lu de ses paies (`engagement::importe`).
 pub fn mois_importes(ctx: &Contexte) -> R<BTreeSet<String>> {
-    let tous = engagement::importe::tous(&ctx.racine).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+    let tous = engagement::importe::tous(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     Ok(tous.iter().flat_map(|i| i.paies().keys().cloned()).collect())
 }
 
@@ -236,7 +236,7 @@ fn mois_pris(dispo: &BTreeMap<String, &'static str>, quand: &Quand) -> R<Vec<Str
 /// lisent les etats et les exports.
 pub fn charger_mois(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<(engagement::saisie::VueDuMois, Vec<Paie>)> {
     engagement::etats::validees_du_mois(ctx, mois, departs)
-        .map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?
+        .map_err(|m| m.reclasser(Classe::Refuse))?
         .ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)))
 }
 
@@ -256,7 +256,7 @@ impl<'a> Lecture<'a> {
     /// Les paies du mois, calculees ou importees (`engagement::etats::paies_du_mois`).
     pub fn paies(&mut self, mois: &str) -> R<Rc<Vec<Paie>>> {
         if !self.paies.contains_key(mois) {
-            let paies = engagement::etats::paies_du_mois(self.ctx, mois, self.departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
+            let paies = engagement::etats::paies_du_mois(self.ctx, mois, self.departs).map_err(|m| m.reclasser(Classe::Refuse))?;
             self.paies.insert(mois.to_string(), Rc::new(paies));
         }
         Ok(Rc::clone(&self.paies[mois]))
@@ -266,7 +266,7 @@ impl<'a> Lecture<'a> {
     pub fn pas(&mut self, mois: &str) -> R<Rc<Vec<Option<Versement>>>> {
         if !self.pas.contains_key(mois) {
             let paies = self.paies(mois)?;
-            let v = crate::prelevement::des_paies(self.ctx, &paies, self.departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
+            let v = crate::prelevement::des_paies(self.ctx, &paies, self.departs).map_err(|m| m.reclasser(Classe::Refuse))?;
             self.pas.insert(mois.to_string(), Rc::new(v));
         }
         Ok(Rc::clone(&self.pas[mois]))
@@ -285,11 +285,11 @@ pub fn titre_spectacle(p: &Paie) -> Option<String> {
 
 /// Un taux flottant en décimal, par son écriture la plus courte qui se relit.
 pub fn dec_taux(x: f64) -> R<Decimal> {
-    socle::num::dec_f64(x).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
+    socle::num::dec_f64(x).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 fn nat_libelle(p: &Paie) -> R<String> {
-    Ok(p.engagement.nat().map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?.libelle.clone())
+    Ok(p.engagement.nat().map_err(|m| m.reclasser(Classe::Refuse))?.libelle.clone())
 }
 
 // ------------------------------------------------------------------ le livre de paie
@@ -463,11 +463,11 @@ fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option
 /// celles que l'import a lues), ce qu'il a fallu taire, et si ses numeros de contrat sont tous ecrits. Un montant que
 /// les pieces d'une paie importee ne disent pas reste vide (`Paie::dit`) ; aucun numero n'est invente.
 fn lignes_du_mois(ctx: &Contexte, mois: &str, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool)> {
-    if engagement::etats::validees_du_mois(ctx, mois, departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?.is_none() && !mois_importes(ctx)?.contains(mois) {
+    if engagement::etats::validees_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?.is_none() && !mois_importes(ctx)?.contains(mois) {
         return Err(erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)));
     }
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
-    let pas = crate::prelevement::des_paies(ctx, &paies, departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
+    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let pas = crate::prelevement::des_paies(ctx, &paies, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (mut lignes, mut sans_pas) = (Vec::new(), Vec::new());
     for (p, r) in paies.iter().zip(pas.iter()) {
         if r.is_none() && p.dit("pas") {
@@ -606,7 +606,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
 /// Ecrit le livre dans `exports/AAAA/livre-de-paie-<periode>-<regroupement>[-coordonnees].<ext>`.
 fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf> {
     let dossier = quand.dossier(ctx);
-    std::fs::create_dir_all(&dossier).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) })?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let nom = format!("livre-de-paie-{}-{}{}.{}", quand.nom(), livre.regroupement, if livre.coordonnees { "-coordonnees" } else { "" }, livre.format);
     let chemin = dossier.join(nom);
     let octets = match livre.format.as_str() {
@@ -614,7 +614,7 @@ fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf
         "xlsx" => xlsx_livre(livre)?,
         _ => pdf_livre(ctx, livre)?,
     };
-    std::fs::write(&chemin, octets).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&chemin, &e) })?;
+    std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     Ok(chemin)
 }
 
@@ -1005,7 +1005,7 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut cols = vec![col_t("salarie", "Salarié")];
     // Une colonne par mois de l'annee, sous son nom abrege de quatre lettres avec son point : « Janv. » (l'annee n'y paraît pas).
     for i in 1..=12 {
-        let m = socle::mois::Mois::nouveau(1, i).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })?;
+        let m = socle::mois::Mois::nouveau(1, i).map_err(|e| e.reclasser(Classe::Illisible))?;
         cols.push(col_m(&format!("m{:02}", i), &format!("{}.", m.nom(socle::mois::Graphie::Titre).chars().take(4).collect::<String>())));
     }
     cols.extend([
@@ -1184,7 +1184,7 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     l.ot("type", v.type_taux.as_deref().filter(|c| !c.is_empty()).map(|c| format!("{} — {}", c, type_de_taux(c))));
                     match &v.taux {
                         None => l.rien("taux"),
-                        Some(t) => l.d("taux", t.dec().map_err(|m| Echec { classe: Some(Classe::CalculImpossible), ..m })?),
+                        Some(t) => l.d("taux", t.dec().map_err(|m| m.reclasser(Classe::CalculImpossible))?),
                     };
                     l.d("prelevement", eur2(v.prelevement));
                 }

@@ -923,11 +923,11 @@ pub fn format_possible(fmt: &str, formats: &[&str]) -> R<String> {
 
 /// Ecrit le tableau dans `dossier/nom.<ext>` (`tsv` s'ecrit `.txt`) et rend le chemin.
 pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<PathBuf> {
-    std::fs::create_dir_all(dossier).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) })?;
+    std::fs::create_dir_all(dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let ext = if t.format == "tsv" { "txt" } else { t.format.as_str() };
     let chemin = dossier.join(format!("{}.{}", nom, ext));
     let contenu = octets(t, Some(ctx))?;
-    std::fs::write(&chemin, contenu).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&chemin, &e) })?;
+    std::fs::write(&chemin, contenu).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     t.fichier = Some(chemin.clone());
     Ok(chemin)
 }
@@ -936,7 +936,7 @@ pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<P
 
 /// « Septembre 2026 » d'un mois `AAAA-MM` (le nom en titre) ; un mois illisible se refuse.
 pub fn libelle_mois(m: &str) -> R<String> {
-    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })
+    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| e.reclasser(Classe::Illisible))
 }
 
 /// AAAA-MM-JJ -> JJ/MM/AAAA ; le reste tel quel.
@@ -952,7 +952,7 @@ pub fn jj(iso: &str) -> String {
 /// « NOM Prenom ».
 pub fn qui(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     if fiche.nom.is_none() {
-        return Err(Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent("nom") });
+        return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
     }
     Ok(qui_souple(fiche))
 }

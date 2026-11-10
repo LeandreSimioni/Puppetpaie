@@ -50,7 +50,7 @@ impl Echec {
     /// Le refus, de la classe `classe` que son lecteur lui donne ; il garde ce qu'il porte a part.
     pub fn en_classe(self, classe: Classe) -> socle::echec::Echec {
         match self {
-            Echec::Impossible(e) | Echec::Autre(e) => socle::echec::Echec { classe: Some(classe), ..e },
+            Echec::Impossible(e) | Echec::Autre(e) => e.reclasser(classe),
         }
     }
 }

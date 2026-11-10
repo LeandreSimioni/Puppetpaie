@@ -53,12 +53,6 @@ fn erreur(m: impl Into<String>) -> Echec {
     socle::echec::erreur(Classe::Courriel, m)
 }
 
-/// Un refus d'ailleurs (le disque, une lecture, la signature) survenu dans la boite ou en l'envoi : il devient un refus
-/// de la boite.
-pub fn de_la_boite(e: Echec) -> Echec {
-    Echec { classe: Some(Classe::Courriel), ..e }
-}
-
 /// La surface de `courriel.Client` : celle que `envoi` et la releve des signatures utilisent.
 pub trait Courriel {
     /// L'adresse de la boite.
@@ -117,7 +111,7 @@ pub fn serveurs(racine: &Path) -> R<Serveurs> {
     if !p.exists() {
         return Ok(s);
     }
-    let dits: ServeursDits = socle::forme::lire_fichier(&p, "Les serveurs de la messagerie de la compagnie ne se lisent pas.").map_err(de_la_boite)?;
+    let dits: ServeursDits = socle::forme::lire_fichier(&p, "Les serveurs de la messagerie de la compagnie ne se lisent pas.").map_err(|e| e.reclasser(Classe::Courriel))?;
     if let Some(h) = dits.imap {
         s.imap = h;
     }
@@ -157,7 +151,7 @@ impl<T: Read + Write + ?Sized> Flux for T {}
 
 fn connecter(hote: &str, port: u16) -> R<TcpStream> {
     // En essai, le garde-fou reseau : aucune boite reelle.
-    socle::garde_reseau::directe(hote).map_err(|e| de_la_boite(e.reformuler(|m| format!("Serveur injoignable : {}", m))))?;
+    socle::garde_reseau::directe(hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
     let delai = Duration::from_secs(DELAI);
     let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
     let mut derniere = None;
@@ -494,7 +488,7 @@ impl Courriel for Client {
                     Some((_, d)) => d,
                     None => self.compte.as_str(),
                 };
-                let i = crate::envoi::nouveau_message_id(domaine).map_err(de_la_boite)?;
+                let i = crate::envoi::nouveau_message_id(domaine).map_err(|e| e.reclasser(Classe::Courriel))?;
                 let mut avec = format!("Message-ID: {}\n", i).into_bytes();
                 avec.extend_from_slice(&brut);
                 brut = avec;
@@ -509,7 +503,7 @@ impl Courriel for Client {
         let mdp = self.mot_de_passe.clone();
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
-        socle::garde_reseau::directe(&hote).map_err(|e| de_la_boite(e.reformuler(|m| format!("Serveur injoignable : {}", m))))?;
+        socle::garde_reseau::directe(&hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
         let tls = TlsParameters::builder(hote.clone()).build_rustls().map_err(|e| erreur(format!("TLS : {}", e)))?;
         let transport = SmtpTransport::builder_dangerous(hote.as_str())
             .port(port)
@@ -597,7 +591,7 @@ fn message_id_de(brut: &[u8]) -> Option<String> {
 /// `octets` octets des aleas du systeme, en hexadecimal ; un systeme qui n'en donne pas refuse.
 pub fn hexa_au_hasard(octets: usize) -> R<String> {
     let mut o = vec![0u8; octets];
-    socle::temps::aleas(&mut o).map_err(|e| de_la_boite(e.reformuler(|p| format!("Le systeme ne donne pas d'aleas : {}.", p))))?;
+    socle::temps::aleas(&mut o).map_err(|e| e.reformuler(|p| format!("Le systeme ne donne pas d'aleas : {}.", p)).reclasser(Classe::Courriel))?;
     Ok(o.iter().map(|c| format!("{:02x}", c)).collect())
 }
 
@@ -623,7 +617,7 @@ impl Courriel for BoiteSimulee {
     /// c'est par lui que la compagnie fictive retrouve ce qui est parti.
     fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
         let dossier = self.racine.join(DOSSIER_COURRIELS);
-        std::fs::create_dir_all(&dossier).map_err(|e| de_la_boite(socle::echec::du_disque(&dossier, &e)))?;
+        std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Courriel))?;
         // Un message sans `Message-ID` en recoit un, comme chez le vrai client.
         let ident = match message_id_de(message_mime) {
             Some(i) => i,
@@ -632,7 +626,7 @@ impl Courriel for BoiteSimulee {
         let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
         let nom = format!("{}_{}.eml", horodatage_de(maintenant)?, hexa_au_hasard(4)?);
         let chemin = dossier.join(&nom);
-        std::fs::write(&chemin, message_mime).map_err(|e| de_la_boite(socle::echec::du_disque(&chemin, &e)))?;
+        std::fs::write(&chemin, message_mime).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Courriel))?;
         Ok(ident)
     }
 

@@ -140,7 +140,7 @@ impl Charge {
         match self.0.get("mois").and_then(Value::as_str).filter(|m| !m.is_empty()) {
             Some(m) => socle::mois::Mois::lire(m)
                 .map(Some)
-                .map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", String::from(e)) }),
+                .map_err(|e| socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", String::from(e)).reclasser(Classe::Illisible)),
             None => Ok(None),
         }
     }

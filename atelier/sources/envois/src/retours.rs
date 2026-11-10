@@ -810,7 +810,7 @@ impl Bilan {
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
 fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
-    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
+    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
@@ -1152,7 +1152,7 @@ const LISTE_ILLISIBLE: &str = "La liste que la plate-forme rend ne se lit pas.";
 /// La liste illisible, la cle qui ne va pas a part.
 #[track_caller]
 fn illisible(cle: &str) -> Echec {
-    Echec { classe: Some(Classe::Illisible), ..socle::echec::cle(LISTE_ILLISIBLE, cle) }
+    socle::echec::cle(LISTE_ILLISIBLE, cle).reclasser(Classe::Illisible)
 }
 
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
@@ -1166,7 +1166,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| m.reclasser(Classe::Illisible))?;
         let mut out = Vec::new();
         for f in UnOuPlusieurs::en_liste(l.retours.and_then(|r| r.flux)) {
             for r in UnOuPlusieurs::en_liste(f.retour) {
@@ -1228,7 +1228,7 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| m.reclasser(Classe::Illisible))?;
         return Ok(UnOuPlusieurs::en_liste(d.depots.and_then(|x| x.declarant).and_then(|x| x.depot)));
     }
     let arbre = lire_texte(texte)?;

@@ -46,7 +46,7 @@ use rust_decimal::Decimal;
 
 use documents::bulletin::{fmt_eur, fmt_heures};
 use engagement::calcul::Paie;
-use crate::courriel::{de_la_boite, Courriel};
+use crate::courriel::Courriel;
 use socle::date::repr_flottant;
 use socle::echec::{refus, Classe, Echec, R};
 
@@ -483,7 +483,7 @@ pub fn envoyer_suivi(
     // LA SIGNATURE DE LA COMPAGNIE : tout courriel passe ici, il la prend ici. Trop lourde, rien ne part.
     let signature = match client.racine().map(crate::signature_courriel::du_poste) {
         Some(Ok(s)) => s,
-        Some(Err(m)) => return Err(ErreurEnvoi { echec: de_la_boite(m), partis: Vec::new(), echoue: premier.destinataire.clone() }),
+        Some(Err(m)) => return Err(ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: Vec::new(), echoue: premier.destinataire.clone() }),
         None => None,
     };
     for message in messages {
@@ -495,15 +495,14 @@ pub fn envoyer_suivi(
             }
             None => (message, None),
         };
-        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: de_la_boite(m), partis: faits.clone(), echoue: message.destinataire.clone() })?;
+        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
             Err(e) if faits.is_empty() => return Err(ErreurEnvoi { echec: e, partis: faits, echoue: message.destinataire.clone() }),
             Err(e) => {
-                let echec = Echec {
-                    classe: Some(Classe::CourrielAvecAvertissement),
-                    ..e.reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), faits.join(", ")))
-                };
+                let echec = e
+                    .reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), faits.join(", ")))
+                    .reclasser(Classe::CourrielAvecAvertissement);
                 return Err(ErreurEnvoi { echec, partis: faits, echoue: message.destinataire.clone() });
             }
         };

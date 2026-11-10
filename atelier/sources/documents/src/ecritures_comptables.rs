@@ -40,7 +40,7 @@ pub struct Ecriture {
 
 /// La date de l'ecriture d'un mois (son dernier jour, AAAA-MM-JJ) et son libelle (« Decembre 2026 »).
 fn date_et_libelle(mois: &str) -> R<(String, String)> {
-    let mois = socle::mois::Mois::lire(mois).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })?;
+    let mois = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
     Ok((mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre)))
 }
 
@@ -49,7 +49,7 @@ fn date_et_libelle(mois: &str) -> R<(String, String)> {
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
 pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
+    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (date, lib_mois) = date_et_libelle(mois)?;
     let jrn = plan.journal.clone();
     let zero = zero2();
@@ -65,7 +65,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
     // comptable general, atelier/reference/sources/plan-comptable-general/LISEZ-MOI.md), tel que la paie le porte. Le PAS d'un
     // mois declare est celui de la paie declaree (`engagement::etats::paie_declaree`), lu et non recalcule au taux du
     // jour (CGI art. 1671 : `prelevement::des_paies`).
-    let pas_des_paies = crate::prelevement::des_paies(ctx, &paies, departs).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })?;
+    let pas_des_paies = crate::prelevement::des_paies(ctx, &paies, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let mut pas_du_mois = zero;
     // LES RETENUES (une ligne hors assiette de nature `retenue` : acompte, avance, saisie) ne sont pas une charge : un
     // acompte solde une avance deja versee (425 « Personnel - Avances et acomptes et autres comptes debiteurs »), une
@@ -91,7 +91,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
         let qui = crate::tableaux_export::qui(&p.salarie)?;
         let mut retenu = zero;
         for l in p.remuneration.iter().filter(|l| !l.soumis) {
-            if catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| Echec { classe: Some(Classe::Refuse), ..m })? != HorsAssiette::Mouvement {
+            if catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| m.reclasser(Classe::Refuse))? != HorsAssiette::Mouvement {
                 continue;
             }
             let Some(regle) = plan.retenues.get(&l.code) else {
@@ -151,7 +151,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += eur2(l.montant_pat);
                     for (part, id_tiers) in [(rg.urssaf, "maladie"), (rg.chomage, "chomage"), (rg.agirc_arrco, "retraite_t1")] {
                         if !part.is_zero() {
-                            let r = plan.lignes.get(id_tiers).ok_or_else(|| Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(id_tiers) })?;
+                            let r = plan.lignes.get(id_tiers).ok_or_else(|| socle::fichiers::absent(id_tiers).reclasser(Classe::Manque))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;
                         }
                     }

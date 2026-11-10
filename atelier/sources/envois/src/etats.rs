@@ -50,7 +50,7 @@ pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero
 // ------------------------------------------------------------------ les etats
 
 pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    Echec { classe: Some(socle::echec::Classe::du_disque(e)), ..socle::echec::du_disque(p, e) }
+    socle::echec::du_disque(p, e).reclasser(socle::echec::Classe::du_disque(e))
 }
 
 // ------------------------------------------------------------ les embauches
@@ -1235,7 +1235,7 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
             ajoutes += 1;
         }
     }
-    crate::journal::ranger(racine, rangements).map_err(|m| Echec { classe: Some(socle::echec::Classe::Disque), ..m })?;
+    crate::journal::ranger(racine, rangements).map_err(|m| m.reclasser(socle::echec::Classe::Disque))?;
     Ok(ajoutes)
 }
 

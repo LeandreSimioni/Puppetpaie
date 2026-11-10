@@ -51,7 +51,7 @@ fn de_lecture(e: Echec) -> Panne {
         Some(c) => c,
         None => Classe::Illisible,
     };
-    Panne::from(Echec { classe: Some(classe), ..e })
+    Panne::from(e.reclasser(classe))
 }
 
 // ----------------------------------------------------------------------- le client
@@ -488,7 +488,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             faits += 1;
         }
     }
-    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })?;
+    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| m.reclasser(Classe::Disque))?;
     crate::organismes_simules::garder(&ctx.racine, &avant, &memoire)?;
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
@@ -532,7 +532,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&chemin, &e) }),
+        Err(e) => return Err(socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)),
     };
     crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui)
 }
@@ -802,14 +802,14 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })?;
+        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }
@@ -838,11 +838,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) }),
+        Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &x) })?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
         if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
             noms.push(nom);
         }
@@ -851,7 +851,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut annees = Annees::new();
     for nom in &noms {
         let p = dossier.join(nom);
-        let octets = std::fs::read(&p).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
+        let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
             let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };

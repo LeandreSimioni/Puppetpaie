@@ -400,7 +400,7 @@ pub struct EchecIndexe {
 
 /// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
 fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
-    ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part))
+    ErreurGoogle::from(socle::echec::refus_avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part).reclasser(Classe::Illisible))
 }
 
 /// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
@@ -409,11 +409,11 @@ pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::en(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::from(m.reclasser(Classe::Illisible)))
 }
 
 pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
-    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::en(Classe::Disque, e))
+    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Disque)))
 }
 
 /// `rien_n_a_bouge` : le disque est-il identique au dernier passage ? SANS RESEAU. Taille et date

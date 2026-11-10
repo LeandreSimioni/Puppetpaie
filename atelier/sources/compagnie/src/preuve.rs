@@ -42,7 +42,7 @@ pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
     let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(crate::en(Classe::Illisible))?)? {
+    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?)? {
         return Ok(String::new());
     }
     Ok(format!(
@@ -106,7 +106,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
         let acte = crate::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
         return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
             crate::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
-            crate::demande::Verdict::Refuse(e) => Err(Echec { classe: Some(Classe::PreuveInsuffisante), ..e }),
+            crate::demande::Verdict::Refuse(e) => Err(e.reclasser(Classe::PreuveInsuffisante)),
         };
     };
     if let Some(m) = preuve.mois_recopie.as_deref().filter(|m| !m.is_empty()) {

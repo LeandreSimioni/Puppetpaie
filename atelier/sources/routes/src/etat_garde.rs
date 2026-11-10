@@ -166,7 +166,7 @@ impl Cle {
         match texte {
             OUVERTURE => Ok(Cle::Ouverture),
             TABLEAU => Ok(Cle::Tableau),
-            m => Mois::lire(m).map(Cle::Mois).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", String::from(e)) }),
+            m => Mois::lire(m).map(Cle::Mois).map_err(|e| socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", String::from(e)).reclasser(Classe::Illisible)),
         }
     }
 }

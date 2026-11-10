@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::{erreur, Classe};
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
@@ -975,12 +975,12 @@ impl ChoixCompta {
         if !chemin.exists() {
             return Ok(ChoixCompta::default());
         }
-        socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
+        socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))
     }
 
     /// Le choix ecrit dans `config/compta.json`.
     pub fn ecrire(&self, racine: &std::path::Path) -> R<()> {
-        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })
+        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| m.reclasser(Classe::Disque))
     }
 
     /// Le logiciel retenu, s'il en est un.
@@ -1074,7 +1074,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if d.ecrire {
         let dossier = p.dossier(ctx);
         if let Some(ec) = &ecr_format {
-            let io = |c: &std::path::Path, e: std::io::Error| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&c, &e) };
+            let io = |c: &std::path::Path, e: std::io::Error| socle::echec::du_disque(&c, &e).reclasser(Classe::Disque);
             let env = envoi(ctx, &plan, sections, &format)?;
             // Les deux fichiers se fabriquent avant d'ecrire : une zone qui ne tient pas refuse l'export entier.
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
@@ -1295,9 +1295,8 @@ fn provision_d_une_annee_importee(
     a_provisionner: &mut Vec<(String, Option<String>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
-    let ko = |x: Echec| Echec { classe: Some(Classe::Refuse), ..x };
-    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
-    let lendemain = fin.plus_jours(1).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
+    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
+    let lendemain = fin.plus_jours(1).map_err(|x| x.reclasser(Classe::Illisible))?;
     let importes: Vec<String> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| k.clone()).collect();
     // `m` est un mois repris : il y en a au moins un.
     let premier_importe = importes.first().cloned().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
@@ -1306,7 +1305,7 @@ fn provision_d_une_annee_importee(
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
     let continuent: BTreeSet<String> = engagement::importe::contrats_lus(&ctx.racine)
-        .map_err(ko)?
+        .map_err(|x| x.reclasser(Classe::Refuse))?
         .into_iter()
         .filter(|c| c.fin.as_deref().is_none_or(|f| f.is_empty() || f > fin.iso().as_str()))
         .map(|c| c.salarie)
@@ -1324,7 +1323,7 @@ fn provision_d_une_annee_importee(
         Ok((total, premier_importe.as_str() <= du.mois_civil().to_string().as_str()))
     };
     for pa in paies.iter().filter(|q| q.importee.is_some()) {
-        let nat = pa.engagement.nat().map_err(|x| Echec { classe: Some(Classe::Refuse), ..x })?;
+        let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
         let Some(au) = nat.au_mois().filter(|_| continuent.contains(&cle)) else {
             continue;
@@ -1333,7 +1332,7 @@ fn provision_d_une_annee_importee(
             continue;
         }
         let date = ctx.salaries.get(cle.as_str()).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
-        let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &au, &cle).map_err(ko)?.filter(|_| date == Some(lendemain.iso())) else {
+        let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &au, &cle).map_err(|x| x.reclasser(Classe::Refuse))?.filter(|_| date == Some(lendemain.iso())) else {
             avert.push(format!(
                 "{} : sa fiche ne dit pas ses congés payés au {} (« Congés payés à la reprise », recopiés de son dernier bulletin repris) : son compteur ne se lit pas, il n'est pas dans la provision.",
                 ctx.nomme(&cle),
@@ -1361,7 +1360,7 @@ fn provision_d_une_annee_importee(
             }
         }
         let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
-        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(ko)?;
+        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.as_deref().map(str::to_string), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1384,11 +1383,11 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut sans_compteur = 0;
     let m = match saisis.last().cloned() {
         Some(m) => {
-            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
+            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
             // Ce qui a ete paye ce mois-la : les paies ecrites de ses engagements valides, la saisie au meme rang.
             let (saisie, paies) = charger_mois(ctx, &m, &d.departs)?;
             for (e, pa) in saisie.engagements.iter().zip(paies.iter()) {
-                let nat = pa.engagement.nat().map_err(|x| Echec { classe: Some(Classe::Refuse), ..x })?;
+                let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
                 // Un contrat fini ce mois-ci a eu son solde de tout compte : les conges non pris y sont payes, il n'y a plus de dette.
                 if !nat.mensuelle() || pa.engagement.fin.is_some_and(|f| f <= fin) {
                     continue;
@@ -1412,7 +1411,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             m
         }
     };
-    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
+    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
     let toutes = Periode::nouvelle(ctx, None, None, true, true)?;
     let livre = lignes_livre(ctx, &toutes, &mut Vec::new(), &d.departs)?;
     let mut lignes: Vec<Ligne> = Vec::new();
@@ -1441,8 +1440,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
         }
-        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(&cle) })?;
-        let nom = fiche.nom.exigee("nom").map_err(|m| Echec { classe: Some(Classe::Manque), ..m })?;
+        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(&cle).reclasser(Classe::Manque))?;
+        let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
         let mut l = Ligne::nouvelle();
         l.t("salarie", match fiche.prenom.portee() {
             Some(prenom) => format!("{} {}", nom, prenom),
@@ -1528,12 +1527,12 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.
-    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
+    let jour = socle::date::Jour::lire(&format!("{}-01-01", annee)).map_err(|x| x.reclasser(Classe::Illisible))?;
     let bar = ctx.bareme(&jour)?;
     // Les plafonds de la franchise, que la conclusion nomme : ceux du bareme de l'annee.
     let plafonds = crate::taxe_sur_les_salaires::plafonds_franchise(Some(&*bar));
     // La fiche telle qu'elle est au 31 decembre de l'annee : celle qu'`exports-periodes` lit pour proposer l'etat.
-    let fin = socle::date::Jour::lire(&format!("{}-12-31", annee)).map_err(|x| Echec { classe: Some(Classe::Illisible), ..x })?;
+    let fin = socle::date::Jour::lire(&format!("{}-12-31", annee)).map_err(|x| x.reclasser(Classe::Illisible))?;
     let regime = crate::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), plafonds);
     let p = Periode::nouvelle(ctx, None, Some(annee), false, true)?;
     let mut avert: Vec<String> = Vec::new();
@@ -1564,7 +1563,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<String>)> = BTreeMap::new();
     for m in p.mois.clone() {
-        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| Echec { classe: Some(Classe::Refuse), ..x }) {
+        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, String::from(e)));

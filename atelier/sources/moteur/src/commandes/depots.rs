@@ -111,11 +111,11 @@ fn secondes(j: &Jour) -> i64 {
 /// La plage de recherche, en heures locales naives. Par defaut, les 30 derniers jours.
 fn fenetre(args: &Args) -> Result<(i64, i64), Echec> {
     let fin = match args.texte("jusqu-a") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?) + 23 * 3600 + 59 * 60 + 59,
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| m.reclasser(Classe::Illisible))?) + 23 * 3600 + 59 * 60 + 59,
         None => socle::paris::maintenant_naif(),
     };
     let debut = match args.texte("depuis") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?),
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| m.reclasser(Classe::Illisible))?),
         None => fin - 30 * JOUR,
     };
     Ok((debut, fin))

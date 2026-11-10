@@ -24,7 +24,7 @@ use socle::texte::{euros, virgule};
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
-use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::echec::{erreur, refus, Classe, R};
 use socle::num::Decimal;
 
 /// Un texte de l'engagement, non vide (ses blancs ote).
@@ -439,7 +439,7 @@ pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
 /// LE MODELE `m` FAIT-IL CE CONTRAT ? (`manques`, avec ses valeurs). Le refus, `ModeleIncomplet`, dit chaque manque et
 /// quoi faire.
 pub fn refuser_un_modele_incomplet(m: &ModeleDuContrat, nat: &Nature, valeurs: &Valeurs) -> R<()> {
-    let dits = manques(nat, &m.lu.texte, Some(valeurs)).map_err(|e| Echec { classe: Some(Classe::ModeleIncomplet), ..e })?;
+    let dits = manques(nat, &m.lu.texte, Some(valeurs)).map_err(|e| e.reclasser(Classe::ModeleIncomplet))?;
     if dits.is_empty() {
         return Ok(());
     }

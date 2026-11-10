@@ -885,7 +885,7 @@ impl Coffre {
         let Some(scelles) = &contenu.secrets else { return Ok(BTreeMap::new()) };
         let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
         let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
-        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
+        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| m.reclasser(Classe::Illisible))
     }
 
     fn poste_ouvre(&self, enveloppes: &Enveloppes, maitresse: &[u8]) -> R<bool> {
@@ -1189,7 +1189,7 @@ impl Coffre {
         let texte = String::from_utf8(clair).map_err(|e| illisible(e.to_string()))?;
         socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.")
             .map(Some)
-            .map_err(|e| Echec { classe: Some(Classe::CoffreIllisible), ..e })
+            .map_err(|e| e.reclasser(Classe::CoffreIllisible))
     }
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et

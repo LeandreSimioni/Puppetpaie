@@ -158,7 +158,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(cle) })?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {

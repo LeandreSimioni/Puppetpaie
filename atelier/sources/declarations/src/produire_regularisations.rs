@@ -48,7 +48,7 @@ pub struct Reg {
 /// corrige toujours ailleurs : sa DSN n'a pas ete faite ici et ne se refait pas ici (regle 4).
 pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str) -> R<bool> {
     use engagement::departs::Envoi;
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(illisible)?.is_some() {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(|e| e.reclasser(Classe::Illisible))?.is_some() {
         return Ok(true);
     }
     let partie = departs
@@ -57,7 +57,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(illisible)?.veille();
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?.veille();
     Ok(ctx.aujourdhui > limite)
 }
 
@@ -78,7 +78,7 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
         if let Some(declarees) =
-            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| Echec { classe: Some(Classe::MoisNonRegularisable), ..m })?
+            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
         {
             out.push(Due { valide: v, rang, declarees });
         }
@@ -92,7 +92,7 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
 /// ecrite de la version presente).
 pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engagement::departs::Departs) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(illisible)?.into_iter().map(String::from) {
+    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(|e| e.reclasser(Classe::Illisible))?.into_iter().map(String::from) {
         if mois.as_str() >= mois_courant {
             break;
         }
@@ -164,12 +164,12 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
 /// « annulation de la declaration initiale accompagnee si opportun d'une declaration corrective » ; ici, aucune).
 fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(illisible)? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(illisible)?.is_none() {
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))? {
+        if n.correction_due(ctx, departs, mois, mois_courant).map_err(|e| e.reclasser(Classe::Illisible))?.is_none() {
             continue;
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
-            .map_err(illisible)?
+            .map_err(|e| e.reclasser(Classe::Illisible))?
             .ok_or_else(|| {
                 let numero = match n.objet().carte().numero.as_deref() {
                     Some(numero) => format!("le contrat {}", numero),
@@ -210,7 +210,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(illisible)? != nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| e.reclasser(Classe::Illisible))? != nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
@@ -261,7 +261,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
     for r in regs {
         let s = &r.apres.salarie;
         if s.nom.is_none() {
-            return Err(Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent("nom") });
+            return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
         }
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
@@ -298,14 +298,9 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
 /// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
 fn decidee_le(le: &str) -> R<Option<Jour>> {
     match le.get(..10) {
-        Some(jour) => Jour::lire(jour).map(Some).map_err(illisible),
+        Some(jour) => Jour::lire(jour).map(Some).map_err(|e| e.reclasser(Classe::Illisible)),
         None => Ok(None),
     }
-}
-
-/// Le refus, reclasse `Illisible` : ce qu'il porte a part reste a part.
-fn illisible(m: Echec) -> Echec {
-    Echec { classe: Some(Classe::Illisible), ..m }
 }
 
 

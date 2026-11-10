@@ -169,11 +169,6 @@ fn operation(m: String) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// Un refus de l'installation : le geste est refuse.
-fn refuse(m: Echec) -> Echec {
-    Echec { classe: Some(Classe::Refuse), ..m }
-}
-
 /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -348,7 +343,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieAjouter => {
             let a: ChargeAjouter = charge.lire()?;
-            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(refuse)?;
+            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(|e| e.reclasser(Classe::Refuse))?;
             let phrase = if c.reelle {
                 format!("{} est ajoutée.", c.nom)
             } else {
@@ -358,12 +353,12 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieCouleur => {
             let c: ChargeCouleur = charge.lire()?;
-            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(refuse)?;
+            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(Couleur { phrase: format!("Couleur posée : {}.", couleur), couleur })
         }
         Route::CompagnieRemettreAZero => {
             let c: ChargeCompagnie = charge.lire()?;
-            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(refuse)?;
+            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(Dit { phrase: format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
         Route::CompagniesGarder => {
@@ -388,7 +383,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
             let cles = compagnie::maj::cles_de_l_editeur();
-            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(refuse)?;
+            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(complete)
         }
         Route::AdministrateurDeposer => {

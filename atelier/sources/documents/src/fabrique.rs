@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::assemblage::{Assemblage, Piece};
 use fabrique_pdf::Description;
-use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::echec::{erreur, refus, Classe, R};
 
 /// Ecrit le PDF de `description` dans `chemin` et rend le chemin.
 pub fn ecrire(description: &Description, chemin: &Path) -> R<PathBuf> {
@@ -25,7 +25,7 @@ pub fn ecrire(description: &Description, chemin: &Path) -> R<PathBuf> {
 
 /// Le PDF de `description` ecrit a `chemin` ; un refus de la fabrique, sur une ligne, sous la classe `FabriqueRefus`.
 pub fn ecrire_pdf(description: &Description, chemin: &Path) -> R<()> {
-    ecrire(description, chemin).map(|_| ()).map_err(|m| Echec { classe: Some(Classe::FabriqueRefus), ..m.reformuler(|p| p.replace('\n', " ").trim().to_string()) })
+    ecrire(description, chemin).map(|_| ()).map_err(|m| m.reformuler(|p| p.replace('\n', " ").trim().to_string()).reclasser(Classe::FabriqueRefus))
 }
 
 /// Les octets du PDF de `description`, sans fichier.
@@ -72,7 +72,7 @@ pub fn fusion_octets(morceaux: &[Vec<u8>], tmp: &Path) -> R<Vec<u8>> {
     let mut pieces = Vec::new();
     for (i, octets) in morceaux.iter().enumerate() {
         let f = dossier.0.join(format!("piece{}.pdf", i));
-        std::fs::write(&f, octets).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&f, &e) })?;
+        std::fs::write(&f, octets).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
         pieces.push((f, None));
     }
     fusion_pieces(&pieces)
@@ -85,7 +85,7 @@ impl Temporaire {
     pub fn nouveau_dans(parent: &Path, prefixe: &str) -> R<Temporaire> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let p = parent.join(format!("{}-{}-{}", prefixe, std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
-        std::fs::create_dir_all(&p).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
+        std::fs::create_dir_all(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         Ok(Temporaire(p))
     }
 }

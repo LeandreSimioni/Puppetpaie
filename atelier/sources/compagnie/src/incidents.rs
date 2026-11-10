@@ -288,7 +288,7 @@ fn lignes(p: &Path) -> R<Vec<Ligne>> {
 }
 
 fn ecrire_lignes(p: &Path, toutes: &[Ligne]) -> R<()> {
-    ecrire_json(p, toutes, 2).map_err(crate::en(Classe::Disque))
+    ecrire_json(p, toutes, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// `noter` : ajoute une ligne, et la rend ; `None` quand rien n'est a noter (les faux envois d'une fictive).
@@ -838,7 +838,7 @@ pub fn lire_config(racine: &Path) -> R<ConfigDiagnostic> {
 
 /// Ecrit `config/diagnostic.json` de `racine`.
 pub fn ecrire_config(racine: &Path, c: &ConfigDiagnostic) -> R<()> {
-    ecrire_json(&racine.join(DIAGNOSTIC), c, 2).map_err(crate::en(Classe::Disque))
+    ecrire_json(&racine.join(DIAGNOSTIC), c, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// L'ENVOI A L'EDITEUR SE COUPE (une condition de SignPath). `config/diagnostic.json`,
@@ -936,7 +936,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         return Ok((s, racine.to_path_buf()));
     }
     let code = dossier_du_code();
-    let logiciel = code.parent().ok_or_else(|| crate::en(Classe::DefautDuLogiciel)(socle::echec::refus_avec("Le dossier du code n'a pas de parent.", socle::echec::APart { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() })))?;
+    let logiciel = code.parent().ok_or_else(|| socle::echec::refus_avec("Le dossier du code n'a pas de parent.", socle::echec::APart { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::DefautDuLogiciel))?;
     let voisin = match logiciel.parent() {
         Some(r) => Some(r.join("prive")),
         None => None,

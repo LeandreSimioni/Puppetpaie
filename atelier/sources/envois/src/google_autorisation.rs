@@ -189,10 +189,10 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
 /// La reponse de Google lue en sa forme `T`, ou la phrase de la panne.
 fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Echec> {
     match envoyer(requete) {
-        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| Echec { classe: Some(Classe::Refuse), ..e }),
+        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| e.reclasser(Classe::Refuse)),
         Err(panne) => match phrase_de_panne(panne) {
             Ok(phrase) => Err(refus(phrase)),
-            Err(e) => Err(Echec { classe: Some(Classe::Refuse), ..e.reformuler(|m| format!("Google ne repond pas : {}. Aucune autorisation enregistree.", m)) }),
+            Err(e) => Err(e.reformuler(|m| format!("Google ne repond pas : {}. Aucune autorisation enregistree.", m)).reclasser(Classe::Refuse)),
         },
     }
 }

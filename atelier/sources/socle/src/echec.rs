@@ -188,6 +188,11 @@ impl Echec {
         Echec { phrase: f(&self.phrase), ..self }
     }
 
+    /// Le meme refus, rendu dans la classe `classe` : sa phrase, ce qu'il porte a part et l'endroit ou il est ne restent.
+    pub fn reclasser(self, classe: Classe) -> Echec {
+        Echec { classe: Some(classe), ..self }
+    }
+
     /// Le meme refus, survenu en lisant le fichier `chemin` : son chemin va a part, s'il n'en porte pas deja un.
     pub fn au_fichier(mut self, chemin: &std::path::Path) -> Echec {
         let a = self.a_part.get_or_insert_with(APart::default);

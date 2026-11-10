@@ -18,7 +18,7 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieLue, PaieVersee};
 use envois::etats;
-use socle::echec::{Classe, Echec, R};
+use socle::echec::{Classe, R};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
 
@@ -175,7 +175,7 @@ fn jours_du_mois(dates: &[DatesTravaillees], mois: &str) -> R<Vec<String>> {
             if j == b {
                 break;
             }
-            j = j.plus_jours(1).map_err(|m| Echec { classe: Some(Classe::CalculImpossible), ..m })?;
+            j = j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
         }
     }
     out.sort();

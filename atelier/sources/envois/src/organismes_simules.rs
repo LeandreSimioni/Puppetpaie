@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{erreur, Classe, R};
 
 use crate::journal::Ligne;
 use declarations::dsn_lue::DsnLue;
@@ -124,7 +124,7 @@ fn charger(racine: &Path) -> R<Memoire> {
 }
 
 fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })
+    socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
@@ -135,7 +135,7 @@ fn jour_iso(t: &str) -> R<Jour> {
 /// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
 fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<f64> {
     let t = taux.replace(',', ".");
-    t.parse::<f64>().map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e)) })
+    t.parse::<f64>().map_err(|e| socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e)).reclasser(Classe::Illisible))
 }
 
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
@@ -171,7 +171,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         Annonce::TauxPas(t) => {
             let n = taux_annonce(&t.taux, "taux_pas.taux", "Le taux de prélèvement annoncé ne se lit pas.")?;
             if t.salarie.is_empty() || !(0.0..=100.0).contains(&n) {
-                return Err(Echec { classe: Some(Classe::Illisible), ..socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas") });
+                return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
             }
             gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: format!("{:.2}", n) });
         }
@@ -180,7 +180,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
             let effet_lisible = matches!(Jour::lire(&t.date_effet), Ok(j) if j.iso() == t.date_effet);
             if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 || !effet_lisible {
-                return Err(Echec { classe: Some(Classe::Illisible), ..socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp") });
+                return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
                 code_risque: code,
@@ -197,7 +197,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             }
             let mois = dit(r.mois);
             if let Some(m) = &mois {
-                Mois::lire(m).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, e.phrase)) })?;
+                Mois::lire(m).map_err(|e| socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, e.phrase)).reclasser(Classe::Illisible))?;
             }
             gardee.refus = Some(RefusAnnonce { code: r.code, message: r.message, rubrique: dit(r.rubrique), mois });
         }
@@ -446,7 +446,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
         return Ok(None);
     }
     let mut o = [0u8; 4];
-    socle::temps::aleas(&mut o).map_err(|e| Echec { classe: Some(Classe::Disque), ..e.reformuler(|m| format!("pas d'alea du systeme : {}", m)) })?;
+    socle::temps::aleas(&mut o).map_err(|e| e.reformuler(|m| format!("pas d'alea du systeme : {}", m)).reclasser(Classe::Disque))?;
     let identifiant = 100_000_000 + u32::from_le_bytes(o) % 900_000_000;
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"{}\" type=\"CRM nominatif\" \

@@ -436,7 +436,7 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
 }
 
 fn cle_absente(k: &str) -> Echec {
-    Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(k) }
+    socle::fichiers::absent(k).reclasser(Classe::Manque)
 }
 
 // --------------------------------------------------------------------- rendu
@@ -611,10 +611,7 @@ pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) 
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
 pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            ..socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent")
-        });
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Illisible));
     }
     let mut tous: Vec<(Certificat, &PaieCs)> = Vec::new();
     for (p, premier) in paires {

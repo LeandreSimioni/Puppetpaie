@@ -10,7 +10,7 @@ use socle::echec::R;
 use socle::ecriture::ecrire_json;
 
 fn os(chemin: &Path, e: std::io::Error) -> Echec {
-    crate::en(Classe::Disque)(socle::echec::du_disque(chemin, &e))
+    socle::echec::du_disque(chemin, &e).reclasser(Classe::Disque)
 }
 
 /// Le journal des pieces ecrites, sous la racine de la compagnie.
@@ -31,7 +31,7 @@ pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<Emp
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
-    ecrire_json(&p, &d, 2).map_err(crate::en(Classe::Disque))
+    ecrire_json(&p, &d, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// UNE PIECE PARTIE NE SE RECRIT JAMAIS (regle 4 de `atelier/AGENTS.md` : ce qui est depose ne se regenere pas) : le
@@ -62,7 +62,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
                 socle::fichiers::nom_du(cible),
                 match socle::date::Jour::lire(&le) {
                     Ok(j) => j.jj_mm_aaaa(),
-                    Err(e) => return Err(Echec { classe: Some(Classe::Illisible), ..e }),
+                    Err(e) => return Err(e.reclasser(Classe::Illisible)),
                 }
             ),
         )),
@@ -84,7 +84,7 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
     if !p.exists() {
         return Ok(std::collections::BTreeMap::new());
     }
-    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })
+    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(|e| e.reclasser(Classe::Illisible))
 }
 
 /// QUAND LE MOTEUR A ECRIT CETTE PIECE (`AAAA-MM-JJTHH:MM`), lu au journal des ecritures (`noter_piece_ecrite`) ; `None`

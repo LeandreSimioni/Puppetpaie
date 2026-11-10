@@ -46,12 +46,12 @@ impl socle::forme::ReponseDUnTiers for FichierDrive {}
 impl FichierDrive {
     /// Son identifiant, que Drive donne toujours a ce qu'il rend.
     fn id(&self) -> Result<String, ErreurGoogle> {
-        self.id.clone().ok_or_else(|| ErreurGoogle::en(Classe::Manque, socle::fichiers::absent("id")))
+        self.id.clone().ok_or_else(|| ErreurGoogle::from(socle::fichiers::absent("id").reclasser(Classe::Manque)))
     }
 
     /// Son nom, que le listage demande.
     fn nom(&self) -> Result<String, ErreurGoogle> {
-        self.name.clone().ok_or_else(|| ErreurGoogle::en(Classe::Manque, socle::fichiers::absent("name")))
+        self.name.clone().ok_or_else(|| ErreurGoogle::from(socle::fichiers::absent("name").reclasser(Classe::Manque)))
     }
 }
 
@@ -144,11 +144,6 @@ impl ErreurGoogle {
     #[track_caller]
     pub fn google(message: impl Into<String>) -> ErreurGoogle {
         ErreurGoogle::nouvelle(Classe::Google, message)
-    }
-
-    /// Un refus d'ailleurs (une lecture, le disque), sous la classe `classe`.
-    pub fn en(classe: Classe, e: Echec) -> ErreurGoogle {
-        ErreurGoogle::from(Echec { classe: Some(classe), ..e })
     }
 
     /// Un fichier local qui manque, ou ne se lit pas.
@@ -284,7 +279,7 @@ impl Client {
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
     fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
-        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::en(Classe::Google, m))
+        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::from(m.reclasser(Classe::Google)))
     }
 
     /// `appel` sans lecture du JSON : les octets de la reponse, tels quels (le contenu d'un fichier, `telecharger`). Le
@@ -376,7 +371,7 @@ fn echapper(nom: &str) -> String {
 
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
 fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
-    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() })))
+    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() }).reclasser(Classe::Illisible)))
 }
 
 /// Des aleas du systeme ; un systeme qui n'en donne pas refuse.
@@ -466,7 +461,7 @@ impl Drive for Client {
             None => fichier
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
-                .ok_or_else(|| ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() })))?,
+                .ok_or_else(|| ErreurGoogle::from(socle::echec::refus_avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() }).reclasser(Classe::Illisible)))?,
         };
         // Un type que l'extension ne dit pas : des octets (RFC 2046, `application/octet-stream`).
         let type_mime = match crate::envoi::type_devine(&nom) {

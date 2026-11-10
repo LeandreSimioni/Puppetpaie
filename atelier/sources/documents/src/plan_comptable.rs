@@ -293,11 +293,11 @@ pub fn plan(ctx: &Contexte) -> R<(Plan, &'static str)> {
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
 pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
-        .map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+        .map_err(|m| m.reclasser(Classe::Illisible))?;
     let propre = ctx.racine.join(PLAN_COMPTABLE);
     if propre.exists() {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
-            .map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
+            .map_err(|m| m.reclasser(Classe::Illisible))?;
         plan.recouvrir(p);
     }
     Ok(plan)

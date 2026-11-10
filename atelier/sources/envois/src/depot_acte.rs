@@ -63,7 +63,7 @@ pub struct Depot<'a> {
 /// puis le reel) prennent `-2`, `-3`... avant `.txt`.
 pub fn archiver_reponse(racine: &Path, quoi: &str, mois: &str, reponse: &str) -> R<PathBuf> {
     let dossier = racine.join(crate::retours::RETOURS).join("depots");
-    std::fs::create_dir_all(&dossier).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&dossier, &e) })?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let etiquette: String = mois.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
     let etiquette = if etiquette.is_empty() { "sans-date".to_string() } else { etiquette };
     let iso = socle::paris::maintenant();
@@ -75,11 +75,11 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, mois: &str, reponse: &str) ->
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
             Ok(mut f) => {
                 use std::io::Write;
-                f.write_all(reponse.as_bytes()).map_err(|e| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) })?;
+                f.write_all(reponse.as_bytes()).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
                 return Ok(p);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => rang += 1,
-            Err(e) => return Err(Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&p, &e) }),
+            Err(e) => return Err(socle::echec::du_disque(&p, &e).reclasser(Classe::Disque)),
         }
     }
 }
@@ -96,12 +96,12 @@ fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &st
 
 /// Ajoute la ligne au journal des depots et la rend.
 fn noter(ctx: &Contexte, d: &Depot, ligne: Ligne) -> R<Ligne> {
-    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), &socle::paris::maintenant()).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })
+    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), &socle::paris::maintenant()).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// LA TRACE, RELATIVE A LA COMPAGNIE : une compagnie change de dossier, et un chemin absolu ne menerait nulle part.
 fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
-    let relative = t.strip_prefix(&ctx.racine).map_err(|_| Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string()) })?;
+    let relative = t.strip_prefix(&ctx.racine).map_err(|_| socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string()).reclasser(Classe::Disque))?;
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
