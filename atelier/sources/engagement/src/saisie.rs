@@ -7,10 +7,8 @@
 //! groupes et par leurs champs (`Champ`), jamais par le nom d'une cle.
 
 use serde::{Deserialize, Serialize};
+use socle::echec::R;
 use socle::forme::NombreLu;
-
-
-use socle::num::Resultat;
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -355,12 +353,12 @@ impl Carte {
     }
 
     /// La nature de son contrat ; une carte qui ne la dit pas se refuse (`crate::PAS_DE_NATURE`).
-    pub fn nature_lue(&self) -> Resultat<std::sync::Arc<droit::natures::Nature>> {
+    pub fn nature_lue(&self) -> R<std::sync::Arc<droit::natures::Nature>> {
         match self.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-            Some(n) => droit::natures::nature(n).map_err(String::from),
+            Some(n) => droit::natures::nature(n),
             None => Err(match &self.salarie {
-                Some(s) => format!("{}{}", s, crate::PAS_DE_NATURE),
-                None => format!("Cet engagement{}", crate::PAS_DE_NATURE),
+                Some(s) => socle::refus!("{}{}", s, crate::PAS_DE_NATURE),
+                None => socle::refus!("Cet engagement{}", crate::PAS_DE_NATURE),
             }),
         }
     }
@@ -371,7 +369,7 @@ impl Carte {
     }
 
     /// Un contrat paye au mois ?
-    pub fn mensuelle(&self) -> Resultat<bool> {
+    pub fn mensuelle(&self) -> R<bool> {
         Ok(self.nature_lue()?.mensuelle())
     }
 }
@@ -387,7 +385,7 @@ pub struct CongePris {
 
 impl CongePris {
     /// Son premier et son dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
-    pub fn jours(&self) -> Resultat<(socle::date::Jour, socle::date::Jour)> {
+    pub fn jours(&self) -> R<(socle::date::Jour, socle::date::Jour)> {
         let lu = |x: &Option<String>, cle: &str| match x {
             Some(j) => socle::date::Jour::lire(j),
             None => Err(socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle)),
