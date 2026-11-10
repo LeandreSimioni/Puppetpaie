@@ -28,7 +28,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, R};
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
 
@@ -139,7 +139,7 @@ pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBu
                 _ => false,
             });
     if la_boite && !d.exists() {
-        std::fs::create_dir_all(&d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
     Ok(d)
 }
@@ -388,7 +388,7 @@ pub(crate) const A_CREER: &str = "<a creer>";
 
 /// Les paies versees des engagements importes, une par mois.
 pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieLue>> {
-    engagement::importe::paies_lues(&ctx.racine).map_err(Echec::from)
+    engagement::importe::paies_lues(&ctx.racine)
 }
 
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
@@ -710,8 +710,8 @@ pub(crate) fn apercu_lu(
 ///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
 ///   refuse.
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
-    let contrats = engagement::importe::contrats_lus(racine).map_err(Echec::from)?;
-    let paies = engagement::importe::paies_lues(racine).map_err(Echec::from)?;
+    let contrats = engagement::importe::contrats_lus(racine)?;
+    let paies = engagement::importe::paies_lues(racine)?;
     let plein = |t: &str| Some(t.to_string()).filter(|t| !t.is_empty());
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(paies.iter().filter_map(|p| p.paie.importe_le.clone())).filter(|t| !t.is_empty()).max();
     let debut = contrats.iter().filter_map(|c| c.debut.as_deref().and_then(plein)).min();
@@ -916,7 +916,7 @@ fn copies_reprises(racine: &Path) -> R<usize> {
     if !dossier.exists() {
         return Ok(0);
     }
-    let disque = |e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e));
+    let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);
     let mut n = 0;
     for e in std::fs::read_dir(&dossier).map_err(disque)? {
         if e.map_err(disque)?.path().is_file() {

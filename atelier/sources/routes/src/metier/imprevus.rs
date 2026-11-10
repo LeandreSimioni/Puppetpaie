@@ -8,7 +8,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use engagement::imprevus::{self, ArretSaisi, GenreArret, Imprevu};
 use engagement::Chiffre;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, R};
 
 /// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, le debut et la fin, le mois qui le
 /// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
@@ -28,16 +28,7 @@ pub(crate) struct ContratAuJour {
     pub(crate) dit: Option<String>,
 }
 
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
-}
-
 /// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
-#[track_caller]
-pub(crate) fn refus_magasin(m: impl Into<String>) -> Echec {
-    erreur(Classe::Refuse, m)
-}
-
 pub(crate) fn magasin<T>(r: R<T>) -> R<T> {
     r.map_err(|e| e.reclasser(Classe::Refuse))
 }
@@ -56,7 +47,7 @@ pub(crate) fn tous_les_arrets(ctx: &Contexte) -> R<Vec<ArretSaisi>> {
 
 /// Les nomenclatures du bloc 60 (`arrets-base.json`), lues par leur forme (`droit::arrets::bloc_60`).
 pub(crate) fn nomenclatures() -> R<Bloc60> {
-    droit::arrets::bloc_60().map_err(plain)
+    droit::arrets::bloc_60()
 }
 
 /// CE QUI FAIT UN ARRET A ECRIRE : qui, quel contrat, le motif et les jours, et ce que la saisie en dit d'autre.

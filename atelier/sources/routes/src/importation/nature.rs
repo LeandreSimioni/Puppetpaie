@@ -30,12 +30,11 @@ use std::path::Path;
 use droit::contexte::Contexte;
 use engagement::importe::Importe;
 use socle::date::Jour;
-use socle::echec::R;
-use socle::echec::erreur;
+use socle::echec::{erreur, Classe, R};
 
 /// Les natures qu'un permanent peut recevoir.
 fn natures_permanentes() -> R<Vec<std::sync::Arc<droit::natures::Nature>>> {
-    let toutes = droit::natures::natures().map_err(|m| erreur(socle::echec::Classe::Refuse, m))?;
+    let toutes = droit::natures::natures().map_err(|m| m.reclasser(Classe::Refuse))?;
     Ok(toutes.iter().filter(|n| n.mensuelle()).cloned().collect())
 }
 
@@ -64,7 +63,7 @@ fn demande(n: &droit::natures::Nature, en_cours: bool) -> Vec<Demande> {
 
 /// Les engagements importes.
 fn importes(racine: &Path) -> R<Vec<Importe>> {
-    engagement::importe::tous(racine).map_err(socle::echec::Echec::from)
+    engagement::importe::tous(racine)
 }
 
 /// Le dernier mois repris : le plus recent que l'historique a verse (`AAAA-MM`) ; aucun sans paie reprise.
@@ -77,7 +76,7 @@ fn dernier_mois(importes: &[Importe]) -> Option<String> {
 fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
     let mut bornes = Vec::new();
     for (m, p) in i.paies() {
-        let mois = socle::mois::Mois::lire(m).map_err(|e| erreur(socle::echec::Classe::Illisible, e))?;
+        let mois = socle::mois::Mois::lire(m).map_err(|e| e.reclasser(Classe::Illisible))?;
         let dans = |j: Option<Jour>| j.filter(|j| mois.contient(j));
         let debut = match dans(p.debut) {
             Some(j) => j,
@@ -137,7 +136,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
         return Ok(Vec::new());
     }
     let suite = match dernier_mois(&importes) {
-        Some(m) => Some(socle::mois::Mois::lire(&m).map_err(|e| erreur(socle::echec::Classe::Illisible, e))?.suivant()),
+        Some(m) => Some(socle::mois::Mois::lire(&m).map_err(|e| e.reclasser(Classe::Illisible))?.suivant()),
         None => None,
     };
     let natures = natures_permanentes()?;
@@ -216,7 +215,7 @@ pub(crate) struct NatureProposee {
 }
 
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
-    erreur(socle::echec::Classe::Refuse, m.into())
+    erreur(Classe::Refuse, m)
 }
 
 /// La charge d'`importation-nature` : le salarie, la nature, et ce que `demande` exige d'un contrat qui court encore.
@@ -329,7 +328,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         })?;
         match champ {
             Demande::Debut | Demande::Fin => {
-                let j = Jour::lire(&v).map_err(|m| refus(format!("{} : rien n'a été écrit.", String::from(m))))?.iso();
+                let j = Jour::lire(&v).map_err(|m| m.reformuler(|p| format!("{} : rien n'a été écrit.", p)).reclasser(Classe::Refuse))?.iso();
                 if champ == Demande::Debut && j > du {
                     return Err(refus(format!(
                         "Le contrat de {} ne peut pas commencer le {} : un bulletin le paie dès le {}. Rien n'a été écrit.",
@@ -357,7 +356,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 };
             }
             Demande::Numero => {
-                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| refus(format!("{} Rien n'a été écrit.", String::from(m))))?;
+                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
                 contrat.numero = Some(n.to_string());
             }
         }
@@ -377,8 +376,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
             }
         }
         true
-    })
-    .map_err(socle::echec::Echec::from)?;
+    })?;
     // Son anciennete dans l'entreprise part du debut de son contrat, s'il a commence avant le premier bulletin repris.
     if let Some(debut) = debut_dit.as_deref() {
         crate::fiches::reprendre_anciennete(ctx, &salarie, &du, debut)?;
@@ -394,7 +392,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         None => du.as_str(),
     };
     let depuis = Jour::lire(commence)
-        .map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", String::from(m))))?;
+        .map_err(|m| m.reformuler(|p| format!("{} : la case des permanents n'a pas ete cochee.", p)).reclasser(Classe::Refuse))?;
     let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;
@@ -402,7 +400,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     // Les contrats de prevoyance et de sante des permanents que l'ecran attend maintenant : ceux que les DSN reprises
     // declarent (S21.G00.15) se posent, lus sous la fiche telle qu'elle vient d'etre ecrite.
     let parametrage = if permanents_declares {
-        let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date)).map_err(socle::echec::Echec::from)?;
+        let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
         crate::importation::parametrage::poser_organismes_repris(&frais)?
     } else {
         Vec::new()
@@ -439,7 +437,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     let mut faits = Vec::new();
     for x in a_dire(racine)? {
         let salarie = x.salarie.clone();
-        let ctx = Contexte::nouveau(racine, Some(*quand)).map_err(socle::echec::Echec::from)?;
+        let ctx = Contexte::nouveau(racine, Some(*quand))?;
         let Some(nir) = ctx.salaries.get(salarie.as_str()).and_then(|f| f.nir.en_texte()) else { continue };
         // Sa derniere paie declaree : le contrat tel que la derniere DSN le dit.
         let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| *n == nir).last() else { continue };

@@ -55,14 +55,14 @@ struct Versee {
 /// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
 fn versees_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<Versee>> {
     let mut out = Vec::new();
-    for i in engagement::importe::du_mois(&ctx.racine, mois).map_err(socle::echec::Echec::from)? {
-        let Some(p) = i.paies_lues().map_err(socle::echec::Echec::from)?.into_iter().find(|p| p.mois == mois) else { continue };
+    for i in engagement::importe::du_mois(&ctx.racine, mois)? {
+        let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut else { continue };
         let cle = p.salarie.clone();
         let salarie = ctx.salaries.get(cle.as_str()).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let (debut, fin) = (p.paie.debut.map(|j| j.iso()), p.paie.fin.map(|j| j.iso()));
         let mut activite = BTreeMap::new();
-        if let Some(c) = i.contrat_lu().map_err(socle::echec::Echec::from)? {
+        if let Some(c) = i.contrat_lu()? {
             if c.debut.as_deref().is_some_and(|d| d.starts_with(mois)) && c.fin.as_deref().is_some_and(|f| f.starts_with(mois)) {
                 for (quoi, n) in [("jours", c.contrat.jours), ("cachets", c.contrat.cachets), ("heures", c.contrat.heures)] {
                     if let Some(v) = n.filter(|n| *n != 0) {
@@ -220,8 +220,8 @@ pub struct Demande {
 /// (un plafond national : ni la convention ni la compagnie n'y changent rien) ; aucun quand le logiciel ne livre pas le
 /// bareme de cette annee.
 fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
-    let an = socle::mois::Mois::lire(mois).map_err(refus)?.annee();
-    let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| erreur(Classe::Illisible, m))? else { return Ok(None) };
+    let an = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Refuse))?.annee();
+    let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))? else { return Ok(None) };
     match socle.plafond_securite_sociale {
         Some(p) => Ok(Some(p.mensuel)),
         None => Err(erreur(Classe::DefautDuLogiciel, format!("Le barème livré de {} n'a pas le plafond de la Sécurité sociale : le signaler au développeur.", an))),
@@ -231,25 +231,25 @@ fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
 /// L'EXEMPTION DE LA CASC-SVP AU MOIS `m` (« AAAA-MM ») : la fiche entreprise de ce mois, lue avec les cles de l'effectif
 /// `eff` de son annee (`droit::bareme::casc_exemptee`), comme la DSN du mois la lit.
 pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, m: &str) -> R<bool> {
-    let mois = socle::mois::Mois::lire(m).map_err(|e| erreur(Classe::Illisible, e))?;
-    let du_mois = ctx.au(&mois.dernier_jour()).map_err(|e| erreur(Classe::Illisible, e))?;
+    let mois = socle::mois::Mois::lire(m).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let du_mois = ctx.au(&mois.dernier_jour()).map_err(|e| e.reclasser(Classe::Illisible))?;
     let an = mois.annee();
     Ok(droit::bareme::casc_exemptee(&du_mois.entreprise, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()))
 }
 
 /// La regularisation CASC-SVP que demande `d`, calculee sans rien ecrire (l'ecriture des fichiers : `ecrire`).
 pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
-    let base = droit::adhesions::casc_svp_base().map_err(|m| erreur(Classe::Disque, m))?;
+    let base = droit::adhesions::casc_svp_base().map_err(|m| m.reclasser(Classe::Disque))?;
     let ent = &ctx.entreprise;
-    let idcc = ent.idcc.ecrite("idcc").map_err(refus)?;
+    let idcc = ent.idcc.ecrite("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
     if idcc != base.idcc {
         return Err(refus(format!(
             "La CASC-SVP est une cotisation de la convention 3090 ; la fiche entreprise dit {}. Il n'y a rien a regulariser.",
             idcc
         )));
     }
-    let eff = ctx.effectif().map_err(refus)?;
-    let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur(Classe::Disque, m))?;
+    let eff = ctx.effectif().map_err(|e| e.reclasser(Classe::Refuse))?;
+    let faits = declarations::casc::mois_regularises(ctx).map_err(|m| m.reclasser(Classe::Disque))?;
     let depuis = base.depuis.clone();
     let mut candidats: Vec<String> = import::mois::mois_importes(&ctx.racine)?
         .into_iter()
@@ -292,7 +292,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         if paies.is_empty() {
             continue;
         }
-        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(refus)?;
+        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
         // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
         let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|(_, porte)| porte);
         if porte {
@@ -403,10 +403,10 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         })?;
         let mut cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         cot.rescale(2);
-        par_mois.push(MoisReg { mois: m.clone(), libelle: socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(refus)?, masse, taux, cotisation: cot, source });
+        par_mois.push(MoisReg { mois: m.clone(), libelle: socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Refuse))?, masse, taux, cotisation: cot, source });
     }
 
-    let siret = ent.siret.ecrite("siret").map_err(refus)?.to_string();
+    let siret = ent.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let mut annees: Vec<AnneeReg> = vec![];
     for r in &par_mois {
         let an: String = r.mois.chars().take(4).collect();
@@ -431,7 +431,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
     let total = annees.iter().fold(Decimal::ZERO, |t, a| t + a.cotisation);
 
-    let nom = ent.raison_sociale.ecrite("raison_sociale").map_err(refus)?.to_string();
+    let nom = ent.raison_sociale.ecrite("raison_sociale").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let ou = |a: &Option<String>, b: &Option<String>| a.remplie().or_else(|| b.remplie()).map(String::from);
     // Le signataire de la fiche, s'il est dit ; sans lui, les courriels ne sont pas signes.
     let signe: String = ent
@@ -530,7 +530,7 @@ fn cellule(o: &Option<String>) -> String {
 /// Les annees deja notees regularisees, en une phrase : l'annee, le montant vire (en euros s'il se lit en nombre) et le
 /// jour du virement.
 fn deja_faites(ctx: &Contexte) -> R<String> {
-    let d = declarations::casc::lue(ctx).map_err(|m| erreur(Classe::Illisible, m))?;
+    let d = declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))?;
     Ok(d.iter()
         .flat_map(|d| &d.regularisations)
         .map(|x| {
@@ -547,7 +547,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
 /// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes.
 pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
     let dossier = ctx.racine.join("exports").join("casc-svp");
-    let io = |p: &Path, e: std::io::Error| erreur(Classe::Disque, socle::echec::du_disque(&p, &e));
+    let io = |p: &Path, e: std::io::Error| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque);
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
     let virgule = |d: &Decimal| d.to_string().replace('.', ",");
     let mut fichiers: Vec<std::path::PathBuf> = vec![];
@@ -671,7 +671,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     ws.set_row_height(2, 132.0).map_err(xl)?;
     ws.set_freeze_panes(3, 0).map_err(xl)?;
     ws.set_column_range_width(0, 36, 14.0).map_err(xl)?;
-    let siret = ctx.entreprise.siret.ecrite("siret").map_err(refus)?.to_string();
+    let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
     let mut cumul: Vec<((String, Option<String>), Decimal)> = Vec::new();
     let texte_de = cellule;
@@ -744,7 +744,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         ));
     }
     let chemin = dossier.join("CASC-SVP_liste-nominative.xlsx");
-    wb.save(&chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    wb.save(&chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     fichiers.push(chemin);
     Ok(())
 }
@@ -756,7 +756,7 @@ pub use declarations::casc::RegularisationNotee;
 pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &str, qui: &str, aujourd_hui: &str) -> R<RegularisationNotee> {
     let r = regularisation(ctx, &Demande { annee: Some(annee.to_string()), ..Default::default() })?;
     let p = fichier_suivi(ctx);
-    let mut d = match declarations::casc::lue(ctx).map_err(|m| erreur(Classe::Illisible, m))? {
+    let mut d = match declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(d) => d,
         None => declarations::casc::CascSvp {
             quoi: "Les regularisations CASC-SVP faites hors DSN. Un mois ici ne revient plus dans un dossier de regularisation.".into(),
@@ -774,6 +774,6 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
         qui: qui.to_string(),
     };
     d.regularisations.push(entree.clone());
-    ecrire_json(&p, &d, 2).map_err(|m| erreur(Classe::Disque, m))?;
+    ecrire_json(&p, &d, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(entree)
 }

@@ -64,7 +64,7 @@ fn plie(mot: &str) -> String {
 
 /// Le vocabulaire : chaque mot des textes de la table de lecture livree (`bulletin_lu::textes_de_la_table`), et
 /// `MOTS_DES_PIECES`. Une table qui ne se lit pas se refuse : rien ne se masque sans elle.
-fn vocabulaire() -> Result<&'static HashSet<String>, String> {
+fn vocabulaire() -> socle::echec::R<&'static HashSet<String>> {
     static V: OnceLock<HashSet<String>> = OnceLock::new();
     if let Some(v) = V.get() {
         return Ok(v);

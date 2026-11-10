@@ -47,9 +47,9 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         };
         let source = format!("Lu dans la DSN de {} reprise par l'import (S21.G00.40.040, S21.G00.40.043).", en_clair);
         let ecrit = match droit::bareme::taux_atmp_refuse(&t) {
-            Ok(None) => crate::fiches::inscrire_taux_atmp(ctx, t, &source).map_err(String::from),
+            Ok(None) => crate::fiches::inscrire_taux_atmp(ctx, t, &source).map_err(|e| e.phrase),
             Ok(Some(m)) => Err(m),
-            Err(m) => Err(m.into()),
+            Err(m) => Err(m.phrase),
         };
         let dit = match taux {
             Some(v) => format!("taux {} %", v.normalize().to_string().replace('.', ",")),
@@ -63,7 +63,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
     // L'annee en cours : le taux collectif de l'arrete pour un risque « TC », comme a l'ouverture.
     match crate::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.an) {
         Ok(dits) => faits.extend(dits),
-        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, String::from(e))),
+        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, e.phrase)),
     }
 }
 
@@ -94,8 +94,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     }
     let (ecran, attendus) = match (compagnie::organismes::lire(ctx, None), droit::organismes::attendus(ctx)) {
         (Ok(e), Ok(a)) => (e, a),
-        (Err(e), _) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase())),
-        (_, Err(m)) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", String::from(m))),
+        (Err(e), _) | (_, Err(e)) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase)),
     };
     let lignes = ecran.lignes();
     let fixes: Vec<String> = lignes.iter().filter_map(libelle_de).map(|l| l.to_uppercase()).collect();
