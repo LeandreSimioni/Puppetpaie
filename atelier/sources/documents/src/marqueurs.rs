@@ -72,6 +72,7 @@ marqueurs! {
     SpectacleTitre = "spectacle.titre",
     SpectacleNumeroObjet = "spectacle.numero_objet",
     CertificatDate = "certificat.date",
+    CertificatPortabilite = "certificat.portabilite",
     ContratClausesParticulieres = "contrat.clauses_particulieres",
     ContratDureeTravail = "contrat.duree_travail",
     ContratEmploi = "contrat.emploi",

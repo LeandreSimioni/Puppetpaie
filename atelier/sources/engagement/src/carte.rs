@@ -527,7 +527,7 @@ impl NatureDeContrat {
 }
 
 /// LE BROUILLON D'UNE CARTE : ce que la page enregistre tant que l'engagement n'est pas valide, peut-etre incomplet. Il
-/// nait avec sa nature (une carte neuve s'ouvre dans celle que dit la route etat, `nouvelle_carte`) et n'existe jamais
+/// nait avec sa nature (une carte neuve s'ouvre dans celle que dit la route saisie du mois, `nouvelle_carte`) et n'existe jamais
 /// sans elle ; chacune des cases de sa nature y est, remplie ou `null`. Il change d'une case a la fois (`Changement`) ;
 /// changer de nature le fait changer de variante. Valider, c'est le lire en carte valide (`CarteValide::depuis`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

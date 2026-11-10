@@ -331,10 +331,9 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     Ok(LogicielDuComptable { logiciels, logiciel: choix.logiciel, analytique: choix.analytique, controle })
 }
 
-/// La page ne propose pas la CASC-SVP de la
-/// 3090 a une compagnie de la 1285, ni la dette de conges a qui n'emploie pas de
-/// permanents.
-fn etat_concerne(ctx: &Contexte, etat: &str) -> bool {
+/// La page ne propose pas la CASC-SVP de la 3090 a une compagnie de la 1285, ni la dette de conges a qui n'a pas de
+/// permanent sur les mois a exporter (`permanents` : `engagement::permanents::Permanents::ouverts`).
+fn etat_concerne(ctx: &Contexte, etat: &str, permanents: bool) -> bool {
     let idcc = ctx.entreprise.idcc.portee();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
@@ -343,7 +342,7 @@ fn etat_concerne(ctx: &Contexte, etat: &str) -> bool {
         }
     }
     if t.si_permanents.iter().any(|e| e == etat) {
-        return ctx.emploie_des_permanents();
+        return permanents;
     }
     true
 }
@@ -383,7 +382,15 @@ struct EcranDesExports {
 fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
     let t = tables();
-    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat)).cloned().collect();
+    // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
+    let permanents = match (mois.first(), mois.last()) {
+        (Some(premier), Some(dernier)) => {
+            let (premier, dernier) = (Mois::lire(premier).map_err(Echec::from)?, Mois::lire(dernier).map_err(Echec::from)?);
+            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()).map_err(Echec::from)?.ouverts()
+        }
+        _ => false,
+    };
+    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat, permanents)).cloned().collect();
     let annees = annees_de(&mois);
     let dossier = ctx.racine.join("exports").display().to_string();
     let ecran = EcranDesExports {

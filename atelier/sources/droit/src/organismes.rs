@@ -534,14 +534,15 @@ impl Organismes {
 /// maintenant (`saisies` : cle -> saisie). Chaque contrat garde ses dates (`depuis`, `jusqu_a`) : la DSN de chaque mois
 /// ne lit que ceux qui le couvrent.
 ///
-/// `exiger` : la periode que l'ecran enregistre ; un contrat qu'il propose pour elle et dont la reference manque se
+/// `exiger` : la periode que l'ecran enregistre, et si les contrats des permanents s'y montrent
+/// (`engagement::permanents::Permanents::ouverts`) ; un contrat qu'il propose pour elle et dont la reference manque se
 /// refuse. Sans elle (la lecture), un contrat sans reference ne se declare pas, et ce qui en depend se refuse plus loin.
 pub fn composer(
     ctx: &Contexte,
     saisi: &[Adhesion],
     mut prises: Vec<u32>,
     saisies: &BTreeMap<String, Saisie>,
-    exiger: Option<&(Jour, Jour)>,
+    exiger: Option<(&(Jour, Jour), bool)>,
 ) -> Resultat<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
     let mut retenus: Vec<(Attendu, Option<String>, String, String)> = Vec::new();
@@ -560,8 +561,8 @@ pub fn composer(
         let Some(libelle) = libelle else {
             // Un contrat vide ne se reclame pas quand l'ecran ne l'a pas propose : un contrat des permanents a une
             // compagnie qui n'en emploie pas, un contrat que la periode regardee ne couvre pas.
-            let Some(periode) = exiger else { continue };
-            if (spec.si_permanents && !ctx.emploie_des_permanents()) || !spec.couvre(periode) {
+            let Some((periode, permanents)) = exiger else { continue };
+            if (spec.si_permanents && !permanents) || !spec.couvre(periode) {
                 continue;
             }
             return Err(format!(

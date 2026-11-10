@@ -853,7 +853,7 @@ function poserQui(liste, voulu) {
 function construireCarte(div, e) {
   // QUI : un salarié. Une carte porte un engagement, et un engagement un salarié.
   const voulu = e.salarie || "";
-  // LA NATURE DU CONTRAT, écrite sur la carte dès l'ouverture (`nouvelle_carte` de la route etat), et une case
+  // LA NATURE DU CONTRAT, écrite sur la carte dès l'ouverture (`nouvelle_carte` de la route saisie), et une case
   // seulement là où elle se choisit. Elle change la forme du bloc : un permanent n'a ni spectacle ni cachets, il a
   // un salaire au mois et des faits (`natures[].carte`).
   div.insertAdjacentHTML("afterbegin", `
@@ -1118,10 +1118,15 @@ function construireCarte(div, e) {
 
   // --- la nature du contrat, et la forme du bloc qu'elle décide
   const selNat = div.querySelector(".e-nature");
-  poserListe(selNat, "natures", [ETAT.natures], () => (ETAT.natures || []).map(
+  // Le déroulant : les natures que le mois propose (`nouvelle_carte.natures` de la route saisie) ; une carte qui a déjà
+  // sa nature la garde, même quand le mois n'en propose plus de neuve (un permanent engagé avant).
+  const proposees = NOUVELLE_CARTE.natures || [];
+  const garde = e.nature && !proposees.includes(e.nature) ? e.nature : "";
+  const offertes = () => (ETAT.natures || []).filter((n) => proposees.includes(n.cle) || n.cle === garde);
+  poserListe(selNat, garde ? `natures:${garde}` : "natures", [ETAT.natures, proposees], () => offertes().map(
     (n) => `<option value="${echapper(n.cle)}" title="${echapper(n.aide || "")}">${echapper(n.libelle)}</option>`).join(""));
   // Le nom court se lit ; ce qu'il veut dire est dans l'aide du champ, nature par nature.
-  div.querySelector(".e-nature-bloc").title = (ETAT.natures || []).filter((n) => n.aide).map((n) => `${n.libelle} : ${n.aide}`).join("\n");
+  div.querySelector(".e-nature-bloc").title = offertes().filter((n) => n.aide).map((n) => `${n.libelle} : ${n.aide}`).join("\n");
   selNat.value = e.nature || "";
   selNat.onchange = () => { viderBornes(div); majNature(div); rafraichirApercu(); };
   const selSpec = div.querySelector(".e-spectacle");
@@ -1240,7 +1245,7 @@ function construireCarte(div, e) {
   majContrat(div);
   majNature(div);
   // Ce qui ne se choisit pas n'a pas de case : la nature se change seulement là où le moteur le dit.
-  div.querySelector(".e-nature-bloc").hidden = !ETAT.nouvelle_carte.nature_au_choix;
+  div.querySelector(".e-nature-bloc").hidden = !NOUVELLE_CARTE.nature_au_choix;
   div.querySelector(".e-viser-btn").onclick = (ev) => {
     ev.preventDefault();
     const c = div.querySelector(".e-chiffres");
@@ -1701,10 +1706,10 @@ function bornesLues(div) {
   return div._bornes || { debut: "", fin: "" };
 }
 
-/* UNE CARTE NEUVE S'OUVRE DANS LA NATURE QUE LE MOTEUR DIT (`nouvelle_carte` de la route etat), écrite sur elle dès
-   l'ouverture. */
+/* UNE CARTE NEUVE S'OUVRE DANS LA NATURE QUE LE MOTEUR DIT POUR LE MOIS (`nouvelle_carte` de la route saisie), écrite
+   sur elle dès l'ouverture. */
 document.getElementById("ajouter-engagement").onclick = () => {
-  document.getElementById("engagements").appendChild(ligneEngagement({ nature: ETAT.nouvelle_carte.nature }));
+  document.getElementById("engagements").appendChild(ligneEngagement({ nature: NOUVELLE_CARTE.nature }));
   rafraichirApercu();
 };
 

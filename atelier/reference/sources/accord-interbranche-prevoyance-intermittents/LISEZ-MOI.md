@@ -50,6 +50,12 @@ le cinéma.
 
 ## Où le moteur s'en sert
 
+- Le certificat de travail d'un intermittent : sa prévoyance de l'accord est une garantie collective et obligatoire
+  (CSS L. 911-1), donc maintenue après la fin du contrat dans les conditions de L. 911-8, que le certificat signale
+  (`engagement::portabilite`, `documents::fin_de_contrat::mention`). Les avenants déposés (5, 7, 9) ne disent rien de la portabilité ; le
+  texte de base de l'accord (20/12/2006) et ses avenants 1 à 4 ne sont pas déposés : s'ils prévoient autre chose,
+  c'est là.
+
 - `logiciel/donnees/baremes/2026.json` : la prévoyance des intermittents (non cadres : 0,34 + 0,12 et le fonds collectif
   0,77, avenants 7 et 8 ; cadres : `par_categorie.cadre`, 0,88 + 0,12 et 0,81). Le barème 2027 prendra les taux de
   l'avenant 9 (ticket #287 du privé).

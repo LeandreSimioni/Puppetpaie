@@ -127,14 +127,6 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> Resultat<Option
 
 // ------------------------------------------------------------------ les jours
 
-/// Le jour `n` mois de calendrier apres `j`, au meme quantieme (le dernier du mois s'il n'existe pas).
-fn plus_mois(j: &Jour, n: i64) -> Resultat<Jour> {
-    let total = j.an as i64 * 12 + (j.mois as i64 - 1) + n;
-    let (an, mois) = ((total / 12) as i32, (total % 12 + 1) as u32);
-    let jour = j.jour.min(socle::date::jours_du_mois(an, mois));
-    Jour::nouveau(an, mois, jour).ok_or_else(|| socle::date::date_impossible(an, mois, jour))
-}
-
 /// La capacite de chaque tranche en jours, la tranche commencant au jour `debut` (une tranche en mois dure de date a date ;
 /// `None` : tant que la caisse indemnise).
 fn capacites(r: &Regime, debut: &Jour) -> Resultat<Vec<Option<i64>>> {
@@ -143,7 +135,7 @@ fn capacites(r: &Regime, debut: &Jour) -> Resultat<Vec<Option<i64>>> {
     for t in &r.tranches {
         let c = match t.duree {
             Duree::Jours(j) => Some(j),
-            Duree::Mois(m) => Some(plus_mois(&d0, m)?.moins(&d0)),
+            Duree::Mois(m) => Some(d0.plus_mois(m)?.moins(&d0)),
             Duree::PendantLesIndemnites => None,
         };
         if let Some(c) = c {
@@ -204,7 +196,7 @@ pub fn fin_possible(r: &Regime, premier: &Jour, fin_arret: &Jour) -> Resultat<Jo
 /// (`jours_deja_indemnises` : ce qu'aucun arret du magasin ne porte).
 pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> Resultat<i64> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let debut_fenetre = plus_mois(&premier, -12)?;
+    let debut_fenetre = premier.plus_mois(-12)?;
     let saisis = imp.jours_deja_indemnises.as_ref().filter(|x| x.vrai()).into_iter().map(entier).sum::<Resultat<i64>>()?;
     let mut total = saisis;
     let cle = &imp.salarie;

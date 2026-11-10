@@ -437,6 +437,30 @@ impl SaisieDeFiche {
     }
 }
 
+/// LA FICHE QUE L'ECRAN MONTRE EN CE MOMENT (`permanents`) : `{"nom": …, "donnees": {…}}`, et pour un salarie deja
+/// enregistre sa cle (`cle`) : les cases d'un permanent qui lui est du se montrent (`engagement::permanents`).
+#[derive(Deserialize)]
+#[serde(tag = "nom", deny_unknown_fields)]
+pub(crate) enum FicheEnCours {
+    #[serde(rename = "entreprise")]
+    Entreprise { donnees: SaisieEntreprise },
+    #[serde(rename = "salarie")]
+    Salarie { cle: Option<IdSalarie>, donnees: SaisieSalarie },
+    #[serde(rename = "spectacle")]
+    Spectacle { donnees: SaisieSpectacle },
+}
+
+impl FicheEnCours {
+    /// Le nom de la fiche, la cle du salarie quand elle est dite, et sa saisie.
+    pub(crate) fn ouverte(self) -> (&'static str, Option<IdSalarie>, Saisie) {
+        match self {
+            FicheEnCours::Entreprise { donnees } => ("entreprise", None, donnees.0),
+            FicheEnCours::Salarie { cle, donnees } => ("salarie", cle, donnees.0),
+            FicheEnCours::Spectacle { donnees } => ("spectacle", None, donnees.0),
+        }
+    }
+}
+
 // ------------------------------------------------------------------ la derivation
 
 /// Le texte dit de la case `cle`, sans ses blancs autour.

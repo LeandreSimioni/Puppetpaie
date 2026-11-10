@@ -401,7 +401,10 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     }
     // LES CONTRATS DES PERMANENTS : c'est tout ce que la compagnie a a saisir des organismes (le reste, les textes le
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
-    if ctx.emploie_des_permanents() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
+    // Le mois que « Pour demarrer » prepare : celui du jour.
+    let mois = ctx.aujourdhui.mois_civil();
+    let permanents = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
+    if permanents.ouverts() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
         out.push(manque(
             "organismes_permanents",
             "Les contrats de prévoyance et de santé des permanents".into(),

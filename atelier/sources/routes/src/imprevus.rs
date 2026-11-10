@@ -460,7 +460,7 @@ struct ReponsePapiers {
     certificat: String,
     recu: String,
     dossier: String,
-    avertissements: [&'static str; 3],
+    avertissements: &'static [&'static str],
 }
 
 /// Ce que chaque route de ce module rend porte sa phrase.

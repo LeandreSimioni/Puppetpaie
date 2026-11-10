@@ -17,7 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
@@ -32,7 +32,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, Forcer, SaisieDeFiche, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -53,10 +53,11 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les cases que montre la fiche en cours de saisie.",
         charge: &[
             NOM_FICHE,
+            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "pour un salarié déjà enregistré, sa clé : les cases d'un permanent qui lui est dû se montrent ; absente sinon", avance: false },
             Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche en cours de saisie ; pour un salarié ou un spectacle, l'entreprise est celle de la compagnie", avance: false },
         ],
         exemple: r#"{"nom":"entreprise","donnees":{}}"#,
-        rend: "permanents (vrai ou faux), montres (les cases que la fiche montre)",
+        rend: "montres (les cases que la fiche montre au jour de l'écran)",
         refus: &[FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -420,37 +421,45 @@ struct EffectifDit {
 
 // ------------------------------------------------------------------ permanents
 
-/// Ce que rend `permanents` : la phrase, le curseur des permanents, et les cases que la fiche montre.
+/// Ce que rend `permanents` : la phrase, et les cases que la fiche montre.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
     phrase: &'static str,
-    permanents: bool,
     montres: Vec<String>,
 }
 
-/// `permanents` : rend le curseur (`contexte::emploie_des_permanents`) : la page montre ou replie ce qui ne vaut que
-/// pour les permanents selon cette reponse, et ne le decide pas elle-meme quand on coche la case.
-fn permanents(ctx: &Contexte, charge: SaisieDeFiche) -> R<Permanents> {
-    let (nom, donnees) = charge.ouverte();
+/// `permanents` : les cases que la fiche en cours de saisie montre au jour de l'ecran (la configuration se montre au
+/// jour : `ouverture::configuration`) ; la page montre ou replie chaque case selon cette reponse, et ne decide rien
+/// quand on coche ou decoche la case des permanents.
+fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
+    let (nom, cle, donnees) = charge.ouverte();
     let entreprise = if nom == "entreprise" { donnees.clone() } else { Saisie::de_la_fiche("entreprise", &ctx.entreprise)? };
-    let p = permanents_de(&entreprise);
+    let jour = ctx.aujourdhui;
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(plain)?;
     Ok(Permanents {
-        phrase: if p { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
-        permanents: p,
-        montres: montres(ctx, nom, &donnees, &entreprise)?,
+        phrase: if permanents_de(&entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
+        montres: montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?,
     })
 }
 
-/// Le curseur des permanents (`contexte::emploie_des_permanents`) de la fiche entreprise telle que l'ecran la saisit.
+/// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
 fn permanents_de(entreprise: &Saisie) -> bool {
     entreprise.case("emploie_des_permanents") == Some(&champs::Valeur::OuiNon(true))
 }
 
-/// CE QUE LA FICHE `nom` MONTRE pour `donnees` : chaque case que `champs::Champ::montre` dit a l'ecran, d'apres la
-/// fiche, l'entreprise `entreprise` (ses permanents, ses conditions) et les etablissements de la compagnie. La page ne
-/// montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, donnees: &Saisie, entreprise: &Saisie) -> R<Vec<String>> {
-    let permanents = permanents_de(entreprise);
+/// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
+/// `champs::Champ::montre` dit a l'ecran, d'apres la fiche, l'entreprise `entreprise` (ses conditions), les
+/// etablissements de la compagnie, et ce que `p` dit des permanents : une case qui ne vaut que pour eux se montre quand
+/// l'entreprise dit en employer (telle qu'elle est saisie), ou qu'un permanent est du -- sur la fiche de l'entreprise,
+/// n'importe lequel ; sur celle d'un salarie, lui (`engagement::permanents::Permanents`). La page ne montre que ces
+/// cases-la.
+pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Vec<String>> {
+    let dus = match (nom, cle) {
+        ("entreprise", _) => !p.dus.is_empty(),
+        ("salarie", Some(c)) => p.dus.iter().any(|d| d.salarie.as_str() == c),
+        _ => false,
+    };
+    let permanents = permanents_de(entreprise) || dus;
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
     Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, permanents, etablissements)).map(|c| c.cle.clone()).collect())
