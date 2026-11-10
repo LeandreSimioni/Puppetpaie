@@ -348,11 +348,17 @@ datée, vérifiable**.
   1, 2, 4, 5 et clauses communes) et de la **1285** (cachet, répétition,
   cirque, musiciens, lyrique, chœur ; les accords suivants sous `accords`, chacun avec sa grille entière et la date où il lie la compagnie, `droit::minima::lie_depuis`).
   `engagement::minima::avertissements` compare chaque ligne à son plancher et
-  rend une phrase, jamais un refus. **Toute inconnue tire vers le bas** :
+  rend une phrase : un salaire sous son minimum ne se refuse pas. **Toute inconnue tire vers le bas** :
   jauge minimale, palier du mois pour un barème trimestriel, la plus basse
   des annexes quand la fiche entreprise ne dit pas la sienne
   (`annexe_convention`). Quand une grille distingue les jauges, le métier
   pointe la ligne la plus basse et la grille porte les autres pour mémoire.
+  Sauf l'échelon et l'ancienneté, que seule la compagnie connaît : l'échelon
+  CCNEAC d'un emploi autre qu'artistique (`echelon_ccneac`, un entier de 1
+  à 12, attribué par l'employeur, X.4.1) et l'ancienneté dans le poste
+  (`poste_depuis`) partout où un minimum en dépend (la grille administrative
+  de la 3090, les conditions `anciennete` des grilles) ; sans la case, le
+  calcul refuse en la nommant, jamais « aucune ancienneté ».
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,
   éditeur, URL, description, version et d'où on la lit, date de relevé,
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le

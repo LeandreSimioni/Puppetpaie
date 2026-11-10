@@ -443,6 +443,63 @@ texte_borne! {
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
 }
 
+/// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
+/// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
+/// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
+/// (`lire`) et a la saisie (`FormeDeCase::FAUTE`), en une phrase qui dit quoi faire. Il se lit d'un nombre ou d'un texte
+/// de chiffres (la case de la page envoie son texte) ; il s'ecrit en nombre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct EchelonCcneac(u8);
+
+impl EchelonCcneac {
+    /// Son rang dans la grille, de 1 a 12.
+    pub fn rang(self) -> usize {
+        usize::from(self.0)
+    }
+
+    /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> Result<EchelonCcneac, String> {
+        match socle::num::entier_de_chiffres(texte.trim()).filter(|n| (1..=12).contains(n)) {
+            Some(n) => Ok(EchelonCcneac(n as u8)),
+            None => Err(format!(
+                "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
+                texte
+            )),
+        }
+    }
+
+    /// Ce qui refuse `texte` ; rien pour un texte vide (la case vide s'ecrit nulle).
+    pub fn faute(texte: &str) -> Option<String> {
+        if texte.is_empty() {
+            return None;
+        }
+        Self::lire(texte).err()
+    }
+}
+
+impl std::fmt::Display for EchelonCcneac {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for EchelonCcneac {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let ecrit = match socle::forme::NombreEcrit::deserialize(d)? {
+            socle::forme::NombreEcrit::Entier(i) => i.to_string(),
+            socle::forme::NombreEcrit::Naturel(u) => u.to_string(),
+            socle::forme::NombreEcrit::Flottant(x) => socle::date::repr_flottant(x),
+            socle::forme::NombreEcrit::Texte(t) => t,
+        };
+        EchelonCcneac::lire(&ecrit).map_err(serde::de::Error::custom)
+    }
+}
+
+impl FormeDeCase for EchelonCcneac {
+    const FAUTE: Option<fn(&str) -> Option<String>> = Some(EchelonCcneac::faute);
+}
+
 /// LA RAISON SOCIALE DECLAREE : 60 caracteres au plus, en deux lignes de 32 coupees entre deux mots. La DSN en ecrit 60
 /// (S10.G00.01.003, X [1,60] : `logiciel/donnees/formats-dsn-base.json`) ; la DPAE, deux lignes de 32 (L_RAISON_SOC_1,
 /// positions 152-183, et L_RAISON_SOC_2, « Nom ou raison sociale (ligne 2) », 510-541 :
@@ -1274,7 +1331,7 @@ fiche! {
         deduction_forfaitaire_accord: AccordDfs,
         statut_boeth: StatutBoeth,
         sante_svp: SanteSvp,
-        echelon_ccneac: String,
+        echelon_ccneac: EchelonCcneac,
         classement_conventionnel: String,
         poste_depuis: Jour,
         stagiaire_ccneac: StagiaireCcneac,
