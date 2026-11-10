@@ -54,7 +54,7 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> Resultat<Vec<&'static str
 
 /// Les heures d'un fait de la carte, zero s'il n'est pas dit ou s'il est negatif.
 fn heures(x: &Option<NombreLu>) -> Resultat<Decimal> {
-    crate::conges::dec_ou(x.as_ref(), Decimal::ZERO).map(|h| h.max(Decimal::ZERO))
+    crate::conges::dec_ou(x.as_ref(), Decimal::ZERO).map(|h| h.max(Decimal::ZERO)).map_err(String::from)
 }
 
 /// LES LIGNES DES HEURES EN PLUS DU MOIS de la saisie `e` d'un contrat paye au mois de `salaire` pour `quotite` heures
