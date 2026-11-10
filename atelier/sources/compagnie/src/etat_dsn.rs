@@ -102,7 +102,7 @@ pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
     }
     if let Some(etablie) = dsn_importee_le(&ctx.racine, mois)? {
         const SANS_BILAN: &str = "aucun bilan de la plate-forme n'est lu pour elle. Rien n'est à refaire ici.";
-        let phrase = match etablie.as_deref().and_then(socle::date::Jour::du_texte) {
+        let phrase = match etablie {
             Some(j) => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée (établie le {}) — {}", j.jj_mm_aaaa(), SANS_BILAN),
             None => format!("DSN déclarée avant PuppetPaie : celle de l'ancien logiciel, importée — {}", SANS_BILAN),
         };
@@ -129,8 +129,8 @@ pub fn importe(racine: &std::path::Path, mois: Mois) -> R<bool> {
 /// LA DSN QUE L'IMPORT A LUE POUR `mois` (`engagement::importe::dsn_deposee`), que la saisie touche aussi le mois ou
 /// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
 /// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
-pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: Mois) -> R<Option<Option<String>>> {
-    Ok(engagement::importe::dsn_deposee(racine, mois)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
+pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: Mois) -> R<Option<Option<socle::date::Jour>>> {
+    Ok(engagement::importe::dsn_deposee(racine, mois)?.map(|x| x.paie.depose_le))
 }
 
 /// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par

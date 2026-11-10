@@ -272,16 +272,6 @@ fn tranche(ligne: &[char], a: usize, b: usize) -> String {
     ligne.iter().skip(a).take(b.saturating_sub(a)).collect()
 }
 
-/// `19900723` -> `1990-07-23` (les dates de l'AEM), le reste tel quel.
-fn aaaammjj(v: &str) -> String {
-    let c: Vec<char> = v.chars().collect();
-    // Des chiffres : les chiffres ASCII et les exposants de Latin-1 (qu'une AEM lue en latin-1 peut porter).
-    if c.len() == 8 && c.iter().all(|x| x.is_ascii_digit() || matches!(x, '\u{b2}' | '\u{b3}' | '\u{b9}')) {
-        return format!("{}-{}-{}", c[0..4].iter().collect::<String>(), c[4..6].iter().collect::<String>(), c[6..8].iter().collect::<String>());
-    }
-    v.to_string()
-}
-
 fn champ(ligne: &[char], a: usize, b: usize) -> String {
     ligne[a..b].iter().collect()
 }
@@ -300,7 +290,7 @@ pub struct ContratAtteste {
     pub(crate) brut: socle::num::Decimal,
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
     pub(crate) numero_attestation: String,
-    pub(crate) date_attestation: String,
+    pub(crate) date_attestation: Option<socle::date::Jour>,
     pub fichier: String,
 }
 
@@ -313,7 +303,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::import
     (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
-    a.atteste_le = plein(&c.date_attestation);
+    a.atteste_le = c.date_attestation;
     a.fichier = plein(&c.fichier);
     ContratLu { salarie: salarie.to_string(), debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
@@ -350,6 +340,16 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 illisible(&mut illisibles);
                 continue;
             };
+            // La signature de l'attestation (`AAAAMMJJ`), quand l'AEM en porte une.
+            let signee = tranche(&l, 858, 866);
+            let date_attestation = match socle::date::lire_aaaammjj(&signee) {
+                Some(j) => Some(j),
+                None if signee.trim().is_empty() => None,
+                None => {
+                    illisible(&mut illisibles);
+                    continue;
+                }
+            };
             let numero_objet = champ(&l, 638, 650).trim_matches(blanc).to_string();
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
             let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
@@ -384,7 +384,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                     jours,
                     brut,
                     numero_attestation: tranche(&l, 36, 42).trim_matches(blanc).to_string(),
-                    date_attestation: aaaammjj(&tranche(&l, 858, 866)),
+                    date_attestation,
                     fichier: nom.clone(),
                 }));
             }

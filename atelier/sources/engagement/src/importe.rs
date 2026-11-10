@@ -52,10 +52,10 @@ pub const IMPORTE: &str = "importe";
 
 /// LA ZONE `importe` D'UN ENGAGEMENT : le jour de l'import, le contrat atteste, s'il l'est, et les paies versees, par
 /// mois (`AAAA-MM`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pieces {
-    pub le: String,
+    pub le: Jour,
     pub contrat: Option<ContratAtteste>,
     pub paies: BTreeMap<Mois, PaieVersee>,
 }
@@ -97,11 +97,11 @@ pub struct ContratAtteste {
     pub numero_attestation: Option<String>,
     pub numero_certificat: Option<String>,
     /// Le jour que la piece porte (sa signature), tel qu'il s'y lit.
-    pub atteste_le: Option<String>,
+    pub atteste_le: Option<Jour>,
     /// La copie de la piece, sous `historique/bulletins/`, et sa page.
     pub fichier: Option<String>,
     pub page: Option<u64>,
-    pub importe_le: Option<String>,
+    pub importe_le: Option<Jour>,
 }
 
 /// Ce qui a declare une paie versee.
@@ -143,7 +143,7 @@ pub struct PaieVersee {
     pub identifiant_pas: Option<String>,
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
-    pub depose_le: Option<String>,
+    pub depose_le: Option<Jour>,
     pub fichier: Option<String>,
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
     pub bases: BTreeMap<String, Decimal>,
@@ -159,7 +159,7 @@ pub struct PaieVersee {
     pub cotisations: Option<Vec<CotisationImprimee>>,
     pub emploi_imprime: Option<EmploiImprime>,
     pub bulletin: Option<BulletinSource>,
-    pub importe_le: Option<String>,
+    pub importe_le: Option<Jour>,
 }
 
 /// Une ligne de remuneration que le bulletin imprime ; `rubrique` : celle du catalogue a laquelle l'import l'a rattachee.
@@ -380,8 +380,8 @@ impl Importe {
     }
 
     /// Quand il a ete importe.
-    pub fn le(&self) -> &str {
-        &self.pieces().le
+    pub fn le(&self) -> Jour {
+        self.pieces().le
     }
 
     /// Ce que l'AEM, le bulletin ou le certificat atteste du contrat, s'il l'est.
@@ -476,7 +476,7 @@ impl Importe {
             contrat.nature_a_dire = false;
             contrat.nature = Some(n);
         }
-        contrat.importe_le = contrat.importe_le.or_else(|| Some(self.le().to_string()).filter(|l| !l.is_empty()));
+        contrat.importe_le = contrat.importe_le.or(Some(self.le()));
         let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
         Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
@@ -488,7 +488,7 @@ impl Importe {
 
     fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
         let mut paie = p.clone();
-        paie.importe_le = paie.importe_le.or_else(|| Some(self.le().to_string()).filter(|l| !l.is_empty()));
+        paie.importe_le = paie.importe_le.or(Some(self.le()));
         Ok(PaieLue { mois, salarie: self.cle_ecrite()?, paie })
     }
 
@@ -706,7 +706,7 @@ impl Importe {
             montant_soumis: tu_vaut_zero(p.net_imposable),
             prelevement,
         });
-        c.importee = Some(Importee { le: self.le().to_string(), non_dits });
+        c.importee = Some(Importee { le: self.le(), non_dits });
         Ok(paie)
     }
 }

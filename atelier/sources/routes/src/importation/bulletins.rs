@@ -2206,7 +2206,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     (a.heures, a.cachets, a.jours, a.brut) = (Some(0), Some(cachets), Some(jours), Some(brut));
     a.numero_certificat = c.numero.clone();
     a.base_conge = c.base_conge;
-    a.atteste_le = c.signe_le.map(|s| s.iso());
+    a.atteste_le = c.signe_le;
     (a.fichier, a.page) = (Some(copie.to_string()), Some(c.page as u64));
     Ok((ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
 }

@@ -237,7 +237,7 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, String, String), PaieLu
 /// contrat d'un permanent font un seul engagement (plus bas).
 /// Son numero est celui que la DSN deposee a declare (S21.G00.40.009), sinon celui que le bulletin imprime ; jamais un
 /// numero tire.
-fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhui: &str) -> R<Vec<engagement::importe::Neuf>> {
+fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhui: socle::date::Jour) -> R<Vec<engagement::importe::Neuf>> {
     use engagement::importe::{Neuf, Pieces};
     // Un salarie, et les dates de son engagement (une fin absente : il court encore). Les dates se comparent comme leur
     // ecriture ISO ; une date absente vient avant toute date.
@@ -384,11 +384,11 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     let mut out: Vec<Neuf> = autres
         .into_iter()
         .map(|g| -> R<Neuf> {
-            let dates = g.contrat.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(g.paies.iter().filter_map(|p| p.paie.importe_le.clone()));
+            let dates = g.contrat.iter().filter_map(|c| c.contrat.importe_le).chain(g.paies.iter().filter_map(|p| p.paie.importe_le));
             // Le jour ou ses pieces ont ete reprises ; des pieces que rien ne date sont reprises par cet import, aujourd'hui.
-            let le = match dates.filter(|x| !x.is_empty()).min() {
+            let le = match dates.min() {
                 Some(l) => l,
-                None => aujourdhui.to_string(),
+                None => aujourdhui,
             };
             let numero = declare(&g).or_else(|| imprime(&g));
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
@@ -500,7 +500,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
     // CE QUE L'IMPORT A DEJA ECRIT, relu de ses engagements importes : les contrats attestes, les paies versees.
     let importes_avant = engagement::importe::tous(&ctx.racine)?;
     let mut engagements: Vec<ContratLu> = engagement::importe::contrats_lus(&ctx.racine)?;
-    let le = aujourdhui.iso();
+    let le = aujourdhui;
     // LES CONTRATS QUE L'IMPORT RETIENT (`import::attestes` en a decide), rattaches par NIR a la fiche qui existe
     // maintenant, comptes par bloc du compte rendu.
     // Ce que le registre change aux contrats de l'historique : reduit, ou retire.
@@ -519,7 +519,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
         let Some(cle) = par_nir.get(nir) else { continue };
         let mut e = ligne.clone();
         e.salarie = cle.clone();
-        e.contrat.importe_le = Some(le.clone());
+        e.contrat.importe_le = Some(le);
         engagements.push(e);
         *comptes.entry(bloc).or_default() += 1;
     }
@@ -539,7 +539,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
         let Some(cle) = x.paie.nir.as_ref().and_then(|n| par_nir.get(n)) else { continue };
         let mut x = x.clone();
         x.salarie = cle.clone();
-        x.paie.importe_le = Some(le.clone());
+        x.paie.importe_le = Some(le);
         let k = x.cle();
         if let Some(a) = par_cle.get(&k).filter(|a| porte_un_bulletin(a) && !porte_un_bulletin(&x)) {
             completer_par(&mut x.paie, &a.paie.clone());
@@ -560,7 +560,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
         }
     }
     if contrats_aem + contrats_bulletins + contrats_certificats + contrats_aem_pdf + neuves > 0 || importes_avant.is_empty() {
-        let importes = engagements_importes(engagements, par_cle.into_values().collect(), &le)?;
+        let importes = engagements_importes(engagements, par_cle.into_values().collect(), le)?;
         for p in engagement::importe::ecrire_tous(&ctx.racine, importes)? {
             fichiers.push(p.display().to_string());
         }

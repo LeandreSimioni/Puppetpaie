@@ -28,6 +28,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
+use socle::date::Jour;
 use socle::echec::{Classe, R};
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
@@ -408,7 +409,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
         (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
-    (x.depose_le, x.fichier) = (p.depot.map(|j| j.iso()), Some(p.fichier.clone()).filter(|f| !f.is_empty()));
+    (x.depose_le, x.fichier) = (p.depot, Some(p.fichier.clone()).filter(|f| !f.is_empty()));
     x
 }
 
@@ -717,9 +718,9 @@ pub(crate) fn apercu_lu(
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
-    let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(paies.iter().filter_map(|p| p.paie.importe_le.clone())).filter(|t| !t.is_empty()).max();
-    let debut = contrats.iter().filter_map(|c| c.debut).min().map(|j| j.iso());
-    let fin = contrats.iter().filter_map(|c| c.fin).max().map(|j| j.iso());
+    let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
+    let debut = contrats.iter().filter_map(|c| c.debut).min();
+    let fin = contrats.iter().filter_map(|c| c.fin).max();
     let salaries: HashSet<&str> = contrats.iter().map(|c| c.salarie.as_str()).filter(|s| !s.is_empty()).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
     let editeur = attend_l_editeur(racine)?;
@@ -740,7 +741,8 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let mut bornes: Vec<String> = debut
         .iter()
         .chain(fin.iter())
-        .chain(reprises.iter().flat_map(|r| r.du.iter().chain(r.au.iter())))
+        .map(Jour::iso)
+        .chain(reprises.iter().flat_map(|r| r.du.iter().chain(r.au.iter())).cloned())
         .map(|x| x.chars().take(7).collect())
         .collect();
     bornes.sort();
@@ -752,14 +754,14 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let repris_dit = (!quoi.is_empty()).then(|| format!("{}{}", quoi.join(", "), periode));
     let le = importe_le.iter().chain(reprises.iter().filter_map(|r| r.le.as_ref())).max();
     let repris_titre = match le {
-        Some(l) => format!("Historique repris le {}", socle::ecran::quand(&l.chars().take(10).collect::<String>())),
+        Some(l) => format!("Historique repris le {}", l.jj_mm_aaaa()),
         None => "Historique repris".to_string(),
     };
     let phrase = match (&importe_le, &debut, &fin) {
         (Some(le), Some(du), Some(au)) => {
-            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", socle::ecran::quand(le), contrats.len(), salaries.len(), socle::ecran::quand(du), socle::ecran::quand(au))
+            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
-        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", socle::ecran::quand(le), contrats.len(), salaries.len()),
+        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
         (None, _, _) => "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string(),
     };
     Ok(EtatImportation {
@@ -786,12 +788,12 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
 #[derive(Debug, Serialize)]
 struct EtatImportation {
     phrase: String,
-    importe_le: Option<String>,
+    importe_le: Option<Jour>,
     contrats: usize,
     salaries: usize,
     objets: usize,
-    du: Option<String>,
-    au: Option<String>,
+    du: Option<Jour>,
+    au: Option<Jour>,
     dossier: String,
     reprises: Vec<RepriseVue>,
     editeur: Vec<MessageEditeur>,
@@ -820,7 +822,7 @@ struct RepriseVue {
     nombre: usize,
     du: Option<String>,
     au: Option<String>,
-    le: Option<String>,
+    le: Option<Jour>,
     /// Les DSN reprises : une par mois declare.
     #[serde(skip_serializing_if = "Option::is_none")]
     declarations: Option<usize>,
@@ -849,7 +851,7 @@ struct Reprise {
     nombre: usize,
     du: Option<String>,
     au: Option<String>,
-    le: Option<String>,
+    le: Option<Jour>,
 }
 
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
@@ -863,13 +865,13 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
             Attestation::Certificat => &mut certificats,
             Attestation::Aem => &mut aem,
         };
-        cible.voir(c.debut.map(|j| j.iso()).as_deref(), c.fin.map(|j| j.iso()).as_deref(), c.contrat.importe_le.as_deref());
+        cible.voir(c.debut.map(|j| j.iso()).as_deref(), c.fin.map(|j| j.iso()).as_deref(), c.contrat.importe_le);
     }
     let (mut dsn, mut bulletins) = (Reprise::default(), Reprise::default());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).
     let mut mois_dsn: BTreeSet<socle::mois::Mois> = BTreeSet::new();
     for x in paies {
-        let le = x.paie.importe_le.as_deref();
+        let le = x.paie.importe_le;
         let mois = x.mois.to_string();
         // Une paie declaree par une DSN et completee par un bulletin compte des deux cotes : elle a les deux sources.
         if x.paie.declare_par == Declaration::Dsn {
@@ -888,7 +890,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
         nombre: r.nombre,
         du: r.du.clone(),
         au: r.au.clone(),
-        le: r.le.clone(),
+        le: r.le,
         declarations: None,
         contrats: None,
         copies: None,
@@ -905,7 +907,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
     if bulletins.nombre > 0 || contrats_bulletins.nombre > 0 || copies > 0 {
         let mut b = RepriseVue { contrats: Some(contrats_bulletins.nombre), copies: Some(copies), ..base("bulletins", "bulletins de paie", &bulletins) };
         if b.le.is_none() {
-            b.le = contrats_bulletins.le.clone();
+            b.le = contrats_bulletins.le;
         }
         out.push(b);
     }
@@ -983,7 +985,7 @@ fn message(canal: &'static str, quand: Option<String>, resume: Option<String>, p
 
 impl Reprise {
     /// Une ligne de plus : ses dates (un texte non vide), et le jour ou elle a ete reprise.
-    fn voir(&mut self, debut: Option<&str>, fin: Option<&str>, le: Option<&str>) {
+    fn voir(&mut self, debut: Option<&str>, fin: Option<&str>, le: Option<Jour>) {
         let texte = |v: Option<&str>| v.filter(|s| !s.is_empty()).map(str::to_string);
         self.nombre += 1;
         if let Some(d) = texte(debut) {
@@ -996,7 +998,7 @@ impl Reprise {
                 self.au = Some(f);
             }
         }
-        if let Some(l) = texte(le) {
+        if let Some(l) = le {
             if self.le.as_ref().is_none_or(|x| &l > x) {
                 self.le = Some(l);
             }

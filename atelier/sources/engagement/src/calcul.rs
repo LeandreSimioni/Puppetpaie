@@ -393,7 +393,7 @@ pub struct Contenu {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Importee {
     /// Le jour de l'import.
-    pub le: String,
+    pub le: socle::date::Jour,
     /// Les montants que les pieces ne disent pas (`brut`, `cotisations_salariales`, `net_a_payer`, `plafond`...) : ils
     /// valent zero dans la paie, et un etat les laisse vides.
     pub non_dits: Vec<&'static str>,
