@@ -328,9 +328,14 @@ fn base() -> Resultat<Base> {
     let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
     let du_calcul: Vec<&str> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
     if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
-        return Err(format!(
-            "rubriques-base.json : la section `au_mois` porte {:?}, et le calcul d'un salarié au mois compose {:?} (`RubriqueDuMois`) : le signaler au développeur.",
-            rangees, du_calcul
+        return Err(socle::echec::avec(
+            "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
+            socle::echec::APart {
+                fichier: Some("rubriques-base.json".into()),
+                cle: Some("au_mois".into()),
+                detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),
+                ..Default::default()
+            },
         ));
     }
     Ok(b)
