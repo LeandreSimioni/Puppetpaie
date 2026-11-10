@@ -148,8 +148,8 @@ enum Atelier {
     Etat {
         ok: bool,
         simule: bool,
-        jour: String,
-        heure: String,
+        jour: socle::date::Jour,
+        heure: socle::paris::InstantEcrit,
         secondes: socle::paris::Moment,
         scenario: Option<String>,
         compagnie: Option<String>,
@@ -158,7 +158,7 @@ enum Atelier {
     },
     Jour {
         ok: bool,
-        jour: String,
+        jour: socle::date::Jour,
         #[serde(skip_serializing_if = "Option::is_none")]
         veille: Option<EtatDeLaVeille>,
     },
@@ -171,7 +171,7 @@ enum Atelier {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeJour {
-    jour: String,
+    jour: socle::date::Jour,
 }
 
 #[derive(Clone)]
@@ -719,8 +719,8 @@ impl Fenetre {
             "etat" => Ok(Atelier::Etat {
                 ok: true,
                 simule: socle::temps::simule(),
-                jour: socle::temps::jour_de_paris().iso(),
-                heure: socle::paris::iso_secondes(socle::temps::secondes()),
+                jour: socle::temps::jour_de_paris(),
+                heure: socle::paris::InstantEcrit::maintenant(),
                 secondes: socle::temps::secondes(),
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
@@ -733,7 +733,6 @@ impl Fenetre {
                 }
                 let texte = std::str::from_utf8(corps).map_err(|e| socle::echec::refus(e.to_string()))?;
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
-                let jour = socle::date::Jour::lire(&jour)?;
                 let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
                     return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
@@ -754,7 +753,7 @@ impl Fenetre {
                     }
                     Phase::Accueil | Phase::MotDePasse { .. } => None,
                 };
-                Ok(Atelier::Jour { ok: true, jour: jour.iso(), veille })
+                Ok(Atelier::Jour { ok: true, jour, veille })
             }
             "simuler" => {
                 let racine = ouverte.ok_or_else(|| socle::echec::refus("Aucune compagnie n'est ouverte."))?;
