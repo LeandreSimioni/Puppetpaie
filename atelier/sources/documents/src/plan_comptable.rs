@@ -376,7 +376,9 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         ));
     }
     let code = match salarie.code_salarie.portee() {
-        Some(t) => entier_de(t.trim()).map_err(|m| Refus::Operation(format!("Le code salarié de {} : {}.", cle, m)))?,
+        Some(t) => entier_de(t.trim()).map_err(|e| {
+            Refus::Operation(format!("Le code salarié de {} : « {} » n'est pas un entier que le modèle sait écrire ({}).", cle, t.trim(), e))
+        })?,
         None => None,
     };
     formater(modele, code, cle, 0).map(Some).map_err(|(classe, message)| {
@@ -384,16 +386,16 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         match classe {
             Classe::Illisible | Classe::Manque => {}
             Classe::FormeNonPortee => {
-                return Refus::Autre(erreur(
-                    Classe::Refuse,
-                    socle::echec::avec(
+                return Refus::Autre(Echec {
+                    a_part: Some(socle::echec::APart { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::APart::default() }),
+                    ..erreur(
+                        Classe::Refuse,
                         format!(
                             "Le modèle du compte individuel « {} » emploie une forme que le logiciel ne sait pas remplir : l'écrire autrement dans le plan comptable.",
                             modele
                         ),
-                        socle::echec::APart { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::APart::default() },
-                    ),
-                ))
+                    )
+                })
             }
             autre => return Refus::Autre(erreur(autre, message)),
         }
@@ -408,7 +410,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
 
 /// Un entier écrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un code qui n'est pas un
 /// entier (il se lit alors en texte). Un entier trop grand se refuse.
-fn entier_de(t: &str) -> Result<Option<i64>, String> {
+fn entier_de(t: &str) -> Result<Option<i64>, std::num::ParseIntError> {
     let (neg, reste) = if let Some(r) = t.strip_prefix('-') {
         (true, r)
     } else if let Some(r) = t.strip_prefix('+') {
@@ -424,10 +426,7 @@ fn entier_de(t: &str) -> Result<Option<i64>, String> {
     if !chiffres.chars().all(|c| c.is_ascii_digit()) {
         return Ok(None);
     }
-    match chiffres.parse::<i64>() {
-        Ok(n) => Ok(Some(if neg { -n } else { n })),
-        Err(e) => Err(format!("« {} » n'est pas un entier que le modèle sait écrire ({})", t, e)),
-    }
+    chiffres.parse::<i64>().map(|n| Some(if neg { -n } else { n }))
 }
 
 // ------------------------------------------------------------- str.format
