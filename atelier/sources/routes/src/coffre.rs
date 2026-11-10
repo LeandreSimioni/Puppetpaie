@@ -1035,7 +1035,7 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
     let (application, _) = application?;
     match jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &jeton.rafraichissement, DELAI)? {
         Ok(_) => Ok(etat(Some(jeton.compte), true, None, accordees)),
-        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme.message), accordees)),
+        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(String::from(probleme.echec)), accordees)),
     }
 }
 

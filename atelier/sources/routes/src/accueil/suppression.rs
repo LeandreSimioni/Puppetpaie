@@ -116,7 +116,7 @@ pub fn question(racine: &Path) -> Result<Suppression, String> {
     let sauvegarde = match g {
         Genre::Reelle => {
             let liee = racine.join(socle::fichiers::CONFIG).join(crate::coffre::FICHIER_JETON).is_file();
-            let derniere = compagnie::sauvegarde::derniere(racine).map_err(|e| e.message)?.map(|d| d.quand);
+            let derniere = compagnie::sauvegarde::derniere(racine).map_err(|e| String::from(e.echec))?.map(|d| d.quand);
             let phrase = match &derniere {
                 Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", socle::ecran::quand(q)),
                 None => "Aucune sauvegarde n'est encore partie dans le Drive.".to_string(),

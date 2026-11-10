@@ -69,14 +69,14 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     };
     let mut client = match routes::coffre::client_drive(&cadre.racine) {
         Ok(c) => c,
-        Err(e) => return refus(e.classe, &e.message),
+        Err(e) => return refus(e.echec.classe, &String::from(e.echec)),
     };
     if !json {
         dire!("Restauration de Drive/{}/{} vers {}", racine_drive, sauvegarde::DOSSIER_DRIVE, cible.display());
     }
     let r = match restauration::restaurer(&cible, racine_drive, &mut client) {
         Ok(r) => r,
-        Err(e) => return refus(e.classe, &e.message),
+        Err(e) => return refus(e.echec.classe, &String::from(e.echec)),
     };
     let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible, ""));
     let code = if r.incidents.is_empty() { 0 } else { 1 };

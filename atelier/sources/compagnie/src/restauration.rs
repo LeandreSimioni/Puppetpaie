@@ -274,13 +274,13 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         }
         let contenu = match client.telecharger(&d.id) {
             Ok(c) => c,
-            Err(e) if hors_ligne(&e.message) => {
+            Err(e) if hors_ligne(&e.echec.phrase) => {
                 resultat.hors_ligne = true;
-                resultat.incidents.push(format!("{} : {}", relatif, e));
+                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
             Err(e) => {
-                resultat.incidents.push(format!("{} : {}", relatif, e));
+                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                 continue;
             }
         };

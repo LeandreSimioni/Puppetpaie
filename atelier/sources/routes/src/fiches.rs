@@ -316,7 +316,7 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
     let r = ouverture(ctx, &opt, Clients::default(), None);
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
-    let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, phrase: e.message, a_part: None })?;
+    let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| e.echec)?;
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),

@@ -94,7 +94,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         let (parent, deja) = match essai {
             Ok(x) => x,
             Err(e) => {
-                if hors_ligne(&e.message) {
+                if hors_ligne(&e.echec.phrase) {
                     // Pas de reseau : les dossiers suivants tomberaient pareil. On s'arrete,
                     // rien de ce qui reste n'entre a l'index, et le prochain passage reprendra tout.
                     resultat.hors_ligne = true;
@@ -104,7 +104,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 }
                 // Un dossier qui resiste ne doit pas emporter les autres : la sauvegarde est
                 // partielle, elle le dit, et le prochain passage reprendra celui-la.
-                resultat.incidents.push(format!("{} : {}", dossier, e));
+                resultat.incidents.push(format!("{} : {}", dossier, String::from(e.echec.clone())));
                 let cause = cause_de(&e);
                 indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
                 resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: cause.into() });
@@ -154,12 +154,12 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 // LE FICHIER A DISPARU ENTRE L'INVENTAIRE ET L'ENVOI, et ce n'est pas un incident :
                 // `engagements/avant/` et `config/avant/` ne gardent que les dernieres copies, et
                 // l'interface enregistre a chaque frappe. On ne l'inscrit pas a l'index non plus.
-                Err(e) if e.classe == Some(Classe::FichierAbsent) => {
+                Err(e) if e.echec.classe == Some(Classe::FichierAbsent) => {
                     resultat.disparus += 1;
                     en_echec.insert(relatif.clone());
                 }
                 Err(e) => {
-                    resultat.incidents.push(format!("{} : {}", relatif, e));
+                    resultat.incidents.push(format!("{} : {}", relatif, String::from(e.echec.clone())));
                     let cause = cause_de(&e);
                     indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
                     resultat.reportes.push(Reporte { quoi: relatif.clone(), dossier: false, cause: cause.into() });

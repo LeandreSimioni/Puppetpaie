@@ -174,7 +174,7 @@ pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafr
             // Une reponse 200 sans jeton d'acces, ou illisible, est un refus de Google comme un autre : une phrase.
             let reponse: ReponseJeton = match lue(brut, "Google a rendu une reponse illisible a la demande de jeton. Reessayer plus tard.") {
                 Ok(r) => r,
-                Err(e) => return Ok(Err(ErreurGoogle::google(String::from(e)))),
+                Err(e) => return Ok(Err(ErreurGoogle::en(Classe::Google, e))),
             };
             match reponse.access_token.filter(|t| !t.is_empty()) {
                 Some(acces) => Ok(Ok(acces)),

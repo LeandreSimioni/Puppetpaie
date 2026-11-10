@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use socle::echec::Classe;
+use socle::echec::{Classe, Echec};
 
 use serde::{Deserialize, Serialize};
 
@@ -46,12 +46,12 @@ impl socle::forme::ReponseDUnTiers for FichierDrive {}
 impl FichierDrive {
     /// Son identifiant, que Drive donne toujours a ce qu'il rend.
     fn id(&self) -> Result<String, ErreurGoogle> {
-        self.id.clone().ok_or_else(|| ErreurGoogle::nouvelle(Classe::Manque, socle::fichiers::absent("id")))
+        self.id.clone().ok_or_else(|| ErreurGoogle::en(Classe::Manque, socle::fichiers::absent("id")))
     }
 
     /// Son nom, que le listage demande.
     fn nom(&self) -> Result<String, ErreurGoogle> {
-        self.name.clone().ok_or_else(|| ErreurGoogle::nouvelle(Classe::Manque, socle::fichiers::absent("name")))
+        self.name.clone().ok_or_else(|| ErreurGoogle::en(Classe::Manque, socle::fichiers::absent("name")))
     }
 }
 
@@ -117,7 +117,7 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
     match e.statut {
         Some(500 | 502 | 503 | 504 | 429) => true,
         Some(403) => {
-            let m = e.message.to_lowercase();
+            let m = e.echec.phrase.to_lowercase();
             m.contains("rate limit") || m.contains("ratelimitexceeded")
         }
         _ => false,
@@ -127,41 +127,40 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
 /// `CopieDeDeveloppement`, `FichierAbsent`, `SortieAbsente`... pour le reste ; aucune pour un refus ordinaire). La phrase
 /// est ecrite pour etre lue.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ErreurGoogle {
-    pub classe: Option<Classe>,
-    pub message: String,
+    pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
     pub statut: Option<u16>,
 }
 
 impl ErreurGoogle {
+    #[track_caller]
     pub fn nouvelle(classe: Classe, message: impl Into<String>) -> ErreurGoogle {
-        ErreurGoogle { classe: Some(classe), message: message.into(), statut: None }
+        ErreurGoogle::from(socle::echec::erreur(classe, message))
     }
 
     /// Un refus de Google, traduit.
+    #[track_caller]
     pub fn google(message: impl Into<String>) -> ErreurGoogle {
         ErreurGoogle::nouvelle(Classe::Google, message)
     }
 
+    /// Un refus d'ailleurs (une lecture, le disque), sous la classe `classe`.
+    pub fn en(classe: Classe, e: Echec) -> ErreurGoogle {
+        ErreurGoogle::from(Echec { classe: Some(classe), ..e })
+    }
+
     /// Un fichier local qui manque, ou ne se lit pas.
+    #[track_caller]
     pub fn fichier(e: &std::io::Error, chemin: &Path) -> ErreurGoogle {
         ErreurGoogle::nouvelle(Classe::du_disque(e), socle::fichiers::panne_fichier(e, chemin))
     }
 }
 
-impl std::fmt::Display for ErreurGoogle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ErreurGoogle {}
-
-impl From<socle::echec::Echec> for ErreurGoogle {
-    fn from(e: socle::echec::Echec) -> Self {
-        ErreurGoogle { classe: e.classe, message: e.into(), statut: None }
+impl From<Echec> for ErreurGoogle {
+    fn from(echec: Echec) -> Self {
+        ErreurGoogle { echec, statut: None }
     }
 }
 
@@ -285,7 +284,7 @@ impl Client {
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
     fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
-        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::nouvelle(Classe::Google, String::from(m)))
+        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::en(Classe::Google, m))
     }
 
     /// `appel` sans lecture du JSON : les octets de la reponse, tels quels (le contenu d'un fichier, `telecharger`). Le
@@ -377,7 +376,7 @@ fn echapper(nom: &str) -> String {
 
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
 fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
-    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() })))
+    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::APart { detail: Some(format!("{} : {}", t, e)), ..socle::echec::APart::default() })))
 }
 
 /// Des aleas du systeme ; un systeme qui n'en donne pas refuse.
@@ -467,7 +466,7 @@ impl Drive for Client {
             None => fichier
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
-                .ok_or_else(|| ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() })))?,
+                .ok_or_else(|| ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("Un fichier à déposer n'a pas de nom.", socle::echec::APart { chemin: Some(fichier.to_string_lossy().into_owned()), ..socle::echec::APart::default() })))?,
         };
         // Un type que l'extension ne dit pas : des octets (RFC 2046, `application/octet-stream`).
         let type_mime = match crate::envoi::type_devine(&nom) {

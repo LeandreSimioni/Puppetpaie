@@ -569,7 +569,7 @@ fn souci_de_la_sauvegarde(ctx: &Contexte, r: &mut Ouverture) -> Option<String> {
     match sauvegarde::souci(&ctx.racine) {
         Ok(s) => s,
         Err(e) => {
-            r.incidents.push(format!("Sauvegarde : {}", e));
+            r.incidents.push(format!("Sauvegarde : {}", String::from(e.echec)));
             None
         }
     }
@@ -1001,7 +1001,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
             Ok(true) => return,
             Ok(false) => {}
             Err(e) => {
-                r.incidents.push(format!("Sauvegarde : {}", e));
+                r.incidents.push(format!("Sauvegarde : {}", String::from(e.echec)));
                 return;
             }
         }
@@ -1016,6 +1016,6 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.
         Ok(s) => r.sauvegarde = Some(s),
-        Err(e) => r.incidents.push(format!("Sauvegarde : {}", e)),
+        Err(e) => r.incidents.push(format!("Sauvegarde : {}", String::from(e.echec))),
     }
 }

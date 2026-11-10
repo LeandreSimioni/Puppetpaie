@@ -384,7 +384,7 @@ fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     let joue = compagnie::bridage::branchement(&ctx.racine)?.joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
-    let r = archivage::archiver(&ctx.racine, &mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| socle::echec::noter_et(e.classe, e.message))?;
+    let r = archivage::archiver(&ctx.racine, &mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| e.echec)?;
     let dossier = format!("{}/{}", r.racine_drive, r.mois);
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
     let ou = format!("{} › {}", r.racine_drive, r.mois);

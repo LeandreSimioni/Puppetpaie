@@ -139,9 +139,9 @@ const FICHIER_ILLISIBLE: &str = "fichier illisible sur ce poste";
 pub fn cause_de(e: &ErreurGoogle) -> &'static str {
     if envois::drive::passagere(e) {
         GOOGLE_INDISPONIBLE
-    } else if e.classe == Some(Classe::DelaiDepasse) || e.message.to_lowercase().contains("timed out") {
+    } else if e.echec.classe == Some(Classe::DelaiDepasse) || e.echec.phrase.to_lowercase().contains("timed out") {
         GOOGLE_MUET
-    } else if e.classe == Some(Classe::Disque) {
+    } else if e.echec.classe == Some(Classe::Disque) {
         FICHIER_ILLISIBLE
     } else {
         GOOGLE_REFUSE
@@ -400,7 +400,7 @@ pub struct EchecIndexe {
 
 /// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
 fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
-    ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part))
+    ErreurGoogle::en(Classe::Illisible, socle::echec::refus_avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part))
 }
 
 /// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
@@ -409,11 +409,11 @@ pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::nouvelle(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::en(Classe::Illisible, m))
 }
 
 pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
-    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, e))
+    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::en(Classe::Disque, e))
 }
 
 /// `rien_n_a_bouge` : le disque est-il identique au dernier passage ? SANS RESEAU. Taille et date
