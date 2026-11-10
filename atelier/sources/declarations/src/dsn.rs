@@ -2555,7 +2555,7 @@ rattacher. Rien n'est ecrit.",
             })?;
             f.add(&k, id);
         } else if crate::versement_declare::est_un_montant(&k) == Some(true) {
-            let m: Decimal = v.parse().map_err(|_| refus(crate::versement_declare::illisible(&k, &v, &d.fichier)))?;
+            let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &d.fichier))?;
             f.add(&k, ms(m, -1));
         } else {
             f.add(&k, v);
@@ -2667,7 +2667,7 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) ->
                 f.add(&k, v);
             }
             _ if crate::versement_declare::est_un_montant(&k) == Some(true) => {
-                let m: Decimal = v.parse().map_err(|_| refus(crate::versement_declare::illisible(&k, &v, &r.declare.fichier)))?;
+                let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &r.declare.fichier))?;
                 f.add(&k, ms(m, -1));
             }
             _ => f.add(&k, v),
@@ -2856,7 +2856,7 @@ struct Ligne81 {
 
 /// Les blocs 78 (78.001, 78.004) et les lignes 81 du versement declare.
 fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(String, Decimal)>, Vec<Ligne81>)> {
-    let lu = |k: &str, v: &str| -> R<Decimal> { v.parse().map_err(|_| refus(crate::versement_declare::illisible(k, v, &d.fichier))) };
+    let lu = |k: &str, v: &str| -> R<Decimal> { v.parse().map_err(|_| crate::versement_declare::illisible(k, v, &d.fichier)) };
     let (mut b78, mut l81): (Vec<(String, Decimal)>, Vec<Ligne81>) = (Vec::new(), Vec::new());
     let (mut bloc, mut affiliation) = (String::new(), None::<String>);
     for (k, v) in d.blocs(&["78", "81"]) {

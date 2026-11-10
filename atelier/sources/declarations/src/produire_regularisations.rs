@@ -48,7 +48,7 @@ pub struct Reg {
 /// corrige toujours ailleurs : sa DSN n'a pas ete faite ici et ne se refait pas ici (regle 4).
 pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str) -> R<bool> {
     use engagement::departs::Envoi;
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(String::from).map_err(refus_valeur)?.is_some() {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(illisible)?.is_some() {
         return Ok(true);
     }
     let partie = departs
@@ -57,7 +57,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(refus_valeur)?.veille();
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(illisible)?.veille();
     Ok(ctx.aujourdhui > limite)
 }
 
@@ -74,11 +74,12 @@ pub struct Due {
 /// correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit a cote de lui, et un
 /// engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
 pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
-    let refus = |m: String| erreur(Classe::MoisNonRegularisable, m);
     let mut out = Vec::new();
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
-        if let Some(declarees) = engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(String::from).map_err(refus)? {
+        if let Some(declarees) =
+            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| Echec { classe: Some(Classe::MoisNonRegularisable), ..m })?
+        {
             out.push(Due { valide: v, rang, declarees });
         }
     }
@@ -91,7 +92,7 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
 /// ecrite de la version presente).
 pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engagement::departs::Departs) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(String::from).map_err(refus_valeur)?.into_iter().map(String::from) {
+    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(illisible)?.into_iter().map(String::from) {
         if mois.as_str() >= mois_courant {
             break;
         }
@@ -134,7 +135,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
                 return Err(refus("le numero sous lequel le contrat a ete declare (S21.G00.40.009) n'est pas connu"));
             }
             let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, &mois, mois_courant)
-                .map_err(|e| refus(&e))?
+                .map_err(|e| Echec { a_part: e.a_part, ..refus(&e.phrase) })?
                 .ok_or_else(|| refus(&format!("aucune DSN partie (journal/depots.jsonl) n'a declare ce contrat pour {}", mois)))?;
             // Le taux du bloc 56 : celui de la paie declaree du mois d'origine.
             let taux_pas_origine = lu.versement.taux_pas.clone();
@@ -163,18 +164,18 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
 /// « annulation de la declaration initiale accompagnee si opportun d'une declaration corrective » ; ici, aucune).
 fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(String::from).map_err(refus_valeur)? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(String::from).map_err(refus_valeur)?.is_none() {
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(illisible)? {
+        if n.correction_due(ctx, departs, mois, mois_courant).map_err(illisible)?.is_none() {
             continue;
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
-            .map_err(refus_valeur)?
+            .map_err(illisible)?
             .ok_or_else(|| {
                 let numero = match n.objet().carte().numero.as_deref() {
                     Some(numero) => format!("le contrat {}", numero),
                     None => "un contrat sans numero".to_string(),
                 };
-                refus_valeur(format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
+                erreur(Classe::Illisible, format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
             })?;
         let apres = lu.avant.annulee();
         out.push(Reg {
@@ -209,7 +210,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })? != nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(illisible)? != nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
@@ -297,13 +298,14 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
 /// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
 fn decidee_le(le: &str) -> R<Option<Jour>> {
     match le.get(..10) {
-        Some(jour) => Jour::lire(jour).map(Some).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e }),
+        Some(jour) => Jour::lire(jour).map(Some).map_err(illisible),
         None => Ok(None),
     }
 }
 
-fn refus_valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
+/// Le refus, reclasse `Illisible` : ce qu'il porte a part reste a part.
+fn illisible(m: Echec) -> Echec {
+    Echec { classe: Some(Classe::Illisible), ..m }
 }
 
 

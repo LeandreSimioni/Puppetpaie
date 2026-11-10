@@ -37,7 +37,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Une modalite du contrat qui a sa rubrique en bloc 41 : d'ou son changement tient sa date.
 struct Modalite {
@@ -129,7 +129,7 @@ fn valeur<'a>(bloc: &'a [(String, String)], r: &str) -> Option<&'a str> {
     bloc.iter().find(|(k, _)| k == r).map(|(_, v)| v.as_str())
 }
 
-fn mois_precedent(mois: &str) -> Resultat<String> {
+fn mois_precedent(mois: &str) -> R<String> {
     let veille = Mois::lire(mois)?.premier_jour().plus_jours(-1)?;
     Ok(veille.mois_civil().to_string())
 }
@@ -140,7 +140,7 @@ fn ddmmaaaa(v: &str) -> Option<Jour> {
 
 /// Les jours ou ces champs d'une fiche datee ont change (`depuis` : les jours ou un champ prend une valeur) : le `depuis` de chaque
 /// valeur qui en suit une autre.
-fn changements_dates(depuis: impl Fn(&str) -> Vec<Option<Jour>>, champs: &[&str]) -> Resultat<Vec<(Jour, String)>> {
+fn changements_dates(depuis: impl Fn(&str) -> Vec<Option<Jour>>, champs: &[&str]) -> R<Vec<(Jour, String)>> {
     let mut out = Vec::new();
     for c in champs {
         out.extend(depuis(c).into_iter().skip(1).filter_map(|j| j.map(|j| (j, c.to_string()))));
@@ -163,7 +163,7 @@ fn qui(p: &Paie) -> String {
 /// La date de la modification (41.001) du changement de `md`, declaree `avant` dans la DSN de `decl.mois`. Refus
 /// quand elle ne se lit pas, ou qu'elle ne tombe pas dans le mois declare (voir l'en-tete du module).
 #[allow(clippy::too_many_arguments)]
-fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, mois: &str, avant: &str, apres: Option<&str>) -> Resultat<Jour> {
+fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, mois: &str, avant: &str, apres: Option<&str>) -> R<Jour> {
     let apres = match apres {
         Some(a) => a,
         None => "(rien)",
@@ -192,7 +192,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         // ou elle differe. Elle n'a pu changer qu'au mois declare suivant : sinon, le mois intermediaire, non depose,
         // l'a peut-etre deja changee, et le jour ne se lit plus.
         if decl.mois != mois_precedent(mois)? {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} passe de '{}' (declare en {}) a '{}'. Cette valeur se lit periode de paie par periode de paie : le changement date du premier jour de la periode ou il a eu lieu, et les mois entre {} et {}, non deposes, ne le disent pas. Deposer d'abord la DSN du mois precedent.",
                 qui(p),
                 md.r40,
@@ -225,7 +225,7 @@ partir duquel le changement vaut, que l'avertissement demande ; l'avenant prend 
     match apres_declare.as_slice() {
         [] => {
             if let Some((j, d)) = candidats.iter().filter(|(j, _)| *j <= fin_b).max_by_key(|(j, _)| *j) {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : {}. Le changement est date du {} ({}), donc deja en vigueur au mois de {}, que la DSN deposee a \
 declare avec l'ancienne valeur. Ce n'est plus un changement du mois mais une correction de mois deja declares (cahier \
 technique DSN, § 2.1.2.5.2 p. 25-26 : bloc S21.G00.41 et profondeur de recalcul), avec la regularisation de leurs paies, \
@@ -233,7 +233,7 @@ que le logiciel ne fait pas. Refus : verifier la date du changement.",
                     qui(p), quoi, j.jj_mm_aaaa(), d, socle::mois::Mois::en_clair(&decl.mois)
                 ));
             }
-            Err(format!(
+            Err(socle::refus!(
                 "{} : {}, et rien ne dit depuis quand. La DSN doit declarer l'ancienne valeur dans un bloc Changements \
 contrat (S21.G00.41) date du jour du changement (41.001, cahier technique DSN p. 216 et § 2.1.2.5.2 p. 25), et ce jour ne \
 se devine pas. Le dater : {}.",
@@ -242,7 +242,7 @@ se devine pas. Le dater : {}.",
         }
         [(j, d)] => {
             if *j < debut_m {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : {}. Le changement est date du {} ({}), avant {} : il se declare dans la DSN de {}, qui n'est pas \
 deposee. La deposer d'abord (elle porte le changement) ; si ces mois ont ete declares avec l'ancienne valeur, c'est une \
 correction de mois deja declares, que le logiciel ne fait pas.",
@@ -263,14 +263,14 @@ dit les termes d'avant (`avant`). Le"
                     " Le logiciel ne decoupe la paie qu'au jour d'un changement de statut, de categorie, d'emploi ou de duree du \
 travail. Le"
                 };
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : {}, le {} ({}), en cours de mois.{} dater au premier jour d'un mois : le {} ou le {}.",
                     qui(p), quoi, j.jj_mm_aaaa(), d, comment, debut_m.jj_mm_aaaa(), suivant.jj_mm_aaaa()
                 ));
             }
             Ok(*j)
         }
-        plusieurs => Err(format!(
+        plusieurs => Err(socle::refus!(
             "{} : {}, et plusieurs changements sont dates depuis la DSN deposee de {} ({}). La DSN les declarerait en \
 plusieurs blocs, chacun avec la valeur d'avant lui, que la fiche ne garde pas toutes. Refus : deposer les mois \
 intermediaires, ou ne garder qu'un changement.",
@@ -285,7 +285,7 @@ intermediaires, ou ne garder qu'un changement.",
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
 /// `mois` de l'etablissement `nics[0]` ; `declare` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au premier mois du
 /// contrat ou quand rien n'a encore ete declare.
-pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> Resultat<Vec<Vec<(String, String)>>> {
+pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
     if e.numero.as_deref().is_none_or(str::is_empty) {
         return Ok(Vec::new());
@@ -301,8 +301,8 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
     // jour que la saisie du mois donne a son avenant ; sinon du dernier jour du mois declare : pour un identifiant autre
     // que le SIRET, « la date de modification du bloc changement peut correspondre a toute date » (§ 2.1.2.3.2, p. 21,
     // `chapitre-2-principes-de-constitution.txt`), au plus tard ce jour-la (CCH-15 de 41.001, p. 217).
-    fn debut_declare<'a>(bloc: &'a [(String, String)], ou: &str, p: &Paie) -> Resultat<&'a str> {
-        valeur(bloc, "S21.G00.40.001").ok_or_else(|| format!("{} : {} ne porte pas la date de debut du contrat (S21.G00.40.001).", qui(p), ou))
+    fn debut_declare<'a>(bloc: &'a [(String, String)], ou: &str, p: &Paie) -> R<&'a str> {
+        valeur(bloc, "S21.G00.40.001").ok_or_else(|| socle::refus!("{} : {} ne porte pas la date de debut du contrat (S21.G00.40.001).", qui(p), ou))
     }
     let (avant, apres) = (debut_declare(&decl.bloc, "la DSN deposee", p)?, debut_declare(ecrit, "le bloc contrat ecrit", p)?);
     if avant != apres {
@@ -317,7 +317,7 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
 p. 217).",
                 qui(p),
                 date.jj_mm_aaaa()
-            ), "date_modification").into());
+            ), "date_modification"));
         }
         identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.021".to_string(), avant.to_string())]);
     }
@@ -333,7 +333,7 @@ p. 217).",
         }
         .filter(|j| *j > fin_b && *j <= fin_m);
         let Some(date) = date.as_ref() else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : le contrat etait declare par l'etablissement {} (DSN de {}) et l'est maintenant par l'etablissement {}. \
 Le SIRET de l'ancien etablissement se declare dans un bloc Changements contrat (S21.G00.41.012) date du jour de la \
 mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, changer l'établissement, « Modifier l'engagement », et dire dans l'avertissement le mois et le jour où il change.",
@@ -360,7 +360,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
         }
         let date = date_du_changement(ctx, p, md, &decl, mois, avant, apres)?;
         let debut = ddmmaaaa(debut_declare(ecrit, "le bloc contrat ecrit", p)?)
-            .ok_or_else(|| format!("{} : la date de debut du bloc contrat ecrit (S21.G00.40.001) ne se lit pas.", qui(p)))?;
+            .ok_or_else(|| socle::refus!("{} : la date de debut du bloc contrat ecrit (S21.G00.40.001) ne se lit pas.", qui(p)))?;
         let profondeur = Jour { jour: 1, ..date }.max(debut);
         modalites.push((
             md.r41,
@@ -377,7 +377,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
 }
 
 /// Pose les blocs 41 du contrat de `p` juste apres son bloc 40, qui commence a la ligne `debut` de `lignes`.
-pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], declare: Option<&Declare>) -> Resultat<()> {
+pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], declare: Option<&Declare>) -> R<()> {
     let mut fin = debut;
     let mut ecrit = Vec::new();
     while let Some(l) = lignes.get(fin).filter(|l| l.starts_with("S21.G00.40.")) {
@@ -414,7 +414,7 @@ pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, m
 ///
 /// Rien a poser quand la date n'a pas change, ou pour un contrat jamais declare (un contrat ajoute). Refus quand la
 /// date declaree ne se lit pas, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
-pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> Resultat<()> {
+pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
     let e = &r.apres.engagement;
     let numero = match e.numero.as_deref() {
         Some(n) => n,
@@ -427,7 +427,7 @@ pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate:
         if *nouveau == r.avant.engagement.debut {
             return Ok(());
         }
-        return Err(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             format!(
                 "Correction de {} (contrat {}) : la date de debut passe du {} au {}, et la DSN deposee ne dit pas la date \
 declaree (S21.G00.40.001 du contrat). Le bloc Changements contrat (S21.G00.41.021, fiche net-entreprises 1952) porte la \
@@ -455,7 +455,7 @@ n'est ecrit.",
                 None => ancienne.to_string(),
             },
             nouveau.jj_mm_aaaa()
-        ), "decidee_le").into());
+        ), "decidee_le"));
     };
     let date = decidee.min(fin_mois);
     let mut fin = debut;

@@ -50,7 +50,7 @@ use droit::organismes::Versement;
 
 use documents::bordereau::{self, Destinataire};
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 const SOURCE_011: &str = "Date de paiement écrite dans la DSN (S21.G00.20.011) : « date à prendre en compte par l'organisme dans le cas d'un prélèvement SEPA » (cahier technique DSN 2026.1, bloc S21.G00.20).";
 const SOURCE_URSSAF: &str = "Code de la sécurité sociale, art. R. 243-6, II : le versement est effectué le mois suivant la période de travail, au plus tard le 5 ou le 15 (sans report : seul le dépôt de la DSN se reporte un jour non ouvré, R. 133-14, I).";
@@ -71,7 +71,7 @@ fn periode_lisible(debut: Option<Jour>, fin: Option<Jour>) -> String {
 }
 
 /// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin`.
-fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> Resultat<Jour> {
+fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
     let mut j = fin.mois_civil().suivant().dernier_jour();
     while crate::echeance_dsn::non_ouvre(&j)?.is_some() {
         j = j.plus_jours(-1)?;
@@ -80,9 +80,9 @@ fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> Resultat<Jour> {
 }
 
 /// Le `jour` du mois qui suit le mois declare `mois` (`AAAA-MM`).
-fn jour_du_mois_suivant(mois: &str, jour: u32) -> Resultat<Jour> {
+fn jour_du_mois_suivant(mois: &str, jour: u32) -> R<Jour> {
     let m = socle::mois::Mois::lire(mois)?.suivant();
-    m.jour(jour).ok_or_else(|| socle::date::jour_impossible(m.annee(), m.numero(), jour))
+    m.jour(jour).ok_or_else(|| socle::echec::refus(socle::date::jour_impossible(m.annee(), m.numero(), jour)))
 }
 
 /// L'organisme est-il une caisse de retraite complementaire Agirc-Arrco (`codes81` porte le 131 ou le 105) ?
@@ -95,7 +95,7 @@ fn est_agirc_arrco(v: Option<&Versement>) -> bool {
 /// `date` (ISO, ou `null` quand aucun texte ne la dit), `quand` (la phrase de la page), `source` (d'ou vient la date) et
 /// `credit` (le trop-verse que l'ordre ne reprend pas ou reprend, et ce que la compagnie en fait ; `null` sans
 /// trop-verse). `jour_echeance` : 5 ou 15 (`Contexte::echeance_dsn`).
-pub fn decrire(ordres: &[crate::dsn::Ordre], mois: &str, jour_echeance: u32) -> Resultat<Vec<OrdreEnClair>> {
+pub fn decrire(ordres: &[crate::dsn::Ordre], mois: &str, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
     let base = droit::organismes::base()?;
     let mut out = Vec::new();
     for o in ordres {
@@ -197,6 +197,6 @@ pub struct CreditEnClair {
 
 /// Le jour du mois suivant ou l'organisme `identifiant` (S21.G00.20.001) preleve, quand la base livree le dit
 /// (`jour_de_paiement` de `donnees/organismes-base.json`, la norme, la meme pour toute compagnie), ou `None`.
-pub fn jour_de_paiement(identifiant: &str) -> Resultat<Option<u32>> {
+pub fn jour_de_paiement(identifiant: &str) -> R<Option<u32>> {
     Ok(droit::organismes::base()?.versement(identifiant).and_then(|v| v.jour_de_paiement))
 }
