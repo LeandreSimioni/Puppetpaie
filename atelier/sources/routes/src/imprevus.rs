@@ -11,7 +11,8 @@
 //! CE QUI S'Y SAISIT, ET CE QUI L'APPELLE (rien de remplissable s'il n'y a pas a le remplir). Le moteur dit, sur chaque
 //! imprevu resume (`resume`), ce que ses faits ouvrent : `ij_attendues` (l'arret ouvre le maintien de salaire, par la loi
 //! ou la convention : ses indemnites journalieres se disent, `arret-indemnites`), `ij_majoree_attendue` et
-//! `jours_deja_indemnises_attendus`. La page n'ouvre que cela.
+//! `jours_deja_indemnises_attendus`. La page n'ouvre que cela. Et ses `gestes` : chacun sa route, sa charge et son
+//! libelle (`GesteDImprevu`), ceux seulement que l'imprevu ouvre ; la page les dessine et les branche, sans choisir.
 //!
 //! LES FORMES. Chaque charge est une structure lue une fois a la porte (`enveloppe::Charge::lire`) ; chaque reponse, une
 //! structure qui porte sa phrase. Ce que ce module lit d'un autre domaine se lit en sa forme : l'imprevu ecrit
@@ -824,10 +825,14 @@ pub(crate) struct ArretResume {
     reprise_motif: Option<String>,
     note: Option<String>,
     saisi_le: String,
+    /// Un signalement en est parti : `etat` le dit a la page.
+    #[serde(skip)]
     pub signale: bool,
     signalement_du: bool,
     signalements: Vec<crate::obligations::EnvoiDeLArret>,
     reporte_par_dit: Vec<String>,
+    /// Les mois des DSN qui l'ont reporte : `reporte_par_dit` les dit a la page.
+    #[serde(skip)]
     reporte_par: Vec<String>,
     etat: EtatDuSignalement,
 }
@@ -880,10 +885,7 @@ pub(crate) struct ResumeDArret {
     jours_deja_indemnises_attendus: bool,
     cachets: Vec<Cachet>,
     prolongations: Vec<Prolongation>,
-    en_cours: bool,
-    peut_prolonger: bool,
-    peut_reprendre_plus_tot: bool,
-    reprise_corrigeable: bool,
+    gestes: Vec<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -940,12 +942,79 @@ pub(crate) struct ResumeDeSuspension {
     note: Option<String>,
     saisi_le: String,
     reporte_par_dit: Vec<String>,
-    reporte_par: Vec<String>,
     cachets: Vec<Cachet>,
+    gestes: Vec<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
     #[serde(skip_serializing_if = "Option::is_none")]
     parti: Option<Vec<Parti>>,
+}
+
+/// UN GESTE D'UN IMPREVU, que la page dessine en bouton et branche : sa route, sa charge (ce qui designe l'imprevu ; la
+/// boite de la route y ajoute ce qu'elle fait saisir) et son libelle. Le moteur ne rend que ceux que l'imprevu ouvre.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct GesteDImprevu {
+    route: Route,
+    charge: Designe,
+    libelle: &'static str,
+}
+
+/// Ce qui designe un imprevu aux routes : un arret, son salarie et son dernier jour travaille ; une absence, son salarie
+/// et son premier jour.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum Designe {
+    Arret { salarie: String, dernier_jour: String },
+    Absence { salarie: String, debut: String },
+}
+
+// Les libelles des gestes, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const PROLONGER: Affiche = Affiche::new("Prolonger l'arrêt");
+const REPRISE_PLUS_TOT: Affiche = Affiche::new("Reprise plus tôt");
+const CORRIGER_LA_REPRISE: Affiche = Affiche::new("Corriger la reprise");
+const INDEMNITES_DITES: Affiche = Affiche::new("Indemnités journalières");
+const INDEMNITES_A_DIRE: Affiche = Affiche::new("Indemnités journalières…");
+const CHANGER_LA_FIN: Affiche = Affiche::new("Changer la fin");
+const RETIRER: Affiche = Affiche::new("Retirer");
+
+impl Designe {
+    fn geste(&self, route: Route, libelle: Affiche) -> GesteDImprevu {
+        GesteDImprevu { route, charge: self.clone(), libelle: libelle.texte() }
+    }
+}
+
+/// CE QU'UN ARRET OUVRE (rien de remplissable s'il n'y a pas a le remplir) : en cours, il se prolonge ou se reprend plus
+/// tot ; une reprise saisie se corrige tant que son signalement n'est pas parti ; ses indemnites journalieres se disent
+/// s'il ouvre le maintien ; il se retire tant que rien n'en est parti (ni signalement, ni DSN qui le reporte). Une
+/// reprise a la date prevue ne se saisit pas : la DSN la porte.
+fn gestes_d_un_arret(a: &ArretSaisi, base: &ArretResume, cours: bool, reprise_corrigeable: bool, ij_attendues: bool) -> Vec<GesteDImprevu> {
+    let d = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille.clone() };
+    let mut g = Vec::new();
+    if cours {
+        g.push(d.geste(Route::ArretProlonger, PROLONGER));
+        g.push(d.geste(Route::ArretReprise, REPRISE_PLUS_TOT));
+    }
+    if reprise_corrigeable {
+        g.push(d.geste(Route::ArretReprise, CORRIGER_LA_REPRISE));
+    }
+    if ij_attendues {
+        // Des indemnites deja dites se reprennent ; pas encore dites, elles sont a dire.
+        g.push(d.geste(Route::ArretIndemnites, if a.ij_brute.is_some() { INDEMNITES_DITES } else { INDEMNITES_A_DIRE }));
+    }
+    if !base.signale && base.reporte_par.is_empty() {
+        g.push(d.geste(Route::ArretOublier, RETIRER));
+    }
+    g
+}
+
+/// Ce qu'une absence ouvre : sa fin change ; elle se retire tant qu'aucune DSN ne l'a reportee.
+fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[String]) -> Vec<GesteDImprevu> {
+    let d = Designe::Absence { salarie: s.salarie.clone(), debut: s.debut.clone() };
+    let mut g = vec![d.geste(Route::SuspensionModifier, CHANGER_LA_FIN)];
+    if reportee.is_empty() {
+        g.push(d.geste(Route::SuspensionOublier, RETIRER));
+    }
+    g
 }
 
 /// LE MONTANT DE PRINCIPE des indemnites d'un arret (`engagement::maintien::ij_de_principe`), ou la phrase qui dit ou le
@@ -1183,11 +1252,9 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     } else {
         None
     };
-    // CE QUE L'ARRET OUVRE A LA PAGE (rien de remplissable s'il n'y a pas a le remplir) :
-    // un arret en cours se prolonge ou se reprend plus tot ; une reprise saisie se corrige tant que son signalement
-    // n'est pas parti.
     let cours = en_cours(ctx, a)?;
     let reprise_corrigeable = a.reprise.is_some() && !envoye(ctx, a, signalement::REPRISE)?;
+    let gestes = gestes_d_un_arret(a, &base, cours, reprise_corrigeable, ouvert);
     let (premier, dernier) = (premier.iso(), dernier.iso());
     let dit = Dit::de(ADire {
         arret: true,
@@ -1216,10 +1283,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         jours_deja_indemnises_attendus: ouvert,
         cachets,
         prolongations: a.prolongations.clone(),
-        en_cours: cours,
-        peut_prolonger: cours,
-        peut_reprendre_plus_tot: cours,
-        reprise_corrigeable,
+        gestes,
         dit,
         obligations: None,
         parti: None,
@@ -1259,7 +1323,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         note: s.note.clone(),
         saisi_le: s.saisi_le.clone(),
         reporte_par_dit: mois_de_la_dsn(&reportee),
-        reporte_par: reportee,
+        gestes: gestes_d_une_absence(s, &reportee),
         cachets,
         dit,
         parti: None,

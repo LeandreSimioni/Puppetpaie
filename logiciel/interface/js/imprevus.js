@@ -363,7 +363,7 @@ function peindreImprevusDeLaCarte(div, liste) {
     return `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}</span></span>
-        <span class="imprevu-gestes">${gestesImprevu(i, MOIS_AFFICHE)}</span>
+        <span class="imprevu-gestes">${gestesImprevu(i)}</span>
         ${jours.length ? `<div class="imprevu-jours">${echapper(i.paye_pendant)}
           ${jours.map((c) => (c.jours || []).map((j) => `${echapper(j.phrase)}
             ${validee ? "" : `<button class="lien" data-retirer="${echapper(j.iso)}" data-rubrique="${echapper(c.rubrique)}">retirer ce jour</button>`}`).join(" · ")).join(" · ")}
@@ -373,7 +373,7 @@ function peindreImprevusDeLaCarte(div, liste) {
   }).join("");
   liste.forEach((i, k) => {
     const r = cible.querySelector(`[data-imprevu="${k}"]`);
-    brancherGestesImprevu(r, i, MOIS_AFFICHE, rafraichirImprevus);
+    brancherGestesImprevu(r, i, rafraichirImprevus);
     r.querySelectorAll("[data-retirer]").forEach((b) => {
       b.onclick = async () => {
         if (!retirerJour(div, b.dataset.rubrique, b.dataset.retirer)) {
@@ -399,41 +399,33 @@ function retirerJour(div, rubrique, iso) {
   return true;
 }
 
-/** Les gestes d'un imprévu, les mêmes sur la carte et dans le dossier du salarié. `mois` : celui du maintien proposé. */
-function gestesImprevu(i, mois) {
-  const g = [];
-  if (i.genre === "arret") {
-    // Le moteur dit ce que l'arrêt ouvre : en cours, il se prolonge ou se reprend plus tôt ; une reprise saisie se
-    // corrige tant que son signalement n'est pas parti. Une reprise à la date prévue ne se saisit pas : la DSN la porte.
-    if (i.peut_prolonger) g.push(`<button class="lien" data-geste="prolonger">Prolonger l'arrêt</button>`);
-    if (i.peut_reprendre_plus_tot) g.push(`<button class="lien" data-geste="reprise">Reprise plus tôt</button>`);
-    if (i.reprise_corrigeable) g.push(`<button class="lien" data-geste="reprise">Corriger la reprise</button>`);
-    if (i.ij_attendues) {
-      g.push(`<button class="lien" data-geste="indemnites">Indemnités journalières${i.ij_brute != null ? "" : "…"}</button>`);
-    }
-    if (!i.signale && !(i.reporte_par || []).length) g.push(`<button class="lien" data-geste="retirer">Retirer</button>`);
-  } else {
-    g.push(`<button class="lien" data-geste="fin">Changer la fin</button>`);
-    if (!(i.reporte_par || []).length) g.push(`<button class="lien" data-geste="retirer">Retirer</button>`);
-  }
-  return g.join("");
+/** Les gestes d'un imprévu, les mêmes sur la carte et dans le dossier du salarié : ceux que le moteur rend (`gestes` :
+ *  chacun sa route, sa charge et son libellé), dessinés tels quels. */
+function gestesImprevu(i) {
+  return (i.gestes || []).map((g, k) => `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>`).join("");
 }
 
-function brancherGestesImprevu(r, i, mois, apres) {
-  const b = (g) => r.querySelector(`.imprevu-gestes [data-geste="${g}"]`);
-  if (b("reprise")) b("reprise").onclick = () => boiteReprise(i, apres);
-  if (b("prolonger")) b("prolonger").onclick = () => boiteProlonger(i, apres);
-  if (b("indemnites")) b("indemnites").onclick = () => boiteIndemnites(i, apres);
-  if (b("fin")) b("fin").onclick = () => boiteFinAbsence(i, apres);
-  if (b("retirer")) b("retirer").onclick = async () => {
-    try {
-      const r = i.genre === "arret"
-        ? await api("arret-oublier", { salarie: i.salarie, dernier_jour: i.dernier_jour_travaille })
-        : await api("suspension-oublier", { salarie: i.salarie, debut: i.debut });
-      dire(r.phrase);
-      await apres();
-    } catch (e) { dire(e.message, "erreur"); }
-  };
+/** La boîte de chaque route qui fait saisir quelque chose avant de partir ; une route sans boîte part avec la charge
+ *  du geste. */
+const BOITES_D_IMPREVU = {
+  "arret-prolonger": boiteProlonger,
+  "arret-reprise": boiteReprise,
+  "arret-indemnites": boiteIndemnites,
+  "suspension-modifier": boiteFinAbsence,
+};
+
+function brancherGestesImprevu(r, i, apres) {
+  r.querySelectorAll(".imprevu-gestes [data-geste]").forEach((b) => {
+    const g = i.gestes[+b.dataset.geste];
+    const boite = BOITES_D_IMPREVU[g.route];
+    b.onclick = boite ? () => boite(i, g, apres) : async () => {
+      try {
+        const x = await api(g.route, g.charge);
+        dire(x.phrase);
+        await apres();
+      } catch (e) { dire(e.message, "erreur"); }
+    };
+  });
 }
 
 /* ------------------------------------------------ le contrat d'un imprévu
@@ -690,14 +682,15 @@ function champsIndemnites(a, x) {
       <input type="number" step="1" min="0" id="${x}-deja" value="${echapper(a.jours_deja_indemnises ?? "")}"></label>` : ""}`;
 }
 
-/** Ce que les cases de `champsIndemnites` disent, pour `arret-indemnites` ; `null` si rien n'est saisi. */
-function chargeIndemnites(a, x) {
-  const charge = { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille };
+/** Ce que les cases de `champsIndemnites` disent, pour `arret-indemnites`, ajouté à `designe` (ce qui désigne l'arrêt) ;
+ *  `null` si rien n'est saisi. */
+function chargeIndemnites(designe, x) {
+  const charge = { ...designe };
   // Un montant part en texte, tel que la case l'écrit (« 40.89 ») ; les jours, en nombre.
   const lire = (id, cle, forme) => { const c = document.getElementById(`${x}-${id}`); if (c && c.value !== "") charge[cle] = forme(c.value); };
   lire("ijb", "ij_brute", String); lire("ijn", "ij_nette", String); lire("ijbm", "ij_brute_majoree", String); lire("ijnm", "ij_nette_majoree", String);
   lire("deja", "jours_deja_indemnises", Number);
-  return Object.keys(charge).length > 2 ? charge : null;
+  return Object.keys(charge).length > Object.keys(designe).length ? charge : null;
 }
 
 async function etapeSuite(i, p, phrase) {
@@ -728,7 +721,7 @@ async function etapeSuite(i, p, phrase) {
   const finir = async () => { fermerBoite(); await p.apres(); };
   document.getElementById("su-plus-tard").onclick = finir;
   document.getElementById("su-ok").onclick = async () => {
-    const charge = chargeIndemnites(i, "su");
+    const charge = chargeIndemnites({ salarie: i.salarie, dernier_jour: i.dernier_jour_travaille }, "su");
     if (charge) {
       try { await api("arret-indemnites", charge); }
       catch (e) { dire(e.message, "erreur"); return; }
@@ -747,7 +740,7 @@ async function etapeSuite(i, p, phrase) {
 
 /** La reprise plus tôt que prévu. Elle ne se signale que si elle est ANTICIPÉE : le moteur fait alors naître le
  *  signalement de reprise, qui paraît dans ce qui est dû. Une reprise déjà saisie se corrige ici ; vide, elle s'efface. */
-async function boiteReprise(a, apres) {
+async function boiteReprise(a, g, apres) {
   let n;
   try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
   const motifs = n.motifs_reprise || [];
@@ -768,7 +761,7 @@ async function boiteReprise(a, apres) {
     const jour = document.getElementById("re-date").value || null;
     let r;
     try {
-      r = await api("arret-reprise", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille,
+      r = await api(g.route, { ...g.charge,
         reprise: jour, motif_reprise: jour && (document.getElementById("re-motif").value || null) });
     } catch (e) { dire(e.message, "erreur"); return; }
     fermerBoite();
@@ -779,7 +772,7 @@ async function boiteReprise(a, apres) {
 
 /** L'avis de prolongation : la nouvelle fin prescrite, et rien d'autre. Le moteur met l'arrêt à jour et dit ce qui en
  *  découle. */
-function boiteProlonger(a, apres) {
+function boiteProlonger(a, g, apres) {
   ouvrirBoite(`
     <h3>Prolonger l'arrêt — ${echapper(nomDuSalarie(a.salarie))}</h3>
     <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}</p>
@@ -792,8 +785,7 @@ function boiteProlonger(a, apres) {
   document.getElementById("pr-ok").onclick = async () => {
     let r;
     try {
-      r = await api("arret-prolonger", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille,
-        fin: document.getElementById("pr-fin").value });
+      r = await api(g.route, { ...g.charge, fin: document.getElementById("pr-fin").value });
     } catch (e) { dire(e.message, "erreur"); return; }
     dire(r.phrase);
     fermerBoite();
@@ -804,7 +796,7 @@ function boiteProlonger(a, apres) {
 
 /** Les indemnités journalières d'un arrêt, par jour, brutes et nettes, telles que le relevé de la caisse les écrit ; et,
  *  seulement si le moteur les attend, celles d'un accident du travail au-delà du 28e jour et les jours déjà indemnisés. */
-function boiteIndemnites(a, apres) {
+function boiteIndemnites(a, g, apres) {
   ouvrirBoite(`
     <h3>Indemnités journalières — ${echapper(nomDuSalarie(a.salarie))}</h3>
     <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}</p>
@@ -814,10 +806,10 @@ function boiteIndemnites(a, apres) {
       <button class="primaire" id="ma-ok">Enregistrer</button>
     </div>`);
   document.getElementById("ma-ok").onclick = async () => {
-    const charge = chargeIndemnites(a, "ma");
+    const charge = chargeIndemnites(g.charge, "ma");
     if (!charge) { fermerBoite(); return; }
     let r;
-    try { r = await api("arret-indemnites", charge); }
+    try { r = await api(g.route, charge); }
     catch (e) { dire(e.message, "erreur"); return; }
     fermerBoite();
     dire(r.phrase);
@@ -825,7 +817,7 @@ function boiteIndemnites(a, apres) {
   };
 }
 
-function boiteFinAbsence(s, apres) {
+function boiteFinAbsence(s, g, apres) {
   ouvrirBoite(`
     <h3>${echapper(s.motif_libelle)} — ${echapper(nomDuSalarie(s.salarie))}</h3>
     <p class="discret">${echapper(s.depuis_dit || "")}</p>
@@ -836,7 +828,7 @@ function boiteFinAbsence(s, apres) {
     </div>`);
   document.getElementById("af-ok").onclick = async () => {
     let r;
-    try { r = await api("suspension-modifier", { salarie: s.salarie, debut: s.debut, fin: document.getElementById("af-fin").value }); }
+    try { r = await api(g.route, { ...g.charge, fin: document.getElementById("af-fin").value }); }
     catch (e) { dire(e.message, "erreur"); return; }
     fermerBoite();
     dire(r.phrase);
@@ -1024,10 +1016,10 @@ async function dessinerImprevusDuSalarie(cle) {
     ${liste.map((i, k) => `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}${i.contrat_dit ? ` · ${echapper(i.contrat_dit)}` : ""}</span></span>
-        <span class="imprevu-gestes">${gestesImprevu(i, null)}</span>
+        <span class="imprevu-gestes">${gestesImprevu(i)}</span>
         <div class="imprevu-parti">${ceQuiEnEstParti(i)}</div>
       </div>`).join("")}`;
-  liste.forEach((i, k) => brancherGestesImprevu(cible.querySelector(`[data-imprevu="${k}"]`), i, null, apres));
+  liste.forEach((i, k) => brancherGestesImprevu(cible.querySelector(`[data-imprevu="${k}"]`), i, apres));
   const porte = document.getElementById("fiche-imprevu-porte");
   porte.onclick = (ev) => { ev.stopPropagation(); menuImprevu(porte, { salarie: cle, apres }); };
 }
