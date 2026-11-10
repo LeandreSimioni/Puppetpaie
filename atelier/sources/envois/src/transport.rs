@@ -142,22 +142,17 @@ pub fn echapper(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `AAAAMMJJhhmmss` depuis un instant ISO (`AAAA-MM-JJ[Thh:mm:ss...]`), la forme des plages de consultation.
-fn horodatage(iso: &str) -> Result<String, String> {
+/// `AAAAMMJJhhmmss` depuis un instant ISO (`AAAA-MM-JJ[Thh:mm:ss...]`), la forme des plages de consultation ; `None` :
+/// l'instant ne se lit pas.
+fn horodatage(iso: &str) -> Option<String> {
     let c: Vec<char> = iso.chars().collect();
     let chiffres = |a: usize, b: usize| -> Option<String> {
         let t: String = c.get(a..b)?.iter().collect();
         t.chars().all(|ch| ch.is_ascii_digit()).then_some(t)
     };
-    let jour = (|| Some(format!("{}{}{}", chiffres(0, 4)?, chiffres(5, 7)?, chiffres(8, 10)?)))()
-        .ok_or_else(|| format!("horodatage illisible : {}", iso))?;
-    let heure = if c.len() >= 19 {
-        (|| Some(format!("{}{}{}", chiffres(11, 13)?, chiffres(14, 16)?, chiffres(17, 19)?)))()
-            .ok_or_else(|| format!("horodatage illisible : {}", iso))?
-    } else {
-        "000000".to_string()
-    };
-    Ok(jour + &heure)
+    let jour = format!("{}{}{}", chiffres(0, 4)?, chiffres(5, 7)?, chiffres(8, 10)?);
+    let heure = if c.len() >= 19 { format!("{}{}{}", chiffres(11, 13)?, chiffres(14, 16)?, chiffres(17, 19)?) } else { "000000".to_string() };
+    Some(jour + &heure)
 }
 
 // ------------------------------------------------------------------- gzip
@@ -636,11 +631,11 @@ pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Ech
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des instants ISO).
 pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
-    let illisible = |e: String| EchecApi::nouveau(Classe::Illisible, e, None);
-    url.push_str(&horodatage(debut).map_err(illisible)?);
+    let illisible = |iso: &str| EchecApi::nouveau(Classe::Illisible, format!("horodatage illisible : {}", iso), None);
+    url.push_str(&horodatage(debut).ok_or_else(|| illisible(debut))?);
     if let Some(fin) = fin {
         url.push('/');
-        url.push_str(&horodatage(fin).map_err(illisible)?);
+        url.push_str(&horodatage(fin).ok_or_else(|| illisible(fin))?);
     }
     appeler(&url, jeton).map(|(corps, _)| corps)
 }
