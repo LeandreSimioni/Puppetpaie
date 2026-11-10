@@ -1037,7 +1037,7 @@ pub(crate) fn date_d_anciennete(fiche: &ChampsSalarie, debut: &Jour) -> Jour {
 /// pas se refuse : rien ne le devine.
 pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<&'static str> {
     sal.statut.dite().map(|s| s.as_str()).ok_or_else(|| {
-        socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut").into()
+        socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut")
     })
 }
 

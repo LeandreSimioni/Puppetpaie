@@ -552,17 +552,23 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: &st
 /// LE MONTANT DE PRINCIPE DES INDEMNITES D'UN ARRET, propose avant le releve de la caisse : par jour, brut et net de CSG et
 /// CRDS (et, pour un accident du travail, de trajet ou une maladie professionnelle, le taux majore des le 29e jour), et la phrase qui le dit.
 /// Textes : `logiciel/donnees/permanents-base.json`, `indemnites_journalieres.principe` et `.principe_accident`, leurs `note`.
-pub struct IjDePrincipe {
+pub struct IjCalculee {
     pub brute: Decimal,
     pub nette: Decimal,
     pub majorees: Option<(Decimal, Decimal)>,
     pub phrase: String,
 }
 
+/// Ce que l'arret propose : le montant de principe calcule, ou la phrase qui dit de le lire sur le releve de la CPAM.
+pub enum IjDePrincipe {
+    Calculee(IjCalculee),
+    AuReleve(String),
+}
+
 const IJ_AU_RELEVE: &str = "Le montant d'un jour se lit sur le relevé de la CPAM.";
 const IJ_A_VERIFIER: &str = "quand le relevé CPAM arrive, vérifiez le montant et corrigez-le s'il diffère.";
 
-/// `Ok(Err(phrase))` quand aucun montant ne se propose : un accident survenu avant le plafond depose (R433-2), un mois sans
+/// `AuReleve(phrase)` quand aucun montant ne se propose : un accident survenu avant le plafond depose (R433-2), un mois sans
 /// paie validee du salarie, un bareme absent.
 /// Une maladie : la moitie (CSS R323-5) de 1/91,25 des trois dernieres paies des mois civils anterieurs a l'interruption
 /// (R323-4, 1°), chacune dans la limite de 1,4 SMIC du mois, au SMIC en vigueur le dernier jour du mois civil precedant
@@ -572,41 +578,38 @@ const IJ_A_VERIFIER: &str = "quand le relevé CPAM arrive, vérifiez le montant 
 /// mois civil anterieur (R433-4, 1°), pris dans la limite de 0,226 % du plafond annuel (L433-2, R433-2) ; l'indemnite au
 /// plus le gain journalier net, ce salaire diminue du taux forfaitaire de 21 % (R433-4, dernier alinea ; R331-5, al. 2 ;
 /// arrete du 28 mars 2013). Net : CSG (L136-8, II, 1°, b) et CRDS (ordonnance n° 96-50, art. 14, I, et 19).
-pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<Result<IjDePrincipe, String>> {
+pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
+    use IjDePrincipe::AuReleve;
     let rg = droit::permanents::regles()?;
     let regles = &rg.indemnites_journalieres;
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     let veille = premier.mois_civil().premier_jour().plus_jours(-1)?;
     let salarie = imp.salarie.clone();
     // La paie validee d'un mois du salarie ; sans elle, rien ne se propose.
-    let paie = |mois: &str| -> R<Result<Decimal, String>> {
-        let brut = crate::conges::remuneration_du_mois(ctx, mois, &salarie)?;
-        Ok(if brut > Decimal::ZERO {
-            Ok(brut)
-        } else {
-            Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : aucune paie validée en {}.", socle::mois::Mois::en_clair(mois)))
-        })
+    let paie = |mois: &str| -> R<Option<Decimal>> {
+        Ok(Some(crate::conges::remuneration_du_mois(ctx, mois, &salarie)?).filter(|brut| *brut > Decimal::ZERO))
     };
+    let sans_paie = |mois: &str| AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : aucune paie validée en {}.", socle::mois::Mois::en_clair(mois)));
     match origine(imp)? {
         Some(Origine::Maladie) => {
             let p = &regles.principe;
             // Le SMIC du plafond, au bareme de son annee : sans lui, rien ne se propose.
             let smic = match ctx.smic(&veille) {
                 Ok(s) => Decimal::try_from(s).map_err(|_| socle::refus!("SMIC illisible : {}", s))?,
-                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
+                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
             };
             let combien = p.mois;
             let (mut bruts, mut jour) = (Vec::new(), veille.clone());
             for _ in 0..combien {
                 let mois = jour.mois_civil().to_string();
                 match paie(&mois)? {
-                    Ok(b) => bruts.push(b),
-                    Err(phrase) => return Ok(Err(phrase)),
+                    Some(b) => bruts.push(b),
+                    None => return Ok(sans_paie(&mois)),
                 }
                 jour = socle::mois::Mois::lire(&mois)?.premier_jour().plus_jours(-1)?;
             }
             let brute = montant_de_principe(&bruts, smic, p)?;
-            Ok(Ok(IjDePrincipe {
+            Ok(IjDePrincipe::Calculee(IjCalculee {
                 brute,
                 nette: net_de_csg_crds(brute, p.csg, p.crds),
                 majorees: None,
@@ -617,28 +620,26 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<Result<IjDePrincipe
             let p = &regles.principe_accident;
             let accident = match jour_dit(&imp.date_accident)? {
                 Some(x) => x,
-                None => return Ok(Err(IJ_AU_RELEVE.to_string())),
+                None => return Ok(AuReleve(IJ_AU_RELEVE.to_string())),
             };
             if accident < p.plafond_depuis {
-                return Ok(Err(IJ_AU_RELEVE.to_string()));
+                return Ok(AuReleve(IJ_AU_RELEVE.to_string()));
             }
             let mensuel = match ctx.plafond_securite_sociale(premier.an) {
                 Ok((mensuel, _)) => mensuel,
-                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
+                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
             };
-            let brut = match paie(&veille.mois_civil().to_string())? {
-                Ok(b) => b,
-                Err(phrase) => return Ok(Err(phrase)),
-            };
+            let mois = veille.mois_civil().to_string();
+            let Some(brut) = paie(&mois)? else { return Ok(sans_paie(&mois)) };
             let (brute, majoree) = montants_d_accident(brut, Decimal::from(mensuel * 12), p)?;
-            Ok(Ok(IjDePrincipe {
+            Ok(IjDePrincipe::Calculee(IjCalculee {
                 brute,
                 nette: net_de_csg_crds(brute, p.csg, p.crds),
                 majorees: Some((majoree, net_de_csg_crds(majoree, p.csg, p.crds))),
                 phrase: format!("Montant de principe (60 % du salaire journalier du mois précédent, 80 % dès le 29e jour) : {}", IJ_A_VERIFIER),
             }))
         }
-        _ => Ok(Err(IJ_AU_RELEVE.to_string())),
+        _ => Ok(AuReleve(IJ_AU_RELEVE.to_string())),
     }
 }
 
