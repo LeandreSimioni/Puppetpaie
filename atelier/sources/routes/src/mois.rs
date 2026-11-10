@@ -1429,7 +1429,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     }
     Ok(Some(Rupture { porte, fin: Some(match e.fin {
         Some(f) => f,
-        None => e.fin_periode()?,
+        None => e.fin_periode(),
     }) }))
 }
 
@@ -1694,7 +1694,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             None => format!("{} →", e.debut.jj_mm_aaaa()),
         };
         if e.a_cheval() {
-            bornes.push_str(&format!(" (paie du {} au {})", e.debut_periode()?.jj_mm_aaaa(), e.fin_periode()?.jj_mm_aaaa()));
+            bornes.push_str(&format!(" (paie du {} au {})", e.debut_periode().jj_mm_aaaa(), e.fin_periode().jj_mm_aaaa()));
         }
         m.push(bornes);
         let paye = p.paye_en_bref();
@@ -1748,7 +1748,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             sans_paie: e.sans_paie(),
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
             jusqu_a: mois_du_contrat.last().copied().ok_or_else(trop_courte)?,
-            periode: Periode { debut: e.debut_periode()?, fin: e.fin_periode()? },
+            periode: Periode { debut: e.debut_periode(), fin: e.fin_periode() },
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
             modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
             rupture: rupture_de(e, &nat)?,

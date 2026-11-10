@@ -911,7 +911,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         let hrs = gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?;
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
-                let fin = e.fin_periode()?;
+                let fin = e.fin_periode();
                 let (pos, anniv) = position(ctx, &cle, declares.tous()?, fin)?;
                 let h = pos.heures_ouverture()?;
                 let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
@@ -1021,7 +1021,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
             if p.salarie.id.to_string() != cle || e.sans_paie() || e.nat()?.mensuelle() {
                 continue;
             }
-            let fp = e.fin_periode()?;
+            let fp = e.fin_periode();
             if fp < *debut || fp > *fin {
                 continue;
             }

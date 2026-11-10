@@ -22,7 +22,7 @@ use socle::num::{dec_f64, eur2, Decimal};
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
 fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, eng.debut_periode(), eng.fin_periode(), &eng.qui())
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul
@@ -31,7 +31,7 @@ fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
 /// (`emplois::jours_de_changement`), et au jour de l'avenant que la saisie date en cours de mois avec ses termes
 /// d'avant (`jour_de_l_avenant`).
 pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
-    let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
+    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     if eng.periode.is_some() || !eng.nat()?.mensuelle() {
         return Ok(vec![(debut, fin)]);
     }
@@ -76,7 +76,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     };
     let (debut_mois, fin_mois) = (eng.debut_mois(), eng.fin_mois());
     // Le contrat borne au mois : la regle d'un premier ou d'un dernier mois incomplet le regarde, pas la coupure.
-    let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
+    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &debut, &fin, &debut_mois, &fin_mois)?;
     let au = eng.nat()?.au_mois().ok_or_else(|| socle::refus!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
     let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
@@ -175,7 +175,7 @@ Dater le changement au premier jour d'un mois sur la fiche.",
 forfaitaire specifique. Ni la reduction generale sous deduction (bornee a 130 %), ni le plafond annuel de 7 600 EUR ne se \
 partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             eng.qui(),
-            p.engagement.debut_periode()?.jj_mm_aaaa()
+            p.engagement.debut_periode().jj_mm_aaaa()
         ));
     }
     // La reduction generale du mois, puis sa part dans chaque periode.

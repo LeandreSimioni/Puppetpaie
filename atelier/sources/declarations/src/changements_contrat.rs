@@ -164,7 +164,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         None => "(rien)",
     };
     let (debut_m, fin_b) = (mois.premier_jour(), decl.mois.dernier_jour());
-    let fin_p = p.engagement.fin_periode()?;
+    let fin_p = p.engagement.fin_periode();
     let mut candidats: Vec<(Jour, String)> = Vec::new();
     if md.saisie {
         if let Some(j) = p.engagement.date_modification {
@@ -197,7 +197,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
                 mois.libelle(Graphie::Accentuee)
             ));
         }
-        candidats.push((p.engagement.debut_periode()?, "la periode de paie (la valeur se lit periode par periode, p. 199)".into()));
+        candidats.push((p.engagement.debut_periode(), "la periode de paie (la valeur se lit periode par periode, p. 199)".into()));
     }
     candidats.retain(|(j, _)| *j <= fin_p);
     let mut apres_declare: Vec<&(Jour, String)> = candidats.iter().filter(|(j, _)| *j > fin_b).collect();
@@ -245,7 +245,7 @@ correction de mois deja declares, que le logiciel ne fait pas.",
             }
             // En cours de mois : la paie decoupee au jour du changement le porte (; norme, § 2.1.2.5 p. 22-23 :
             // 41.001 au jour, 41.028 au premier du mois), pour ce que le decoupage sait calculer.
-            if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)?) {
+            if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)) {
                 let suivant = Jour { jour: 1, ..debut_m.plus_jours(31)? };
                 let comment = if md.decoupable && md.saisie && md.fiche.is_empty() {
                     " La paie se decoupe au jour d'un avenant quand la saisie dit les termes du contrat d'avant (`avant` : \

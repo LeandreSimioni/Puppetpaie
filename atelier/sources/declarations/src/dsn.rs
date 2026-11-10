@@ -754,7 +754,7 @@ fn org_de(pile: &Pile, code: &str) -> Option<String> {
 /// La pile de bareme de cette paie, sur le bareme du mois choisi.
 fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
     let nat = p.engagement.nat()?;
-    let fin = p.engagement.fin_periode()?;
+    let fin = p.engagement.fin_periode();
     let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
         &nat,
         p.engagement.motif_recours,
@@ -1189,7 +1189,7 @@ fn affiliations_du_permanent(p: &Paie, ent: &ChampsEntreprise) -> R<Option<Affil
     let Some(au_mois) = p.engagement.nat()?.au_mois() else {
         return Ok(None);
     };
-    let fin = p.engagement.fin_periode()?;
+    let fin = p.engagement.fin_periode();
     let prevoyance = bareme::affiliation_prevoyance(ent, &p.salarie, &au_mois, &fin)?;
     // La dispense (CCNEAC XII.2.1.8 ; 3090, accord du 19/07/2024, art. 9.2 ; `sante_dispense`) : le bulletin n'a plus
     // de mutuelle (`bareme_sante`), et le
@@ -1256,7 +1256,7 @@ fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<usize>> {
 pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<String>) -> R<Vec<Affiliation>> {
     let e = &p.engagement;
     let permanent = affiliations_du_permanent(p, ent)?;
-    let fin = e.fin_periode()?;
+    let fin = e.fin_periode();
     let mut out = Vec::new();
     for (place, reference) in refs.into_iter().enumerate() {
         let mut debut: Option<Jour> = None;
@@ -1908,7 +1908,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add("S21.G00.65.003", s.fin.jjmmaaaa());
     }
     let places = places_par_contrat(bar);
-    let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, (e.debut_periode()?, e.fin_periode()?))?;
+    let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
     for a in rattachements(p, orgs, &bar.entreprise.fiche, refs)? {
         if let Some(o) = a.option {
             si_admise(f, nature_dsn, "S21.G00.70.004", Some(o))?;
@@ -2390,8 +2390,8 @@ p. 243). Porter une partie des corrections sur une DSN suivante. Rien n'est ecri
 
 fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux_pas: Option<&Triplet>) -> R<()> {
     let e = &p.engagement;
-    let debut = e.debut_periode()?;
-    let fin = e.fin_periode()?;
+    let debut = e.debut_periode();
+    let fin = e.fin_periode();
     // « Date à laquelle le débiteur effectue le versement » (`bloc-S21.G00.50.txt`, l. 50-55 ; CCH-13, l. 61-62 : au plus
     // tard le dernier jour du mois suivant) : le jour ou se fait la retenue, celui du taux de PAS de la paie.
     f.add("S21.G00.50.001", e.date_du_versement()?.jjmmaaaa());
@@ -2424,7 +2424,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // declarer dans le bloc Remuneration est cette periode elementaire de paie, lorsque le logiciel de paie produit
     // effectivement un decoupage », norme 2026.1, § 2.1.3.2, p. 28 ; les mesures d'activite aussi, § 2.1.3.5, p. 29).
     for q in p.elementaires() {
-        remunerations(f, q, &q.engagement.debut_periode()?, &q.engagement.fin_periode()?, 1)?;
+        remunerations(f, q, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1)?;
     }
     primes_et_indemnites(f, p, &debut, &fin, 1)?;
     if e.sans_paie() {
@@ -2467,7 +2467,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // « Pour tout changement intervenant en cours de mois, il convient de ventiler les bases assujetties par periodes »
     // (fiche net-entreprises 1265, l. 52) ; FAQ Agirc-Arrco « Changement de situation en cours de mois ».
     for q in p.elementaires() {
-        bases_et_cotisations(f, q, bar, rang, &q.engagement.debut_periode()?, &q.engagement.fin_periode()?, 1, "01", &[])?;
+        bases_et_cotisations(f, q, bar, rang, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1, "01", &[])?;
     }
     Ok(())
 }
@@ -2489,7 +2489,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let orgs = ctx.organismes()?;
     let bar = bar_du(ctx, ent, &orgs, &nic, mois)?;
     let e = &p.engagement;
-    let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode()?, e.fin_periode()?))?;
+    let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
     let affiliations = rattachements(p, &orgs, &bar.entreprise.fiche, refs)?
         .into_iter()
         .map(|a| ((202 + a.place as i64).to_string(), a.reference))
@@ -2685,11 +2685,11 @@ fn bloc_regularisation(
     // `avant` ne donne ici que l'engagement declare (ses bornes, s'il est sans paie) : les montants annules sont ceux
     // du versement declare (`r.declare`), pas ceux d'un recalcul.
     let (avant, apres) = (&r.avant, &r.apres);
-    let debut = avant.engagement.debut_periode()?;
-    let fin = avant.engagement.fin_periode()?;
+    let debut = avant.engagement.debut_periode();
+    let fin = avant.engagement.fin_periode();
     // La paie corrigee se rattache a la periode du contrat corrige : ses dates ont pu changer (fiche
     // net-entreprises 1952 ; cahier technique DSN 2026.1, §2.1.3.6). L'annulation recopie le declare, a ses dates.
-    let (debut_c, fin_c) = (apres.engagement.debut_periode()?, apres.engagement.fin_periode()?);
+    let (debut_c, fin_c) = (apres.engagement.debut_periode(), apres.engagement.fin_periode());
     // Le prelevement du versement de la correction est celui que l'engagement rend (`prelevement_de_la_correction`) :
     // la DSN ne le calcule pas.
     let d_ni = pas_c.difference;
@@ -4661,12 +4661,12 @@ certificat de conformite du depot precedent.",
     // Les adhesions qu'au moins une affiliation du fichier reference : celles des salaries affilies ce mois-la
     // (`rattachements`), pas toutes celles de leur nature (CCH-13 et CCH-14 de 15.004, p. 151).
     for p in paies {
-        let refs = affiliations(&orgs, &*p.engagement.nat()?, &contribs, (p.engagement.debut_periode()?, p.engagement.fin_periode()?))?;
+        let refs = affiliations(&orgs, &*p.engagement.nat()?, &contribs, (p.engagement.debut_periode(), p.engagement.fin_periode()))?;
         couvertes.extend(rattachements(p, &orgs, &bar.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
     for r in regs {
         let b = bar_de(r.mois)?;
-        let refs = affiliations(&orgs, &*r.apres.engagement.nat()?, &b.contributions_du_mois, (r.apres.engagement.debut_periode()?, r.apres.engagement.fin_periode()?))?;
+        let refs = affiliations(&orgs, &*r.apres.engagement.nat()?, &b.contributions_du_mois, (r.apres.engagement.debut_periode(), r.apres.engagement.fin_periode()))?;
         couvertes.extend(rattachements(&r.apres, &orgs, &b.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
     for a in &orgs.adhesions_prevoyance {

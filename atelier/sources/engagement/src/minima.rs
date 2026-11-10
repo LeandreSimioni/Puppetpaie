@@ -78,7 +78,7 @@ fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
 }
 
 /// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
-fn jour_de_paie(paie: &Paie) -> R<Jour> {
+fn jour_de_paie(paie: &Paie) -> Jour {
     paie.engagement.fin_periode()
 }
 
@@ -518,7 +518,7 @@ impl<'a> Cx<'a> {
                     &a.champ,
                 ));
             };
-            let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) else {
+            let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie).iso())) else {
                 return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
             };
             if n < a.ans {
@@ -716,7 +716,7 @@ impl<'a> Cx<'a> {
                 "poste_depuis",
             ));
         };
-        let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
+        let veille = jour_de_paie(self.paie).plus_jours(-1)?;
         let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));
         let e = (ans.div_euclid(5) + 1).clamp(1, 5) as usize;
         Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, depuis.jj_mm_aaaa())))
@@ -1112,7 +1112,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
 /// la comparaison porte sur le total, pas sur un taux reconstitue.
 pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let qui = crate::qui_de(&paie.salarie)?;
-    let jour = paie.engagement.fin_periode()?;
+    let jour = paie.engagement.fin_periode();
     let smic = dec_f64(ctx.smic(&jour)?)?;
     let mut avis = Vec::new();
     for l in &paie.remuneration {

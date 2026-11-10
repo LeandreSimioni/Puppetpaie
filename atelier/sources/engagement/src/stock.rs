@@ -421,14 +421,14 @@ impl Objet {
     }
 
     /// Les mois que la saisie a touches : le premier, ceux qui ont des faits, et ceux ou un terme change.
-    pub fn mois_saisis(&self) -> R<Vec<Mois>> {
+    pub fn mois_saisis(&self) -> Vec<Mois> {
         let premier = self.fichier;
         let mut v = vec![premier];
         v.extend(self.brut.saisie.faits.keys().copied().filter(|m| *m > premier));
         v.extend(self.avenants().iter().map(|a| Mois::du_jour(&a.depuis)).filter(|m| *m > premier));
         v.sort();
         v.dedup();
-        Ok(v)
+        v
     }
 
     /// L'engagement touche-t-il `mois` ? Du premier mois a celui de sa fin ; sans terme, de son premier mois a toujours.
@@ -468,7 +468,7 @@ impl Objet {
     pub fn mois_couverts(&self, jusqu_a: Mois) -> R<Vec<Mois>> {
         let fin = match self.dernier_mois()? {
             Some(d) => d,
-            None => self.mois_saisis()?.last().copied().into_iter().fold(jusqu_a.max(self.fichier), Mois::max),
+            None => self.mois_saisis().last().copied().into_iter().fold(jusqu_a.max(self.fichier), Mois::max),
         };
         Ok(self.fichier.jusqu_a(fin))
     }
@@ -870,7 +870,7 @@ pub fn mois_saisis(racine: &Path) -> R<Vec<Mois>> {
     let courant = Mois::du_jour(&droit::contexte::aujourdhui_sans_note()?);
     let horizon = v.iter().max().copied().map(|h| h.max(courant));
     for o in objets(racine)?.into_iter().filter(|o| !o.importe_seul()) {
-        v.extend(o.mois_saisis()?);
+        v.extend(o.mois_saisis());
         let premier = o.fichier;
         let fin = o.dernier_mois()?.or(horizon.filter(|h| *h >= premier));
         if let Some(d) = fin {

@@ -2051,7 +2051,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     };
     // Les arrets du contrat qui croisent la periode du signalement : le FCTU les reporte (bloc 60), comme la mensuelle,
     // tires du magasin des imprevus ; ses suspensions (bloc 65) en viennent deja (`imprevus::suspensions_du_mois`).
-    let (debut_p, fin_p) = (paie.engagement.debut_periode()?, paie.engagement.fin_periode()?);
+    let (debut_p, fin_p) = (paie.engagement.debut_periode(), paie.engagement.fin_periode());
     let arrets: Vec<declarations::dsn::Arret> = magasin(imprevus::arrets_du_contrat(ctx, &paie, &debut_p, &fin_p))?
         .into_iter()
         .map(|saisi| declarations::dsn::Arret { saisi })

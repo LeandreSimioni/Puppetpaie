@@ -253,8 +253,8 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
             arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, &cle, eng.numero.as_deref(), &eng.debut)?;
         }
         Some(MoisPaye {
-            debut: eng.debut_periode()?,
-            fin: eng.fin_periode()?,
+            debut: eng.debut_periode(),
+            fin: eng.fin_periode(),
             contrat_debut: eng.debut,
             numero: eng.numero.clone(),
             pris: conges_pris_de_la_paie(&ctx.racine, p)?,
@@ -946,8 +946,8 @@ pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, moi
     let mut cpt = avant.compteur.clone();
     let (debut, fin) = periode_de_reference(&fin_du_mois)?;
     // La presence de CE mois, bornee a la periode de reference.
-    let p_debut = eng.debut_periode()?.max(debut);
-    let p_fin = eng.fin_periode()?.min(fin);
+    let p_debut = eng.debut_periode().max(debut);
+    let p_fin = eng.fin_periode().min(fin);
     if p_fin >= p_debut {
         let cle_fiche = cle_de_fiche(ctx, cle)?;
         let non_acquis =
@@ -973,7 +973,7 @@ pub(crate) fn compteur_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<Option<(
 /// Les jours de conges que CETTE paie decompte, lus sur ses lignes : le
 /// catalogue marque la rubrique.
 pub(crate) fn conges_pris_de_la_paie(racine: &Path, paie: &Paie) -> R<Decimal> {
-    let jour = &paie.engagement.fin_periode()?;
+    let jour = &paie.engagement.fin_periode();
     let mut total = Decimal::ZERO;
     for l in &paie.engagement.lignes {
         if rubrique(racine, l.rubrique(), jour)?.conges_pris {

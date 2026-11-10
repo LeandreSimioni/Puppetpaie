@@ -875,8 +875,8 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> R<Vec<Bloc>> {
                  siens.",
                 bulletin,
                 nom_imprime(sal)?,
-                p.engagement.debut_periode()?.jj_mm_aaaa(),
-                p.engagement.fin_periode()?.jj_mm_aaaa(),
+                p.engagement.debut_periode().jj_mm_aaaa(),
+                p.engagement.fin_periode().jj_mm_aaaa(),
             ))],
             7.0,
             Some(GRIS),
@@ -1164,8 +1164,8 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         m("Période :", true, None),
         mt(format!(
             " du {} au {}{} {} ",
-            e.debut_periode()?.jj_mm_aaaa(),
-            e.fin_periode()?.jj_mm_aaaa(),
+            e.debut_periode().jj_mm_aaaa(),
+            e.fin_periode().jj_mm_aaaa(),
             contrat_long,
             tiret
         )),

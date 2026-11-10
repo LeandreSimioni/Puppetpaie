@@ -636,18 +636,18 @@ impl Engagement {
 
     /// Le contrat borne au mois : le debut de la periode de paie (de la periode elementaire, quand ce calcul en est
     /// une : `periode`).
-    pub fn debut_periode(&self) -> R<Jour> {
-        if let Some((d, _)) = self.periode {
-            return Ok(d);
+    pub fn debut_periode(&self) -> Jour {
+        match self.periode {
+            Some((d, _)) => d,
+            None => self.debut.max(self.debut_mois()),
         }
-        Ok(self.debut.max(self.debut_mois()))
     }
 
-    pub fn fin_periode(&self) -> R<Jour> {
-        if let Some((_, f)) = self.periode {
-            return Ok(f);
+    pub fn fin_periode(&self) -> Jour {
+        match self.periode {
+            Some((_, f)) => f,
+            None => self.fin.into_iter().fold(self.fin_mois(), Jour::min),
         }
-        Ok(self.fin.into_iter().fold(self.fin_mois(), Jour::min))
     }
 
     /// Le jour du versement de ce que l'engagement paie (S21.G00.50.001, la « date de paiement » du bulletin) : celui que
@@ -657,7 +657,7 @@ impl Engagement {
     pub fn date_du_versement(&self) -> R<Jour> {
         match self.date_paiement {
             Some(d) => Ok(d),
-            None => self.versement.jour(self.mois,self.fin_periode()?),
+            None => self.versement.jour(self.mois,self.fin_periode()),
         }
     }
 
@@ -764,8 +764,8 @@ impl Engagement {
                 Some(ContratEcrit { periode_essai_jours: self.ecrit.periode_essai_jours.as_ref().map(Chiffre::canon).transpose()?, ..self.ecrit.clone() })
             },
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
-            debut_periode: self.debut_periode()?,
-            fin_periode: self.fin_periode()?,
+            debut_periode: self.debut_periode(),
+            fin_periode: self.fin_periode(),
             quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
             premier_mois: self.premier_mois(),

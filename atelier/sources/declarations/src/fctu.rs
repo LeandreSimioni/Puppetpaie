@@ -469,7 +469,7 @@ ou un annule.",
         Some(j) => j,
         None => aujourdhui()?,
     };
-    let (debut_p, fin_p) = (e.debut_periode()?, e.fin_periode()?);
+    let (debut_p, fin_p) = (e.debut_periode(), e.fin_periode());
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference :
     // `note`) ; un jour que la donnee ne couvre pas refuse.
@@ -567,7 +567,7 @@ ou un annule.",
     f.add("S21.G00.50.020", defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
     let bornes = |q: &engagement::calcul::Paie| -> R<(Jour, Jour)> {
-        if paie.periodes.is_empty() { Ok((debut_p, fin_p)) } else { Ok((q.engagement.debut_periode()?, q.engagement.fin_periode()?)) }
+        if paie.periodes.is_empty() { Ok((debut_p, fin_p)) } else { Ok((q.engagement.debut_periode(), q.engagement.fin_periode())) }
     };
     for q in paie.elementaires() {
         let (d, f_) = bornes(q)?;

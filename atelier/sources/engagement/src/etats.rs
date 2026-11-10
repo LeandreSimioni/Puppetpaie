@@ -711,7 +711,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
         return Ok(None);
     }
     let cle = p.salarie.id.to_string();
-    let fin = e.fin_periode()?;
+    let fin = e.fin_periode();
     let taux = droit::pas::taux_dgfip(ctx, &cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
     let t = |j: Jour| (j.an, j.mois, j.jour);
@@ -824,9 +824,9 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
                 let p = places.get(*i).copied().flatten().and_then(|j| s.paies.get(j)).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
                 let conges = crate::conges::compteur_ecrit(ctx, p, mois)?;
                 let (salarie, spectacle) = (&p.engagement.salarie, p.engagement.spectacle.as_deref());
-                let config = empreinte::configuration(ctx, &p.engagement.fin_periode()?, salarie, spectacle)?;
+                let config = empreinte::configuration(ctx, &p.engagement.fin_periode(), salarie, spectacle)?;
                 let entree_fiches = empreinte::fiches(ctx, mois, salarie, spectacle)?;
-                Ok((relire::ecrire(ctx, p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode()?, config, entree_fiches))
+                Ok((relire::ecrire(ctx, p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode(), config, entree_fiches))
             })
             .collect::<R<Vec<_>>>()
     })?;
@@ -1191,7 +1191,7 @@ pub fn mois_du_changement(v: &Valide, passee: stock::Version) -> R<Option<Mois>>
     let ancien = v.objet.d_apres_la_saisie(saisie);
     let mensuel = v.objet.mensuel()?;
     // Les mois ou l'une des versions a une paie (`paies::mois_ecrits`), et ceux que l'une des saisies a touches.
-    let mut mois: Vec<Mois> = crate::paies::mois_ecrits(&v.objet)?.into_iter().chain(v.objet.mois_saisis()?).chain(ancien.mois_saisis()?).collect();
+    let mut mois: Vec<Mois> = crate::paies::mois_ecrits(&v.objet)?.into_iter().chain(v.objet.mois_saisis()).chain(ancien.mois_saisis()).collect();
     mois.sort();
     mois.dedup();
     let garder = |x: Option<Carte>| x.map(|c| clauses_de(&c, mensuel));

@@ -493,13 +493,8 @@ impl Paie {
     }
 
     /// La paie est-elle decoupee au jour `j` (une periode elementaire commence ce jour-la, apres le debut du mois) ?
-    pub fn decoupee_le(&self, j: &Jour) -> R<bool> {
-        for p in self.periodes.iter().skip(1) {
-            if p.engagement.debut_periode()? == *j {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    pub fn decoupee_le(&self, j: &Jour) -> bool {
+        self.periodes.iter().skip(1).any(|p| p.engagement.debut_periode() == *j)
     }
 
     pub fn ligne(&self, id: &str) -> Option<&LigneCotisation> {
@@ -801,7 +796,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
 /// telle : l'annee est celle de la periode de paie, et les contrats d'un mois se suivent dans l'ordre de la saisie.
 fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Decimal> {
     let cle = sal.id.to_string();
-    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode()?.mois_civil(), &cle)?;
+    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &cle)?;
     for p in precedentes {
         let sienne = p.salarie.id == cle || p.engagement.salarie == eng.salarie;
         if sienne {
@@ -1060,7 +1055,7 @@ pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Pa
         None => calculer_du_mois(ctx, eng, precedentes),
         Some((montant, avis)) => {
             let mut e = eng.clone();
-            e.lignes = crate::maintien::avec_le_montant(&eng.lignes, montant)?;
+            e.lignes = crate::maintien::avec_le_montant(&eng.lignes, montant);
             let mut p = calculer_du_mois(ctx, &e, precedentes)?;
             p.ecrire().avertissements.push(avis);
             Ok(p)
@@ -1103,7 +1098,7 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
         &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
     )?;
     let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
-    bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode()?, caisse, cpf_cdd, majoration)
+    bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode(), caisse, cpf_cdd, majoration)
 }
 
 /// LA DISPENSE DE SANTE A DES BORNES. Les accords de branche deposes en
@@ -1174,7 +1169,7 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
         return Ok(fiche);
     }
     let cle = fiche.id.to_string();
-    let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
+    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &cle, eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<String> = suspensions.iter().map(|s| s.motif().to_string()).collect();
@@ -1313,7 +1308,7 @@ pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<Decimal>
 pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
     let nat = eng.nat()?;
     let mut avis_dfs: Vec<String> = Vec::new();
-    let fin_periode = eng.fin_periode()?;
+    let fin_periode = eng.fin_periode();
     let ctx = &ctx.au(&fin_periode)?;
     let sal = fiche_de_l_engagement(ctx, eng)?;
     essai_dans_son_plafond(ctx, eng, &nat, &sal)?;
@@ -1825,13 +1820,13 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
             _ => None,
         };
-        return plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), tp, &pss_du_contexte(ctx));
+        return plafond_permanent(tuple(&e.debut_periode()), tuple(&e.fin_periode()), tp, &pss_du_contexte(ctx));
     }
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
         artiste,
-        debut_periode: tuple(&e.debut_periode()?),
-        fin_periode: tuple(&e.fin_periode()?),
+        debut_periode: tuple(&e.debut_periode()),
+        fin_periode: tuple(&e.fin_periode()),
         debut: tuple(&e.debut),
         // Un contrat paye a l'engagement a son terme (`Engagement::fin` : `None` seulement pour un permanent ouvert).
         fin: tuple(&e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?),
@@ -1860,7 +1855,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Decimal> {
-    plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), None, &pss_du_contexte(ctx))
+    plafond_permanent(tuple(&e.debut_periode()), tuple(&e.fin_periode()), None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.

@@ -71,8 +71,8 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     let heures = e.heures.into_iter().sum::<f64>().round_ties_even() as i64;
     Ok(Some(Declare {
         salarie: p.salarie.id.to_string(),
-        debut: e.debut_periode()?,
-        fin: e.fin_periode()?,
+        debut: e.debut_periode(),
+        fin: e.fin_periode(),
         heures,
         cachets: e.cachets,
         jours: e.jours,
