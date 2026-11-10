@@ -18,7 +18,8 @@ use socle::forme::NombreLu;
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::{Decimal, Resultat};
+use socle::echec::{refus, Echec, R};
+use socle::num::Decimal;
 
 /// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
 /// forme canonique ecrit ses nombres en texte (`ContratEcrit`) ; un flottant garde son ecriture (`130.0`).
@@ -57,33 +58,33 @@ impl Chiffre {
     }
 
     /// Le decimal : un entier tel quel, un flottant par sa forme la plus courte, un texte lu.
-    pub fn dec(&self) -> Resultat<Decimal> {
+    pub fn dec(&self) -> R<Decimal> {
         match self {
             Chiffre::Nombre(n) => match (n.as_i64(), n.as_u64()) {
                 (Some(i), _) => Ok(Decimal::from(i)),
                 (_, Some(u)) => Ok(Decimal::from(u)),
-                _ => socle::num::dec_f64(n.en_f64()).map_err(String::from),
+                _ => socle::num::dec_f64(n.en_f64()),
             },
-            Chiffre::Texte(s) => socle::num::dec_texte(s).map_err(String::from),
+            Chiffre::Texte(s) => socle::num::dec_texte(s),
         }
     }
 
     /// Le decimal dont un flottant garde son echelle (`130.0`, sa forme ecrite).
-    pub fn dec_avec_echelle(&self) -> Resultat<Decimal> {
+    pub fn dec_avec_echelle(&self) -> R<Decimal> {
         match self {
             Chiffre::Nombre(n) if n.as_i64().is_none() && n.as_u64().is_none() => {
                 let s = socle::date::repr_flottant(n.en_f64());
-                socle::num::dec_texte(&s).map_err(|_| format!("nombre hors de portee : {}", s))
+                socle::num::dec_texte(&s).map_err(|_| socle::refus!("nombre hors de portee : {}", s))
             }
             autre => autre.dec(),
         }
     }
 
     /// Le flottant : un nombre, ou un nombre ecrit en texte.
-    pub fn flottant(&self) -> Resultat<f64> {
+    pub fn flottant(&self) -> R<f64> {
         match self {
-            Chiffre::Nombre(n) => n.as_f64().ok_or_else(|| format!("nombre illisible : {}", n)),
-            Chiffre::Texte(s) => s.trim().parse::<f64>().map_err(|_| socle::num::illisible(s)),
+            Chiffre::Nombre(n) => n.as_f64().ok_or_else(|| socle::refus!("nombre illisible : {}", n)),
+            Chiffre::Texte(s) => s.trim().parse::<f64>().map_err(|_| refus(socle::num::illisible(s))),
         }
     }
 
@@ -100,7 +101,7 @@ impl Chiffre {
     }
 
     /// Sa forme canonique : un nombre en texte normalise (`socle::num::nombre`), un texte tel quel.
-    pub fn canon(&self) -> Resultat<Chiffre> {
+    pub fn canon(&self) -> R<Chiffre> {
         Ok(match self {
             Chiffre::Nombre(_) => Chiffre::Texte(socle::num::nombre(self.dec()?)),
             Chiffre::Texte(s) => Chiffre::Texte(s.clone()),
@@ -140,8 +141,8 @@ impl DateDeLigne {
     }
 
     /// Le jour lu.
-    pub fn lu(&self) -> Resultat<Jour> {
-        Jour::lire(self.jour()).map_err(String::from)
+    pub fn lu(&self) -> R<Jour> {
+        Jour::lire(self.jour())
     }
 
     /// Le lieu que la date dit d'elle-meme, tel qu'il est ecrit ; `None` s'il est vide.
@@ -383,8 +384,8 @@ pub struct Marques {
 }
 
 /// La forme canonique d'un decimal : sa forme ecrite normalisee (`socle::num::nombre`).
-fn canon(x: Decimal) -> Resultat<Decimal> {
-    socle::num::dec_texte(&socle::num::nombre(x)).map_err(String::from)
+fn canon(x: Decimal) -> R<Decimal> {
+    socle::num::dec_texte(&socle::num::nombre(x))
 }
 
 impl LignePaie {
@@ -459,13 +460,13 @@ impl LignePaie {
 
     /// Le taux de la ligne devient `taux` (le tarif de la convention, la limite d'un frais) ; une ligne dont le taux n'est
     /// pas une case n'en change pas : refus.
-    pub fn poser_taux(&mut self, taux: Decimal) -> Resultat<()> {
+    pub fn poser_taux(&mut self, taux: Decimal) -> R<()> {
         match self {
             LignePaie::Unites(l) => l.taux = Some(taux),
             LignePaie::UnitesEtHeures(l) => l.taux = Some(taux),
             LignePaie::Frais(l) => l.taux = Some(taux),
             LignePaie::Composee(l) => l.taux = taux,
-            _ => return Err(format!("la ligne {} ne prend pas de taux : le signaler au développeur", self.rubrique())),
+            _ => return Err(socle::refus!("la ligne {} ne prend pas de taux : le signaler au développeur", self.rubrique())),
         }
         Ok(())
     }
@@ -627,27 +628,27 @@ impl LignePaie {
     }
 
     /// Ses jours du mois, lus.
-    pub fn jours(&self) -> Resultat<Vec<Jour>> {
+    pub fn jours(&self) -> R<Vec<Jour>> {
         self.dates().iter().map(DateDeLigne::lu).collect()
     }
 
     /// Le premier jour de la ligne (ses dates, puis son planning) ; `None` : elle n'en a pas.
-    pub fn premier_jour(&self) -> Resultat<Option<Jour>> {
+    pub fn premier_jour(&self) -> R<Option<Jour>> {
         self.dates().first().or(self.planning().first()).map(DateDeLigne::lu).transpose()
     }
 
     /// Une ligne en pourcentage, sa base et son pourcentage positifs ; une autre passe.
-    pub fn verifier_pourcentage(&self) -> Resultat<()> {
+    pub fn verifier_pourcentage(&self) -> R<()> {
         let LignePaie::Pourcentage(l) = self else { return Ok(()) };
         if l.base.is_some_and(|b| b < Decimal::ZERO) || l.taux_majoration.is_some_and(|p| p < Decimal::ZERO) {
-            return Err(format!("Ligne << {} >> : base et pourcentage sont positifs.", l.rubrique));
+            return Err(socle::refus!("Ligne << {} >> : base et pourcentage sont positifs.", l.rubrique));
         }
         Ok(())
     }
 
     /// SA FORME CANONIQUE, pour les empreintes et les oracles : ses nombres en texte normalise, sans ce que le moteur pose
     /// pour l'ecran (`Marques`).
-    pub fn canon(&self) -> Resultat<LignePaie> {
+    pub fn canon(&self) -> R<LignePaie> {
         let o = |x: Option<Decimal>| x.map(canon).transpose();
         Ok(match self.clone() {
             LignePaie::Unites(l) => LignePaie::Unites(Unites { quantite: o(l.quantite)?, taux: o(l.taux)?, ..l }),
@@ -743,7 +744,7 @@ impl FormeSaisie {
     /// LA FORME D'UNE LIGNE DE LA RUBRIQUE `r`, telle que son catalogue la declare (`saisie` ; `jours`, celle de la
     /// semaine, ce sont les dates de la ligne) ; `None` : une rubrique que le moteur pose (`saisie` vide), qui ne se saisit
     /// pas. Une `saisie` que le moteur ne sait pas ranger est une rubrique mal decrite : refus.
-    pub fn de(r: &droit::catalogue::Rubrique) -> Resultat<Option<FormeSaisie>> {
+    pub fn de(r: &droit::catalogue::Rubrique) -> R<Option<FormeSaisie>> {
         let mut dit: Vec<&str> = r.saisie.iter().map(String::as_str).filter(|s| *s != "jours").collect();
         dit.sort_unstable();
         let frais = r.nature == "frais";
@@ -757,7 +758,7 @@ impl FormeSaisie {
             (["genre", "montant"], _) => FormeSaisie::AvantageEnNature,
             ([], _) => return Ok(None),
             _ => {
-                return Err(format!(
+                return Err(socle::refus!(
                     "La rubrique « {} » est mal décrite : sa saisie ({}) ne dit pas une forme de ligne. Le signaler au développeur.",
                     r.libelle,
                     r.saisie.join(", ")
@@ -884,7 +885,7 @@ impl LigneDonnee {
 
     /// LE JOUR OU SA RUBRIQUE SE LIT : son premier jour (ses dates, puis son planning), sinon le dernier jour de `mois`,
     /// celui de la carte.
-    pub fn jour(&self, mois: Mois) -> Resultat<Jour> {
+    pub fn jour(&self, mois: Mois) -> R<Jour> {
         let premier = self.dates.iter().chain(self.planning.iter()).flatten().next();
         match premier {
             Some(d) => d.lu(),
@@ -894,9 +895,9 @@ impl LigneDonnee {
 
     /// LA LIGNE RANGEE DANS SA FORME (`FormeSaisie::de` de sa rubrique `r`, lue au catalogue a son jour, `jour`) : elle
     /// dit exactement les cles que cette forme demande, sinon le refus dit lesquelles donner et lesquelles retirer.
-    pub fn ranger(self, r: &droit::catalogue::Rubrique) -> Resultat<LignePaie> {
+    pub fn ranger(self, r: &droit::catalogue::Rubrique) -> R<LignePaie> {
         let Some(forme) = FormeSaisie::de(r)? else {
-            return Err(format!("« {} » ne se saisit pas : le moteur la pose lui-même. Retirez la ligne.", r.libelle));
+            return Err(socle::refus!("« {} » ne se saisit pas : le moteur la pose lui-même. Retirez la ligne.", r.libelle));
         };
         let voulues = forme.cles();
         let dites = self.dites();
@@ -911,7 +912,7 @@ impl LigneDonnee {
             if !de_trop.is_empty() {
                 quoi.push(format!("retirez {}", liste(&de_trop)));
             }
-            return Err(format!(
+            return Err(socle::refus!(
                 "la ligne « {} » dit {} : {}.",
                 r.libelle,
                 liste(&voulues.iter().map(|c| c.nom()).collect::<Vec<_>>()),
@@ -921,7 +922,7 @@ impl LigneDonnee {
         // Une case vide s'ecrit `null`, jamais un texte vide.
         for (cle, t) in [(Cle::Lieu, &self.lieu), (Cle::Territoire, &self.territoire), (Cle::Genre, &self.genre)] {
             if t.as_ref().is_some_and(|t| t.as_ref().is_some_and(|t| t.trim().is_empty())) {
-                return Err(format!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, cle.nom()));
+                return Err(socle::refus!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, cle.nom()));
             }
         }
         let rubrique = r.code.clone();
@@ -984,15 +985,15 @@ impl LigneDonnee {
 /// LES LIGNES QU'UN APPELANT DONNE A UNE CARTE DE `mois`, RANGEES (`LigneDonnee::ranger`) : chacune sa rubrique lue au
 /// catalogue de la compagnie a son jour (`LigneDonnee::jour`). Le premier refus nomme le salarie (`qui`) et la ligne ;
 /// rien ne s'ecrit.
-pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qui: &str) -> Resultat<Vec<LignePaie>> {
+pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qui: &str) -> R<Vec<LignePaie>> {
     let mut out = Vec::new();
     for (i, l) in lignes.into_iter().enumerate() {
-        let refus = |m: String| format!("{} : sa ligne {} : {} Rien n'est écrit.", qui, i + 1, m);
+        let dans_la_ligne = |m: Echec| m.reformuler(|p| format!("{} : sa ligne {} : {} Rien n'est écrit.", qui, i + 1, p));
         let Some(code) = l.rubrique.clone() else {
-            return Err(refus("elle dit sa rubrique (« rubrique »).".to_string()));
+            return Err(dans_la_ligne(refus("elle dit sa rubrique (« rubrique »).")));
         };
-        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(refus)?).map_err(|e| refus(e.into()))?;
-        out.push(l.ranger(&r).map_err(refus)?);
+        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(dans_la_ligne)?).map_err(dans_la_ligne)?;
+        out.push(l.ranger(&r).map_err(dans_la_ligne)?);
     }
     Ok(out)
 }

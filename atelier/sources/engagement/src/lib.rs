@@ -733,7 +733,7 @@ impl Engagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
             dates_travail: self.dates_travail.clone(),
-            lignes: self.lignes.iter().map(|l| Ok(l.canon()?)).collect::<R<Vec<_>>>()?,
+            lignes: self.lignes.iter().map(LignePaie::canon).collect::<R<Vec<_>>>()?,
             debut: self.debut,
             fin: self.fin,
             numero: self.numero.clone(),

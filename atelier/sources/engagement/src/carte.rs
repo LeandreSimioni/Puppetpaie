@@ -792,7 +792,7 @@ impl Changements {
         let mut essai = b.clone();
         for ch in self.0 {
             let q = qui(&essai);
-            let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
+            let ch = ch.ranger(&|l| Ok(crate::ligne::ranger(&ctx.racine, mois, l, &q)?), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
             essai.changer(ch, &q)?;
         }
         *b = essai;

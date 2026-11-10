@@ -1483,7 +1483,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     }
     let montant = |k: &str, t: &Option<String>| -> R<Option<Chiffre>> {
         let Some(t) = t else { return Ok(None) };
-        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| refus(format!("Indemnité journalière ({}) : {}", k, e)))?;
+        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| refus(format!("Indemnité journalière ({}) : {}", k, String::from(e))))?;
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }

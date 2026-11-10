@@ -120,14 +120,14 @@ pub(crate) fn sub(a: Decimal, b: Decimal) -> Decimal {
 /// `defaut`.
 pub(crate) fn dec_ou(v: Option<&NombreLu>, defaut: Decimal) -> R<Decimal> {
     match v.map(|n| Chiffre::Nombre(n.clone())) {
-        Some(x) if x.vrai() => Ok(x.dec_avec_echelle()?),
+        Some(x) if x.vrai() => x.dec_avec_echelle(),
         _ => Ok(defaut),
     }
 }
 
 /// Le decimal d'un nombre de la carte, son echelle gardee (`Chiffre::dec_avec_echelle`).
 pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
-    Ok(Chiffre::Nombre(n.clone()).dec_avec_echelle()?)
+    Chiffre::Nombre(n.clone()).dec_avec_echelle()
 }
 
 // -------------------------------------------------- les jours ouvrables
