@@ -158,7 +158,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(cle) })?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {
@@ -189,7 +189,7 @@ impl<'a> Recapitulatifs<'a> {
         }
         let chemin = tmp.join(format!("R_{}.pdf", cle));
         let octets = crate::fabrique::fusion_octets(&morceaux, tmp).map_err(Echec::from)?;
-        std::fs::write(&chemin, octets).map_err(|e| Echec::from(socle::echec::du_disque(&chemin, &e)))?;
+        std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
         Ok(Some(chemin))
     }
 }
