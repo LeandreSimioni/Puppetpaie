@@ -858,7 +858,7 @@ fn paies_du_mois(ctx: &Contexte, mois: &str, cle: &str) -> Resultat<Vec<PaieLue>
     if let Some(p) = memo {
         return p;
     }
-    let p = crate::etats::paies_validees(ctx, mois, cle).and_then(|paies| paies.iter().map(|p| lue(ctx, mois, p)).collect());
+    let p = crate::etats::paies_validees(ctx, mois, cle).map_err(String::from).and_then(|paies| paies.iter().map(|p| lue(ctx, mois, p)).collect());
     MEMO.with(|m| {
         let mut m = m.borrow_mut();
         if m.0 > 0 {

@@ -62,7 +62,7 @@ use crate::stock::{self, Objet};
 use crate::{empreinte, relire};
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::num::{pct, Decimal, Resultat};
+use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
 
 /// La raison d'un recalcul : le taux de prelevement a la source a change.
 pub const TAUX_DE_PAS: &str = "taux de PAS reçu";
@@ -118,11 +118,11 @@ pub fn fini(siens: &[Depart], mois: &str) -> bool {
 /// une fois comme un mois dont les documents sont partis (`rafraichir`) : une decision de l'editeur (le code qui calcule,
 /// une regle datee) refait sa paie, en rectificatif, avec une version ; le reste ne bouge pas. La couche du dessus
 /// l'appelle une fois par version installee. Rend les mois dont une paie s'est refaite.
-pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> Resultat<Vec<String>> {
+pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<String>> {
     let mut refaits = Vec::new();
     for mois in crate::paies::mois_payes(&ctx.racine) {
-        let avant: Vec<Option<Arc<PaieEcrite>>> = tels_qu_ecrits(ctx, &mois, departs)?.iter().map(|e| e.paie_ecrite(&mois)).collect::<Resultat<_>>()?;
-        let apres: Vec<Option<Arc<PaieEcrite>>> = lu_et_rafraichi(ctx, &mois, departs, true)?.iter().map(|e| e.paie_ecrite(&mois)).collect::<Resultat<_>>()?;
+        let avant: Vec<Option<Arc<PaieEcrite>>> = tels_qu_ecrits(ctx, &mois, departs)?.iter().map(|e| e.paie_ecrite(&mois)).collect::<R<_>>()?;
+        let apres: Vec<Option<Arc<PaieEcrite>>> = lu_et_rafraichi(ctx, &mois, departs, true)?.iter().map(|e| e.paie_ecrite(&mois)).collect::<R<_>>()?;
         let change = |a: &Option<Arc<PaieEcrite>>, b: &Option<Arc<PaieEcrite>>| match (a, b) {
             (Some(x), Some(y)) => !chiffres_egaux(x, y),
             (x, y) => x.is_some() != y.is_some(),
@@ -154,7 +154,7 @@ pub struct Valide {
     le: String,
     /// Pourquoi la paie du mois lu ne s'est pas ecrite : le refus du recalcul (`du_mois`), quand elle manque, ou quand il
     /// dit une saisie a finir (`saisie_incomplete`) : la paie ecrite ne tient plus, et elle ne se lit pas.
-    refus: Option<String>,
+    refus: Option<Echec>,
     /// La paie d'un mois qu'une validation en cours vient de calculer (`valides_lues`) : elle se lit en place de l'ecrite.
     en_cours: Option<(String, Arc<PaieEcrite>)>,
 }
@@ -219,28 +219,28 @@ impl Valide {
 
     /// La paie ecrite de `mois` (`{"paie", "fiches", "pas"?, "empreinte", "recalcul"?}`), si elle l'est ; une paie ecrite
     /// qui ne se lit pas se refuse.
-    pub fn paie_ecrite(&self, mois: &str) -> Resultat<Option<Arc<PaieEcrite>>> {
-        if self.refus.as_deref().is_some_and(crate::saisie_incomplete) {
+    pub fn paie_ecrite(&self, mois: &str) -> R<Option<Arc<PaieEcrite>>> {
+        if self.refus.as_ref().is_some_and(|r| crate::saisie_incomplete(&r.phrase)) {
             return Ok(None);
         }
         match &self.en_cours {
             Some((m, p)) if m == mois => Ok(Some(p.clone())),
-            _ => crate::paies::presente(&self.objet, mois),
+            _ => Ok(crate::paies::presente(&self.objet, mois)?),
         }
     }
 
     /// Pourquoi la paie de `mois` s'est recalculee d'elle-meme, et quand.
-    pub fn recalcul(&self, mois: &str) -> Resultat<Option<Recalcul>> {
+    pub fn recalcul(&self, mois: &str) -> R<Option<Recalcul>> {
         Ok(self.paie_ecrite(mois)?.and_then(|p| p.recalcul.clone()))
     }
 
     /// LA PAIE DE `mois`, TELLE QU'ELLE A ETE VALIDEE : ce que lit ce qui fabrique un document. `data` : la saisie du mois
     /// (`stock::vue_du_mois`), `i` : le rang de l'engagement dans cette saisie.
-    pub fn paie(&self, ctx: &Contexte, data: &crate::saisie::VueDuMois, i: usize) -> Resultat<Paie> {
+    pub fn paie(&self, ctx: &Contexte, data: &crate::saisie::VueDuMois, i: usize) -> R<Paie> {
         let mois = &data.mois.to_string();
         let x = self.paie_ecrite(mois)?.ok_or_else(|| match &self.refus {
-            Some(refus) => format!("{} : la paie de {} ne se calcule pas. {}", qui_de(ctx, &self.objet), socle::mois::Mois::en_clair(mois), refus),
-            None => format!(
+            Some(r) => r.clone().reformuler(|p| format!("{} : la paie de {} ne se calcule pas. {}", qui_de(ctx, &self.objet), socle::mois::Mois::en_clair(mois), p)),
+            None => socle::refus!(
                 "{} : la paie de {} n'est pas calculée. Revalidez l'engagement : ouvrez sa carte, puis « Modifier l'engagement ».",
                 qui_de(ctx, &self.objet),
                 socle::mois::Mois::en_clair(mois)
@@ -266,13 +266,13 @@ fn paie_sur_son_ecrite(mut paie: Paie, x: &PaieEcrite) -> Paie {
 /// `numero` : le numero de son bulletin, le premier N CE de son certificat. Ils se relisent ensuite (`numeros_ecrits`) :
 /// un document reparti a l'identique garde ses numeros. Une paie deja numerotee ne change pas de
 /// numero.
-pub fn poser_numeros_des_documents(ctx: &Contexte, mois: &str, cle: &str, numero: &str, bulletin: Option<&str>, ce: Option<i64>) -> Resultat<()> {
+pub fn poser_numeros_des_documents(ctx: &Contexte, mois: &str, cle: &str, numero: &str, bulletin: Option<&str>, ce: Option<i64>) -> R<()> {
     let o = stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
         .find(|o| o.carte().salarie.as_deref() == Some(cle) && o.carte().numero.as_deref() == Some(numero))
-        .ok_or_else(|| format!("{} : pas d'engagement de {} au contrat {}", mois, cle, numero))?;
+        .ok_or_else(|| socle::refus!("{} : pas d'engagement de {} au contrat {}", mois, cle, numero))?;
     let Some(mut p) = crate::paies::presente(&o, mois)?.filter(|_| o.est_valide()).map(|p| (*p).clone()) else {
-        return Err(format!("{} : l'engagement de {} au contrat {} n'a pas de paie validee", mois, cle, numero));
+        return Err(socle::refus!("{} : l'engagement de {} au contrat {} n'a pas de paie validee", mois, cle, numero));
     };
     let mut change = false;
     if let Some(b) = bulletin.filter(|_| p.bulletin.is_none()) {
@@ -316,7 +316,7 @@ impl Etat {
     }
 
     /// La paie ecrite de `mois` de l'engagement valide (`Valide::paie_ecrite`) ; `None` en saisie.
-    pub fn paie_ecrite(&self, mois: &str) -> Resultat<Option<Arc<PaieEcrite>>> {
+    pub fn paie_ecrite(&self, mois: &str) -> R<Option<Arc<PaieEcrite>>> {
         match self.valide() {
             Some(v) => v.paie_ecrite(mois),
             None => Ok(None),
@@ -326,10 +326,10 @@ impl Etat {
 
 /// Le contrat de l'engagement `o` a-t-il ete signe hors du logiciel (`crate::signe_ailleurs_de`) ? Ce qui ne se lit pas
 /// se refuse.
-pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> Resultat<bool> {
+pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let c = o.carte();
     let nat = c.nature_lue()?;
-    crate::signe_ailleurs_de(&ctx.racine, &nat, c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?, &crate::debut_brut(&o.brut), c.numero.as_deref(), &o.fichier)
+    Ok(crate::signe_ailleurs_de(&ctx.racine, &nat, c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?, &crate::debut_brut(&o.brut), c.numero.as_deref(), &o.fichier)?)
 }
 
 /// Qui est l'engagement `o`, pour une phrase de l'ecran : « MARTIN Lou (contrat du 20/11/2026) » (`crate::salarie_nomme`).
@@ -357,7 +357,7 @@ fn etat(o: Objet, mois: &str, departs: &Departs) -> Etat {
 
 /// L'etat de chaque engagement que `mois` montre, tel qu'il est ecrit, sans le recalcul de lui-meme, d'apres ce qui est
 /// parti (`departs`, que la couche du dessus lit) : ce que lit un bilan qui ne lit aucune paie.
-pub fn tels_qu_ecrits(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Vec<Etat>> {
+pub fn tels_qu_ecrits(ctx: &Contexte, mois: &str, departs: &Departs) -> R<Vec<Etat>> {
     Ok(stock::objets_du_mois(&ctx.racine, mois)?.into_iter().map(|o| etat(o, mois, departs)).collect())
 }
 
@@ -389,7 +389,7 @@ fn a_revalider(ctx: &Contexte, o: &Objet, v: stock::Version) -> Option<String> {
 /// couche du dessus a pose (`poser_temoin`), qui le note pour l'editeur. Une paie que ce refus empeche d'ecrire (le mois
 /// qu'un contrat sans terme n'avait pas encore) le porte : ce qui la lit dit pourquoi elle manque (le taux AT/MP de
 /// l'annee, un bareme), et quoi faire.
-pub fn du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Vec<Etat>> {
+pub fn du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> R<Vec<Etat>> {
     lu_et_rafraichi(ctx, mois, departs, false)
 }
 
@@ -397,11 +397,11 @@ pub fn du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Vec<Et
 /// refuse (son rang dans l'ecran), avec son refus.
 struct Rafraichi {
     etats: Option<Vec<Etat>>,
-    refus: Vec<(usize, String)>,
+    refus: Vec<(usize, Echec)>,
 }
 
-fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> Resultat<Vec<Etat>> {
-    let refus: Vec<(Option<usize>, String)> = match rafraichir(ctx, mois, departs, passage) {
+fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> R<Vec<Etat>> {
+    let refus: Vec<(Option<usize>, Echec)> = match rafraichir(ctx, mois, departs, passage) {
         // Rien ne s'est reecrit : les etats lus pour la verification sont ceux du mois.
         Ok(Rafraichi { etats: Some(etats), .. }) => return Ok(etats),
         Ok(Rafraichi { refus, .. }) => refus.into_iter().map(|(i, m)| (Some(i), m)).collect(),
@@ -409,14 +409,15 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool)
         Err(m) => vec![(None, m)],
     };
     let mut etats = tels_qu_ecrits(ctx, mois, departs)?;
-    let mut temoins: Vec<&String> = Vec::new();
+    let mut temoins: Vec<String> = Vec::new();
     for (_, m) in &refus {
         // Une saisie a finir est l'affaire de l'utilisateur : ce qui lit la paie la lui dit, l'editeur n'en est pas averti.
-        if !temoins.contains(&m) && !crate::saisie_incomplete(m) {
-            temoins.push(m);
+        let texte = String::from(m.clone());
+        if !temoins.contains(&texte) && !crate::saisie_incomplete(&m.phrase) {
             if let Some(temoin) = TEMOIN.get() {
-                temoin(&ctx.racine, mois, m);
+                temoin(&ctx.racine, mois, &texte);
             }
+            temoins.push(texte);
         }
     }
     // Une paie qui manque (un contrat sans terme qui entre dans le mois) ne s'est pas ecrite a cause de son refus : qui la
@@ -431,7 +432,7 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool)
         };
         let sien = refus.iter().find(|(r, _)| r.is_none_or(|r| r == i));
         let Some((_, m)) = sien else { continue };
-        if v.paie_ecrite(mois)?.is_none() || (!parti && crate::saisie_incomplete(m)) {
+        if v.paie_ecrite(mois)?.is_none() || (!parti && crate::saisie_incomplete(&m.phrase)) {
             v.refus = Some(m.clone());
         }
     }
@@ -450,13 +451,13 @@ pub fn poser_temoin(t: Temoin) {
 
 /// Pour chaque engagement que `mois` montre, dans l'ordre de l'ecran : est-il valide ? Ne lit aucune paie, donc ne
 /// recalcule rien : ce que comptent l'accueil et le bilan d'un mois.
-pub fn valides_du_mois(ctx: &Contexte, mois: &str) -> Resultat<Vec<bool>> {
+pub fn valides_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<bool>> {
     Ok(stock::objets_du_mois(&ctx.racine, mois)?.iter().map(Objet::est_valide).collect())
 }
 
 /// La paie ecrite de `mois` de l'engagement du salarie `cle` (la cle de sa fiche) au contrat `numero`, lue par
 /// `du_mois` ; `None` s'il n'est pas valide ou n'a pas de paie ecrite pour ce mois.
-pub fn paie_ecrite_de(ctx: &Contexte, mois: &str, cle: &str, numero: &str, departs: &Departs) -> Resultat<Option<PaieEcrite>> {
+pub fn paie_ecrite_de(ctx: &Contexte, mois: &str, cle: &str, numero: &str, departs: &Departs) -> R<Option<PaieEcrite>> {
     for e in du_mois(ctx, mois, departs)? {
         let o = e.objet();
         if o.carte().salarie.as_deref() == Some(cle) && o.carte().numero.as_deref() == Some(numero) {
@@ -472,13 +473,13 @@ pub fn paie_ecrite_de(ctx: &Contexte, mois: &str, cle: &str, numero: &str, depar
 /// de chacun, au meme rang. Un engagement en saisie n'y est pas : aucun document ne part de lui. Un mois d'apres le
 /// present n'a pas encore de paie ecrite : celle de chaque engagement valide s'y calcule, sans s'ecrire, pour ce qui part
 /// avant lui (la DPAE, le contrat). `None` : aucune saisie.
-pub fn validees_du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Option<(crate::saisie::VueDuMois, Vec<Paie>)>> {
+pub fn validees_du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> R<Option<(crate::saisie::VueDuMois, Vec<Paie>)>> {
     validees_du_mois_parmi(ctx, mois, departs, &|_| true)
 }
 
 /// `validees_du_mois`, reduite aux engagements valides que `garder` retient : la paie d'un engagement que l'appelant ne
 /// lit pas ne se relit pas.
-pub fn validees_du_mois_parmi(ctx: &Contexte, mois: &str, departs: &Departs, garder: &dyn Fn(&Valide) -> bool) -> Resultat<Option<(crate::saisie::VueDuMois, Vec<Paie>)>> {
+pub fn validees_du_mois_parmi(ctx: &Contexte, mois: &str, departs: &Departs, garder: &dyn Fn(&Valide) -> bool) -> R<Option<(crate::saisie::VueDuMois, Vec<Paie>)>> {
     let etats = du_mois(ctx, mois, departs)?;
     let Some(data) = stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(None) };
     let mut gardes = Vec::new();
@@ -508,7 +509,7 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: &str, departs: &Departs, gar
 /// (`validees_du_mois`), puis celle de chaque engagement importe paye ce mois (`importe::paies_du_mois` : ce que les
 /// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye ; rien ne se
 /// calcule. Ce qui part (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare.
-pub fn paies_du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Vec<Paie>> {
+pub fn paies_du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> R<Vec<Paie>> {
     let mut paies: Vec<Paie> = validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).collect();
     paies.extend(crate::importe::paies_du_mois(ctx, mois)?);
     Ok(paies)
@@ -523,7 +524,7 @@ pub fn paies_du_mois(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<
 ///
 /// Le calcul qui les lit note leur empreinte (`paies <mois> <salarie>`, `empreinte_des_paies_validees`), et elle seule :
 /// une paie validee de ce salarie qui change fait recalculer ses mois qui l'ont lue ; celle d'un autre salarie, non.
-pub fn paies_validees(ctx: &Contexte, mois: &str, salarie: &str) -> Resultat<Vec<Paie>> {
+pub fn paies_validees(ctx: &Contexte, mois: &str, salarie: &str) -> R<Vec<Paie>> {
     let Some(saisie) = stock::vue_et_empreinte(&ctx.racine, mois)? else { return Ok(Vec::new()) };
     let data = &saisie.0;
     let valides = valides_lues(ctx, mois, Some(salarie))?;
@@ -533,13 +534,13 @@ pub fn paies_validees(ctx: &Contexte, mois: &str, salarie: &str) -> Resultat<Vec
 
 /// L'empreinte des paies validees de `mois` telles qu'un calcul les lit (`paies_validees`) : celles du salarie `salarie`
 /// (la cle de sa fiche), ou toutes avec `None` (ce que la DSN du mois declare) ; ce qui ne se lit pas se refuse.
-pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: &str, salarie: Option<&str>) -> Resultat<String> {
+pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: &str, salarie: Option<&str>) -> R<String> {
     empreinte_des_paies(&valides_lues(ctx, mois, salarie)?, mois)
 }
 
 /// Ce qu'un calcul lit d'une paie validee d'un autre mois : la paie, et le compteur de conges avant son mois.
-fn empreinte_des_paies(valides: &[(usize, Valide)], mois: &str) -> Resultat<String> {
-    let paies: Vec<Option<Arc<PaieEcrite>>> = valides.iter().map(|(_, v)| v.paie_ecrite(mois)).collect::<Resultat<_>>()?;
+fn empreinte_des_paies(valides: &[(usize, Valide)], mois: &str) -> R<String> {
+    let paies: Vec<Option<Arc<PaieEcrite>>> = valides.iter().map(|(_, v)| v.paie_ecrite(mois)).collect::<R<_>>()?;
     let lues: Vec<Option<(&FormeDePaie<Avis>, &Option<crate::conges::Avant>)>> = paies.iter().map(|p| p.as_ref().map(|p| (&p.paie, &p.conges_avant))).collect();
     Ok(socle::fichiers::sha256_hex(socle::ecriture::json_en_ligne(&lues).as_bytes()))
 }
@@ -591,7 +592,7 @@ pub(crate) struct CommeALaValidation {
 }
 
 impl CommeALaValidation {
-    pub(crate) fn ouvrir(ctx: &Contexte, mois: &str) -> Resultat<CommeALaValidation> {
+    pub(crate) fn ouvrir(ctx: &Contexte, mois: &str) -> R<CommeALaValidation> {
         if EN_VALIDATION.with(|e| e.borrow().is_some()) {
             return Ok(CommeALaValidation { _garde: None });
         }
@@ -631,7 +632,7 @@ pub(crate) fn marque_de_validation() -> String {
 /// cours de validation y porte les paies qu'elle a deja calculees, et seulement elles (un engagement deja valide, ses
 /// paies ecrites a cote). Ce qui est parti n'y change rien (une paie partie se lit comme une paie validee) : le journal
 /// des envois ne se lit pas, et un calcul qui lit ces paies ne depend que d'elles (`paies <mois> <salarie>`).
-fn valides_lues(ctx: &Contexte, mois: &str, salarie: Option<&str>) -> Resultat<Vec<(usize, Valide)>> {
+fn valides_lues(ctx: &Contexte, mois: &str, salarie: Option<&str>) -> R<Vec<(usize, Valide)>> {
     // Hors d'une validation, aucun engagement n'est en cours.
     let en_cours: Vec<_> = EN_VALIDATION.with(|e| e.borrow().clone()).into_iter().flatten().collect();
     let mut out = Vec::new();
@@ -671,7 +672,7 @@ fn valides_lues(ctx: &Contexte, mois: &str, salarie: Option<&str>) -> Resultat<V
 
 /// Les numeros des documents de chaque engagement valide de `mois`, au meme rang que `validees_du_mois` : le numero de
 /// son bulletin, le premier N CE de son certificat, et le bulletin que sa paie rectifie, tels que la paie ecrite les porte.
-pub fn numeros_des_documents(ctx: &Contexte, mois: &str, departs: &Departs) -> Resultat<Vec<NumerosEcrits>> {
+pub fn numeros_des_documents(ctx: &Contexte, mois: &str, departs: &Departs) -> R<Vec<NumerosEcrits>> {
     tels_qu_ecrits(ctx, mois, departs)?
         .iter()
         .filter_map(Etat::valide)
@@ -693,17 +694,17 @@ pub struct NumerosEcrits {
 // ------------------------------------------------------------------ calculer et ecrire
 
 /// Le rang de l'engagement `o` parmi ceux que `mois` montre.
-fn rang_dans(ctx: &Contexte, o: &Objet, mois: &str) -> Resultat<usize> {
+fn rang_dans(ctx: &Contexte, o: &Objet, mois: &str) -> R<usize> {
     stock::objets_du_mois(&ctx.racine, mois)?
         .iter()
         .position(|x| x.fichier == o.fichier && x.rang == o.rang)
-        .ok_or_else(|| format!("{} ne touche pas {}", qui_de(ctx, o), mois))
+        .ok_or_else(|| socle::refus!("{} ne touche pas {}", qui_de(ctx, o), mois))
 }
 
 /// Le prelevement a la source de la paie `p`, au taux que la DGFiP a transmis et qui vaut le jour de son paiement
 /// (`droit::pas::taux_dgfip`), sinon a la grille de l'article 204 H ; `None` pour un mois sans paie. Un bareme sans
 /// grille refuse le calcul : un prelevement ne se devine pas (regle 1), et aucun document ne le calcule a la place.
-pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> Resultat<Option<droit::pas::Versement>> {
+pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Versement>> {
     let e = &p.engagement;
     if e.sans_paie() {
         return Ok(None);
@@ -719,9 +720,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> Resultat<Option<droit::pa
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `IJ_ASSIETTE_PAS`).
     // Sans subrogation, aucune avance.
     let avance: Decimal = p.bases.get(crate::maintien::IJ_ASSIETTE_PAS).into_iter().sum();
-    droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)
-        .map(Some)
-        .map_err(|e| socle::echec::Echec::from(e).into())
+    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de
@@ -740,7 +739,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> Resultat<Option<droit::pa
 /// Un bareme sans grille refuse, comme pour une paie (regle 1).
 pub fn prelevement_de_la_correction(
     ctx: &Contexte, apres: &Paie, net_imposable_declare: Decimal, taux_origine: Option<&str>, mois_du_versement: &str,
-) -> Resultat<PrelevementDeLaCorrection> {
+) -> R<PrelevementDeLaCorrection> {
     let versement = socle::mois::Mois::lire(mois_du_versement)?;
     let (debut, fin) = (versement.premier_jour(), versement.dernier_jour());
     let difference = socle::num::sub(apres.net_imposable, net_imposable_declare);
@@ -750,8 +749,7 @@ pub fn prelevement_de_la_correction(
     let bareme = ctx.bareme(&debut)?;
     let t = |j: Jour| (j.an, j.mois, j.jour);
     let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
-    let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)
-        .map_err(socle::echec::Echec::from)?;
+    let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Decimal::ZERO {
         match taux_origine.filter(|t| !t.is_empty()) {
             Some(t) => Some(pct(difference, socle::num::dec_texte(t)?)),
@@ -781,9 +779,9 @@ impl PrelevementDeLaCorrection {
 }
 
 /// La paie de l'engagement `o` pour `mois`, calculee maintenant : `{"paie", "fiches", "pas", "empreinte"}`.
-pub(crate) fn calculer(ctx: &Contexte, o: &Objet, mois: &str) -> Resultat<PaieEcrite> {
+pub(crate) fn calculer(ctx: &Contexte, o: &Objet, mois: &str) -> R<PaieEcrite> {
     let i = rang_dans(ctx, o, mois)?;
-    calculer_les_rangs(ctx, mois, &[i])?.pop().ok_or_else(|| "le calcul du mois n'a pas cette paie".to_string())
+    calculer_les_rangs(ctx, mois, &[i])?.pop().ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))
 }
 
 /// Ce que la saisie `data` d'un mois pose pour tous ses engagements (comme `stock::empreinte_de_saisie` la separe).
@@ -799,12 +797,12 @@ fn mois_lu(data: &crate::saisie::VueDuMois) -> crate::saisie::CeQueLeMoisDit {
 /// de `rangs`, comptes comme valides (`stock::empreinte_de_saisie` ne compte que ceux-la) ; un engagement en saisie
 /// n'entre ni dans le calcul ni dans l'empreinte d'une paie ecrite. DES AUTRES ENGAGEMENTS DU MOIS, ELLE NE LIT QUE CEUX
 /// DE SON SALARIE : le calcul ne prend qu'eux, et ce qui refuse la paie d'un salarie n'empeche pas celle d'un autre.
-fn calculer_les_rangs(ctx: &Contexte, mois: &str, rangs: &[usize]) -> Resultat<Vec<PaieEcrite>> {
+fn calculer_les_rangs(ctx: &Contexte, mois: &str, rangs: &[usize]) -> R<Vec<PaieEcrite>> {
     let ctx = &ctx.du_mois(mois)?;
-    let mut data = stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| format!("{} : aucune saisie", mois))?;
+    let mut data = stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| socle::refus!("{} : aucune saisie", mois))?;
     let tous = std::mem::take(&mut data.engagements);
     let salaries: Vec<IdSalarie> =
-        rangs.iter().map(|i| tous.get(*i).and_then(|e| e.salarie.clone()).ok_or_else(|| socle::fichiers::absent("salarie"))).collect::<socle::echec::R<_>>()?;
+        rangs.iter().map(|i| tous.get(*i).and_then(|e| e.salarie.clone()).ok_or_else(|| socle::fichiers::absent("salarie"))).collect::<R<_>>()?;
     let mut gardes = Vec::new();
     let mut places = vec![None; tous.len()];
     for (i, mut e) in tous.into_iter().enumerate() {
@@ -823,14 +821,15 @@ fn calculer_les_rangs(ctx: &Contexte, mois: &str, rangs: &[usize]) -> Resultat<V
         rangs
             .iter()
             .map(|i| {
-                let p = places.get(*i).copied().flatten().and_then(|j| s.paies.get(j)).ok_or("le calcul du mois n'a pas cette paie")?;
+                let p = places.get(*i).copied().flatten().and_then(|j| s.paies.get(j)).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
                 let conges = crate::conges::compteur_ecrit(ctx, p, mois)?;
                 let (salarie, spectacle) = (&p.engagement.salarie, p.engagement.spectacle.as_deref());
                 let config = empreinte::configuration(ctx, &p.engagement.fin_periode()?, salarie, spectacle)?;
                 let entree_fiches = empreinte::fiches(ctx, mois, salarie, spectacle)?;
                 Ok((relire::ecrire(ctx, p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode()?, config, entree_fiches))
             })
-            .collect::<Resultat<Vec<_>>>()
+            .collect::<R<Vec<_>>>()
+            .map_err(String::from)
     })?;
     // DES AUTRES ENGAGEMENTS DE SON MOIS, UNE PAIE NE LIT QUE CEUX DE SON SALARIE (`calcul::dfs_deja_deduite`, sur
     // `precedentes`) ; `un_numero_un_salarie` refuse sans changer un chiffre. Des autres mois, elle ne lit que les paies
@@ -977,7 +976,7 @@ fn memes_chiffres(a: &BTreeMap<String, PaieEcrite>, b: &BTreeMap<String, PaieEcr
 /// sur elle (`siens`), elle se garde, datee, dans les versions de l'engagement, ses paies sous son numero dans le fichier
 /// de leur mois (`paies::garder_la_version`), et le present prend le numero suivant ; sinon le present garde son numero
 /// `n`, sans historique.
-fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: &str) -> Resultat<u64> {
+fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: &str) -> R<u64> {
     if !siens.iter().any(|d| d.version == n) {
         return Ok(n);
     }
@@ -995,8 +994,8 @@ fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: 
 /// saisie de son mois n'a pas change. Une validation qui change ce qu'un envoi a emporte fait une version
 /// (`nouvelle_version`) ; une validation qui ne change rien garde le numero. Refus : un mois qui ne se calcule pas ; rien
 /// n'est ecrit.
-pub fn valider(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) -> Resultat<Valide> {
-    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| format!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn valider(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) -> R<Valide> {
+    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
     // Le numero du contrat d'abord : la paie de chaque mois le porte, et le calcul lit l'engagement ecrit. Un calcul
     // refuse rend l'engagement tel qu'il etait.
     let avant = o.clone();
@@ -1050,12 +1049,12 @@ pub fn valider(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) -> Re
     if let Some(premier) = premier_refait {
         reporter(ctx, &o, &premier, departs)?;
     }
-    Valide::de(o).ok_or_else(|| "validation illisible".to_string())
+    Valide::de(o).ok_or_else(|| refus("validation illisible"))
 }
 
 /// Les paies que la validation de `o` ecrit, une par mois qu'il couvre jusqu'au present (`mois_present`). `anciennes` : celles de la
 /// validation qu'elle remplace ; `siens` : ce qui est parti de l'engagement.
-fn paies_a_valider(ctx: &Contexte, o: &Objet, mois: &str, anciennes: &BTreeMap<String, PaieEcrite>, siens: &[Depart]) -> Resultat<BTreeMap<String, PaieEcrite>> {
+fn paies_a_valider(ctx: &Contexte, o: &Objet, mois: &str, anciennes: &BTreeMap<String, PaieEcrite>, siens: &[Depart]) -> R<BTreeMap<String, PaieEcrite>> {
     let mut paies = BTreeMap::new();
     let en_cours = EnValidation::ouvrir(o);
     let present = mois_present(ctx);
@@ -1112,11 +1111,11 @@ fn garder_les_numeros(f: &PaieEcrite, p: &mut PaieEcrite) {
 /// Les imprevus que la paie ecrite `f` a lus (le magasin, `imprevus::DOSSIER`) valent-ils encore ce qu'ils valaient ?
 /// Un arret saisi ou corrige apres le depart du mois les change : la paie partie se refait alors a la revalidation, et
 /// l'ecart passe en regularisation (`apres_un_imprevu`).
-fn imprevus_tiennent(ctx: &Contexte, f: &PaieEcrite) -> Resultat<bool> {
+fn imprevus_tiennent(ctx: &Contexte, f: &PaieEcrite) -> R<bool> {
     let magasin = format!("racine:{}", crate::imprevus::DOSSIER);
     let entrees: BTreeMap<String, String> =
         f.empreinte.entrees.iter().filter(|(k, _)| k.split_once(' ').is_some_and(|(_, c)| c.starts_with(&magasin))).map(|(k, v)| (k.clone(), v.clone())).collect();
-    empreinte::tient(ctx, &entrees, &mut empreinte::Relues::default())
+    Ok(empreinte::tient(ctx, &entrees, &mut empreinte::Relues::default())?)
 }
 
 /// Ce que la revalidation d'un engagement, apres un imprevu change (`apres_un_imprevu`), a donne.
@@ -1136,7 +1135,7 @@ pub enum Revalidation {
 /// toute correction d'un mois parti (un bulletin rectificatif verse avec une paie suivante ; la DSN du mois tant que
 /// l'annule-et-remplace est admis, sinon la DSN qui porte la correction). Le mois parti ne se redepose pas. Rend les
 /// engagements dont une paie a change, et ceux qui attendent.
-pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> Resultat<Vec<Revalidation>> {
+pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> R<Vec<Revalidation>> {
     let mut out = Vec::new();
     for o in stock::objets(&ctx.racine)? {
         if !o.est_valide() || o.est_non_actif() || o.est_importe() || o.carte().salarie.as_deref() != Some(salarie) {
@@ -1156,7 +1155,7 @@ pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> Res
                     out.push(Revalidation::Changee(v));
                 }
             }
-            Err(m) => out.push(Revalidation::Attend(qui_de(ctx, &o), m)),
+            Err(m) => out.push(Revalidation::Attend(qui_de(ctx, &o), String::from(m))),
         }
     }
     Ok(out)
@@ -1165,7 +1164,7 @@ pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> Res
 /// L'empreinte de la saisie de `mois` dont la paie de l'engagement `o` (de `salarie`) depend, `o` compte comme valide,
 /// comme son calcul le compte (`calculer_les_rangs`) : celle qu'une paie ecrite de `o` porte si ce que le mois dit d'elle
 /// n'a pas change.
-fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: &str, salarie: Option<&str>) -> Resultat<Option<String>> {
+fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: &str, salarie: Option<&str>) -> R<Option<String>> {
     let Some(mut data) = stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(None) };
     let i = rang_dans(ctx, o, mois)?;
     let Some(e) = data.engagements.get_mut(i) else { return Ok(None) };
@@ -1178,7 +1177,7 @@ fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: &str, salarie: Option<
 /// L'engagement de rang `rang` de l'ecran de `mois`, rouvert (`modifier`), est-il a revalider ? Sa saisie dit autre
 /// chose que sa validation mise de cote, ou celle-ci ne dit pas tout ce qu'un envoi emporte (`a_revalider`). Faux pour un
 /// engagement qui n'a pas ete rouvert.
-pub fn a_revalider_rouvert(ctx: &Contexte, mois: &str, rang: usize) -> Resultat<bool> {
+pub fn a_revalider_rouvert(ctx: &Contexte, mois: &str, rang: usize) -> R<bool> {
     let Some(o) = stock::objet_du_mois(&ctx.racine, mois, rang)? else { return Ok(false) };
     let Some(p) = &o.brut.precedente else { return Ok(false) };
     Ok(p.saisie.as_ref() != Some(&saisie_de(&o)) || a_revalider(ctx, &o, stock::Version::Presente(p)).is_some())
@@ -1188,7 +1187,7 @@ pub fn a_revalider_rouvert(ctx: &Contexte, mois: &str, rang: usize) -> Resultat<
 /// premier mois dont les clauses (`CLAUSES`) different. C'est de ce mois que l'avenant prend effet (R1221-40 : « au plus
 /// tard a la date de prise d'effet de cette modification », `atelier/reference/sources/code-du-travail/
 /// articles-20261029.md`, l. 856). `None` : aucun mois ne change.
-pub fn mois_du_changement(v: &Valide, passee: stock::Version) -> Resultat<Option<String>> {
+pub fn mois_du_changement(v: &Valide, passee: stock::Version) -> R<Option<String>> {
     let Some(saisie) = passee.saisie() else { return Ok(None) };
     let ancien = v.objet.d_apres_la_saisie(saisie);
     let mensuel = v.objet.mensuel()?;
@@ -1209,8 +1208,8 @@ pub fn mois_du_changement(v: &Valide, passee: stock::Version) -> Resultat<Option
 }
 
 /// « MODIFIER… » : l'engagement repasse en saisie. Sa validation se garde (`precedente`) pour la suivante.
-pub fn modifier(ctx: &Contexte, mois: &str, rang: usize) -> Resultat<EnSaisie> {
-    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| format!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn modifier(ctx: &Contexte, mois: &str, rang: usize) -> R<EnSaisie> {
+    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
     if let Some(v) = o.brut_mut().valide.take() {
         o.brut_mut().precedente = Some(v);
         stock::reecrire(&ctx.racine, &o)?;
@@ -1243,10 +1242,10 @@ pub fn ce_qui_est_parti(o: &Objet, departs: &Departs) -> Vec<String> {
 /// (`ce_qui_est_parti` vide), il s'efface, meme valide, et rend son numero (`numeros` : le suivant se tire de ce que portent les
 /// engagements et ce qui est parti). Refus des qu'un envoi est parti : il ne se supprime plus, il peut ne plus etre
 /// actif (`desactiver`) ; rien n'est ecrit.
-pub fn supprimer(ctx: &Contexte, o: &Objet, departs: &Departs) -> Resultat<()> {
+pub fn supprimer(ctx: &Contexte, o: &Objet, departs: &Departs) -> R<()> {
     let partis = ce_qui_est_parti(o, departs);
     if !partis.is_empty() {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : déjà parti : {}. Il ne se supprime plus ; il peut devenir non actif : il reste dans la compagnie, avec ses versions, et ne compte plus dans aucune paie ni aucune déclaration. Rien n'est effacé.",
             qui_de(ctx, o),
             partis.join(" ; "),
@@ -1311,7 +1310,7 @@ impl NonActif {
 
     /// LA CORRECTION de `mois` que la DSN de `porteur` doit porter pour lui : ce qui a ete declare pour ce mois par les
     /// DSN anterieures a `porteur` (`paies_declarees`), quand la derniere ne l'a pas declare non actif ; `None` sinon.
-    pub fn correction_due(&self, ctx: &Contexte, departs: &Departs, mois: &str, porteur: &str) -> Resultat<Option<Vec<Declaree>>> {
+    pub fn correction_due(&self, ctx: &Contexte, departs: &Departs, mois: &str, porteur: &str) -> R<Option<Vec<Declaree>>> {
         let declarees = paies_declarees(ctx, &self.objet, departs, mois, porteur)?;
         let due = declarees.last().is_some_and(|d| d.version != self.version);
         Ok(due.then_some(declarees))
@@ -1321,10 +1320,10 @@ impl NonActif {
 /// « NE PLUS ETRE ACTIF » : l'engagement de rang `rang` dans l'ecran de `mois`, dont quelque chose est parti, garde sa
 /// validation parmi ses versions (datee du `le` de la desactivation) et devient non actif. Refus quand rien n'est parti :
 /// il se supprime (`supprimer`) ; rien n'est ecrit.
-pub fn desactiver(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) -> Resultat<NonActif> {
-    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| format!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn desactiver(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) -> R<NonActif> {
+    let mut o = stock::objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
     if ce_qui_est_parti(&o, departs).is_empty() {
-        return Err(format!("{} : rien n'est parti de cet engagement ; il se supprime, il ne devient pas non actif. Rien n'est écrit.", qui_de(ctx, &o)));
+        return Err(socle::refus!("{} : rien n'est parti de cet engagement ; il se supprime, il ne devient pas non actif. Rien n'est écrit.", qui_de(ctx, &o)));
     }
     let le = maintenant();
     // La validation presente : la derniere version, gardee telle quelle.
@@ -1341,11 +1340,11 @@ pub fn desactiver(ctx: &Contexte, mois: &str, rang: usize, departs: &Departs) ->
     }
     o.brut_mut().non_actif = Some(stock::NonActif { le, version });
     stock::reecrire(&ctx.racine, &o)?;
-    NonActif::de(o).ok_or_else(|| "desactivation illisible".to_string())
+    NonActif::de(o).ok_or_else(|| refus("desactivation illisible"))
 }
 
 /// Les engagements non actifs que `mois` montrerait, tels qu'ils sont ecrits.
-pub fn non_actifs_du_mois(ctx: &Contexte, mois: &str) -> Resultat<Vec<NonActif>> {
+pub fn non_actifs_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<NonActif>> {
     Ok(stock::non_actifs_du_mois(&ctx.racine, mois)?.into_iter().filter_map(NonActif::de).collect())
 }
 
@@ -1367,7 +1366,7 @@ fn decision_de_l_editeur(raison: &str) -> bool {
 /// `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-20190227.html`). Un mois fini (`fini`) ne se regarde qu'au
 /// passage d'une version (`passage`, `corriger_les_mois_finis`) ; un mois d'apres le present n'a pas de paie
 /// (`mois_present`).
-fn rafraichir(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> Resultat<Rafraichi> {
+fn rafraichir(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> R<Rafraichi> {
     // Au contexte du mois, quel que soit le jour de celui qui lit : ce que l'empreinte relit (les fiches) vaut au mois paye.
     let present = mois_present(ctx);
     let ctx = &ctx.du_mois(mois)?;
@@ -1431,7 +1430,7 @@ fn rafraichir(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> R
             salaries.push(s);
         }
     }
-    let mut refus: Vec<(usize, String)> = Vec::new();
+    let mut refus: Vec<(usize, Echec)> = Vec::new();
     let mut calculees: Vec<((usize, Objet, Option<PaieEcrite>, bool), PaieEcrite)> = Vec::new();
     for s in &salaries {
         let siens: Vec<(usize, Objet, Option<PaieEcrite>, bool)> =
@@ -1503,7 +1502,7 @@ fn rafraichir(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool) -> R
 /// chaque paie partie de son salarie dans les mois d'apres, jusqu'au present, du plus ancien au plus recent, remet a jour
 /// l'etat qu'elle tient pour le mois suivant (`conges_avant_a_jour`) : un mois fini ne se relit pas, et le premier mois
 /// en cours reprend un etat juste. Une paie qui n'est pas partie se refait a sa lecture (son empreinte ne tient plus).
-fn reporter(ctx: &Contexte, o: &Objet, premier: &str, departs: &Departs) -> Resultat<()> {
+fn reporter(ctx: &Contexte, o: &Objet, premier: &str, departs: &Departs) -> R<()> {
     let Some(cle) = &o.carte().salarie else { return Ok(()) };
     let present = mois_present(ctx);
     for mois in crate::paies::mois_payes(&ctx.racine).into_iter().filter(|m| m.as_str() > premier && *m <= present) {
@@ -1528,7 +1527,7 @@ fn reporter(ctx: &Contexte, o: &Objet, premier: &str, departs: &Departs) -> Resu
 /// LE COMPTEUR AVANT LE MOIS D'UNE PAIE PARTIE, a jour des mois d'avant : la paie partie ne bouge pas, mais l'etat
 /// qu'elle tient pour le mois suivant (`CONGES_AVANT`) suit ce dont il depend (les paies validees des mois qu'il lit,
 /// les fiches). `None` : il tient. Sinon, la paie ecrite avec l'etat refait, et ce qu'il a lu dans son empreinte.
-fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: &str, relues: &mut empreinte::Relues) -> Resultat<Option<PaieEcrite>> {
+fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: &str, relues: &mut empreinte::Relues) -> R<Option<PaieEcrite>> {
     let entrees = &ancienne.empreinte.entrees;
     let de_lui = |k: &str| k.starts_with("paies ") || k.starts_with("fiches ");
     let siennes: BTreeMap<String, String> = entrees.iter().filter(|(k, _)| de_lui(k)).map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -1601,13 +1600,13 @@ pub enum ARefaire {
 /// LA VERSION EN VIGUEUR AU DEPART de chaque envoi, comparee au present de l'engagement valide `v` : ce qui est a
 /// refaire. Pour chaque sorte d'envoi (et chaque mois des documents et des DSN), le dernier parti fait foi ; parti sur la
 /// version presente, il est a jour.
-pub fn a_refaire(ctx: &Contexte, v: &Valide, departs: &Departs) -> Resultat<Vec<ARefaire>> {
+pub fn a_refaire(ctx: &Contexte, v: &Valide, departs: &Departs) -> R<Vec<ARefaire>> {
     a_refaire_parmi(ctx, v, departs, &|_| true)
 }
 
 /// `a_refaire`, pour les seules sortes d'envoi que `sorte` retient : ce qui ne se demande pas ne se compare pas (les paies
 /// des documents et des DSN partis, pour qui ne cherche que l'avenant d'un contrat).
-pub fn a_refaire_parmi(ctx: &Contexte, v: &Valide, departs: &Departs, sorte: &dyn Fn(Envoi) -> bool) -> Resultat<Vec<ARefaire>> {
+pub fn a_refaire_parmi(ctx: &Contexte, v: &Valide, departs: &Departs, sorte: &dyn Fn(Envoi) -> bool) -> R<Vec<ARefaire>> {
     let siens = ses_departs(&v.objet, departs);
     let present = v.version();
     let actuelle = v.objet.brut.valide.as_ref();
@@ -1756,12 +1755,12 @@ pub fn version_au_depart<'a>(v: &'a Valide, departs: &Departs, envoi: Envoi) -> 
 /// La version `n` de l'engagement `o`, telle qu'elle est ecrite (`saisie`) : le present, la validation que
 /// « Modifier… » a mise de cote, ou une version passee ; `None` si l'engagement n'a pas de version `n`. Refus : une
 /// version qui ne dit pas tout ce qu'un envoi a emporte (`a_revalider`).
-fn version_ecrite<'a>(ctx: &Contexte, o: &'a Objet, n: u64) -> Resultat<Option<stock::Version<'a>>> {
+fn version_ecrite<'a>(ctx: &Contexte, o: &'a Objet, n: u64) -> R<Option<stock::Version<'a>>> {
     let Some(v) = o.brut.version(n) else {
         return Ok(None);
     };
     match a_revalider(ctx, o, v) {
-        Some(phrase) => Err(phrase),
+        Some(phrase) => Err(refus(phrase)),
         None => Ok(Some(v)),
     }
 }
@@ -1769,7 +1768,7 @@ fn version_ecrite<'a>(ctx: &Contexte, o: &'a Objet, n: u64) -> Resultat<Option<s
 /// La version de l'engagement `o` sur laquelle la derniere DSN qui a declare `mois` est partie (celle du mois, ou celle
 /// d'un mois suivant qui a porte sa correction), telle qu'elle est ecrite ; `None` si aucune DSN n'a declare ce mois
 /// pour lui.
-fn version_de_la_dsn<'a>(ctx: &Contexte, o: &'a Objet, departs: &Departs, mois: &str) -> Resultat<Option<stock::Version<'a>>> {
+fn version_de_la_dsn<'a>(ctx: &Contexte, o: &'a Objet, departs: &Departs, mois: &str) -> R<Option<stock::Version<'a>>> {
     match ses_departs(o, departs).iter().rev().find(|d| d.envoi == Envoi::Dsn && d.mois.as_deref() == Some(mois)) {
         Some(d) => version_ecrite(ctx, o, d.version),
         None => Ok(None),
@@ -1777,27 +1776,27 @@ fn version_de_la_dsn<'a>(ctx: &Contexte, o: &'a Objet, departs: &Departs, mois: 
 }
 
 /// Ce que la version `version` dit de `mois` (`Objet::vue` de sa saisie).
-fn vue_de_la_version(o: &Objet, version: stock::Version, mois: &str) -> Resultat<Option<crate::saisie::Carte>> {
+fn vue_de_la_version(o: &Objet, version: stock::Version, mois: &str) -> R<Option<crate::saisie::Carte>> {
     let saisie = version.saisie().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "saisie"))?;
-    o.d_apres_la_saisie(saisie).vue(mois)
+    Ok(o.d_apres_la_saisie(saisie).vue(mois)?)
 }
 
 /// LA PAIE ECRITE DE `mois` DE LA VERSION `version` de l'engagement `o` (une validation, celle qu'une modification va
 /// remplacer, ou une version passee, telles que l'engagement les ecrit) : la paie presente du mois pour la version presente,
 /// celle que la version passee a gardee (`paies::de_la_version`) sinon ; `None` si elle n'en a pas pour ce mois.
-pub fn paie_ecrite_de_la_version(o: &Objet, version: stock::Version, mois: &str) -> Resultat<Option<Arc<PaieEcrite>>> {
+pub fn paie_ecrite_de_la_version(o: &Objet, version: stock::Version, mois: &str) -> R<Option<Arc<PaieEcrite>>> {
     let n = version.numero();
     let presente = o.brut.valide.iter().chain(o.brut.precedente.iter()).any(|v| v.version == n);
     match n {
         Some(n) if !presente => Ok(crate::paies::de_la_version(o, n, mois)?.map(Arc::new)),
-        _ => crate::paies::presente(o, mois),
+        _ => Ok(crate::paies::presente(o, mois)?),
     }
 }
 
 /// La paie de `mois` que la version `version` de `o` a ecrite, relue (`relire`) sur la saisie de cette version, la fiche
 /// du salarie et la saisie du mois telles que son calcul les a lues (`fiches`, `MOIS_LU`) ; `None` si cette version n'a
 /// pas de paie pour ce mois. Elle porte le numero de son bulletin quand ses documents sont partis.
-fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: &str) -> Resultat<Option<Paie>> {
+fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: &str) -> R<Option<Paie>> {
     let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
     let Some(vue) = vue_de_la_version(o, version, mois)? else { return Ok(None) };
     let data = crate::saisie::VueDuMois { mois: socle::mois::Mois::lire(mois)?, taux_cachet: ecrite.saisie_du_mois.taux_cachet.clone(), engagements: vec![vue] };
@@ -1809,7 +1808,7 @@ fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: 
 /// LA PAIE DECLAREE de `mois` : celle que la version sur laquelle la derniere DSN qui a declare ce mois est partie a
 /// ecrite (`paie_de_la_version`) (regle 4 : ce qui est declare se lit, il ne se recalcule pas) ; `None` si aucune DSN
 /// n'a declare ce mois pour l'engagement `o`.
-pub fn paie_declaree(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str) -> Resultat<Option<Paie>> {
+pub fn paie_declaree(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str) -> R<Option<Paie>> {
     match version_de_la_dsn(ctx, o, departs, mois)? {
         Some(v) => paie_de_la_version(ctx, o, v, mois),
         None => Ok(None),
@@ -1818,7 +1817,7 @@ pub fn paie_declaree(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str) -
 
 /// La paie de `mois` que la version n° `n` de l'engagement `o` a ecrite (`version_ecrite`, `paie_de_la_version`) ; `None`
 /// si `o` n'a pas cette version ou qu'elle n'a pas de paie pour ce mois.
-pub fn paie_de_la_version_n(ctx: &Contexte, o: &Objet, n: u64, mois: &str) -> Resultat<Option<Paie>> {
+pub fn paie_de_la_version_n(ctx: &Contexte, o: &Objet, n: u64, mois: &str) -> R<Option<Paie>> {
     match version_ecrite(ctx, o, n)? {
         Some(v) => paie_de_la_version(ctx, o, v, mois),
         None => Ok(None),
@@ -1828,7 +1827,7 @@ pub fn paie_de_la_version_n(ctx: &Contexte, o: &Objet, n: u64, mois: &str) -> Re
 /// LA PAIE PARTIE de `mois` : celle que la version sur laquelle les derniers documents de ce mois sont partis au salarie
 /// a ecrite (`paie_de_la_version`), avec le numero de son bulletin ; `None` si les documents de ce mois ne sont pas partis
 /// pour l'engagement `o`. C'est ce que son bulletin a paye.
-pub fn paie_partie(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str) -> Resultat<Option<Paie>> {
+pub fn paie_partie(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str) -> R<Option<Paie>> {
     let Some(d) = ses_departs(o, departs).iter().rev().find(|d| d.envoi == Envoi::Documents && d.mois.as_deref() == Some(mois)) else {
         return Ok(None);
     };
@@ -1851,7 +1850,7 @@ pub struct Declaree {
 /// chaque correction qu'une DSN d'un mois suivant a portee (la derniere DSN de ce mois-la fait foi). Vide si aucune DSN
 /// n'a declare ce mois pour l'engagement `o`. Refus : une correction portee par la DSN d'un mois posterieur a `avant`
 /// (une correction se porte apres la derniere qui a declare le contrat), ou une version qui n'a pas de paie de ce mois.
-pub fn paies_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str, avant: &str) -> Resultat<Vec<Declaree>> {
+pub fn paies_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str, avant: &str) -> R<Vec<Declaree>> {
     let mut out: Vec<Declaree> = Vec::new();
     let non_actif = o.brut.non_actif.as_ref().map(|n| n.version);
     for (par, n) in versions_declarees(ctx, o, departs, mois, avant)? {
@@ -1866,7 +1865,7 @@ pub fn paies_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str,
             .map(|v| paie_de_la_version(ctx, o, v, mois))
             .transpose()?
             .flatten()
-            .ok_or_else(|| format!("{} : la version {} sur laquelle une DSN a declare {} n'a pas de paie de ce mois", qui_de(ctx, o), n, mois))?;
+            .ok_or_else(|| socle::refus!("{} : la version {} sur laquelle une DSN a declare {} n'a pas de paie de ce mois", qui_de(ctx, o), n, mois))?;
         out.push(Declaree { par, version: n, paie });
     }
     Ok(out)
@@ -1874,13 +1873,13 @@ pub fn paies_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str,
 
 /// Les versions que `paies_declarees` relit, dans le meme ordre, chacune avec le mois de la DSN qui l'a portee : ce qui
 /// a ete declare, sans en relire les paies.
-fn versions_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str, avant: &str) -> Resultat<Vec<(Option<String>, u64)>> {
+fn versions_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str, avant: &str) -> R<Vec<(Option<String>, u64)>> {
     let mut chaine: Vec<(Option<String>, u64)> = Vec::new();
     for d in ses_departs(o, departs).iter().filter(|d| d.envoi == Envoi::Dsn && d.mois.as_deref() == Some(mois)) {
         match d.par.as_deref() {
             None => chaine = vec![(None, d.version)],
             Some(p) if p > avant => {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : une correction de {} est deja partie dans la DSN de {}, posterieure a {}. Une correction se porte dans un mois posterieur au dernier qui a declare le contrat.",
                     qui_de(ctx, o),
                     mois,
@@ -1904,7 +1903,7 @@ fn versions_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: &str, 
 /// quand aucune DSN n'a declare ce mois pour lui. `None` : rien a corriger, ou pas de paie presente de ce mois. La couche
 /// des declarations dit si le mois se corrige ainsi (sa DSN partie, son annule-et-remplace passe). Les paies declarees ne
 /// se relisent que quand la correction est due.
-pub fn correction_due(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str, avant: &str) -> Resultat<Option<Vec<Declaree>>> {
+pub fn correction_due(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str, avant: &str) -> R<Option<Vec<Declaree>>> {
     let Some(presente) = v.paie_ecrite(mois)? else { return Ok(None) };
     let Some(&(_, derniere)) = versions_declarees(ctx, &v.objet, departs, mois, avant)?.last() else { return Ok(Some(Vec::new())) };
     if Some(derniere) == v.version() {
@@ -1920,7 +1919,7 @@ pub fn correction_due(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str,
 /// LA DERNIERE DATE DE DEBUT DECLAREE de l'engagement `o` (AAAA-MM-JJ) par une DSN d'un mois anterieur a `avant` : celle
 /// de la saisie de la version sur laquelle la derniere est partie, quel que soit le mois qu'elle declarait (la correction
 /// d'un autre mois d'un contrat sur plusieurs mois a pu la changer). `None` : aucune.
-pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: &str) -> Resultat<Option<String>> {
+pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: &str) -> R<Option<String>> {
     let Some(d) = ses_departs(o, departs).iter().rev().find(|d| d.envoi == Envoi::Dsn && d.par.as_deref().or(d.mois.as_deref()).is_some_and(|m| m < avant)) else {
         return Ok(None);
     };

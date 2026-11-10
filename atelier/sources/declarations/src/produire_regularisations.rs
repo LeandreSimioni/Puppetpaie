@@ -78,7 +78,7 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
     let mut out = Vec::new();
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
-        if let Some(declarees) = engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(refus)? {
+        if let Some(declarees) = engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(String::from).map_err(refus)? {
             out.push(Due { valide: v, rang, declarees });
         }
     }
@@ -163,8 +163,8 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
 /// « annulation de la declaration initiale accompagnee si opportun d'une declaration corrective » ; ici, aucune).
 fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(refus_valeur)? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(refus_valeur)?.is_none() {
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(String::from).map_err(refus_valeur)? {
+        if n.correction_due(ctx, departs, mois, mois_courant).map_err(String::from).map_err(refus_valeur)?.is_none() {
             continue;
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)

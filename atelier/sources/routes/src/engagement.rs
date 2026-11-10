@@ -231,7 +231,7 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
     if let Some(manque) = crate::mois::manque_de(ctx, &data, i) {
         return Err(crate::mois::refus_du_calcul(ctx, &data, manque));
     }
-    engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| crate::mois::refus_du_calcul(ctx, &data, m))?;
+    engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| crate::mois::refus_du_calcul(ctx, &data, m.into()))?;
     brouillon.ecrire().map_err(Echec::from)?;
     if let Some(e) = data.engagements.get(i) {
         if let Some(cle) = &e.salarie {
@@ -363,7 +363,7 @@ fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement:
     }
     let v = engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| {
         match engagement::stock::vue_du_mois(&ctx.racine, mois) {
-            Ok(Some(data)) => crate::mois::refus_du_calcul(ctx, &data, m),
+            Ok(Some(data)) => crate::mois::refus_du_calcul(ctx, &data, m.into()),
             Ok(None) => Echec::from(m),
             Err(lu) => Echec::from(lu),
         }
@@ -461,7 +461,7 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
             Ok(()) => Ok(Retrait { phrase: "Engagement retiré.".into(), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: m.clone(), avertissement: Some(m) }),
+            Err(m) if parti => Ok(Retrait { phrase: String::from(m.clone()), avertissement: Some(m.into()) }),
             Err(m) => Err(Echec::from(m)),
         };
     }

@@ -630,7 +630,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<Etat
     // Le mois que l'ouverture montre se lit avec elle : ses paies validees se recalculent ici (`engagement::etats::du_mois`),
     // pas apres l'ecriture de l'etat, qui serait aussitot perime. Ce qui refuse ici refusera a l'ecran du mois, qui le dit.
     if let Some(m) = ouvre {
-        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, &m.to_string(), &j.departs));
+        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, &m.to_string(), &j.departs).map_err(String::from));
         if let Err(e) = recalcul {
             noter(&format!("le recalcul de {} à l'ouverture refuse", m), &e);
         }
