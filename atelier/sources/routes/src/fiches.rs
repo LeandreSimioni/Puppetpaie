@@ -521,9 +521,9 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
                 ("entreprise", _) => dit(ctx.salarie(salarie).map_err(plain)?.code_emploi_ft.portee()),
                 _ => continue,
             };
-            let jour = lu.mois.premier_jour();
-            let termes = std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes));
-            for t in termes {
+            // La carte au premier jour de son mois, chaque avenant au jour ou il vaut.
+            let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
+            for (t, jour) in termes {
                 if let Some(code) = dit(t.code_emploi_ft.as_deref()).or_else(|| dit(t.metier.as_deref())).or_else(|| du_salarie.clone()) {
                     metiers.insert((code, dit(t.statut.as_deref()), jour.clone(), salarie.to_string()));
                 }
