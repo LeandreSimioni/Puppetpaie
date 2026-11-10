@@ -1014,7 +1014,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
     }
     let client = match canal(racine)? {
         Canal::Panne(e) => {
-            bilan.erreur = Some(e.message);
+            bilan.erreur = Some(e.dite());
             return Ok(());
         }
         Canal::Pret(c) => c,
@@ -1041,7 +1041,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
         let r = match client.rapporter(&contenu) {
             Ok(r) => r,
             Err(e) => {
-                bilan.erreur = Some(e.message);
+                bilan.erreur = Some(e.dite());
                 break;
             }
         };

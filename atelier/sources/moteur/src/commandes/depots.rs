@@ -39,7 +39,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         return Ok(2);
     };
     let environnement = args.exige("environnement")?;
-    let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| ko(p.message))?;
+    let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| ko(String::from(p.echec)))?;
     derouler(cadre, args, client)
 }
 
@@ -63,7 +63,7 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
     match resultat {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            dire!("Echec : {}", p.message);
+            dire!("Echec : {}", String::from(p.echec));
             return Ok(1);
         }
         Err(p) => return Err(p.en_echec()),

@@ -5,7 +5,7 @@
 
 use serde::Deserialize;
 
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{erreur, Classe, Echec, R};
 
 use crate::drive::ErreurGoogle;
 use crate::transport::{envoyer, Panne, Requete};
@@ -127,8 +127,8 @@ pub fn traduire(code: u16, corps: &str) -> String {
 }
 
 /// Une panne du transport : `Ok(phrase)` pour un statut de Google (traduit) ou un reseau injoignable,
-/// `Err((classe, message))` pour une panne brute (delai depasse, connexion fermee, corps illisible...).
-pub fn phrase_de_panne(p: Panne) -> Result<String, (Classe, String)> {
+/// `Err` pour une panne brute (delai depasse, connexion fermee, corps illisible...), son refus.
+pub fn phrase_de_panne(p: Panne) -> R<String> {
     match p {
         Panne::Statut { code, corps } => {
             let corps = corps.map_err(|p| brute(*p))?;
@@ -141,12 +141,12 @@ pub fn phrase_de_panne(p: Panne) -> Result<String, (Classe, String)> {
     }
 }
 
-/// Une panne brute (`Panne::Brute`) : sa classe et son message ; une autre se dit par sa phrase.
-fn brute(p: Panne) -> (Classe, String) {
+/// Une panne brute (`Panne::Brute`) : son refus ; une autre se dit par sa phrase.
+fn brute(p: Panne) -> Echec {
     match p {
-        Panne::Brute { classe, message, .. } => (classe, message),
-        Panne::Reseau(raison) => (Classe::Reseau, format!("Reseau injoignable : {}", raison)),
-        Panne::Statut { code, .. } => (Classe::Reseau, format!("HTTP {}", code)),
+        Panne::Brute(e) => e,
+        Panne::Reseau(raison) => erreur(Classe::Reseau, format!("Reseau injoignable : {}", raison)),
+        Panne::Statut { code, .. } => erreur(Classe::Reseau, format!("HTTP {}", code)),
     }
 }
 
@@ -183,7 +183,7 @@ pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafr
         }
         Err(panne) => match phrase_de_panne(panne) {
             Ok(phrase) => Ok(Err(ErreurGoogle::google(phrase))),
-            Err((classe, message)) => Err(erreur(classe, message)),
+            Err(e) => Err(e),
         },
     }
 }

@@ -192,7 +192,7 @@ fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Ech
         Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| Echec { classe: Some(Classe::Refuse), ..e }),
         Err(panne) => match phrase_de_panne(panne) {
             Ok(phrase) => Err(refus(phrase)),
-            Err((_, message)) => Err(refus(format!("Google ne repond pas : {}. Aucune autorisation enregistree.", message))),
+            Err(e) => Err(Echec { classe: Some(Classe::Refuse), ..e.reformuler(|m| format!("Google ne repond pas : {}. Aucune autorisation enregistree.", m)) }),
         },
     }
 }

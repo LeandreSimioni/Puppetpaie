@@ -36,45 +36,22 @@ fn horodatage_archive(local: i64) -> String {
 
 // -------------------------------------------------------------------- les pannes
 
-/// Une panne du transport : `Organisme` (son message et son `code`, le statut HTTP quand il y en a un), ou une autre
-/// panne que la releve ne rattrape pas.
-#[derive(Debug, Clone)]
-pub struct Panne {
-    pub classe: Classe,
-    pub message: String,
-    pub code: Option<i64>,
+/// Une panne de la plate-forme : `crate::transport::EchecApi` (son refus, et le statut HTTP quand il y en a un).
+pub use crate::transport::EchecApi as Panne;
+
+/// Une panne sans statut HTTP.
+#[track_caller]
+fn panne(classe: Classe, message: String) -> Panne {
+    Panne::from(socle::echec::erreur(classe, message))
 }
 
-impl Panne {
-    /// Une panne sans statut HTTP.
-    fn de(classe: Classe, message: String) -> Panne {
-        Panne { classe, message, code: None }
-    }
-
-    /// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
-    fn de_lecture(e: Echec) -> Panne {
-        let classe = match e.classe {
-            Some(c) => c,
-            None => Classe::Illisible,
-        };
-        Panne::de(classe, e.into())
-    }
-
-    pub fn est_api(&self) -> bool {
-        matches!(self.classe, Classe::Organisme | Classe::DepotRefuse)
-    }
-
-    /// La panne comme un refus de route : sa classe et sa phrase.
-    pub fn en_echec(self) -> Echec {
-        Echec { classe: Some(self.classe), phrase: self.message, a_part: None }
-    }
-}
-
-/// La panne que le transport rend : sa classe, sa phrase, son statut HTTP.
-impl From<crate::transport::EchecApi> for Panne {
-    fn from(e: crate::transport::EchecApi) -> Panne {
-        Panne { classe: e.classe, message: e.erreur, code: e.code }
-    }
+/// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
+fn de_lecture(e: Echec) -> Panne {
+    let classe = match e.classe {
+        Some(c) => c,
+        None => Classe::Illisible,
+    };
+    Panne::from(Echec { classe: Some(classe), ..e })
 }
 
 // ----------------------------------------------------------------------- le client
@@ -120,7 +97,7 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
             "https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(Panne::de(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
+        autre => return Err(panne(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
     Ok(Adresses {
         authentification: auth.into(),
@@ -246,7 +223,7 @@ impl Client {
     pub fn lister_retours(&mut self, debut: i64, fin: i64) -> Result<Vec<Annonce>, Panne> {
         let base = self.adresses.retours.clone();
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
@@ -254,13 +231,13 @@ impl Client {
     pub fn lister_depots(&mut self, debut: i64, fin: i64) -> Result<Vec<Depot>, Panne> {
         let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_depots_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
     pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
         let (brut, _) = self.appel(&format!("{}{}", self.adresses.retours_flux, idflux))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
     /// Recupere un retour : (contenu brut, type de contenu, s'il est dit).
@@ -276,7 +253,7 @@ impl Client {
     pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
-        let jeton = self.jeton.clone().ok_or_else(|| Panne::de(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
+        let jeton = self.jeton.clone().ok_or_else(|| panne(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
         let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
         let texte = String::from_utf8_lossy(&brut).trim_matches(socle::texte::blanc).to_string();
         let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
@@ -288,8 +265,8 @@ impl Client {
 fn gzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
     use std::io::Write;
     let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(donnees).map_err(|x| Panne::de(Classe::Disque, x.to_string()))?;
-    e.finish().map_err(|x| Panne::de(Classe::Disque, x.to_string()))
+    e.write_all(donnees).map_err(|x| panne(Classe::Disque, x.to_string()))?;
+    e.finish().map_err(|x| panne(Classe::Disque, x.to_string()))
 }
 
 // ------------------------------------------------------------------ la releve
@@ -594,7 +571,7 @@ pub fn relever_retours(
     match client.authentifier() {
         Ok(()) => releve.session_jusqu_a = client.expire_le.clone(),
         Err(p) if p.est_api() => {
-            releve.incidents.push(format!("Authentification refusee : {}", p.message));
+            releve.incidents.push(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
@@ -616,7 +593,7 @@ pub fn relever_retours(
                 if p.code == Some(404) {
                     continue;
                 }
-                releve.incidents.push(format!("Consultation interrompue : {}", p.message));
+                releve.incidents.push(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
@@ -651,7 +628,7 @@ pub fn relever_retours(
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
             Err(p) if p.est_api() => {
-                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature, p.message));
+                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature, p.echec.phrase));
                 rates.push(r);
             }
             Err(p) => return Err(en_echec(p)),
@@ -728,7 +705,7 @@ pub fn relever_retours_dpae(
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.incidents.push(format!("Consultation du flux {} : {}", flux, p.message));
+            r.incidents.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),
@@ -740,7 +717,7 @@ pub fn relever_retours_dpae(
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature, p.message)),
+            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }
     }

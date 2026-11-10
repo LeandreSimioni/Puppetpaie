@@ -91,8 +91,8 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
     let mdp = mot_de_passe_de_consultation(ctx, nom)?;
     match authentifier(ctx, nom, mdp) {
         Ok(()) => Ok(Verdict::de(nom, true, "session ouverte".into(), None)),
-        Err(p) if p.classe == Classe::Organisme => {
-            let premiere: String = socle::texte::lignes_du_texte(&p.message).first().map(|l| l.to_string()).into_iter().collect();
+        Err(p) if p.echec.classe == Some(Classe::Organisme) => {
+            let premiere: String = socle::texte::lignes_du_texte(&p.echec.phrase).first().map(|l| l.to_string()).into_iter().collect();
             let conseil = if premiere.contains("422") {
                 Some("Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le.")
             } else if premiere.contains("403") {

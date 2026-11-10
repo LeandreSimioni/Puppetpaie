@@ -112,7 +112,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
     }
     let client = match incidents::canal(racine) {
         Ok(Canal::Pret(c)) => c,
-        Ok(Canal::Panne(e)) => return bilan(Some(annee), false, None, "", &e.message),
+        Ok(Canal::Panne(e)) => return bilan(Some(annee), false, None, "", &e.dite()),
         Err(e) => return bilan(Some(annee), false, None, "", &String::from(e)),
     };
     let paies = match compter(ctx, annee) {
@@ -120,7 +120,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
         Err(e) => return bilan(Some(annee), false, None, "", &format!("compte refuse : {}", String::from(e))),
     };
     if let Err(e) = client.compter_paies(annee, paies) {
-        return bilan(Some(annee), false, Some(paies), "", &e.message);
+        return bilan(Some(annee), false, Some(paies), "", &e.dite());
     }
     let poste = client.poste.0.clone();
     match retenir(racine, annee, paies, &poste) {

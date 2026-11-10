@@ -9,7 +9,7 @@
 //! rompue, un gzip illisible (`Reseau`) portent leur `classe`, que l'appelant releve.
 
 use droit::fiche::Lue as _;
-use socle::echec::Classe;
+use socle::echec::{Classe, Echec};
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -63,34 +63,51 @@ pub enum Panne {
     Statut { code: u16, corps: Result<Vec<u8>, Box<Panne>> },
     /// La connexion n'a pas abouti : la raison.
     Reseau(String),
-    /// Une panne après l'envoi, sous sa classe.
-    Brute { classe: Classe, message: String },
+    /// Une panne après l'envoi : son refus, né avec sa classe.
+    Brute(Echec),
 }
 
 impl Panne {
+    #[track_caller]
     fn brute(classe: Classe, message: impl Into<String>) -> Panne {
-        Panne::Brute { classe, message: message.into() }
+        Panne::Brute(socle::echec::erreur(classe, message))
     }
 }
 
-/// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`Organisme`, `DepotRefuse`, ou celle d'une panne
-/// brute), sa phrase, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
-#[derive(Debug, Clone, PartialEq)]
+/// UNE PANNE D'UN ORGANISME, telle que la releve la note : son refus, de classe `Organisme`, `DepotRefuse`, ou celle
+/// d'une panne brute, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
+#[derive(Debug, Clone)]
 pub struct EchecApi {
-    pub erreur: String,
-    pub classe: Classe,
+    pub echec: Echec,
     pub code: Option<i64>,
 }
 
 impl EchecApi {
+    #[track_caller]
     fn nouveau(classe: Classe, erreur: String, code: Option<i64>) -> EchecApi {
-        EchecApi { erreur, classe, code }
+        EchecApi { echec: socle::echec::erreur(classe, erreur), code }
+    }
+
+    /// Un refus de la plate-forme elle-meme (`Organisme`, `DepotRefuse`) : la releve le note et continue.
+    pub fn est_api(&self) -> bool {
+        matches!(self.echec.classe, Some(Classe::Organisme | Classe::DepotRefuse))
+    }
+
+    /// La panne comme un refus de route.
+    pub fn en_echec(self) -> Echec {
+        self.echec
+    }
+}
+
+impl From<Echec> for EchecApi {
+    fn from(echec: Echec) -> Self {
+        EchecApi { echec, code: None }
     }
 }
 
 fn echec_brut(p: Panne) -> EchecApi {
     match p {
-        Panne::Brute { classe, message } => EchecApi::nouveau(classe, message, None),
+        Panne::Brute(e) => EchecApi::from(e),
         // Les appelants traduisent les deux autres avant d'arriver ici.
         Panne::Reseau(r) => EchecApi::nouveau(Classe::Reseau, r, None),
         Panne::Statut { code, .. } => EchecApi::nouveau(Classe::Reseau, format!("HTTP {}", code), Some(code as i64)),
@@ -379,7 +396,7 @@ fn agent(delai: u64, url: &str) -> Result<ureq::Agent, Panne> {
     if tls {
         c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
-    let c = socle::garde_reseau::regler(c, url).map_err(|e| Panne::Reseau(e.into()))?;
+    let c = socle::garde_reseau::regler(c, url).map_err(|e| Panne::Reseau(e.phrase))?;
     Ok(c.build().into())
 }
 

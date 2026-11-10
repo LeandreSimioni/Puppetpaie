@@ -332,7 +332,7 @@ impl Client {
                 };
                 let mut e = match phrase_de_panne(panne) {
                     Ok(phrase) => ErreurGoogle::google(phrase),
-                    Err((classe, message)) => ErreurGoogle::nouvelle(classe, message),
+                    Err(e) => ErreurGoogle::from(e),
                 };
                 e.statut = statut;
                 Err(e)

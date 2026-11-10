@@ -554,7 +554,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         if client.is_none() {
             match incidents::canal(racine)? {
                 Canal::Panne(e) => {
-                    panne = Some(e.message);
+                    panne = Some(e.dite());
                     break;
                 }
                 Canal::Pret(c) => client = Some(c),
@@ -568,7 +568,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
                 partis += 1;
             }
             Err(e) => {
-                panne = Some(e.message);
+                panne = Some(e.dite());
                 break;
             }
         }
