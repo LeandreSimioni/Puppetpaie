@@ -1332,7 +1332,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
         Some(b) => b.0.clone(),
         None => "Re: fiche".to_string(),
     };
-    envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code))
+    envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code)).map_err(String::from)
 }
 
 /// La boite de la compagnie fictive, vue par la releve. Chaque demande de fiche partie

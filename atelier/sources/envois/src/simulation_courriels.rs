@@ -21,12 +21,12 @@ const PARAMETRE_NOM: &str = "name";
 
 /// Le disque qui refuse un courriel joue.
 fn du_disque(chemin: &Path, e: &std::io::Error) -> Echec {
-    Echec::from(socle::echec::du_disque(chemin, e))
+    socle::echec::du_disque(chemin, e)
 }
 
 /// Un courriel joue que `mailparse` ne lit pas : il a ete ecrit par la boite simulee, c'est un defaut du logiciel.
 fn illisible(e: mailparse::MailParseError) -> Echec {
-    Echec::from(socle::echec::avec("Un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))
+    socle::echec::refus_avec("Un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() })
 }
 
 /// Les courriels joues, du plus ancien au plus recent : (nom, octets). Aucun encore : le dossier n'existe pas.
@@ -313,7 +313,7 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
         return Ok(None);
     }
     let octets = f.get_body_raw().map_err(illisible)?;
-    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| Echec::from(socle::echec::avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() })))?;
+    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| socle::echec::refus_avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
     Ok(Some(pdf.get_pages().len()))
 }
 
@@ -321,7 +321,7 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
 /// en adresses. Un courriel joue dit toujours qui l'envoie et a qui.
 fn adresses(m: &ParsedMail, champ: &str) -> R<String> {
     let (Some(brut), Some(h)) = (m.headers.get_first_value(champ), m.headers.get_first_header(champ)) else {
-        return Err(Echec::from(socle::echec::cle("Un courriel joué ne dit pas qui l'envoie ou à qui.", champ)));
+        return Err(socle::echec::cle("Un courriel joué ne dit pas qui l'envoie ou à qui.", champ));
     };
     let liste = match mailparse::addrparse_header(h) {
         Ok(l) => l,
@@ -451,7 +451,7 @@ pub fn bouton_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[
 
 /// Le courriel que la personne fictive renvoie a la boite (de `de` a `a`), date de maintenant,
 /// identifiant `<ident@fictive.puppetpaie>`.
-pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -> Result<Vec<u8>, String> {
+pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -> socle::echec::R<Vec<u8>> {
     // Dans une compagnie fictive, une adresse de salarie AVEC NOM D'AFFICHAGE (`Nom <adresse>`) est
     // acceptee. `envoi::en_mime_avec` n'ecrit que des adresses simples : le message se fabrique avec l'adresse nue,
     // puis l'en-tete `From` est remis avec son nom d'affichage.
