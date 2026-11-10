@@ -45,7 +45,7 @@ use socle::num::Decimal;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, refus_magasin, tous_les_arrets, ArretDit, ContratAuJour};
+use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
 const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé avant l'arrêt, qui le désigne", avance: false };
 const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d'absence"), forme: Forme::Date, sens: "le premier jour de l'absence, qui la désigne", avance: false };
@@ -548,9 +548,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 fn regulariser(ctx: &Contexte, nom: &str, phrase: &mut String) -> R<()> {
     use engagement::etats::Revalidation;
     let cle = cle_du_nom(ctx, nom)?;
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut dit = Vec::new();
-    for x in engagement::etats::apres_un_imprevu(ctx, &cle, &departs).map_err(Echec::from)? {
+    for x in engagement::etats::apres_un_imprevu(ctx, &cle, &departs)? {
         match x {
             Revalidation::Changee(v) => {
                 let lignes = crate::engagement::ce_que_le_changement_entraine(ctx, &v, &departs)?;
@@ -576,7 +576,7 @@ fn refus(m: impl Into<String>) -> Echec {
 
 /// Un jour ecrit dans un imprevu ou une carte, lu ; illisible, il se refuse.
 fn jour(t: &str) -> R<Jour> {
-    Jour::lire(t).map_err(|m| erreur(Classe::Illisible, m))
+    Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Un jour ecrit, tel qu'une phrase le dit (« 02/11/2026 »).
@@ -595,7 +595,7 @@ fn numero_dit(n: &Option<String>) -> String {
 /// La cle de la fiche que `nom` designe, comme partout dans le moteur (`Contexte::cle_du_salarie` : la casse, les accents,
 /// le prenom, le NIR ne comptent pas). Un nom qui ne designe personne se refuse avec sa phrase.
 fn cle_du_nom(ctx: &Contexte, nom: &str) -> R<IdSalarie> {
-    ctx.cle_du_salarie(nom).map_err(|m| erreur(Classe::Manque, m))
+    ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))
 }
 
 /// LE CONTRAT QU'UN IMPREVU SUSPEND : parmi ceux du salarie qui couvrent `jour` (`contrats_au`), celui que la charge
@@ -739,7 +739,7 @@ fn la_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<(usize, Vec<Impre
 /// Ecrit le fichier du mois de `jour` du magasin des imprevus (`imprevus/AAAA-MM.json`) : les arrets ET les suspensions
 /// qu'il range, tels que la liste les donne.
 fn ecrire(ctx: &Contexte, jour: &Jour, liste: Vec<Imprevu>) -> R<()> {
-    imprevus::ecrire(&ctx.racine, &jour.mois_civil().to_string(), liste).map_err(|m| erreur(Classe::Disque, m))
+    imprevus::ecrire(&ctx.racine, &jour.mois_civil().to_string(), liste).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// Ce qui est parti d'un imprevu (`obligations::ce_qui_est_parti` : les envois du journal, tels qu'il les lit).
@@ -1415,7 +1415,7 @@ struct MotifSuspension {
 
 /// Les motifs d'une suspension qui se DECLARENT (`permanents-base.json`, section `suspensions`, sans le 200).
 fn motifs_de_suspension() -> R<Vec<MotifSuspension>> {
-    let regles = droit::permanents::regles().map_err(refus_magasin)?;
+    let regles = magasin(droit::permanents::regles())?;
     Ok(regles
         .suspensions
         .motifs
@@ -1484,7 +1484,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     }
     let montant = |k: &str, t: &Option<String>| -> R<Option<Chiffre>> {
         let Some(t) = t else { return Ok(None) };
-        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| refus(format!("Indemnité journalière ({}) : {}", k, String::from(e))))?;
+        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
@@ -1506,7 +1506,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
         a.jours_deja_indemnises = Some(Chiffre::entier(i64::from(j)));
     }
     let nouveau = Imprevu::Arret(a.clone());
-    imprevus::verifier(&nouveau).map_err(refus)?;
+    imprevus::verifier(&nouveau).map_err(|e| e.reclasser(Classe::Refuse))?;
     liste[i] = nouveau;
     ecrire(ctx, &dernier, liste)?;
     reponse_arret(ctx, &a, "Indemnités journalières notées.")
@@ -1525,7 +1525,7 @@ fn nature_du_contrat(ctx: &Contexte, a: &ArretSaisi) -> R<Option<std::sync::Arc<
     let Some(cle) = c.nature.as_deref() else {
         return Err(refus(format!("{} : la nature de son contrat du {} n'est pas encore dite.", c.nom, c.debut)));
     };
-    Ok(Some(droit::natures::nature(cle).map_err(refus)?))
+    Ok(Some(droit::natures::nature(cle).map_err(|e| e.reclasser(Classe::Refuse))?))
 }
 
 /// L'arret ouvre-t-il le maintien de salaire, par la loi ou la convention (`engagement::maintien::droits`) ? Un arret dont
@@ -1650,7 +1650,7 @@ l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche n
     ));
     // Les jours ajoutes qui tombent dans un mois dont la DSN reelle est deja partie : elle portait l'ancienne fin.
     let declares = reporte_par(&envois_de_l_arret(ctx, &avant)?);
-    for m in Mois::entre(&fin_avant.plus_jours(1).map_err(|e| erreur(Classe::Illisible, e))?, &f).iter().map(Mois::to_string) {
+    for m in Mois::entre(&fin_avant.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?, &f).iter().map(Mois::to_string) {
         if declares.iter().any(|x| *x == m) {
             avertissements.push(format!(
                 "La DSN de {} est déjà partie avec l'ancienne fin (le {}) : la paie de ce mois, où les jours ajoutés \
@@ -1672,7 +1672,7 @@ remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). 
 
 /// L'arret est-il subroge (S21.G00.60.004 = oui) ?
 fn signalement_subroge(a: &ArretSaisi) -> R<bool> {
-    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { saisi: a.clone() }).map_err(|m| erreur(Classe::Illisible, m))
+    declarations::signalement::avec_subrogation(&declarations::dsn::Arret { saisi: a.clone() }).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les suspensions
@@ -1680,7 +1680,7 @@ fn signalement_subroge(a: &ArretSaisi) -> R<bool> {
 /// Ce qu'une suspension doit tenir avant de s'ecrire : son motif se declare (`imprevus::verifier_motif_de_suspension` :
 /// connu, pas le 200), elle finit apres avoir commence, et ne deborde pas de son contrat.
 fn verifier_suspension(s: &SuspensionSaisie, contrat_fin: Option<&str>) -> R<()> {
-    imprevus::verifier_motif_de_suspension(&s.motif, &s.salarie).map_err(refus)?;
+    imprevus::verifier_motif_de_suspension(&s.motif, &s.salarie).map_err(|e| e.reclasser(Classe::Refuse))?;
     let (debut, fin) = (jour(&s.debut)?, jour(&s.fin)?);
     if fin < debut {
         return Err(refus(format!(
@@ -1902,8 +1902,8 @@ fn arret_oublier(ctx: &Contexte, c: &ChargeArretOublier) -> R<ReponseArret> {
 /// Ce qui peut partir du mois : la saisie de ses engagements valides (`engagement::etats::validees_du_mois`), et leurs
 /// paies ecrites ; refus si aucun engagement ne le touche.
 fn validees(ctx: &Contexte, mois: &str) -> R<(VueDuMois, Vec<Paie>)> {
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?;
-    engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(plain)?.ok_or_else(|| refus(format!("Aucune saisie pour {}.", mois)))
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
+    engagement::etats::validees_du_mois(ctx, mois, &departs)?.ok_or_else(|| refus(format!("Aucune saisie pour {}.", mois)))
 }
 
 /// L'engagement avec ses bornes : un contrat aux cachets ne les ecrit pas, il commence son premier jour travaille et
@@ -1970,7 +1970,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
 
 /// Un champ que le signalement exige, lu dans la carte ; absent, il se refuse.
 fn exige<'a>(x: &'a Option<String>, cle: &str) -> R<&'a str> {
-    x.as_deref().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))
+    x.as_deref().ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))
 }
 
 /// `fctu.FinDeContrat` que le signalement declarera, batie sur la saisie (`fin-contrat-signaler`).
@@ -1985,7 +1985,7 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: &str) -> R<declarati
             liste.join("\n  ")
         )));
     }
-    let preavis = e.preavis.as_ref().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("preavis")))?;
+    let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
     Ok(declarations::fctu::FinDeContrat {
         fin: exige(&e.fin, "fin")?.to_string(),
         motif: exige(&e.motif_rupture, "motif_rupture")?.to_string(),
@@ -2023,7 +2023,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (rang, e) = engagement_qui_finit(&saisie, &cle, salarie, &mois)?;
     let fin = fin_de_contrat_declaree(ctx, &e, &mois)?;
     if remplace.is_none() && !refaire {
-        let journal = envois::journal::lu(&ctx.racine).map_err(plain)?;
+        let journal = envois::journal::lu(&ctx.racine)?;
         if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &jour(&fin.fin)?)? {
             return Err(refus(format!(
                 "Le signalement de fin de contrat de {} est parti le {} : il ne se refait pas. Le corriger : un annule et remplace (champ « remplace »). Rien n'est écrit.",
@@ -2051,16 +2051,15 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     };
     // Les arrets du contrat qui croisent la periode du signalement : le FCTU les reporte (bloc 60), comme la mensuelle,
     // tires du magasin des imprevus ; ses suspensions (bloc 65) en viennent deja (`imprevus::suspensions_du_mois`).
-    let (debut_p, fin_p) = (paie.engagement.debut_periode().map_err(plain)?, paie.engagement.fin_periode().map_err(plain)?);
-    let arrets: Vec<declarations::dsn::Arret> = imprevus::arrets_du_contrat(ctx, &paie, &debut_p, &fin_p)
-        .map_err(refus_magasin)?
+    let (debut_p, fin_p) = (paie.engagement.debut_periode()?, paie.engagement.fin_periode()?);
+    let arrets: Vec<declarations::dsn::Arret> = magasin(imprevus::arrets_du_contrat(ctx, &paie, &debut_p, &fin_p))?
         .into_iter()
         .map(|saisi| declarations::dsn::Arret { saisi })
         .collect();
-    let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
-    declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
+    let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
+    declarations::dsn::ecrire(&texte, &cible)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
-    let preavis = declarations::fctu::libelle_preavis(&fin.type_preavis).map_err(plain)?;
+    let preavis = declarations::fctu::libelle_preavis(&fin.type_preavis)?;
     Ok(ReponseSignalementFin {
         fichier: cible.to_string_lossy().into_owned(),
         phrase: phrase_du_signalement(&format!("Signalement de fin de contrat écrit (préavis : {}). Rien n'est parti.", preavis), &avertissements),
@@ -2194,8 +2193,8 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         envoi_test: c.test == Some(true),
         date_constitution: Some(constitution),
     };
-    let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(plain)?).map_err(echec_fctu)?;
-    declarations::dsn::ecrire(&texte, &cible).map_err(plain)?;
+    let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
+    declarations::dsn::ecrire(&texte, &cible)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
@@ -2209,11 +2208,6 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         ordre,
         avertissements,
     })
-}
-
-#[track_caller]
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
 }
 
 // -------------------------------------------------------------------- arrets
@@ -2324,9 +2318,9 @@ pub(crate) fn resume_d_arret_complet(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi,
 /// La nature d'un engagement : dite (regle 6), et connue ; sinon `Manque`.
 fn nature_de(e: &Carte) -> R<std::sync::Arc<droit::natures::Nature>> {
     let Some(texte) = e.nature.as_deref() else {
-        return Err(erreur(Classe::Manque, socle::fichiers::absent("nature")));
+        return Err(socle::fichiers::absent("nature").reclasser(Classe::Manque));
     };
-    droit::natures::nature(texte).map_err(|m| erreur(Classe::Manque, m))
+    droit::natures::nature(texte).map_err(|m| m.reclasser(Classe::Manque))
 }
 
 /// CE QUI MANQUE A UN SIGNALEMENT, tel que l'ecran le dit : `champ` (la donnee de l'engagement, `data-fait` de sa carte),
@@ -2377,11 +2371,11 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     let anciennete = droit::permanents::anciennete_mois(&debut, &fin);
     let motif = e.motif_rupture.as_deref();
     let cdd = !nature_de(e)?.duree_indeterminee;
-    let duree = droit::permanents::preavis_mois(anciennete, motif, cdd).map_err(plain)?;
-    let regle = droit::permanents::regle_du_preavis(motif, cdd).map_err(plain)?;
+    let duree = droit::permanents::preavis_mois(anciennete, motif, cdd)?;
+    let regle = droit::permanents::regle_du_preavis(motif, cdd)?;
     let mut dit = match (duree, &regle) {
         (Some(m), _) if m != Decimal::ZERO => format!("La loi en donne {} mois (L1234-1).", m),
-        (Some(_), _) => match droit::permanents::raison_sans_preavis(motif, cdd).map_err(plain)? {
+        (Some(_), _) => match droit::permanents::raison_sans_preavis(motif, cdd)? {
             Some(r) => format!("La loi ne donne aucun préavis pour ce motif : {}", r),
             None => "La loi ne donne aucun préavis pour ce motif.".to_string(),
         },
@@ -2391,7 +2385,7 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     // Ce que dit la convention, a cote, par le moteur (le calcul de `moteur preavis`) ; pas pour un motif sans preavis
     // ni pour la rupture d'un CDD par le salarie (L1243-2), que la convention du licenciement ne regle pas.
     if duree != Some(Decimal::ZERO) && regle.is_none() {
-        let tout = engagement::preavis(ctx, e, anciennete, motif).map_err(plain)?;
+        let tout = engagement::preavis(ctx, e, anciennete, motif)?;
         if let (Some(conv), true) = (tout.convention, tout.qui != "la loi (L1234-1)") {
             dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", tout.qui, conv));
         } else if tout.mois.is_none() {
@@ -2415,7 +2409,7 @@ fn ce_qui_manque(ctx: &Contexte, e: &Carte) -> R<Vec<Manque>> {
             "Le motif de la rupture (S21.G00.62.002) est obligatoire, et un CDI n'en a aucun par défaut.",
         )),
         // CCH-12 de S21.G00.62.003 : la date de notification, obligatoire pour ces motifs (`fctu::notification_exigee`).
-        Some(motif) if e.notification_rupture.is_none() && declarations::fctu::notification_exigee(motif).map_err(plain)? => manques.push(manque(
+        Some(motif) if e.notification_rupture.is_none() && declarations::fctu::notification_exigee(motif)? => manques.push(manque(
             "notification_rupture",
             "Notifiée le",
             "le jour où la rupture a été notifiée : la démission remise, la lettre de rupture ou de licenciement envoyée, la \
@@ -2436,7 +2430,7 @@ technique DSN p. 275). Le signalement ne s'écrit pas sans elle.",
             "Le bloc S21.G00.63 est obligatoire dans un signalement de fin de contrat (cardinalité 1,*) : même sans préavis, il \
 se déclare, avec le type « 90 - pas de clause de préavis applicable ».",
         )),
-        Some(p) if declarations::fctu::preavis_non_effectue(&p.genre).map_err(plain)? && e.dernier_jour_paye.is_none() => manques.push(manque(
+        Some(p) if declarations::fctu::preavis_non_effectue(&p.genre)? && e.dernier_jour_paye.is_none() => manques.push(manque(
             "dernier_jour_paye",
             "Dernier jour payé",
             "le dernier jour travaillé et payé au salaire habituel, avant le préavis qui n'est pas effectué.",
@@ -2504,11 +2498,11 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
     // Un signalement de fin ne se doit que pour un engagement valide, lu tel qu'il est ecrit (`tels_qu_ecrits`) : un
     // brouillon ne part pas, et ce qui ne fait que lire ne recalcule rien. Un mois sans saisie n'a aucune fin.
     let texte = mois.to_string();
-    let Some(saisie) = engagement::stock::vue_du_mois(&ctx.racine, &texte).map_err(Echec::from)? else {
+    let Some(saisie) = engagement::stock::vue_du_mois(&ctx.racine, &texte)? else {
         return Ok(Vec::new());
     };
     let journal = envois::journal::lu(&ctx.racine)?;
-    let etats = engagement::etats::tels_qu_ecrits(ctx, &texte, &journal.departs).map_err(Echec::from)?;
+    let etats = engagement::etats::tels_qu_ecrits(ctx, &texte, &journal.departs)?;
     let mut out = Vec::new();
     for (i, carte) in saisie.engagements.iter().enumerate() {
         if etats.get(i).and_then(|x| x.valide()).is_none() {
@@ -2525,7 +2519,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         if !(mois.premier_jour() <= fin && fin <= mois.dernier_jour()) {
             continue;
         }
-        let salarie = e.salarie.clone().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("salarie")))?;
+        let salarie = e.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie").reclasser(Classe::Manque))?;
         let a_saisir = ce_qui_manque(ctx, &e)?;
         // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).
         let obligation = crate::obligations::de_la_fin(ctx, Some(salarie.as_str()), fin, &journal.lignes, aujourdhui)?;
@@ -2618,7 +2612,7 @@ fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> 
 fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
     let mut sorties: Vec<ContratAuJour> = Vec::new();
     let mut vus: BTreeSet<(String, Option<String>)> = BTreeSet::new();
-    let mut mois = engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.into_iter().map(String::from).collect::<Vec<_>>();
+    let mut mois = engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from).collect::<Vec<_>>();
     mois.reverse();
     for m in mois {
         for (c, e) in crate::mois::engagements_du_mois(ctx, &m)? {
@@ -2630,7 +2624,7 @@ fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
             // qu'un arret ou une suspension se pose. Un contrat dont la nature n'est pas encore dite n'est pas tenu pour
             // paye au mois : il ne couvre que ses bornes. Le mois le plus recent qui le saisit fait foi (une fin ecrite
             // plus tard l'emporte) : il est retenu, couvrant ou non, avant les mois plus anciens.
-            let mensuel = e.nature.as_deref().map(droit::natures::nature).transpose().map_err(refus)?.is_some_and(|n| n.mensuelle());
+            let mensuel = e.nature.as_deref().map(droit::natures::nature).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|n| n.mensuelle());
             if debut.is_empty() || (fin.is_none() && !mensuel) {
                 continue;
             }
