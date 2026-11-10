@@ -48,7 +48,8 @@
 
 use std::path::Path;
 use socle::date::Jour;
-use socle::num::{Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::Decimal;
 
 /// La table de lecture, dans `logiciel/donnees/`.
 pub const FICHIER_TABLE: &str = "bulletins-lecture-base.json";
@@ -672,7 +673,7 @@ struct LigneDetaillee {
 
 /// LES TEXTES DE LA TABLE LIVREE, tels qu'ecrits : ses notes, ses libelles, ses signatures, les rubriques de ses lignes
 /// (le vocabulaire que le masque des incidents garde : `import::incident`).
-pub fn textes_de_la_table() -> Resultat<Vec<String>> {
+pub fn textes_de_la_table() -> R<Vec<String>> {
     let t: TableEcrite = socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join(FICHIER_TABLE), "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?;
     let e = &t.entetes;
     let r = &t.resumes;
@@ -699,7 +700,7 @@ pub fn textes_de_la_table() -> Resultat<Vec<String>> {
 
 impl Libelles {
     /// Les jetons de chaque libelle : un libelle vide, ou aucun, se refuse.
-    fn phrases(&self, ou: &str) -> Resultat<Vec<Vec<String>>> {
+    fn phrases(&self, ou: &str) -> R<Vec<Vec<String>>> {
         let liste: Vec<&String> = match self {
             Libelles::Un(t) => vec![t],
             Libelles::Plusieurs(l) => l.iter().collect(),
@@ -708,45 +709,45 @@ impl Libelles {
         for x in liste {
             let p = jetons(x);
             if p.is_empty() {
-                return Err(format!("{} : un libellé vide", ou));
+                return Err(socle::refus!("{} : un libellé vide", ou));
             }
             sortie.push(p);
         }
         if sortie.is_empty() {
-            return Err(format!("{} : aucun libellé", ou));
+            return Err(socle::refus!("{} : aucun libellé", ou));
         }
         Ok(sortie)
     }
 
     /// Les libelles canoniques.
-    fn canoniques(&self, ou: &str) -> Resultat<Vec<String>> {
+    fn canoniques(&self, ou: &str) -> R<Vec<String>> {
         Ok(self.phrases(ou)?.into_iter().map(|p| p.join(" ")).collect())
     }
 
     /// Des mots seuls (un en-tete de colonne se lit mot a mot).
-    fn mots_seuls(&self, ou: &str) -> Resultat<Vec<String>> {
+    fn mots_seuls(&self, ou: &str) -> R<Vec<String>> {
         let p = self.phrases(ou)?;
         if let Some(x) = p.iter().find(|x| x.len() != 1) {
-            return Err(format!("{} : « {} » n'est pas un mot seul", ou, x.join(" ")));
+            return Err(socle::refus!("{} : « {} » n'est pas un mot seul", ou, x.join(" ")));
         }
         Ok(p.into_iter().map(|mut x| x.remove(0)).collect())
     }
 }
 
 /// Des groupes de libelles : (cle, libelles canoniques).
-fn groupes(g: &[(String, Libelles)], ou: &str) -> Resultat<Vec<(String, Vec<String>)>> {
+fn groupes(g: &[(String, Libelles)], ou: &str) -> R<Vec<(String, Vec<String>)>> {
     g.iter().map(|(k, x)| Ok((k.clone(), x.canoniques(&format!("{}.{}", ou, k))?))).collect()
 }
 
 impl Table {
     /// La table livree (`logiciel/donnees/bulletins-lecture-base.json`).
-    pub fn livree() -> Resultat<Table> {
+    pub fn livree() -> R<Table> {
         let chemin = socle::fichiers::dossier_du_code().join(FICHIER_TABLE);
         Table::de(socle::forme::lire_fichier(&chemin, "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?)
     }
 
     /// La table, verifiee : une mention inconnue, un libelle vide ou en double est un refus qui le nomme.
-    fn de(t: TableEcrite) -> Resultat<Table> {
+    fn de(t: TableEcrite) -> R<Table> {
         let mut mentions = Vec::new();
         for (n, x) in &t.mentions {
             let &(nom, sorte, section, rangs, employeur) =
@@ -773,7 +774,7 @@ impl Table {
             pas: r.pas.canoniques("resumes.pas")?,
             net_imposable: r.net_imposable.canoniques("resumes.net_imposable")?,
         };
-        let logiciels = t.logiciels.iter().map(|(k, x)| Ok((k.clone(), x.signature.phrases(&format!("logiciels.{}.signature", k))?))).collect::<Resultat<_>>()?;
+        let logiciels = t.logiciels.iter().map(|(k, x)| Ok((k.clone(), x.signature.phrases(&format!("logiciels.{}.signature", k))?))).collect::<R<_>>()?;
         Ok(Table {
             mentions,
             entetes,
@@ -820,7 +821,7 @@ impl Table {
     }
 }
 
-fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> Resultat<Vec<LigneTable>> {
+fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
     let livrees = droit::catalogue::livrees()?;
     let hors_assiette = |code: &str| livrees.iter().any(|r| r.code == code && !r.soumis);
     let mut lignes: Vec<LigneTable> = Vec::new();
@@ -830,16 +831,16 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> Resultat<Vec<LigneTable>> {
             None => (None, None),
             Some(LigneEcrite::Rubrique(s)) => (Some(s.clone()), None),
             Some(LigneEcrite::Detail(d)) => match d.heures {
-                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o)).into()),
+                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o))),
                 h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
             },
         };
         if rubrique.as_deref() == Some("") {
-            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)).into());
+            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)));
         }
         let c = canon(libelle);
         if lignes.iter().any(|x| x.canon == c) {
-            return Err(format!("{} : libellé en double", o));
+            return Err(socle::refus!("{} : libellé en double", o));
         }
         let non_soumise = rubrique.as_deref().is_some_and(hors_assiette);
         lignes.push(LigneTable { libelle: libelle.clone(), canon: c, rubrique, heures, non_soumise });
@@ -1055,13 +1056,13 @@ fn en_objet<S: serde::Serializer, T: serde::Serialize>(l: &[(String, T)], s: S) 
 
 /// `lire(chemin)` : chaque page du PDF, lue avec la table livree. Une erreur : le PDF ne s'ouvre pas, ou la table
 /// ne se lit pas.
-pub fn lire(chemin: &Path) -> Resultat<Vec<Lecture>> {
+pub fn lire(chemin: &Path) -> R<Vec<Lecture>> {
     lire_avec(chemin, &Table::livree()?)
 }
 
 /// La meme, avec une table donnee.
-pub fn lire_avec(chemin: &Path, table: &Table) -> Resultat<Vec<Lecture>> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+pub fn lire_avec(chemin: &Path, table: &Table) -> R<Vec<Lecture>> {
+    let r = crate::releve::du_pdf(chemin).map_err(|e| refus(e.phrase()))?;
     let avertissements = &r.avertissements;
     Ok(r.releve
         .pages
@@ -2269,7 +2270,7 @@ struct Lignes {
 }
 
 /// Chaque ligne qui porte une rubrique la lit dans le catalogue de la compagnie (voir `compteurs`).
-fn lignes_comptees(b: &BulletinLu, racine: &Path) -> Resultat<Lignes> {
+fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
     let zero = Decimal::ZERO;
     let mut avertissements = Vec::new();
     let mut sans_duree = false;
@@ -2383,7 +2384,7 @@ fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, 
 /// decompose pas sur un bulletin qui a lui-meme des cachets : on ne devine pas la conversion qu'un logiciel a faite (un
 /// cachet groupe a 8 h, la regle d'avant ce decret) ; les compteurs restent ceux des lignes. Une erreur : une rubrique
 /// que le catalogue ne connait pas.
-pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> Resultat<Compteurs> {
+pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Compteurs> {
     let zero = Decimal::ZERO;
     let forfait = droit::catalogue::rubrique(racine, "cachet", &b.fin)?.heures_forfait.map(socle::num::dec_f64).transpose()?;
     // Le total d'heures que des lignes comptent, cachets convertis ; `None` : inconnu.
@@ -2400,7 +2401,7 @@ pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> Resul
     let jours_de = |l: &Lignes| (!l.dates.is_empty()).then(|| Decimal::from(l.dates.len()));
     let imprime = |b: &BulletinLu, nom: &str| b.cumuls.iter().find(|(n, _)| n == nom).and_then(|(_, c)| c.periode);
     let siennes = lignes_comptees(b, racine)?;
-    let autres: Vec<(Lignes, &BulletinLu)> = freres.iter().map(|f| lignes_comptees(f, racine).map(|l| (l, *f))).collect::<Resultat<_>>()?;
+    let autres: Vec<(Lignes, &BulletinLu)> = freres.iter().map(|f| lignes_comptees(f, racine).map(|l| (l, *f))).collect::<R<_>>()?;
     let nombre = autres.len() + 1;
     let mut avertissements = siennes.avertissements.clone();
     let (mut cachets, mut heures, mut enseignement) = (siennes.cachets, siennes.heures, siennes.enseignement);

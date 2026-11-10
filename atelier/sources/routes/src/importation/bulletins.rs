@@ -63,7 +63,7 @@ use import::proposee;
 use import::tri::Sorte;
 use socle::num::Decimal;
 use socle::texte::euros;
-use import::attestes::{Atteste, Registre};
+use import::attestes::{Atteste, Registre, Reste};
 use engagement::importe::{Attestation, ContratAtteste, ContratLu, Declaration, PaieLue, PaieVersee};
 use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces, A_CREER};
 use import::reponse::{
@@ -232,7 +232,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         .collect::<R<_>>()?;
 
     // 2. Les bulletins, page par page.
-    let table = Table::livree().map_err(|m| erreur(Classe::Refuse, format!("La table de lecture des bulletins ne se lit pas : {}", m)))?;
+    let table = Table::livree().map_err(|m| erreur(Classe::Refuse, format!("La table de lecture des bulletins ne se lit pas : {}", String::from(m))))?;
     let saisis: HashSet<String> = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))?.into_iter().map(String::from).collect();
     let mut pages: BTreeMap<usize, Vec<PageCr>> = BTreeMap::new();
     let mut illisibles: BTreeMap<usize, String> = BTreeMap::new();
@@ -248,7 +248,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let lectures = match bulletin_lu::lire_avec(&f.disque, &table) {
             Ok(l) => l,
             Err(m) => {
-                illisibles.insert(i, m.replace(&*f.disque.to_string_lossy(), &f.chemin));
+                illisibles.insert(i, String::from(m).replace(&*f.disque.to_string_lossy(), &f.chemin));
                 continue;
             }
         };
@@ -260,7 +260,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let (certificats_du_fichier, aer, aem) = match lues {
             (Ok(c), Ok(r), Ok(a)) => (c, r, a),
             (Err(m), _, _) | (_, Err(m), _) | (_, _, Err(m)) => {
-                illisibles.insert(i, m.replace(&*f.disque.to_string_lossy(), &f.chemin));
+                illisibles.insert(i, String::from(m).replace(&*f.disque.to_string_lossy(), &f.chemin));
                 continue;
             }
         };
@@ -415,14 +415,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     for (i, aem, e) in &pieces {
         let f = &tri.fichiers[*i];
         match import::dsn_aem::verdict_entreprise(*aem, e, siren.as_deref()) {
-            Err(raison) => {
-                ecartes.insert(*i, raison);
+            import::dsn_aem::Verdict::Ecartee(raison) => {
+                ecartes.insert(*i, raison.to_string());
                 continue;
             }
-            Ok(Some(a)) => {
-                avertis.insert(*i, a);
+            import::dsn_aem::Verdict::Avertie(a) => {
+                avertis.insert(*i, a.to_string());
             }
-            Ok(None) => {}
+            import::dsn_aem::Verdict::Reprise => {}
         }
         let sous = if *aem { "AEM_EDI" } else { "DSN" };
         let d = export.join(sous);
@@ -1161,9 +1161,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_deref())?;
             match contrat_du_certificat(c, statut.as_deref(), &cle_de(nir), &copie) {
-                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils) {
-                    Ok(r) => reste = r,
-                    Err(m) => sans_reste = Some(m),
+                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils).unwrap_or_else(|e| Reste::NeSeComptePas(String::from(e))) {
+                    Reste::Rien => {}
+                    Reste::Seul(l) => reste = Some(l),
+                    Reste::NeSeComptePas(m) => sans_reste = Some(m),
                 },
                 Err(m) => sans_reste = Some(m),
             }
@@ -2217,7 +2218,7 @@ fn compter(lus: &mut [Lu], racine: &Path) {
                 .filter(|s| (&s.b.numero, s.b.debut, s.b.fin) != (&l.b.numero, l.b.debut, l.b.fin))
                 .map(|s| &s.b)
                 .collect();
-            bulletin_lu::compteurs(&l.b, &freres, racine).map_err(|e| e.to_string())
+            bulletin_lu::compteurs(&l.b, &freres, racine).map_err(String::from)
         })
         .collect();
     for (l, c) in lus.iter_mut().zip(comptes) {

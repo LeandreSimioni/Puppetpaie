@@ -469,18 +469,26 @@ pub(crate) const AEM_AUTRE: &str = "AEM d'une autre entreprise : son Siret n'est
 pub(crate) const AEM_SANS_SIRET: &str =
     "son Siret ne se lit pas (caractères 51 à 64 de l'enregistrement) : l'entreprise n'est pas contrôlée";
 
-/// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference : `Err(raison)` -- elle n'est pas reprise et RIEN
-/// n'en est lu --, `Ok(Some(avertissement))` -- elle passe, mais son entreprise ne se controle pas --, ou `Ok(None)`.
-pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Result<Option<String>, String> {
+/// Le sort d'une DSN ou d'une AEM devant la reference (`verdict_entreprise`) : ecartee, avec sa raison -- elle n'est pas
+/// reprise et RIEN n'en est lu --, reprise avec un avertissement -- son entreprise ne se controle pas --, ou reprise.
+pub enum Verdict {
+    Ecartee(&'static str),
+    Avertie(&'static str),
+    Reprise,
+}
+
+/// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference.
+pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Verdict {
+    let lisible = if e.illisibles > 0 { Verdict::Avertie(AEM_SANS_SIRET) } else { Verdict::Reprise };
     if e.sirens.is_empty() {
         // Une AEM sans enregistrement lisible ne rend rien a `lire_aem` : rien a controler.
-        return if aem { Ok((e.illisibles > 0).then(|| AEM_SANS_SIRET.to_string())) } else { Err(DSN_SANS_SIREN.to_string()) };
+        return if aem { lisible } else { Verdict::Ecartee(DSN_SANS_SIREN) };
     }
-    let Some(r) = reference else { return Err(PLUSIEURS_ENTREPRISES.to_string()) };
+    let Some(r) = reference else { return Verdict::Ecartee(PLUSIEURS_ENTREPRISES) };
     if e.sirens.iter().any(|s| s != r) {
-        return Err((if aem { AEM_AUTRE } else { DSN_AUTRE }).to_string());
+        return Verdict::Ecartee(if aem { AEM_AUTRE } else { DSN_AUTRE });
     }
-    Ok((e.illisibles > 0).then(|| AEM_SANS_SIRET.to_string()))
+    lisible
 }
 
 

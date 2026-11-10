@@ -35,6 +35,7 @@
 use std::path::Path;
 
 use socle::date::Jour;
+use socle::echec::{refus, R};
 use socle::mois::Mois;
 use socle::num::entier_de_chiffres;
 use socle::num::Decimal;
@@ -280,8 +281,8 @@ pub struct PageAem {
 }
 
 /// Les pages du PDF qui sont des AEM (ou leur notice), lues. Les autres pages n'y sont pas.
-pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+pub fn lire(chemin: &Path) -> R<Vec<PageAem>> {
+    let r = crate::releve::du_pdf(chemin).map_err(|e| refus(e.phrase()))?;
     let pages: Vec<Vec<Mot>> = r.releve.pages.iter().map(mots_de).collect();
     let notices: Vec<bool> = pages.iter().map(|m| est_notice(m)).collect();
     let mut out = Vec::new();
@@ -314,12 +315,12 @@ pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
 ///
 /// Une case qui n'ecrit pas ce que sa rubrique attend (une date, un nombre) ne dit rien : l'AEM qu'elle fait dit alors
 /// ce qui lui manque (`Aem::manque`).
-pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
+pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     let champs = match documents::aer::champs(octets) {
         Ok(c) => c,
-        Err(documents::aer::Echec::Fabrique(m)) => return Err(m),
-        Err(documents::aer::Echec::Autre(e)) => return Err(String::from(e)),
-        Err(documents::aer::Echec::Ecarts(l)) => return Err(l.join(" ; ")),
+        Err(documents::aer::Echec::Fabrique(m)) => return Err(refus(m)),
+        Err(documents::aer::Echec::Autre(e)) => return Err(e),
+        Err(documents::aer::Echec::Ecarts(l)) => return Err(refus(l.join(" ; "))),
     };
     let champ = |nom: &str| champs.iter().find(|c| c.nom == nom);
     let v = |nom: &str| champ(nom).and_then(|c| c.valeur.texte()).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -346,7 +347,7 @@ pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
             numero_objet = v(&nom("CON_OBJET_"));
         }
         let (Some(debut), Some(fin)) = (jour(&nom("SAL_DT_DEB_")), jour(&nom("SAL_DT_FIN_"))) else { continue };
-        let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| format!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
+        let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| socle::refus!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
         let a = Aem {
             page,
             mois: Some(debut.mois_civil()),
