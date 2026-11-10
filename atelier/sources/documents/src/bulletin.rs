@@ -10,7 +10,8 @@ use engagement::cumul::Passe;
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::texte::euros;
-use socle::num::{dec_f64, div, sub, Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::{dec_f64, div, sub, Decimal};
 use droit::pas::Versement;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Morceau};
@@ -90,18 +91,18 @@ pub fn jours(x: Decimal) -> String {
 }
 
 /// `jours` d'un nombre de jours facultatif : refuse quand il manque.
-fn jours_option(x: Option<f64>) -> Resultat<String> {
+fn jours_option(x: Option<f64>) -> R<String> {
     match x {
         Some(x) => Ok(jours(dec_f64(x)?)),
-        None => Err("nombre de jours absent".to_string()),
+        None => Err(refus("nombre de jours absent")),
     }
 }
 
 // ------------------------------------------------------------ les briques
 
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
-fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> Resultat<String> {
-    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle).into())
+fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> R<String> {
+    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle))
 }
 
 
@@ -257,7 +258,7 @@ fn ligne_net(libelle: &str, montant: Decimal, colonnes: i64) -> Ligne {
 
 /// Le SMIC de la reduction
 /// generale, celui du CALCUL (gele a 12,02 en 2026), pas le SMIC du jour.
-pub fn smic_de_la_reduction(p: &Paie) -> Resultat<String> {
+pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
     if let Some(rg) = &p.reduction_generale {
         if !rg.heures.is_zero() {
             return Ok(format!(
@@ -281,7 +282,7 @@ pub fn smic_de_la_reduction(p: &Paie) -> Resultat<String> {
 /// (`droit::clauses::profil` : la fiche, sinon le metier, jamais devinee) dite par le libelle de la convention, puis le
 /// classement que la fiche porte dans la grille (`classement_conventionnel`) ; `None` quand ni l'une ni l'autre ne se
 /// lisent.
-fn classification(idcc: Option<&str>, sal: &ChampsSalarie, au_mois: Option<&droit::natures::AuMois>) -> Resultat<Option<String>> {
+fn classification(idcc: Option<&str>, sal: &ChampsSalarie, au_mois: Option<&droit::natures::AuMois>) -> R<Option<String>> {
     let profil = droit::clauses::profil(idcc, sal, au_mois, &Default::default())?;
     // La categorie dite par la convention ; celle que la convention ne nomme pas s'imprime telle que la fiche la dit.
     let categorie = match profil.categorie {
@@ -303,7 +304,7 @@ fn classification(idcc: Option<&str>, sal: &ChampsSalarie, au_mois: Option<&droi
 /// Le nom du salarie tel que le bulletin l'imprime : son nom d'usage avec ses accents (`nom_affichage`, sinon `nom`), en
 /// capitales, puis son prenom (`prenom_affichage`, sinon `prenom`). La DSN et la DPAE declarent le nom sans accents ;
 /// le bulletin est lu par le salarie, sous son nom.
-fn nom_imprime(sal: &ChampsSalarie) -> Resultat<String> {
+fn nom_imprime(sal: &ChampsSalarie) -> R<String> {
     let lu = |cases: [Option<&str>; 2]| -> Option<String> {
         cases.into_iter().flatten().find(|t| !t.trim().is_empty()).map(str::to_string)
     };
@@ -314,7 +315,7 @@ fn nom_imprime(sal: &ChampsSalarie) -> Resultat<String> {
 
 /// L'emploi tel que le bulletin l'imprime : celui que l'engagement choisit, lisible et accorde a la fiche
 /// (`emploi_affichage`), sinon celui de la fiche, sinon le libelle que la DSN declare (`emploi`, S21.G00.40.006).
-fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> Resultat<String> {
+fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> R<String> {
     let lisible = e.emploi_affichage.clone().filter(|t| !t.trim().is_empty())
         .or_else(|| sal.emploi_affichage.portee().filter(|t| !t.trim().is_empty()).map(str::to_string));
     match lisible {
@@ -323,9 +324,9 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> Resultat<S
     }
 }
 
-pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> Resultat<(String, String)> {
+pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> R<(String, String)> {
     let Some(idcc_compagnie) = ent.idcc.portee() else {
-        return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc").into());
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
     };
     let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
     let libelle = if idcc == "1734" {
@@ -371,7 +372,7 @@ pub struct PrelevementDeLEcart {
 }
 
 /// Le bas d'un bulletin RECTIFICATIF.
-fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> Resultat<Vec<Ligne>> {
+fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
     let lignes = [
         ("Net à payer avant impôt du bulletin rectifié", r.net_avant),
         ("Net à payer avant impôt rectifié", r.net_apres),
@@ -407,7 +408,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> Resultat<Vec<Ligne>> {
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
 /// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas. Un versement sans taux (une
 /// paie importee dont la piece ne le disait pas) laisse sa case vide.
-fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> Resultat<Vec<Ligne>> {
+fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>> {
     let taux = pas.taux.as_ref().map(|t| t.dec().map(fmt_taux)).transpose()?;
     Ok(vec![
         ligne(
@@ -571,7 +572,7 @@ impl Modele {
 
 /// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie. Sans choix,
 /// le bulletin est celui de l'arrete du 25/02/2016, art. 1, I, le simplifie, sans l'annexe que seul le complet ajoute.
-pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> Resultat<Modele> {
+pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> R<Modele> {
     Ok(match modele_du_salarie(sal)? {
         Some(m) => m,
         None => modele_de_la_compagnie(ent),
@@ -739,12 +740,12 @@ fn montant_ou_rien(x: Decimal) -> Cellule {
 }
 
 /// Un taux, s'il y en a un.
-fn taux_dit(t: Option<f64>) -> Resultat<Cellule> {
+fn taux_dit(t: Option<f64>) -> R<Cellule> {
     Ok(so(t.map(|t| dec_f64(t).map(fmt_taux)).transpose()?))
 }
 
 /// La base d'une ligne, et son taux salarial et son taux employeur ; rien la ou le bareme masque base et taux.
-fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> Resultat<(Cellule, Cellule, Cellule)> {
+fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> R<(Cellule, Cellule, Cellule)> {
     if l.masquer_base_et_taux {
         return Ok((vide(), vide(), vide()));
     }
@@ -753,7 +754,7 @@ fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> Resultat<(Cellule, C
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
-fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> Resultat<Ligne> {
+fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> R<Ligne> {
     let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base)) };
     Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal)?, montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
@@ -763,7 +764,7 @@ fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
 }
 
 /// Les lignes d'un groupe de rangs egaux, dans l'ordre du moteur.
-fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> Resultat<Vec<Ligne>> {
+fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> R<Vec<Ligne>> {
     let mut out = Vec::new();
     match r {
         Rang::Sante | Rang::Retraite => {
@@ -824,13 +825,13 @@ fn somme_des_rangs(
 /// - « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES » : la prevoyance.
 /// Aucun montant ne change : chaque ligne de la paie s'imprime une fois, et les trois sommes refont les totaux de la
 /// paie (sinon refus).
-fn tableau_modele(p: &Paie) -> Resultat<Vec<Ligne>> {
+fn tableau_modele(p: &Paie) -> R<Vec<Ligne>> {
     let rangees = rangees(p);
     let (oblig_sal, oblig_pat) = somme_des_rangs(&rangees, &obligatoire);
     let (fac_sal, fac_pat) = somme_des_rangs(&rangees, &|r| matches!(r, Rang::Facultative(_)));
     let (all_sal, all_pat) = somme_des_rangs(&rangees, &|r| *r == Rang::Allegement);
     if oblig_sal + fac_sal + all_sal != p.total_sal || oblig_pat + fac_pat + all_pat != p.total_pat {
-        return Err(format!(
+        return Err(socle::refus!(
             "Le bulletin ne retrouve pas les totaux de la paie : salarie {} + {} + {} pour {}, employeur {} + {} + {} \
              pour {}. Une ligne de cotisation n'a pas trouve sa place dans le modele.",
             oblig_sal, fac_sal, all_sal, p.total_sal, oblig_pat, fac_pat, all_pat, p.total_pat
@@ -860,7 +861,7 @@ fn tableau_modele(p: &Paie) -> Resultat<Vec<Ligne>> {
 /// cotisation -- chaque ligne du bareme sous la ligne (ou le groupe) du bulletin qui la porte, avec sa base, le taux et
 /// le montant de la part salariale et de la part employeur --, puis les trois totaux du bulletin, aux memes montants.
 /// Elle ne dit rien que la paie ne dise : chaque ligne de la paie s'y imprime une fois.
-fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Bloc>> {
+fn blocs_annexe(p: &Paie, numero: Option<&str>) -> R<Vec<Bloc>> {
     let sal = &p.salarie;
     // Un bulletin sans numero (un apercu) ne le dit pas.
     let bulletin = if let Some(n) = numero { format!("au bulletin n° {}", n) } else { "au bulletin".to_string() };
@@ -896,7 +897,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> Resultat<Vec<Bloc>> {
         th,
     )];
     let rangees = rangees(p);
-    let detail = |r: &Rang, lignes: &[&engagement::calcul::LigneCotisation], corps: &mut Vec<Ligne>| -> Resultat<()> {
+    let detail = |r: &Rang, lignes: &[&engagement::calcul::LigneCotisation], corps: &mut Vec<Ligne>| -> R<()> {
         // Les exonerations n'ont pas de titre : la ligne du bulletin qui les porte est leur total, qui les suit.
         if *r != Rang::Allegement {
             if let Some(titre) = r.titre() {
@@ -965,7 +966,7 @@ pub struct Jeu<'a> {
 }
 
 /// Les blocs d'UN bulletin.
-fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Bloc>> {
+fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     let p = j.paie;
     let (sal, e, sp) = (&p.salarie, &p.engagement, &p.spectacle);
     let conv = convention_du_contrat(ent, sp.as_ref(), sal, &e.fin_mois()?)?;
@@ -1154,7 +1155,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Bloc>> {
         long.push(')');
         long
     } else if e.a_cheval()? {
-        let fin = e.fin.ok_or_else(|| format!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
+        let fin = e.fin.ok_or_else(|| socle::refus!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
         format!(" (contrat du {} au {})", e.debut.jj_mm_aaaa(), fin.jj_mm_aaaa())
     } else {
         String::new()
@@ -1280,7 +1281,7 @@ pub fn identite_de(gabarits: &Path, nom: &str) -> Option<PathBuf> {
 
 /// `description` : un document par jeu, chacun sur sa page ; au modele complet (la case du salarie, sinon celle de la
 /// compagnie : `modele_du_bulletin`), l'annexe suit le bulletin, document a part (une page neuve).
-pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) -> Resultat<Description> {
+pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) -> R<Description> {
     let mut documents = Vec::new();
     for j in jeux {
         let modele = modele_du_bulletin(ent, &j.paie.salarie)?;
@@ -1328,7 +1329,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
 
 /// Les lignes de remuneration d'une paie qui s'impriment sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES » : hors assiette
 /// et pas un revenu (la nature de la rubrique, `Rubrique::hors_assiette`, celle que le montant net social lit).
-pub fn remboursements(ctx: &Contexte, p: &Paie) -> Resultat<Vec<usize>> {
+pub fn remboursements(ctx: &Contexte, p: &Paie) -> R<Vec<usize>> {
     let mut out = Vec::new();
     for (i, l) in p.remuneration.iter().enumerate() {
         if !l.soumis && droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.hors_assiette()? != droit::catalogue::HorsAssiette::Revenu {
@@ -1358,9 +1359,9 @@ pub fn jeux_et_description(
     rectificatifs: &HashMap<usize, Rectificatif>,
     departs: &engagement::departs::Departs,
     passe: &Passe,
-) -> Resultat<Description> {
+) -> R<Description> {
     if numeros.len() != paies.len() {
-        return Err(format!("{} numeros de bulletin pour {} paies.", numeros.len(), paies.len()));
+        return Err(socle::refus!("{} numeros de bulletin pour {} paies.", numeros.len(), paies.len()));
     }
     let pas_par_paie = crate::prelevement::des_paies(ctx, paies, departs)?;
     let mut colonnes_par_salarie: HashMap<String, Vec<Colonne>> = HashMap::new();
@@ -1392,7 +1393,7 @@ pub fn jeux_et_description(
         }
         let cle = p.salarie.id.to_string();
         // Une paie qui n'est pas un mois sans paie porte son prelevement (`prelevement::des_paies`).
-        let pas = pas_par_paie[i].as_ref().ok_or_else(|| format!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
+        let pas = pas_par_paie[i].as_ref().ok_or_else(|| socle::refus!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
         jeux.push(Jeu {
             paie: p,
             numero: numeros[i].as_deref(),
@@ -1405,14 +1406,14 @@ pub fn jeux_et_description(
         });
     }
     if jeux.is_empty() {
-        return Err("Aucun bulletin a ecrire : toutes les paies sont des mois sans paie.".to_string());
+        return Err(refus("Aucun bulletin a ecrire : toutes les paies sont des mois sans paie."));
     }
     description(&jeux, ent)
 }
 
 /// CE QUE LES BULLETINS DE `paies` CUMULENT (`jeux_et_description`) : ce que la compagnie a declare jusqu'a `mois`, pour
 /// les seuls salaries au cachet de ces paies -- le cumul ne se tire que pour eux, seuls leurs engagements se relisent.
-pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, departs: &'a engagement::departs::Departs) -> Resultat<Passe<'a>> {
+pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, departs: &'a engagement::departs::Departs) -> R<Passe<'a>> {
     let mut au_cachet = std::collections::BTreeSet::new();
     for pa in paies {
         if !pa.engagement.nat()?.mensuelle() {
@@ -1424,12 +1425,12 @@ pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, de
 
 
 /// Le texte d'une case de la fiche, exigee : vide, elle se refuse en se nommant.
-fn exige(c: &Option<String>, cle: &str) -> Resultat<String> {
-    c.ecrite(cle).map(str::to_string).map_err(String::from)
+fn exige(c: &Option<String>, cle: &str) -> R<String> {
+    c.ecrite(cle).map(str::to_string)
 }
 
 /// Le modele du bulletin que la fiche du salarie choisit, `None` si elle n'en choisit pas.
-pub fn modele_du_salarie(sal: &FicheSalarie) -> Resultat<Option<Modele>> {
+pub fn modele_du_salarie(sal: &FicheSalarie) -> R<Option<Modele>> {
     Ok(sal.modele_bulletin.dite().map(|m| match m {
         droit::fiche::ModeleBulletin::Simplifie => Modele::Simplifie,
         droit::fiche::ModeleBulletin::Complet => Modele::Complet,

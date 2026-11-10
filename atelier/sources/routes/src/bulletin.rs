@@ -250,7 +250,7 @@ pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Descrip
     let numeros: Vec<Option<String>> = (1..=s.paies.len()).map(|n| Some(format!("{}/{}", n, &mois[..4]))).collect();
     let departs = engagement::departs::Departs::default();
     let passe = documents::bulletin::passe_des_bulletins(&ctx, &s.paies, &mois, &departs)?;
-    jeux_et_description(&ctx, &s.paies, &numeros, &ent, &mois, None, false, &HashMap::new(), &departs, &passe)
+    Ok(jeux_et_description(&ctx, &s.paies, &numeros, &ent, &mois, None, false, &HashMap::new(), &departs, &passe)?)
 }
 
 /// Le PDF de la paie fictive sous `modele`.
