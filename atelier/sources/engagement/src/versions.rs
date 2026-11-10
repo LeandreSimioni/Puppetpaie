@@ -15,7 +15,7 @@ use crate::stock::{Saisie, Version};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
-use socle::num::Resultat;
+use socle::echec::R;
 use socle::texte::{euros, virgule};
 
 /// « 14/11 » d'un jour ISO ; tel quel s'il ne se lit pas.
@@ -61,7 +61,7 @@ fn bornes(s: &Carte) -> (String, String) {
 }
 
 /// Le libelle d'une rubrique au catalogue, et son unite.
-fn libelle(ctx: &Contexte, code: &str) -> Resultat<(String, String)> {
+fn libelle(ctx: &Contexte, code: &str) -> R<(String, String)> {
     let r = droit::catalogue::rubrique(&ctx.racine, code, &ctx.lue_au)?;
     Ok((r.libelle, r.unite))
 }
@@ -144,7 +144,7 @@ fn ou_rien<'a, T>(x: Option<&'a T>, rien: &'a T) -> &'a T {
 /// CE QUI A CHANGE d'une saisie a l'autre, en mots, dans l'ordre ou l'on lit un engagement : les bornes, chaque ligne
 /// (son nombre, son taux, ses jours, son lieu), puis les autres clauses ; chaque terme qui change a une date (« À partir
 /// du 01/09 : Salaire mensuel : … → … ») ; et les faits de chaque mois suivant d'un contrat qui deborde.
-pub fn changements(ctx: &Contexte, avant: Option<&Saisie>, apres: Option<&Saisie>) -> Resultat<Vec<String>> {
+pub fn changements(ctx: &Contexte, avant: Option<&Saisie>, apres: Option<&Saisie>) -> R<Vec<String>> {
     let vide = Saisie::default();
     let (a, b) = (ou_rien(avant, &vide), ou_rien(apres, &vide));
     let mut out = changements_du_mois(ctx, &a.carte, &b.carte)?;
@@ -246,14 +246,14 @@ pub fn termes_changes(convenue: &Saisie, presente: &Saisie) -> Vec<TermeChange> 
 /// CE QUI A CHANGE DEPUIS LA VERSION `n` de l'engagement valide `v` jusqu'a son present, en mots (`changements`) : ce
 /// que dit la frise, et ce que dit le renvoi des documents partis sur la version `n`. Vide si `n` est le present ou ne se
 /// lit pas.
-pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> Resultat<Vec<String>> {
+pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
     match (v.version_numero(n), &v.objet().brut.valide) {
         (Some(passee), Some(present)) if v.version() != Some(n) => changements(ctx, passee.saisie(), present.saisie.as_ref()),
         _ => Ok(Vec::new()),
     }
 }
 
-fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> Resultat<Vec<String>> {
+fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
     let mut out = Vec::new();
     let ((da, fa), (db, fb)) = (bornes(a), bornes(b));
     if da != db {
@@ -376,9 +376,9 @@ pub struct VersionDeLaFrise {
 /// LA FRISE de l'engagement valide `v` (`Frise`). `None` : aucune version passee, jamais modifie apres un envoi, ou la
 /// paie de `mois` est restee celle de la version d'avant (un contrat au mois change a partir d'un mois suivant : ce
 /// mois-ci reste tel qu'il est parti).
-pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str) -> Resultat<Option<Frise>> {
+pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str) -> R<Option<Frise>> {
     let passees = v.versions();
-    let paie_du_mois = |x: Version| -> Resultat<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, mois)?.map(|p| p.paie.clone())) };
+    let paie_du_mois = |x: Version| -> R<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, mois)?.map(|p| p.paie.clone())) };
     let present = v.objet().brut.valide.as_ref().map(Version::Presente);
     let Some((a, p)) = passees.last().map(Version::Passee).zip(present) else { return Ok(None) };
     let avant = paie_du_mois(a)?;
@@ -417,7 +417,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str) -> Resul
 /// etait parti que le changement touche (`etats::a_refaire`), groupe par sorte, les mois qui se suivent en une etendue :
 /// « Modifié le 20/01, à partir de septembre 2025, après l'envoi du contrat, des documents et des DSN de septembre à
 /// décembre 2025 ». Le detail, envoi par envoi, est dans la frise.
-fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[Depart]) -> Resultat<String> {
+fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[Depart]) -> R<String> {
     let mut phrase = format!("Modifié le {}", jour_court(v.le()));
     if let Some(m) = premier_mois_change(v)?.filter(|m| m.as_str() != v.objet().premier_mois()) {
         phrase.push_str(&format!(", à partir de {}", socle::mois::Mois::en_clair(&m)));
@@ -463,10 +463,10 @@ fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[De
 
 /// Le premier mois dont la paie a change au dernier changement de l'engagement valide `v` (sa derniere version passee
 /// contre son present) ; `None` si aucune ne se lit autrement, ou sans version passee.
-fn premier_mois_change(v: &Valide) -> Resultat<Option<String>> {
+fn premier_mois_change(v: &Valide) -> R<Option<String>> {
     let (Some(passee), Some(valide)) = (v.versions().last(), v.objet().brut.valide.as_ref()) else { return Ok(None) };
     let (avant, present) = (Version::Passee(passee), Version::Presente(valide));
-    let paie = |x: Version, m: &str| -> Resultat<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, m)?.map(|p| p.paie.clone())) };
+    let paie = |x: Version, m: &str| -> R<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, m)?.map(|p| p.paie.clone())) };
     for m in crate::paies::mois_ecrits(v.objet())? {
         if paie(avant, &m)? != paie(present, &m)? {
             return Ok(Some(m));
