@@ -6,11 +6,6 @@ use droit::fiche::Lue as _;
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::Echec;
-
-pub fn ko(m: impl Into<String>) -> Echec {
-    Echec { classe: None, phrase: m.into(), a_part: None }
-}
 
 /// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --
 /// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
@@ -46,7 +41,7 @@ fn instant_du_jour(j: Jour) -> String {
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
-pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<TauxRecu>, Echec> {
+pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
     let par_nir: std::collections::HashMap<String, String> = ctx
         .salaries
         .iter()

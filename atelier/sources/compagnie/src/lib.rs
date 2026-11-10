@@ -38,6 +38,12 @@ pub mod taux_pas;
 /// (`moteur route`, qui sert les memes).
 pub const INTERFACE: &str = "interface";
 
+/// Un refus venu d'ailleurs, sous la classe que ce geste lui donne : il garde sa phrase, ce qu'il porte a part, et
+/// l'endroit ou il est ne.
+pub(crate) fn en(classe: socle::echec::Classe) -> impl Fn(socle::echec::Echec) -> socle::echec::Echec {
+    move |e| socle::echec::Echec { classe: Some(classe), ..e }
+}
+
 /// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
 pub fn maintenant() -> String {
     socle::paris::maintenant()[..16].replacen('T', " ", 1)

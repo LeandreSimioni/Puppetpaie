@@ -74,11 +74,11 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
     let mut jour = depart;
     let mut restants = combien;
     while restants > 0 {
-        jour = jour.plus_jours(1).map_err(|m| erreur(Classe::CalculImpossible, m))?;
+        jour = jour.plus_jours(1).map_err(crate::en(Classe::CalculImpossible))?;
         if jour.jour_de_la_semaine() >= 5 {
             continue;
         }
-        let feries = socle::feries::feries(jour.an).map_err(|m| erreur(Classe::Illisible, m))?;
+        let feries = socle::feries::feries(jour.an).map_err(crate::en(Classe::Illisible))?;
         if feries.iter().any(|(j, _)| *j == jour) {
             continue;
         }
@@ -96,7 +96,7 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
 /// reponse, il ne la fait pas attendre au-dela du delai. Il se lit au journal de ce qui est parti ; rien d'autre ne le
 /// garde.
 pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
-    let lignes = envois::journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?.lignes;
+    let lignes = envois::journal::lu(&ctx.racine).map_err(crate::en(Classe::Disque))?.lignes;
     let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie.as_str() == cle));
     let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true)
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
@@ -104,12 +104,12 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
     let Some(l) = derniere else { return Ok(None) };
     let quand = l.quand().to_string();
     // Un taux recu depuis la demande y a repondu.
-    let recus = droit::pas::recus(ctx, cle).map_err(|m| erreur(Classe::Illisible, m))?;
+    let recus = droit::pas::recus(ctx, cle).map_err(crate::en(Classe::Illisible))?;
     if recus.last().and_then(|r| r.mis_a_disposition.portee()).is_some_and(|d| chiffres(d) >= chiffres(&quand)) {
         return Ok(None);
     }
     let le_jour = quand.get(..10).ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
-    let jour = Jour::lire(le_jour).map_err(|m| erreur(Classe::Illisible, m))?;
+    let jour = Jour::lire(le_jour).map_err(crate::en(Classe::Illisible))?;
     let avant = jours_ouvres_apres(jour, 5)?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
@@ -120,7 +120,7 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
 /// porte un (1,1). `forcer` : demander encore, une demande deja partie (le signalement rejete par la plate-forme).
 pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R<Vec<Ligne>> {
     use declarations::amorcage as am;
-    let ko = |m: String| erreur(Classe::Illisible, m);
+    let ko = crate::en(Classe::Illisible);
     let cle_de = |p: &Paie| p.salarie.id.to_string();
     let mut cles: Vec<String> = Vec::new();
     for p in paies {
@@ -134,7 +134,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
     for cle in &cles {
         let mut besoin: Option<(usize, droit::pas::Situation)> = None;
         for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
-            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| ko(e.into()))?), Some(&p.engagement.mois)).map_err(|e| ko(e.into()))?;
+            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(&ko)?), Some(&p.engagement.mois)).map_err(&ko)?;
             if s.situation == droit::pas::SANS_NIR || s.a_demander {
                 besoin = Some((i, s));
                 break;
@@ -179,8 +179,8 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
 pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: &str, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
     let dossier = ctx.racine.join("sorties").join(mois);
-    let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))? + 1;
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|m| erreur(Classe::Disque, m))?;
+    let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(crate::en(Classe::Refuse))? + 1;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(crate::en(Classe::Disque))?;
     let mut fichiers = Vec::new();
     for (rang, l) in retenues.iter().enumerate() {
         let options = am::Options {
@@ -194,7 +194,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, m
         let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
         let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
-        declarations::dsn::ecrire(&texte, &cible).map_err(|m| erreur(Classe::Disque, m))?;
+        declarations::dsn::ecrire(&texte, &cible).map_err(crate::en(Classe::Disque))?;
         crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(&cible), None, None)?;
         fichiers.push(cible);
     }
@@ -238,7 +238,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     let jour = d.constitution.aaaammjj();
     let mut out: Vec<String> = vec![
         "SIGNALEMENTS D'AMORCAGE DES DONNEES VARIABLES (nature 08)".into(),
-        format!("Motif {} - {}", d.motif, am::libelle_motif(d.motif).map_err(|m| erreur(Classe::Illisible, m))?),
+        format!("Motif {} - {}", d.motif, am::libelle_motif(d.motif).map_err(crate::en(Classe::Illisible))?),
         format!("Constitues le {}", d.constitution.jj_mm_aaaa()),
         String::new(),
         format!("Un signalement par individu : {} fichier(s) a deposer.", retenus.len()),
@@ -263,6 +263,6 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         }
     }
     let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));
-    std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&recap, &e)))?;
+    std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| crate::en(Classe::Disque)(socle::echec::du_disque(&recap, &e)))?;
     Ok(Lot { motif: d.motif.to_string(), dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
 }

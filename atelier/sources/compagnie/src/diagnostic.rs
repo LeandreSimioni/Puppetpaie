@@ -1214,7 +1214,7 @@ fn page_vue() -> &'static Mutex<Option<PageDite>> {
 pub fn noter_gestes(racine: &Path, texte: &str) {
     let lot: LotDeGestes = match socle::forme::lire_texte(texte, "Les gestes de la page ne se lisent pas.") {
         Ok(l) => l,
-        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {}", String::from(e))),
+        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {} {:?}", e.phrase, e.a_part)),
     };
     let forme = |s: &str, limite: usize| texte_en_forme(Some(racine), s.trim(), limite);
     if let Some(p) = lot.page {
@@ -1559,7 +1559,7 @@ pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
     if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
         return Ok(None);
     }
-    let objets = engagement::stock::objets_du_mois(racine, mois).map_err(socle::echec::Echec::from)?;
+    let objets = engagement::stock::objets_du_mois(racine, mois)?;
     let journal = envois::journal::lu(racine)?;
     let du_mois: Vec<DepotDit> = journal
         .lignes

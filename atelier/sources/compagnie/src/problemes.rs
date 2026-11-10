@@ -329,8 +329,8 @@ fn chemin_corps(racine: &Path, id: &str) -> PathBuf {
 /// Ecrit en entier ou pas du tout : un fichier a cote, puis renomme. Un lecteur ne voit jamais un fichier a moitie.
 fn ecrire_entier<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
     let provisoire = socle::ecriture::provisoire(p);
-    ecrire_json(&provisoire, v, 2).map_err(|m| erreur(Classe::Disque, m))?;
-    std::fs::rename(&provisoire, p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))
+    ecrire_json(&provisoire, v, 2).map_err(crate::en(Classe::Disque))?;
+    std::fs::rename(&provisoire, p).map_err(|e| crate::en(Classe::Disque)(socle::echec::du_disque(&p, &e)))
 }
 
 /// `signalements` : ceux faits depuis ce poste, du plus recent au plus ancien, chacun avec ce que la page en dit.
@@ -369,12 +369,12 @@ fn en_attente(l: &Signalement) -> bool {
 fn verrouiller(racine: &Path) -> R<Option<Verrou>> {
     let p = chemin_signalements(racine).with_file_name(".signalements.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| crate::en(Classe::Disque)(socle::echec::du_disque(&d, &e)))?;
     }
     let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::maintenant());
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(crate::en(Classe::Disque))? {
             Ok(v) => return Ok(Some(v)),
             Err(socle::verrou::Verrouille { .. }) if std::time::Instant::now() >= fin => return Ok(None),
             Err(socle::verrou::Verrouille { .. }) => std::thread::sleep(std::time::Duration::from_millis(50)),
@@ -397,7 +397,7 @@ fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Signalement>) -> R<(T, boo
 /// Un identifiant de message, propre au poste : l'heure et six octets tires au hasard. Il nomme son fichier d'attente.
 fn nouvel_id() -> R<String> {
     let mut alea = [0u8; 6];
-    socle::temps::aleas(&mut alea).map_err(|e| erreur(Classe::Disque, e))?;
+    socle::temps::aleas(&mut alea).map_err(crate::en(Classe::Disque))?;
     let heure: String = socle::paris::maintenant().chars().filter(char::is_ascii_alphanumeric).collect();
     Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
 }
@@ -448,7 +448,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {
-            std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+            std::fs::create_dir_all(d).map_err(|e| crate::en(Classe::Disque)(socle::echec::du_disque(&d, &e)))?;
         }
         ecrire_entier(&fichier, &corps)?;
         lignes.push(ligne);
@@ -461,7 +461,10 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         Err(e) => match std::fs::remove_file(&fichier) {
             Ok(()) => Err(e),
             Err(x) if x.kind() == std::io::ErrorKind::NotFound => Err(e),
-            Err(x) => Err(socle::echec::Echec { classe: e.classe, phrase: format!("{} {}", String::from(e), String::from(socle::echec::du_disque(&fichier, &x))), a_part: None }),
+            Err(x) => {
+                let d = socle::echec::du_disque(&fichier, &x);
+                Err(socle::echec::Echec { a_part: e.a_part.or(d.a_part), phrase: format!("{} {}", e.phrase, d.phrase), ..e })
+            }
         },
     }
 }
@@ -502,9 +505,9 @@ pub fn partir(racine: &Path) -> BilanMessages {
         Err(e) => {
             let reste = match en_ordre(racine) {
                 Ok(l) => l.iter().filter(|l| en_attente(l)).count(),
-                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", String::from(e), String::from(f))), occupe: false },
+                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", e.phrase, f.phrase)), occupe: false },
             };
-            BilanMessages { partis: 0, reste, erreur: Some(e.into()), occupe: false }
+            BilanMessages { partis: 0, reste, erreur: Some(e.phrase), occupe: false }
         }
     }
 }
@@ -513,10 +516,10 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     let bilan = |partis: usize, reste: usize, erreur: Option<String>, occupe: bool| BilanMessages { partis, reste, erreur, occupe };
     let p = chemin_signalements(racine).with_file_name(".signalements-envoi.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| crate::en(Classe::Disque)(socle::echec::du_disque(&d, &e)))?;
     }
     let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::maintenant());
-    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(crate::en(Classe::Disque))? {
         Ok(v) => v,
         Err(socle::verrou::Verrouille { .. }) => return Ok(bilan(0, en_ordre(racine)?.iter().filter(|l| en_attente(l)).count(), None, true)),
     };
@@ -564,7 +567,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         match c.signaler(&corps) {
             Ok(r) => {
                 marquer_arrive(racine, &id, &r)?;
-                socle::ecriture::effacer(&fichier).map_err(|m| erreur(Classe::Disque, m))?;
+                socle::ecriture::effacer(&fichier).map_err(crate::en(Classe::Disque))?;
                 partis += 1;
             }
             Err(e) => {
@@ -646,7 +649,7 @@ fn effacer_les_partis(racine: &Path) -> R<()> {
             };
             let Some(id) = nom.strip_suffix(".json") else { continue };
             if !lignes.iter().any(|l| en_attente(l) && l.id == id) {
-                socle::ecriture::effacer(&f).map_err(|m| erreur(Classe::Disque, m))?;
+                socle::ecriture::effacer(&f).map_err(crate::en(Classe::Disque))?;
             }
         }
         Ok(((), false))

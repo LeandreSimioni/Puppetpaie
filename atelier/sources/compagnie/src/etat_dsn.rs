@@ -120,17 +120,17 @@ pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
 
 /// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
 pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
-    if engagement::stock::a_une_saisie(racine, mois).map_err(socle::echec::Echec::from)? {
+    if engagement::stock::a_une_saisie(racine, mois)? {
         return Ok(false);
     }
-    Ok(!engagement::importe::du_mois(racine, mois).map_err(socle::echec::Echec::from)?.is_empty())
+    Ok(!engagement::importe::du_mois(racine, mois)?.is_empty())
 }
 
 /// LA DSN QUE L'IMPORT A LUE POUR `mois` (`engagement::importe::dsn_deposee`), que la saisie touche aussi le mois ou
 /// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
 /// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
 pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: &str) -> R<Option<Option<String>>> {
-    Ok(engagement::importe::dsn_deposee(racine, mois).map_err(socle::echec::Echec::from)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
+    Ok(engagement::importe::dsn_deposee(racine, mois)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
 }
 
 /// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par
@@ -154,7 +154,7 @@ pub fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
     if let Some(j) = ctx.entreprise.premiere_embauche.dite() {
         return Ok(Some(socle::mois::Mois::du_jour(j).to_string()));
     }
-    if !engagement::stock::mois_saisis(&ctx.racine).map_err(socle::echec::Echec::from)?.is_empty() {
+    if !engagement::stock::mois_saisis(&ctx.racine)?.is_empty() {
         return Ok(None);
     }
     let journal = envois::journal::lu(&ctx.racine)?;
