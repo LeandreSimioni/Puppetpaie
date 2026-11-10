@@ -94,10 +94,9 @@ fait). Rien n'est écrit.",
             ),
         ));
     }
-    let dite = match &maintien {
-        Some(m) => mention(m, &nom, &fin),
-        None => String::new(),
-    };
+    // Sans maintien du (aucune garantie collective, ou faute lourde), L911-8, 6° n'a rien a faire signaler : le
+    // paragraphe du modele reste vide.
+    let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));

@@ -32,11 +32,7 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, 
     let ent = &ctx.entreprise;
     let prime = clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), metier, statut)?;
     let prend = |r: &&Rubrique| {
-        let forme = match mensuelle {
-            None => true,
-            Some(true) => crate::a_une_limite(&r.code),
-            Some(false) => r.reservee_a() != Some("mensuelle"),
-        };
+        let forme = mensuelle.is_none_or(|m| if m { crate::a_une_limite(&r.code) } else { r.reservee_a() != Some("mensuelle") });
         !r.saisie.is_empty()
             && forme
             && statut.is_none_or(|s| r.reservee_au_statut().is_none_or(|v| v == s))
