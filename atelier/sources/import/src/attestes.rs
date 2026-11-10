@@ -124,10 +124,10 @@ pub fn chevauche(d1: Option<&str>, f1: Option<&str>, d: &str, f: &str) -> bool {
     d1.is_some_and(|d1| d1 <= f) && f1.is_none_or(|f1| d <= f1)
 }
 
-/// Les mois `AAAA-MM` de `debut` a `fin` (ISO) ; `None` : une date manque ou ne se lit pas.
-fn mois_de(debut: Option<&str>, fin: Option<&str>) -> Option<Vec<String>> {
+/// Les mois de `debut` a `fin` (ISO) ; `None` : une date manque ou ne se lit pas.
+fn mois_de(debut: Option<&str>, fin: Option<&str>) -> Option<Vec<socle::mois::Mois>> {
     let jour = |x: Option<&str>| x.and_then(socle::date::Jour::du_texte);
-    Some(socle::mois::Mois::entre(&jour(debut)?, &jour(fin)?).iter().map(socle::mois::Mois::to_string).collect())
+    Some(socle::mois::Mois::entre(&jour(debut)?, &jour(fin)?))
 }
 
 /// Ce qu'un certificat atteste seul (`reste_du_certificat`) : rien, son reste, ou la phrase qui dit pourquoi le reste ne
@@ -151,15 +151,14 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
     let Some(siens) = mois_de(c.debut.as_deref(), c.fin.as_deref()) else { return sans_dates() };
     let (Some(debut_c), Some(fin_c)) = (c.debut.as_deref(), c.fin.as_deref()) else { return Ok(Reste::Rien) };
     let coupants: Vec<&&Atteste> = par.iter().filter(|p| chevauche(p.debut.as_deref(), p.fin.as_deref(), debut_c, fin_c)).collect();
-    let mut coupes: BTreeSet<String> = BTreeSet::new();
+    let mut coupes: BTreeSet<socle::mois::Mois> = BTreeSet::new();
     for p in &coupants {
         let Some(siens) = mois_de(p.debut.as_deref(), p.fin.as_deref()) else { return sans_dates() };
         coupes.extend(siens);
     }
     let restent: Vec<usize> = (0..siens.len()).filter(|i| !coupes.contains(&siens[*i])).collect();
     let (Some(&premier), Some(&dernier)) = (restent.first(), restent.last()) else { return Ok(Reste::Rien) };
-    let libelle = |m: &str| socle::mois::Mois::en_clair(m);
-    let mois_restants = restent.iter().map(|i| libelle(&siens[*i])).collect::<Vec<_>>().join(", ");
+    let mois_restants = restent.iter().map(|i| siens[*i].libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ");
     if dernier - premier + 1 != restent.len() {
         return Ok(Reste::NeSeComptePas(format!(
             "il reste au certificat ({}) des mois de part et d'autre d'un mois attesté ailleurs : ses jours ou cachets et son brut ne se partagent pas entre eux ; déposez les bulletins de ces mois",
@@ -187,9 +186,8 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
             en_mots(heures, cachets, jours, brut)
         )));
     };
-    let mois = |m: &str| socle::mois::Mois::lire(m);
-    let debut = mois(&siens[premier])?.premier_jour().iso().max(debut_c.to_string());
-    let fin = mois(&siens[dernier])?.dernier_jour().iso().min(fin_c.to_string());
+    let debut = siens[premier].premier_jour().iso().max(debut_c.to_string());
+    let fin = siens[dernier].dernier_jour().iso().min(fin_c.to_string());
     let mut ligne = c.ligne.clone();
     let mut b = reste_brut.round_dp(2);
     b.rescale(2);

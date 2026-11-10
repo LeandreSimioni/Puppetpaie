@@ -81,7 +81,7 @@ pub enum Detail {
 /// qualite de cadre, d'ou vient le taux AT/MP), et pour un ecart, notre taux, le leur et l'ecart relatif.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Cas {
-    mois: String,
+    mois: socle::mois::Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
     logiciel: Option<String>,
     nature: droit::natures::NatureDeContrat,
@@ -168,7 +168,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     };
     let nombre = |t: Option<socle::num::Decimal>| t.map(socle::num::nombre);
     let cas = |c: &Comparaison, p: &mut Propre| Cas {
-        mois: p.texte(&c.mois.to_string()),
+        mois: c.mois,
         logiciel: None,
         nature: c.nature,
         statut: p.option(&c.statut),

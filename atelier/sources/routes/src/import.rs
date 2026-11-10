@@ -486,10 +486,11 @@ pub(crate) fn apercu_lu(
                 None => "?".to_string(),
             };
             let fiche = proposee::de("entreprise", &ctx.entreprise)?;
-            let ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, &lecture.dernier_mois)?;
+            let dernier_mois = lecture.dernier_mois.map(|m| m.to_string()).unwrap_or_default();
+            let ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, &dernier_mois)?;
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer("entreprise", &fiche, &e)?;
-            f.noter(&champs, &Origine::dsn(&lecture.dernier_mois));
+            f.noter(&champs, &Origine::dsn(&dernier_mois));
             entreprise = Some(f);
             crate::importation::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
         }
@@ -510,10 +511,10 @@ pub(crate) fn apercu_lu(
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = par_nir.get(&decl.nir) {
             let fiche = vue_salarie(ctx, cle)?;
-            let ec = ecarts("salarie", &fiche, &decl.fiche()?, &decl.mois)?;
+            let ec = ecarts("salarie", &fiche, &decl.fiche()?, &decl.mois.to_string())?;
             let mut entree = FicheImportee::new("salarie", Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
-            entree.noter(&champs, &Origine::dsn(&decl.mois));
+            entree.noter(&champs, &Origine::dsn(&decl.mois.to_string()));
             crate::importation::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
             salaries.push(entree);
             continue;
@@ -545,7 +546,7 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.clone(), dernier: o.dernier_mois.clone(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
         .collect();
     for c in &contrats {
         if c.numero_objet.is_empty() {
@@ -633,7 +634,7 @@ pub(crate) fn apercu_lu(
         if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
             continue;
         }
-        if !deja_paies.contains(&(mois.clone(), cle_de(nir), contrat.clone())) {
+        if !deja_paies.contains(&(mois.to_string(), cle_de(nir), contrat.clone())) {
             paies_nouvelles += 1;
         }
     }
@@ -661,18 +662,18 @@ pub(crate) fn apercu_lu(
                 Some(s) => libelle_de(&s.individu),
                 None => nir.clone(),
             };
-            sans_nets.push(SansNets { mois: mois.clone(), nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
+            sans_nets.push(SansNets { mois: mois.to_string(), nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
         let paie = paie_declaree(v, objet);
-        paies.push(engagement::importe::PaieLue { mois: socle::mois::Mois::lire(mois)?, salarie: cle_de(nir), paie });
+        paies.push(engagement::importe::PaieLue { mois: *mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {
         source: source.to_string(),
         dsn: lecture.fichiers,
         aem: n_aem,
-        premier_mois: lecture.premier_mois.clone(),
-        dernier_mois: lecture.dernier_mois.clone(),
+        premier_mois: lecture.premier_mois.map(|m| m.to_string()).unwrap_or_default(),
+        dernier_mois: lecture.dernier_mois.map(|m| m.to_string()).unwrap_or_default(),
         entreprise,
         salaries,
         spectacles,
@@ -692,7 +693,7 @@ pub(crate) fn apercu_lu(
         paies,
         contrats_attestes: Vec::new(),
         contrats_changes: Vec::new(),
-        licences: lecture.licences.clone(),
+        licences: lecture.licences.iter().map(|(m, l)| (m.to_string(), l.clone())).collect(),
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
     })
