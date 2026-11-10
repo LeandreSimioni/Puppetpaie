@@ -1988,7 +1988,7 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
     let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
     Ok(declarations::fctu::FinDeContrat {
         fin: exige(&e.fin, "fin")?.to_string(),
-        motif: exige(&e.motif_rupture, "motif_rupture")?.to_string(),
+        motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
         mois_rattachement: mois,
         type_preavis: preavis.genre.clone(),
         preavis_debut: preavis.debut.clone(),
@@ -2352,7 +2352,7 @@ fn fin_au_terme(e: &Carte) -> R<Carte> {
         return Ok(e);
     }
     if let Some(m) = nature_de(&e)?.motif_rupture_par_defaut() {
-        e.motif_rupture = Some(m.to_string());
+        e.motif_rupture = Some(m);
         if e.preavis.is_none() {
             e.preavis = Some(Preavis { genre: SANS_PREAVIS.to_string(), debut: None, fin: None });
         }
@@ -2369,7 +2369,7 @@ pub(crate) fn phrase_du_manque(m: &Manque) -> String {
 fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     let (debut, fin) = (jour(exige(&e.debut, "debut")?)?, jour(exige(&e.fin, "fin")?)?);
     let anciennete = droit::permanents::anciennete_mois(&debut, &fin);
-    let motif = e.motif_rupture.as_deref();
+    let motif = e.motif_rupture;
     let cdd = !nature_de(e)?.duree_indeterminee;
     let duree = droit::permanents::preavis_mois(anciennete, motif, cdd)?;
     let regle = droit::permanents::regle_du_preavis(motif, cdd)?;
@@ -2401,7 +2401,7 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
 fn ce_qui_manque(ctx: &Contexte, e: &Carte) -> R<Vec<Manque>> {
     let e = &fin_au_terme(e)?;
     let mut manques = Vec::new();
-    match e.motif_rupture.as_deref() {
+    match e.motif_rupture {
         None => manques.push(manque(
             "motif_rupture",
             "Motif de la rupture",
@@ -2481,7 +2481,7 @@ pub(crate) struct FinASignaler {
     /// Le libelle de sa nature de contrat.
     #[serde(rename = "nature")]
     libelle_nature: String,
-    motif_rupture: Option<String>,
+    motif_rupture: Option<droit::natures::MotifDeRupture>,
     preavis: Option<Preavis>,
     pub a_saisir: Vec<Manque>,
     pub du: bool,
@@ -2512,7 +2512,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         let e = avec_ses_bornes(carte);
         let nat = nature_de(&e)?;
         // La regle est celle de la nature et du motif (`Nature::signalement_fctu`) : un CDDU rompu avant son terme se signale.
-        if !nat.signalement_fctu(e.motif_rupture.as_deref()) {
+        if !nat.signalement_fctu(e.motif_rupture) {
             continue;
         }
         let Some(fin) = e.fin.as_deref() else { continue };
@@ -2539,7 +2539,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             numero: e.numero.clone(),
             fin,
             libelle_nature: nat.libelle.clone(),
-            motif_rupture: e.motif_rupture.clone(),
+            motif_rupture: e.motif_rupture,
             preavis: e.preavis.clone(),
             a_saisir,
             du,

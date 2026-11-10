@@ -1688,7 +1688,7 @@ const DE_LA_RUPTURE: [Champ; 10] = [
 /// travail d'apres la fin retires (une ligne garde ses jours jusqu'a la fin, et sa quantite ne croit pas).
 fn seule_la_rupture(partie: Option<&stock::Saisie>, presente: Option<&stock::Saisie>) -> bool {
     let (Some(partie), Some(presente)) = (partie, presente) else { return false };
-    let motif_dit = |s: &stock::Saisie| s.carte.motif_rupture.as_deref().is_some_and(|m| !m.is_empty());
+    let motif_dit = |s: &stock::Saisie| s.carte.motif_rupture.is_some();
     let Some(fin) = presente.carte.fin.as_deref().filter(|f| f.len() == 10) else { return false };
     if !motif_dit(presente) || motif_dit(partie) {
         return false;
@@ -1729,7 +1729,7 @@ mod tests_rupture {
             saisie(crate::saisie::Carte {
                 debut: Some("2026-05-04".into()),
                 fin: Some("2026-05-06".into()),
-                motif_rupture: Some("084".into()),
+                motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
                 preavis: Some(crate::saisie::Preavis { genre: "90".into(), debut: None, fin: None }),
                 ..carte(ligne(3, taux))
             })

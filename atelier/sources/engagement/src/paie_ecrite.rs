@@ -240,8 +240,8 @@ pub struct FormeDEngagement {
     #[serde(with = "nombre_opt")]
     pub quotite_reference_saisie: Option<Decimal>,
     pub modalite_temps_travail_saisie: Option<String>,
-    pub motif_recours: Option<String>,
-    pub motif_rupture: Option<String>,
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
+    pub motif_rupture: Option<droit::natures::MotifDeRupture>,
     pub notification_rupture: Option<Jour>,
     pub preavis: Option<crate::saisie::Preavis>,
     pub transaction: Option<String>,

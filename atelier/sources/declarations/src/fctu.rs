@@ -82,7 +82,7 @@ fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> R<String> {
 #[derive(Debug, Clone)]
 pub struct FinDeContrat {
     pub fin: String,
-    pub motif: String,
+    pub motif: droit::natures::MotifDeRupture,
     pub mois_rattachement: socle::mois::Mois,
     pub type_preavis: String,
     pub preavis_debut: Option<String>,
@@ -128,8 +128,9 @@ pub fn preavis_non_effectue(type_preavis: &str) -> R<bool> {
 /// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
 /// refuse par le point de depot. Un seul endroit : la liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et
 /// `verifier` la lisent ici.
-pub fn notification_exigee(motif: &str) -> R<bool> {
-    Ok(nomenclatures()?.notification_rupture.motifs.iter().any(|m| m == motif))
+pub fn notification_exigee(motif: droit::natures::MotifDeRupture) -> R<bool> {
+    // La liste de la CCH-12 est celle de la norme, plus large que les motifs qu'une nature permet : du texte.
+    Ok(nomenclatures()?.notification_rupture.motifs.iter().any(|m| m == motif.code()))
 }
 
 // ------------------------------------------------ le type de preavis et ce que la paie verse
@@ -288,7 +289,7 @@ S21.G00.63.002.",
     }
 
     // CCH-11 et CCH-12 du bloc 63 : deux motifs limitent le type de preavis.
-    if let Some(limite) = types.permis_au_motif(&fin.motif) {
+    if let Some(limite) = types.permis_au_motif(fin.motif) {
         let permis = &limite.types;
         if !permis.contains(&fin.type_preavis) {
             let mut noms = Vec::new();
@@ -302,7 +303,7 @@ S21.G00.63.002.",
                 fin.motif,
                 limite.controle,
                 noms.join(", "),
-                if fin.motif == "043" || fin.motif == "110" {
+                if fin.motif == droit::natures::MotifDeRupture::RuptureConventionnelle {
                     "Une rupture conventionnelle n'a pas de preavis : sa convention FIXE la date de rupture (L1237-13)."
                 } else {
                     "Une rupture en periode d'essai releve du delai de prevenance (L1221-25 et L1221-26), pas du \
@@ -327,7 +328,7 @@ preavis de L1234-1."
     }
 
     // CCH-12 de S21.G00.62.003 : pour ces motifs, la date de notification est obligatoire.
-    if fin.notification.is_none() && notification_exigee(&fin.motif)? {
+    if fin.notification.is_none() && notification_exigee(fin.motif)? {
         return Err(Echec::impossible(format!(
             "Motif de rupture {} : la date de notification de la rupture (S21.G00.62.003, `notification_rupture` dans la \
 saisie) est OBLIGATOIRE -- CCH-12 de S21.G00.62.003, cahier technique DSN p. 275. Le point de depot refuserait le \
@@ -348,13 +349,13 @@ signalement sans elle. Rien n'est ecrit.",
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
     let nat = e.nat()?;
-    if let Some(refus) = nat.motif_rupture_refuse(&fin.motif, numero_dit(e)) {
+    if let Some(refus) = nat.motif_rupture_refuse(fin.motif, numero_dit(e)) {
         return Err(Echec::impossible(refus));
     }
 
     // La derogation du CDDU (circuit derogatoire, motif 031 seul : fiche 2062) : le moteur le DIT plutot que de refuser,
     // car le salarie peut demander le signalement (fiche 1902). Rompu avant son terme, le CDDU se signale.
-    if !nat.signalement_fctu(Some(&fin.motif)) {
+    if !nat.signalement_fctu(Some(fin.motif)) {
         avertissements.push(format!(
             "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
 DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
@@ -376,7 +377,7 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
 pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> {
     let j = |s: &str| -> R<String> { Ok(d(s)?.jjmmaaaa()) };
     f.add("S21.G00.62.001", j(&fin.fin)?);
-    f.add("S21.G00.62.002", &fin.motif);
+    f.add("S21.G00.62.002", fin.motif.code());
     if let Some(n) = &fin.notification {
         f.add("S21.G00.62.003", j(n)?);
     }

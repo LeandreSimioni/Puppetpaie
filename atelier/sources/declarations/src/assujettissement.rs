@@ -123,7 +123,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &s
 
 /// Ce que la DSN ecrit d'un contrat calcule ou saisi : nature, dispositif, motif.
 fn codes_du_contrat(p: &Paie) -> R<(Option<String>, Option<String>, Option<String>)> {
-    Ok(droit::cpf_cdd::codes_de(&*p.engagement.nat()?, p.engagement.motif_recours.as_deref()))
+    Ok(droit::cpf_cdd::codes_de(&*p.engagement.nat()?, p.engagement.motif_recours))
 }
 
 fn qui(p: &Paie) -> String {

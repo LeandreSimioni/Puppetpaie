@@ -125,7 +125,7 @@ carte! {
         #[champ(Terme, Lieu)]
         pub lieu: Option<String>,
         #[champ(Terme, MotifRecours)]
-        pub motif_recours: Option<String>,
+        pub motif_recours: Option<droit::natures::MotifDeRecours>,
         #[champ(Terme, QuotiteContrat)]
         pub quotite_contrat: Option<NombreLu>,
         #[champ(Terme, QuotiteReference)]
@@ -180,7 +180,7 @@ carte! {
         #[champ(Fait, FauteGrave)]
         pub faute_grave: Option<bool>,
         #[champ(Fin, MotifRupture)]
-        pub motif_rupture: Option<String>,
+        pub motif_rupture: Option<droit::natures::MotifDeRupture>,
         #[champ(Fin, NotificationRupture)]
         pub notification_rupture: Option<String>,
         #[champ(Fin, EngagementLicenciement)]
@@ -269,6 +269,11 @@ macro_rules! choix_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
 }
 choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc);
+
+macro_rules! code_simple {
+    ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
+}
+code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture);
 
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {

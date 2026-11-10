@@ -126,8 +126,9 @@ impl TypesPreavis {
     }
 
     /// Les types permis au motif `motif`, ou `None` s'il ne limite pas le type.
-    pub fn permis_au_motif(&self, motif: &str) -> Option<&Permis> {
-        self.types_permis_par_motif.motifs.get(motif)
+    pub fn permis_au_motif(&self, motif: crate::natures::MotifDeRupture) -> Option<&Permis> {
+        // Les motifs des controles sont ceux de la norme, plus larges que ceux qu'une nature permet (110) : du texte.
+        self.types_permis_par_motif.motifs.get(motif.code())
     }
 }
 

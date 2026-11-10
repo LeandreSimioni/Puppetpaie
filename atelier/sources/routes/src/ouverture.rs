@@ -20,7 +20,7 @@ use declarations::champs::{self, Valeur};
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
 use droit::emplois::{self};
-use droit::natures::{self, Nature};
+use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
@@ -1294,30 +1294,30 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
 
 /// `faits_de_rupture` : les faits a demander a l'ecran pour CE motif, et eux
 /// seuls (« si compagnie simple, interface simple »).
-fn faits_de_rupture(n: &Nature, m: &str) -> R<Vec<&'static str>> {
-    const SANS_NOTIFICATION: [&str; 5] = ["031", "043", "065", "083", "084"];
-    const LICENCIEMENTS: [&str; 8] = ["014", "020", "087", "088", "091", "092", "095", "096"];
-    let m = m.to_string();
-    if m.is_empty() {
-        return Ok(vec![]);
-    }
+fn faits_de_rupture(n: &Nature, m: MotifDeRupture) -> R<Vec<&'static str>> {
+    use MotifDeRupture::*;
+    let sans_notification = matches!(m, FinDeCdd | RuptureConventionnelle | DecesDeLEmployeur | ForceMajeure | CommunAccord);
+    let licenciement = matches!(
+        m,
+        LicenciementEconomique | LicenciementAutreMotif | LicenciementFauteGrave | LicenciementFauteLourde | InaptitudeNonProfessionnelle | InaptitudeProfessionnelle | RuptureAnticipeeFauteGrave | RuptureAnticipeeFauteLourde
+    );
     let mut faits = Vec::new();
     // La rupture conventionnelle, ou le moteur refuse sans le fait (CGI 80
     // duodecies 6°).
-    let sec = permanents::rupture(Some(&m))?;
+    let sec = permanents::rupture(Some(m))?;
     if sec.is_some_and(|(fin, _)| fin == permanents::FinDeCdi::RuptureConventionnelle) {
         faits.push("en_droit_a_la_retraite");
     }
     // Un contrat a duree indeterminee dont le motif ouvre un preavis, et dont le preavis non effectue se paie : pas
     // celui que le texte n'indemnise pas (`preavis.indemnite_compensatrice.motifs_sans_indemnite` : 059, 039, 091).
-    let sans_indemnite = matches!(permanents::indemnite_de_preavis(Some(&m))?, permanents::IndemniteDePreavis::Aucune(_));
+    let sans_indemnite = matches!(permanents::indemnite_de_preavis(Some(m))?, permanents::IndemniteDePreavis::Aucune(_));
     if n.duree_indeterminee && !sans_indemnite {
-        if !permanents::sans_preavis(Some(&m))? {
+        if !permanents::sans_preavis(Some(m))? {
             faits.push("preavis_non_effectue");
         }
     }
     // Un CDD dont l'indemnite de fin de contrat est due.
-    if !n.duree_indeterminee && permanents::precarite_due(n, Some(&m))?.is_none() {
+    if !n.duree_indeterminee && permanents::precarite_due(n, Some(m))?.is_none() {
         faits.push("precarite_due");
     }
     // LES DATES ET LA TRANSACTION SELON LE MOTIF : une rupture decidee par l'un
@@ -1325,17 +1325,17 @@ fn faits_de_rupture(n: &Nature, m: &str) -> R<Vec<&'static str>> {
     // l'entretien prealable ; une rupture conventionnelle se date par la
     // SIGNATURE de la convention ; la TRANSACTION suit un litige.
     // Et toujours quand le signalement l'exige (CCH-12 de S21.G00.62.003, `fctu::notification_exigee`) : la force majeure
-    // (083) est de la table ci-dessus, et sa date de notification est pourtant obligatoire dans un FCTU.
-    if !SANS_NOTIFICATION.contains(&m.as_str()) || declarations::fctu::notification_exigee(&m)? {
+    // (083) est de la liste ci-dessus, et sa date de notification est pourtant obligatoire dans un FCTU.
+    if !sans_notification || declarations::fctu::notification_exigee(m)? {
         faits.push("notification_rupture");
     }
-    if LICENCIEMENTS.contains(&m.as_str()) {
+    if licenciement {
         faits.push("engagement_licenciement");
     }
-    if m == "043" {
+    if m == RuptureConventionnelle {
         faits.push("signature_convention");
     }
-    if LICENCIEMENTS.contains(&m.as_str()) || m == "038" || m == "058" {
+    if licenciement || matches!(m, MiseALaRetraite | PriseDActe) {
         faits.push("transaction");
     }
     Ok(faits)
@@ -1359,11 +1359,11 @@ struct NatureDeLaPage {
     /// La fin se signale-t-elle (`Nature::signalement_fctu`) : au motif par defaut, et motif par motif -- un CDDU a son
     /// terme (031) part dans la mensuelle, rompu avant (036, 037...) il se signale. La page ne decide rien.
     signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<String, bool>,
-    motifs_rupture: Vec<natures::MotifDeRupture>,
-    faits_de_rupture: BTreeMap<String, Vec<&'static str>>,
-    motif_rupture_defaut: Option<String>,
-    motifs_recours: Vec<natures::MotifDeRecours>,
+    signalement_par_motif: BTreeMap<MotifDeRupture, bool>,
+    motifs_rupture: Vec<natures::RuptureOfferte>,
+    faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
+    motif_rupture_defaut: Option<MotifDeRupture>,
+    motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
     quotite_defaut: Option<NombreLu>,
     /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
@@ -1378,17 +1378,19 @@ struct NatureDeLaPage {
 /// PROPOSE se dit au mois (`mois::NouvelleCarte`, `engagement::permanents::Permanents::natures_neuves`).
 fn natures() -> R<Vec<NatureDeLaPage>> {
     let toutes = natures::natures()?;
+    let cartes = engagement::carte::CarteValide::natures()?;
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
     for n in toutes.iter() {
         let motifs = n.motifs_rupture();
         let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
         for m in motifs {
-            faits.insert(m.code.clone(), faits_de_rupture(n, &m.code)?);
-            signales.insert(m.code.clone(), n.signalement_fctu(Some(&m.code)));
+            faits.insert(m.code, faits_de_rupture(n, m.code)?);
+            signales.insert(m.code, n.signalement_fctu(Some(m.code)));
         }
-        let carte = engagement::carte::CarteValide::natures()
-            .into_iter()
+        let carte = cartes
+            .iter()
+            .cloned()
             .find(|d| d.nature == n.cle)
             .ok_or_else(|| erreur(Classe::Manque, format!("Le logiciel ne sait pas saisir un {}.", n.libelle)))?;
         sortie.push(NatureDeLaPage {

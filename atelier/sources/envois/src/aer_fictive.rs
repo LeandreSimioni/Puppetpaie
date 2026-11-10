@@ -361,7 +361,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     cadre(&mut p1, 745.0, "3", "CONTRAT DE TRAVAIL");
     etiquette(&mut p1, 30.0, 773.0, "Emploi occupé");
     f.imprime_dite(1, "CON_LIB_EMPLOI", [109.0, 764.0, 562.0, 776.0], emploi, 8.5, Alignement::Gauche);
-    let motif_lu = if motif == "031" { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
+    let motif_lu = if droit::natures::MotifDeRupture::du_code(motif) == Some(droit::natures::MotifDeRupture::FinDeCdd) { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
     etiquette(&mut p1, 30.0, 792.0, &format!("Motif de la rupture : {}", motif_lu));
 
     // Page 2 : le cadre 4, une colonne par periode.

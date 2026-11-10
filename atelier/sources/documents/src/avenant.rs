@@ -521,7 +521,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
             };
             if cadre { "cadre".into() } else { "non cadre".into() }
         }
-        "motif_recours" => nat.libelle_motif_recours(&texte).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
+        "motif_recours" => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
         "spectacle" => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
         "emploi" => format!("« {} »", texte),
         _ => texte,

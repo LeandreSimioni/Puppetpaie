@@ -4,7 +4,7 @@
 
 use socle::echec::R;
 
-use crate::natures::Nature;
+use crate::natures::{MotifDeRecours, Nature};
 
 /// Le contrat d'un salarie dans un message : « le contrat VA5.26.01 de VARENNE », « le contrat de VARENNE » tant qu'il n'a
 /// pas de numero.
@@ -58,15 +58,15 @@ S21.G00.44 sur une supposition.",
 /// Ce que la DSN ecrit d'un contrat de nature `nat` : nature, dispositif, motif (celui de la nature, sinon celui de
 /// l'engagement).
 /// Un code que la nature ni l'engagement ne disent est `None`.
-pub fn codes_de(nat: &Nature, motif_recours: Option<&str>) -> (Option<String>, Option<String>, Option<String>) {
-    let motif = nat.code("S21.G00.40.021").or_else(|| motif_recours.filter(|m| !m.is_empty()).map(str::to_string));
+pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<String>) {
+    let motif = nat.code("S21.G00.40.021").or_else(|| motif_recours.map(|m| m.code().to_string()));
     (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), motif)
 }
 
 /// Le contrat de nature `nat` paie-t-il la contribution CPF-CDD ? C'est la ou le calcul lit le motif de recours saisi :
 /// un CDD sans motif refuse (le motif dit s'il est saisonnier), un motif que la nature n'a pas aussi
 /// (`Nature::motif_recours_refuse`).
-pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<&str>, qui: &str) -> R<bool> {
+pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<MotifDeRecours>, qui: &str) -> R<bool> {
     if let Some(refus) = nat.code("S21.G00.40.021").is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
         return Err(socle::echec::refus(refus));
     }

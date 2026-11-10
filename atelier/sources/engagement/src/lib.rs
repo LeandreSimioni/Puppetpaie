@@ -53,7 +53,7 @@ use socle::forme::NombreLu;
 use droit::catalogue::rubrique;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
-use droit::natures::{Nature, NatureDeContrat};
+use droit::natures::{MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
 pub use ligne::{Chiffre, DateDeLigne, LignePaie};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -111,8 +111,8 @@ pub struct Engagement {
     pub quotite_contrat: Option<f64>,
     pub quotite_reference_saisie: Option<f64>,
     pub modalite_temps_travail_saisie: Option<String>,
-    pub motif_recours: Option<String>,
-    pub motif_rupture: Option<String>,
+    pub motif_recours: Option<MotifDeRecours>,
+    pub motif_rupture: Option<MotifDeRupture>,
     pub notification_rupture: Option<Jour>,
     pub preavis: Option<saisie::Preavis>,
     /// Le dernier jour travaille et paye au salaire habituel que la saisie dit (`dernier_jour_paye`, AAAA-MM-JJ) ;
@@ -190,8 +190,8 @@ pub struct Assemble {
     pub quotite_contrat: Option<Chiffre>,
     pub quotite_reference_saisie: Option<Chiffre>,
     pub modalite_temps_travail_saisie: Option<String>,
-    pub motif_recours: Option<String>,
-    pub motif_rupture: Option<String>,
+    pub motif_recours: Option<MotifDeRecours>,
+    pub motif_rupture: Option<MotifDeRupture>,
     pub notification_rupture: Option<Jour>,
     pub preavis: Option<saisie::Preavis>,
     pub dernier_jour_paye: Option<Jour>,
@@ -867,7 +867,7 @@ struct Termes {
     quotite_contrat: Option<Chiffre>,
     quotite_reference: Option<Chiffre>,
     modalite_temps_travail: Option<String>,
-    motif_recours: Option<String>,
+    motif_recours: Option<MotifDeRecours>,
     personne_remplacee: Option<String>,
     repartition_horaire: Option<String>,
 }
@@ -907,8 +907,8 @@ impl Termes {
                 quotite_contrat: Some(n(&c.quotite_contrat)),
                 quotite_reference: c.quotite_reference.as_ref().map(n),
                 modalite_temps_travail: c.modalite_temps_travail.clone(),
-                motif_recours: Some(c.motif_recours.code().to_string()),
-                personne_remplacee: c.motif_recours.personne_remplacee().cloned(),
+                motif_recours: Some(c.motif_recours),
+                personne_remplacee: c.personne_remplacee.clone(),
                 repartition_horaire: c.repartition_horaire.clone(),
             },
         }
@@ -1052,7 +1052,7 @@ pub(crate) fn engagements(
             modalite_temps_travail_saisie: termes.modalite_temps_travail,
             motif_recours: termes.motif_recours,
             etablissement: carte.etablissement.clone(),
-            motif_rupture: carte.motif_rupture.clone(),
+            motif_rupture: carte.motif_rupture,
             // La fin du contrat telle que la saisie la dit : la mensuelle et le FCTU en tirent le meme S21.G00.62.006
             // (`fctu::dernier_jour_paye`).
             preavis: carte.preavis.clone(),
@@ -2089,7 +2089,7 @@ pub fn lue_sans_paie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Vec<calcul::
 /// Le preavis de l'engagement `e` (sa saisie), pour une anciennete et un motif de rupture : la loi (L1234-1) et la
 /// convention, et laquelle s'applique (`solde::duree_du_preavis`).
 #[cfg(feature = "ecran")]
-pub fn preavis(ctx: &Contexte, e: &saisie::Carte, anciennete: Decimal, motif: Option<&str>) -> R<solde::Preavis> {
+pub fn preavis(ctx: &Contexte, e: &saisie::Carte, anciennete: Decimal, motif: Option<MotifDeRupture>) -> R<solde::Preavis> {
     solde::duree_du_preavis(ctx, e, anciennete, motif)
 }
 

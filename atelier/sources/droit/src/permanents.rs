@@ -3,7 +3,7 @@
 //! Le module calcule, il ne decide pas : les nombres vivent dans `permanents-base.json`, avec l'article qui les porte,
 //! lu une fois par sa forme (`regles`, la seule lecture : `Regles` et ses types).
 
-use crate::natures::Nature;
+use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
 use socle::date::{jours_du_mois, Jour};
@@ -40,7 +40,7 @@ macro_rules! forme {
 }
 
 /// Des codes de motif de rupture (DSN S21.G00.62.002) et ce que le texte en dit.
-pub type ParMotif = BTreeMap<String, String>;
+pub type ParMotif = BTreeMap<MotifDeRupture, String>;
 
 forme! {
     /// `permanents-base.json`, entier.
@@ -173,7 +173,7 @@ forme! {
 forme! {
     /// `preavis.delai_de_prevenance` : L1221-25.
     pub struct RegleDuDelaiDePrevenance {
-        pub motif_rupture: String,
+        pub motif_rupture: MotifDeRupture,
         pub rubrique: String,
         pub dsn_bloc52: CodeDsn,
         pub tranches: Vec<TrancheDeDelai>,
@@ -272,13 +272,13 @@ forme! {
     pub struct ContributionPatronale {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub taux: Decimal,
-        pub motifs: Vec<String>,
+        pub motifs: Vec<MotifDeRupture>,
     }
 }
 
 forme! {
     pub struct RuptureConventionnelle {
-        pub motif_rupture: String,
+        pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
         pub rubrique: String,
         pub indemnite: PlancherDeRupture,
@@ -297,7 +297,7 @@ forme! {
 
 forme! {
     pub struct MiseALaRetraite {
-        pub motif_rupture: String,
+        pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
         pub dsn_bloc52_conventionnelle: CodeDsn,
         pub rubrique: String,
@@ -309,7 +309,7 @@ forme! {
 
 forme! {
     pub struct DepartALaRetraite {
-        pub motif_rupture: String,
+        pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
         pub dsn_bloc52_conventionnelle: CodeDsn,
         pub rubrique: String,
@@ -575,13 +575,13 @@ fn douze() -> Decimal {
 }
 
 /// Le refus d'un motif de rupture que la fiche ne dit pas, quand la regle en a besoin.
-fn motif_requis<'a>(motif: Option<&'a str>, pour: &str) -> R<&'a str> {
-    motif.filter(|m| !m.is_empty()).ok_or_else(|| socle::refus!("{} : le motif de la fin du contrat n'est pas dit (case « Motif de la fin »).", pour))
+fn motif_requis(motif: Option<MotifDeRupture>, pour: &str) -> R<MotifDeRupture> {
+    motif.ok_or_else(|| socle::refus!("{} : le motif de la fin du contrat n'est pas dit (case « Motif de la fin »).", pour))
 }
 
 /// Ce que `liste` dit de ce motif, s'il y est et le dit.
-fn dit(liste: &ParMotif, motif: Option<&str>) -> Option<String> {
-    motif.and_then(|m| liste.get(m)).filter(|t| !t.is_empty()).cloned()
+fn dit(liste: &ParMotif, motif: Option<MotifDeRupture>) -> Option<String> {
+    motif.and_then(|m| liste.get(&m)).filter(|t| !t.is_empty()).cloned()
 }
 
 // --------------------------------------------------------------- les conges
@@ -688,7 +688,7 @@ pub fn indemnite_des_jours(
 }
 // ------------------------------------------------------- la fin du contrat
 /// `None` si l'indemnite de fin de CDD est due, sinon pourquoi elle ne l'est pas.
-pub fn precarite_due(nature: &Nature, motif_rupture: Option<&str>) -> R<Option<String>> {
+pub fn precarite_due(nature: &Nature, motif_rupture: Option<MotifDeRupture>) -> R<Option<String>> {
     if nature.duree_indeterminee {
         return Ok(Some(
             "un contrat a duree indeterminee n'a pas d'indemnite de fin \
@@ -701,7 +701,7 @@ pub fn precarite_due(nature: &Nature, motif_rupture: Option<&str>) -> R<Option<S
     if let Some(raison) = r.natures_exclues.get(&nature.cle) {
         return Ok(Some(raison.clone()));
     }
-    Ok(motif_rupture.and_then(|m| r.motifs_rupture_exclus.get(m)).cloned())
+    Ok(motif_rupture.and_then(|m| r.motifs_rupture_exclus.get(&m)).cloned())
 }
 
 /// 10 % de la remuneration totale brute versee pendant le CDD (L1243-8 ; la fiche entreprise ne porte aucun accord de
@@ -730,7 +730,7 @@ pub fn anciennete_mois(debut: &Jour, fin: &Jour) -> Decimal {
 
 /// Ce que `preavis.rupture_anticipee_cdd` dit du motif d'un contrat a duree determinee : `Some(true)` aucun preavis,
 /// `Some(false)` un preavis que le moteur ne compte pas (L1243-2), avec le texte ; `None` hors de la section.
-fn regle_du_cdd(cdd: bool, motif_rupture: Option<&str>) -> R<Option<(bool, String)>> {
+fn regle_du_cdd(cdd: bool, motif_rupture: Option<MotifDeRupture>) -> R<Option<(bool, String)>> {
     if !cdd {
         return Ok(None);
     }
@@ -738,7 +738,7 @@ fn regle_du_cdd(cdd: bool, motif_rupture: Option<&str>) -> R<Option<(bool, Strin
     let sec = &rg.preavis.rupture_anticipee_cdd;
     let Some(m) = motif_rupture else { return Ok(None) };
     for (liste, sans) in [(&sec.motifs_sans_preavis, true), (&sec.motifs_a_dire, false)] {
-        if let Some(t) = liste.get(m) {
+        if let Some(t) = liste.get(&m) {
             return Ok(Some((sans, t.clone())));
         }
     }
@@ -747,7 +747,7 @@ fn regle_du_cdd(cdd: bool, motif_rupture: Option<&str>) -> R<Option<(bool, Strin
 
 /// La duree du preavis en mois, ou `None` quand la loi ne la donne pas (ou que le moteur ne sait pas la compter :
 /// `regle_du_preavis`). `cdd` : le contrat est a duree determinee, et ses motifs de rupture anticipee ont leur regle.
-pub fn preavis_mois(anciennete: Decimal, motif_rupture: Option<&str>, cdd: bool) -> R<Option<Decimal>> {
+pub fn preavis_mois(anciennete: Decimal, motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<Decimal>> {
     if let Some((sans, _)) = regle_du_cdd(cdd, motif_rupture)? {
         return Ok(if sans { Some(Decimal::ZERO) } else { None });
     }
@@ -765,13 +765,13 @@ pub fn preavis_mois(anciennete: Decimal, motif_rupture: Option<&str>, cdd: bool)
 }
 
 /// Le preavis que la loi donne pour ce motif d'un CDD sans que le moteur sache le compter (`motifs_a_dire` : L1243-2).
-pub fn regle_du_preavis(motif_rupture: Option<&str>, cdd: bool) -> R<Option<String>> {
+pub fn regle_du_preavis(motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<String>> {
     Ok(regle_du_cdd(cdd, motif_rupture)?.filter(|(sans, _)| !sans).map(|(_, t)| t))
 }
 
 /// Pourquoi la loi ne donne aucun preavis pour ce motif (`preavis.motifs_sans_preavis`, et pour un CDD
 /// `preavis.rupture_anticipee_cdd.motifs_sans_preavis`), quand il est de cette liste.
-pub fn raison_sans_preavis(motif_rupture: Option<&str>, cdd: bool) -> R<Option<String>> {
+pub fn raison_sans_preavis(motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<String>> {
     if let Some((sans, t)) = regle_du_cdd(cdd, motif_rupture)? {
         return Ok(if sans { Some(t) } else { None });
     }
@@ -779,9 +779,9 @@ pub fn raison_sans_preavis(motif_rupture: Option<&str>, cdd: bool) -> R<Option<S
 }
 
 /// Ce motif est-il de `preavis.motifs_sans_preavis` (sans la regle d'un CDD) ?
-pub fn sans_preavis(motif_rupture: Option<&str>) -> R<bool> {
+pub fn sans_preavis(motif_rupture: Option<MotifDeRupture>) -> R<bool> {
     let rg = regles()?;
-    Ok(motif_rupture.is_some_and(|m| rg.preavis.motifs_sans_preavis.contains_key(m)))
+    Ok(motif_rupture.is_some_and(|m| rg.preavis.motifs_sans_preavis.contains_key(&m)))
 }
 
 /// Ce que le texte fait du preavis non effectue, pour ce motif (`preavis.indemnite_compensatrice`).
@@ -800,15 +800,15 @@ pub enum IndemniteDePreavis {
 /// L'indemnite compensatrice d'un preavis non effectue, selon le motif de rupture. L1234-5 est au chapitre du
 /// licenciement d'un CDI ; les autres fins de contrat ont leurs articles (`code-du-travail/articles-20261013.md`,
 /// « Le preavis non effectue : ce que chaque fin de contrat en fait »). Un motif sans preavis ne passe pas par ici.
-pub fn indemnite_de_preavis(motif_rupture: Option<&str>) -> R<IndemniteDePreavis> {
+pub fn indemnite_de_preavis(motif_rupture: Option<MotifDeRupture>) -> R<IndemniteDePreavis> {
     let rg = regles()?;
     let ic = &rg.preavis.indemnite_compensatrice;
     let m = motif_requis(motif_rupture, "Le préavis non effectué")?;
-    Ok(if let Some(t) = ic.motifs_sans_indemnite.get(m) {
+    Ok(if let Some(t) = ic.motifs_sans_indemnite.get(&m) {
         IndemniteDePreavis::Aucune(t.clone())
-    } else if let Some(t) = ic.motifs_par_un_autre_article.get(m) {
+    } else if let Some(t) = ic.motifs_par_un_autre_article.get(&m) {
         IndemniteDePreavis::AutreArticle(t.clone())
-    } else if let Some(t) = ic.motifs_a_trancher.get(m) {
+    } else if let Some(t) = ic.motifs_a_trancher.get(&m) {
         IndemniteDePreavis::ATrancher(t.clone())
     } else {
         IndemniteDePreavis::Licenciement
@@ -819,11 +819,11 @@ pub fn indemnite_de_preavis(motif_rupture: Option<&str>) -> R<IndemniteDePreavis
 /// (`indemnite_preavis`, DSN 52 « 023 »), sauf le motif qui a la sienne (`rubrique_par_motif` : le 092, L1226-14,
 /// `indemnite_preavis_inaptitude`, DSN 52 « 032 », cahier technique 2026.1 p. 253, `norme-dsn/texte/bloc-S21.G00.52.txt`).
 /// Le code du bloc 52 est celui de la rubrique : il suit le motif comme l'indemnite.
-pub fn rubrique_de_l_indemnite_de_preavis(motif_rupture: Option<&str>) -> R<String> {
+pub fn rubrique_de_l_indemnite_de_preavis(motif_rupture: Option<MotifDeRupture>) -> R<String> {
     let rg = regles()?;
     let ic = &rg.preavis.indemnite_compensatrice;
     let m = motif_requis(motif_rupture, "L'indemnité de préavis")?;
-    Ok(match ic.rubrique_par_motif.get(m) {
+    Ok(match ic.rubrique_par_motif.get(&m) {
         Some(propre) => propre.clone(),
         None => ic.rubrique.clone(),
     })
@@ -833,10 +833,10 @@ pub fn rubrique_de_l_indemnite_de_preavis(motif_rupture: Option<&str>) -> R<Stri
 
 /// La section `preavis.delai_de_prevenance` si ce motif est le sien (034 : la fin d'essai a l'initiative de l'employeur),
 /// sinon `None` : le 035 (L1221-26) n'ouvre rien au salarie.
-pub fn regle_du_delai_de_prevenance(motif_rupture: Option<&str>) -> R<Option<RegleDuDelaiDePrevenance>> {
+pub fn regle_du_delai_de_prevenance(motif_rupture: Option<MotifDeRupture>) -> R<Option<RegleDuDelaiDePrevenance>> {
     let rg = regles()?;
     let s = &rg.preavis.delai_de_prevenance;
-    Ok((motif_rupture == Some(s.motif_rupture.as_str())).then(|| s.clone()))
+    Ok((motif_rupture == Some(s.motif_rupture)).then(|| s.clone()))
 }
 
 /// Le delai de prevenance que L1221-25 donne a cette presence, et le jour ou il expire.
@@ -952,7 +952,7 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
 pub fn indemnite_licenciement(
     anciennete: Decimal,
     reference: Decimal,
-    motif_rupture: Option<&str>,
+    motif_rupture: Option<MotifDeRupture>,
 ) -> R<IndemniteLegale> {
     let rg = regles()?;
     let r = &rg.indemnite_licenciement;
@@ -1026,22 +1026,24 @@ impl FinDeCdi {
 
 /// La fin d'un CDI que ce motif designe (043 rupture conventionnelle, 038 mise a la retraite, 039 depart a la
 /// retraite), et la rubrique de son indemnite.
-pub fn rupture(motif_rupture: Option<&str>) -> R<Option<(FinDeCdi, String)>> {
+pub fn rupture(motif_rupture: Option<MotifDeRupture>) -> R<Option<(FinDeCdi, String)>> {
     let rg = regles()?;
     let Some(m) = motif_rupture else { return Ok(None) };
     let fin = [
-        (FinDeCdi::RuptureConventionnelle, &rg.rupture_conventionnelle.motif_rupture, &rg.rupture_conventionnelle.rubrique),
-        (FinDeCdi::MiseALaRetraite, &rg.mise_a_la_retraite.motif_rupture, &rg.mise_a_la_retraite.rubrique),
-        (FinDeCdi::DepartALaRetraite, &rg.depart_a_la_retraite.motif_rupture, &rg.depart_a_la_retraite.rubrique),
+        (FinDeCdi::RuptureConventionnelle, rg.rupture_conventionnelle.motif_rupture, &rg.rupture_conventionnelle.rubrique),
+        (FinDeCdi::MiseALaRetraite, rg.mise_a_la_retraite.motif_rupture, &rg.mise_a_la_retraite.rubrique),
+        (FinDeCdi::DepartALaRetraite, rg.depart_a_la_retraite.motif_rupture, &rg.depart_a_la_retraite.rubrique),
     ]
     .into_iter()
-    .find(|(_, motif, _)| motif.as_str() == m)
+    .find(|(_, motif, _)| *motif == m)
     .map(|(fin, _, rubrique)| (fin, rubrique.clone()));
     Ok(fin)
 }
 
 /// `None` si ce code d'indemnite peut accompagner ce motif (CCH-21 a
 /// CCH-24), sinon pourquoi non.
+/// Les listes des controles sont celles de la norme, plus larges que les motifs qu'une nature permet : `motif_rupture` est
+/// un code de la norme.
 pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<&str>) -> R<Option<String>> {
     let code = match code {
         Some(c) if !c.is_empty() => c,

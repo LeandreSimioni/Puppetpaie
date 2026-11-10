@@ -69,7 +69,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     }
     // LE MOTIF (L1242-12, premier alinea) et, pour un remplacement, la personne remplacee (1°).
     if nat.motif_recours_exige() {
-        let code = texte(eng.motif_recours.as_deref()).ok_or_else(|| socle::refus!("Le contrat de {} ne dit pas son motif de recours : un CDD « comporte la définition précise de son motif » (L. 1242-12). Le choisir dans l'engagement (Plus d'options › Motif de recours). Rien n'est écrit.", nom))?;
+        let code = eng.motif_recours.ok_or_else(|| socle::refus!("Le contrat de {} ne dit pas son motif de recours : un CDD « comporte la définition précise de son motif » (L. 1242-12). Le choisir dans l'engagement (Plus d'options › Motif de recours). Rien n'est écrit.", nom))?;
         let libelle = nat.libelle_motif_recours(code).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", code, nat.libelle))?;
         m.insert(Marqueur::ContratMotif, minuscule_initiale(&libelle));
         if nat.motif_de_remplacement(code) {

@@ -23,10 +23,6 @@ use socle::echec::R;
 use crate::calcul::Paie;
 use crate::stock::Objet;
 
-/// Les motifs de fin pour faute lourde (S21.G00.62.002) : « 088 - Licenciement pour faute lourde », « 096 - Rupture
-/// anticipee pour faute lourde ».
-const FAUTE_LOURDE: [&str; 2] = ["088", "096"];
-
 /// Le plafond du maintien, en mois (L. 911-8, 1°).
 const DOUZE_MOIS: u32 = 12;
 
@@ -46,7 +42,9 @@ pub struct Portabilite {
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
 /// n'est maintenu (une faute lourde, ou aucune garantie collective).
 pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
-    if p.engagement.motif_rupture.as_deref().is_some_and(|m| FAUTE_LOURDE.contains(&m)) {
+    // Les motifs de fin pour faute lourde (S21.G00.62.002).
+    use droit::natures::MotifDeRupture::{LicenciementFauteLourde, RuptureAnticipeeFauteLourde};
+    if matches!(p.engagement.motif_rupture, Some(LicenciementFauteLourde | RuptureAnticipeeFauteLourde)) {
         return Ok(None);
     }
     let objets = crate::stock::objets(racine)?;

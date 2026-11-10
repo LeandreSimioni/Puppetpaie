@@ -1099,10 +1099,10 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.debut, eng.fin.as_ref())?;
     let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
         &nat,
-        eng.motif_recours.as_deref(),
+        eng.motif_recours,
         &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours.as_deref(), &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
     bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode()?, caisse, cpf_cdd, majoration)
 }
 
@@ -1329,10 +1329,10 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     // ni contrat aide (`droit::cpf_cdd`, la regle du bloc 44).
     let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
         &nat,
-        eng.motif_recours.as_deref(),
+        eng.motif_recours,
         &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours.as_deref(), &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
     let bar = bareme_du_salarie(ctx, &sal, &nat, &fin_periode, caisse, cpf_cdd, majoration)?;
     let rubriques_bulletin = &bar.rubriques_bulletin;
     let jours = Decimal::from(eng.jours);

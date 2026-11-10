@@ -14,7 +14,9 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
-  (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés.
+  (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
+  aussi (`droit::natures::MotifDeRecours`, `MotifDeRupture`), et le fichier, lu contre elles, dit ceux que chaque nature
+  permet.
 - **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
   porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
   (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par

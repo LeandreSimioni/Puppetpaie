@@ -8,7 +8,7 @@
 
 use crate::emplois;
 use crate::fiche::{ChampsSalarie, Lue};
-use crate::natures::AuMois;
+use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
 use serde::Deserialize;
@@ -647,6 +647,8 @@ pub struct PreavisDit {
     pub pourquoi: Option<String>,
 }
 
+/// Le motif est un code de la norme (S21.G00.62.002) : les listes d'une convention suivent son texte, plus large que les
+/// motifs qu'une nature permet (089).
 pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<&str>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
@@ -663,7 +665,7 @@ pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Dec
         return Ok(PreavisDit { mois: Some(P::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
     let categorie = categorie.filter(|c| !c.is_empty());
-    let demission = motif == Some("059");
+    let demission = motif.and_then(MotifDeRupture::du_code) == Some(MotifDeRupture::Demission);
     let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
         Some(t) if !t.is_empty() => t,
         _ => {

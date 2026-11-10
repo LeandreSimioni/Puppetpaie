@@ -13,7 +13,7 @@ use crate::conges::{
 use crate::saisie::Carte;
 use crate::{Chiffre, LignePaie};
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{AuMois, Nature};
+use droit::natures::{AuMois, MotifDeRupture, Nature};
 use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
@@ -145,13 +145,13 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::d
     Ok(m.jour(fin.jour.min(m.jours())))
 }
 
-pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, motif: Option<&str>) -> R<Preavis> {
+pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, motif: Option<MotifDeRupture>) -> R<Preavis> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
     let prof = profil(ctx, e)?;
     let categorie = prof.categorie.as_deref();
-    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
+    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif.map(MotifDeRupture::code), age(ctx, e)?)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
@@ -280,7 +280,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
     };
     let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
     let qui = qui(ctx, e);
-    let motif = e.motif_rupture.as_deref();
+    let motif = e.motif_rupture;
     let chomes = ctx.entreprise.feries_chomes();
     let premier = mois.premier_jour();
 
@@ -551,7 +551,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 /// a l'indemnite compensatrice de conges payes du solde.
 #[allow(clippy::too_many_arguments)]
 fn delai_de_prevenance(
-    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<&str>, nat: &Nature,
+    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<MotifDeRupture>, nat: &Nature,
     qui: &str, stc: &mut Solde,
 ) -> R<()> {
     let Some(regle) = permanents::regle_du_delai_de_prevenance(motif)? else {
@@ -739,7 +739,7 @@ fn indemnite_de_rupture(
     e: &Carte,
     mois: Mois,
     anciennete: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
 ) -> R<()> {
@@ -971,7 +971,7 @@ fn indemnite_de_rupture(
     let regles = permanents::regles()?;
     let contrib = &regles.regime_des_indemnites_de_rupture.contribution_patronale;
     if let Some(m) = motif {
-        if contrib.motifs.iter().any(|x| x == m) {
+        if contrib.motifs.contains(&m) {
             let taux = contrib.taux;
             stc.avertissements.push(avertir(format!(
                 "{} : l'employeur doit en plus la CONTRIBUTION DE {} % sur la \
@@ -1088,13 +1088,13 @@ fn indemnite_de_licenciement(
     e: &Carte,
     mois: Mois,
     anciennete: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
 ) -> R<()> {
     let qui = qui(ctx, e);
     let saisi = e.indemnite_licenciement.as_ref();
-    if saisi.is_none() && !(nat.duree_indeterminee && motif.is_some_and(|m| !m.is_empty())) {
+    if saisi.is_none() && !(nat.duree_indeterminee && motif.is_some()) {
         return Ok(());
     }
     let reference = salaire_de_reference(ctx, e, mois)?;
@@ -1212,7 +1212,7 @@ fn indemnite_conventionnelle(
     e: &Carte,
     anciennete: Decimal,
     reference: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
 ) -> R<clauses::Indemnite> {
     clauses::indemnite_licenciement(
         idcc(ctx),
@@ -1220,7 +1220,7 @@ fn indemnite_conventionnelle(
         &profil(ctx, e)?,
         anciennete,
         reference,
-        motif,
+        motif.map(MotifDeRupture::code),
         age(ctx, e)?,
     )
 }

@@ -1461,7 +1461,7 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
         return Ok(Vec::new());
     }
     let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.as_deref().is_some_and(|m| nat.motif_de_remplacement(m)) {
+    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
         v.push("personne_remplacee");
     }
     if nat.mensuelle() && e.modalite_temps_travail()? == "20" {
@@ -1492,7 +1492,7 @@ fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois
         return Ok(Vec::new());
     }
     let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.as_deref().is_some_and(|m| nat.motif_de_remplacement(m)) {
+    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
         v.push("personne_remplacee");
     }
     v.push("clauses_particulieres");

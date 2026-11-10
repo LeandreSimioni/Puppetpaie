@@ -19,7 +19,7 @@ use droit::reduction::au_dela_du_seuil;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, Mesure, Nature, TypeDeRemuneration};
+use droit::natures::{contrat_court, Mesure, MotifDeRupture, Nature, TypeDeRemuneration};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -757,11 +757,11 @@ fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
     let fin = p.engagement.fin_periode()?;
     let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
         &nat,
-        p.engagement.motif_recours.as_deref(),
+        p.engagement.motif_recours,
         &droit::cpf_cdd::le_contrat(p.engagement.numero.as_deref(), &p.engagement.salarie),
     )?;
     let caisse = p.declaree_a_la_caisse_des_conges()?;
-    let majoration = droit::majoration_chomage::due(&nat, p.engagement.motif_recours.as_deref(), &p.engagement.debut, p.engagement.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, p.engagement.motif_recours,&p.engagement.debut, p.engagement.fin.as_ref());
     let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, p.salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
     if let Some(pile) = socle::memoire::tenu(&bar.piles).get(&cle) {
         return Ok(pile.clone());
@@ -1519,8 +1519,8 @@ fn si_admise(f: &mut Fichier, nature_dsn: &str, rubrique: &str, valeur: Option<S
 
 fn motif_recours(p: &Paie, nat: &Nature) -> R<String> {
     let e = &p.engagement;
-    match e.motif_recours.as_deref().filter(|m| !m.is_empty()) {
-        Some(m) => Ok(m.to_string()),
+    match e.motif_recours {
+        Some(m) => Ok(m.code().to_string()),
         None => Err(refus!(
             "Dites pourquoi ce CDD est conclu (« Motif du CDD », sur la carte de l'engagement) : {} ({}) n'en dit pas le motif.\n\
 C'est le motif qui rend le contrat licite (code du travail, L. 1242-2 : remplacement d'un salarié, accroissement \
@@ -1531,16 +1531,16 @@ temporaire d'activité, emploi saisonnier…) ; la DSN le déclare, il y est obl
     }
 }
 
-fn motif_rupture(p: &Paie, nat: &Nature) -> R<String> {
+fn motif_rupture(p: &Paie, nat: &Nature) -> R<MotifDeRupture> {
     let e = &p.engagement;
-    if let Some(m) = e.motif_rupture.as_deref().filter(|m| !m.is_empty()) {
+    if let Some(m) = e.motif_rupture {
         // CCH-11 de S21.G00.62.002 : un motif que la nature n'admet pas ne s'ecrit pas.
         if let Some(phrase) = nat.motif_rupture_refuse(m, &numero_dit(&e.numero, "None").to_string()) {
             return Err(refus(phrase));
         }
-        return Ok(m.to_string());
+        return Ok(m);
     }
-    if let Some(d) = nat.motif_rupture_par_defaut().filter(|d| !d.is_empty()) {
+    if let Some(d) = nat.motif_rupture_par_defaut() {
         return Ok(d);
     }
     let connus: Vec<String> = nat
@@ -1893,11 +1893,11 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add("S21.G00.62.001", fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
-        f.add("S21.G00.62.002", &motif);
+        f.add("S21.G00.62.002", motif.code());
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add("S21.G00.62.006", crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
         // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
-        for (rub, val) in nat.codes_fin(Some(&motif)) {
+        for (rub, val) in nat.codes_fin(Some(motif)) {
             f.add(&rub, val);
         }
     }
@@ -2136,8 +2136,8 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
             Some(c) => c,
             None => continue,
         };
-        if let Some(m) = p.engagement.motif_rupture.as_deref().filter(|m| !m.is_empty()) {
-            if let Some(pourquoi) = droit::permanents::code_52_permis(Some(code), Some(m))? {
+        if let Some(m) = p.engagement.motif_rupture {
+            if let Some(pourquoi) = droit::permanents::code_52_permis(Some(code), Some(m.code()))? {
                 return Err(refus!(
                     "Contrat {}, ligne << {} >> : {}",
                     numero_dit(&p.engagement.numero, "None").to_string(),

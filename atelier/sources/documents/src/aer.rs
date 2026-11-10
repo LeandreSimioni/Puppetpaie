@@ -122,7 +122,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
 pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture.as_deref().filter(|m| !m.is_empty())) {
+    if !nat.signalement_fctu(e.motif_rupture) {
         return Ok(false);
     }
     let (debut, fin) = (e.debut_mois(), e.fin_mois());

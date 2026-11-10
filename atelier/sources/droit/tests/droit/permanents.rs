@@ -76,6 +76,12 @@ fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
 type Nature = droit::natures::NatureDeContrat;
 type Motif = Option<String>;
 
+/// Le motif de rupture d'un cas : un code de la norme que les motifs d'une nature n'ont pas (« zzz », 099, 110...) ne
+/// dit aucun motif, comme le texte vide.
+fn motif(m: &Motif) -> Option<droit::natures::MotifDeRupture> {
+    m.as_deref().and_then(droit::natures::MotifDeRupture::du_code)
+}
+
 fn arrondir_jours(a: &(Decimal,)) -> Decimal {
     p::arrondir_jours(a.0)
 }
@@ -102,7 +108,7 @@ fn les_conges() {
 }
 
 fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
-    p::precarite_due(&a.0.proprietes().unwrap(), a.1.as_deref()).into()
+    p::precarite_due(&a.0.proprietes().unwrap(), motif(&a.1)).into()
 }
 fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
     p::indemnite_precarite(a.0).into()
@@ -111,14 +117,14 @@ fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
     p::anciennete_mois(&a.0, &a.1)
 }
 fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
-    p::preavis_mois(a.0, a.1.as_deref(), false).into()
+    p::preavis_mois(a.0, motif(&a.1), false).into()
 }
 fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
     let s = p::salaire_de_reference(&a.0, &a.1);
     SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
 }
 fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(a.0, a.1, a.2.as_deref()).map(legale).into()
+    p::indemnite_licenciement(a.0, a.1, motif(&a.2)).map(legale).into()
 }
 fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
     p::indemnite_mise_a_la_retraite(a.0, a.1).map(legale).into()
@@ -130,7 +136,7 @@ fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart>
     p::indemnite_depart_retraite(a.0, a.1).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
-    p::rupture(a.0.as_deref()).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
+    p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
 }
 fn code_52_permis(a: &(Motif, Motif)) -> Rendu<Option<String>> {
     p::code_52_permis(a.0.as_deref(), a.1.as_deref()).into()

@@ -26,6 +26,116 @@ pub enum Paie {
 /// La rubrique du motif de recours (S21.G00.40.021), dont une nature peut dire les valeurs (`champs`).
 const MOTIF_DE_RECOURS: &str = "S21.G00.40.021";
 
+/// UNE LISTE FERMEE DE CODES DE LA NORME, declaree une fois : chaque variante et son code, le seul endroit ou il s'ecrit.
+/// Elle se lit et s'ecrit par son code ; un code qu'elle n'a pas se refuse a la lecture, en disant ceux qu'elle a.
+/// Dans l'ordre de leurs codes : un objet indexe par elle s'ecrit comme quand son code etait un texte.
+macro_rules! codes_fermes {
+    ($(#[$a:meta])* $nom:ident, $quoi:literal { $( $(#[$va:meta])* $v:ident = $code:literal, )* }) => {
+        $(#[$a])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $nom {
+            $( $(#[$va])* $v, )*
+        }
+
+        impl $nom {
+            pub const TOUS: &'static [$nom] = &[ $( $nom::$v, )* ];
+
+            /// Son code, le seul endroit ou il s'ecrit.
+            pub fn code(self) -> &'static str {
+                match self { $( $nom::$v => $code, )* }
+            }
+
+            /// Celui de ce code, s'il en est un.
+            pub fn du_code(code: &str) -> Option<$nom> {
+                $nom::TOUS.iter().copied().find(|m| m.code() == code)
+            }
+        }
+
+        impl Ord for $nom {
+            fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+                self.code().cmp(autre.code())
+            }
+        }
+
+        impl PartialOrd for $nom {
+            fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(autre))
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(self.code())
+            }
+        }
+
+        impl Serialize for $nom {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.code())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $nom {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let code = String::deserialize(d)?;
+                $nom::du_code(&code).ok_or_else(|| {
+                    let connus: Vec<&str> = $nom::TOUS.iter().map(|m| m.code()).collect();
+                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, repr(&code), connus.join(", ")))
+                })
+            }
+        }
+    };
+}
+
+codes_fermes! {
+    /// UN MOTIF DE RECOURS D'UN CDD (S21.G00.40.021, cahier technique DSN 2026.1 p. 194-195,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`) : ceux que `contrats-base.json` offre
+    /// (`natures.cdd.champs."S21.G00.40.021".valeurs`), ni plus ni moins (`lu` le verifie). Ce que chacun porte en plus
+    /// (la personne remplacee) et la nature qui le permet, le fichier le dit (`Proprietes::motif_de_remplacement`,
+    /// `Proprietes::motif_recours_refuse`).
+    MotifDeRecours, "Motif de recours" {
+        Remplacement = "01",
+        Accroissement = "02",
+        Saisonnier = "03",
+        ObjetDefini = "06",
+        Insertion = "09",
+        ComplementDeFormation = "10",
+        RemplacementATempsPartiel = "12",
+        AttenteDeSuppression = "13",
+    }
+}
+
+codes_fermes! {
+    /// UN MOTIF DE RUPTURE (S21.G00.62.002, cahier technique DSN 2026.1 p. 270-273,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`) : ceux que `contrats-base.json` permet a ses natures
+    /// (`natures.<n>.fin_de_contrat.motifs`), ni plus ni moins (`lu` le verifie). Ceux qu'une nature permet, elle le dit
+    /// (`Proprietes::motif_rupture_refuse`).
+    MotifDeRupture, "Motif de rupture" {
+        LicenciementEconomique = "014",
+        LicenciementAutreMotif = "020",
+        FinDeCdd = "031",
+        InaptitudeDuCdd = "033",
+        FinDEssaiParLEmployeur = "034",
+        FinDEssaiParLeSalarie = "035",
+        RuptureAnticipeeParLEmployeur = "036",
+        RuptureAnticipeeParLeSalarie = "037",
+        MiseALaRetraite = "038",
+        DepartALaRetraite = "039",
+        RuptureConventionnelle = "043",
+        PriseDActe = "058",
+        Demission = "059",
+        DecesDeLEmployeur = "065",
+        ForceMajeure = "083",
+        CommunAccord = "084",
+        LicenciementFauteGrave = "087",
+        LicenciementFauteLourde = "088",
+        InaptitudeNonProfessionnelle = "091",
+        InaptitudeProfessionnelle = "092",
+        RuptureAnticipeeFauteGrave = "095",
+        RuptureAnticipeeFauteLourde = "096",
+    }
+}
+
 /// UNE NATURE DE CONTRAT, et la seule facon d'en nommer une : personne n'en ajoute hors du logiciel, une nature neuve
 /// arrive par une mise a jour. Elle s'ecrit par sa cle (`cle`), celle de `natures` dans `contrats-base.json`, qui dit ses
 /// proprietes (`proprietes`) ; une cle qui n'en est pas une se refuse a la lecture.
@@ -191,14 +301,14 @@ struct Champ {
     #[serde(rename = "note")]
     _note: Option<String>,
     obligatoire: Option<bool>,
-    valeurs: Option<Vec<MotifDeRecours>>,
+    valeurs: Option<Vec<RecoursOffert>>,
 }
 
 /// UN MOTIF DE RECOURS (S21.G00.40.021) qu'une nature propose.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MotifDeRecours {
-    pub code: String,
+pub struct RecoursOffert {
+    pub code: MotifDeRecours,
     pub libelle: String,
     /// Le CDD conclu au titre du 1° de L1242-2 nomme la personne remplacee (L1242-12, 1°).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,8 +318,8 @@ pub struct MotifDeRecours {
 /// UN MOTIF DE RUPTURE (S21.G00.62.002) que la CCH-11 autorise pour la nature, et ce qu'il ouvre (`dit`, sa `source`).
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MotifDeRupture {
-    pub code: String,
+pub struct RuptureOfferte {
+    pub code: MotifDeRupture,
     pub libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dit: Option<String>,
@@ -294,10 +404,18 @@ struct FinDeContrat {
     #[serde(rename = "note")]
     _note: String,
     /// Le motif quand le contrat va a son terme (`None` pour un CDI : il se saisit).
-    motif_par_defaut: Option<CodeFixe>,
-    motifs: Vec<MotifDeRupture>,
+    motif_par_defaut: Option<MotifParDefaut>,
+    motifs: Vec<RuptureOfferte>,
     signalement_fctu: SignalementFctu,
     circuit_derogatoire: Option<CircuitDerogatoire>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MotifParDefaut {
+    valeur: MotifDeRupture,
+    #[serde(rename = "quoi")]
+    _quoi: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -313,7 +431,7 @@ struct SignalementFctu {
 #[serde(deny_unknown_fields)]
 struct CircuitDerogatoire {
     rubrique: String,
-    motifs: Vec<String>,
+    motifs: Vec<MotifDeRupture>,
     applique: String,
     non_applique: String,
     #[serde(rename = "quoi")]
@@ -483,12 +601,12 @@ impl Proprietes {
 
     /// Le motif de recours `code` appelle-t-il le nom et la qualification de la personne remplacee ? (L1242-12, 1° :
     /// le CDD conclu au titre du 1° de L1242-2.)
-    pub fn motif_de_remplacement(&self, code: &str) -> bool {
+    pub fn motif_de_remplacement(&self, code: MotifDeRecours) -> bool {
         self.motifs_recours().into_iter().flatten().any(|m| m.code == code && m.personne_remplacee == Some(true))
     }
 
     /// Le libelle du motif de recours `code`, tel que `contrats-base.json` le dit.
-    pub fn libelle_motif_recours(&self, code: &str) -> Option<String> {
+    pub fn libelle_motif_recours(&self, code: MotifDeRecours) -> Option<String> {
         self.motifs_recours().into_iter().flatten().find(|m| m.code == code).map(|m| m.libelle.clone())
     }
 
@@ -508,11 +626,11 @@ impl Proprietes {
     }
 
     /// Le motif de rupture quand le contrat va a son terme (`None` pour un CDI).
-    pub fn motif_rupture_par_defaut(&self) -> Option<String> {
-        self.fin_de_contrat.motif_par_defaut.as_ref().map(|m| m.valeur.clone())
+    pub fn motif_rupture_par_defaut(&self) -> Option<MotifDeRupture> {
+        self.fin_de_contrat.motif_par_defaut.as_ref().map(|m| m.valeur)
     }
 
-    pub fn motifs_rupture(&self) -> &[MotifDeRupture] {
+    pub fn motifs_rupture(&self) -> &[RuptureOfferte] {
         &self.fin_de_contrat.motifs
     }
 
@@ -521,7 +639,7 @@ impl Proprietes {
     /// 2026.1, p. 270-273, `norme-dsn/texte/bloc-S21.G00.62.txt`) : un motif hors de la liste serait rejete (091 et 092,
     /// l'inaptitude, ne valent que pour les natures 01, 07, 08, 09, 50, 53, 54, 82, 91 ; un CDD rompu pour inaptitude
     /// est en 033). Le CDDU, de nature 02, a la liste du CDD. Une nature sans liste n'est pas controlee.
-    pub fn motif_rupture_refuse(&self, motif: &str, numero: &str) -> Option<String> {
+    pub fn motif_rupture_refuse(&self, motif: MotifDeRupture, numero: &str) -> Option<String> {
         let motifs = self.motifs_rupture();
         if motifs.is_empty() || motifs.iter().any(|m| m.code == motif) {
             return None;
@@ -537,17 +655,16 @@ impl Proprietes {
     }
 
     /// Les motifs de recours (S21.G00.40.021) que cette nature accepte.
-    pub fn motifs_recours(&self) -> Option<&[MotifDeRecours]> {
+    pub fn motifs_recours(&self) -> Option<&[RecoursOffert]> {
         self.champs.get(MOTIF_DE_RECOURS).and_then(|c| c.valeurs.as_deref())
     }
 
-    /// Le refus d'un motif de recours saisi (`S21.G00.40.021`) que cette nature n'accepte pas, ou `None`. La rubrique
-    /// est une liste de codes de deux caracteres (cahier technique DSN 2026.1, p. 194-195,
-    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`) ; la nature en propose une partie (`valeurs` de
-    /// `contrats-base.json`). Une nature sans liste (le CDDU, qui fixe le sien ; le CDI) n'est pas controlee.
-    pub fn motif_recours_refuse(&self, motif: &str, qui: &str) -> Option<String> {
+    /// Le refus d'un motif de recours saisi (`S21.G00.40.021`) que cette nature n'accepte pas, ou `None` : la nature en
+    /// propose une partie (`valeurs` de `contrats-base.json`). Une nature sans liste (le CDDU, qui fixe le sien ; le CDI)
+    /// n'est pas controlee.
+    pub fn motif_recours_refuse(&self, motif: MotifDeRecours, qui: &str) -> Option<String> {
         let motifs = match self.motifs_recours() {
-            Some(m) if !m.is_empty() && !motif.is_empty() && !m.iter().any(|m| m.code == motif) => m,
+            Some(m) if !m.is_empty() && !m.iter().any(|m| m.code == motif) => m,
             _ => return None,
         };
         let connus: Vec<String> = motifs.iter().map(|m| format!("{} ({})", m.code, m.libelle)).collect();
@@ -564,22 +681,21 @@ impl Proprietes {
         self.champs.get(MOTIF_DE_RECOURS).is_some_and(|c| c.obligatoire == Some(true))
     }
 
-    /// La fin de ce contrat, pour ce motif de rupture (S21.G00.62.002 ; `None` ou vide : le defaut de la nature),
-    /// part-elle par le circuit derogatoire ? Pour un CDDU, le seul 031 (CCH-12 de S21.G00.62.017, fiche 2062).
-    pub fn circuit_derogatoire_pour(&self, motif: Option<&str>) -> bool {
+    /// La fin de ce contrat, pour ce motif de rupture (S21.G00.62.002 ; `None` : le defaut de la nature), part-elle par
+    /// le circuit derogatoire ? Pour un CDDU, le seul 031 (CCH-12 de S21.G00.62.017, fiche 2062).
+    pub fn circuit_derogatoire_pour(&self, motif: Option<MotifDeRupture>) -> bool {
         let Some(c) = &self.fin_de_contrat.circuit_derogatoire else { return false };
-        let motif = motif.filter(|m| !m.is_empty()).map(str::to_string).or_else(|| self.motif_rupture_par_defaut());
-        motif.is_some_and(|m| c.motifs.contains(&m))
+        motif.or_else(|| self.motif_rupture_par_defaut()).is_some_and(|m| c.motifs.contains(&m))
     }
 
-    /// LA REGLE, ET SON SEUL ENDROIT : la fin de ce contrat, pour ce motif de rupture (`None` ou vide : le defaut de la
+    /// LA REGLE, ET SON SEUL ENDROIT : la fin de ce contrat, pour ce motif de rupture (`None` : le defaut de la
     /// nature), se declare-t-elle par un signalement de fin de contrat (nature 07) ? Toute fin de contrat donne lieu a
     /// l'attestation employeur (R. 1234-9), par le FCTU en DSN (fiche net-entreprises 119) ; le CDDU n'en est dispense
     /// que par le circuit derogatoire, pour le 031 : « Tous les autres motifs de rupture doivent etre declares par
     /// l'emission d'un signalement FCTU » (fiche 2062, `atelier/reference/sources/net-entreprises-base-connaissances/
     /// net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt`). Les listes des fins a signaler (ligne de
     /// commande, page, rappels), le FCTU et l'ecran de saisie la lisent ici.
-    pub fn signalement_fctu(&self, motif: Option<&str>) -> bool {
+    pub fn signalement_fctu(&self, motif: Option<MotifDeRupture>) -> bool {
         self.fin_de_contrat.signalement_fctu.valeur && !self.circuit_derogatoire_pour(motif)
     }
 
@@ -587,7 +703,7 @@ impl Proprietes {
     /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le motif : « 01 » au circuit derogatoire,
     /// « 02 » hors de lui (CCH-11 et CCH-12, cahier technique DSN 2026.1 p. 277, `atelier/reference/norme-dsn/texte/
     /// bloc-S21.G00.62.txt`).
-    pub fn codes_fin(&self, motif: Option<&str>) -> BTreeMap<String, String> {
+    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<String, String> {
         let mut out = BTreeMap::new();
         if let Some(c) = &self.fin_de_contrat.circuit_derogatoire {
             let valeur = if self.circuit_derogatoire_pour(motif) { &c.applique } else { &c.non_applique };
@@ -730,6 +846,14 @@ fn lu() -> R<Arc<Contrats>> {
             }
         };
         let par_nature = [de(NatureDeContrat::TOUTES[0])?, de(NatureDeContrat::TOUTES[1])?, de(NatureDeContrat::TOUTES[2])?];
+        // Les deux listes fermees sont celles du fichier, ni plus ni moins : un code qu'elles n'ont pas s'est refuse a la
+        // lecture ; un code qu'aucune nature ne permet se refuse ici.
+        if let Some(m) = MotifDeRecours::TOUS.iter().find(|m| !natures.iter().any(|n| n.motifs_recours().into_iter().flatten().any(|o| o.code == **m))) {
+            return Err(socle::echec::a_la_cle(ILLISIBLE, "natures", format!("aucune nature n'y offre le motif de recours {}", m)));
+        }
+        if let Some(m) = MotifDeRupture::TOUS.iter().find(|m| !natures.iter().any(|n| n.motifs_rupture().iter().any(|o| o.code == **m))) {
+            return Err(socle::echec::a_la_cle(ILLISIBLE, "natures", format!("aucune nature n'y permet le motif de rupture {}", m)));
+        }
         Ok(Contrats { natures: Arc::new(natures), par_nature, categories: f.categories_d_emploi })
     })
 }
