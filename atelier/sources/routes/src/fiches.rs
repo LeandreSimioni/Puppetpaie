@@ -450,20 +450,22 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
 /// `champs::Champ::montre` dit a l'ecran, d'apres la fiche, l'entreprise `entreprise` (ses conditions), les
 /// etablissements de la compagnie, et la piece de la case (`droit::fiche::Piece`) : elle ne se montre que si la fiche
-/// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par un engagement paye au mois : elle se montre
-/// quand l'entreprise dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose), ou
-/// qu'un engagement paye au mois est du -- sur la fiche de l'entreprise, n'importe lequel ; sur celle d'un salarie, le
-/// sien (`engagement::permanents::Permanents`). Et le fait que le calcul lit doit tenir (`si_fait` : `FaitsDeLaFiche`).
-/// La page ne montre que ces cases-la.
+/// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par la nature d'un engagement paye au mois : sur la
+/// fiche d'un salarie, un des siens (`engagement::permanents::cle_du_salarie`) ; sur celle de l'entreprise, quand elle
+/// dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose) ou qu'un engagement paye au
+/// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
+/// telle qu'elle est saisie. Et le fait que le calcul lit doit tenir (`si_fait` : `FaitsDeLaFiche`). La page ne montre
+/// que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Vec<String>> {
-    let dus = match (nom, cle) {
-        ("entreprise", _) => !p.dus.is_empty(),
-        ("salarie", Some(c)) => p.dus.iter().any(|d| d.salarie.as_str() == c),
+    let au_mois = match (nom, cle) {
+        ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
+        ("salarie", Some(c)) => engagement::permanents::cle_du_salarie(ctx, c).map_err(plain)?.is_some(),
         _ => false,
     };
-    let au_mois = permanents_de(entreprise) || dus;
+    let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
     let ouverte = |piece: Piece| match piece {
         Piece::Permanent => au_mois,
+        Piece::EmploieDesPermanents => avec_permanents,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);

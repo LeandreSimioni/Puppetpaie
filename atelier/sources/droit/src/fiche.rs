@@ -738,9 +738,18 @@ macro_rules! cases {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Piece {
-    /// Les cases d'un salarie au mois : seul le calcul d'un engagement paye au mois les lit (`natures::AuMois`).
+    /// Les cases d'un salarie au mois, et celles de l'entreprise que seul son calcul lit : seul le calcul d'un engagement
+    /// paye au mois les ouvre (`natures::AuMois`).
     Permanent,
+    /// Les cases d'une compagnie qui emploie des permanents : seule la case « emploie des permanents » cochee les ouvre
+    /// (`EmploieDesPermanents`).
+    EmploieDesPermanents,
 }
+
+/// LA CLE DES CASES D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS (`ChampsEntreprise::avec_permanents`) : seule sa case
+/// « emploie des permanents », cochee a la date lue, la donne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmploieDesPermanents(());
 
 /// UNE PIECE FERMEE : ses cases (`C`) ne se lisent qu'avec sa cle (`K`), qu'un calcul ne tient que s'il est celui qui
 /// les lit (`natures::AuMois` : la nature d'un engagement paye au mois). Une case rangee ici et lue par un calcul qui
@@ -1591,7 +1600,6 @@ fiche! {
         type_radio_1922: TypeRadio1922,
         cinquante_salaries_3241: bool,
         jauge_annexe_1: JaugeAnnexe1,
-        subrogation_ij: Subrogation,
         urssaf_compte: String,
         medecine_travail: CodeMedecine,
         contact_sante_travail: ContactSanteTravail,
@@ -1603,20 +1611,14 @@ fiche! {
         organisation_patronale: String,
         organisation_patronale_depuis: Jour,
         emploie_des_permanents: bool,
-        date_de_versement_permanents: String,
         date_de_versement_intermittents: String,
-        prevoyance_permanents: PrevoyancePermanents,
         jours_feries_chomes: JoursFeriesChomes,
-        plafond_temps_partiel: PlafondTempsPartiel,
         deduction_forfaitaire_option: OptionDfs,
         representation_personnel: RepresentationPersonnel,
         casc_svp_exemptee: bool,
-        sante_permanents: SantePermanents,
-        sante_suspension_non_indemnisee: SanteSuspension,
         premiere_embauche: Jour,
         taxe_sur_les_salaires: TaxeSurLesSalaires,
         taxe_apprentissage_motif_non_assujettissement: MotifNonAssujettissement,
-        cinquante_salaries_et_plus: bool,
         taux_atmp: TauxAtmp,
         etablissements: Vec<Etablissement>,
         signataire: Signataire,
@@ -1629,7 +1631,24 @@ fiche! {
         modele_bulletin: ModeleBulletin,
         conseils: bool,
     }
-    pieces {}
+    pieces {
+        /// LES CASES DE L'ENTREPRISE QUE SEUL LE CALCUL D'UN SALARIE AU MOIS LIT : la subrogation de son maintien, le
+        /// jour de son versement, sa prevoyance et sa sante, son plafond a temps partiel, sa sante pendant une suspension
+        /// non indemnisee (`natures::AuMois`).
+        permanent: Permanent, CasesDesPermanents, crate::natures::AuMois {
+            subrogation_ij: Subrogation,
+            date_de_versement_permanents: String,
+            prevoyance_permanents: PrevoyancePermanents,
+            plafond_temps_partiel: PlafondTempsPartiel,
+            sante_permanents: SantePermanents,
+            sante_suspension_non_indemnisee: SanteSuspension,
+        }
+        /// LES CASES D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS : « au moins cinquante salaries », que seule la case
+        /// « emploie des permanents » cochee ouvre (`ChampsEntreprise::avec_permanents`).
+        avec_permanents: EmploieDesPermanents, CasesAvecPermanents, EmploieDesPermanents {
+            cinquante_salaries_et_plus: bool,
+        }
+    }
     notes {
         /// D'ou vient le fichier (une compagnie d'essai le dit).
         note,
@@ -1782,6 +1801,11 @@ impl ChampsEntreprise {
     /// Les feries qu'elle chome, tels que `socle::feries::chomes` les lit ; `None` : la fiche n'en dit rien.
     pub fn feries_chomes(&self) -> Option<&'static str> {
         self.jours_feries_chomes.dite().map(Choix::code)
+    }
+
+    /// La cle des cases d'une compagnie qui emploie des permanents : sa case « emploie des permanents » cochee.
+    pub fn avec_permanents(&self) -> Option<EmploieDesPermanents> {
+        self.emploie_des_permanents.oui().then_some(EmploieDesPermanents(()))
     }
 
     /// Le nom de la compagnie tel que l'ecran le dit : le nom d'usage, sinon la raison sociale.

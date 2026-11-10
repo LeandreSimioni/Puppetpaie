@@ -186,14 +186,19 @@ fn spectacles_declares(ctx: &Contexte) -> Resultat<Vec<droit::contexte::IdSpecta
     Ok(out)
 }
 
-/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere.
-fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<bool> {
+/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere, d'un salarie dont un engagement est
+/// paye au mois : la cle de cet engagement (seul son calcul lit la sante d'une suspension,
+/// `calcul::sante_de_la_suspension`).
+fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<Option<droit::natures::AuMois>> {
+    use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
         if engagement::imprevus::est_une_suspension(&imp) && engagement::imprevus::motif_de_suspension(imp.motif())?.is_some_and(|m| !m.remunere) {
-            return Ok(true);
+            if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
+                return Ok(Some(cle));
+            }
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
 /// La fiche typee `fiche` de la fiche `nom`, dans la forme d'une saisie, pour dire ce qui lui manque.
@@ -386,7 +391,8 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
     // refuse tant que la fiche ne repond pas (`calcul::sante_de_la_suspension`). Elle ne se demande que si une suspension
     // non remuneree est saisie : un champ n'apparait que parce qu'un fait l'exige.
-    if ent.idcc.portee() != Some("3090") && !ent.sante_suspension_non_indemnisee.est_dite() && une_suspension_non_remuneree(ctx)? {
+    let dite = |cle: &droit::natures::AuMois| ent.permanent.ouvrir(cle).sante_suspension_non_indemnisee.est_dite();
+    if ent.idcc.portee() != Some("3090") && une_suspension_non_remuneree(ctx)?.is_some_and(|cle| !dite(&cle)) {
         let cle = droit::bareme::SANTE_SUSPENSION;
         let (libelle, aide) = champ(cle)?;
         out.push(manque(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", ENTREPRISE, Some(cle), aide)?);

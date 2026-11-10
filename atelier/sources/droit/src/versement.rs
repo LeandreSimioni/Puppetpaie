@@ -90,7 +90,10 @@ impl Versement {
     /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat` (`cle_de`) ; absente : le dernier
     /// jour du mois.
     pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> Resultat<Versement> {
-        let dit = if nat.mensuelle() { &ent.date_de_versement_permanents } else { &ent.date_de_versement_intermittents };
+        let dit = match nat.au_mois() {
+            Some(au_mois) => &ent.permanent.ouvrir(&au_mois).date_de_versement_permanents,
+            None => &ent.date_de_versement_intermittents,
+        };
         match dit.portee() {
             Some(t) => Versement::lire(t).map_err(|_| {
                 format!(

@@ -664,7 +664,7 @@ pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, n
     }
     if let Some(idcc) = ent.idcc.portee().filter(|i| *i != "3090") {
         // Une convention sans regime de sante a elle : le contrat de l'entreprise.
-        let choix = ent.sante_permanents.dite();
+        let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite();
         let Some(taux_contrat) = choix.and_then(|c| c.taux_contrat.dite()) else {
             return Err(format!(
                 "{} : sa complémentaire santé ne se calcule pas encore. Un salarié au mois y est affilié \

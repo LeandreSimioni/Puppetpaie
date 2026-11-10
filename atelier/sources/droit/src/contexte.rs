@@ -163,10 +163,11 @@ pub struct Effectif {
 /// l'apprentissage a 250 (C. trav. L. 6242-1, I).
 pub const GRAND_SEUIL: i64 = 50;
 
-/// La case est-elle cochee ? Elle ne vaut qu'avec des permanents, la seule voie vers cinquante salaries : une compagnie
-/// d'intermittents ne la voit pas, et un seuil de cinquante et plus ne l'atteint pas.
+/// La case est-elle cochee ? Elle est rangee avec les cases d'une compagnie qui emploie des permanents, la seule voie
+/// vers cinquante salaries (`fiche::EmploieDesPermanents`) : une compagnie d'intermittents ne la voit pas, et un seuil
+/// de cinquante et plus ne l'atteint pas.
 pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
-    fiche.emploie_des_permanents.oui() && fiche.cinquante_salaries_et_plus.oui()
+    fiche.avec_permanents().is_some_and(|cle| fiche.avec_permanents.ouvrir(&cle).cinquante_salaries_et_plus.oui())
 }
 
 /// `config/effectifs.json` : les effectifs par annee civile et par code, ceux que l'Urssaf renvoie en 118 (`calcule_le`,

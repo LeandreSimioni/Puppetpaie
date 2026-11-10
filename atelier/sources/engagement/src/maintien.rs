@@ -234,7 +234,8 @@ pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> Resultat<O
     if regimes.is_empty() {
         return Ok(None);
     }
-    let choisie = ctx.entreprise.subrogation_ij.dite() == Some(&droit::fiche::Subrogation::Oui);
+    // Le choix de la compagnie est une case des permanents : seul un contrat paye au mois le lit.
+    let choisie = nat.au_mois().is_some_and(|au_mois| ctx.entreprise.permanent.ouvrir(&au_mois).subrogation_ij.dite() == Some(&droit::fiche::Subrogation::Oui));
     if !choisie && !regimes.iter().any(|r| r.subrogation) {
         return Ok(None);
     }

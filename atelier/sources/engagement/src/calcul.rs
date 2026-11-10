@@ -1182,7 +1182,7 @@ accord sante du 19/07/2024, art. 4.2 et 15)",
             motifs.join(", ")
         )
     } else {
-        match ent.sante_suspension_non_indemnisee.dite() {
+        match ent.permanent.ouvrir(au_mois).sante_suspension_non_indemnisee.dite() {
             Some(droit::fiche::SanteSuspension::Suspendue) => format!(
                 "contrat suspendu sans indemnisation tout le mois (motif {}) : les garanties de sante sont suspendues (fiche \
 entreprise, « {} »)",
@@ -1921,12 +1921,15 @@ impl PlafondTempsPartiel {
 /// artiste est exclu (L. 242-10, 1° ; BOSS § 1090) : la reponse de la fiche ne le concerne pas. Le calcul l'ecrit dans
 /// la paie (`Contenu::plafond_temps_partiel`), que la DSN lit.
 pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal: &ChampsSalarie) -> Resultat<PlafondTempsPartiel> {
-    if !e.nat()?.mensuelle() || e.modalite_temps_travail()? != "20" {
+    let Some(au_mois) = e.nat()?.au_mois() else {
+        return Ok(PlafondTempsPartiel::NonConcerne);
+    };
+    if e.modalite_temps_travail()? != "20" {
         return Ok(PlafondTempsPartiel::NonConcerne);
     }
     // « Entier » : l'etablissement renonce a la proratisation pour tous ses salaries a temps partiel (fiche 3369 ; BOSS,
     // assiette generale, § 760).
-    let renonce = ent.plafond_temps_partiel.dite() == Some(&droit::fiche::PlafondTempsPartiel::Entier);
+    let renonce = ent.permanent.ouvrir(&au_mois).plafond_temps_partiel.dite() == Some(&droit::fiche::PlafondTempsPartiel::Entier);
     if statut_de(sal)? == "artiste" {
         return Ok(PlafondTempsPartiel::Exclu);
     }

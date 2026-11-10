@@ -67,12 +67,6 @@ impl Permanents {
         self.proposes || !self.dus.is_empty()
     }
 
-    /// Les cases d'un permanent se montrent-elles sur la fiche du salarie `salarie` ? Un permanent neuf se propose, ou
-    /// ce salarie est du.
-    pub fn pour(&self, salarie: &IdSalarie) -> bool {
-        self.proposes || self.dus.iter().any(|d| d.salarie == *salarie)
-    }
-
     /// LE FILTRE UNIQUE DES NATURES : celles d'un contrat d'usage toujours ; une nature payee au mois quand un permanent
     /// neuf se propose, ou qu'un engagement du l'a. Dans l'ordre de `contrats-base.json`.
     pub fn natures(&self) -> Resultat<Vec<Arc<Nature>>> {
@@ -88,6 +82,27 @@ impl Permanents {
     pub fn natures_neuves(&self) -> Resultat<Vec<Arc<Nature>>> {
         Ok(droit::natures::natures()?.iter().filter(|n| !n.mensuelle() || self.proposes).cloned().collect())
     }
+}
+
+/// LA CLE DE LA PIECE D'UN PERMANENT QUE TIENT LE SALARIE `salarie` (`droit::natures::AuMois`) : la nature d'un de ses
+/// engagements payes au mois, en saisie ou valide, a toute date, qui se calcule (commence la case des permanents cochee :
+/// sinon il se refuse). `None` : aucun de ses engagements n'est paye au mois ; rien de sa fiche de salarie au mois ne se
+/// lit, et sa fiche ne le montre pas (`routes::fiches::montres`). Rien n'est attache a la personne : c'est l'engagement
+/// qui ouvre la piece.
+pub fn cle_du_salarie(ctx: &Contexte, salarie: &str) -> Resultat<Option<droit::natures::AuMois>> {
+    for o in crate::stock::objets(&ctx.racine)? {
+        if o.est_non_actif() || o.importe_seul() || o.carte().salarie.as_ref().map(IdSalarie::as_str) != Some(salarie) {
+            continue;
+        }
+        let Some((depuis, nature)) = o.au_mois_depuis()? else { continue };
+        if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+            continue;
+        }
+        if let Some(cle) = nature.au_mois() {
+            return Ok(Some(cle));
+        }
+    }
+    Ok(None)
 }
 
 impl Objet {

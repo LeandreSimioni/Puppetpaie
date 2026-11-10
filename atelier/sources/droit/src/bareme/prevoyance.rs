@@ -216,7 +216,7 @@ en vigueur au {} dans le catalogue de branche.",
             total = local;
         }
     }
-    let choix = ent.sante_permanents.dite().and_then(|s| s.part_patronale.dite());
+    let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite().and_then(|s| s.part_patronale.dite());
     let minimum = sante.part_patronale_minimum.0;
     // La part de l'employeur est celle que la compagnie a decidee (au moins le minimum de la convention) : elle seule la
     // connait.
@@ -476,7 +476,7 @@ fn part_t2(b: &Bloc) -> f64 {
 pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> Resultat<Cotisation> {
     let idcc = entreprise.idcc.ecrite("idcc")?;
     let reg = a_la_date(regime(idcc)?, fin);
-    let ent = entreprise.prevoyance_permanents.dite();
+    let ent = entreprise.permanent.ouvrir(au_mois).prevoyance_permanents.dite();
     let contrat = ent.is_some_and(|p| p.regime.est_dite());
     let ent_taux = ent.and_then(|p| p.taux.dite());
     let part_du_contrat = ent_taux.and_then(|t| t.part_patronale.dite());

@@ -43,11 +43,14 @@ que par la structure :
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
   (`droit::fiche::PieceFermee`), qui ne s'ouvre que par sa clé. Les cases d'un salarié au mois
-  (`ChampsSalarie::permanent`) ne s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé
-  au mois donne : un calcul qui n'a pas cette nature en main ne les lit pas, il ne compile pas. Ce que la fiche montre
-  s'en déduit (`routes::fiches::montres`) : une pièce qu'aucun engagement ne peut ouvrir ne pose aucune question. Le
-  fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans `champs-base.json`. La fiche Entreprise
-  garde encore son étiquette `si_permanents`.
+  (`ChampsSalarie::permanent`), et celles de l'entreprise que seul son calcul lit (`ChampsEntreprise::permanent`), ne
+  s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé au mois donne : un calcul qui n'a
+  pas cette nature en main ne les lit pas, il ne compile pas. « Au moins cinquante salariés »
+  (`ChampsEntreprise::avec_permanents`) ne s'ouvre que par la case « emploie des permanents » cochée. Ce que la fiche
+  montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
+  engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; une pièce qu'aucun engagement ne peut ouvrir
+  ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
+  `champs-base.json`.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
