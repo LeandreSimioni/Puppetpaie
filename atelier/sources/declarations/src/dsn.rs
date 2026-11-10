@@ -1383,7 +1383,8 @@ fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: &st
     if ent.idcc.portee() != Some(base.idcc.as_str()) || mois < base.depuis.trim() {
         return Ok(None);
     }
-    if bareme::casc_exemptee(ent)? {
+    let (an, eff) = (Mois::lire(mois)?.annee(), ctx.effectif()?);
+    if bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
     if crate::casc::mois_regularises(ctx)?.iter().any(|m| m == mois) {

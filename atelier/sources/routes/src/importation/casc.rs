@@ -239,14 +239,11 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             idcc
         )));
     }
-    match droit::bareme::casc_exemptee(ent) {
-        Err(m) => return Err(refus(m)),
-        Ok(true) => {
-            return Err(refus(
-                "L'entreprise est declaree hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) : il n'y a rien a regulariser.",
-            ))
-        }
-        Ok(false) => {}
+    let (an, eff) = (ctx.aujourdhui.an, ctx.effectif().map_err(refus)?);
+    if droit::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
+        return Err(refus(
+            "L'entreprise est declaree hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) : il n'y a rien a regulariser.",
+        ));
     }
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur(Classe::Disque, m))?;
     let depuis = base.depuis.clone();

@@ -47,13 +47,17 @@ que par la structure :
   s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé au mois donne : un calcul qui n'a
   pas cette nature en main ne les lit pas, il ne compile pas. « Au moins cinquante salariés »
   (`ChampsEntreprise::avec_permanents`) ne s'ouvre que par la case « emploie des permanents » cochée. Les cases du
-  métier (l'échelon de la CCNEAC, le poste, l'artiste stagiaire, l'expérience de la 3241 ; la jauge de la salle de
-  l'annexe I sur la fiche Entreprise) ne s'ouvrent que par `droit::minima::ParLaGrille`, que seule une grille trouvée
-  donne (`grille_au`, et la prime d'ancienneté d'un technicien de l'annexe I). Ce que la fiche
+  métier (l'échelon de la CCNEAC, le poste, l'artiste stagiaire, l'expérience de la 3241) ne s'ouvrent que par
+  `droit::minima::ParLaGrille`, que seule une grille trouvée donne (`grille_au`, et la prime d'ancienneté d'un
+  technicien de l'annexe I) ; la jauge de la salle de l'annexe I, sur la fiche Entreprise, par cette clé et
+  `AuMois` ensemble (`ChampsEntreprise::metier`). La représentation du personnel ne s'ouvre que par
+  `droit::contexte::UnCsePossible`, que seul l'effectif donne quand un comité peut exister (`Effectif::cse`) ;
+  l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
+  (`Effectif::cinquante`) et un CSE dit donnent. Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
-  du métier de chacun de ses engagements ; une pièce qu'aucun engagement ne peut ouvrir
-  ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
+  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
+  ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le

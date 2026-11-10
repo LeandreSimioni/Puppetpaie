@@ -177,7 +177,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         None => aujourdhui()?,
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
-    let bar = crate::dsn::BaremeDuMois::nouveau(droit::forme_bareme::Pile::default(), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, taux_lus: false });
+    let bar = crate::dsn::BaremeDuMois::nouveau(droit::forme_bareme::Pile::default(), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).

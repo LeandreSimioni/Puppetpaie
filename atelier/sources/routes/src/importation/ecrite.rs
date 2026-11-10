@@ -79,7 +79,8 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     if ent.idcc.portee() != Some(base.idcc.as_str()) {
         return Ok(None);
     }
-    if !matches!(droit::bareme::casc_exemptee(ent), Ok(false)) {
+    let (an, eff) = (ctx.aujourdhui.an, ctx.effectif().map_err(Echec::from)?);
+    if droit::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
     let faits: HashSet<String> = declarations::casc::mois_regularises(ctx).map_err(Echec::from)?.into_iter().collect();

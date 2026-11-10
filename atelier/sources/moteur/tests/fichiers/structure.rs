@@ -985,7 +985,8 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
 /// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
 /// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en
 /// plus) ; l'aide d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique`
-/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul.
+/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul. Aucune ligne ne
+/// porte d'etiquette (`si_fait`, `si_permanents`...) : la piece d'une case ne se dit que dans sa forme.
 #[test]
 fn champs_base_et_les_fiches_ont_les_memes_cases() {
     use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree, FormeDeCase};
@@ -1023,6 +1024,14 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
         for l in &lignes {
             let cle = l["cle"].as_str().unwrap_or("");
             let ou = format!("{}.{}", nom, cle);
+            // AUCUNE ETIQUETTE : ce que la fiche montre se deduit de la piece de la case, tiree de sa forme
+            // (`droit::fiche::Piece`) ; une ligne ne pose de condition que sur ce qui est saisi (`si`, `si_entreprise`,
+            // `si_etablissements`), jamais sur un fait du calcul ni sur une piece.
+            for k in l.as_object().into_iter().flat_map(|o| o.keys()) {
+                if k == "piece" || (k.starts_with("si_") && k != "si_entreprise" && k != "si_etablissements") {
+                    fautes.push(format!("{} : `{}` est une etiquette ; la piece de la case se range dans sa forme", ou, k));
+                }
+            }
             let Some(d) = declarees.iter().find(|d| d.cle == cle) else {
                 fautes.push(format!("{} : une ligne de champs-base.json qu'aucun champ de la fiche ne porte", ou));
                 continue;

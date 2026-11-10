@@ -73,10 +73,13 @@ pub static TEXTES: &[Texte] = &[
             // travail (elle cite L2315-61). L'effectif s'y compte selon
             // L1111-2, et le seuil de onze doit tenir douze mois consecutifs
             // (L2311-2) : ce n'est PAS l'effectif de l'Urssaf (L130-1 du code
-            // de la securite sociale, plus bas). C'est ce qui fait que
-            // `calcul.representation_du_personnel` prend la representation
-            // DECLAREE pour un fait, sans l'opposer au CRM 118.
-            Domaine { cle: "effectif_cse", titre: "L'effectif qui compte pour le comite social et economique", numeros: &["L1111-2", "L2311-2", "L2315-61"] },
+            // de la securite sociale, plus bas). Un comite elu dure le mandat
+            // de ses membres, quatre ans (L2314-33), deux a quatre par accord
+            // (L2314-34), et n'est pas renouvele a son terme si l'effectif est
+            // reste sous onze salaries douze mois consecutifs (L2313-10) :
+            // `contexte::Effectif::cse` ouvre la representation du personnel
+            // tant qu'un comite peut exister.
+            Domaine { cle: "effectif_cse", titre: "L'effectif qui compte pour le comite social et economique", numeros: &["L1111-2", "L2311-2", "L2313-10", "L2314-33", "L2314-34", "L2315-61"] },
             // LES MAJORATIONS DES EMPLOYEURS AFFILIES A UNE CAISSE DE CONGES.
             // L243-1-3 du code de la securite sociale
             // cite ces articles-la : la caisse (L3141-32), les contributions

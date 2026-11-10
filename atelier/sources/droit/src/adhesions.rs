@@ -97,9 +97,10 @@ pub fn casc_svp_base() -> Resultat<Arc<CascSvp>> {
 /// `atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`), et l'identifiant technique (15.005) est
 /// interne au message DSN (`atelier/reference/norme-dsn/texte/bloc-S21.G00.15.txt`, l. 112-117). La compagnie n'en
 /// saisit donc rien : `Contexte::organismes` la porte meme quand `config/organismes.json` ne la nomme pas.
-pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise) -> Resultat<Option<Adhesion>> {
+/// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::Effectif::cinquante`, `cse`).
+pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> Resultat<Option<Adhesion>> {
     let base = casc_svp_base()?;
-    if ent.idcc.portee().map(str::trim) != Some(base.idcc.trim()) || crate::bareme::casc_exemptee(ent)? {
+    if ent.idcc.portee().map(str::trim) != Some(base.idcc.trim()) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
     let d = &base.dsn;
@@ -145,10 +146,11 @@ mod tests {
     #[test]
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
-        let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#)).unwrap().unwrap();
+        let soixante = crate::contexte::Effectif { annees: [(2025, 60.0)].into(), premiere_embauche: None, cinquante_salaries: true };
+        let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, 2026).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));
-        assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#)).unwrap().is_none());
+        assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, 2026).unwrap().is_none());
         let exemptee = fiche(r#"{"idcc": "3090", "casc_svp_exemptee": true, "representation_personnel": "cse"}"#);
-        assert!(casc_svp(&exemptee).unwrap().is_none());
+        assert!(casc_svp(&exemptee, &soixante, 2026).unwrap().is_none());
     }
 }

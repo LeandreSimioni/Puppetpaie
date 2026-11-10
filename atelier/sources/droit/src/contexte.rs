@@ -158,6 +158,28 @@ pub struct Effectif {
     pub cinquante_salaries: bool,
 }
 
+/// LA CLE DE LA REPRESENTATION DU PERSONNEL (`fiche::Piece::Cse`) : seul l'effectif de la compagnie la donne
+/// (`Effectif::cse`), quand un comite social et economique peut exister a l'annee lue. Il ne se met en place qu'a partir
+/// de onze salaries atteints douze mois consecutifs (C. trav. L2311-2,
+/// `atelier/reference/sources/code-du-travail/xml/L2311-2.xml`) ; elu, il dure le mandat de ses membres, quatre ans
+/// (L2314-33), deux a quatre par accord (L2314-34), et ne disparait qu'a son terme, si l'effectif est reste sous onze
+/// salaries douze mois consecutifs (L2313-10 : « l'instance n'est pas renouvelée »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnCsePossible(());
+
+/// LA CLE DE CE QUI NE VAUT QU'A PARTIR DE CINQUANTE SALARIES (l'exemption de la CASC-SVP, 3090, art. 4.22 B :
+/// `fiche::ChampsEntreprise::exemption_casc`) : seul l'effectif la donne (`Effectif::cinquante`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CinquanteSalaries(());
+
+/// Le seuil du comite social et economique (C. trav. L2311-2).
+const SEUIL_DU_CSE: f64 = 11.0;
+/// Les annees civiles avant celle lue ou un effectif d'au moins onze salaries laisse un comite exister : un mandat de
+/// quatre ans au plus (L2314-33, L2314-34), renouvele tant que l'effectif n'est pas reste sous onze salaries les douze
+/// mois d'avant son terme (L2313-10). Un mandat renouvele au plus tard un an apres le dernier mois a onze court quatre
+/// ans de plus : cinq annees.
+const ANNEES_DU_CSE: i32 = 5;
+
 /// Le plus petit des grands seuils : le FNAL a 0,50 % et le `tdelta` de la reduction generale (bareme,
 /// `seuils_effectif`), l'echeance du 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1), puis la contribution supplementaire a
 /// l'apprentissage a 250 (C. trav. L. 6242-1, I).
@@ -228,6 +250,21 @@ impl Effectif {
             Some((_, v)) => Some(*v),
             None => self.annee(annee_paie - 1),
         }
+    }
+
+    /// LA CLE DE LA REPRESENTATION DU PERSONNEL pour `annee` (`UnCsePossible`) : une des cinq annees civiles d'avant
+    /// (`ANNEES_DU_CSE`) a un effectif connu d'au moins onze salaries. L'effectif lu est celui de l'Urssaf (moyenne
+    /// annuelle, L. 130-1 CSS : les 118, ou ce que la compagnie en dit, zero avant la premiere embauche), pas celui, mois
+    /// par mois, de L1111-2 que le code du travail compte : c'est le seul que le moteur connaisse. `None` : aucune de ces
+    /// annees n'atteint onze salaries, ou leur effectif n'est pas connu (`a_dire` le demande).
+    pub fn cse(&self, annee: i32) -> Option<UnCsePossible> {
+        (annee - ANNEES_DU_CSE..annee).any(|a| self.annee(a).is_some_and(|v| v >= SEUIL_DU_CSE)).then_some(UnCsePossible(()))
+    }
+
+    /// LA CLE DE CINQUANTE SALARIES pour `annee` (`CinquanteSalaries`) : la fiche dit la compagnie d'au moins cinquante
+    /// salaries (`cinquante_salaries`), et l'effectif connu le plus recent (`valeur`) l'atteint.
+    pub fn cinquante(&self, annee: i32) -> Option<CinquanteSalaries> {
+        (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= GRAND_SEUIL as f64)).then_some(CinquanteSalaries(()))
     }
 
     /// LES ANNEES DONT L'EFFECTIF MANQUE POUR LES TAUX DE LA PAIE EN `annee_paie` : celles des cinq dernieres que le plus
@@ -1552,6 +1589,19 @@ depuis le plus recent.",
         Ok(couche.contributions_dsn.iter().flatten().cloned().collect())
     }
 
+    /// LA CONVENTION QUE LA FICHE ENTREPRISE NOMME A `jour` FAIT-ELLE DEPENDRE UNE CONTRIBUTION DE LA REPRESENTATION DU
+    /// PERSONNEL (`par_representation` de ses `contributions_conventionnelles` : le FNAS de la CCNEAC, article III.3.1) ?
+    /// Lu dans la couche de la convention du socle de l'annee, comme `contributions_dsn` ; une annee sans socle, ou une
+    /// fiche sans convention, n'en a aucune.
+    pub fn contribution_par_representation(&self, jour: &Jour) -> Resultat<bool> {
+        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(false) };
+        let ent = self.entreprise_au(jour);
+        let Some(idcc) = ent.idcc.portee() else { return Ok(false) };
+        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
+        let Some(couche) = convention(&socle_an, idcc)? else { return Ok(false) };
+        Ok(couche.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty())))
+    }
+
     /// Le bareme resolu a ce jour, garde et partage : il se lit sans se copier ; ce qui le change (la pile d'un contrat,
     /// `bareme::bareme_applique` ; la surcharge d'un etablissement) en part.
     pub fn bareme(&self, jour: &Jour) -> Resultat<Arc<Pile>> {
@@ -1562,8 +1612,8 @@ depuis le plus recent.",
     /// effectif de l'annee.
     pub fn entreprise_lue(&self, jour: &Jour) -> Resultat<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
-        let effectif = effectif_de(&self.racine, &fiche)?.valeur(jour.an);
-        Ok(crate::bareme::EntrepriseLue { fiche, effectif, taux_lus: false })
+        let lu = effectif_de(&self.racine, &fiche)?;
+        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.an), cse: lu.cse(jour.an), cinquante: lu.cinquante(jour.an), taux_lus: false })
     }
 
     /// (PSS mensuel, PSS horaire) de l'annee, d'apres la fiche entreprise de ce contexte.

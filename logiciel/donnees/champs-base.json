@@ -794,10 +794,9 @@
    "ecran": true
   },
   {
-   "note": "LA REPRESENTATION DU PERSONNEL, que la CCNEAC lit (23/09/2026) : son\nFNAS en depend (article III.3.1). En 3090, il ne sert qu'a l'exemption de la CASC-SVP\n(`droit::bareme::casc_exemptee`). Sous onze salaries, sans objet ; au-dela, `droit::bareme::representation_du_personnel` la demande\nplutot que de supposer une carence.",
+   "note": "LA REPRESENTATION DU PERSONNEL, que la CCNEAC lit (23/09/2026) : son\nFNAS en depend (article III.3.1). En 3090, il ne sert qu'a l'exemption de la CASC-SVP\n(`droit::bareme::casc_exemptee`). Elle ne se montre que si l'effectif laisse un comite exister\n(`droit::fiche::Piece::Cse`) ; sous onze salaries, le FNAS ne la lit pas ; au-dela,\n`droit::bareme::representation_du_personnel` la demande plutot que de supposer une carence.",
    "cle": "representation_personnel",
    "avance": "cas_particulier",
-   "si_fait": "onze_salaries",
    "libelles": {"aucune": "Pas de CSE (carence constatée)", "csec": "CSE conventionnel (11 à 49 salariés)", "cse_adherent_fnas": "CSE de 50 salariés et plus, adhérent au FNAS", "cse": "CSE qui n'adhère pas au FNAS"},
    "libelle": "Comité social et économique (CSE)",
    "forme": "choix",
@@ -813,31 +812,21 @@
    "declare": false,
    "derive_de": null,
    "rubrique": null,
-   "si": [
-    {
-     "idcc": [
-      "1285"
-     ]
-    },
-    {
-     "idcc": [
-      "3090"
-     ],
-     "casc_svp_exemptee": [
-      "true"
-     ]
-    }
-   ],
+   "si": {
+    "idcc": [
+     "1285",
+     "3090"
+    ]
+   },
    "si_etablissements": false,
    "si_entreprise": null,
    "booleen_defaut": true,
    "ecran": true
   },
   {
-   "note": "L'EXEMPTION DE LA CASC-SVP (3090, article 4.22 B) : un fait que\nl'entreprise declare, et que `droit::bareme::casc_exemptee` confronte au CSE.",
+   "note": "L'EXEMPTION DE LA CASC-SVP (3090, article 4.22 B) : un fait que\nl'entreprise declare, qui ne se lit et ne se montre qu'a une compagnie d'au moins\ncinquante salaries dont la fiche dit un CSE (`droit::fiche::Piece::Casc`).",
    "cle": "casc_svp_exemptee",
    "avance": "cas_particulier",
-   "si_fait": "onze_salaries",
    "libelle": "Exemptée de la CASC-SVP (50 salariés et plus)",
    "forme": "booleen",
    "aide": "Seulement pour une compagnie d'au moins 50 salariés dont le CSE verse aux activités sociales et culturelles au moins autant que la CASC-SVP (article 4.22 B de la convention). Sinon, laisser décoché : la contribution est due.",

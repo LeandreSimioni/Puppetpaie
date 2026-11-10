@@ -746,7 +746,23 @@ pub enum Piece {
     EmploieDesPermanents,
     /// Les cases que seule une grille qui vise le metier d'un engagement lit (`minima::ParLaGrille`).
     Metier,
+    /// Les cases que seule la grille du metier d'un engagement paye au mois lit (`minima::ParLaGrille` et
+    /// `natures::AuMois`) : la jauge de la salle de l'annexe I.
+    MetierAuMois,
+    /// La representation du personnel : seul un effectif qui laisse un comite exister l'ouvre
+    /// (`contexte::UnCsePossible`).
+    Cse,
+    /// L'exemption de la CASC-SVP : seule une compagnie d'au moins cinquante salaries dotee d'un comite l'ouvre
+    /// (`ExemptionCasc`).
+    Casc,
 }
+
+/// LA CLE DE L'EXEMPTION DE LA CASC-SVP (`ChampsEntreprise::exemption_casc`) : « les entreprises d'au moins 50 salariés
+/// qui disposent d'un comité social et économique » (3090, art. 4.22 B,
+/// `atelier/reference/sources/kali-3090-titres-iv-v-sante-20260923.md`) ; seules les cles de l'effectif
+/// (`contexte::CinquanteSalaries`, `contexte::UnCsePossible`) et un comite dit la donnent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExemptionCasc(());
 
 /// LA CLE DES CASES D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS (`ChampsEntreprise::avec_permanents`) : seule sa case
 /// « emploie des permanents », cochee a la date lue, la donne.
@@ -1620,8 +1636,6 @@ fiche! {
         date_de_versement_intermittents: String,
         jours_feries_chomes: JoursFeriesChomes,
         deduction_forfaitaire_option: OptionDfs,
-        representation_personnel: RepresentationPersonnel,
-        casc_svp_exemptee: bool,
         premiere_embauche: Jour,
         taxe_sur_les_salaires: TaxeSurLesSalaires,
         taxe_apprentissage_motif_non_assujettissement: MotifNonAssujettissement,
@@ -1654,10 +1668,21 @@ fiche! {
         avec_permanents: EmploieDesPermanents, CasesAvecPermanents, EmploieDesPermanents {
             cinquante_salaries_et_plus: bool,
         }
-        /// LES CASES DU METIER : la jauge de la salle, que seule la prime d'anciennete d'un technicien de l'annexe I lit
-        /// (`clauses::prime_anciennete`, `minima::ParLaGrille`).
-        metier: Metier, CasesDuMetierEntreprise, crate::minima::ParLaGrille {
+        /// LA JAUGE DE LA SALLE, que seule la prime d'anciennete d'un technicien de l'annexe I paye au mois lit
+        /// (`clauses::prime_anciennete`, que seul le calcul d'un engagement au mois appelle) : la cle de sa grille
+        /// (`minima::ParLaGrille`) et celle d'un salarie au mois (`natures::AuMois`).
+        metier: MetierAuMois, CasesDuMetierEntreprise, (crate::minima::ParLaGrille, crate::natures::AuMois) {
             jauge_annexe_1: JaugeAnnexe1,
+        }
+        /// LA REPRESENTATION DU PERSONNEL : seul un effectif qui laisse un comite exister l'ouvre
+        /// (`contexte::UnCsePossible`).
+        cse: Cse, CasesDuCse, crate::contexte::UnCsePossible {
+            representation_personnel: RepresentationPersonnel,
+        }
+        /// L'EXEMPTION DE LA CASC-SVP (3090, art. 4.22 B) : seule une compagnie d'au moins cinquante salaries dotee d'un
+        /// comite l'ouvre (`ChampsEntreprise::exemption_casc`).
+        casc: Casc, CasesDeLaCasc, ExemptionCasc {
+            casc_svp_exemptee: bool,
         }
     }
     notes {
@@ -1816,6 +1841,12 @@ impl ChampsEntreprise {
     /// La cle des cases d'une compagnie qui emploie des permanents : sa case « emploie des permanents » cochee.
     pub fn avec_permanents(&self) -> Option<EmploieDesPermanents> {
         self.emploie_des_permanents.oui().then_some(EmploieDesPermanents(()))
+    }
+
+    /// LA CLE DE L'EXEMPTION DE LA CASC-SVP : la compagnie compte au moins cinquante salaries, un comite peut exister, et
+    /// la fiche dit un CSE (`cse` ou `cse_adherent_fnas` ; le CSE conventionnel de la CCNEAC n'est pas celui de la 3090).
+    pub fn exemption_casc(&self, _cinquante: &crate::contexte::CinquanteSalaries, cse: &crate::contexte::UnCsePossible) -> Option<ExemptionCasc> {
+        matches!(self.cse.ouvrir(cse).representation_personnel.code(), Some("cse" | "cse_adherent_fnas")).then_some(ExemptionCasc(()))
     }
 
     /// Le nom de la compagnie tel que l'ecran le dit : le nom d'usage, sinon la raison sociale.

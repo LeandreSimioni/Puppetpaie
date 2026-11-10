@@ -355,20 +355,23 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
-    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Un bareme qui ne se lit pas se dit plus
-    // bas, ce qui lui manque.
+    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
+    // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = "representation_personnel";
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
-    // Sans CSE dit, c'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.b) : inconnu,
-    // c'est lui que la contribution demande, pas le CSE.
+    // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
+    // lui que la contribution demande, pas le CSE.
     if let Ok(b) = &bareme {
-        if ent.representation_personnel.dite().is_none() && par_representation(b) {
+        if par_representation(b) {
+            let cse = effectif.cse(an);
+            let dit = cse.as_ref().is_some_and(|k| ent.cse.ouvrir(k).representation_personnel.est_dite());
             match effectif.valeur(an) {
-                Some(e) if e >= 11.0 => {
+                Some(e) if e >= 11.0 && cse.is_some() && !dit => {
                     let (libelle, aide) = champ(cle)?;
                     out.push(manque(cle, libelle, "la contribution au FNAS de chaque paie", ENTREPRISE, Some(cle), aide)?);
                 }
+                // Sans la cle, l'effectif d'une des cinq annees d'avant manque : `a_dire` l'a demande plus haut.
                 Some(_) => {}
                 None => out.push(manque(
                     "effectif",
@@ -376,7 +379,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
                     "la contribution au FNAS de chaque paie",
                     ENTREPRISE,
                     None,
-                    format!("Sans comité social et économique dit, la CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé », ou le comité dans Configuration › Entreprise.", an - 1),
+                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", an - 1),
                 )?),
             }
         }

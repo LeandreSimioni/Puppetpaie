@@ -465,8 +465,9 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// fiche d'un salarie, un des siens (`engagement::permanents::cle_du_salarie`) ; sur celle de l'entreprise, quand elle
 /// dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose) ou qu'un engagement paye au
 /// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
-/// telle qu'elle est saisie. Et le fait que le calcul lit doit tenir (`si_fait` : `FaitsDeLaFiche`). La page ne montre
-/// que ces cases-la.
+/// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
+/// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
+/// page ne montre que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
     let au_mois = match (nom, cle) {
         ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
@@ -475,50 +476,47 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     };
     let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
+    let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx)? } else { (false, false) };
     let ouverte = |piece: Piece, case: &str| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
-        Piece::Metier => du_metier.contains(case),
+        Piece::Metier | Piece::MetierAuMois => du_metier.contains(case),
+        Piece::Cse => cse,
+        Piece::Casc => casc,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
-    let faits = FaitsDeLaFiche::lus(ctx)?;
-    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect();
-    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (Piece::Metier, !du_metier.is_empty())]
+    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle.clone()).collect();
+    // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
+    let metier = if nom == "entreprise" { Piece::MetierAuMois } else { Piece::Metier };
+    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
         .into_iter()
         .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
         .collect();
     Ok(Montres { cases, pieces_ouvertes })
 }
 
-/// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : si l'effectif connu de la
-/// compagnie est sous onze salaries.
-struct FaitsDeLaFiche {
-    sous_onze: bool,
-}
-
-impl FaitsDeLaFiche {
-    fn lus(ctx: &Contexte) -> R<FaitsDeLaFiche> {
-        // L'effectif que la representation du personnel lit (`Contexte::entreprise_lue`) : celui de l'annee d'avant.
-        let sous_onze = ctx.effectif().map_err(plain)?.valeur(ctx.aujourdhui.an).is_some_and(|e| e < 11.0);
-        Ok(FaitsDeLaFiche { sous_onze })
-    }
-
-    /// Le fait de la case `c` de la fiche `donnees` tient-il ? Une case sans fait tient toujours. Sous onze salaries, la
-    /// representation du personnel que la fiche dit se lit encore (`representation_du_personnel` la prend d'abord), et
-    /// l'exemption cochee se refuse en se nommant (`casc_exemptee`) : dites, elles restent montrees.
-    fn tient(&self, c: &champs::Champ, donnees: &Saisie) -> bool {
-        c.si_fait.as_ref().is_none_or(|f| match f {
-            champs::Fait::OnzeSalaries => !self.sous_onze || donnees.dite(&c.cle).is_some(),
-        })
-    }
+/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::Effectif`) : la
+/// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
+/// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
+/// de la CASC-SVP quand la compagnie compte cinquante salaries et que sa fiche, telle qu'elle est enregistree, dit un CSE
+/// (`droit::fiche::ChampsEntreprise::exemption_casc`). Un effectif inconnu n'ouvre rien : c'est lui que « Pour
+/// démarrer » demande (`Effectif::a_dire`).
+fn pieces_de_l_effectif(ctx: &Contexte) -> R<(bool, bool)> {
+    let (jour, eff) = (ctx.aujourdhui, ctx.effectif().map_err(plain)?);
+    let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
+    let Some(cse) = cse else { return Ok((false, false)) };
+    let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour).map_err(plain)?;
+    let casc = cinquante.is_some_and(|c| ctx.entreprise.exemption_casc(&c, &cse).is_some());
+    Ok((lue, casc))
 }
 
 /// LES CASES DU METIER (`droit::fiche::Piece::Metier`) QUE LA FICHE `nom` MONTRE : celles que la grille du metier de
 /// chaque engagement actif lit. Sur la fiche du salarie `cle`, les cases que son metier demande
 /// (`engagement::minima::cases_du_metier`), au premier jour de chacun de ses engagements : le metier de la carte ou
 /// d'un avenant, sinon l'emploi de la fiche en cours de saisie (`donnees`), comme la paie le lit. Sur la fiche de
-/// l'entreprise, la jauge de la salle quand un engagement est celui d'un technicien de l'annexe I, que sa prime
+/// l'entreprise, la jauge de la salle quand un engagement paye au mois (`paye_au_mois`) est celui d'un technicien de
+/// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
 fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
@@ -534,7 +532,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
             let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
             let du_salarie = match (nom, cle) {
                 ("salarie", Some(c)) if c == salarie => de_la_fiche.clone(),
-                ("entreprise", _) => dit(ctx.salarie(salarie).map_err(plain)?.code_emploi_ft.portee()),
+                ("entreprise", _) if paye_au_mois(s)? => dit(ctx.salarie(salarie).map_err(plain)?.code_emploi_ft.portee()),
                 _ => continue,
             };
             // La carte au premier jour de son mois, chaque avenant au jour ou il vaut.
@@ -561,6 +559,19 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
         }
     }
     Ok(cases)
+}
+
+/// L'ENGAGEMENT `s` EST-IL PAYE AU MOIS, par sa carte ou un avenant (`droit::natures::Nature::au_mois`) : seul son calcul
+/// lit la jauge de la salle de l'annexe I (`droit::fiche::Piece::MetierAuMois`).
+fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
+    for t in std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes)) {
+        if let Some(n) = t.nature.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            if droit::natures::nature(n).map_err(plain)?.au_mois().is_some() {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 // ------------------------------------------------------- taxe-sur-les-salaires-regime
