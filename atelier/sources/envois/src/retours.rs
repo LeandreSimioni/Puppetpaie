@@ -16,9 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
-type Resultat<T> = Result<T, Echec>;
-
-use socle::echec::{erreur as echec, Classe, Echec};
+use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
@@ -370,7 +368,7 @@ fn declaration_valide(d: &[char]) -> bool {
 }
 
 /// La declaration `<?xml ...?>` de tete, si le texte en commence par une.
-fn controle_declaration(c: &[char]) -> Resultat<()> {
+fn controle_declaration(c: &[char]) -> R<()> {
     if commence_par(c, 0, "<?xml") && blanc_xml(c.get(5)) {
         if let Some(fin) = chercher(c, 5, "?>") {
             if !declaration_valide(&c[5..fin]) {
@@ -384,7 +382,7 @@ fn controle_declaration(c: &[char]) -> Resultat<()> {
 /// Ce qu'expat refuse et que `roxmltree` laisse passer : la declaration mal
 /// ecrite, un nom hors de XML 1.0 quatrieme edition, une reference a un
 /// caractere impossible (`&#xD800;`, `&#x110000;`).
-fn controle_expat(s: &str) -> Resultat<()> {
+fn controle_expat(s: &str) -> R<()> {
     let c: Vec<char> = s.chars().collect();
     let mut i = 0;
     let mut pile: Vec<String> = Vec::new();
@@ -416,7 +414,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
             None => c.len(),
         }
     };
-    let reference = |c: &[char], i: usize| -> Resultat<()> {
+    let reference = |c: &[char], i: usize| -> R<()> {
         // `&#` en c[i..] : chiffres decimaux, ou `x` et chiffres hexadecimaux, puis `;`.
         let (base, mut k) = if c.get(i + 2) == Some(&'x') { (16, i + 3) } else { (10, i + 2) };
         let debut = k;
@@ -565,7 +563,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
 }
 
 /// Un XML déjà en texte : sa déclaration d'encodage est sans effet.
-fn lire_texte(s: &str) -> Resultat<Arbre> {
+fn lire_texte(s: &str) -> R<Arbre> {
     match s.strip_prefix('\u{feff}') {
         Some(t) => lire_texte_nu(t),
         None => lire_texte_nu(s),
@@ -573,7 +571,7 @@ fn lire_texte(s: &str) -> Resultat<Arbre> {
 }
 
 /// Le texte sans son BOM : un second est un caractere de tete que XML refuse.
-fn lire_texte_nu(s: &str) -> Resultat<Arbre> {
+fn lire_texte_nu(s: &str) -> R<Arbre> {
     if s.starts_with('\u{feff}') {
         return Err(mal_forme("XML mal forme : un caractere inattendu"));
     }
@@ -674,7 +672,7 @@ fn erreur_codage(c: &Codage, nom: &str) -> Echec {
 }
 
 /// `ET.fromstring(octets)` : l'encodage declare est celui qui decode.
-fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
+fn lire_octets(o: &[u8]) -> R<Arbre> {
     let invalide = || echec(Classe::XmlIllisible, "XML mal forme : un caractere inattendu");
     let incorrect = || echec(Classe::XmlIllisible, "l'encodage declare par le XML n'est pas le sien");
     let (o, bom8) = match o.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
@@ -811,11 +809,11 @@ impl Bilan {
 }
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
-fn mois_du_rapport(brut: &str) -> Resultat<socle::mois::Mois> {
-    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| echec(Classe::Illisible, m))
+fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
+    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
 }
 
-fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Option<Bilan>> {
+fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let Some(flux) = get("idflux") else { return Ok(None) };
     let recu_le = match (get("date_reception"), get("heure_reception")) {
@@ -845,7 +843,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Opt
 /// LE BILAN QUE PORTENT LES OCTETS `o` : `None` quand ce n'est pas un rapport de depot (un XML d'une autre forme, ou
 /// sans flux) ; un XML qui ne se lit pas est un refus (sa classe) : la reprise du journal le nomme (`illisibles`), le
 /// rattachement des retours le tient pour une piece sans bilan (`bilan_si_xml`).
-pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
+pub fn bilan_d_octets(o: &[u8]) -> R<Option<Bilan>> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(nettoye(&texte))?;
     let racine = arbre.racine();
@@ -869,7 +867,7 @@ pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
 
 /// `bilan_d_octets`, une piece qui n'est pas du XML lisible n'ayant pas de bilan (une archive, un PDF) ; tout autre
 /// refus (un encodage inconnu, un mois illisible) remonte.
-pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
+pub fn bilan_si_xml(o: &[u8]) -> R<Option<Bilan>> {
     match bilan_d_octets(o) {
         Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
         autre => autre,
@@ -882,7 +880,7 @@ pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
 /// dit d'une declaration : ni salarie, ni contrat, ni date d'evenement (schema des bilans `v01r08`, ceux qu'elle rend ;
 /// specification VT2.2, `atelier/reference/sources/gip-mds-api-dsn/`). Un XML illisible, ou qui
 /// n'est pas un rapport de depot, n'en identifie aucune.
-pub fn declarations_du_bilan(o: &[u8]) -> Resultat<Vec<DeclarationIdentifiee>> {
+pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
     let Some(arbre) = octets_arbre(o)? else { return Ok(Vec::new()) };
     let racine = arbre.racine();
     if local(&racine.tag) != "rapport" || !racine.attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)) {
@@ -932,7 +930,7 @@ pub struct DeclarationIdentifiee {
 
 /// L'arbre d'octets ; un XML mal forme n'en est pas un (`None`), tout autre refus (un
 /// encodage inconnu) remonte.
-fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
+fn octets_arbre(o: &[u8]) -> R<Option<Arbre>> {
     match lire_octets(o) {
         Ok(a) => Ok(Some(a)),
         Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
@@ -941,7 +939,7 @@ fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
 }
 
 /// `anomalies_du_bilan` : les motifs d'un BAN, en phrases lisibles.
-pub fn anomalies_lisibles_d_octets(o: &[u8]) -> Resultat<Vec<String>> {
+pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
     let Some(arbre) = octets_arbre(o)? else {
         return Ok(Vec::new());
     };
@@ -979,7 +977,7 @@ pub struct AnomalieCodee {
 }
 
 /// Les anomalies d'un bilan, en codes.
-pub fn anomalies_codees_d_octets(o: &[u8]) -> Resultat<Vec<AnomalieCodee>> {
+pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
     let Some(arbre) = octets_arbre(o)? else {
         return Ok(Vec::new());
     };
@@ -1158,11 +1156,11 @@ fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
 
 /// Les retours que la plate-forme liste : XML (1.0) ou JSON (2.0). Un champ que la plate-forme ne decrit pas refuse
 /// la liste.
-pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
+pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
+        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
         let mut out = Vec::new();
         for f in UnOuPlusieurs::en_liste(l.retours.and_then(|r| r.flux)) {
             for r in UnOuPlusieurs::en_liste(f.retour) {
@@ -1220,11 +1218,11 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
 }
 
 /// Les depots que la plate-forme liste (depots > declarant > depot{idflux, date, statut}) : XML (1.0) ou JSON (2.0).
-pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
+pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
+        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?;
         return Ok(UnOuPlusieurs::en_liste(d.depots.and_then(|x| x.declarant).and_then(|x| x.depot)));
     }
     let arbre = lire_texte(texte)?;
@@ -1468,7 +1466,7 @@ fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
 }
 
 /// `extraire_taux_pas` : les quatre strategies, de la plus sure a la plus large.
-pub fn taux_pas_d_octets(o: &[u8]) -> Resultat<TauxPasLus> {
+pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(&texte)?;
     let strategies: [(&'static str, fn(&Arbre) -> Vec<ReleveTauxPas>); 4] = [
@@ -1523,7 +1521,7 @@ fn mauvais(m: impl Into<String>) -> Echec {
     echec(Classe::ArchiveIllisible, m)
 }
 
-fn cp437(o: &[u8]) -> Resultat<String> {
+fn cp437(o: &[u8]) -> R<String> {
     o.iter()
         .map(|&b| if b < 0x80 { Some(b as char) } else { char::from_u32(CP437[b as usize - 0x80]) })
         .collect::<Option<String>>()
@@ -1531,7 +1529,7 @@ fn cp437(o: &[u8]) -> Resultat<String> {
 }
 
 /// Le nom d'un membre : UTF-8 si le drapeau 11 est leve, cp437 sinon.
-fn nom_zip(o: &[u8], drapeaux: usize) -> Resultat<String> {
+fn nom_zip(o: &[u8], drapeaux: usize) -> R<String> {
     if drapeaux & 0x800 != 0 {
         std::str::from_utf8(o)
             .map(str::to_string)
@@ -1574,7 +1572,7 @@ fn description_compression(t: usize) -> &'static str {
 }
 
 /// `ZipInfo._decodeExtra` : la zone zip64 des tailles et du decalage.
-fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
+fn extra_zip64(extra: &[u8], m: &mut Membre) -> R<()> {
     let mut e = extra;
     while e.len() >= 4 {
         let (tp, ln) = (u16_le(e, 0), u16_le(e, 2));
@@ -1583,7 +1581,7 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
         }
         if tp == 0x0001 {
             let mut d = &e[4..ln + 4];
-            let mut lire = |champ: &str| -> Resultat<u64> {
+            let mut lire = |champ: &str| -> R<u64> {
                 if d.len() < 8 {
                     return Err(mauvais(format!("archive zip64 abimee : {} absent du champ supplementaire", champ)));
                 }
@@ -1607,7 +1605,7 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
 }
 
 /// Le repertoire central, dans l'ordre de l'archive.
-fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
+fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
     let pas_un_zip = || mauvais("ce n'est pas une archive zip");
     let taille_fichier = b.len();
     // `_EndRecData`
@@ -1724,7 +1722,7 @@ fn crc32(o: &[u8]) -> u64 {
 }
 
 /// `ZipFile.read(nom)`.
-fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
+fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
     if m.decalage < 0 {
         return Err(echec(Classe::Illisible, format!("negative seek value {}", m.decalage)));
     }
@@ -1899,7 +1897,7 @@ pub struct AttestationAer {
 
 /// `aer_spectacle` : les attestations d'une archive de nature 46 ; liste vide si
 /// le contenu n'est pas une archive lisible.
-pub fn aer_spectacle(o: &[u8]) -> Resultat<Vec<AttestationAer>> {
+pub fn aer_spectacle(o: &[u8]) -> R<Vec<AttestationAer>> {
     let membres = match repertoire_zip(o) {
         Ok(m) => m,
         Err(e) if e.classe == Some(Classe::ArchiveIllisible) => return Ok(Vec::new()),
@@ -2063,7 +2061,7 @@ fn premier_texte<'a>(a: &'a Arbre, e: &'a Noeud, noms: &[&str]) -> &'a str {
 /// (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`) ; les noms
 /// d'elements sont ceux des pieces recues (`v01r08`) et des exemples du guide. `None` : ce n'est pas un rapport
 /// harmonise (un XML d'un autre format, un PDF, une archive), ou il ne se lit pas.
-pub fn lire_rapport(o: &[u8]) -> Resultat<Option<Rapport>> {
+pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
     let Some(arbre) = octets_arbre(o)? else { return Ok(None) };
     let racine = arbre.racine();
     if local(&racine.tag) != "rapport" {
@@ -2197,7 +2195,7 @@ pub struct DonneeCollective {
 }
 
 /// Les noms des membres d'une archive ZIP (une archive d'AER, nature 43 ou 46) ; vide si ce n'en est pas une.
-pub fn membres_du_zip(o: &[u8]) -> Resultat<Vec<String>> {
+pub fn membres_du_zip(o: &[u8]) -> R<Vec<String>> {
     match repertoire_zip(o) {
         Ok(m) => Ok(m.into_iter().map(|x| x.nom).filter(|n| !n.ends_with('/')).collect()),
         Err(e) if e.classe == Some(Classe::ArchiveIllisible) => Ok(Vec::new()),
@@ -2415,7 +2413,7 @@ fn blocs_sous<'a>(a: &'a Arbre, e: &'a Noeud, nom: &'a str) -> Vec<&'a Noeud> {
 /// - `parametres` (`RO.B008`) et `identites` (`RO.B009`) ; `informations` (`RO.B011`, `RO.B012`, CT 2027.1.0).
 ///
 /// `None` : aucun bloc NEOReS (`RO_B000` a `RO_B012`), ou le fichier ne se lit pas.
-pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
+pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let est_bloc = |n: &Noeud| {
         let t = local(&n.tag);
@@ -2582,7 +2580,7 @@ const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérat
 /// attendue, date d'evenement, regroupement) avec leur `ContexteRetourMetier` (rubrique, libelle, valeur) -- d'ou le
 /// salarie (S21.G00.30.002 et .004). `None` : ce n'en est pas un, ou il ne se lit pas (il est en ISO-8859-1, qu'il
 /// declare : guide v6.8, §7.1).
-pub fn lire_crm_oc(o: &[u8]) -> Resultat<Option<CrmOc>> {
+pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
     if local(&racine.tag) != "Fichier" || !a.enfants(racine).any(|x| local(&x.tag) == "Declaration") {
