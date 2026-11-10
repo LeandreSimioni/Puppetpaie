@@ -1152,7 +1152,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<
         let reference = Decimal::from_str("151.67").unwrap();
         let base = eur2(div(mul(base_conv, quotite), reference));
         let montant = eur2(div(mul(base, pourcentage), Decimal::ONE_HUNDRED));
-        lignes.push(LignePaie::composee("prime_anciennete", Decimal::ONE, dec_f64(flot(montant))?));
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Decimal::ONE, dec_f64(flot(montant))?));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \

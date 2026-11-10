@@ -580,7 +580,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let mut propose = std::collections::BTreeMap::new();
     for n in &neuves {
         let mensuelle = droit::natures::nature(n).map_err(Echec::from)?.mensuelle();
-        propose.insert(n.clone(), engagement::proposees::proposees(ctx, Some(mensuelle), None, &mois.premier_jour())?);
+        propose.insert(n.clone(), engagement::proposees::proposees(ctx, Some(mensuelle), None, None, &mois.premier_jour())?);
     }
     let nouvelle_carte = NouvelleCarte {
         nature: engagement::carte::CDDU,
@@ -1766,9 +1766,9 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
         // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == "20")? } else { Vec::new() },
-        // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut de la fiche telle que la paie la lit (le metier de
-        // la carte par-dessus celle du salarie).
-        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), &data.mois.premier_jour())?,
+        // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
+        // (le metier de la carte par-dessus celui du salarie).
+        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
         // LES CASES QU'UNE LIGNE DE FRAIS APPELLE : le lieu d'une nuitée, le restaurant d'un repas, le justificatif d'un
         // frais au-delà de sa limite (`engagement::frais_au_dela`).
         cases: e

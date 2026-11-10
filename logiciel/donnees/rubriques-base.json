@@ -775,7 +775,7 @@
       "soumis": true,
       "imposable": true,
       "conges_spectacles": true,
-      "source": "La prime d'anciennete de la convention 3090, annexe I, article 3.11 : 1 % du salaire conventionnel par annee de presence au-dela de trois, jusqu'a 10 %. Un salaire : soumise, imposable, et dans l'assiette des conges payes."
+      "source": "La prime d'anciennete de la convention 3090, annexe I, article 3.11 (atelier/reference/sources/legifrance-3090-annexe-I/legifrance-3090-annexe-I-20261110.txt) : « Après 3 ans de présence, il est attribué à chaque technicien une prime d'ancienneté de 1 % du salaire conventionnel », jusqu'a 10 %. Proposee sur la carte des seuls techniciens de l'annexe I, quelle que soit la nature du contrat (art. 3.1 : « deux types de contrats pour le personnel technique », le CDI et le CDD ; `droit::clauses::prime_anciennete_possible`). Le calcul la compose pour un contrat paye au mois ; pour un contrat d'usage, la compagnie la saisit quand elle la doit. Un salaire : soumise, imposable, et dans l'assiette des conges payes."
     },
     "indemnite_licenciement_conventionnelle": {
       "libelle": "Indemnité conventionnelle de licenciement (supplément)",
