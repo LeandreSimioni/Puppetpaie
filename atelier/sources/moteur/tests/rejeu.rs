@@ -309,7 +309,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     assert_eq!(bilan["verdict"], json!("KO"), "{}", ligne);
     assert!(bilan["anomalies"].to_string().contains("Code URSSAF invalide"), "{}", bilan);
     assert!(!ligne["retours"].as_array().unwrap().iter().any(|x| x["nature"] == json!("94")), "une DSN refusee n'a pas de taux : {}", ligne);
-    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal().unwrap()).unwrap();
+    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal()).unwrap();
     assert!(etat.refusee, "{:?}", etat);
 
     // UN FICHIER REFUSE NE REPART PAS TOUT SEUL : a l'ouverture suivante, l'horloge refait la DSN a son echeance, octet
@@ -328,7 +328,7 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     std::fs::write(racine.join("config/entreprise.json"), serde_json::to_string_pretty(&entreprise).unwrap()).unwrap();
     ouvrir("2026-12-21");
     assert_eq!(de_novembre(), avant + 2, "le fichier corrige part, en test puis en reel");
-    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal().unwrap()).unwrap();
+    let etat = envois::etats::etat_dsn_du_mois(&envois::journal::lu(&racine).unwrap().lignes, socle::mois::Mois::lire("2026-11").unwrap(), None, ctx.entreprise.nic_principal()).unwrap();
     assert!(!etat.refusee, "{:?}", etat);
     ouvrir("2026-12-22");
     assert_eq!(de_novembre(), avant + 2, "une DSN acceptee ne repart pas");
@@ -562,6 +562,58 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
     (racine, jour)
 }
 
+/// AUCUNE CASE D'UNE PIECE QU'AUCUN ENGAGEMENT N'OUVRE NE SE MONTRE (la forme, `droit::fiche::Piece` : « c'est
+/// l'engagement qui decide tout ») : sur la configuration du jour `jour`, une case de la piece d'un permanent ne se montre
+/// sur la fiche d'un salarie que si un de ses engagements actifs est paye au mois (sa carte, ou un avenant, le dit), et
+/// sur celle de l'entreprise que si elle dit employer des permanents ou qu'un engagement est paye au mois ; une case
+/// d'une compagnie qui emploie des permanents, que si sa case est cochee. Les engagements se lisent dans leurs fichiers,
+/// leur nature dans `contrats-base.json`, sans la fonction qui ouvre la piece. Rend la configuration et les salaries au
+/// mois.
+fn aucune_piece_fermee_ne_se_montre(racine: &std::path::Path, jour: &str) -> (Value, std::collections::BTreeSet<String>) {
+    let conf = outils::reussi(&outils::route(racine, "configuration", json!({}), jour)).clone();
+    let pieces = |fiche: &str| -> std::collections::BTreeMap<String, String> {
+        conf["description"][fiche].as_array().unwrap().iter().filter_map(|c| Some((c["cle"].as_str()?.to_string(), c["piece"].as_str()?.to_string()))).collect()
+    };
+    let mut au_mois = std::collections::BTreeSet::new();
+    for f in std::fs::read_dir(racine.join("engagements")).unwrap().flatten() {
+        let m = outils::lire(racine, &format!("engagements/{}", f.file_name().to_string_lossy()));
+        for e in m["engagements"].as_array().unwrap().iter().filter(|e| e["non_actif"].is_null()) {
+            let s = &e["saisie"];
+            let natures = std::iter::once(&s["carte"]["nature"]).chain(s["avenants"].as_array().into_iter().flatten().map(|a| &a["termes"]["nature"]));
+            if natures.filter_map(Value::as_str).any(|n| droit::natures::nature(n).unwrap().mensuelle()) {
+                au_mois.insert(s["carte"]["salarie"].as_str().unwrap().to_string());
+            }
+        }
+    }
+    let emploie = conf["entreprise"]["donnees"]["emploie_des_permanents"] == json!(true);
+    let (de_l_entreprise, du_salarie) = (pieces("entreprise"), pieces("salarie"));
+    for case in conf["entreprise"]["montres"].as_array().unwrap().iter().filter_map(Value::as_str) {
+        match de_l_entreprise.get(case).map(String::as_str) {
+            Some("permanent") => assert!(emploie || !au_mois.is_empty(), "l'entreprise montre {} sans permanent", case),
+            Some("emploie_des_permanents") => assert!(emploie, "l'entreprise montre {} sans employer de permanents", case),
+            _ => {}
+        }
+    }
+    for s in conf["salaries"].as_array().unwrap() {
+        let cle = s["cle"].as_str().unwrap();
+        for case in s["montres"].as_array().unwrap().iter().filter_map(Value::as_str) {
+            assert!(
+                du_salarie.get(case).map(String::as_str) != Some("permanent") || au_mois.contains(cle),
+                "{} voit {} sans engagement payé au mois",
+                cle,
+                case
+            );
+        }
+    }
+    (conf, au_mois)
+}
+
+/// Les cases que la configuration `conf` montre sur la fiche du salarie `cle`.
+fn montrees(conf: &Value, cle: &str) -> Vec<String> {
+    let s = conf["salaries"].as_array().unwrap().iter().find(|s| s["cle"] == json!(cle)).unwrap_or_else(|| panic!("{} n'a pas de fiche", cle));
+    s["montres"].as_array().unwrap().iter().filter_map(Value::as_str).map(str::to_string).collect()
+}
+
 /// LE FIL DE FER (`atelier/fictives/fictive-fil-de-fer/`) : une compagnie de marionnettes (convention 3090), ses repas et
 /// nuitees, le FCAP-SVP paye et coche.
 #[test]
@@ -580,6 +632,10 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
         assert!(r["refus"]["classe"] == json!("DsnDeLAncienLogiciel") && r["refus"]["phrase"].as_str().is_some_and(|e| e.contains(dit)), "{} : {}", mois, r);
         assert!(!racine.join("sorties").join(mois).exists(), "{} : la DSN refusee s'est ecrite", mois);
     }
+    // UNE COMPAGNIE SANS PERMANENT NE VOIT RIEN D'UN PERMANENT : aucun engagement paye au mois, la case des permanents
+    // decochee ; aucune fiche ne montre une case de leurs pieces.
+    let (conf, au_mois) = aucune_piece_fermee_ne_se_montre(&racine, jour);
+    assert!(au_mois.is_empty() && conf["entreprise"]["donnees"]["emploie_des_permanents"] != json!(true), "le Fil de fer emploie un permanent : {:?}", au_mois);
 }
 
 /// L'HOTEL DE BOURGOGNE (`atelier/fictives/fictive-hotel-de-bourgogne/`) : une compagnie de theatre (convention 1285),
@@ -599,4 +655,10 @@ fn la_fictive_de_l_hotel_de_bourgogne_tient_son_annee_et_se_livre() {
     // du mois porte ce que son bulletin compte.
     let apercu = outils::reussi(&outils::route(&racine, "importation-apercu", json!({}), jour)).clone();
     assert_eq!(apercu["rien_a_faire"], json!(true), "{}", apercu["phrase"]);
+    // UN INTERMITTENT D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS NE VOIT RIEN D'UN PERMANENT (le bug : Molière et Talma, en
+    // CDDU, voyaient les cases d'un salarie au mois) ; une permanente voit ce que la grille de son metier lit (le bug :
+    // Champmesle, CDI, ADM020, groupe 4 de la CCNEAC, ne voyait pas son echelon, que son minimum exige : art. X.4.1).
+    let (conf, au_mois) = aucune_piece_fermee_ne_se_montre(&racine, jour);
+    assert!(!au_mois.contains("MOLIERE") && !au_mois.contains("TALMA") && au_mois.contains("CHAMPMESLE"), "{:?}", au_mois);
+    assert!(montrees(&conf, "CHAMPMESLE").iter().any(|c| c == "echelon_ccneac"), "Champmeslé ne voit pas son échelon : {:?}", montrees(&conf, "CHAMPMESLE"));
 }

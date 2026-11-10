@@ -150,7 +150,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "configuration (les fiches vérifiées), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -162,7 +161,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases",
         refus: &[OPERATION],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -174,7 +172,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "la version installée et ce que la mise à jour en sait, phrase",
         refus: &[OPERATION],
         acte: Acte::Lit,
-        avance: true,
         phrase: 0,
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire la version")),
     },
@@ -186,9 +183,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "les courriels joués (à qui, quoi, quand)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
         acte: Acte::Lit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::LectureAvancee,
     },
 ];
 
@@ -255,6 +251,12 @@ pub(crate) struct VueFiche<P> {
     pastille: PastilleDeFiche,
     sans_titre: bool,
     montres: Vec<String>,
+    /// Les pieces que les engagements de la fiche ouvrent (`fiches::Montres::pieces_ouvertes`) : la page n'ouvre le tiroir
+    /// d'une piece que sur elles.
+    pieces_ouvertes: Vec<droit::fiche::Piece>,
+    /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
+    /// elles.
+    ecarts: Vec<String>,
 }
 
 impl<P> VueFiche<P> {
@@ -375,8 +377,15 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
 
 /// La fiche telle que l'ecran la montre. Ses cases sont COMBLEES : une fiche d'avant ne porte que la forme declaree, et
 /// l'ecran doit proposer une forme lisible de depart. Rien n'est ecrit pour autant. `montres` : les cases que la page en
-/// montre (`fiches::montres`, que la fiche de l'entreprise `ent` commande).
-fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::Plate, historique: Vec<TempsDeLaCase<Valeur>>, ent: &champs::Saisie) -> R<VueFiche<F::Plate>> {
+/// montre (`fiches::montres`, que la fiche de l'entreprise `ent` et les permanents du jour `p` commandent).
+fn fiche_verifiee<F: SorteDeFiche>(
+    ctx: &Contexte,
+    cle: Option<&str>,
+    plate: F::Plate,
+    historique: Vec<TempsDeLaCase<Valeur>>,
+    ent: &champs::Saisie,
+    p: &engagement::permanents::Permanents,
+) -> R<VueFiche<F::Plate>> {
     let nom = F::NOM;
     let lue = vue::<F>(&plate)?;
     let anomalies = champs::verifier_fiche(nom, &lue)?;
@@ -445,7 +454,13 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
-    let montres = super::fiches::montres(ctx, nom, &comble, ent)?;
+    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
+    // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
+    let du_code_postal = match ctx.entreprise.code_postal.portee() {
+        Some(cp) => declarations::urssaf::base().map_err(plain)?.du_code_postal(cp),
+        None => None,
+    };
+    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&comble, du_code_postal.as_deref())).map(|c| c.cle.clone()).collect();
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -461,6 +476,8 @@ fn fiche_verifiee<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, plate: F::
         pastille,
         sans_titre,
         montres,
+        pieces_ouvertes,
+        ecarts,
     })
 }
 
@@ -519,29 +536,6 @@ fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String
         Ok(b) => (matches!(b.versement_mobilite, Some(droit::forme_bareme::VersementMobiliteEcrit::Ecrit(_))), None),
         Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", socle::echec::phrase_de(&e)))),
     }
-}
-
-/// `salaries_au_mois` : les salaries qui ont, ou ont eu, un contrat paye au mois. Lu dans les engagements : la nature se
-/// dit sur l'engagement (ou sur un de ses mois), pas sur la fiche. L'ecran n'ouvre le bloc « Salarie au mois » qu'a eux.
-fn salaries_au_mois(ctx: &Contexte) -> R<Vec<String>> {
-    let mensuelles: BTreeSet<String> = natures::natures().map_err(plain)?.iter().filter(|n| n.mensuelle()).map(|n| n.cle.clone()).collect();
-    let mut trouves: BTreeSet<String> = BTreeSet::new();
-    let mut lus = Vec::new();
-    for f in engagement::stock::fichiers(&ctx.racine) {
-        lus.extend(engagement::stock::lire_fichier(&ctx.racine, &f).map_err(plain)?);
-    }
-    for e in lus.into_iter().flat_map(|m| m.engagements) {
-        // La nature du premier mois, et chaque nature qu'un avenant lui donne ensuite.
-        let s = &e.saisie;
-        let natures = std::iter::once(&s.carte.nature).chain(s.avenants.iter().map(|a| &a.termes.nature));
-        if !natures.flatten().any(|n| mensuelles.contains(n)) {
-            continue;
-        }
-        if let Some(c) = &s.carte.salarie {
-            trouves.insert(c.to_string());
-        }
-    }
-    Ok(trouves.into_iter().collect())
 }
 
 /// La racine des donnees du poste (`contexte.RACINE`) : `PUPPETPAIE_DONNEES`,
@@ -819,16 +813,11 @@ pub(crate) struct ConfigurationDeLaPage {
     compteurs: documents::ecrire_documents::Compteurs,
     erreurs: Option<socle::ecran::Pastille>,
     description: Descriptions,
-    /// CE QUE LA CASE « Emploie des permanents » COMMANDE A L'ECRAN : les champs `si_permanents` restent dans la
-    /// description -- les retirer, ce serait les effacer au premier enregistrement. La page les replie.
-    permanents: bool,
     /// Ce que la liste des etablissements commande.
     etablissements: Option<Vec<ChoixEtablissement>>,
     versement_mobilite_des_etablissements: bool,
     /// Pourquoi le bareme du jour ne se compose pas, s'il ne se compose pas.
     bareme: Option<String>,
-    /// Parmi les salaries, ceux qui sont payes au mois.
-    salaries_au_mois: Vec<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
     invitation: Invitation,
@@ -868,22 +857,24 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let montree = droit::fiche::ChampsEntreprise { etablissements: (!autres.is_empty()).then_some(autres), ..ctx.entreprise.clone() };
     let mut temps = temps_de(Some(ctx.entreprise_brute()), &jour)?;
     temps.extend(temps_des_etablissements(ctx, &jour)?);
-    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent)?;
+    // LES PERMANENTS DU JOUR DE L'ECRAN : ce qui ne vaut que pour eux se montre s'ils se proposent ce jour-la, ou qu'un
+    // permanent est du (`engagement::permanents`).
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(plain)?;
+    let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent, &p)?;
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
     let erreurs: usize = entreprise.erreurs() + salaries.iter().map(VueFiche::erreurs).sum::<usize>() + spectacles.iter().map(VueFiche::erreurs).sum::<usize>();
     let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
-    let permanents = ctx.emploie_des_permanents();
     // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
     // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
     let description_entreprise = champs::description("entreprise")?;
@@ -949,11 +940,9 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         compteurs,
         erreurs,
         description: Descriptions { entreprise: description_entreprise, salarie: champs::description("salarie")?, spectacle: champs::description("spectacle")? },
-        permanents,
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
         bareme,
-        salaries_au_mois: if permanents { salaries_au_mois(ctx)? } else { vec![] },
         identite: identite(ctx, &ctx.gabarits())?,
         invitation: Invitation {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
@@ -1188,14 +1177,6 @@ const GENRES_EN_CLAIR: [(&str, &str); 5] = [("02", "repas"), ("03", "logement"),
 /// L'aide du choix « Lieu » d'une ligne de frais.
 const LIEU_AIDE: &str = "Où dort et mange le salarié : hors de la métropole, la limite exonérée change ; à l'étranger, c'est l'indemnité du pays pour la nuitée et les repas du jour.";
 
-/// `rubriques` : le catalogue qui PAIE, dans l'ordre ou le proposer.
-/// Les formes de paie dont la carte propose une ligne de la rubrique `r` (`"activite"`, `"mensuelle"`).
-fn formes_de(r: &Rubrique) -> Vec<&'static str> {
-    let activite = r.reservee_a() != Some("mensuelle");
-    let mensuelle = engagement::a_une_limite(&r.code);
-    [("activite", activite), ("mensuelle", mensuelle)].into_iter().filter(|(_, oui)| *oui).map(|(f, _)| f).collect()
-}
-
 /// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Choix {
@@ -1244,11 +1225,6 @@ pub(crate) struct RubriqueDeLaPage {
     plafond_mensuel: Option<i64>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: String,
-    /// Les cartes qui la proposent en ligne (« activite », « mensuelle ») : un contrat paye au mois ne porte en ligne que
-    /// ses repas et ses nuitees (`engagement::a_une_limite`), un contrat d'usage tout ce qui n'est pas reserve au mois.
-    formes: Vec<&'static str>,
-    /// Le statut du salarie auquel elle est reservee (« artiste »), ou rien : `statut` de `salaries` de la route etat.
-    reservee_au_statut: Option<&'static str>,
     genres: Vec<Choix>,
     /// CE QUE LA RUBRIQUE PROMET SANS QUE RIEN NE LE TIENNE.
     non_appliques: Vec<&'static str>,
@@ -1320,8 +1296,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> Resultat<RubriqueDeLaPage> {
         plafond_mensuel: r.plafond_mensuel,
         plafond_annuel_heures: r.plafond_annuel_heures,
         origine: r.origine.clone(),
-        formes: formes_de(r),
-        reservee_au_statut: r.reservee_au_statut(),
         genres,
         non_appliques,
         source: r.source.clone(),
@@ -1379,16 +1353,6 @@ fn faits_de_rupture(n: &Nature, m: &str) -> R<Vec<&'static str>> {
     Ok(faits)
 }
 
-/// UNE CARTE NEUVE S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des intermittents, un
-/// permanent s'ajoute rarement. Sa nature ne se change que dans une compagnie qui emploie des salaries au mois (sa fiche
-/// Entreprise, `Contexte::emploie_des_permanents`) ; ailleurs, rien ne se choisit, et la carte n'a pas de case nature.
-/// Changer de nature change la carte de variante (`engagement::carte::CarteValide`) : ses cases sont celles de la nouvelle.
-#[derive(Debug, Clone, serde::Serialize)]
-struct NouvelleCarte {
-    nature: &'static str,
-    nature_au_choix: bool,
-}
-
 /// UNE NATURE DE CONTRAT telle que l'ecran la propose : ce que `contrats-base.json` en dit, et ce que la page en tire sans
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1421,14 +1385,14 @@ struct NatureDeLaPage {
     unite_quotite: String,
 }
 
-/// Les natures de contrat, telles que l'ecran doit les proposer. Tout vient de `contrats-base.json`. SAUF LES NATURES
-/// PAYEES AU MOIS : elles ne descendent que si la fiche entreprise dit employer des permanents.
-fn natures(ctx: &Contexte) -> R<Vec<NatureDeLaPage>> {
+/// Les natures de contrat, telles que l'ecran les DECRIT : toutes, pour que toute carte se dessine (celle d'un permanent
+/// engage avant que la case des permanents se decoche aussi). Tout vient de `contrats-base.json`. Ce qu'une carte neuve
+/// PROPOSE se dit au mois (`mois::NouvelleCarte`, `engagement::permanents::Permanents::natures_neuves`).
+fn natures() -> R<Vec<NatureDeLaPage>> {
     let toutes = natures::natures().map_err(plain)?;
-    let permanents = ctx.emploie_des_permanents();
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
-    for n in toutes.iter().filter(|n| permanents || !n.mensuelle()) {
+    for n in toutes.iter() {
         let motifs = n.motifs_rupture();
         let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
         for m in motifs {
@@ -1530,12 +1494,12 @@ fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
 
 // -------------------------------------------------------------------- l'etat
 
-/// Un salarie des listes ou l'on choisit : sa cle, son nom, et son statut comme la paie le lit.
+/// Un salarie des listes ou l'on choisit : sa cle et son nom. Ce que sa carte propose, la carte le dit
+/// (`engagement::proposees`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct SalarieDeLaListe {
     cle: String,
     libelle: String,
-    statut: String,
 }
 
 /// Un spectacle des listes ou l'on choisit : sa cle, son titre et son numero d'objet, tels que sa fiche les porte.
@@ -1544,20 +1508,6 @@ struct SpectacleDeLaListe {
     cle: String,
     titre: String,
     numero_objet: Option<String>,
-}
-
-/// La rubrique d'une ligne neuve, par statut du salarie.
-#[derive(Debug, Clone, serde::Serialize)]
-struct ParStatut {
-    artiste: Option<String>,
-    technicien: Option<String>,
-}
-
-/// La rubrique d'une ligne neuve sur la carte d'un contrat d'usage (`activite`) et d'un contrat paye au mois.
-#[derive(Debug, Clone, serde::Serialize)]
-struct RubriqueParDefaut {
-    activite: ParStatut,
-    mensuelle: ParStatut,
 }
 
 /// Un organisme de recouvrement que la DPAE fait choisir.
@@ -1588,12 +1538,10 @@ pub(crate) struct EtatDeLaPage {
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
-    rubrique_par_defaut: RubriqueParDefaut,
     emplois: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<String>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
-    nouvelle_carte: NouvelleCarte,
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
     transaction: Vec<droit::preavis::Code>,
@@ -1622,14 +1570,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     cles.sort();
     let salaries = cles
         .into_iter()
-        .map(|k| {
-            // Son statut, comme la paie le lit (vide, un artiste) : les rubriques `reservee_au_statut` s'y comparent.
-            let statut = match ctx.salaries.get(k).and_then(|f| f.statut.dite()) {
-                Some(s) => s.as_str().to_string(),
-                None => droit::fiche::Statut::Artiste.as_str().to_string(),
-            };
-            SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k), statut }
-        })
+        .map(|k| SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k) })
         .collect();
     let spectacles = ctx
         .spectacles_actifs()
@@ -1645,16 +1586,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let cat = catalogue::catalogue(&ctx.racine, &ctx.lue_au).map_err(plain)?;
     // Une rubrique que le moteur pose (`saisie` vide) ne se propose pas.
     let rubriques: Vec<RubriqueDeLaPage> = cat.iter().filter(|r| !r.saisie.is_empty()).map(rubrique_de_la_page).collect::<Resultat<_>>().map_err(plain)?;
-    // La rubrique d'une ligne neuve, par forme de paie et par statut du salarie (sans salarie, celui d'un artiste, comme
-    // la paie le lit) : le moteur la choisit, la page la pose. Sur la carte d'un contrat d'usage, la premiere rubrique de
-    // salaire qu'il propose (`catalogue::par_defaut`) ; sur celle d'un contrat paye au mois, son premier frais
-    // (`engagement::a_une_limite`), dans l'ordre du catalogue.
-    let activite = |statut: &str| catalogue::par_defaut(&cat, "activite", statut).map(|r| r.code.clone());
-    let au_mois = cat.iter().find(|r| !r.saisie.is_empty() && engagement::a_une_limite(&r.code)).map(|r| r.code.clone());
-    let rubrique_par_defaut = RubriqueParDefaut {
-        activite: ParStatut { artiste: activite("artiste"), technicien: activite("technicien") },
-        mensuelle: ParStatut { artiste: au_mois.clone(), technicien: au_mois },
-    };
     // LA FIN D'UN CONTRAT, telle qu'elle se saisit. Les types de preavis
     // SAISISSABLES seulement.
     let fctu = droit::preavis::base().map_err(plain)?;
@@ -1697,7 +1628,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         salaries,
         spectacles,
         rubriques,
-        rubrique_par_defaut,
         // Le catalogue des metiers, deja dans l'ordre des familles.
         emplois: super::metiers::metiers(ctx)?,
         familles_emplois: emplois::familles().map_err(plain)?,
@@ -1705,8 +1635,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // ils n'y sont pas d'office.
         emplois_autres: super::metiers::metiers_autres_conventions(ctx)?,
         // LES NATURES DE CONTRAT : celles que la compagnie engage (une carte dit toujours la sienne).
-        natures: natures(ctx)?,
-        nouvelle_carte: NouvelleCarte { nature: engagement::carte::CDDU, nature_au_choix: ctx.emploie_des_permanents() },
+        natures: natures()?,
         types_preavis,
         aides: Aides(AIDES),
         transaction,
@@ -1730,6 +1659,11 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // Le pays de naissance : la table « Pays » de la DSN, ou se lit S21.G00.30.015.
         pays_naissance: socle::pays::servir_naissance().map_err(plain)?,
     })
+}
+
+/// L'aide d'une case (`AIDES`), pour une route qui la rend avec un geste ; une cle absente est un defaut du logiciel.
+pub(crate) fn aide(cle: &str) -> R<&'static str> {
+    AIDES.iter().find(|(k, _)| *k == cle).map(|(_, a)| *a).ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'aide « {} » n'existe pas.", cle)))
 }
 
 /// Les aides des cases (`AIDES`), rendues comme un dictionnaire dans leur ordre.

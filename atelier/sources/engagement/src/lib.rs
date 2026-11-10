@@ -34,6 +34,9 @@ pub mod solde;
 pub mod numeros;
 pub mod paie_ecrite;
 pub mod paies;
+pub mod permanents;
+pub mod portabilite;
+pub mod proposees;
 pub mod stock;
 pub mod versions;
 #[cfg(feature = "ecran")]
@@ -955,18 +958,23 @@ pub(crate) fn engagements(
             None => carte,
         };
         if nat.mensuelle() {
-            // Employer des permanents se declare.
-            if !ctx.emploie_des_permanents() {
+            // Employer des permanents se declare, a partir d'un jour : un contrat paye au mois qui COMMENCE quand la
+            // compagnie ne le dit pas se refuse ; celui commence avant que la case se decoche continue
+            // (`permanents::Permanents`). Le jour d'un avenant qui le fait passer au mois : `stock::poser_la_saisie`.
+            let debut = Jour::lire(&carte.debut_lu()).map_err(|m| format!("{} : {}", qui, m))?;
+            if !ctx.emploie_des_permanents_pendant(&debut, &debut) {
                 return Err(format!(
-                    "{} : cet engagement est un contrat payé au mois ({}), et la compagnie ne dit pas qu'elle emploie \
-                     des salariés au mois.\n\
+                    "{} : cet engagement est un contrat payé au mois ({}) qui commence le {}, et la compagnie ne dit pas \
+                     qu'elle emploie des salariés au mois ce jour-là.\n\
                      \x20 À faire, dans cet ordre : cocher « La compagnie emploie aussi des salariés au mois » dans \
                      Configuration › Entreprise (bloc « Vos salariés »), puis remplir ce que la case ouvre : la \
                      complémentaire santé de chaque permanent (obligatoire, art. L911-7, le logiciel ne paie pas sans \
                      elle) et, pour un non-cadre de moins d'un an dans l'entreprise, son entrée dans la branche.\n\
                      \x20 Si ce n'était pas voulu : la nature se change sur la carte ; un intermittent au cachet est \
                      un « CDDU ».",
-                    qui, nat.libelle
+                    qui,
+                    nat.libelle,
+                    debut.jj_mm_aaaa()
                 ));
             }
         }

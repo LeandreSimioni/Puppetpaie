@@ -228,6 +228,15 @@ fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
     }
 }
 
+/// L'EXEMPTION DE LA CASC-SVP AU MOIS `m` (« AAAA-MM ») : la fiche entreprise de ce mois, lue avec les cles de l'effectif
+/// `eff` de son annee (`droit::bareme::casc_exemptee`), comme la DSN du mois la lit.
+pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, m: &str) -> R<bool> {
+    let mois = socle::mois::Mois::lire(m).map_err(|e| erreur(Classe::Illisible, e))?;
+    let du_mois = ctx.au(&mois.dernier_jour()).map_err(|e| erreur(Classe::Illisible, e))?;
+    let an = mois.annee();
+    Ok(droit::bareme::casc_exemptee(&du_mois.entreprise, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()))
+}
+
 /// La regularisation CASC-SVP que demande `d`, calculee sans rien ecrire (l'ecriture des fichiers : `ecrire`).
 pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     let base = droit::adhesions::casc_svp_base().map_err(|m| erreur(Classe::Disque, m))?;
@@ -239,15 +248,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             idcc
         )));
     }
-    match droit::bareme::casc_exemptee(ent) {
-        Err(m) => return Err(refus(m)),
-        Ok(true) => {
-            return Err(refus(
-                "L'entreprise est declaree hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) : il n'y a rien a regulariser.",
-            ))
-        }
-        Ok(false) => {}
-    }
+    let eff = ctx.effectif().map_err(refus)?;
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| erreur(Classe::Disque, m))?;
     let depuis = base.depuis.clone();
     let mut candidats: Vec<String> = import::mois::mois_importes(&ctx.racine)?
@@ -265,7 +266,24 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     if !d.annees.is_empty() {
         candidats.retain(|x| d.annees.iter().any(|a| x.chars().take(4).collect::<String>() == *a));
     }
+    // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien : l'exemption se lit au mois.
+    let mut exemptes: Vec<String> = vec![];
+    for m in &candidats {
+        if exemptee_au_mois(ctx, &eff, m)? {
+            exemptes.push(m.clone());
+        }
+    }
+    candidats.retain(|m| !exemptes.contains(m));
+    if candidats.is_empty() && !exemptes.is_empty() {
+        return Err(refus(format!(
+            "L'entreprise est hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) pour {} : il n'y a rien a regulariser.",
+            exemptes.join(", ")
+        )));
+    }
     let mut avert: Vec<String> = vec![];
+    if !exemptes.is_empty() {
+        avert.push(format!("Hors du dispositif CASC-SVP (article 4.22 B), donc hors du dossier : {}.", exemptes.join(", ")));
+    }
     let mut portees: Vec<String> = vec![];
     let mut lues: Vec<(String, Vec<Versee>)> = vec![];
     let contrat_casc = base.dsn.contrat.clone();

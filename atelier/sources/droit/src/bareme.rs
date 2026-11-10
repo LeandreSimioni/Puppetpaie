@@ -11,7 +11,7 @@ use crate::forme_bareme::{
     CotisationDsn, CotisationModifiee, CotisationSupplementaire, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp, TauxDate,
     VersementMobiliteEcrit,
 };
-use crate::natures::Nature;
+use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
 use socle::echec::APart;
@@ -578,8 +578,8 @@ pub const SANTE_SUSPENSION_MAINTENUE: &str = "maintenue";
 /// (`sante_dispense`), ou un mois entierement suspendu sans indemnisation (`SalarieDuContrat::sante_suspendue`) : le bareme pose alors la
 /// paie sans mutuelle (`bareme_sante`), et la DSN ne rattache pas le salarie a l'adhesion sante ce mois-la
 /// (`dsn::affiliations_du_permanent`), comme pour une dispense.
-pub fn sans_sante(sal: &SalarieDuContrat) -> bool {
-    sal.sante_dispense.remplie().is_some() || sal.sante_suspendue.as_deref().is_some_and(|s| !s.is_empty())
+pub fn sans_sante(sal: &SalarieDuContrat, au_mois: &AuMois) -> bool {
+    sal.permanent.ouvrir(au_mois).sante_dispense.remplie().is_some() || sal.sante_suspendue.as_deref().is_some_and(|s| !s.is_empty())
 }
 
 /// La cotisation globale minimale des frais de sante d'un permanent (% du
@@ -651,10 +651,11 @@ fn entier_de(m: &crate::fiche::Montant) -> Resultat<i64> {
 
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
 pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> Resultat<Pile> {
-    if !mensuelle(nat) {
+    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
         return Ok(bar);
-    }
-    match prevoyance::sante_conventionnelle(ent, sal, fin)? {
+    };
+    let au_mois = &au_mois;
+    match prevoyance::sante_conventionnelle(ent, sal, au_mois, fin)? {
         Some(Mutuelle::Sans) => return Ok(sans_mutuelle(bar)),
         Some(Mutuelle::Pose { base, total, pat }) => {
             return Ok(poser_mutuelle(bar, Some(&base), total, pat, Some("Complémentaire santé conventionnelle")))
@@ -663,7 +664,7 @@ pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, n
     }
     if let Some(idcc) = ent.idcc.portee().filter(|i| *i != "3090") {
         // Une convention sans regime de sante a elle : le contrat de l'entreprise.
-        let choix = ent.sante_permanents.dite();
+        let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite();
         let Some(taux_contrat) = choix.and_then(|c| c.taux_contrat.dite()) else {
             return Err(format!(
                 "{} : sa complémentaire santé ne se calcule pas encore. Un salarié au mois y est affilié \
@@ -674,7 +675,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
                 idcc
             ));
         };
-        if sans_sante(sal) {
+        if sans_sante(sal, au_mois) {
             return Ok(sans_mutuelle(bar));
         }
         let total = taux_contrat.decimal()?;
@@ -706,7 +707,7 @@ la Securite sociale), et pas plus de 100.",
     // rattache pas a la sante (`dsn::affiliations_du_permanent`). Ses bornes sont deja lues
     // (`calcul::dispense_de_la_periode`). Un mois entierement suspendu sans indemnisation suspend les garanties (art. 4.2 :
     // `calcul::sante_de_la_suspension`) : pas de mutuelle non plus (`calcul::sans_sante`).
-    if sans_sante(sal) {
+    if sans_sante(sal, au_mois) {
         return Ok(sans_mutuelle(bar));
     }
     let releve = nat
@@ -717,7 +718,7 @@ la Securite sociale), et pas plus de 100.",
     let Some(releve) = releve.filter(|r| !r.niveaux.is_empty()) else {
         return Ok(bar);
     };
-    let choix = sal.sante_svp.dite();
+    let choix = sal.permanent.ouvrir(au_mois).sante_svp.dite();
     let Some((choix, niveau, taux)) = choix.and_then(|c| {
         let niveau = c.niveau.portee()?.to_string();
         releve.niveaux.get(&niveau).map(|t| (c, niveau, t))
@@ -802,10 +803,10 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> Resultat<Pile> {
 
 /// La prevoyance d'un permanent : la CONVENTION la fixe, pas le bareme.
 pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> Resultat<Pile> {
-    if !mensuelle(nat) {
+    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
         return Ok(bar);
-    }
-    let cot = prevoyance::cotisation(sal, est_cadre(sal), fin, ent)?;
+    };
+    let cot = prevoyance::cotisation(sal, &au_mois, est_cadre(sal), fin, ent)?;
     let mut rubriques: Vec<Rubrique> = Vec::new();
     let mut posee = false;
     for r in std::mem::take(&mut bar.rubriques_bulletin) {
@@ -854,60 +855,51 @@ remplit (voir par_nature.permanent.rubriques.prevoyance).",
     Ok(bar)
 }
 
-/// L'entreprise est-elle hors du dispositif CASC-SVP ? (CCN 3090, 4.22 B)
-pub fn casc_exemptee(ent: &ChampsEntreprise) -> Resultat<bool> {
-    if !ent.casc_svp_exemptee.oui() {
-        return Ok(false);
-    }
-    let rep = ent.representation_personnel.code();
-    if !matches!(rep, Some("cse" | "cse_adherent_fnas")) {
-        return Err(socle::echec::avec(
-            "La fiche entreprise dit la compagnie exemptée de la CASC-SVP, et l'exemption demande un comité social et économique : le déclarer, ou décocher l'exemption.",
-            APart {
-                cle: Some("casc_svp_exemptee".into()),
-                detail: Some(format!(
-                    "config/entreprise.json : `casc_svp_exemptee` est coche, mais \
-l'exemption de la CASC-SVP ne vaut que pour une entreprise d'au \
-moins 50 salaries dotee d'un CSE (CCN 3090, art. 4.22 B), et \
-`representation_personnel` dit '{}'. Declarer le CSE (<< cse >>) \
-ou decocher l'exemption. Rien n'est calcule.",
-                    match rep {
-                        Some(r) => r,
-                        None => "rien",
-                    }
-                )),
-                ..APart::default()
-            },
-        ));
-    }
-    Ok(true)
+/// L'entreprise est-elle hors du dispositif CASC-SVP ? (CCN 3090, 4.22 B : « Les entreprises d'au moins 50 salariés qui
+/// disposent d'un comité social et économique ne sont pas soumises à ce dispositif »,
+/// `atelier/reference/sources/kali-3090-titres-iv-v-sante-20260923.md`.) L'exemption ne se lit qu'avec sa cle : sans
+/// cinquante salaries ni comite (`fiche::ChampsEntreprise::exemption_casc`), elle n'a pas de sens et la contribution
+/// est due.
+pub fn casc_exemptee(ent: &ChampsEntreprise, cinquante: Option<&crate::contexte::CinquanteSalaries>, cse: Option<&crate::contexte::UnCsePossible>) -> bool {
+    let (Some(cinquante), Some(cse)) = (cinquante, cse) else { return false };
+    ent.exemption_casc(cinquante, cse).is_some_and(|cle| ent.casc.ouvrir(&cle).casc_svp_exemptee.oui())
 }
 
 /// Retire la CASC-SVP (rubrique `ccn` de la 3090) d'une entreprise exemptee.
-pub fn bareme_casc(mut bar: Pile, ent: &ChampsEntreprise) -> Resultat<Pile> {
-    if ent.idcc.portee() != Some("3090") || !casc_exemptee(ent)? {
-        return Ok(bar);
+pub fn bareme_casc(mut bar: Pile, ent: &EntrepriseLue) -> Pile {
+    if ent.fiche.idcc.portee() != Some("3090") || !casc_exemptee(&ent.fiche, ent.cinquante.as_ref(), ent.cse.as_ref()) {
+        return bar;
     }
     bar.rubriques_bulletin.retain(|r| r.id != "ccn");
-    Ok(bar)
+    bar
 }
 
-/// La representation du personnel (CCNEAC), lue sur la fiche entreprise et
-/// confrontee a l'effectif : elle decide du FNAS (article III.3.1).
+/// LA REPRESENTATION DU PERSONNEL QUE LE FNAS DE LA CCNEAC LIT (article III.3.1,
+/// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`) : sous onze salaries, 1,45 % quel que soit
+/// le comite (III.3.1.b : « Dans les entreprises de moins de 11 salariés, l'entreprise verse au FNAS une contribution
+/// égale à 1,45 % » ; un comite peut y durer jusqu'au terme de son mandat, C. trav. L2313-10) ; a partir de onze, celle
+/// que la fiche dit (III.3.1.a et c), lue avec la cle de l'effectif. Un effectif inconnu se demande : c'est lui qui
+/// decide.
 pub fn representation_du_personnel(ent: &EntrepriseLue) -> Resultat<String> {
-    if let Some(v) = ent.fiche.representation_personnel.code() {
-        return Ok(v.to_string());
-    }
     match ent.effectif {
         // III.3.1.b : moins de onze salaries, 1,45 %.
         Some(e) if e < 11.0 => Ok("aucune".to_string()),
-        Some(_) => Err(
+        Some(_) => match ent.cse.as_ref().and_then(|cle| ent.fiche.cse.ouvrir(cle).representation_personnel.code()) {
+            Some(v) => Ok(v.to_string()),
+            None if ent.cse.is_none() => Err(
+                "L'effectif de la compagnie n'est pas connu pour chacune des cinq années d'avant : la CCNEAC fait dépendre la \
+contribution au FNAS de l'effectif et du comité social et économique (article III.3.1). Dire l'effectif de ces années dans « Pour \
+démarrer »."
+                    .to_string(),
+            ),
+            None => Err(
             "Comité social et économique (CSE) : la compagnie compte au moins onze salariés, et la CCNEAC fait dépendre de son CSE \
 la contribution au FNAS (article III.3.1). Le dire dans Configuration › Entreprise : pas de CSE (carence constatée), un CSE \
 conventionnel (11 à 49 salariés), ou un CSE de 50 salariés et plus, adhérent au FNAS ou non. Il ne se devine pas : le CSE \
 conventionnel est la règle « sauf carence »."
-                .to_string(),
-        ),
+                    .to_string(),
+            ),
+        },
         // Sans effectif connu, le CSE ne se demande pas : c'est l'effectif qui manque (`contexte::Effectif::a_dire`).
         None => Err("L'effectif de la compagnie n'est pas connu : sous onze salariés, la CCNEAC fixe la contribution au FNAS \
 sans CSE (article III.3.1). Le dire dans « Pour démarrer »."
@@ -1146,7 +1138,7 @@ pub fn bareme_applique(
     bar = bareme_majoration_chomage(bar, majoration_chomage)?;
     bar = bareme_taxe_apprentissage(bar, fiche, fin_periode)?;
     bar = bareme_convention(bar, ent, Some(nat))?;
-    bar = bareme_casc(bar, fiche)?;
+    bar = bareme_casc(bar, ent);
     bar = bareme_sante(bar, fiche, sal, Some(nat), fin_periode)?;
     bar = bareme_retraite_t1(bar, fiche, sal, Some(nat))?;
     bar = bareme_cadre(bar, sal, Some(nat))?;
@@ -1160,7 +1152,13 @@ pub fn bareme_applique(
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EntrepriseLue {
     pub fiche: ChampsEntreprise,
+    /// L'effectif connu le plus recent avant l'annee (`contexte::Effectif::valeur`) : la CCNEAC fixe le FNAS par lui
+    /// (III.3.1.a et b).
     pub effectif: Option<f64>,
+    /// La cle de la representation du personnel (`contexte::Effectif::cse`) : sans elle, aucun comite ne peut exister.
+    pub cse: Option<crate::contexte::UnCsePossible>,
+    /// La cle de cinquante salaries (`contexte::Effectif::cinquante`) : l'exemption de la CASC-SVP la demande.
+    pub cinquante: Option<crate::contexte::CinquanteSalaries>,
     /// La pile d'une paie IMPORTEE : ses taux se lisent sur ses pieces, la pile ne fait que ranger ses bases
     /// (`engagement::importe`). Ce qui ne decide qu'un taux ne se demande pas : la representation du personnel, et
     /// l'effectif qui la remplace (`bareme_convention`). Une annee que l'ancien logiciel a payee n'a pas a dire
@@ -1756,8 +1754,8 @@ pub enum AffiliationPrevoyance {
 
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` de la periode, selon la regle de sa
 /// cotisation : le meme regime, la meme anciennete (`bareme_prevoyance`).
-pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, fin: &Jour) -> Resultat<AffiliationPrevoyance> {
-    prevoyance::affiliation(sal, est_cadre(sal), fin, ent)
+pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: &Jour) -> Resultat<AffiliationPrevoyance> {
+    prevoyance::affiliation(sal, au_mois, est_cadre(sal), fin, ent)
 }
 
 /// La somme des parts d'une base `a` a chacun des taux `taux` (en pourcent), chacune arrondie au centime : une ligne

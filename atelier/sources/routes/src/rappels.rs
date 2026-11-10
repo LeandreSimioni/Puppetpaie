@@ -53,7 +53,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -65,7 +64,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état et si un rappel la dit",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -77,7 +75,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "phrase, archives, continuent, configuration",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
     },
@@ -89,7 +86,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "titre, note, manques (chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
     },
@@ -104,7 +100,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "cle, fait",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "une échéance qui se coche, avec son année" }, FORME],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
     },
@@ -292,9 +287,8 @@ pub(crate) enum EtatEcheance {
     AFaire,
     Fait,
     EnRetard,
-    Information,
 }
-use EtatEcheance::{AFaire, EnRetard, Fait, Information};
+use EtatEcheance::{AFaire, EnRetard, Fait};
 
 impl EtatEcheance {
     /// Son nom, celui que la couleur lit (`socle::ecran::couleur_de_l_etat`).
@@ -303,7 +297,6 @@ impl EtatEcheance {
             AFaire => "a_faire",
             Fait => "fait",
             EnRetard => "en_retard",
-            Information => "information",
         }
     }
 
@@ -313,7 +306,6 @@ impl EtatEcheance {
             EnRetard => "en retard",
             AFaire => "à faire",
             Fait => "fait",
-            Information => "pour info",
         }
     }
 }
@@ -643,8 +635,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     let ordre = |etat: EtatEcheance| match etat {
         EnRetard => 0,
         AFaire => 1,
-        Information => 2,
-        Fait => 3,
+        Fait => 2,
     };
     ce_mois.sort_by_cached_key(|e| (ordre(e.etat), e.rang()));
     a_venir.sort_by_key(|e| (e.tombe, e.date));
@@ -806,15 +797,11 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     x.source = e.source.clone();
     x.cochable = e.fait_par == FaitPar::Coche;
     x.annee = Some(annee);
-    x.etat = if e.fait_par == FaitPar::Information {
-        Information
-    } else {
-        match fait_annuel(ctx, e, annee, faites)? {
-            Some(true) => Fait,
-            // Une compagnie arrivee apres l'echeance n'est pas « en retard » : elle a a le faire.
-            Some(false) if courant > dernier && !arrivee_apres => EnRetard,
-            _ => AFaire,
-        }
+    x.etat = match fait_annuel(ctx, e, annee, faites)? {
+        Some(true) => Fait,
+        // Une compagnie arrivee apres l'echeance n'est pas « en retard » : elle a a le faire.
+        Some(false) if courant > dernier && !arrivee_apres => EnRetard,
+        _ => AFaire,
     };
     // Due : son premier mois est venu, et elle n'est pas faite.
     x.due = matches!(x.etat, AFaire | EnRetard) && debut <= courant;
@@ -898,14 +885,13 @@ struct Annuelle {
     fait_par: FaitPar,
 }
 
-/// Qui dit une echeance annuelle faite : la cloture de l'exercice, la compagnie qui la coche, ou personne (une
-/// information).
+/// Qui dit une echeance annuelle faite : la cloture de l'exercice, ou la compagnie qui la coche. Une echeance n'existe
+/// que s'il y a quelque chose a faire : ce qui n'est qu'une information n'en est pas une.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum FaitPar {
     ExerciceClos,
     Coche,
-    Information,
 }
 
 fn echeancier_base() -> socle::echec::R<EcheancierBase> {

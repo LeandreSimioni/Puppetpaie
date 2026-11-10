@@ -133,6 +133,15 @@ impl Jour {
         Jour::depuis_ordinal(self.ordinal() + n).ok_or_else(|| HORS_CALENDRIER.to_string())
     }
 
+    /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne
+    /// l'a pas.
+    pub fn plus_mois(&self, n: i64) -> Resultat<Jour> {
+        let total = self.an as i64 * 12 + (self.mois as i64 - 1) + n;
+        let (an, mois) = (total.div_euclid(12) as i32, (total.rem_euclid(12) + 1) as u32);
+        let jour = self.jour.min(jours_du_mois(an, mois));
+        Jour::nouveau(an, mois, jour).ok_or_else(|| date_impossible(an, mois, jour))
+    }
+
     /// `(self - autre).days`.
     pub fn moins(&self, autre: &Jour) -> i64 {
         self.ordinal() - autre.ordinal()

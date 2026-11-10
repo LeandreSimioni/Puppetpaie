@@ -36,7 +36,7 @@ const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), form
 
 /// Une lecture sans charge de l'Historique ou des Exports.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, avance: false, phrase: 0, ecran: ECRAN }
+    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN }
 }
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -54,7 +54,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "le logiciel retenu",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -70,9 +69,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Exports),
     },
     Fiche {
         route: Route::Exporter,
@@ -88,7 +86,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "le tableau, ou le fichier écrit",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -108,7 +105,6 @@ pub const ROUTES: &[Fiche] = &[
             OPERATION,
         ],
         acte: Acte::Engage,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -120,7 +116,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "salaries (chacun : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau), phrase (ce que vaut ce compte)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -139,9 +134,8 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::Refuse, corriger: "la date du virement fait, ou l'année que la phrase nomme ; rien n'est parti" },
         ],
         acte: Acte::Engage,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvance(Place::Exports),
     },
 ];
 
@@ -337,21 +331,41 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     Ok(LogicielDuComptable { logiciels, logiciel: choix.logiciel, analytique: choix.analytique, controle })
 }
 
-/// La page ne propose pas la CASC-SVP de la
-/// 3090 a une compagnie de la 1285, ni la dette de conges a qui n'emploie pas de
-/// permanents.
-fn etat_concerne(ctx: &Contexte, etat: &str) -> bool {
+/// La page ne propose pas la CASC-SVP de la 3090 a une compagnie de la 1285, ni un etat de convention a qui n'en a pas
+/// dit, ni la dette de conges a qui n'a pas de permanent sur les mois a exporter (`permanents` :
+/// `engagement::permanents::Permanents::ouverts`), ni la taxe sur les salaires a qui ne la doit aucune des annees a
+/// exporter (`taxe_due`).
+fn etat_concerne(ctx: &Contexte, etat: &str, piece: Option<droit::fiche::Piece>, permanents: bool, taxe_due: bool) -> bool {
     let idcc = ctx.entreprise.idcc.portee();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
-        if idcc.is_some() && !liste.iter().any(|c| Some(c.as_str()) == idcc) {
+        if !liste.iter().any(|c| Some(c.as_str()) == idcc) {
             return false;
         }
     }
-    if t.si_permanents.iter().any(|e| e == etat) {
-        return ctx.emploie_des_permanents();
+    // Un etat de la piece d'un salarie au mois (`plan_comptable::Tables::etats`).
+    if piece.is_some() {
+        return permanents;
+    }
+    if t.si_taxe_sur_les_salaires.iter().any(|e| e == etat) {
+        return taxe_due;
     }
     true
+}
+
+/// La compagnie doit-elle la taxe sur les salaires d'une des annees `annees` ? Le regime de la fiche telle qu'elle est
+/// au 31 decembre de chacune (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : une annee ou la
+/// fiche ne dit pas encore tout compte, l'etat dit ce qu'il faut repondre ; une annee ou elle n'est pas due, non.
+fn taxe_due_une_annee(ctx: &Contexte, annees: &[String]) -> R<bool> {
+    for a in annees {
+        let an: i32 = a.parse().map_err(|_| erreur(Classe::Illisible, format!("L'année {} ne se lit pas.", repr(a))))?;
+        let Some(fin) = socle::date::Jour::nouveau(an, 12, 31) else { continue };
+        let regime = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), None);
+        if !matches!(regime.decision, Ok(None)) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 
@@ -389,8 +403,17 @@ struct EcranDesExports {
 fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
     let t = tables();
-    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat)).cloned().collect();
+    // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
+    let permanents = match (mois.first(), mois.last()) {
+        (Some(premier), Some(dernier)) => {
+            let (premier, dernier) = (Mois::lire(premier).map_err(Echec::from)?, Mois::lire(dernier).map_err(Echec::from)?);
+            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()).map_err(Echec::from)?.ouverts()
+        }
+        _ => false,
+    };
     let annees = annees_de(&mois);
+    let taxe_due = taxe_due_une_annee(ctx, &annees)?;
+    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, &e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
     let dossier = ctx.racine.join("exports").display().to_string();
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
@@ -612,7 +635,7 @@ pub(crate) enum Exporte {
 pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     use documents::etats_paie::Demande;
     let etat = c.etat.clone();
-    let etats = &documents::plan_comptable::tables().etats;
+    let etats: Vec<&documents::plan_comptable::EtatLivre> = documents::plan_comptable::tables().etats().map(|(e, _)| e).collect();
     let Some(forme) = etats.iter().find(|e| e.etat == etat) else {
         let mut noms: Vec<&str> = etats.iter().map(|e| e.etat.as_str()).collect();
         noms.sort_unstable();

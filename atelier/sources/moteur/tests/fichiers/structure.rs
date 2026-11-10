@@ -668,9 +668,22 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     }
     // Une route se nomme par son nom (la page, `/api/<route>`) ou, dans le moteur, par sa variante (`Route::MoisAOuvrir`).
     let appelee = |f: &routes::catalogue::Fiche, t: &str| t.contains(&format!("\"{}\"", f.nom())) || t.contains(&format!("/api/{}", f.nom())) || t.contains(&format!("Route::{:?}", f.route));
+    // Une route rendue en geste : une route la rend (`geste(Route::…`) et la page de sa place dessine les gestes depuis la
+    // fiche de leur route (`brancherLesGestes`, `js/avance.js`).
+    let mut moteur_des_routes = String::new();
+    for p in sources(&espace().join("routes/src")) {
+        moteur_des_routes.push_str(&std::fs::read_to_string(p).unwrap());
+    }
     for f in &tout {
         match f.ecran {
-            Ecran::Dessine(p) => assert!(
+            Ecran::Geste(p) | Ecran::GesteAvance(p) => {
+                assert!(moteur_des_routes.contains(&format!("geste(Route::{:?},", f.route)), "{} : aucune route ne la rend en geste : rends-la (`geste(Route::…`), ou donne-lui un autre écran", f.nom());
+                assert!(
+                    fichiers_de(p).iter().any(|x| lu(x).contains("brancherLesGestes(")),
+                    "{} : aucune page de sa place ({}) ne dessine les gestes (brancherLesGestes, js/avance.js)", f.nom(), p.nom()
+                );
+            }
+            Ecran::Dessine(p) | Ecran::DessineAvance(p) => assert!(
                 fichiers_de(p).iter().any(|x| appelee(f, &lu(x))),
                 "{} : aucune page de sa place ({}) ne l'appelle : donne à cette route sa place à l'écran (fiche, champ ecran) et appelle-la depuis cette page ({})",
                 f.nom(), p.nom(), fichiers_de(p).join(", ")
@@ -679,13 +692,12 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
                 assert!(f.charge.iter().all(|c| c.forme != routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
                 let porte = format!("data-auto=\"{}\"", p.nom());
                 let configuration = p.nom().starts_with("Configuration › ") && html.contains("id=\"config-avance\"");
-                assert!(f.avance, "{} s'affiche sous « Avancé » de sa place : sa fiche est avancée", f.nom());
                 assert!(
                     configuration || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
                     "{} : sa place ({}) n'a pas son « Avancé » (data-auto) : appelle js/avance.js là où la page l'ouvre", f.nom(), p.nom()
                 );
             }
-            Ecran::Lecture => {
+            Ecran::Lecture | Ecran::LectureAvancee => {
                 assert!(f.acte == Acte::Lit, "{} écrit : donne à cette route sa place à l'écran (fiche, champ ecran)", f.nom());
                 assert!(appelee(f, &page) || appelee(f, &fenetre), "{} : ni la page ni la fenêtre ne la lisent : donne-lui sa place à l'écran, ou retire-la", f.nom());
             }
@@ -911,11 +923,70 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     }
 }
 
+/// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
+/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape) ne la lit
+/// par `case`, `dite` ou `mot` que dans sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
+#[test]
+fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
+    use droit::fiche::{ChampsEntreprise, ChampsSalarie, FormeDeCase};
+    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()).collect();
+    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()));
+    assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
+    let porte = espace().join("declarations/src/champs.rs");
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != porte) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
+        let t = std::fs::read_to_string(&p).unwrap();
+        for c in &rangees {
+            for lecture in ["case", "dite", "mot"] {
+                if t.contains(&format!(".{}(\"{}\")", lecture, c)) {
+                    fautes.push(format!("{} lit la case {} par son nom (`{}`)", rel, c, lecture));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une case d'une piece se lit par la piece ouverte, avec sa cle :\n{}", fautes.join("\n"));
+}
+
+/// UNE RUBRIQUE D'UN SALARIE AU MOIS NE SE COMPOSE QUE PAR SA CLE (`droit::catalogue::RubriqueDuMois`, la section
+/// `au_mois` de `rubriques-base.json`) : une ligne d'une de ces rubriques n'entre sur une paie que par
+/// `engagement::LignePaie::du_mois` ou `ij_nettes`, qui exigent `natures::AuMois` ; une carte ne les saisit pas
+/// (`catalogue::rubrique_a_saisir`). Hors des tests, leur code ne s'ecrit qu'a son enum (`droit/src/catalogue.rs`), et ne
+/// se prend (`.code()`) que la et dans les lignes qui la composent (`engagement/src/ligne.rs`) : ailleurs, on lit
+/// (`nomme`).
+#[test]
+fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
+    let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/rubriques-base.json")).unwrap()).unwrap();
+    let codes: Vec<String> = base["au_mois"].as_object().unwrap().keys().cloned().collect();
+    assert!(!codes.is_empty(), "rubriques-base.json n'a pas de section au_mois");
+    let enumeration = espace().join("droit/src/catalogue.rs");
+    let composition = espace().join("engagement/src/ligne.rs");
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
+        let tout = std::fs::read_to_string(&p).unwrap();
+        // Les tests d'un fichier lisent ce qu'ils veulent.
+        let t = tout.split("#[cfg(test)]").next().unwrap_or("");
+        if p != enumeration {
+            fautes.extend(codes.iter().filter(|c| t.contains(&format!("\"{}\"", c))).map(|c| format!("{} ecrit le code {}", rel, c)));
+        }
+        if p != enumeration && p != composition {
+            for v in ["IndemniteCongesPayes", "IjssNettes"] {
+                if t.contains(&format!("{}.code()", v)) {
+                    fautes.push(format!("{} prend le code de {} hors de la ligne qui la compose", rel, v));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une rubrique d'un salarie au mois se compose par sa cle (`LignePaie::du_mois`) :\n{}", fautes.join("\n"));
+}
+
 /// LES FICHES N'ONT QU'UNE FORME : chaque cle de `champs-base.json` (`entreprise`, `salarie`) est un champ de sa structure
 /// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
 /// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en
 /// plus) ; l'aide d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique`
-/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul.
+/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul. Aucune ligne ne
+/// porte d'etiquette (`si_fait`, `si_permanents`...) : la piece d'une case ne se dit que dans sa forme.
 #[test]
 fn champs_base_et_les_fiches_ont_les_memes_cases() {
     use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree, FormeDeCase};
@@ -953,6 +1024,14 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
         for l in &lignes {
             let cle = l["cle"].as_str().unwrap_or("");
             let ou = format!("{}.{}", nom, cle);
+            // AUCUNE ETIQUETTE : ce que la fiche montre se deduit de la piece de la case, tiree de sa forme
+            // (`droit::fiche::Piece`) ; une ligne ne pose de condition que sur ce qui est saisi (`si`, `si_entreprise`,
+            // `si_etablissements`), jamais sur un fait du calcul ni sur une piece.
+            for k in l.as_object().into_iter().flat_map(|o| o.keys()) {
+                if k == "piece" || (k.starts_with("si_") && k != "si_entreprise" && k != "si_etablissements") {
+                    fautes.push(format!("{} : `{}` est une etiquette ; la piece de la case se range dans sa forme", ou, k));
+                }
+            }
             let Some(d) = declarees.iter().find(|d| d.cle == cle) else {
                 fautes.push(format!("{} : une ligne de champs-base.json qu'aucun champ de la fiche ne porte", ou));
                 continue;

@@ -41,6 +41,29 @@ que par la structure :
   `atelier` l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
+- **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
+  (`droit::fiche::PieceFermee`), qui ne s'ouvre que par sa clé. Les cases d'un salarié au mois
+  (`ChampsSalarie::permanent`), et celles de l'entreprise que seul son calcul lit (`ChampsEntreprise::permanent`), ne
+  s'ouvrent que par `droit::natures::AuMois`, que seule la nature d'un engagement payé au mois donne : un calcul qui n'a
+  pas cette nature en main ne les lit pas, il ne compile pas. « Au moins cinquante salariés »
+  (`ChampsEntreprise::avec_permanents`) ne s'ouvre que par la case « emploie des permanents » cochée. Les cases du
+  métier (l'échelon de la CCNEAC, le poste, l'artiste stagiaire, l'expérience de la 3241) ne s'ouvrent que par
+  `droit::minima::ParLaGrille`, que seule une grille trouvée donne (`grille_au`, et la prime d'ancienneté d'un
+  technicien de l'annexe I) ; la jauge de la salle de l'annexe I, sur la fiche Entreprise, par cette clé et
+  `AuMois` ensemble (`ChampsEntreprise::metier`). La représentation du personnel ne s'ouvre que par
+  `droit::contexte::UnCsePossible`, que seul l'effectif donne quand un comité peut exister (`Effectif::cse`) ;
+  l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
+  (`Effectif::cinquante`) et un CSE dit donnent. Ce que la fiche
+  montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
+  engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
+  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
+  ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
+  `champs-base.json`. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
+  l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
+  rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
+  sans permanent, et un intermittent de l'Hôtel de Bourgogne ne voient aucune case d'une pièce qu'aucun de leurs
+  engagements n'ouvre.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
@@ -348,11 +371,17 @@ datée, vérifiable**.
   1, 2, 4, 5 et clauses communes) et de la **1285** (cachet, répétition,
   cirque, musiciens, lyrique, chœur ; les accords suivants sous `accords`, chacun avec sa grille entière et la date où il lie la compagnie, `droit::minima::lie_depuis`).
   `engagement::minima::avertissements` compare chaque ligne à son plancher et
-  rend une phrase, jamais un refus. **Toute inconnue tire vers le bas** :
+  rend une phrase : un salaire sous son minimum ne se refuse pas. **Toute inconnue tire vers le bas** :
   jauge minimale, palier du mois pour un barème trimestriel, la plus basse
   des annexes quand la fiche entreprise ne dit pas la sienne
   (`annexe_convention`). Quand une grille distingue les jauges, le métier
   pointe la ligne la plus basse et la grille porte les autres pour mémoire.
+  Sauf l'échelon et l'ancienneté, que seule la compagnie connaît : l'échelon
+  CCNEAC d'un emploi autre qu'artistique (`echelon_ccneac`, un entier de 1
+  à 12, attribué par l'employeur, X.4.1) et l'ancienneté dans le poste
+  (`poste_depuis`) partout où un minimum en dépend (la grille administrative
+  de la 3090, les conditions `anciennete` des grilles) ; sans la case, le
+  calcul refuse en la nommant, jamais « aucune ancienneté ».
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,
   éditeur, URL, description, version et d'où on la lit, date de relevé,
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le
@@ -916,6 +945,17 @@ L'arrondi est **au demi supérieur** (`socle::num::eur`) : c'est ce que montrent
 Le calcul, la déclaration, le signalement de fin de contrat et l'écran d'un permanent sont ceux d'un intermittent,
 avec ce que la nature du contrat change. La prévoyance des permanents est un taux que **la convention fixe, donc le
 logiciel le livre**.
+
+**La case « emploie des permanents » ne règle que ce que le moteur propose.** Elle est datée (l'historique de la fiche
+Entreprise) et se lit par une seule fonction, à la date qui compte : `Contexte::emploie_des_permanents_pendant(debut,
+fin)`. Ce que le moteur propose et ce qui est dû sur une période, une seule réponse le dit,
+`engagement::permanents::Permanents::de` : `proposes` (la case sur la période : un CDI ou un CDD neuf s'y propose) et
+`dus` (les engagements payés au mois qui y courent et ont commencé la case cochée). Les natures d'une carte neuve
+(route `saisie` du mois), les modèles de contrat, les cases des fiches (`montres`), les contrats des organismes,
+« Pour démarrer » et les états d'export la lisent. **Ce qui est dû se montre toujours** : un permanent engagé avant
+que la case se décoche se paie, se termine et reçoit ses documents (la portabilité de ses garanties comprise) comme
+avant ; seul un contrat payé au mois qui **commence** sans la case se refuse (au calcul, à son début ; l'avenant qui y
+ferait passer un contrat, à l'écriture).
 
 ### Le taux d'une branche n'est pas une donnée de compagnie
 

@@ -45,8 +45,8 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::num::{div, eur2, mul, Decimal, Resultat};
 
-/// La rubrique des indemnites journalieres nettes que la compagnie subrogee reverse, et celle des brutes qu'elle deduit.
-pub const IJ_NETTES: &str = "ijss_nettes";
+/// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
+/// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
 pub const IJ_BRUTES: &str = "ijss_brutes";
 /// Les cles de `Paie::bases` : ces indemnites nettes, et leur assiette du prelevement a la source.
 pub const IJ_SUBROGEES: &str = "ij_subrogees_nettes";
@@ -127,14 +127,6 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> Resultat<Option
 
 // ------------------------------------------------------------------ les jours
 
-/// Le jour `n` mois de calendrier apres `j`, au meme quantieme (le dernier du mois s'il n'existe pas).
-fn plus_mois(j: &Jour, n: i64) -> Resultat<Jour> {
-    let total = j.an as i64 * 12 + (j.mois as i64 - 1) + n;
-    let (an, mois) = ((total / 12) as i32, (total % 12 + 1) as u32);
-    let jour = j.jour.min(socle::date::jours_du_mois(an, mois));
-    Jour::nouveau(an, mois, jour).ok_or_else(|| socle::date::date_impossible(an, mois, jour))
-}
-
 /// La capacite de chaque tranche en jours, la tranche commencant au jour `debut` (une tranche en mois dure de date a date ;
 /// `None` : tant que la caisse indemnise).
 fn capacites(r: &Regime, debut: &Jour) -> Resultat<Vec<Option<i64>>> {
@@ -143,7 +135,7 @@ fn capacites(r: &Regime, debut: &Jour) -> Resultat<Vec<Option<i64>>> {
     for t in &r.tranches {
         let c = match t.duree {
             Duree::Jours(j) => Some(j),
-            Duree::Mois(m) => Some(plus_mois(&d0, m)?.moins(&d0)),
+            Duree::Mois(m) => Some(d0.plus_mois(m)?.moins(&d0)),
             Duree::PendantLesIndemnites => None,
         };
         if let Some(c) = c {
@@ -204,7 +196,7 @@ pub fn fin_possible(r: &Regime, premier: &Jour, fin_arret: &Jour) -> Resultat<Jo
 /// (`jours_deja_indemnises` : ce qu'aucun arret du magasin ne porte).
 pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> Resultat<i64> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let debut_fenetre = plus_mois(&premier, -12)?;
+    let debut_fenetre = premier.plus_mois(-12)?;
     let saisis = imp.jours_deja_indemnises.as_ref().filter(|x| x.vrai()).into_iter().map(entier).sum::<Resultat<i64>>()?;
     let mut total = saisis;
     let cle = &imp.salarie;
@@ -242,7 +234,8 @@ pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> Resultat<O
     if regimes.is_empty() {
         return Ok(None);
     }
-    let choisie = ctx.entreprise.subrogation_ij.dite() == Some(&droit::fiche::Subrogation::Oui);
+    // Le choix de la compagnie est une case des permanents : seul un contrat paye au mois le lit.
+    let choisie = nat.au_mois().is_some_and(|au_mois| ctx.entreprise.permanent.ouvrir(&au_mois).subrogation_ij.dite() == Some(&droit::fiche::Subrogation::Oui));
     if !choisie && !regimes.iter().any(|r| r.subrogation) {
         return Ok(None);
     }
@@ -674,7 +667,8 @@ fn net_de_csg_crds(brute: Decimal, csg: Decimal, crds: Decimal) -> Decimal {
 /// Les lignes du mois : le maintien (le plus favorable des complements, plus les indemnites subrogees qu'il avance), et,
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
-pub fn lignes(dmois: &DuMois, mois: &str) -> Vec<LignePaie> {
+/// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose.
+pub fn lignes(dmois: &DuMois, mois: &str, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
     let plancher = eur2(dmois.ij_subrogees_brutes);
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -708,7 +702,8 @@ pub fn lignes(dmois: &DuMois, mois: &str) -> Vec<LignePaie> {
             LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: rubrique.to_string(), jours: j, taux: div(montant, j).normalize(), assiette_pas })
         };
         out.push(ij(IJ_BRUTES, plancher, None));
-        out.push(ij(IJ_NETTES, eur2(dmois.ij_subrogees_nettes), Some(eur2(dmois.assiette_pas))));
+        let nettes = eur2(dmois.ij_subrogees_nettes);
+        out.push(LignePaie::ij_nettes(au, j, div(nettes, j).normalize(), eur2(dmois.assiette_pas)));
     }
     out
 }
@@ -912,7 +907,8 @@ mod tests {
                 ij_subrogees_jours: if ij > 0 { 10 } else { 0 },
                 ..DuMois::default()
             };
-            let l = lignes(&m, "2026-03");
+            let au = droit::natures::nature("cdi").unwrap().au_mois().unwrap();
+            let l = lignes(&m, "2026-03", &au);
             l[0].taux().unwrap()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));

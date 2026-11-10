@@ -8,6 +8,7 @@
 
 use crate::emplois;
 use crate::fiche::{ChampsSalarie, Lue};
+use crate::natures::AuMois;
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
 use serde::Deserialize;
@@ -568,7 +569,9 @@ pub struct Profil {
     pub source: String,
 }
 
-pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement) -> Resultat<Profil> {
+/// `au_mois` : la cle de la piece d'un permanent, quand l'engagement lu est paye au mois ; sans elle, la categorie que
+/// la fiche dit ne se lit pas (elle n'est demandee qu'a un salarie au mois).
+pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> Resultat<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -577,7 +580,8 @@ pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement) 
     let grille = c3090.map(|c| c.grille.clone());
     let profil = |categorie: Option<&str>, source: String| Profil { categorie: categorie.map(str::to_string), grille: grille.clone(), source };
 
-    let dit = e.categorie_conventionnelle.clone().or_else(|| fiche.categorie_conventionnelle.code().map(str::to_string));
+    let de_la_fiche = au_mois.and_then(|a| fiche.permanent.ouvrir(a).categorie_conventionnelle.code());
+    let dit = e.categorie_conventionnelle.clone().or_else(|| de_la_fiche.map(str::to_string));
     if let Some(dit) = dit {
         if let Some(valeurs) = sec.map(|s| &s.valeurs).filter(|v| !v.is_empty() && !v.iter().any(|(k, _)| *k == dit)) {
             return Ok(profil(None, format!(
@@ -1063,14 +1067,51 @@ pub struct Prime {
     pub annees: i64,
 }
 
-/// La prime d'anciennete d'un technicien de l'annexe de la convention qui en porte une, pour le mois qui finit `jour`,
-/// ou `None` si elle ne le concerne pas.
-pub fn prime_anciennete(idcc: Option<&str>, annexe: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement, jour: &Jour, jauge: Option<&str>) -> Resultat<Option<Prime>> {
+/// La rubrique de la prime d'anciennete (`rubriques-base.json`) : la ligne que le calcul compose pour un contrat paye au
+/// mois, et que la carte ne propose qu'a ceux que la prime peut viser (`prime_anciennete_possible`).
+pub const RUBRIQUE_PRIME_ANCIENNETE: &str = "prime_anciennete";
+
+/// La prime d'anciennete de la convention `idcc`, si elle en porte une pour l'annexe `annexe`.
+fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&str>, annexe: Option<&str>) -> Option<&'t PrimeAnciennete> {
+    t.convention(idcc).and_then(|c| c.prime_anciennete.as_ref()).filter(|sec| annexe.map(str::trim) == Some(sec.annexe.as_str()))
+}
+
+/// La classification 3090 d'un metier que la prime vise : sa grille technique. Le titre III de l'annexe I vaut pour le
+/// « personnel technique (y compris régisseurs, habilleuses et couturières) » (art. 3.1,
+/// `atelier/reference/sources/legifrance-3090-annexe-I/legifrance-3090-annexe-I-20261110.txt`) : ni les
+/// administratifs, ni les artistes.
+fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090> {
+    m.classification_3090().filter(|c| c.grille == "technique")
+}
+
+/// La prime d'anciennete peut-elle viser un engagement de la compagnie (convention `idcc`, annexe `annexe`) dont la carte
+/// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
+/// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
+/// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
+pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<&str>) -> Resultat<bool> {
     let t = table()?;
-    let Some(sec) = t.convention(idcc).and_then(|c| c.prime_anciennete.as_ref()) else { return Ok(None) };
-    if annexe.map(str::trim) != Some(sec.annexe.as_str()) {
-        return Ok(None);
+    if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some("artiste") {
+        return Ok(false);
     }
+    Ok(match metier.map(emplois::metier).transpose()?.flatten() {
+        Some(m) => grille_technique(&m).is_some(),
+        None => metier.is_none_or(|c| c.trim().is_empty()),
+    })
+}
+
+/// La prime d'anciennete d'un technicien de l'annexe de la convention qui en porte une, pour le mois qui finit `jour`,
+/// ou `None` si elle ne le concerne pas. La jauge de la salle est une case du metier (`fiche::Piece::Metier`) : `jauge`
+/// ne la lit qu'avec la cle de la grille de l'annexe, qu'un technicien de l'annexe seul donne.
+pub fn prime_anciennete<'j>(
+    idcc: Option<&str>,
+    annexe: Option<&str>,
+    fiche: &ChampsSalarie,
+    e: &DitParLEngagement,
+    jour: &Jour,
+    jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<&'j str>,
+) -> Resultat<Option<Prime>> {
+    let t = table()?;
+    let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
     let m = code.as_deref().map(emplois::metier).transpose()?.flatten();
     // Artiste : l'engagement le dit, sinon la fiche.
@@ -1079,7 +1120,7 @@ pub fn prime_anciennete(idcc: Option<&str>, annexe: Option<&str>, fiche: &Champs
         None => fiche.statut.dite() == Some(&crate::fiche::Statut::Artiste),
     };
     let (Some(m), Some(code)) = (m.as_ref(), code.as_deref()) else { return Ok(None) };
-    let Some(c3090) = m.classification_3090().filter(|c| c.grille == "technique") else { return Ok(None) };
+    let Some(c3090) = grille_technique(m) else { return Ok(None) };
     if artiste {
         return Ok(None);
     }
@@ -1105,6 +1146,7 @@ pub fn prime_anciennete(idcc: Option<&str>, annexe: Option<&str>, fiche: &Champs
     let base = if sec.familles_costume.iter().flatten().any(|f| f == famille) {
         g.costume.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.costume.{}", niveau)))?
     } else {
+        let jauge = jauge(&crate::minima::ParLaGrille::de_l_annexe());
         let Some((_, salaires)) = jauge.and_then(|j| g.technique.iter().find(|(k, _)| k == j)) else {
             let cles: Vec<String> = g.technique.iter().map(|(k, _)| format!("\"{}\"", k)).collect();
             return Ok(Some(prime(None, Some(format!(

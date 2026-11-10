@@ -1180,20 +1180,22 @@ pub struct Affiliation {
 struct AffiliationsDuPermanent {
     prevoyance: bareme::AffiliationPrevoyance,
     sante: bool,
+    /// La cle des cases d'un salarie au mois, que la fin d'une dispense lit (`rattachements`).
+    au_mois: droit::natures::AuMois,
 }
 
 /// `None` pour un contrat qui n'est pas paye au mois : un intermittent est affilie a toutes les adhesions de sa nature.
 fn affiliations_du_permanent(p: &Paie, ent: &ChampsEntreprise) -> Resultat<Option<AffiliationsDuPermanent>> {
-    if !p.engagement.nat()?.mensuelle() {
+    let Some(au_mois) = p.engagement.nat()?.au_mois() else {
         return Ok(None);
-    }
+    };
     let fin = p.engagement.fin_periode()?;
-    let prevoyance = bareme::affiliation_prevoyance(ent, &p.salarie, &fin)?;
+    let prevoyance = bareme::affiliation_prevoyance(ent, &p.salarie, &au_mois, &fin)?;
     // La dispense (CCNEAC XII.2.1.8 ; 3090, accord du 19/07/2024, art. 9.2 ; `sante_dispense`) : le bulletin n'a plus
     // de mutuelle (`bareme_sante`), et le
     // salarie n'est pas rattache au contrat de sante -- 70.014/.015 decrivent la dispense comme ce qui ouvre ou ferme
     // l'affiliation (cahier technique 2026.1, p. 287).
-    let dispense = p.salarie.sante_dispense.portee();
+    let dispense = p.salarie.permanent.ouvrir(&au_mois).sante_dispense.portee();
     // Un mois entierement suspendu sans indemnisation, garanties suspendues (`calcul::sante_de_la_suspension` : 3090,
     // accord sante du 19/07/2024, art. 4.2 et 15) : pas de cotisation, et pas de rattachement a la sante ce mois-la --
     // comme une dispense. INFERENCE NOMMEE : aucune fiche DSN deposee ne dit comment declarer une affiliation sante
@@ -1222,7 +1224,7 @@ declare.",
             "sante_dispense",
         ));
     }
-    Ok(Some(AffiliationsDuPermanent { prevoyance, sante: dispense.is_none() && suspendue.is_none() }))
+    Ok(Some(AffiliationsDuPermanent { prevoyance, sante: dispense.is_none() && suspendue.is_none(), au_mois }))
 }
 
 /// Les places (`Affiliation::place`) des adhesions de sa nature auxquelles le salarie n'est pas affilie ce mois-la.
@@ -1288,7 +1290,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
             // (`bloc-S21.G00.71.txt`, p. 287), le lendemain de son dernier jour. Ce mois-ci n'est plus dispense
             // (`calcul::dispense_de_la_periode`) : une fin de dispense posee est passee.
             if place == 1 {
-                if let Some(j) = p.salarie.sante_dispense_jusqu_au.dite() {
+                if let Some(j) = p.salarie.permanent.ouvrir(&a.au_mois).sante_dispense_jusqu_au.dite() {
                     let lendemain = j.plus_jours(1)?;
                     if lendemain <= fin && debut.is_none_or(|x| lendemain > x) {
                         debut = Some(lendemain);
@@ -1336,7 +1338,9 @@ compagnie ; rien n'est declare.",
             lieu
         ));
     }
-    let choix = p.salarie.sante_svp.dite();
+    // Le niveau d'un salarie au mois : un contrat qui ne l'est pas n'en dit aucun.
+    let au_mois = p.engagement.nat()?.au_mois();
+    let choix = au_mois.as_ref().and_then(|au| p.salarie.permanent.ouvrir(au).sante_svp.dite());
     let niveau = choix.and_then(|c| c.niveau.portee());
     let enfants = match choix.and_then(|c| c.enfants.dite()) {
         Some(m) => m.entier()?,
@@ -1379,7 +1383,8 @@ fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: &st
     if ent.idcc.portee() != Some(base.idcc.as_str()) || mois < base.depuis.trim() {
         return Ok(None);
     }
-    if bareme::casc_exemptee(ent)? {
+    let (an, eff) = (Mois::lire(mois)?.annee(), ctx.effectif()?);
+    if bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
     if crate::casc::mois_regularises(ctx)?.iter().any(|m| m == mois) {

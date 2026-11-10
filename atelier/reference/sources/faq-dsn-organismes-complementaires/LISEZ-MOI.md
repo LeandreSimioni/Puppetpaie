@@ -39,9 +39,13 @@ Antérieure aux rubriques `70.014`/`70.015` (dates d'affiliation) : elle ne les 
 
 ## Où le moteur s'en sert
 
-Nulle part encore (11/10/2026, séance « documents »). Les commentaires de `paie/src/dsn.rs` (bloc 70, l. 879-890 et
-943-946) citent le cahier technique ; ils pourront citer cette FAQ pour la dispense (aucun bloc 70) et l'affilié sans
-cotisation (78 code 31, 81 à 0.00).
+- **§ 5.2, « Bordereau de radiation »** (l. 850-861) : « Les organismes complémentaires reçoivent les informations liées
+  aux fins de contrat de travail (bloc S21.G00.62), permettant de substituer les formulaires de radiation », avec la
+  mensuelle et le signalement de fin de contrat. C'est par là que l'employeur « informe l'organisme assureur de la
+  cessation du contrat de travail » (CSS L. 911-8, 6°) : le moteur n'envoie rien de plus, et l'avis des papiers de fin
+  de contrat le dit (`documents::fin_de_contrat::AVIS`).
+- Les commentaires de `declarations/src/dsn.rs` (bloc 70) citent le cahier technique ; ils pourront citer cette FAQ
+  pour la dispense (aucun bloc 70) et l'affilié sans cotisation (78 code 31, 81 à 0.00).
 
 ## Pièce secondaire : la fiche technique GHS (sPAIEctacle) « Contrôle du paramétrage OC »
 

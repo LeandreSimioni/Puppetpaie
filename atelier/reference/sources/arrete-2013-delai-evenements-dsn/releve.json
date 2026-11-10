@@ -3,12 +3,12 @@
  "global": "Freemium_legi_global_20250713-140000.tar.gz",
  "texte": "Arrete du 2 juillet 2013 fixant le delai de transmission des evenements dans le cadre de la declaration sociale nominative",
  "legitext": "JORFTEXT000027683422",
- "livraisons_lues": 483,
- "livraisons_totales": 483,
- "complet": true,
- "derniere_livraison": "20261102-213929",
+ "livraisons_lues": 485,
+ "livraisons_totales": 2,
+ "complet": false,
+ "derniere_livraison": "20261109-212854",
  "changes_depuis_le_global": [],
- "releve_le": "2026-11-03",
+ "releve_le": "2026-11-10",
  "articles": {
   "1": {
    "debut": "2013-07-11",

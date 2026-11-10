@@ -919,7 +919,7 @@ le reste, et **une phrase par raison**, pas par ligne
 Une grille **relevée** n'est pas toujours une grille **appliquée** : les
 cachets d'artistes de la CCNEAC sont relevés et servent, ses emplois autres
 qu'artistiques aussi — groupe de l'article XI.3 (`classification_1285` du
-catalogue), échelon de la fiche (`echelon_ccneac`, le premier sans lui), à
+catalogue), échelon de la fiche (`echelon_ccneac` ; sans lui, le calcul refuse), à
 l'heure comme au mois ; la NAO 2026, non étendue, est dans le fichier sans
 être lue.
 

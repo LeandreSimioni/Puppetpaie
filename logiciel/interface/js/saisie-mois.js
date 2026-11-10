@@ -190,9 +190,8 @@ async function calculerApercu(lu) {
   }
   // Dès qu'un engagement nomme son salarié, le moteur dit ce que le mois en compte et ce qui lui manque (`apercu`).
   if (!engagements.length) {
-    // Le permanent ne se nomme qu'à une compagnie qui en emploie.
-    const perm = !!(ETAT.configuration || {}).permanents;
-    cible.innerHTML = `<p class="discret">${aideDe(perm ? "apercu_vide_permanents" : "apercu_vide")}</p>`;
+    // Le permanent ne se nomme que dans un mois qui en propose ou en paie un : le moteur dit quelle aide.
+    cible.innerHTML = `<p class="discret">${aideDe(NOUVELLE_CARTE.aide_vide)}</p>`;
     return;
   }
   cible.classList.add("attente");
@@ -223,6 +222,11 @@ async function calculerApercu(lu) {
       div._bornes = p ? { debut: p.debut || "", fin: p.fin || "" } : null;
       div._contratDit = p ? p.contrat_dit : null;
       majContrat(div);
+      // CE QUE SA CARTE PROPOSE, le moteur le dit pour cet engagement (`propose` : ses rubriques, celle d'une ligne
+      // neuve) ; les déroulants le suivent.
+      div._propose = (p && p.propose) || null;
+      div._proposePour = salarieDuBloc(div);
+      reposerRubriques(div);
       // Un engagement auquel il manque un fait est enregistré tel quel : la carte dit ce qui manque, sans montant.
       const manques = part.filter((x) => x && x.a_completer);
       if (manques.length) {
@@ -537,6 +541,7 @@ async function chargerMois(mois, repeint = false) {
   // L'identité de chaque engagement, dans l'ordre de `engagements` : ce par quoi sa carte le désigne.
   SAISIE = { ...r.saisie, identites: r.identites || [] };
   IMPORTES = r.importes || [];
+  NOUVELLE_CARTE = r.nouvelle_carte;
   MOIS_AFFICHE = mois;
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
@@ -664,6 +669,7 @@ async function repeindreLeMois(mois, ancien, frais) {
     if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
     afficherRappelsMois();
     IMPORTES = r.importes || [];
+    NOUVELLE_CARTE = r.nouvelle_carte;
     majAvisDuMois(mois, r.ferme_aux_neufs ? "" : r.phrase);
     dessinerMoisImporte(r.ferme_aux_neufs, r);
   } catch (e) { /* la saisie se lit telle quelle : rien à changer */ }
@@ -696,6 +702,10 @@ function majAvisDemo(mois) {
  * la carte montre chaque case remplie de ce que l'import a lu, avec d'où elle vient. Ce que l'import n'a pas pu lire
  * se dit sur la carte, case par case, et pourquoi. La page n'en décide rien : elle affiche. */
 let IMPORTES = [];
+
+/* CE QU'UNE CARTE NEUVE DU MOIS PEUT ÊTRE (`nouvelle_carte` de la route `saisie`) : sa nature d'ouverture, les natures
+ * que le mois propose, si elle se choisit, et l'aide d'un mois vide. Le moteur le dit, mois par mois. */
+let NOUVELLE_CARTE = { nature: "", natures: [], nature_au_choix: false, aide_vide: "apercu_vide" };
 
 const CASES_IMPORTEES = [
   ["brut", "Brut"], ["net_imposable", "Net imposable"], ["net_a_payer", "Net à payer"],

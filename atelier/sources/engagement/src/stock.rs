@@ -1066,6 +1066,22 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: &str, rang: usize, saisie: &Carte, 
         }
     };
     poser_sur(&mut o, mois, saisie, le)?;
+    // UN AVENANT QUI FAIT PASSER LE CONTRAT AU MOIS est un contrat paye au mois qui commence ce jour-la : il se refuse
+    // quand la compagnie ne dit pas employer des permanents ce jour-la, comme une premiere carte (`engagements`).
+    if !o.mensuel()? {
+        if let Some((depuis, nature)) = o.au_mois_depuis()? {
+            if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+                return Err(format!(
+                    "{} : à partir du {}, ce contrat deviendrait un contrat payé au mois ({}), et la compagnie ne dit pas \
+                     qu'elle emploie des salariés au mois ce jour-là. À faire : cocher « La compagnie emploie aussi des \
+                     salariés au mois » dans Configuration › Entreprise, à cette date ; sinon garder sa nature. Rien n'est écrit.",
+                    crate::salarie_nomme(ctx, o.carte().salarie.as_deref()),
+                    depuis.jj_mm_aaaa(),
+                    nature.libelle
+                ));
+            }
+        }
+    }
     reecrire(&ctx.racine, &o)?;
     Ok(())
 }

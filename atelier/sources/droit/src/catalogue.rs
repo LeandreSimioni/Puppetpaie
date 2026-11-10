@@ -10,7 +10,7 @@ use serde::Deserialize;
 use socle::echec::APart;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::num::Resultat;
-use crate::fiche::{ChampsRubrique, Datee, FicheDatee, RubriqueDatee, VoirListe};
+use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -122,6 +122,11 @@ pub struct Rubrique {
     pub arret_de_travail: bool,
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
+    /// SA PIECE : `Piece::Permanent` pour une rubrique livree rangee dans `au_mois` de `rubriques-base.json`, que seul le
+    /// calcul d'un contrat paye au mois paie, quand ses autres cases ne le disent pas : l'indemnite de conges d'un
+    /// permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav. D. 7121-38), les indemnites
+    /// journalieres que la compagnie subrogee reverse (la subrogation est une case des permanents).
+    pub piece: Option<Piece>,
     pub origine: String,
     /// Ce que la ligne fait, que l'ecran dit sous elle quand son nom ne le dit pas (l'acompte).
     pub dit: Option<String>,
@@ -205,6 +210,7 @@ impl Rubrique {
             || self.arret_de_travail
             || self.conges_pris
             || self.dsn_bloc52.as_deref().is_some_and(|s| !s.is_empty())
+            || self.piece == Some(Piece::Permanent)
         {
             return Some("mensuelle");
         }
@@ -286,6 +292,18 @@ struct Base {
     annexes: Annexes,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     rubriques: Vec<(String, ChampsRubrique)>,
+    /// LA PIECE D'UN SALARIE AU MOIS (`fiche::Piece::Permanent`) : les rubriques que seul le calcul d'un contrat paye au
+    /// mois paie, rangees a part. Leur place dit leur piece ; aucune case ne la dit.
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    au_mois: Vec<(String, ChampsRubrique)>,
+}
+
+impl Base {
+    /// Chaque rubrique livree avec sa piece : la sienne pour celles qui sont rangees dans `au_mois`.
+    fn rangees(self) -> Vec<(String, ChampsRubrique, Option<Piece>)> {
+        let communes = self.rubriques.into_iter().map(|(c, v)| (c, v, None));
+        communes.chain(self.au_mois.into_iter().map(|(c, v)| (c, v, Some(Piece::Permanent)))).collect()
+    }
 }
 
 /// Le seuil et la fenetre des annexes VIII et X (`rubriques-base.json`, `annexes`).
@@ -302,16 +320,74 @@ pub struct Annexes {
 
 /// LA SEULE LECTURE DE `rubriques-base.json` : sa forme.
 fn base() -> Resultat<Base> {
-    socle::forme::lire_fichier(
+    let b: Base = socle::forme::lire_fichier(
         &dossier_du_code().join("rubriques-base.json"),
         "Les rubriques livrées avec le logiciel ne se lisent pas : le signaler au développeur.",
-    )
+    )?;
+    // La piece d'un salarie au mois est celle que le calcul compose (`RubriqueDuMois`) : ni plus, ni moins.
+    let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
+    let du_calcul: Vec<&str> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
+        return Err(socle::echec::avec(
+            "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
+            socle::echec::APart {
+                fichier: Some("rubriques-base.json".into()),
+                cle: Some("au_mois".into()),
+                detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),
+                ..Default::default()
+            },
+        ));
+    }
+    Ok(b)
+}
+
+/// LES RUBRIQUES DE LA PIECE D'UN SALARIE AU MOIS (`au_mois` de `rubriques-base.json`) : seul le calcul d'un contrat
+/// paye au mois les compose, avec sa cle (`engagement::LignePaie::du_mois`, qui exige `natures::AuMois`) ; une carte ne
+/// les saisit pas (`rubrique_a_saisir`). Leur code ne s'ecrit en Rust qu'ici (`structure.rs`,
+/// `une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RubriqueDuMois {
+    /// L'indemnite des conges payes pris (L3141-24 ; la caisse des Conges Spectacles paie ceux d'un intermittent,
+    /// D. 7121-38).
+    IndemniteCongesPayes,
+    /// Les indemnites journalieres que la compagnie subrogee reverse (la subrogation est une case des permanents).
+    IjssNettes,
+}
+
+impl RubriqueDuMois {
+    pub const TOUTES: [RubriqueDuMois; 2] = [RubriqueDuMois::IndemniteCongesPayes, RubriqueDuMois::IjssNettes];
+
+    /// Le code `code` d'une ligne ecrite est-il le sien ? (Lire une ligne ne la compose pas.)
+    pub fn nomme(self, code: &str) -> bool {
+        self.code() == code
+    }
+
+    /// Son code au catalogue : ne le prennent que les lignes qui la composent, avec la cle (`engagement::LignePaie`).
+    pub fn code(self) -> &'static str {
+        match self {
+            RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
+            RubriqueDuMois::IjssNettes => "ijss_nettes",
+        }
+    }
+}
+
+/// UNE RUBRIQUE QU'UNE CARTE SAISIT, telle qu'elle vaut a `jour` : celle de la piece d'un salarie au mois ne se saisit
+/// pas, le calcul qui tient sa cle la compose (`RubriqueDuMois`).
+pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> Resultat<Rubrique> {
+    let r = rubrique(racine, code, jour)?;
+    if r.piece.is_some() {
+        return Err(format!(
+            "La rubrique {} ne se saisit pas : le calcul d'un contrat payé au mois la pose lui-même.",
+            repr(code)
+        ));
+    }
+    Ok(r)
 }
 
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
 /// toute configuration (la table de lecture des bulletins s'y rapporte).
 pub fn livrees() -> Resultat<Vec<Rubrique>> {
-    base()?.rubriques.into_iter().map(|(c, v)| construire(&c, v, "base")).collect()
+    base()?.rangees().into_iter().map(|(c, v, piece)| construire(&c, v, "base", piece)).collect()
 }
 
 /// Le seuil et la fenetre des annexes VIII et X.
@@ -338,7 +414,7 @@ fn de_la_compagnie(racine: &Path) -> Resultat<RubriquesDeLaCompagnie> {
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
-fn construire(code: &str, f: ChampsRubrique, origine: &str) -> Resultat<Rubrique> {
+fn construire(code: &str, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> Resultat<Rubrique> {
     let faute = |cle: &str, quoi: &str| mal_decrite(code, format!("Rubrique {} : `{}` {}.", repr(code), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> String) -> Resultat<T> {
         c.ok_or_else(|| faute(cle, "manque"))
@@ -369,6 +445,7 @@ fn construire(code: &str, f: ChampsRubrique, origine: &str) -> Resultat<Rubrique
         arret_de_travail: dite(f.arret_de_travail, "arret_de_travail", &faute)?,
         conges_pris: dite(f.conges_pris, "conges_pris", &faute)?,
         dsn_bloc52: f.dsn_bloc52,
+        piece,
         origine: origine.to_string(),
         dit: f.dit,
     };
@@ -398,8 +475,9 @@ fn rubriques_datees(racine: &Path) -> Resultat<bool> {
 /// siennes (`config/rubriques-compagnie.json`, datees comme toute la configuration : une rubrique changee a une date ne
 /// change pas les paies d'avant ; une rubrique qui ne dit encore rien a `jour` n'existe pas).
 fn construire_catalogue(racine: &Path, jour: &Jour) -> Resultat<Vec<Rubrique>> {
-    // code -> (cases, propre a la compagnie)
-    let mut brut: Vec<(String, ChampsRubrique, bool)> = base()?.rubriques.into_iter().map(|(c, v)| (c, v, false)).collect();
+    // code -> (cases, piece, propre a la compagnie) ; une rubrique de la compagnie n'est dans aucune piece, et celle
+    // qu'elle ajuste garde la sienne.
+    let mut brut: Vec<(String, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
     if socle::fichiers::est_dossier(racine) {
         for (c, datee) in de_la_compagnie(racine)?.rubriques {
             let v = datee.au(jour);
@@ -408,13 +486,13 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> Resultat<Vec<Rubrique>> {
             }
             match brut.iter_mut().find(|e| e.0 == c) {
                 Some(e) => e.1.par_dessus(&v),
-                None => brut.push((c, v, true)),
+                None => brut.push((c, v, None, true)),
             }
         }
     }
     let mut out = Vec::new();
-    for (code, d, propre) in brut {
-        out.push(construire(&code, d, if propre { "compagnie" } else { "base" })?);
+    for (code, d, piece, propre) in brut {
+        out.push(construire(&code, d, if propre { "compagnie" } else { "base" }, piece)?);
     }
     out.sort_by_key(|r| r.libelle.to_lowercase());
     Ok(out)
@@ -470,16 +548,6 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> Resultat<Arc<Vec<Rubrique>>> {
     g.insert(fichiers, (datee, c.clone()));
     g.insert(cle, (datee, c.clone()));
     Ok(c)
-}
-
-/// LA RUBRIQUE D'UNE LIGNE DE PAIE NEUVE, par forme de paie (`"activite"` ou `"mensuelle"`, celles de
-/// [`Rubrique::reservee_a`]) et par statut du salarie (`"artiste"` ou `"technicien"`, celui de
-/// [`Rubrique::reservee_au_statut`]) : une ligne neuve paie un travail, elle ne s'ouvre pas sur la premiere rubrique du
-/// deroulant, qui se range par libelle (« Absence » en tete) : la premiere rubrique de salaire (nature `salaire`) que la
-/// forme et le statut proposent, dans l'ordre du catalogue. `None` : aucune.
-pub fn par_defaut<'a>(cat: &'a [Rubrique], forme: &str, statut: &str) -> Option<&'a Rubrique> {
-    let proposee = |r: &&Rubrique| r.reservee_a().is_none_or(|f| f == forme) && r.reservee_au_statut().is_none_or(|s| s == statut);
-    cat.iter().filter(proposee).find(|r| r.nature == "salaire")
 }
 
 /// Une rubrique par son code, telle qu'elle vaut a `jour`. Refuse un code inconnu : mieux vaut s'arreter que payer une

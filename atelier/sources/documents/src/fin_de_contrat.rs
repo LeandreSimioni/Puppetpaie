@@ -1,7 +1,8 @@
 //! Le certificat de travail et le reçu pour solde de tout compte d'un contrat qui se termine : deux papiers que la
 //! compagnie remet au salarié, rien ne part nulle part. Ils se fabriquent depuis la paie validée de l'engagement.
 //!
-//! Le certificat se délivre à l'expiration du contrat (L1234-19) et ne porte que les mentions de D1234-6 ; le reçu
+//! Le certificat se délivre à l'expiration du contrat (L1234-19) et porte les mentions de D1234-6, et le maintien des
+//! garanties collectives de prévoyance et de santé que CSS L. 911-8, 6° lui fait signaler (`mention`, `engagement::portabilite`) ; le reçu
 //! fait l'inventaire des sommes versées (L1234-20), ligne à ligne, et s'établit en double exemplaire (D1234-7).
 
 use droit::fiche::Lue as _;
@@ -18,11 +19,40 @@ use socle::echec::{erreur, Classe, R};
 use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
-pub const AVIS: [&str; 3] = [
+pub const AVIS: &[&str] = &[
     "Le reçu pour solde de tout compte s'établit en double exemplaire (D1234-7) : un pour le salarié, un pour la compagnie. Il se signe de sa main, avec la mention « pour solde de tout compte ».",
     "Il peut être dénoncé par lettre recommandée dans les six mois (L1234-20 et D1234-8) ; passé ce délai, il est libératoire pour les seules sommes qui y sont inscrites.",
-    "Le certificat de travail ne contient que les mentions de D1234-6 : dates d'entrée et de sortie, emplois occupés et leurs périodes.",
+    "Le certificat de travail contient les mentions de D1234-6 (dates d'entrée et de sortie, emplois occupés et leurs périodes) et, pour un salarié couvert par une prévoyance ou une complémentaire santé collective, le maintien de ces garanties (code de la sécurité sociale, L911-8, 6°), sauf faute lourde.",
+    "L'organisme assureur apprend la fin du contrat par la DSN (sa fin dans la mensuelle, et le signalement de fin de contrat quand il part) : rien d'autre à lui envoyer.",
 ];
+
+/// LE MAINTIEN DES GARANTIES QUE LE CERTIFICAT SIGNALE (CSS L. 911-8,
+/// `atelier/reference/sources/code-de-la-securite-sociale/xml/L911-8.xml`, 6° : « L'employeur signale le maintien de ces
+/// garanties dans le certificat de travail » ; les accords santé des permanents de la 1285 et de la 3090 le redisent :
+/// `kali-1285-accord-frais-de-sante-20260130-20261011.md`, l. 201, `kali-3090-accord-sante-permanents-20240719-20261011.md`,
+/// l. 153), en mots, depuis ce que l'engagement en dit (`engagement::portabilite`). La garantie santé des intermittents
+/// est une adhésion individuelle, hors de L. 911-8 : seule leur prévoyance s'y lit.
+fn mention(m: &engagement::portabilite::Portabilite, nom: &str, fin: &Jour) -> String {
+    let garanties = match (m.prevoyance, m.sante) {
+        (true, true) => "de prévoyance (décès, incapacité de travail, invalidité) et de complémentaire santé",
+        (true, false) => "de prévoyance (décès, incapacité de travail, invalidité)",
+        _ => "de complémentaire santé",
+    };
+    let contrats = if m.consecutifs { "de ses derniers contrats consécutifs dans l'entreprise, depuis le " } else { "de son dernier contrat de travail, depuis le " };
+    format!(
+        "Maintien des garanties (article L. 911-8 du code de la sécurité sociale) : si la cessation de son contrat de \
+travail lui ouvre droit à une prise en charge par l'assurance chômage, {} bénéficie du maintien à titre gratuit des \
+garanties collectives {} en vigueur dans l'entreprise, à compter du {} et pendant la durée de son indemnisation, dans \
+la limite de {} mois (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
+l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
+        nom,
+        garanties,
+        fin.jj_mm_aaaa(),
+        m.mois,
+        contrats,
+        m.depuis.jj_mm_aaaa()
+    )
+}
 
 /// Écrit les deux papiers de la paie `p` (dont l'engagement finit), établis le `date`, dans `sortie` : le certificat
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
@@ -42,12 +72,37 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let poste = ctx.gabarits();
     let certificat = sortie.join(format!("CertificatTravail_{}_{}.pdf", cle, fin.aaaammjj()));
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
-    let valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
+    let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
+    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| erreur(Classe::Manque, m))?, p.salarie.nom.ecrite("nom").map_err(|m| erreur(Classe::Manque, m))?);
+    let maintien = engagement::portabilite::de(&ctx.racine, p, numero, &fin)?;
+    // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
+    // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
+    let chemin_cert = socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste);
+    let lu_cert = ModeleLu::du_fichier(&chemin_cert)?;
+    if maintien.is_some() && !lu_cert.cite(Marqueur::CertificatPortabilite) {
+        return Err(erreur(
+            Classe::ModeleIncomplet,
+            format!(
+                "Le modèle du certificat de travail ({}) ne cite pas {} : le maintien des garanties de {} (code de la \
+sécurité sociale, L911-8, 6°) se tairait. Ajouter {} au modèle, sur sa propre ligne avant les signatures (le modèle livré le \
+fait). Rien n'est écrit.",
+                socle::fichiers::nom_du(&chemin_cert),
+                Marqueur::CertificatPortabilite,
+                nom,
+                Marqueur::CertificatPortabilite
+            ),
+        ));
+    }
+    // Sans maintien du (aucune garantie collective, ou faute lourde), L911-8, 6° n'a rien a faire signaler : le
+    // paragraphe du modele reste vide.
+    let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
+    valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
-    ecrire_papier(&socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste), valeurs_cert, &certificat, &ent, true)?;
-    if let Err(e) = ecrire_papier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste), valeurs, &recu, &ent, false) {
+    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
+    ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
+    if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
         let _ = std::fs::remove_file(&certificat);
         return Err(e);
     }
@@ -106,11 +161,10 @@ fn inventaire(p: &Paie) -> String {
     lignes.join("\n")
 }
 
-/// Le papier de `modele`, par la fabrique (style « attestation »). `signe` : le certificat s'établit signé de
+/// Le papier du modèle lu `lu`, par la fabrique (style « attestation »). `signe` : le certificat s'établit signé de
 /// l'employeur.
-fn ecrire_papier(modele: &Path, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
-    let lu = ModeleLu::du_fichier(modele)?;
-    let mut un = crate::contrat::document_modele(&lu, &valeurs);
+fn ecrire_papier(lu: &ModeleLu, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
+    let mut un = crate::contrat::document_modele(lu, &valeurs);
     if signe {
         un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }

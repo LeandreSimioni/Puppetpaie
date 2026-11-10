@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ARTICLE>
+<META>
+<META_COMMUN>
+<ID>LEGIARTI000035616843</ID>
+<ANCIEN_ID/>
+<ORIGINE>LEGI</ORIGINE>
+<URL>article/LEGI/ARTI/00/00/35/61/68/LEGIARTI000035616843.xml</URL>
+<NATURE>Article</NATURE>
+</META_COMMUN>
+<META_SPEC>
+<META_ARTICLE>
+
+<NUM>L2314-34</NUM>
+
+<ETAT>VIGUEUR</ETAT>
+
+<DATE_DEBUT>2018-01-01</DATE_DEBUT>
+<DATE_FIN>2999-01-01</DATE_FIN>
+
+
+
+<TYPE>AUTONOME</TYPE>
+</META_ARTICLE>
+</META_SPEC>
+</META>
+<CONTEXTE>
+<TEXTE autorite="" cid="LEGITEXT000006072050" date_publi="2999-01-01" date_signature="2999-01-01" ministere="" nature="CODE" nor="" num="" num_parution_jo="">
+<TITRE_TXT c_titre_court="Code du travail" debut="1973-01-03" fin="2999-01-01" id_txt="LEGITEXT000006072050">Code du travail</TITRE_TXT>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2999-01-01" id="LEGISCTA000006112874">Partie législative  </TITRE_TM>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2999-01-01" id="LEGISCTA000006132331">Deuxième partie : Les relations collectives de travail  </TITRE_TM>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2999-01-01" id="LEGISCTA000006145399">Livre III : Les institutions représentatives du personnel</TITRE_TM>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2018-01-01" id="LEGISCTA000006160739">Titre Ier : Délégué du personnel</TITRE_TM>
+<TITRE_TM debut="2018-01-01" fin="2999-01-01" id="LEGISCTA000035650770">Titre Ier : Comité social et économique</TITRE_TM>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2018-01-01" id="LEGISCTA000006177948">Chapitre IV : Nombre, élection et mandat</TITRE_TM>
+<TITRE_TM debut="2018-01-01" fin="2999-01-01" id="LEGISCTA000035651197">Chapitre IV : Composition, élections et mandat</TITRE_TM>
+<TM>
+<TITRE_TM debut="2008-05-01" fin="2999-01-01" id="LEGISCTA000006189544">Section 3 : Durée et fin du mandat.</TITRE_TM>
+</TM>
+</TM>
+</TM>
+</TM>
+</TM>
+</TM>
+</TEXTE>
+</CONTEXTE>
+
+<VERSIONS>
+<VERSION etat="VIGUEUR">
+<LIEN_ART debut="2018-01-01" etat="VIGUEUR" fin="2999-01-01" id="LEGIARTI000035616843" num="L2314-34" origine="LEGI"/>
+</VERSION>
+</VERSIONS>
+<NOTA>
+<CONTENU>
+<p>Conformément à l'article 9 I de l'ordonnance n° 2017-1386 du 22 septembre 2017, les présentes dispositions entrent en vigueur à la date d'entrée en vigueur des décrets pris pour leur application, et au plus tard le 1er janvier 2018.  </p>
+</CONTENU>
+</NOTA>
+<BLOC_TEXTUEL>
+<CONTENU>
+<p>Par dérogation aux dispositions de l'article L. 2314-33, un accord de branche, un accord de groupe ou un accord d'entreprise, selon le cas, peut fixer une durée du mandat des représentants du personnel au comité comprise entre deux et quatre ans.</p>
+</CONTENU>
+</BLOC_TEXTUEL>
+<LIENS>
+<LIEN cidtexte="JORFTEXT000035607348" datesignatexte="2017-09-22" id="LEGIARTI000035608975" naturetexte="ORDONNANCE" nortexte="MTRT1724789R" num="1" numtexte="2017-1386" sens="cible" typelien="CREE">Ordonnance n°2017-1386 du 22 septembre 2017 - art. 1</LIEN>
+
+<LIEN cidtexte="LEGITEXT000006072050" datesignatexte="2999-01-01" id="LEGIARTI000035616841" naturetexte="CODE" nortexte="" num="L2314-33" numtexte="" sens="source" typelien="CITATION">Code du travail - art. L2314-33 (VD)</LIEN>
+
+
+
+
+
+</LIENS>
+</ARTICLE>

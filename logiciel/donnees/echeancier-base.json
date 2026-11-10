@@ -56,15 +56,6 @@
       "detail": "Une fois l'an, hors DSN, sur la masse salariale de l'année écoulée : 0,1 % pour la création et l'événement (3252, à l'AGP) ; 0,03 %, 50 € au moins, pour la télédiffusion (3241) ; 0,05 % pour la radiodiffusion (1922, à l'APAR, avant le 31 mars) ; 0,07 % pour l'édition phonographique (2121, appelé par l'AGEPRO) ; 0,05 %, 40 € au moins, pour les espaces de loisirs (1790, avant le 1er mars). L'appel vient de l'organisme collecteur de la branche. Le montant : Exports › Paritarisme de branche.",
       "source": "CCN 3252, art. 3.6.1 ; CCN 3241, art. 11.1 et 11.2 (base KALI, 27/09/2026) ; protocole APEP (2121), art. 3 ; avenant n° 14 de la 1790, art. 3 et 5 (29/09/2026).",
       "fait_par": "coche"
-    },
-    {
-      "cle": "fnas-fcap-1285",
-      "idcc": ["1285"],
-      "mois": [1],
-      "titre": "FNAS et FCAP : rien à faire à part",
-      "detail": "Pour la CCNEAC, le FNAS et le FCAP sont déclarés et prélevés avec chaque DSN (affiliations Audiens) : aucun appel séparé.",
-      "source": "CCNEAC (IDCC 1285), lue dans la base KALI de la DILA le 23/09/2026.",
-      "fait_par": "information"
     }
   ]
 }

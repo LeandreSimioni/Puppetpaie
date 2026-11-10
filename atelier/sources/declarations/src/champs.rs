@@ -20,6 +20,7 @@ use std::sync::OnceLock;
 use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
+use droit::fiche::Piece;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::dossier_du_code;
@@ -191,6 +192,22 @@ pub fn condition_remplie(si: Option<&Condition>, donnees: &Saisie) -> bool {
     si.is_none_or(|c| c.remplie(donnees))
 }
 
+/// UNE CASE DU TIROIR « Avancé » (`avance` de `champs-base.json`) : un cas particulier, et ce qui y est le cas
+/// ordinaire. Le tiroir s'ouvre de lui-meme quand une de ses cases s'en ecarte (`Champ::ecart`) ; une case sans `avance`
+/// est sur le chemin simple.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Avance {
+    /// Toute valeur dite s'ecarte du cas ordinaire, qui est de n'en rien dire.
+    CasParticulier,
+    /// Toujours remplie (ce que le metier remplit, un matricule) : sa valeur n'est jamais un ecart.
+    ToujoursRemplie,
+    /// L'organisme que le code postal de la compagnie donne est le cas ordinaire (`declarations::urssaf`).
+    DuCodePostal,
+    /// Ces valeurs sont le cas ordinaire.
+    Ordinaire(Vec<String>),
+}
+
 /// `Champ` : une ligne de la table.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -205,10 +222,15 @@ pub struct Champ {
     pub declare: bool,
     pub derive_de: Option<String>,
     pub rubrique: Option<String>,
-    pub si_permanents: bool,
+    /// LA PIECE DE LA CASE, tiree de sa forme (`droit::fiche::ChampsSalarie::piece_de`), jamais de la table ; `None` :
+    /// tout calcul la lit. Posee a la lecture de la table (`table`).
+    #[serde(skip)]
+    pub piece: Option<Piece>,
     pub si: Option<Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<Condition>,
+    /// La case est un cas particulier, rangee sous « Avancé », et ce qui y est le cas ordinaire (`avance`).
+    pub avance: Option<Avance>,
     /// Quand la compagnie DOIT le remplir (`exige_si`, meme forme que `si`) : `Champ::exige`.
     pub exige_si: Option<Condition>,
     pub booleen_defaut: bool,
@@ -303,16 +325,34 @@ impl Champ {
 
     /// Le champ de la fiche `donnees` est-il A L'ECRAN ? Il se saisit (ni deduit, ni hors de l'ecran), sa condition `si`
     /// est remplie par la fiche, celle de l'entreprise (`si_entreprise`, pour la fiche d'un salarie ou d'un spectacle :
-    /// `entreprise`) aussi, la compagnie emploie des permanents s'il ne vaut que pour eux (`si_permanents`) et a plusieurs
-    /// etablissements s'il les nomme (`si_etablissements`). La page montre ce que cette fonction dit (`routes::
-    /// fiches::montres`), et rien d'autre.
-    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, permanents: bool, etablissements: bool) -> bool {
+    /// `entreprise`) aussi, sa piece est ouverte pour elle (`ouverte(piece, cle)` : la fiche peut avoir un calcul qui la
+    /// lit, `routes::fiches::montres`) et la compagnie a plusieurs etablissements s'il les nomme (`si_etablissements`).
+    /// La page montre ce que cette fonction dit (`routes::fiches::montres`), et rien d'autre.
+    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, ouverte: impl Fn(Piece, &str) -> bool, etablissements: bool) -> bool {
         self.ecran
             && !self.calcule()
             && condition_remplie(self.si.as_ref(), donnees)
             && entreprise.is_none_or(|e| condition_remplie(self.si_entreprise.as_ref(), e))
-            && !(self.si_permanents && !permanents)
+            && self.piece.is_none_or(|p| ouverte(p, &self.cle))
             && !(self.si_etablissements && !etablissements)
+    }
+
+    /// La case du tiroir « Avancé » s'ecarte-t-elle du cas ordinaire dans la fiche `donnees` (`Avance`) ? `du_code_postal` :
+    /// l'organisme Urssaf que le code postal de la compagnie donne. Vide ou « non » n'est jamais un ecart.
+    pub fn ecart(&self, donnees: &Saisie, du_code_postal: Option<&str>) -> bool {
+        let Some(a) = &self.avance else { return false };
+        let mot = match comme_la_page(donnees.case(&self.cle)) {
+            VueDeLaPage::Vide => return false,
+            VueDeLaPage::Structure => return donnees.dite(&self.cle).is_some() && *a != Avance::ToujoursRemplie,
+            VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
+            VueDeLaPage::Mot(m) => m,
+        };
+        match a {
+            Avance::CasParticulier => true,
+            Avance::ToujoursRemplie => false,
+            Avance::DuCodePostal => Some(mot.as_str()) != du_code_postal,
+            Avance::Ordinaire(valeurs) => !valeurs.iter().any(|v| v.eq_ignore_ascii_case(&mot)),
+        }
     }
 
     /// Le champ est-il EXIGE de la compagnie `donnees` ? Sa condition `exige_si` de `champs-base.json`, la seule : la
@@ -353,10 +393,11 @@ impl Champ {
             calcule: self.calcule(),
             derive_de: self.derive_de.as_deref(),
             rubrique: self.rubrique.as_deref(),
-            si_permanents: self.si_permanents,
+            piece: self.piece,
             si: self.si.as_ref(),
             si_etablissements: self.si_etablissements,
             si_entreprise: self.si_entreprise.as_ref(),
+            avance: self.avance.as_ref(),
             exige_si: self.exige_si.as_ref(),
             booleen_defaut: self.booleen_defaut,
             ecran: self.ecran,
@@ -430,12 +471,15 @@ pub struct Description<'a> {
     /// « commune ».
     pub derive_de: Option<&'a str>,
     pub rubrique: Option<&'a str>,
-    /// Ce qui ne se montre qu'a une compagnie qui emploie des permanents : le champ reste dans la description, c'est
-    /// l'ecran qui le replie.
-    pub si_permanents: bool,
+    /// La piece de la case (`Champ::piece`) : elle reste dans la description, l'ecran replie le bloc dont aucune case
+    /// n'est montree (`montres`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piece: Option<Piece>,
     pub si: Option<&'a Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<&'a Condition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avance: Option<&'a Avance>,
     pub exige_si: Option<&'a Condition>,
     pub booleen_defaut: bool,
     pub ecran: bool,
@@ -498,11 +542,27 @@ struct Table {
 
 static TABLE: OnceLock<Result<Table, String>> = OnceLock::new();
 
+/// CHAQUE CASE DANS SA PIECE : celle que sa forme lui donne (`droit::fiche`), et nulle autre : la table n'a pas de mot
+/// pour la dire (`deny_unknown_fields`).
+fn ranger(mut t: Table) -> Table {
+    let fiches: [(&mut Vec<Champ>, fn(&str) -> Option<Piece>); 3] = [
+        (&mut t.entreprise, droit::fiche::ChampsEntreprise::piece_de),
+        (&mut t.salarie, droit::fiche::ChampsSalarie::piece_de),
+        (&mut t.spectacle, droit::fiche::ChampsSpectacle::piece_de),
+    ];
+    for (champs, piece_de) in fiches {
+        for c in champs.iter_mut() {
+            c.piece = piece_de(&c.cle);
+        }
+    }
+    t
+}
+
 /// Les champs de la fiche `nom` (`entreprise`, `salarie`, `spectacle`), tels que la table livree les decrit.
 fn table(nom: &str) -> R<&'static [Champ]> {
     let chemin = dossier_du_code().join("champs-base.json");
     let t = TABLE
-        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur."))
+        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").map(ranger))
         .as_ref()
         .map_err(|m| plain(m.clone()))?;
     // Lu une fois par processus (le code livre ne change pas sous la fenetre), mais note a chaque usage : un calcul

@@ -186,14 +186,19 @@ fn spectacles_declares(ctx: &Contexte) -> Resultat<Vec<droit::contexte::IdSpecta
     Ok(out)
 }
 
-/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere.
-fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<bool> {
+/// Une suspension saisie (un imprevu du bloc 65) dont le motif n'est pas remunere, d'un salarie dont un engagement est
+/// paye au mois : la cle de cet engagement (seul son calcul lit la sante d'une suspension,
+/// `calcul::sante_de_la_suspension`).
+fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<Option<droit::natures::AuMois>> {
+    use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
         if engagement::imprevus::est_une_suspension(&imp) && engagement::imprevus::motif_de_suspension(imp.motif())?.is_some_and(|m| !m.remunere) {
-            return Ok(true);
+            if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
+                return Ok(Some(cle));
+            }
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
 /// La fiche typee `fiche` de la fiche `nom`, dans la forme d'une saisie, pour dire ce qui lui manque.
@@ -350,20 +355,23 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
-    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Un bareme qui ne se lit pas se dit plus
-    // bas, ce qui lui manque.
+    // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
+    // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = "representation_personnel";
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
-    // Sans CSE dit, c'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.b) : inconnu,
-    // c'est lui que la contribution demande, pas le CSE.
+    // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
+    // lui que la contribution demande, pas le CSE.
     if let Ok(b) = &bareme {
-        if ent.representation_personnel.dite().is_none() && par_representation(b) {
+        if par_representation(b) {
+            let cse = effectif.cse(an);
+            let dit = cse.as_ref().is_some_and(|k| ent.cse.ouvrir(k).representation_personnel.est_dite());
             match effectif.valeur(an) {
-                Some(e) if e >= 11.0 => {
+                Some(e) if e >= 11.0 && cse.is_some() && !dit => {
                     let (libelle, aide) = champ(cle)?;
                     out.push(manque(cle, libelle, "la contribution au FNAS de chaque paie", ENTREPRISE, Some(cle), aide)?);
                 }
+                // Sans la cle, l'effectif d'une des cinq annees d'avant manque : `a_dire` l'a demande plus haut.
                 Some(_) => {}
                 None => out.push(manque(
                     "effectif",
@@ -371,7 +379,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
                     "la contribution au FNAS de chaque paie",
                     ENTREPRISE,
                     None,
-                    format!("Sans comité social et économique dit, la CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé », ou le comité dans Configuration › Entreprise.", an - 1),
+                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", an - 1),
                 )?),
             }
         }
@@ -386,7 +394,8 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
     // refuse tant que la fiche ne repond pas (`calcul::sante_de_la_suspension`). Elle ne se demande que si une suspension
     // non remuneree est saisie : un champ n'apparait que parce qu'un fait l'exige.
-    if ent.idcc.portee() != Some("3090") && !ent.sante_suspension_non_indemnisee.est_dite() && une_suspension_non_remuneree(ctx)? {
+    let dite = |cle: &droit::natures::AuMois| ent.permanent.ouvrir(cle).sante_suspension_non_indemnisee.est_dite();
+    if ent.idcc.portee() != Some("3090") && une_suspension_non_remuneree(ctx)?.is_some_and(|cle| !dite(&cle)) {
         let cle = droit::bareme::SANTE_SUSPENSION;
         let (libelle, aide) = champ(cle)?;
         out.push(manque(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", ENTREPRISE, Some(cle), aide)?);
@@ -401,7 +410,10 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     }
     // LES CONTRATS DES PERMANENTS : c'est tout ce que la compagnie a a saisir des organismes (le reste, les textes le
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
-    if ctx.emploie_des_permanents() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
+    // Le mois que « Pour demarrer » prepare : celui du jour.
+    let mois = ctx.aujourdhui.mois_civil();
+    let permanents = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
+    if permanents.ouverts() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
         out.push(manque(
             "organismes_permanents",
             "Les contrats de prévoyance et de santé des permanents".into(),
@@ -442,8 +454,8 @@ pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
 }
 
 /// La reprise des conges de ce salarie est-elle deja dite sur sa fiche (`conges_reprise.date`) ?
-pub fn conges_repris(ctx: &Contexte, salarie: &str) -> bool {
-    ctx.salaries.get(salarie).and_then(|f| f.conges_reprise.dite()).is_some_and(|c| c.date.est_dite())
+pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: &str) -> bool {
+    ctx.salaries.get(salarie).and_then(|f| f.permanent.ouvrir(au_mois).conges_reprise.dite()).is_some_and(|c| c.date.est_dite())
 }
 
 /// Les permanents dont un contrat commence avant le premier mois ou PuppetPaie le paie, et dont la fiche ne dit pas les
@@ -452,8 +464,8 @@ pub fn conges_repris(ctx: &Contexte, salarie: &str) -> bool {
 /// neuf (`engagement::importe`), valide ou non. Un intermittent n'en est pas (ses conges sont ceux des Conges
 /// Spectacles) ; un contrat ne d'ici n'a rien d'avant.
 fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
-    // (salarie, debut du contrat, premier jour paye ici)
-    let mut contrats: Vec<(String, String, Jour)> = Vec::new();
+    // (cle des cases d'un salarie au mois, salarie, debut du contrat, premier jour paye ici)
+    let mut contrats: Vec<(droit::natures::AuMois, String, String, Jour)> = Vec::new();
     let mut vus: Vec<String> = Vec::new();
     // Les engagements valides et actifs, chacun dans le mois de son fichier (`engagement::stock::objets`) : un brouillon
     // n'engage rien, un contrat repris qui continue ici si.
@@ -464,17 +476,17 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
         let e = o.carte();
         let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
         let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature.as_deref()) else { continue };
-        if vus.contains(&salarie) || !droit::natures::nature(nature)?.mensuelle() {
+        let Some(au) = droit::natures::nature(nature)?.au_mois().filter(|_| !vus.contains(&salarie)) else {
             continue;
-        }
+        };
         vus.push(salarie.clone());
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, debut, o.premier_mois())? {
-            contrats.push((salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
+            contrats.push((au, salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
         }
     }
     let mut out = Vec::new();
-    for (salarie, debut, premier) in contrats {
-        if debut >= premier.iso() || conges_repris(ctx, &salarie) {
+    for (au, salarie, debut, premier) in contrats {
+        if debut >= premier.iso() || conges_repris(ctx, &au, &salarie) {
             continue;
         }
         let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {

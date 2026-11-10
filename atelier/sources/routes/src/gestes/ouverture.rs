@@ -59,7 +59,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
         ecran: ECRAN,
     },

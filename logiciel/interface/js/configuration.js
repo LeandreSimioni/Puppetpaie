@@ -520,7 +520,7 @@ document.addEventListener("click", async (ev) => {
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
-    // Les natures au mois s'ouvrent alors dans la saisie (`etat.natures`).
+    // Les natures au mois s'ouvrent alors dans la saisie (`nouvelle_carte` de la route saisie).
     await relireEtat();
     rafraichirReferentiels();
     rafraichirEtatImportation();
@@ -778,7 +778,7 @@ const SECTIONS_FICHE = {
     // LE CURSEUR DES PERMANENTS SORT DE L'« AVANCÉ ».
     // C'est la question qui commande tout ce qui ne vaut que pour les
     // salariés au mois (natures CDI/CDD, santé et prévoyance, organismes) :
-    // elle se pose en clair. Le moteur le lit (`contexte::emploie_des_permanents`).
+    // elle se pose en clair, datée. Le moteur la lit (`Contexte::emploie_des_permanents_pendant`).
     // Les conseils « Le saviez-vous ? » :
     // une option qui parle de vos salariés, elle se pose avec eux.
     ["Vos salariés", ["emploie_des_permanents", "date_de_versement_permanents", "date_de_versement_intermittents", "conseils"]],
@@ -799,17 +799,8 @@ const SECTIONS_FICHE = {
     // déclare chaque année si la compagnie la doit (bloc S21.G00.44), et ne
     // se fait pas sans réponse. Le moteur ne connaît pas sa TVA.
     ["Taxe sur les salaires", ["taxe_sur_les_salaires"]],
-    // L'AVANCE. L'editeur : « si on peut deviner que c'est le
-    // truc de base, on le met en truc de base ; si les gens veulent changer,
-    // ils cliquent sur avancé ». Chacun de ces champs a une valeur par
-    // defaut qui est le cas ordinaire d'une compagnie : pas de salarie au
-    // mois, pas de syndicat, pas de CSE, pas d'exemption, et un effectif lu
-    // dans les retours de l'Urssaf plutot qu'une date de premiere embauche.
-    // Le bloc s'ouvre de lui-meme si l'un d'eux s'ecarte du cas ordinaire.
-    // Chaque case suit ce qui la commande : les fériés chômés
-    // et la prévoyance ne se montrent qu'avec des permanents, la date
-    // d'adhésion qu'avec un syndicat, le CSE qu'en CCNEAC, l'exemption
-    // CASC-SVP qu'en 3090.
+    // L'AVANCE : sa place et son ordre. Ce qui est avancé, et ce qui y est le cas ordinaire, le moteur le dit
+    // (`avance` de la description, `ecarts` de la fiche) : le bloc s'ouvre de lui-meme pour une case qui s'en ecarte.
     ["Avancé — cas particuliers", ["jours_feries_chomes", "plafond_temps_partiel",
       "deduction_forfaitaire_option",
       "prevoyance_permanents", "sante_permanents", "subrogation_ij",
@@ -853,7 +844,7 @@ const SECTIONS_FICHE = {
                          "forfait_jours"],
      { sante: true }],
     // L'avance : ce qui a une valeur par defaut juste pour presque tout le
-    // monde. Le tiroir s'ouvre seul si l'une s'en ecarte (`ORDINAIRE`).
+    // monde. Le tiroir s'ouvre seul si l'une s'en ecarte (`ecarts` de la fiche, que le moteur dit).
     // La déduction forfaitaire spécifique : un tiroir à elle, qui dit ce que
     // l'entreprise en a décidé (`DFS_HTML`).
     ["Déduction forfaitaire spécifique", ["deduction_forfaitaire",
@@ -869,25 +860,6 @@ const SECTIONS_FICHE = {
 
 /* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`droit::conges::JOURS_DE_LA_SEMAINE`). */
 const JOURS_DE_LA_SEMAINE = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
-
-/* Ce qui, dans le tiroir « Avancé », vaut le cas ordinaire et ne l'ouvre
- * donc pas. Une case absente d'ici ouvre le tiroir des qu'elle est remplie. */
-const ORDINAIRE = {
-  code_urssaf: (v) => String(v) === String(ETAT.urssaf_deduit || ""),
-  retraite_complementaire: (v) => String(v).trim().toUpperCase() === "AUDIENS",
-  // Toujours remplis, et c'est normal : un matricule, un prefixe, une date.
-  code_salarie: () => true,
-  initiales_contrat: () => true,
-  date_anciennete: () => true,
-  actif: (v) => v !== false,
-  statut_conventionnel: (v) => String(v) === "05",
-  // Ce que le métier remplit : toujours là, et l'« Avancé » n'a pas à
-  // s'ouvrir pour eux.
-  statut: () => true,
-  statut_categoriel_rc: () => true,
-  pcs_ese: () => true,
-  code_emploi_ft: () => true,
-};
 
 /* Les champs que la machine deduit d'un autre, ou qu'elle connait sans
  * qu'on les lui dise : ils restent dans le formulaire — donc ils repartent

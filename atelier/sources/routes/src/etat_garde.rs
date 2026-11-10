@@ -75,7 +75,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…), perime",
         refus: &[ILLISIBLE],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -93,9 +92,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "pret ; prêt : le mois à ouvrir et son écran, aujourdhui, les lectures de l'ouverture (etat, echeancier, rappels…), la veille, la mise à jour, les signalements ; sinon la phrase de ce que fait le moteur",
         refus: &[ILLISIBLE],
         acte: Acte::Lit,
-        avance: true,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::LectureAvancee,
     },
     Fiche {
         route: Route::EtatParEngagement,
@@ -105,7 +103,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire), non_actifs",
         refus: &[ILLISIBLE],
         acte: Acte::Lit,
-        avance: false,
         phrase: 160,
         ecran: ECRAN,
     },
@@ -117,7 +114,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic",
         refus: &[ILLISIBLE],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -593,15 +589,24 @@ fn charge_du_mois(mois: Mois) -> R<Charge> {
     socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&ChargeMois { mois }), "La charge d'un mois ne s'écrit pas.").map_err(Echec::from)
 }
 
+/// La charge de l'apercu de la saisie enregistree : le mois, et aucune modification en cours (`mois::ChargeApercu`).
+#[derive(Serialize)]
+struct ApercuEnregistre {
+    mois: Mois,
+    modifications: [Mois; 0],
+}
+
 /// L'etat de `mois`, refait : ses deux etats (`etapes::les_deux_etats`) et ses lectures (`LECTURES`, puis l'apercu de la
 /// saisie enregistree).
 fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -> R<EtatDuMois> {
     let charge = charge_du_mois(mois)?;
     let mut lectures: Vec<(Route, String)> = LECTURES.iter().map(|r| (*r, lecture(o, *r, &charge))).collect();
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
-    // (`{"mois": mois}`, le mois enregistre), quand le mois a une saisie ; la page ne le redemande que quand on modifie
-    // la saisie.
+    // (`{"mois": mois, "modifications": []}`, le mois enregistre), quand le mois a une saisie ; la page ne le redemande
+    // que quand on modifie la saisie.
     if engagement::stock::a_une_saisie(&ctx.racine, &mois.to_string())? {
+        let apercu = ApercuEnregistre { mois, modifications: [] };
+        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.").map_err(Echec::from)?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let (par_engagement, bilan) = crate::etapes::les_deux_etats(ctx, mois)?;

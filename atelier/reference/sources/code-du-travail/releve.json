@@ -3,10 +3,10 @@
  "global": "Freemium_legi_global_20250713-140000.tar.gz",
  "texte": "Code du travail",
  "legitext": "LEGITEXT000006072050",
- "livraisons_lues": 483,
- "livraisons_totales": 483,
- "complet": true,
- "derniere_livraison": "20261102-213929",
+ "livraisons_lues": 485,
+ "livraisons_totales": 2,
+ "complet": false,
+ "derniere_livraison": "20261109-212854",
  "changes_depuis_le_global": [
   {
    "apres": "LEGIARTI000052437183",
@@ -20,6 +20,14 @@
    "apres": "LEGIARTI000052437168",
    "article": "L1237-9",
    "avant": "LEGIARTI000047453555",
+   "depuis": "2025-10-26",
+   "livraison": "20251027-211613",
+   "texte": "travail"
+  },
+  {
+   "apres": "LEGIARTI000052437191",
+   "article": "L2314-33",
+   "avant": "LEGIARTI000036761951",
    "depuis": "2025-10-26",
    "livraison": "20251027-211613",
    "texte": "travail"
@@ -57,7 +65,7 @@
    "texte": "travail"
   }
  ],
- "releve_le":"2026-11-03",
+ "releve_le": "2026-11-10",
  "articles": {
   "D1221-23": {
    "debut": "2008-05-01",
@@ -518,6 +526,21 @@
    "debut": "2018-01-01",
    "en_vigueur": true,
    "id": "LEGIARTI000035609353"
+  },
+  "L2313-10": {
+   "debut": "2018-01-01",
+   "en_vigueur": true,
+   "id": "LEGIARTI000035650929"
+  },
+  "L2314-33": {
+   "debut": "2025-10-26",
+   "en_vigueur": true,
+   "id": "LEGIARTI000052437191"
+  },
+  "L2314-34": {
+   "debut": "2018-01-01",
+   "en_vigueur": true,
+   "id": "LEGIARTI000035616843"
   },
   "L2315-61": {
    "debut": "2018-04-01",

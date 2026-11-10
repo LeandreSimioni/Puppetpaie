@@ -287,7 +287,6 @@ function dessinerFormulaire(fiche) {
   if (!fiche) return;
   FICHE_COURANTE = fiche;
   const desc = ETAT.configuration.description[FICHE_ACTIVE];
-  const avecPermanents = !!(ETAT.configuration || {}).permanents;
 
   // CE QU'ON N'AFFICHE PAS, ON LE GARDE. Le signataire porte un `nom_aem` et
   // une note ; la banque porte un avertissement de diffusion. Ces clefs ne
@@ -299,7 +298,6 @@ function dessinerFormulaire(fiche) {
     if (sousChamps(c) && v && typeof v === "object") STRUCTURES_ORIGINE[c.cle] = v;
   });
 
-  const caches = CACHES[FICHE_ACTIVE] || [];
   // Les champs CALCULES ne sont pas proposes a la saisie : c'est le programme qui les fabrique, et ils ne se montrent
   // pas (`saisissables`).
   const champHtml = (c) => champDeFiche(c, fiche, FICHE_ACTIVE);
@@ -315,34 +313,36 @@ function dessinerFormulaire(fiche) {
   } else {
     const parCle = {};
     saisissables.forEach((c) => { parCle[c.cle] = c; });
+    // CE QUI EST « AVANCÉ », LE MOTEUR LE DIT (`avance` de la description) : une case ne va dans un tiroir « Avancé »
+    // que s'il la dit avancée, et une case qu'il dit avancée n'en sort pas. Les tables ne disent que l'ordre et la place.
+    const avancee = (i) => !!(sections[i][2] || {}).avance;
     const places = new Set();
-    sections.forEach(([, cles]) => cles.forEach((k) => places.add(k)));
+    sections.forEach(([, cles], i) => cles.forEach((k) => {
+      if (parCle[k] && !!parCle[k].avance === avancee(i)) places.add(k);
+    }));
     const reste = saisissables.filter((c) => !places.has(c.cle));
-    // Un champ oublie des tables va dans la derniere section TITREE : la
-    // derniere tout court peut etre l'historique, qui n'a pas de titre.
-    const derniereTitree = sections.map(([t]) => !!t).lastIndexOf(true);
+    // Un champ oublie des tables va dans la derniere section TITREE de son rang (simple ou avancee) : la derniere tout
+    // court peut etre l'historique, qui n'a pas de titre.
+    const derniere = (avance) => sections.map(([t], i) => !!t && avancee(i) === avance).lastIndexOf(true);
+    const derniereSimple = derniere(false);
+    const derniereAvancee = derniere(true);
     champs = sections.map(([titre, cles, options], i) => {
-      let dedans = cles.map((k) => parCle[k]).filter(Boolean);
-      if (i === derniereTitree) dedans = dedans.concat(reste);
+      let dedans = cles.map((k) => parCle[k]).filter((c) => c && !!c.avance === avancee(i));
+      if (i === derniereSimple) dedans = dedans.concat(reste.filter((c) => !c.avance || derniereAvancee < 0));
+      if (i === derniereAvancee) dedans = dedans.concat(reste.filter((c) => !!c.avance));
       if (!dedans.length) return "";
       // Une section vide ne s'affiche pas : « Ce qui a changé » n'a de titre
       // que le jour ou une valeur declaree a change (`histoireDuChamp` ne
       // rend rien avant).
       const dedansHtml = dedans.map(champHtml).join("");
       if (!dedansHtml.trim()) return "";
-      // La section des permanents suit la case : rien a remplir tant que la
-      // compagnie n'a pas dit en employer.
-      const toute = dedans.every((c) => c.si_permanents);
+      // La section dont chaque case est rangée dans une pièce (`piece`) se replie
+      // quand le moteur n'en montre aucune case (`montres`, `montrerBlocsPermanents`).
+      const toute = dedans.every((c) => !!c.piece);
       if ((options || {}).avance) {
-        // Ce qui vaut le cas ordinaire n'ouvre pas le tiroir : l'Urssaf du
-        // code postal, Audiens.
-        // code postal, Audiens ; pour un salarie, le matricule et le reste
-        // de ce qui est toujours rempli (ORDINAIRE).
-        const ecart = dedans.some((c) => {
-          const v = fiche.donnees[c.cle];
-          return !caches.includes(c.cle) && v !== null && v !== undefined
-            && v !== "" && v !== false && !(ORDINAIRE[c.cle] || (() => false))(v);
-        });
+        // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
+        const ecarts = new Set(fiche.ecarts || []);
+        const ecart = dedans.some((c) => ecarts.has(c.cle));
         return `<details class="bloc avance"${ecart ? " open" : ""}>
           <summary>${echapper(titre)}</summary>
           ${(options || {}).dfs ? DFS_HTML() : ""}
@@ -356,33 +356,18 @@ function dessinerFormulaire(fiche) {
       const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML()
         : opt.atmp ? ATMP_HTML() : "";
       const permanents = toute || opt.sante;
-      // LE BLOC DU SALARIÉ AU MOIS NE S'OUVRE QU'À LUI. Dans une
-      // compagnie qui emploie aussi des permanents, la fiche d'une comédienne
-      // au cachet déroulait sa complémentaire santé et sa prévoyance. Replié
-      // pour qui n'a jamais eu de contrat au mois — sauf s'il y a déjà une
-      // valeur : rien de saisi ne devient invisible.
-      if (opt.sante && avecPermanents && FICHE_ACTIVE === "salarie") {
-        // Au mois : le moteur le dit (`salaries_au_mois`) — ou la saisie en cours
-        // l'engage déjà au mois, pas encore enregistrée parce que sa santé manque
-        // (le refus ne doit pas envoyer sur un tiroir replié).
-        let enCours = false;
-        try {
-          enCours = engagementsALEcran().some((x) => x.salarie === fiche.cle
-            && natureDe(x.nature).mensuelle);
-        } catch (e) { enCours = false; }
-        const auMois = ((ETAT.configuration || {}).salaries_au_mois || []).includes(fiche.cle) || enCours;
-        const rempli = dedans.some((c) => {
-          const v = fiche.donnees[c.cle];
-          return v !== null && v !== undefined && v !== "";
-        }) || !!fiche.donnees.sante_svp;
-        return `<details class="bloc avance" data-bloc-permanents="1"${auMois || rempli ? " open" : ""}>
-          <summary>${echapper(titre)}${auMois ? "" : ` <span class="discret">— payé au mois</span>`}</summary>
+      // LE TIROIR DU SALARIÉ AU MOIS : ouvert quand le moteur dit sa pièce ouverte
+      // (`pieces_ouvertes` de la fiche, puis de la route `permanents`) ; la page
+      // n'en décide rien.
+      if (opt.sante && FICHE_ACTIVE === "salarie") {
+        const ouverte = (fiche.pieces_ouvertes || []).includes("permanent");
+        return `<details class="bloc avance" data-bloc-permanents="1" data-piece="permanent"${ouverte ? " open" : ""}>
+          <summary>${echapper(titre)}</summary>
           ${entete}
           <div class="champs">${dedansHtml}</div>
         </details>`;
       }
-      return `<section class="bloc"${permanents && !avecPermanents ? ' hidden' : ''}${
-          permanents ? ' data-bloc-permanents="1"' : ''}>
+      return `<section class="bloc"${permanents ? ' data-bloc-permanents="1"' : ''}>
         ${titre ? `<h3>${echapper(titre)}</h3>` : ""}
         ${entete}
         <div class="champs">${dedansHtml}</div>
@@ -777,31 +762,22 @@ function brancherFichesAttendues() {
   });
 }
 
-/** LE CURSEUR DES PERMANENTS, TEL QUE L'ÉCRAN LE MONTRE EN CE MOMENT.
- * C'est la réponse du moteur : celle de la
- *  configuration enregistrée (`ETAT.configuration.permanents`), puis, la case
- *  à peine cochée ou décochée, celle de la route `permanents` sur la fiche en
- *  cours. La page ne le déduit jamais elle-même. */
-let PERMANENTS_A_L_ECRAN = false;
-
-/** LES BLOCS DES PERMANENTS (une section dont toutes les cases ne valent que pour eux, la santé d'un salarié) suivent
- *  la réponse du moteur (`PERMANENTS_A_L_ECRAN`), sinon leur titre resterait seul au-dessus du vide. */
+/** LES BLOCS DES PERMANENTS (une section dont toutes les cases ne valent que pour eux, la santé d'un salarié) se
+ *  replient quand le moteur n'en montre aucune case (`montres`) : un titre ne reste pas seul au-dessus du vide. */
 function montrerBlocsPermanents() {
-  const oui = PERMANENTS_A_L_ECRAN;
-  document.querySelectorAll("#config-formulaire [data-bloc-permanents]").forEach((s) => { s.hidden = !oui; });
-  const sante = document.getElementById("config-sante");
-  if (sante) sante.hidden = !oui;
+  document.querySelectorAll("#config-formulaire [data-bloc-permanents]").forEach((s) => {
+    s.hidden = ![...s.querySelectorAll("[data-montre]")].some((c) => !c.hidden);
+  });
 }
 
 function brancherPermanents() {
-  PERMANENTS_A_L_ECRAN = !!(ETAT.configuration || {}).permanents;
   montrerBlocsPermanents();
 }
 
 /** CE QUE LA FICHE MONTRE SUIT LA SAISIE, tout de suite, sans attendre l'enregistrement : à chaque changement, le
- *  moteur dit les cases à l'écran et si la compagnie emploie des permanents (route `permanents`, `montres`) ; chaque
- *  case (`data-montre`) se montre ou se replie selon ce qu'il nomme. La page n'en décide rien. Le déroulant « Nature »
- *  d'un engagement, lui, suit à l'enregistrement : il vient du serveur. */
+ *  moteur dit les cases à l'écran (route `permanents`, `montres` ; pour un salarié enregistré, avec sa clé : les cases
+ *  d'un permanent qui lui est dû) ; chaque case (`data-montre`) se montre ou se replie selon ce qu'il nomme. La page
+ *  n'en décide rien. Le déroulant « Nature » d'un engagement vient de la route du mois. */
 function brancherConditions() {
   const form = document.getElementById("config-formulaire");
   if (!form) return;
@@ -809,11 +785,14 @@ function brancherConditions() {
   const appliquer = async () => {
     const n = ++demande;
     let r;
-    try { r = await api("permanents", { nom: FICHE_ACTIVE, donnees: lireFormulaire() }); } catch (e) { dire(e.message, "erreur"); return; }
+    const charge = { nom: FICHE_ACTIVE, donnees: lireFormulaire() };
+    if (FICHE_ACTIVE === "salarie" && FICHE_COURANTE && FICHE_COURANTE.cle) charge.cle = FICHE_COURANTE.cle;
+    try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== demande || !form.isConnected) return;
-    PERMANENTS_A_L_ECRAN = !!r.permanents;
     const montres = new Set(r.montres || []);
     form.querySelectorAll("[data-montre]").forEach((el) => { el.hidden = !montres.has(el.dataset.montre); });
+    const ouvertes = new Set(r.pieces_ouvertes || []);
+    form.querySelectorAll("details[data-piece]").forEach((el) => { el.open = ouvertes.has(el.dataset.piece); });
     montrerBlocsPermanents();
   };
   form.addEventListener("change", appliquer);

@@ -34,9 +34,9 @@
    sont pas des imprévus : ils restent dans la saisie du mois.
 
    RIEN NE SE DÉCIDE ICI (règle 2) : le moteur dit ce que chaque fait ouvre
-   (`imprevus` : `ij_attendues`, `jours_deja_indemnises_attendus`,
-   `cachets`, `obligations` ; `arret-obligations` pour un arrêt pas encore
-   écrit), et la page ne montre un champ que parce qu'il le dit. */
+   (`imprevus` : ses `gestes`, `a_dire`, `cachets`, `obligations` ;
+   `arret-obligations` pour un arrêt pas encore écrit), et la page ne montre
+   un bouton ou un champ que parce qu'il le dit. */
 
 let IMPREVUS = null;        // la dernière lecture `imprevus` du mois affiché
 let FINS = null;            // la dernière lecture `fins-de-contrat` du mois affiché
@@ -363,7 +363,7 @@ function peindreImprevusDeLaCarte(div, liste) {
     return `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}</span></span>
-        <span class="imprevu-gestes">${gestesImprevu(i, MOIS_AFFICHE)}</span>
+        <span class="imprevu-gestes">${gestesImprevu(i)}</span>
         ${jours.length ? `<div class="imprevu-jours">${echapper(i.paye_pendant)}
           ${jours.map((c) => (c.jours || []).map((j) => `${echapper(j.phrase)}
             ${validee ? "" : `<button class="lien" data-retirer="${echapper(j.iso)}" data-rubrique="${echapper(c.rubrique)}">retirer ce jour</button>`}`).join(" · ")).join(" · ")}
@@ -373,7 +373,7 @@ function peindreImprevusDeLaCarte(div, liste) {
   }).join("");
   liste.forEach((i, k) => {
     const r = cible.querySelector(`[data-imprevu="${k}"]`);
-    brancherGestesImprevu(r, i, MOIS_AFFICHE, rafraichirImprevus);
+    brancherGestesImprevu(r, i, rafraichirImprevus);
     r.querySelectorAll("[data-retirer]").forEach((b) => {
       b.onclick = async () => {
         if (!retirerJour(div, b.dataset.rubrique, b.dataset.retirer)) {
@@ -399,41 +399,15 @@ function retirerJour(div, rubrique, iso) {
   return true;
 }
 
-/** Les gestes d'un imprévu, les mêmes sur la carte et dans le dossier du salarié. `mois` : celui du maintien proposé. */
-function gestesImprevu(i, mois) {
-  const g = [];
-  if (i.genre === "arret") {
-    // Le moteur dit ce que l'arrêt ouvre : en cours, il se prolonge ou se reprend plus tôt ; une reprise saisie se
-    // corrige tant que son signalement n'est pas parti. Une reprise à la date prévue ne se saisit pas : la DSN la porte.
-    if (i.peut_prolonger) g.push(`<button class="lien" data-geste="prolonger">Prolonger l'arrêt</button>`);
-    if (i.peut_reprendre_plus_tot) g.push(`<button class="lien" data-geste="reprise">Reprise plus tôt</button>`);
-    if (i.reprise_corrigeable) g.push(`<button class="lien" data-geste="reprise">Corriger la reprise</button>`);
-    if (i.ij_attendues) {
-      g.push(`<button class="lien" data-geste="indemnites">Indemnités journalières${i.ij_brute != null ? "" : "…"}</button>`);
-    }
-    if (!i.signale && !(i.reporte_par || []).length) g.push(`<button class="lien" data-geste="retirer">Retirer</button>`);
-  } else {
-    g.push(`<button class="lien" data-geste="fin">Changer la fin</button>`);
-    if (!(i.reporte_par || []).length) g.push(`<button class="lien" data-geste="retirer">Retirer</button>`);
-  }
-  return g.join("");
+/** Les gestes d'un imprévu, les mêmes sur la carte et dans le dossier du salarié : ceux que le moteur rend (`gestes`),
+ *  dessinés et branchés depuis la fiche de leur route (`js/avance.js`). */
+function gestesImprevu(i) {
+  return boutonsDesGestes(i.gestes);
 }
 
-function brancherGestesImprevu(r, i, mois, apres) {
-  const b = (g) => r.querySelector(`.imprevu-gestes [data-geste="${g}"]`);
-  if (b("reprise")) b("reprise").onclick = () => boiteReprise(i, apres);
-  if (b("prolonger")) b("prolonger").onclick = () => boiteProlonger(i, apres);
-  if (b("indemnites")) b("indemnites").onclick = () => boiteIndemnites(i, apres);
-  if (b("fin")) b("fin").onclick = () => boiteFinAbsence(i, apres);
-  if (b("retirer")) b("retirer").onclick = async () => {
-    try {
-      const r = i.genre === "arret"
-        ? await api("arret-oublier", { salarie: i.salarie, dernier_jour: i.dernier_jour_travaille })
-        : await api("suspension-oublier", { salarie: i.salarie, debut: i.debut });
-      dire(r.phrase);
-      await apres();
-    } catch (e) { dire(e.message, "erreur"); }
-  };
+function brancherGestesImprevu(r, i, apres) {
+  brancherLesGestes(r.querySelector(".imprevu-gestes"), i.gestes || [],
+    { titre: nomDuSalarie(i.salarie), dit: [i.quoi, i.periode].filter(Boolean).join(", ") }, apres);
 }
 
 /* ------------------------------------------------ le contrat d'un imprévu
@@ -665,44 +639,17 @@ async function boiteAbsence(ou) {
 }
 
 /* ------------------------------------- ce que l'imprévu écrit appelle encore
-   Le moteur le dit sur l'imprévu qu'il vient d'écrire : ses indemnités
-   journalières (`ij_attendues` : l'arrêt ouvre le maintien de salaire, par
-   la loi ou la convention ; `ij_majoree_attendue` : un accident du travail
-   au-delà du 28e jour), les jours déjà indemnisés
-   (`jours_deja_indemnises_attendus`), et les jours que la saisie paie
-   pendant l'imprévu (`cachets`). Rien de tout ça : la boîte se ferme.
-   Sinon, une seconde page, où rien n'est obligatoire — les indemnités se
-   connaissent au relevé de la caisse, et se reprennent sous la carte. */
-
-/** Les cases des indemnités journalières d'un arrêt, et ses jours déjà indemnisés : seulement ce que le moteur attend. */
-function champsIndemnites(a, x) {
-  const montant = (id, libelle, v) => `<label class="champ-boite">${libelle}
-      <input type="number" step="0.01" min="0" id="${x}-${id}" value="${echapper(v ?? "")}"></label>`;
-  // Le montant de principe que le moteur propose (`ij_proposees`) remplit les cases tant que l'arrêt n'a pas le sien.
-  const pr = a.ij_proposees || {};
-  return `${a.ij_attendues ? `<p class="note">${aideDe("indemnites_journalieres")}</p>
-    ${pr.phrase ? `<p class="note">${echapper(pr.phrase)}</p>` : ""}
-    <div class="champs-deux">${montant("ijb", "Indemnité brute par jour", a.ij_brute ?? pr.ij_brute)}${
-      montant("ijn", "Indemnité nette par jour", a.ij_nette ?? pr.ij_nette)}</div>` : ""}
-    ${a.ij_majoree_attendue ? `<div class="champs-deux">${montant("ijbm", "Brute majorée par jour", a.ij_brute_majoree ?? pr.ij_brute_majoree)}${
-      montant("ijnm", "Nette majorée par jour", a.ij_nette_majoree ?? pr.ij_nette_majoree)}</div>` : ""}
-    ${a.jours_deja_indemnises_attendus ? `<label class="champ-boite" title="${aideDe("jours_deja_indemnises")}">Jours déjà indemnisés
-      <input type="number" step="1" min="0" id="${x}-deja" value="${echapper(a.jours_deja_indemnises ?? "")}"></label>` : ""}`;
-}
-
-/** Ce que les cases de `champsIndemnites` disent, pour `arret-indemnites` ; `null` si rien n'est saisi. */
-function chargeIndemnites(a, x) {
-  const charge = { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille };
-  // Un montant part en texte, tel que la case l'écrit (« 40.89 ») ; les jours, en nombre.
-  const lire = (id, cle, forme) => { const c = document.getElementById(`${x}-${id}`); if (c && c.value !== "") charge[cle] = forme(c.value); };
-  lire("ijb", "ij_brute", String); lire("ijn", "ij_nette", String); lire("ijbm", "ij_brute_majoree", String); lire("ijnm", "ij_nette_majoree", String);
-  lire("deja", "jours_deja_indemnises", Number);
-  return Object.keys(charge).length > 2 ? charge : null;
-}
+   Le moteur le dit sur l'imprévu qu'il vient d'écrire : ce qu'un arrêt
+   appelle encore (`a_dire` : le geste de ses indemnités journalières, quand
+   il ouvre le maintien de salaire), et les jours que la saisie paie pendant
+   l'imprévu (`cachets`). Rien de tout ça : la boîte se ferme. Sinon, une
+   seconde page, où rien n'est obligatoire — les indemnités se connaissent au
+   relevé de la caisse, et se reprennent sous la carte. */
 
 async function etapeSuite(i, p, phrase) {
   const jours = (i.cachets || []);
-  if (!i.ij_attendues && !i.jours_deja_indemnises_attendus && !jours.length) {
+  const g = i.a_dire;
+  if (!g && !jours.length) {
     fermerBoite();
     dire(phrase);
     await p.apres();
@@ -713,7 +660,7 @@ async function etapeSuite(i, p, phrase) {
   ouvrirBoite(`
     <p>${echapper(phrase)}</p>
     <h3>Ce qu'il appelle encore</h3>
-    ${champsIndemnites(i, "su")}
+    ${g ? `<div id="su-geste">${casesDuGeste(g)}</div>` : ""}
     ${jours.length ? `<div class="champ-boite">${aideDe("jours_payes")}
       <div class="liste-jours">${jours.map((c, k) => (c.jours || []).map((j) => ici(c)
         ? `<label class="coche"><input type="checkbox" data-jour="${k}" value="${echapper(j.iso)}">
@@ -728,9 +675,9 @@ async function etapeSuite(i, p, phrase) {
   const finir = async () => { fermerBoite(); await p.apres(); };
   document.getElementById("su-plus-tard").onclick = finir;
   document.getElementById("su-ok").onclick = async () => {
-    const charge = chargeIndemnites(i, "su");
+    const charge = g && chargeDuGeste(document.getElementById("su-geste"), g);
     if (charge) {
-      try { await api("arret-indemnites", charge); }
+      try { await api(g.route, charge); }
       catch (e) { dire(e.message, "erreur"); return; }
     }
     let retires = 0;
@@ -743,106 +690,6 @@ async function etapeSuite(i, p, phrase) {
   };
 }
 
-/* ------------------------------------------------ reprendre, maintenir, finir */
-
-/** La reprise plus tôt que prévu. Elle ne se signale que si elle est ANTICIPÉE : le moteur fait alors naître le
- *  signalement de reprise, qui paraît dans ce qui est dû. Une reprise déjà saisie se corrige ici ; vide, elle s'efface. */
-async function boiteReprise(a, apres) {
-  let n;
-  try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
-  const motifs = n.motifs_reprise || [];
-  ouvrirBoite(`
-    <h3>${echapper(a.reprise_titre)} — ${echapper(nomDuSalarie(a.salarie))}</h3>
-    <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}</p>
-    <label class="champ-boite">Premier jour retravaillé
-      <input type="date" id="re-date" value="${echapper(a.reprise || "")}"></label>
-    <label class="champ-boite">Comment
-      <select id="re-motif">${motifs.map((m) => `<option value="${echapper(m.code)}"${
-        m.code === a.reprise_motif ? " selected" : ""}>${echapper(m.libelle)}</option>`).join("")}</select></label>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="re-ok">Enregistrer</button>
-    </div>`);
-  document.getElementById("re-ok").onclick = async () => {
-    // Un jour vide efface la reprise, et son motif avec elle : l'un ne va pas sans l'autre.
-    const jour = document.getElementById("re-date").value || null;
-    let r;
-    try {
-      r = await api("arret-reprise", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille,
-        reprise: jour, motif_reprise: jour && (document.getElementById("re-motif").value || null) });
-    } catch (e) { dire(e.message, "erreur"); return; }
-    fermerBoite();
-    dire(r.phrase);
-    await apres();
-  };
-}
-
-/** L'avis de prolongation : la nouvelle fin prescrite, et rien d'autre. Le moteur met l'arrêt à jour et dit ce qui en
- *  découle. */
-function boiteProlonger(a, apres) {
-  ouvrirBoite(`
-    <h3>Prolonger l'arrêt — ${echapper(nomDuSalarie(a.salarie))}</h3>
-    <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}</p>
-    <label class="champ-boite" title="${aideDe("prolongation")}">Prolongé jusqu'au
-      <input type="date" id="pr-fin" value=""></label>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="pr-ok">Prolonger</button>
-    </div>`);
-  document.getElementById("pr-ok").onclick = async () => {
-    let r;
-    try {
-      r = await api("arret-prolonger", { salarie: a.salarie, dernier_jour: a.dernier_jour_travaille,
-        fin: document.getElementById("pr-fin").value });
-    } catch (e) { dire(e.message, "erreur"); return; }
-    dire(r.phrase);
-    fermerBoite();
-    await apres();
-  };
-}
-
-
-/** Les indemnités journalières d'un arrêt, par jour, brutes et nettes, telles que le relevé de la caisse les écrit ; et,
- *  seulement si le moteur les attend, celles d'un accident du travail au-delà du 28e jour et les jours déjà indemnisés. */
-function boiteIndemnites(a, apres) {
-  ouvrirBoite(`
-    <h3>Indemnités journalières — ${echapper(nomDuSalarie(a.salarie))}</h3>
-    <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}</p>
-    ${champsIndemnites(a, "ma")}
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="ma-ok">Enregistrer</button>
-    </div>`);
-  document.getElementById("ma-ok").onclick = async () => {
-    const charge = chargeIndemnites(a, "ma");
-    if (!charge) { fermerBoite(); return; }
-    let r;
-    try { r = await api("arret-indemnites", charge); }
-    catch (e) { dire(e.message, "erreur"); return; }
-    fermerBoite();
-    dire(r.phrase);
-    await apres();
-  };
-}
-
-function boiteFinAbsence(s, apres) {
-  ouvrirBoite(`
-    <h3>${echapper(s.motif_libelle)} — ${echapper(nomDuSalarie(s.salarie))}</h3>
-    <p class="discret">${echapper(s.depuis_dit || "")}</p>
-    <label class="champ-boite">Jusqu'au <input type="date" id="af-fin" value="${echapper(s.fin || "")}"></label>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="af-ok">Enregistrer</button>
-    </div>`);
-  document.getElementById("af-ok").onclick = async () => {
-    let r;
-    try { r = await api("suspension-modifier", { salarie: s.salarie, debut: s.debut, fin: document.getElementById("af-fin").value }); }
-    catch (e) { dire(e.message, "erreur"); return; }
-    fermerBoite();
-    dire(r.phrase);
-    await apres();
-  };
-}
 
 /* ------------------------------------------------------ les actes dus */
 
@@ -1024,10 +871,10 @@ async function dessinerImprevusDuSalarie(cle) {
     ${liste.map((i, k) => `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}${i.contrat_dit ? ` · ${echapper(i.contrat_dit)}` : ""}</span></span>
-        <span class="imprevu-gestes">${gestesImprevu(i, null)}</span>
+        <span class="imprevu-gestes">${gestesImprevu(i)}</span>
         <div class="imprevu-parti">${ceQuiEnEstParti(i)}</div>
       </div>`).join("")}`;
-  liste.forEach((i, k) => brancherGestesImprevu(cible.querySelector(`[data-imprevu="${k}"]`), i, null, apres));
+  liste.forEach((i, k) => brancherGestesImprevu(cible.querySelector(`[data-imprevu="${k}"]`), i, apres));
   const porte = document.getElementById("fiche-imprevu-porte");
   porte.onclick = (ev) => { ev.stopPropagation(); menuImprevu(porte, { salarie: cle, apres }); };
 }

@@ -17,8 +17,8 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
-use droit::contexte::Contexte;
-use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee};
+use droit::contexte::{Contexte, IdSalarie};
+use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -32,7 +32,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, Forcer, SaisieDeFiche, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -53,13 +53,13 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les cases que montre la fiche en cours de saisie.",
         charge: &[
             NOM_FICHE,
+            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "pour un salarié déjà enregistré, sa clé : les cases d'un permanent qui lui est dû, et celles que le métier d'un de ses engagements demande, se montrent ; absente sinon", avance: false },
             Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche en cours de saisie ; pour un salarié ou un spectacle, l'entreprise est celle de la compagnie", avance: false },
         ],
         exemple: r#"{"nom":"entreprise","donnees":{}}"#,
-        rend: "permanents (vrai ou faux), montres (les cases que la fiche montre)",
+        rend: "montres (les cases que la fiche montre au jour de l'écran)",
         refus: &[FORME],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -74,7 +74,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -86,7 +85,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "anomalies (case, gravité, message), declare (ce que la DSN dirait), suggestions",
         refus: &[MANQUE, FORME, OPERATION],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -106,7 +104,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 120,
         ecran: ECRAN,
     },
@@ -118,7 +115,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: ETAT_REND,
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -134,7 +130,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "code (celui de la demande), adresse",
         refus: &[PREUVE, BOITE, OPERATION],
         acte: Acte::Engage,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -146,7 +141,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "attendues, recues (les fiches écrites), incidents",
         refus: &[BOITE, OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -158,7 +152,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "adresse",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: false,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -170,7 +163,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
         acte: Acte::Lit,
-        avance: false,
         phrase: 60,
         ecran: ECRAN,
     },
@@ -185,7 +177,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "annee, valeur et d'où elle vient (l'Urssaf, la compagnie, la première embauche), a_dire (les années qui manquent pour payer cette année), phrase",
         refus: &[OPERATION, FORME, ILLISIBLE],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 300,
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire ou poser l'effectif")),
     },
@@ -197,7 +188,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
         acte: Acte::Lit,
-        avance: false,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Fiches),
     },
@@ -209,9 +199,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "sauvegarde (la dernière : quand, ce qui est parti), erreur (ce qui l'a empêchée) ; ne refuse jamais",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Fiches),
+        ecran: Ecran::DessineAvance(Place::Fiches),
     },
     Fiche {
         route: Route::CompagnieSupprimer,
@@ -224,9 +213,8 @@ pub const ROUTES: &[Fiche] = &[
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Fiches),
+        ecran: Ecran::DessineAvance(Place::Fiches),
     },
 ];
 /// Une route de ce module, branchee sur l'enveloppe.
@@ -433,40 +421,160 @@ struct EffectifDit {
 
 // ------------------------------------------------------------------ permanents
 
-/// Ce que rend `permanents` : la phrase, le curseur des permanents, et les cases que la fiche montre.
+/// Ce que rend `permanents` : la phrase, les cases que la fiche montre et les pieces que ses engagements ouvrent.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
     phrase: &'static str,
-    permanents: bool,
     montres: Vec<String>,
+    pieces_ouvertes: Vec<Piece>,
 }
 
-/// `permanents` : rend le curseur (`contexte::emploie_des_permanents`) : la page montre ou replie ce qui ne vaut que
-/// pour les permanents selon cette reponse, et ne le decide pas elle-meme quand on coche la case.
-fn permanents(ctx: &Contexte, charge: SaisieDeFiche) -> R<Permanents> {
-    let (nom, donnees) = charge.ouverte();
+/// `permanents` : les cases que la fiche en cours de saisie montre au jour de l'ecran (la configuration se montre au
+/// jour : `ouverture::configuration`) ; la page montre ou replie chaque case selon cette reponse, et ne decide rien
+/// quand on coche ou decoche la case des permanents.
+fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
+    let (nom, cle, donnees) = charge.ouverte();
     let entreprise = if nom == "entreprise" { donnees.clone() } else { Saisie::de_la_fiche("entreprise", &ctx.entreprise)? };
-    let p = permanents_de(&entreprise);
+    let jour = ctx.aujourdhui;
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(plain)?;
+    let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?;
     Ok(Permanents {
-        phrase: if p { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
-        permanents: p,
-        montres: montres(ctx, nom, &donnees, &entreprise)?,
+        phrase: if permanents_de(&entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
+        montres: cases,
+        pieces_ouvertes,
     })
 }
 
-/// Le curseur des permanents (`contexte::emploie_des_permanents`) de la fiche entreprise telle que l'ecran la saisit.
+/// CE QUE LA FICHE MONTRE (`montres`) : ses cases, et les pieces que ses engagements ouvrent, entieres (celle d'un
+/// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
+/// d'une piece que sur elles.
+pub(crate) struct Montres {
+    pub(crate) cases: Vec<String>,
+    pub(crate) pieces_ouvertes: Vec<Piece>,
+}
+
+/// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
 fn permanents_de(entreprise: &Saisie) -> bool {
     entreprise.case("emploie_des_permanents") == Some(&champs::Valeur::OuiNon(true))
 }
 
-/// CE QUE LA FICHE `nom` MONTRE pour `donnees` : chaque case que `champs::Champ::montre` dit a l'ecran, d'apres la
-/// fiche, l'entreprise `entreprise` (ses permanents, ses conditions) et les etablissements de la compagnie. La page ne
-/// montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, donnees: &Saisie, entreprise: &Saisie) -> R<Vec<String>> {
-    let permanents = permanents_de(entreprise);
+/// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
+/// `champs::Champ::montre` dit a l'ecran, d'apres la fiche, l'entreprise `entreprise` (ses conditions), les
+/// etablissements de la compagnie, et la piece de la case (`droit::fiche::Piece`) : elle ne se montre que si la fiche
+/// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par la nature d'un engagement paye au mois : sur la
+/// fiche d'un salarie, un des siens (`engagement::permanents::cle_du_salarie`) ; sur celle de l'entreprise, quand elle
+/// dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose) ou qu'un engagement paye au
+/// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
+/// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
+/// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
+/// page ne montre que ces cases-la.
+pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
+    let au_mois = match (nom, cle) {
+        ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
+        ("salarie", Some(c)) => engagement::permanents::cle_du_salarie(ctx, c).map_err(plain)?.is_some(),
+        _ => false,
+    };
+    let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
+    let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
+    let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
+    let ouverte = |piece: Piece, case: &str| match piece {
+        Piece::Permanent => au_mois,
+        Piece::EmploieDesPermanents => avec_permanents,
+        Piece::Metier | Piece::MetierAuMois => du_metier.contains(case),
+        Piece::Cse => cse,
+        Piece::Casc => casc,
+    };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
-    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, permanents, etablissements)).map(|c| c.cle.clone()).collect())
+    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle.clone()).collect();
+    // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
+    let metier = if nom == "entreprise" { Piece::MetierAuMois } else { Piece::Metier };
+    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
+        .into_iter()
+        .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
+        .collect();
+    Ok(Montres { cases, pieces_ouvertes })
+}
+
+/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::Effectif`) : la
+/// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
+/// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
+/// de la CASC-SVP quand la compagnie compte cinquante salaries et que la fiche `entreprise`, telle qu'elle est saisie, dit
+/// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`). La saisie revient dans la fiche par sa forme, case par case
+/// (`reporter`, sans nommer aucune case) : la cle se tire de la fiche typee. Un effectif inconnu n'ouvre rien : c'est lui
+/// que « Pour démarrer » demande (`Effectif::a_dire`).
+fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> {
+    let (jour, eff) = (ctx.aujourdhui, ctx.effectif().map_err(plain)?);
+    let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
+    let Some(cse) = cse else { return Ok((false, false)) };
+    let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour).map_err(plain)?;
+    let Some(cinquante) = cinquante else { return Ok((lue, false)) };
+    let mut saisie = ctx.entreprise.clone();
+    reporter::<FicheEntrepriseDatee>(&mut saisie, &Saisie::de_la_fiche("entreprise", &ctx.entreprise)?, entreprise)?;
+    Ok((lue, saisie.exemption_casc(&cinquante, &cse).is_some()))
+}
+
+/// LES CASES DU METIER (`droit::fiche::Piece::Metier`) QUE LA FICHE `nom` MONTRE : celles que la grille du metier de
+/// chaque engagement actif lit. Sur la fiche du salarie `cle`, les cases que son metier demande
+/// (`engagement::minima::cases_du_metier`), au premier jour de chacun de ses engagements : le metier de la carte ou
+/// d'un avenant, sinon l'emploi de la fiche en cours de saisie (`donnees`), comme la paie le lit. Sur la fiche de
+/// l'entreprise, la jauge de la salle quand un engagement paye au mois (`paye_au_mois`) est celui d'un technicien de
+/// l'annexe I, que sa prime
+/// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
+/// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
+fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
+    let mut cases = std::collections::BTreeSet::new();
+    let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
+    let de_la_fiche = dit(donnees.mot("code_emploi_ft").as_deref());
+    // (metier, statut dit par la carte, jour, salarie)
+    let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
+    for f in engagement::stock::fichiers(&ctx.racine) {
+        let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, &f).map_err(plain)? else { continue };
+        for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
+            let s = &e.saisie;
+            let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
+            let du_salarie = match (nom, cle) {
+                ("salarie", Some(c)) if c == salarie => de_la_fiche.clone(),
+                ("entreprise", _) if paye_au_mois(s)? => dit(ctx.salarie(salarie).map_err(plain)?.code_emploi_ft.portee()),
+                _ => continue,
+            };
+            // La carte au premier jour de son mois, chaque avenant au jour ou il vaut.
+            let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
+            for (t, jour) in termes {
+                if let Some(code) = dit(t.code_emploi_ft.as_deref()).or_else(|| dit(t.metier.as_deref())).or_else(|| du_salarie.clone()) {
+                    metiers.insert((code, dit(t.statut.as_deref()), jour.clone(), salarie.to_string()));
+                }
+            }
+        }
+    }
+    for (code, statut, jour, salarie) in &metiers {
+        if nom == "salarie" {
+            cases.extend(engagement::minima::cases_du_metier(ctx, code, jour).map_err(plain)?);
+            continue;
+        }
+        let ent = &ctx.entreprise;
+        let statut = match statut {
+            Some(s) => Some(s.clone()),
+            None => ctx.salarie(salarie).map_err(plain)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
+        };
+        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref()).map_err(plain)? {
+            cases.insert("jauge_annexe_1".to_string());
+        }
+    }
+    Ok(cases)
+}
+
+/// L'ENGAGEMENT `s` EST-IL PAYE AU MOIS, par sa carte ou un avenant (`droit::natures::Nature::au_mois`) : seul son calcul
+/// lit la jauge de la salle de l'annexe I (`droit::fiche::Piece::MetierAuMois`).
+fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
+    for t in std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes)) {
+        if let Some(n) = t.nature.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            if droit::natures::nature(n).map_err(plain)?.au_mois().is_some() {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 // ------------------------------------------------------- taxe-sur-les-salaires-regime

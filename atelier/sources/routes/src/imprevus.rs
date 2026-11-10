@@ -9,9 +9,10 @@
 //! `Refuse` (la page les montre tels quels) ; un refus n'ecrit rien.
 //!
 //! CE QUI S'Y SAISIT, ET CE QUI L'APPELLE (rien de remplissable s'il n'y a pas a le remplir). Le moteur dit, sur chaque
-//! imprevu resume (`resume`), ce que ses faits ouvrent : `ij_attendues` (l'arret ouvre le maintien de salaire, par la loi
-//! ou la convention : ses indemnites journalieres se disent, `arret-indemnites`), `ij_majoree_attendue` et
-//! `jours_deja_indemnises_attendus`. La page n'ouvre que cela.
+//! imprevu resume (`resume`), ce que ses faits ouvrent : ses `gestes` (`GesteDImprevu`), ceux seulement que l'imprevu
+//! ouvre, chacun sa route, sa charge, son libelle et les cases que sa boite fait saisir ; et `a_dire`, ce qu'un arret
+//! ecrit appelle encore (ses indemnites journalieres, quand il ouvre le maintien de salaire, par la loi ou la
+//! convention). La page les dessine et les branche, sans choisir ni nommer de route.
 //!
 //! LES FORMES. Chaque charge est une structure lue une fois a la porte (`enveloppe::Charge::lire`) ; chaque reponse, une
 //! structure qui porte sa phrase. Ce que ce module lit d'un autre domaine se lit en sa forme : l'imprevu ecrit
@@ -51,28 +52,44 @@ const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d
 const UN_ARRET: &str = r#"{"salarie":"FULLER","dernier_jour":"2026-11-27"}"#;
 
 /// Une fiche de ce module : `rend` et les refus que toutes partagent.
-const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, acte: Acte, avance: bool) -> Fiche {
-    Fiche { route, geste, charge, exemple, rend, refus: &[OPERATION, MANQUE, ILLISIBLE, FORME], acte, avance, phrase: 0, ecran: ECRAN }
+const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, acte: Acte, ecran: Ecran) -> Fiche {
+    Fiche { route, geste, charge, exemple, rend, refus: &[OPERATION, MANQUE, ILLISIBLE, FORME], acte, phrase: 0, ecran }
 }
 
 const ORDRE: Champ = Champ { nom: "ordre", libelle: Affiche::new("Numéro d'ordre"), forme: Forme::Nombre, sens: "son numéro d'ordre ; sinon le suivant de ceux déjà partis", avance: true };
 const REMPLACE: Champ = Champ { nom: "remplace", libelle: Affiche::new("Remplace"), forme: Forme::Texte, sens: "le signalement qu'il remplace", avance: true };
 const TEST: Champ = Champ { nom: "test", libelle: Affiche::new("Fichier d'essai"), forme: Forme::OuiNon, sens: "vrai : un fichier d'essai, marqué comme tel", avance: true };
 
-/// Ou ces routes se voient a l'ecran (une place par module).
+/// Ou ces routes se voient a l'ecran (une place par module) : sur le chemin simple, ou hors de lui.
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
+const AVANCE: Ecran = Ecran::DessineAvance(Place::Paie);
+/// Les routes qu'un imprevu offre en gestes (`GesteDImprevu`) : la page les atteint par le geste, dans une boite tiree
+/// de leur fiche.
+const GESTE: Ecran = Ecran::Geste(Place::Paie);
+const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
+
+// Les cases que la boite d'un geste fait saisir : celles de la fiche de sa route, nommees par le geste (`cases`).
+const FIN_PRESCRITE: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false };
+const REPRISE: Champ = Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false };
+const MOTIF_REPRISE: Champ = Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true };
+const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), en texte (« 40.89 ») ; absente, elle ne change pas", avance: false };
+const IJ_NETTE: Champ = Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false };
+const IJ_BRUTE_MAJOREE: Champ = Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true };
+const IJ_NETTE_MAJOREE: Champ = Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true };
+const JOURS_DEJA_INDEMNISES: Champ = Champ { nom: "jours_deja_indemnises", libelle: Affiche::new("Jours déjà indemnisés"), forme: Forme::Nombre, sens: "les jours indemnisés dans les douze mois qu'aucun arrêt saisi ne porte", avance: true };
+const NOUVELLE_FIN: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin"), forme: Forme::Date, sens: "sa nouvelle fin", avance: false };
 
 /// Les routes de ce module, et leurs fiches, dans l'ordre d'un arrêt : il s'enregistre, se suit, se signale, s'oublie.
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
         &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "à la place du mois : les imprévus de ce salarié", avance: true }],
-        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures", Acte::Lit, false),
-    Fiche { ecran: Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts")), ..fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &[], "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, true) },
+        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures", Acte::Lit, ECRAN),
+    fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &[], "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &[MOIS],
-        r#"{"mois":"2026-11"}"#, "fins : chacune avec ce qui est fait et ce qui manque", Acte::Lit, false),
+        r#"{"mois":"2026-11"}"#, "fins : chacune avec ce qui est fait et ce qui manque", Acte::Lit, ECRAN),
     fiche(Route::ArretContrats, "Lire les contrats qu'un arrêt suspendrait à ce jour.",
         &[SALARIE, Champ { nom: "jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false }],
-        r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, false),
+        r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
     Fiche { phrase: 400, ..fiche(Route::ArretEnregistrer, "Enregistrer un arrêt de travail.",
         &[
             SALARIE, DERNIER_JOUR,
@@ -86,42 +103,37 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "note", libelle: Affiche::new("Note"), forme: Forme::Texte, sens: "une note libre", avance: true },
         ],
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","debut":"2026-11-30","fin":"2026-11-30","motif":"01"}"#,
-        "arret (l'arrêt résumé), phrase", Acte::Ecrit, false) },
+        "arret (l'arrêt résumé), phrase", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 700, ..fiche(Route::ArretProlonger, "Prolonger un arrêt : sa nouvelle fin.",
-        &[SALARIE, DERNIER_JOUR, Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false }],
+        &[SALARIE, DERNIER_JOUR, FIN_PRESCRITE],
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","fin":"2026-12-04"}"#,
-        "arret (l'arrêt résumé), phrase", Acte::Ecrit, false) },
+        "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::ArretReprise, "Poser ou effacer la reprise d'un arrêt.",
-        &[SALARIE, DERNIER_JOUR, Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false }, Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true }],
-        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","reprise":"2026-12-03"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, false) },
+        &[SALARIE, DERNIER_JOUR, REPRISE, MOTIF_REPRISE],
+        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","reprise":"2026-12-03"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::ArretIndemnites, "Dire les indemnités journalières d'un arrêt, par jour.",
-        &[SALARIE, DERNIER_JOUR,
-            Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), en texte (« 40.89 ») ; absente, elle ne change pas", avance: false },
-            Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false },
-            Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true },
-            Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true },
-            Champ { nom: "jours_deja_indemnises", libelle: Affiche::new("Jours déjà indemnisés"), forme: Forme::Nombre, sens: "les jours indemnisés dans les douze mois qu'aucun arrêt saisi ne porte", avance: true }],
-        r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, false) },
+        &[SALARIE, DERNIER_JOUR, IJ_BRUTE, IJ_NETTE, IJ_BRUTE_MAJOREE, IJ_NETTE_MAJOREE, JOURS_DEJA_INDEMNISES],
+        r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 600, ..fiche(Route::ArretSignaler, "Fabriquer le signalement d'un arrêt, sans le déposer.",
         &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Texte, sens: "04 l'arrêt, ou 05 la reprise", avance: false }, REMPLACE, ORDRE, TEST,
             Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
-        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, false) },
+        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &[SALARIE, DERNIER_JOUR],
-        UN_ARRET, "arret (l'arrêt retiré, résumé), phrase", Acte::Ecrit, false) },
+        UN_ARRET, "arret (l'arrêt retiré, résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionEnregistrer, "Enregistrer une absence qui suspend un contrat.",
         &[SALARIE, DEBUT, Champ { nom: "fin", libelle: Affiche::new("Dernier jour"), forme: Forme::Date, sens: "son dernier jour", avance: false }, Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::Texte, sens: "le code du motif (nomenclatures de imprevus)", avance: false }, Champ { nom: "contrat", libelle: Affiche::new("Contrat"), forme: Forme::Texte, sens: "le contrat, quand plusieurs couvrent le jour", avance: true }, Champ { nom: "note", libelle: Affiche::new("Note"), forme: Forme::Texte, sens: "une note libre", avance: true }],
-        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27","motif":"501"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, true) },
+        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27","motif":"501"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionModifier, "Changer la fin ou le motif d'une absence.",
-        &[SALARIE, DEBUT, Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin"), forme: Forme::Date, sens: "sa nouvelle fin", avance: false }, Champ { nom: "motif", libelle: Affiche::new("Nouveau motif"), forme: Forme::Texte, sens: "son nouveau motif", avance: true }],
-        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, true) },
+        &[SALARIE, DEBUT, NOUVELLE_FIN, Champ { nom: "motif", libelle: Affiche::new("Nouveau motif"), forme: Forme::Texte, sens: "son nouveau motif", avance: true }],
+        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionOublier, "Retirer une absence qui n'a pas été déclarée.", &[SALARIE, DEBUT],
-        r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, "suspension (l'absence retirée, résumée), phrase", Acte::Ecrit, true) },
+        r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, "suspension (l'absence retirée, résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
     Fiche { phrase: 600, ..fiche(Route::FinContratSignaler, "Fabriquer le signalement d'une fin de contrat, sans le déposer.",
         &[MOIS, SALARIE, REMPLACE, ORDRE, TEST, Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
-        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements", Acte::Ecrit, true) },
+        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 160, ..fiche(Route::FinContratDocuments, "Fabriquer le certificat de travail et le reçu pour solde de tout compte.",
         &[MOIS, SALARIE, Champ { nom: "le", libelle: Affiche::new("Établis le"), forme: Forme::Date, sens: "le jour où ils s'établissent ; sinon aujourd'hui", avance: true }],
-        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "phrase, certificat et recu (leurs chemins), dossier, avertissements (ce qu'il faut savoir en les remettant)", Acte::Ecrit, false) },
+        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "phrase, certificat et recu (leurs chemins), dossier, avertissements (ce qu'il faut savoir en les remettant)", Acte::Ecrit, ECRAN) },
 ];
 
 // ------------------------------------------------------------------ les charges
@@ -448,7 +460,7 @@ struct ReponsePapiers {
     certificat: String,
     recu: String,
     dossier: String,
-    avertissements: [&'static str; 3],
+    avertissements: &'static [&'static str],
 }
 
 /// Ce que chaque route de ce module rend porte sa phrase.
@@ -823,10 +835,14 @@ pub(crate) struct ArretResume {
     reprise_motif: Option<String>,
     note: Option<String>,
     saisi_le: String,
+    /// Un signalement en est parti : `etat` le dit a la page.
+    #[serde(skip)]
     pub signale: bool,
     signalement_du: bool,
     signalements: Vec<crate::obligations::EnvoiDeLArret>,
     reporte_par_dit: Vec<String>,
+    /// Les mois des DSN qui l'ont reporte : `reporte_par_dit` les dit a la page.
+    #[serde(skip)]
     reporte_par: Vec<String>,
     etat: EtatDuSignalement,
 }
@@ -855,10 +871,8 @@ impl EtatDuSignalement {
 
 /// UN ARRET TEL QUE LA PAGE LE LIT : le resume de toujours (`ArretResume`), plus `genre`, `premier_jour`, `dernier_jour`,
 /// `jours_deja_indemnises`, les indemnites par jour (`ij_brute`, `ij_nette`, `ij_brute_majoree`, `ij_nette_majoree`),
-/// `origine`, `ij_attendues` (l'arret ouvre le maintien), `ij_proposees` (le montant de principe, majore pour un accident,
-/// et sa phrase, tant que l'arret ne dit pas le sien), `ij_majoree_attendue` (un accident du travail au-dela du
-/// vingt-huitieme jour, CSS R433-3), `jours_deja_indemnises_attendus`, `cachets`, ce qu'il ouvre a la page, ses phrases
-/// (`Dit`), puis, dans les listes, ses `obligations` et ce qui en est `parti`.
+/// `origine`, `cachets`, ses `gestes` et `a_dire` (ce qu'il ouvre a la page), ses phrases (`Dit`), puis, dans les listes,
+/// ses `obligations` et ce qui en est `parti`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDArret {
     #[serde(flatten)]
@@ -872,17 +886,12 @@ pub(crate) struct ResumeDArret {
     ij_brute_majoree: Option<Chiffre>,
     ij_nette_majoree: Option<Chiffre>,
     origine: Option<droit::maintien::Origine>,
-    ij_attendues: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ij_proposees: Option<IjProposees>,
-    ij_majoree_attendue: bool,
-    jours_deja_indemnises_attendus: bool,
     cachets: Vec<Cachet>,
     prolongations: Vec<Prolongation>,
-    en_cours: bool,
-    peut_prolonger: bool,
-    peut_reprendre_plus_tot: bool,
-    reprise_corrigeable: bool,
+    gestes: Vec<GesteDImprevu>,
+    /// Ce que l'arret ecrit appelle encore : ses indemnites journalieres, quand il ouvre le maintien (le meme geste que
+    /// dans `gestes`).
+    a_dire: Option<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -939,27 +948,186 @@ pub(crate) struct ResumeDeSuspension {
     note: Option<String>,
     saisi_le: String,
     reporte_par_dit: Vec<String>,
-    reporte_par: Vec<String>,
     cachets: Vec<Cachet>,
+    gestes: Vec<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
     #[serde(skip_serializing_if = "Option::is_none")]
     parti: Option<Vec<Parti>>,
 }
 
-/// LE MONTANT DE PRINCIPE des indemnites d'un arret (`engagement::maintien::ij_de_principe`), ou la phrase qui dit ou le
-/// lire.
+/// UN GESTE D'UN IMPREVU, que la page dessine en bouton et branche : sa route, sa charge (ce qui designe l'imprevu), son
+/// libelle, et ce que sa boite fait saisir : les cases de la fiche de sa route qu'elle montre (`cases` ; aucune : le geste
+/// part tel quel), ce qu'elles montrent d'abord (`valeurs`), les choix d'une case qui se choisit (`choix`) et ce que la
+/// boite dit au-dessus (`phrases`). Le moteur ne rend que ceux que l'imprevu ouvre.
 #[derive(Debug, Clone, Serialize)]
-struct IjProposees {
+pub(crate) struct GesteDImprevu {
+    route: Route,
+    charge: Designe,
+    libelle: &'static str,
+    cases: Vec<&'static str>,
+    valeurs: ValeursDeDepart,
+    choix: ChoixDesCases,
+    phrases: Vec<String>,
+}
+
+/// Ce que les cases d'un geste montrent d'abord : ce que l'imprevu dit deja, ou ce que le moteur propose.
+#[derive(Debug, Clone, Default, Serialize)]
+struct ValeursDeDepart {
     #[serde(skip_serializing_if = "Option::is_none")]
-    ij_brute: Option<String>,
+    fin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ij_nette: Option<String>,
-    phrase: String,
+    reprise: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ij_brute_majoree: Option<String>,
+    motif_reprise: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ij_nette_majoree: Option<String>,
+    ij_brute: Option<Chiffre>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ij_nette: Option<Chiffre>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ij_brute_majoree: Option<Chiffre>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ij_nette_majoree: Option<Chiffre>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jours_deja_indemnises: Option<Chiffre>,
+}
+
+/// Les choix d'une case d'un geste qui se choisit dans une liste : le motif d'une reprise (nomenclature du bloc 60).
+#[derive(Debug, Clone, Default, Serialize)]
+struct ChoixDesCases {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    motif_reprise: Option<Vec<Choisi>>,
+}
+
+/// Un choix : le code que la charge porte, le libelle que la liste montre.
+#[derive(Debug, Clone, Serialize)]
+struct Choisi {
+    code: String,
+    libelle: String,
+}
+
+/// Ce qui designe un imprevu aux routes : un arret, son salarie et son dernier jour travaille ; une absence, son salarie
+/// et son premier jour.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum Designe {
+    Arret { salarie: String, dernier_jour: String },
+    Absence { salarie: String, debut: String },
+}
+
+// Les libelles des gestes, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const PROLONGER: Affiche = Affiche::new("Prolonger l'arrêt");
+const REPRISE_PLUS_TOT: Affiche = Affiche::new("Reprise plus tôt");
+const CORRIGER_LA_REPRISE: Affiche = Affiche::new("Corriger la reprise");
+const INDEMNITES_DITES: Affiche = Affiche::new("Indemnités journalières");
+const INDEMNITES_A_DIRE: Affiche = Affiche::new("Indemnités journalières…");
+const CHANGER_LA_FIN: Affiche = Affiche::new("Changer la fin");
+const RETIRER: Affiche = Affiche::new("Retirer");
+
+impl Designe {
+    /// Le geste, sans case a saisir : il part avec sa charge.
+    fn geste(&self, route: Route, libelle: Affiche) -> GesteDImprevu {
+        GesteDImprevu {
+            route,
+            charge: self.clone(),
+            libelle: libelle.texte(),
+            cases: Vec::new(),
+            valeurs: ValeursDeDepart::default(),
+            choix: ChoixDesCases::default(),
+            phrases: Vec::new(),
+        }
+    }
+}
+
+/// La reprise d'un arret, a saisir : son jour et son motif, ceux que l'arret dit deja.
+fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -> GesteDImprevu {
+    let motifs = n.motifs_reprise.saisissables().into_iter().map(|m| Choisi { code: m.code, libelle: m.libelle }).collect();
+    GesteDImprevu {
+        cases: vec![REPRISE.nom, MOTIF_REPRISE.nom],
+        valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif.clone(), ..ValeursDeDepart::default() },
+        choix: ChoixDesCases { motif_reprise: Some(motifs) },
+        ..d.geste(Route::ArretReprise, libelle)
+    }
+}
+
+/// LES INDEMNITES JOURNALIERES D'UN ARRET QUI OUVRE LE MAINTIEN, a dire : les cases que le moteur attend (les majorees,
+/// pour un accident du travail au-dela du vingt-huitieme jour, CSS R433-3), remplies de ce que l'arret dit, sinon du montant de principe
+/// (`engagement::maintien::ij_de_principe`), que la personne garde ou corrige ; sinon, la phrase dit ou le lire.
+fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bool) -> R<GesteDImprevu> {
+    let mut propose = ValeursDeDepart::default();
+    let mut dit = None;
+    if !a.ij_brute.as_ref().is_some_and(Chiffre::vrai) {
+        match magasin(engagement::maintien::ij_de_principe(ctx, a))? {
+            Ok(ij) => {
+                propose.ij_brute = Some(Chiffre::Texte(ij.brute.to_string()));
+                propose.ij_nette = Some(Chiffre::Texte(ij.nette.to_string()));
+                propose.ij_brute_majoree = ij.majorees.map(|(b, _)| Chiffre::Texte(b.to_string()));
+                propose.ij_nette_majoree = ij.majorees.map(|(_, n)| Chiffre::Texte(n.to_string()));
+                dit = Some(ij.phrase);
+            }
+            Err(phrase) => dit = Some(phrase),
+        }
+    }
+    let mut cases = vec![IJ_BRUTE.nom, IJ_NETTE.nom];
+    if majoree {
+        cases.extend([IJ_BRUTE_MAJOREE.nom, IJ_NETTE_MAJOREE.nom]);
+    }
+    cases.push(JOURS_DEJA_INDEMNISES.nom);
+    // Des indemnites deja dites se reprennent ; pas encore dites, elles sont a dire.
+    let libelle = if a.ij_brute.is_some() { INDEMNITES_DITES } else { INDEMNITES_A_DIRE };
+    let valeurs = ValeursDeDepart {
+        ij_brute: a.ij_brute.clone().or(propose.ij_brute),
+        ij_nette: a.ij_nette.clone().or(propose.ij_nette),
+        ij_brute_majoree: a.ij_brute_majoree.clone().or(propose.ij_brute_majoree),
+        ij_nette_majoree: a.ij_nette_majoree.clone().or(propose.ij_nette_majoree),
+        jours_deja_indemnises: a.jours_deja_indemnises.clone(),
+        ..ValeursDeDepart::default()
+    };
+    let mut phrases = vec![crate::ouverture::aide("indemnites_journalieres")?.to_string()];
+    if let Some(dit) = dit {
+        phrases.push(dit);
+    }
+    phrases.push(crate::ouverture::aide("jours_deja_indemnises")?.to_string());
+    Ok(GesteDImprevu { cases, valeurs, phrases, ..d.geste(Route::ArretIndemnites, libelle) })
+}
+
+/// CE QU'UN ARRET OUVRE (rien de remplissable s'il n'y a pas a le remplir) : en cours, il se prolonge ou se reprend plus
+/// tot ; une reprise saisie se corrige tant que son signalement n'est pas parti ; ses indemnites journalieres se disent
+/// s'il ouvre le maintien (`indemnites`) ; il se retire tant que rien n'en est parti (ni signalement, ni DSN qui le
+/// reporte). Une reprise a la date prevue ne se saisit pas : la DSN la porte.
+fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool, reprise_corrigeable: bool, indemnites: Option<&GesteDImprevu>) -> R<Vec<GesteDImprevu>> {
+    let d = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille.clone() };
+    let mut g = Vec::new();
+    if cours {
+        g.push(GesteDImprevu {
+            cases: vec![FIN_PRESCRITE.nom],
+            phrases: vec![crate::ouverture::aide("prolongation")?.to_string()],
+            ..d.geste(Route::ArretProlonger, PROLONGER)
+        });
+        g.push(geste_de_reprise(&d, a, n, REPRISE_PLUS_TOT));
+    }
+    if reprise_corrigeable {
+        g.push(geste_de_reprise(&d, a, n, CORRIGER_LA_REPRISE));
+    }
+    g.extend(indemnites.cloned());
+    if !base.signale && base.reporte_par.is_empty() {
+        g.push(d.geste(Route::ArretOublier, RETIRER));
+    }
+    Ok(g)
+}
+
+/// Ce qu'une absence ouvre : sa fin change ; elle se retire tant qu'aucune DSN ne l'a reportee.
+fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[String]) -> Vec<GesteDImprevu> {
+    let d = Designe::Absence { salarie: s.salarie.clone(), debut: s.debut.clone() };
+    let mut g = vec![GesteDImprevu {
+        cases: vec![NOUVELLE_FIN.nom],
+        valeurs: ValeursDeDepart { fin: Some(s.fin.clone()), ..ValeursDeDepart::default() },
+        ..d.geste(Route::SuspensionModifier, CHANGER_LA_FIN)
+    }];
+    if reportee.is_empty() {
+        g.push(d.geste(Route::SuspensionOublier, RETIRER));
+    }
+    g
 }
 
 /// Un jour paye pendant l'imprevu (`imprevus::cachets_dans`, tel qu'il le rend), avec son mois et chacun de ses jours en
@@ -980,18 +1148,15 @@ struct JourPaye {
 }
 
 /// CE QUE L'ECRAN LIT D'UN IMPREVU, en phrases que la page ne compose pas : ce qu'il est (`quoi`), sa periode
-/// (`periode` ; un arret sans reprise dit sa fin prescrite), son contrat (`contrat_dit`), sa reprise (`reprise_dit`), le
-/// debut d'une absence (`depuis_dit`), ce qui est paye pendant (`paye_pendant`), et les signalements deja partis
-/// (`deja_signale`, par nature).
+/// (`periode` ; un arret sans reprise dit sa fin prescrite), son contrat (`contrat_dit`), sa reprise (`reprise_dit`), ce
+/// qui est paye pendant (`paye_pendant`), et les signalements deja partis (`deja_signale`, par nature).
 #[derive(Debug, Clone, Serialize)]
 struct Dit {
     quoi: String,
     periode: String,
     contrat_dit: Option<String>,
     reprise_dit: Option<String>,
-    depuis_dit: Option<String>,
     paye_pendant: &'static str,
-    reprise_titre: &'static str,
     signaler_titre: SignalerTitre,
     deja_signale: DejaSignale,
 }
@@ -1030,7 +1195,6 @@ struct ADire<'a> {
     premier: &'a str,
     dernier: &'a str,
     contrat: Option<&'a str>,
-    debut: &'a str,
     signalements: &'a [crate::obligations::EnvoiDeLArret],
 }
 
@@ -1049,9 +1213,7 @@ impl Dit {
             },
             contrat_dit: x.contrat.map(|c| format!("contrat {}", c)),
             reprise_dit: x.reprise.map(|r| clair(r).map(|r| format!("reprise le {}", r))).transpose()?,
-            depuis_dit: Some(format!("Depuis le {}", clair(x.debut)?)),
             paye_pendant: if x.arret { "Payé pendant l'arrêt" } else { "Payé pendant l'absence" },
-            reprise_titre: if x.reprise.is_some() { "La reprise" } else { "Reprise plus tôt" },
             signaler_titre: SignalerTitre { arret: "Signaler l'arrêt", reprise: "Signaler la reprise" },
             deja_signale: DejaSignale { arret: deja("04"), reprise: deja("05") },
         })
@@ -1166,27 +1328,11 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     let origine = motif.and_then(|m| m.origine);
     let ouvert = ouvre_le_maintien(ctx, a)?;
     let majoree = ouvert && origine.is_some_and(|o| o.professionnelle() || o == droit::maintien::Origine::Trajet) && dernier.moins(&premier) >= 28;
-    // LE MONTANT DE PRINCIPE, propose tant que l'arret ne dit pas le sien (`engagement::maintien::ij_de_principe`) : la
-    // page en remplit les cases, la personne le garde ou le corrige ; sinon, la phrase dit ou le lire.
-    let ij_proposees = if ouvert && !a.ij_brute.as_ref().is_some_and(Chiffre::vrai) {
-        Some(match magasin(engagement::maintien::ij_de_principe(ctx, a))? {
-            Ok(ij) => IjProposees {
-                ij_brute: Some(ij.brute.to_string()),
-                ij_nette: Some(ij.nette.to_string()),
-                phrase: ij.phrase,
-                ij_brute_majoree: ij.majorees.map(|(b, _)| b.to_string()),
-                ij_nette_majoree: ij.majorees.map(|(_, n)| n.to_string()),
-            },
-            Err(phrase) => IjProposees { ij_brute: None, ij_nette: None, phrase, ij_brute_majoree: None, ij_nette_majoree: None },
-        })
-    } else {
-        None
-    };
-    // CE QUE L'ARRET OUVRE A LA PAGE (rien de remplissable s'il n'y a pas a le remplir) :
-    // un arret en cours se prolonge ou se reprend plus tot ; une reprise saisie se corrige tant que son signalement
-    // n'est pas parti.
+    let designe = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille.clone() };
+    let a_dire = if ouvert { Some(geste_des_indemnites(ctx, &designe, a, majoree)?) } else { None };
     let cours = en_cours(ctx, a)?;
     let reprise_corrigeable = a.reprise.is_some() && !envoye(ctx, a, signalement::REPRISE)?;
+    let gestes = gestes_d_un_arret(n, a, &base, cours, reprise_corrigeable, a_dire.as_ref())?;
     let (premier, dernier) = (premier.iso(), dernier.iso());
     let dit = Dit::de(ADire {
         arret: true,
@@ -1195,7 +1341,6 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         premier: &premier,
         dernier: &dernier,
         contrat: a.contrat_numero.as_deref(),
-        debut: &a.debut,
         signalements: &base.signalements,
     })?;
     Ok(ResumeDArret {
@@ -1209,16 +1354,10 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         ij_brute_majoree: a.ij_brute_majoree.clone(),
         ij_nette_majoree: a.ij_nette_majoree.clone(),
         origine,
-        ij_attendues: ouvert,
-        ij_proposees,
-        ij_majoree_attendue: majoree,
-        jours_deja_indemnises_attendus: ouvert,
         cachets,
         prolongations: a.prolongations.clone(),
-        en_cours: cours,
-        peut_prolonger: cours,
-        peut_reprendre_plus_tot: cours,
-        reprise_corrigeable,
+        gestes,
+        a_dire,
         dit,
         obligations: None,
         parti: None,
@@ -1240,7 +1379,6 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         premier: &premier,
         dernier: &dernier,
         contrat: s.contrat_numero.as_deref(),
-        debut: &s.debut,
         signalements: &[],
     })?;
     Ok(ResumeDeSuspension {
@@ -1258,7 +1396,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         note: s.note.clone(),
         saisi_le: s.saisi_le.clone(),
         reporte_par_dit: mois_de_la_dsn(&reportee),
-        reporte_par: reportee,
+        gestes: gestes_d_une_absence(s, &reportee),
         cachets,
         dit,
         parti: None,
@@ -1334,8 +1472,8 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
 /// son bordereau de paiement (BPIJ : le prix unitaire de l'« I.J. normale » ou « majoree », puis les retenues CSG et RDS,
 /// `atelier/reference/sources/subrogation-indemnites-journalieres/bpij-edi/`) : brutes, et nettes de CSG et CRDS. Le
 /// maintien de salaire s'en deduit (`engagement::maintien`) ; avant le releve, le resume en propose le montant de principe
-/// (`ij_proposees`), que la page met dans ses cases. Un champ absent ne change pas. La page ne les demande que pour un
-/// arret qui ouvre le maintien (`ij_attendues` du resume) ; ailleurs, elles ne se deduisent de rien.
+/// (`geste_des_indemnites`), qui remplit les cases du geste. Un champ absent ne change pas. Le geste ne s'offre que pour
+/// un arret qui ouvre le maintien ; ailleurs, elles ne se deduisent de rien.
 fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret> {
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let dernier = c.dernier_jour;

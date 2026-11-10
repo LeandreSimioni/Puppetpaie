@@ -515,14 +515,6 @@
       "retabli": true, "arret_de_travail": true, "compte_pour": "droits_et_montant", "salaire_de_base": false, "suspension": false, "conges_pris": false, "soumis": true, "imposable": true, "conges_spectacles": false,
       "source": "Subrogee, la compagnie percoit les indemnites journalieres a la place du salarie (CSS R323-11) : le salaire maintenu les avance, et elles se retirent du brut, qu'elles ne sont pas (« les indemnites journalieres de securite sociale non soumises a cotisations », BOSS, assiette generale, § 850 ; norme DSN 2026.1, § 2.3.2 : l'employeur ne declare que « le salaire proprement dit [...] a l'exclusion des indemnites journalieres »). Le montant brut, avant CSG et CRDS, du releve de la caisse (`engagement::maintien`)."
     },
-    "ijss_nettes": {
-      "libelle": "Indemnités journalières (subrogation)",
-      "unite": "jour", "nature": "indemnite", "sens": "+", "compte_pour": "droits_et_montant", "saisie": ["quantite", "taux"],
-      "salaire_de_base": false, "retabli": false, "suspension": false, "arret_de_travail": false, "conges_pris": false,
-      "heures_forfait": null, "plafond": null, "aem": null, "dsn_type": null,
-      "soumis": false, "imposable": false, "conges_spectacles": false,
-      "source": "Les indemnites journalieres que la compagnie subrogee reverse, nettes de la CSG et de la CRDS que la caisse a retenues (BPIJ : les retenues CSG et RDS). Hors cotisations et hors net imposable (norme DSN 2026.1, § 2.3.2 : la caisse les declare elle-meme), dans l'assiette du prelevement a la source (S21.G00.50.013 ; BOFiP BOI-IR-PAS-20-10-10, § 80 a 110) et dans le montant net social (BOSS, Q 13 bis ; S21.G00.58, type 10). `engagement::maintien`."
-    },
     "absence_conges_payes": {
       "libelle": "Absence congés payés",
       "unite": "jour",
@@ -542,25 +534,6 @@
       "imposable": true,
       "conges_spectacles": false,
       "source": "Les jours de conges payes pris dans le mois, retires du salaire de base — l'autre moitie du couple, l'indemnite, les repaie. `quantite` est en JOURS OUVRABLES, l'unite du compteur (art. L3141-3). La paire absence / indemnite est la facon dont un bulletin montre un conge paye : elle rend visible que l'indemnite n'est pas le salaire, et c'est ce qui permet au dixieme (L3141-24 I) de depasser le maintien (II) sans que personne ne se demande d'ou vient la difference. Un conge paye N'EST PAS une suspension du contrat : rien n'en part en bloc 65."
-    },
-    "indemnite_conges_payes": {
-      "libelle": "Indemnité de congés payés",
-      "unite": "jour",
-      "nature": "salaire",
-      "sens": "+", "compte_pour": "droits_et_montant",
-      "salaire_de_base": false, "retabli": false, "suspension": false, "arret_de_travail": false, "conges_pris": false,
-      "saisie": [
-        "quantite",
-        "taux"
-      ],
-      "heures_forfait": null,
-      "plafond": null,
-      "aem": null,
-      "dsn_type": "010",
-      "soumis": true,
-      "imposable": true,
-      "conges_spectacles": false,
-      "source": "L'indemnite due pour les jours de conges pris : art. L3141-24, le plus favorable du dixieme de la remuneration de la periode de reference et du maintien de salaire. Le moteur calcule les deux et retient le plus favorable (`droit::permanents::indemnite_conges`) ; la regle et ses nombres sont dans `permanents-base.json`."
     },
     "indemnite_compensatrice_conges": {
       "libelle": "Indemnité compensatrice de congés payés",
@@ -773,7 +746,7 @@
       "soumis": true,
       "imposable": true,
       "conges_spectacles": true,
-      "source": "La prime d'anciennete de la convention 3090, annexe I, article 3.11 : 1 % du salaire conventionnel par annee de presence au-dela de trois, jusqu'a 10 %. Un salaire : soumise, imposable, et dans l'assiette des conges payes."
+      "source": "La prime d'anciennete de la convention 3090, annexe I, article 3.11 (atelier/reference/sources/legifrance-3090-annexe-I/legifrance-3090-annexe-I-20261110.txt) : « Après 3 ans de présence, il est attribué à chaque technicien une prime d'ancienneté de 1 % du salaire conventionnel », jusqu'a 10 %. Proposee sur la carte des seuls techniciens de l'annexe I, quelle que soit la nature du contrat (art. 3.1 : « deux types de contrats pour le personnel technique », le CDI et le CDD ; `droit::clauses::prime_anciennete_possible`). Le calcul la compose pour un contrat paye au mois ; pour un contrat d'usage, la compagnie la saisit quand elle la doit. Un salaire : soumise, imposable, et dans l'assiette des conges payes."
     },
     "indemnite_licenciement_conventionnelle": {
       "libelle": "Indemnité conventionnelle de licenciement (supplément)",
@@ -869,6 +842,35 @@
       "imposable": true,
       "conges_spectacles": false,
       "source": "Ce que la convention donne AU-DELA de l'indemnite legale de depart a la retraite (L1237-9, D1237-1) -- pour la 3090 (art. 7.9) : un mois a dix ans au lieu d'un demi, deux a vingt au lieu d'un et demi, trois a trente au lieu de deux. Soumise et imposable comme l'indemnite legale de depart. Declaree en S21.G00.52.001 = << 006 - Indemnite conventionnelle de depart a la retraite du salarie >>, a cote de la ligne legale (005), permise avec les motifs 039 et 059 (CCH-23)."
+    }
+  },
+  "au_mois": {
+    "ijss_nettes": {
+      "libelle": "Indemnités journalières (subrogation)",
+      "unite": "jour", "nature": "indemnite", "sens": "+", "compte_pour": "droits_et_montant", "saisie": ["quantite", "taux"],
+      "salaire_de_base": false, "retabli": false, "suspension": false, "arret_de_travail": false, "conges_pris": false,
+      "heures_forfait": null, "plafond": null, "aem": null, "dsn_type": null,
+      "soumis": false, "imposable": false, "conges_spectacles": false,
+      "source": "Les indemnites journalieres que la compagnie subrogee reverse, nettes de la CSG et de la CRDS que la caisse a retenues (BPIJ : les retenues CSG et RDS). Hors cotisations et hors net imposable (norme DSN 2026.1, § 2.3.2 : la caisse les declare elle-meme), dans l'assiette du prelevement a la source (S21.G00.50.013 ; BOFiP BOI-IR-PAS-20-10-10, § 80 a 110) et dans le montant net social (BOSS, Q 13 bis ; S21.G00.58, type 10). `engagement::maintien`. Payee au mois : la subrogation est une case des permanents."
+    },
+    "indemnite_conges_payes": {
+      "libelle": "Indemnité de congés payés",
+      "unite": "jour",
+      "nature": "salaire",
+      "sens": "+", "compte_pour": "droits_et_montant",
+      "salaire_de_base": false, "retabli": false, "suspension": false, "arret_de_travail": false, "conges_pris": false,
+      "saisie": [
+        "quantite",
+        "taux"
+      ],
+      "heures_forfait": null,
+      "plafond": null,
+      "aem": null,
+      "dsn_type": "010",
+      "soumis": true,
+      "imposable": true,
+      "conges_spectacles": false,
+      "source": "L'indemnite due pour les jours de conges pris : art. L3141-24, le plus favorable du dixieme de la remuneration de la periode de reference et du maintien de salaire. Le moteur calcule les deux et retient le plus favorable (`droit::permanents::indemnite_conges`) ; la regle et ses nombres sont dans `permanents-base.json`. Payee au mois : la caisse des Conges Spectacles paie les conges d'un intermittent (C. trav. D. 7121-38)."
     }
   },
   "annexes": {

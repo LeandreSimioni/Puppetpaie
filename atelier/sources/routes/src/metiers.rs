@@ -18,7 +18,7 @@ use socle::echec::{erreur, R};
 const METIERS_REND: &str = "emplois (les métiers proposés) et emplois_autres (ceux des autres conventions)";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::Dessine(Place::Metiers);
+const ECRAN: Ecran = Ecran::DessineAvance(Place::Metiers);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
@@ -30,7 +30,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: "metiers (le catalogue, chacun dit retenu ou non)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
-        avance: true,
         phrase: 0,
         ecran: ECRAN,
     },
@@ -42,7 +41,6 @@ pub const ROUTES: &[Fiche] = &[
         rend: METIERS_REND,
         refus: &[OPERATION, MANQUE, FORME],
         acte: Acte::Ecrit,
-        avance: true,
         phrase: 0,
         ecran: ECRAN,
     },

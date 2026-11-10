@@ -1,8 +1,10 @@
-//! Les minima conventionnels confrontes a une paie (la table et ses grilles : `droit::minima`) : des avertissements,
-//! jamais un refus. `avertissements` lit la grille de la convention ; `sous_le_smic` lit la loi.
+//! Les minima conventionnels confrontes a une paie (la table et ses grilles : `droit::minima`) : des avertissements.
+//! `avertissements` lit la grille de la convention ; `sous_le_smic` lit la loi.
 //!
 //! Chaque minimum prend, quand la paie ne dit pas tout, l'hypothese la plus basse : un avertissement qui crie a tort ne
-//! se lit plus.
+//! se lit plus. Sauf l'echelon et l'anciennete, que seule la compagnie connait (l'echelon de la CCNEAC, l'anciennete
+//! que demandent la grille administrative de la 3090 et les conditions `anciennete` des grilles) : sans la case de la
+//! fiche, le calcul refuse en la nommant.
 
 use std::collections::BTreeSet;
 
@@ -16,7 +18,7 @@ use droit::contexte::Contexte;
 use socle::date::{repr_texte, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
-use droit::minima::{ans_revolus, grille_au, iso, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
+use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
 use socle::num::{add, dec_f64, div, mul, sub, Decimal, Resultat};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -74,9 +76,9 @@ fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
     Some(eng.fin?.moins(&eng.debut) + 1)
 }
 
-/// Le dernier jour de la periode payee, en AAAA-MM-JJ.
-fn jour_de_paie(paie: &Paie) -> Option<String> {
-    paie.engagement.fin.map(|j| j.iso())
+/// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
+fn jour_de_paie(paie: &Paie) -> Resultat<Jour> {
+    paie.engagement.fin_periode()
 }
 
 fn premier_jour(paie: &Paie) -> Option<String> {
@@ -112,6 +114,8 @@ struct Cx<'a> {
     /// jour depuis lequel elle la lie quand c'est celle d'un accord qui suit la grille de la convention.
     grille: &'a Convention,
     lie_depuis: Option<String>,
+    /// La cle des cases du metier de la fiche, que la grille trouvee donne.
+    par_la_grille: droit::minima::ParLaGrille,
     m: &'a emplois::Metier,
     fiche: &'a droit::fiche::SalarieDuContrat,
     paie: &'a Paie,
@@ -122,6 +126,22 @@ struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
+    /// LA CASE `cle` DE LA FICHE DU SALARIE qu'une condition de grille nomme (`droit::minima::case_lue`) : une case du
+    /// metier, par la cle de la grille ; une case de la piece d'un permanent (le forfait en jours) ne se lit que pour un
+    /// contrat paye au mois ; pour un autre, elle ne dit rien.
+    fn case_du_salarie(&self, cle: &str) -> Resultat<Option<CaseLue>> {
+        if let Some(lue) = case_lue(&self.fiche.champs, cle)? {
+            return Ok(Some(lue));
+        }
+        if let Some(lue) = case_lue(self.fiche.metier.ouvrir(&self.par_la_grille), cle)? {
+            return Ok(Some(lue));
+        }
+        match self.paie.engagement.nat()?.au_mois() {
+            Some(au) => case_lue(self.fiche.permanent.ouvrir(&au), cle),
+            None => Ok(None),
+        }
+    }
+
     /// Les lignes de minima du metier dans la 3090, annexe par annexe (hors catalogue : aucune).
     fn refs(&self) -> &'a std::collections::BTreeMap<String, String> {
         static AUCUNE: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -254,13 +274,21 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// L'echelon de la CCNEAC : celui de la fiche (1 a 12), ou le premier.
-    fn echelon_ccneac(&self) -> (usize, String) {
-        let v = self.fiche.echelon_ccneac.portee().map(str::trim);
-        if let Some((v, n)) = v.and_then(|v| socle::num::entier_de_chiffres(v).filter(|n| (1..=12).contains(n)).map(|n| (v, n))) {
-            return (n as usize, format!("échelon {} de la fiche", v));
-        }
-        (1, "échelon 1, la fiche ne disant pas le sien (`echelon_ccneac`)".into())
+    /// L'echelon de la CCNEAC, celui de la fiche (1 a 12) : « Lors de son embauche (ou lorsqu'il est promu dans un nouvel
+    /// emploi au sein de l'entreprise) chaque salarié bénéficie d'un échelon qui lui est attribué par l'employeur »
+    /// (art. X.4.1, `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Seule la compagnie le
+    /// connait : sans lui, le calcul refuse en nommant la case (son type le borne a 1..12, `droit::fiche::EchelonCcneac`).
+    fn echelon_ccneac(&self) -> Resultat<(usize, String)> {
+        let Some(e) = self.fiche.metier.ouvrir(&self.par_la_grille).echelon_ccneac.dite() else {
+            return Err(socle::echec::cle(
+                format!(
+                    "La fiche de {} ne dit pas son échelon de la CCNEAC, et le minimum de son emploi en dépend : l'employeur l'attribue, de 1 à 12 (art. X.4.1). Le dire sur sa fiche (« Échelon (CCNEAC) »).",
+                    crate::qui_de(self.fiche)?
+                ),
+                "echelon_ccneac",
+            ));
+        };
+        Ok((e.rang(), format!("échelon {} de la fiche", e)))
     }
 
     /// Le taux horaire minimum d'un emploi autre qu'artistique de la CCNEAC.
@@ -269,7 +297,7 @@ impl<'a> Cx<'a> {
         let Some(groupe) = c1285.groupe.map(|g| g.to_string()).filter(|g| !g.is_empty()) else { return Ok(None) };
         let Some(grille) = self.grille.emplois_autres_qu_artistiques.as_ref() else { return Ok(None) };
         let Some(echelons) = grille.groupes.get(&groupe) else { return Ok(None) };
-        let (echelon, d_ou) = self.echelon_ccneac();
+        let (echelon, d_ou) = self.echelon_ccneac()?;
         let mensuel = *echelons
             .get(echelon - 1)
             .ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du groupe {}", echelon, groupe)))?;
@@ -465,21 +493,34 @@ impl<'a> Cx<'a> {
             }
         }
         for (cl, attendu) in c.si_salarie.into_iter().flatten() {
-            if !case_lue(&self.fiche.champs, cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
+            if !self.case_du_salarie(cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
                 return Ok(false);
-            }
-        }
-        if let Some(a) = c.anciennete {
-            let Some(depuis) = case_lue(&self.fiche.champs, &a.champ)? else { return Ok(false) };
-            match ans_revolus(&depuis.texte, jour_de_paie(self.paie).as_deref()) {
-                Some(n) if n >= a.ans => {}
-                _ => return Ok(false),
             }
         }
         if let Some(max) = c.duree_contrat_max_jours {
             match jours_du_contrat(&self.paie.engagement) {
                 Some(j) if j <= max => {}
                 _ => return Ok(false),
+            }
+        }
+        // L'anciennete, en dernier : elle ne se demande que si tout le reste vise la ligne. Seule la compagnie sait depuis
+        // quand ; sans la case, le calcul refuse en la nommant.
+        if let Some(a) = c.anciennete {
+            let Some(depuis) = self.case_du_salarie(&a.champ)? else {
+                return Err(socle::echec::cle(
+                    format!(
+                        "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
+                        crate::qui_de(self.fiche)?,
+                        a.ans
+                    ),
+                    &a.champ,
+                ));
+            };
+            let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) else {
+                return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
+            };
+            if n < a.ans {
+                return Ok(false);
             }
         }
         Ok(true)
@@ -657,18 +698,26 @@ impl<'a> Cx<'a> {
         Ok(plus_bas(trouves, |p| p.montant))
     }
 
-    /// L'echelon de la grille administrative de la 3090 : 1 sous 5 ans dans la
-    /// fonction, puis un de plus par tranche de 5 ans passee, jusqu'au 5e.
+    /// L'echelon de la grille administrative de la 3090 : « Échelon 1 = Salariés présents dans l'entreprise et dans la
+    /// fonction depuis moins de 5 ans. Échelon 2 = [...] depuis plus de 5 ans », puis plus de 10, 15 et 20 ans (avenant
+    /// du 21/07/2025, clauses communes, KALIARTI000053721751,
+    /// `atelier/reference/sources/kali-3090-avenant-2025-administratifs-anciennete-20260929.md`). « Plus de » : les ans
+    /// revolus a la veille du dernier jour paye. Seule la compagnie sait depuis quand (`poste_depuis`) : sans elle, le
+    /// calcul refuse en nommant la case.
     fn echelon_3090(&self) -> Resultat<(usize, String)> {
-        let (Some(depuis), Some(jour)) = (self.fiche.poste_depuis.dite().map(|j| j.iso()), jour_de_paie(self.paie)) else {
-            return Ok((1, "échelon 1, la fiche ne disant pas depuis quand (`poste_depuis`)".into()));
+        let Some(depuis) = self.fiche.metier.ouvrir(&self.par_la_grille).poste_depuis.dite() else {
+            return Err(socle::echec::cle(
+                format!(
+                    "La fiche de {} ne dit pas depuis quand ce poste est le sien, et le minimum de la grille administrative de la 3090 en dépend : un échelon de plus après 5, 10, 15 et 20 ans dans l'entreprise et la fonction. Le dire sur sa fiche (« Dans ce poste depuis »).",
+                    crate::qui_de(self.fiche)?
+                ),
+                "poste_depuis",
+            ));
         };
-        let veille = iso(&jour).ok_or("date illisible")?.plus_jours(-1)?.iso();
-        let Some(ans) = ans_revolus(&depuis, Some(&veille)) else {
-            return Ok((1, "échelon 1, `poste_depuis` illisible".into()));
-        };
+        let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
+        let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));
         let e = (ans.div_euclid(5) + 1).clamp(1, 5) as usize;
-        Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, Jour::lire(&depuis)?.jj_mm_aaaa())))
+        Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, depuis.jj_mm_aaaa())))
     }
 
     /// Le taux horaire minimum d'un technicien, par son niveau 3090 ou son
@@ -689,14 +738,17 @@ impl<'a> Cx<'a> {
         if classement.grille == "administratif" {
             // Grille mensuelle pour un temps plein, ramenee a l'heure sur 151,67 h.
             let Some(valeurs) = communes_cl.administratifs_mensuel_echelons.du_niveau(&niveau) else { return Ok(None) };
-            let (echelon, mut d_ou) = self.echelon_3090()?;
             if valeurs.is_empty() {
                 return Err(socle::fichiers::trop_courte(&format!("les échelons du niveau {}", niveau)));
             }
-            let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau)))?;
-            if valeurs.len() == 1 {
-                d_ou = "sans échelon".into();
-            }
+            // Le cadre du groupe 1 n'a qu'une valeur : aucune anciennete a lire.
+            let (montant, d_ou) = if valeurs.len() == 1 {
+                (valeurs[0], "sans échelon".to_string())
+            } else {
+                let (echelon, d_ou) = self.echelon_3090()?;
+                let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau)))?;
+                (montant, d_ou)
+            };
             let horaire = arrondi2(montant / 151.67);
             return Ok(plancher(
                 dec_f64(horaire)?,
@@ -869,12 +921,13 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> Resultat<Optio
         .parse::<i64>()
         .map_err(|e| e.to_string())?;
     let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
-    let Some((grille, lie_depuis)) = grille_au(t, &idcc, organisation.as_deref(), premier_jour(paie).as_deref()) else { return Ok(None) };
+    let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_deref(), premier_jour(paie).as_deref()) else { return Ok(None) };
     let cx = Cx {
         t,
         idcc: &idcc,
         grille,
         lie_depuis,
+        par_la_grille,
         m: &m,
         fiche: &paie.salarie,
         paie,
@@ -1089,4 +1142,64 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> Resultat<Vec<Avis>> {
         });
     }
     Ok(avis)
+}
+
+/// LES CASES DE LA FICHE D'UN SALARIE QUE LE MINIMUM DE SON METIER LIT, pour un engagement de metier `code` a `jour` :
+/// les memes chemins que `Cx::plancher_de`, lus sans paie. L'echelon de la CCNEAC d'un emploi non artistique classe
+/// dans un groupe (`plancher_horaire_1285`, art. X.4.1) ; le poste depuis lequel la grille administrative de la 3090
+/// compte ses echelons (`echelon_3090`) ; et chaque case qu'une grille ou une majoration qui vise ce metier nomme
+/// (`anciennete`, `si_salarie` : l'artiste stagiaire, l'anciennete du choeur de la CCNEAC, l'experience de la 3241).
+/// Ce que la paie seule departage (la population, l'unite de la ligne, les conditions sur le spectacle et
+/// l'entreprise) ne retire rien : une case que le calcul peut demander se montre. La fiche du salarie montre ces
+/// cases-la, et seulement celles-la (`droit::fiche::Piece::Metier`, `routes::fiches::montres`) ; le calcul ne les lit
+/// qu'avec la cle de la grille trouvee (`droit::minima::ParLaGrille`).
+pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> Resultat<BTreeSet<String>> {
+    let mut lues = BTreeSet::new();
+    let ent = ctx.entreprise_au(jour);
+    let Some(idcc) = ent.idcc.portee() else { return Ok(lues) };
+    let Some(m) = emplois::metier(code)? else { return Ok(lues) };
+    let tab = table()?;
+    let t: &Table = &tab;
+    let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
+    let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_deref(), Some(&jour.iso())) else { return Ok(lues) };
+    let statut = m.statut().as_str();
+    if idcc == "1285" && statut == "technicien" {
+        let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| g.to_string()).filter(|g| !g.is_empty());
+        if groupe.is_some_and(|g| grille.emplois_autres_qu_artistiques.as_ref().is_some_and(|e| e.groupes.contains_key(&g))) {
+            lues.insert("echelon_ccneac".to_string());
+        }
+    }
+    if idcc == "3090" && statut == "technicien" {
+        let administratif = m.classification_3090().filter(|c| c.grille == "administratif" && !c.niveau.is_empty());
+        let communes = t.convention("3090").and_then(|c| c.clauses_communes.as_ref());
+        if let (Some(c), Some(communes)) = (administratif, communes) {
+            if communes.administratifs_mensuel_echelons.du_niveau(&c.niveau).is_some_and(|v| v.len() > 1) {
+                lues.insert("poste_depuis".to_string());
+            }
+        }
+    }
+    let ligne = m.au_catalogue().and_then(|f| f.minima.ligne(idcc));
+    let vise = |c: &Conditions| {
+        c.categories.is_none_or(|cats| cats.iter().any(|x| Some(x.as_str()) == ligne || (x.is_empty() && ligne.is_none())))
+            && c.codes.is_none_or(|codes| codes.iter().any(|x| *x == m.code))
+    };
+    let nommees = |c: &Conditions, lues: &mut BTreeSet<String>| {
+        lues.extend(c.anciennete.map(|a| a.champ.clone()));
+        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.keys().cloned()));
+    };
+    let grilles = grille.grilles.iter().flatten().chain(grille.grilles_complementaires.iter().flatten());
+    for gr in grilles.filter(|gr| gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut)) {
+        let c = gr.conditions();
+        if !vise(&c) {
+            continue;
+        }
+        nommees(&c, &mut lues);
+        for maj in gr.majorations.iter().flatten() {
+            let c = maj.conditions();
+            if vise(&c) {
+                nommees(&c, &mut lues);
+            }
+        }
+    }
+    Ok(lues)
 }

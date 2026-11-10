@@ -59,7 +59,6 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     rend: "mois (celui à ouvrir), courant, reste (les étapes qui restent)",
     refus: &[crate::catalogue::ILLISIBLE],
     acte: Acte::Lit,
-    avance: false,
     phrase: 0,
     ecran: ECRAN,
 }];
@@ -1356,8 +1355,10 @@ impl<'a> Moteur<'a> {
         envois::journal::lu(self.racine()).map(|j| j.lignes).map_err(plain)
     }
 
-    fn nic(&self) -> R<String> {
-        Ok(self.ctx.entreprise.nic.ecrite("nic").map_err(plain)?.to_string())
+    /// Le NIC de l'etablissement principal, s'il est dit : une compagnie neuve ne l'a pas encore, et n'a que lui (la DSN,
+    /// elle, l'exige : « Pour demarrer » le demande).
+    fn nic(&self) -> Option<String> {
+        self.ctx.entreprise.nic_principal().map(str::to_string)
     }
 
     // ------------------------------------------------------ la saisie du mois
@@ -1801,7 +1802,7 @@ impl<'a> Moteur<'a> {
         let lignes = self.lignes()?;
         let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), true);
         let mut out = Vec::new();
-        for l in etats::de_l_etablissement(reels, nic, &self.nic()?) {
+        for l in etats::de_l_etablissement(reels, nic, self.nic().as_deref()) {
             if !l.accepte() || l.signalement() || etats::refuse_par_un_retour(l) {
                 continue;
             }
@@ -1864,14 +1865,11 @@ impl<'a> Moteur<'a> {
         } else {
             let departs = self.departs()?;
             let plusieurs = !self.ctx.entreprise_du_mois(mois).map_err(plain)?.secondaires().is_empty();
-            let voulu = match nic {
-                Some(n) => n.to_string(),
-                None => self.nic()?,
-            };
+            let voulu = nic.map(str::to_string).or_else(|| self.nic());
             let mut n = 0;
             for e in self.etats_du_mois(le_mois)? {
                 let Some(v) = e.valide() else { continue };
-                if plusieurs && nic_de_l_engagement(self.ctx, &e)?.as_deref() !=Some(voulu.as_str()) {
+                if plusieurs && nic_de_l_engagement(self.ctx, &e)?.as_deref() != voulu.as_deref() {
                     continue;
                 }
                 if engagement::etats::correction_due(self.ctx, v, &departs, mois, "9999-12").map_err(plain)?.is_some() {
@@ -2208,7 +2206,8 @@ impl<'a> Moteur<'a> {
         let ent = self.ctx.entreprise_du_mois(&mois.to_string()).map_err(plain)?;
         if ent.secondaires().is_empty() {
             let g = self.groupes_dsn_de(mois, None)?;
-            return Ok(vec![(vec![ent.nic.ecrite("nic").map_err(plain)?.to_string()], g)]);
+            // Une fiche qui ne dit pas encore son NIC n'a que son siege : sa classe ne le nomme pas.
+            return Ok(vec![(ent.nic_principal().map(str::to_string).into_iter().collect(), g)]);
         }
         let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(|e| e.jour));
         let mut classes: Vec<(Vec<String>, Groupe)> = Vec::new();
@@ -2301,11 +2300,8 @@ impl<'a> Moteur<'a> {
     fn dsn_a_declarer(&mut self, le_mois: Mois, nic: Option<&str>) -> R<bool> {
         let mois = &le_mois.to_string();
         let plusieurs = !self.ctx.entreprise_du_mois(mois).map_err(plain)?.secondaires().is_empty();
-        let voulu = match nic {
-            Some(n) => n.to_string(),
-            None => self.nic()?,
-        };
-        let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)?.as_deref() == Some(voulu.as_str())) };
+        let voulu = nic.map(str::to_string).or_else(|| self.nic());
+        let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)?.as_deref() == voulu.as_deref()) };
         for e in self.etats_du_mois(le_mois)? {
             if e.valide().is_some() && de_l_etablissement(self.ctx, &e.objet().brut)? {
                 return Ok(true);

@@ -38,9 +38,9 @@ impl JoursTravailles {
         JoursTravailles { jours: [true, true, true, true, true, false, false], dits: false }
     }
 
-    /// Les jours que dit la fiche `fiche` (sa valeur au jour lu).
-    pub fn de_la_fiche(fiche: &crate::fiche::FicheSalarie) -> Resultat<Self> {
-        Self::de_la_case(&fiche.jours_travailles, fiche.id.as_str())
+    /// Les jours que dit la fiche `fiche` (sa valeur au jour lu), d'un salarie au mois.
+    pub fn de_la_fiche(fiche: &crate::fiche::FicheSalarie, au_mois: &crate::natures::AuMois) -> Resultat<Self> {
+        Self::de_la_case(&fiche.permanent.ouvrir(au_mois).jours_travailles, fiche.id.as_str())
     }
 
     /// Le refus d'une case `jours_travailles` qui ne se lit pas par sa forme (`qui` : la cle du salarie).
