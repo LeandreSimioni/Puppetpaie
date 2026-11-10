@@ -225,7 +225,7 @@ fn dossier(ctx: &Contexte) -> PathBuf {
 }
 
 fn disque(chemin: &Path, e: std::io::Error) -> Echec {
-    erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
+    socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)
 }
 
 fn lire_texte(chemin: &Path) -> R<String> {
@@ -238,7 +238,7 @@ fn lus(ctx: &Contexte) -> R<ModelesDeContrat> {
     if !chemin.is_file() {
         return Ok(ModelesDeContrat::default());
     }
-    socle::forme::lire_fichier(&chemin, "les modèles de contrat de la compagnie").map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&chemin, "les modèles de contrat de la compagnie").map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 fn ecrire(ctx: &Contexte, m: &ModelesDeContrat) -> R<()> {
@@ -254,7 +254,7 @@ fn refus(m: impl Into<String>) -> Echec {
 }
 
 fn nature_de(cle: &str) -> R<std::sync::Arc<Nature>> {
-    droit::natures::nature(cle).map_err(Echec::from)
+    droit::natures::nature(cle)
 }
 
 /// Le texte livre d'une partie du modele de base de cette nature.
@@ -274,14 +274,14 @@ fn nom_de_base(nat: &Nature) -> String {
 /// Ce qui manque a une partie d'un modele de cette nature (le verificateur de sa partie).
 fn manques(nat: &Nature, partie: Partie, texte: &str) -> R<Vec<String>> {
     match partie {
-        Partie::Contrat => documents::contrat_ecrit::manques(nat, texte, None).map_err(|m| erreur(Classe::Illisible, m)),
+        Partie::Contrat => documents::contrat_ecrit::manques(nat, texte, None).map_err(|m| m.reclasser(Classe::Illisible)),
         Partie::Avenant => Ok(documents::contrat_ecrit::manques_de_l_avenant(texte)),
     }
 }
 
 /// Un modele lu pour un contrat, et son avenant ; un texte qui ne se lit pas est un refus.
 fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleDuContrat> {
-    let lire = |t: &str| ModeleLu::lire(t, &nom).map_err(|m| erreur(Classe::ModeleIncomplet, m));
+    let lire = |t: &str| ModeleLu::lire(t, &nom).map_err(|m| m.reclasser(Classe::ModeleIncomplet));
     Ok(ModeleDuContrat { lu: lire(contrat)?, avenant: lire(avenant)?, nom, base })
 }
 
@@ -289,13 +289,11 @@ fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleD
 fn numero_d_id(id: &str) -> R<u32> {
     match id.strip_prefix('m').map(str::parse::<u32>) {
         Some(Ok(n)) => Ok(n),
-        _ => Err(erreur(
-            Classe::MalFormee,
-            socle::echec::avec(
-                format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", id),
-                socle::echec::Lieu { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() },
-            ),
-        )),
+        _ => {
+            let a_part = socle::echec::Lieu { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() };
+            let phrase = format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", id);
+            Err(Echec { a_part: Some(a_part.into()), ..erreur(Classe::MalFormee, phrase) })
+        }
     }
 }
 
@@ -335,7 +333,7 @@ fn texte_de(nat: &Nature, s: Option<&Special>, partie: Partie) -> R<String> {
 /// (`modele_contrat`), sinon le defaut que la compagnie a choisi pour sa nature, sinon la base de sa nature. Un choix qui
 /// nomme un special supprime (`supprimes`) revient au defaut : c'est ce que la suppression dit.
 pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
-    let nat = p.engagement.nat().map_err(Echec::from)?;
+    let nat = p.engagement.nat()?;
     let m = lus(ctx)?;
     let choix = p.engagement.ecrit.modele_contrat.as_deref().filter(|id| !m.supprimes.iter().any(|x| x == id));
     let choisi = match choix {
@@ -738,8 +736,8 @@ dites!(Modeles, ModeleRendu, Apercu);
 /// `engagement::permanents::Permanents::natures`).
 fn natures_de(ctx: &Contexte) -> R<Vec<std::sync::Arc<Nature>>> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(Echec::from)?;
-    Ok(p.natures().map_err(Echec::from)?.into_iter().filter(|n| n.modele_contrat().is_some()).collect())
+    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    Ok(p.natures()?.into_iter().filter(|n| n.modele_contrat().is_some()).collect())
 }
 
 /// Ce qui manque au contrat et a l'avenant d'un modele, l'avenant nomme.
@@ -813,12 +811,12 @@ fn ce_qui_a_change(avant: &str, maintenant: &str) -> Vec<String> {
 /// dans le logiciel, de cette nature, le plus recent d'abord.
 fn engagements_de(ctx: &Contexte, nature: &str) -> R<Vec<EngagementAuChoix>> {
     let mut v: Vec<EngagementAuChoix> = Vec::new();
-    for o in engagement::stock::objets(&ctx.racine).map_err(Echec::from)? {
+    for o in engagement::stock::objets(&ctx.racine)? {
         if !o.est_valide() || o.est_importe() || o.est_non_actif() || o.carte().nature.as_deref() != Some(nature) {
             continue;
         }
         let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), Jour::du_texte(&engagement::debut_brut(&o.brut))) else { continue };
-        let mois = Mois::lire(o.premier_mois()).map_err(Echec::from)?;
+        let mois = Mois::lire(o.premier_mois())?;
         v.push(EngagementAuChoix { engagement: EngagementVise { mois, salarie: salarie.to_string(), debut }, nom: engagement::etats::qui_de(ctx, &o) });
     }
     v.sort_by(|a, b| b.engagement.debut.cmp(&a.engagement.debut));
@@ -857,7 +855,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let phrase = if dits.is_empty() { format!("{} : complet.", quoi) } else { format!("{} : {}", quoi, dits.join(" ")) };
     // La base n'est copiee de rien : rien ne se compare, `None`.
     let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
-    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| erreur(Classe::Illisible, m))?;
+    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
     let engagements = engagements_de(ctx, &nat.cle)?;
     Ok(ModeleRendu {
         phrase,
@@ -896,7 +894,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             .ok_or_else(|| refus(format!("La compagnie n'a encore aucun engagement validé de {} : l'aperçu remplit le modèle avec l'un d'eux.", nat.nom_du_contrat())))?,
     };
     let mois = vise.mois.to_string();
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &departs)?;
     let p = paies
         .into_iter()
@@ -922,8 +920,8 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         Partie::Avenant => {
             // Rien ne change : l'apercu cite le premier article du contrat tel qu'il est (`modification_d_apercu`).
             let v = documents::contrat::valeurs_de_paie(ctx, &ent, &p)?;
-            let contrat = modele.lu.decoupe(&nom).map_err(|m| erreur(Classe::Illisible, m))?;
-            let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| refus(m))?;
+            let contrat = modele.lu.decoupe(&nom).map_err(|m| m.reclasser(Classe::Illisible))?;
+            let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| m.reclasser(Classe::Refuse))?;
             let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero as i64), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
             documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, &debut, &jour, &jour, &modele, false)?
         }
@@ -970,8 +968,7 @@ fn renommer(ctx: &Contexte, c: ChargeRenommer) -> R<Modeles> {
 
 /// Les engagements dont une carte choisit le special `id` (sa case `modele_contrat`, au premier mois ou a un avenant).
 fn choisi_par(ctx: &Contexte, id: &str) -> R<Vec<String>> {
-    Ok(engagement::stock::objets(&ctx.racine)
-        .map_err(Echec::from)?
+    Ok(engagement::stock::objets(&ctx.racine)?
         .iter()
         .filter(|o| o.carte().modele_contrat.as_deref() == Some(id) || o.avenants().iter().any(|a| a.termes.modele_contrat.as_deref() == Some(id)))
         .map(|o| engagement::etats::qui_de(ctx, o))
