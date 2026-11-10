@@ -203,7 +203,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// Comment chaque contrat est parti la derniere fois : `imprime` (remis en main propre, `detail.main_propre`) ou
-/// `courriel`. Un contrat imprime peut toujours partir par courriel : il part alors comme un envoi, non comme un rappel.
+/// `courriel`.
 pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
@@ -213,6 +213,18 @@ pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
         }
     }
     d
+}
+
+/// LES CONTRATS QU'UN COURRIEL A DEJA DEMANDE A SIGNER (un avenant n'en est pas un), par (salarie, numero) : le
+/// redemander par courriel est un rappel ; un contrat parti imprime seulement part par courriel pour la premiere fois.
+/// C'est le journal qui le dit, jamais celui qui demande.
+pub fn contrats_demandes_par_courriel(lignes: &[Ligne]) -> HashSet<Paire> {
+    lignes
+        .iter()
+        .filter_map(Ligne::signature)
+        .filter(|e| e.accepte && !e.detail.main_propre)
+        .flat_map(|e| e.detail.contrats.iter().filter(|c| !c.est_avenant()).map(|c| paire(&c.salarie, c.numero_dit())))
+        .collect()
 }
 
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (signe, ou la mention retiree), sur la ligne de son envoi (`journal::rattacher`),
@@ -397,6 +409,9 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
         if let Some(e) = l.signature() {
             for c in e.detail.contrats.iter().filter(|c| c.est_avenant()) {
                 let liste = out.entry(paire(&c.salarie, c.numero_dit())).or_default();
+                // Un courriel a demande de signer CETTE piece (le meme fichier) : un avenant refait sous le meme numero
+                // est une autre piece, qu'aucun courriel n'a encore demandee.
+                let par_courriel = !e.detail.main_propre || liste.iter().any(|a| a.numero == c.avenant && a.fichier == c.fichier && a.par_courriel);
                 liste.retain(|a| a.numero != c.avenant);
                 liste.push(AvenantParti {
                     numero: c.avenant,
@@ -408,6 +423,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
                     effet: c.effet.clone(),
                     modifications: c.modifications.iter().flatten().cloned().collect(),
                     signe: None,
+                    par_courriel,
                 });
             }
         }

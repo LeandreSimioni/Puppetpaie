@@ -672,7 +672,8 @@ impl RetourContrat {
 }
 
 /// UN AVENANT PARTI (`etats::avenants_par_contrat`) : son numero, quand et dans quel mois il est parti, sa piece, son code
-/// de signature, le contrat qu'il modifie, son effet, ses modifications, et le jour ou il est revenu signe.
+/// de signature, le contrat qu'il modifie, son effet, ses modifications, le jour ou il est revenu signe, et si un
+/// courriel a deja demande de signer cette piece (`par_courriel`) : la redemander par courriel est alors un rappel.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AvenantParti {
     pub numero: Option<i64>,
@@ -684,6 +685,7 @@ pub struct AvenantParti {
     pub effet: Option<String>,
     pub modifications: Vec<ArticleModifie>,
     pub signe: Option<String>,
+    pub par_courriel: bool,
 }
 
 /// UN CONTRAT QUE LA SIGNATURE ATTEND (`etats::signatures_attendues`), et que le contrat contresigne renvoie.
