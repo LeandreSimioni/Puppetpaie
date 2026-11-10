@@ -9,9 +9,6 @@ use crate::d28::P;
 use crate::echec::{refus, R};
 pub use rust_decimal::Decimal;
 
-/// Le refus en texte des couches qui ne rendent pas encore `echec::R` (`From<Echec> for String` les y convertit).
-pub type Resultat<T> = Result<T, String>;
-
 /// Le decimal d'un nombre ecrit en texte (`"12.5"`, `" 1e3 "`), blancs autour ignores.
 #[track_caller]
 pub fn dec_texte(s: &str) -> R<Decimal> {

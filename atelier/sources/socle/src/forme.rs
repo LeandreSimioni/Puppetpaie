@@ -116,16 +116,6 @@ fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> Echec
     refus_avec(phrase, Lieu { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..Lieu::default() })
 }
 
-/// La longueur, en octets, de l'objet JSON qui ouvre `texte` (ce qu'un refus porte a part, `echec::avec`), s'il en
-/// ouvre un.
-pub fn objet_en_tete(texte: &str) -> Option<usize> {
-    let mut lu = serde_json::Deserializer::from_str(texte).into_iter::<serde::de::IgnoredAny>();
-    match (texte.starts_with('{'), lu.next()) {
-        (true, Some(Ok(_))) => Some(lu.byte_offset()),
-        _ => None,
-    }
-}
-
 #[track_caller]
 fn refus(phrase: &str, fichier: Option<&Path>, e: &serde_path_to_error::Error<serde_json::Error>) -> Echec {
     let cle = e.path().to_string();
@@ -401,7 +391,7 @@ impl From<i64> for NombreLu {
 
 impl std::str::FromStr for NombreLu {
     type Err = String;
-    fn from_str(t: &str) -> Result<NombreLu, String> {
+    fn from_str(t: &str) -> Result<NombreLu, Self::Err> {
         t.parse::<serde_json::Number>().map(NombreLu).map_err(|_| crate::num::illisible(t))
     }
 }

@@ -53,7 +53,7 @@ pub fn json_trie<T: Serialize + ?Sized>(v: &T) -> String {
 }
 
 /// Le JSON de `v` sur une ligne, serre, tel que serde l'ecrit : une ligne d'un journal (JSONL), ou ce qu'un refus porte
-/// a part (`echec::avec`), que `echec::phrase_de` sait retirer.
+/// a part (`Echec::en_lignes`).
 pub fn json_en_ligne<T: Serialize + ?Sized>(v: &T) -> String {
     // Toute forme du logiciel s'ecrit (`en_valeur`).
     match serde_json::to_string(v) {

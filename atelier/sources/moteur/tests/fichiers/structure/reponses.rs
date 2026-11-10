@@ -811,7 +811,7 @@ impl<'e> Formes<'e> {
         let f = self.espace.fonction(fichier, &chemin, &nom)?;
         let (ff, retour) = (f.fichier, f.retour.clone());
         let t = match lire_ty(&retour) {
-            Ty::Chemin(s, mut a) if !a.is_empty() && ["R", "Result", "Resultat"].contains(&s.last().unwrap().as_str()) => a.remove(0),
+            Ty::Chemin(s, mut a) if !a.is_empty() && ["R", "Result"].contains(&s.last().unwrap().as_str()) => a.remove(0),
             autre => return Err(format!("la fonction {} ne rend pas un `Result` lisible ({:?})", nom, autre)),
         };
         self.du_type(ff, &t, &HashMap::new()).map(Some)

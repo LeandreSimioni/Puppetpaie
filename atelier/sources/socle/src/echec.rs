@@ -229,37 +229,12 @@ pub fn refus_avec(phrase: impl Into<String>, a_part: impl Into<APart>) -> Echec 
     Echec { a_part: Some(a_part.into()), ..noter_et(None, phrase) }
 }
 
-/// LE PONT DES COUCHES QUI REFUSENT ENCORE EN TEXTE (`num::Resultat`) : le refus tel qu'elles le lisent, sa phrase et, ce
-/// qu'il porte a part, ecrit derriere `A_PART` (`avec`). Rien ne se note : l'endroit ou il est ne l'est deja.
-impl From<Echec> for String {
-    fn from(e: Echec) -> String {
-        match e.a_part {
-            Some(a) => avec(e.phrase, a),
-            None => e.phrase,
-        }
-    }
-}
-
 /// La classe d'un refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
 /// `Exception`.
 pub fn classe_notee(classe: Option<Classe>) -> &'static str {
     match classe {
         Some(c) => c.nom(),
         None => "Exception",
-    }
-}
-
-impl From<String> for Echec {
-    #[track_caller]
-    fn from(phrase: String) -> Self {
-        noter_et(None, phrase)
-    }
-}
-
-impl From<&str> for Echec {
-    #[track_caller]
-    fn from(m: &str) -> Self {
-        noter_et(None, m)
     }
 }
 
@@ -342,9 +317,6 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
 
 // ============================================================================================ ce qui va a part
 
-/// Entre la phrase d'un refus et ce qu'il porte a part : un chemin, une cle, un fichier, une donnee pour la page.
-pub const A_PART: char = '\u{1e}';
-
 /// CE QU'UN REFUS PORTE A PART, ecrit sans etiquette : l'objet rendu est celui de la variante. Un `Lieu` (un chemin, un
 /// fichier, une cle, ce qui a ete lu), ou la forme que declare la couche qui refuse (l'etat d'un depot, les anomalies
 /// d'une fiche, l'archive alteree), gardee typee jusqu'a la porte, qui l'ecrit une fois ; personne ne la relit.
@@ -402,36 +374,6 @@ pub struct Lieu {
     pub cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-}
-
-/// UN REFUS QUI PORTE QUELQUE CHOSE A PART. Sa phrase se lit a l'ecran, en mots ; ce qui n'est pas fait pour l'ecran
-/// (le chemin d'un fichier, la cle d'une donnee, le nom d'un fichier livre) ou ce que la page lit d'autre (l'etat d'un
-/// mois, les anomalies d'une fiche) va dans `plus`, une forme (`APart`, ou celle de la couche qui refuse) qui s'ecrit en
-/// objet, que la reponse de la route rend a cote de la phrase (`separer`) : la fenetre l'ouvre, le LLM le lit. Une
-/// phrase qu'on prefixe garde ce qu'elle porte.
-pub fn avec(phrase: impl Into<String>, plus: impl serde::Serialize) -> String {
-    format!("{}{}{}", phrase.into(), A_PART, crate::ecriture::json_en_ligne(&plus))
-}
-
-/// La phrase d'un refus, sans ce qu'il porte a part (`avec`) : les morceaux du message, chacun sans l'objet qui
-/// l'ouvre.
-pub fn phrase_de(message: &str) -> String {
-    let mut phrase = String::new();
-    for (rang, m) in message.split(A_PART).enumerate() {
-        let debut = match (rang, crate::forme::objet_en_tete(m)) {
-            (0, _) | (_, None) => 0,
-            (_, Some(n)) => n,
-        };
-        phrase.push_str(&m[debut..]);
-    }
-    phrase
-}
-
-impl Echec {
-    /// La phrase du refus, sans ce qu'une couche du dessus y a encore ecrit a part (`phrase_de`).
-    pub fn phrase(&self) -> String {
-        phrase_de(&self.phrase)
-    }
 }
 
 /// UN FICHIER QUE LE DISQUE REFUSE (absent, interdit, illisible, mal forme) : la phrase dit ce qui arrive, en mots ; le

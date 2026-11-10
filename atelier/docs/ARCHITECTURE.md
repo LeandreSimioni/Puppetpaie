@@ -70,7 +70,9 @@ que par la structure :
   tiers : « Le corps et ses portes »),
   `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
-  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`. Les tests de structure sont
+  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`,
+  `un_refus_n_est_jamais_un_texte` (un refus est un `socle::echec::Echec`, ce qu'il porte a part dans son `a_part`,
+  jamais un `Result<_, String>`). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
 
 ## Compiler peu

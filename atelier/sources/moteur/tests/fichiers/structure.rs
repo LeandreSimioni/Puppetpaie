@@ -177,7 +177,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
                 if chemin {
-                    chemins.push(format!("{}:{} : le refus « {} » compose un chemin : il va dans un champ à part (`socle::echec::avec`)", rel, ligne, phrase));
+                    chemins.push(format!("{}:{} : le refus « {} » compose un chemin : il va dans un champ à part (`socle::echec::refus_avec`)", rel, ligne, phrase));
                 } else {
                     voir(format!("{}:{} : le refus", rel, ligne), &phrase, usize::MAX, false);
                 }
@@ -185,11 +185,11 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     fautes.extend(chemins);
-    assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM ; un chemin, une clé, un fichier vont dans un champ à part du refus, `socle::echec::avec`) :\n{}", fautes.join("\n"));
+    assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM ; un chemin, une clé, un fichier vont dans un champ à part du refus, `socle::echec::refus_avec`) :\n{}", fautes.join("\n"));
 }
 
 /// LES PHRASES DE REFUS d'un source Rust (hors commentaires et tests) : le litteral que construit un refus, en premier
-/// argument de `Err(…)`, `ok_or(…)`, `ok_or_else(|| …)`, `map_err(|e| …)`, `Echec::from(…)`, `message: …`, `avec(…)`,
+/// argument de `Err(…)`, `ok_or(…)`, `ok_or_else(|| …)`, `map_err(|e| …)`, `refus(…)`, `refus!(…)`, `message: …`, `refus_avec(…)`,
 /// ou en second de `erreur(classe, …)`, `noter_et(classe, …)` (directement ou par `format!`). Chacune : sa ligne, sa
 /// phrase (une valeur composee `{}` y devient un mot ; `{:?}` reste du code) et si ses valeurs portent un chemin
 /// (`.display()`).
@@ -232,7 +232,7 @@ fn refus_rs(t: &str) -> Vec<(usize, String, bool)> {
         let avant: String = c[debut.saturating_sub(160)..debut].iter().filter(|x| !x.is_whitespace()).collect();
         let avant = avant.strip_suffix("format!(").unwrap_or(&avant);
         let avant = avant.strip_suffix('&').unwrap_or(avant);
-        let premier = ["Err(", "ok_or(", "Echec::from(", "message:", "echec::avec(", "echec::a_la_cle(", "echec::cle(", "ok_or_else(||"].iter().any(|s| avant.ends_with(s))
+        let premier = ["Err(", "ok_or(", "refus(", "refus!(", "message:", "refus_avec(", "echec::a_la_cle(", "echec::cle(", "ok_or_else(||"].iter().any(|s| avant.ends_with(s))
             || avant.rsplit_once("map_err(|").is_some_and(|(_, r)| r.ends_with('|') && r[..r.len() - 1].chars().all(|x| x.is_alphanumeric() || x == '_'));
         let second = ["erreur(", "noter_et("].iter().any(|f| avant.rsplit_once(f).is_some_and(|(_, r)| r.ends_with(',') && r.matches(',').count() == 1 && !r.replace("Some(", "").contains('(')));
         // La phrase d'un texte borne (`droit::fiche::texte_borne!`), apres sa mesure : `… "caractères" par caracteres, "…"`.
@@ -539,7 +539,7 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     }
     match routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
         Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
-        Err(e) => json!({"ok": false, "erreur": String::from(e)}),
+        Err(e) => json!({"ok": false, "erreur": e.en_lignes()}),
     }
 }
 
@@ -898,6 +898,26 @@ fn l_engagement_ne_lit_pas_le_journal() {
             assert!(!code.contains("\"journal"), "{}:{} lit le journal : {}", p.display(), n + 1, l.trim());
         }
     }
+}
+
+/// UN REFUS EST UN `Echec`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'ecrit
+/// `Result<…, String>` (une impl de `TryFrom` ou `FromStr` pour serde rend `Self::Error`, ce que serde exige), et le refus
+/// en texte n'existe plus : ni `A_PART` du socle, ni `phrase_de`, ni `objet_en_tete`, ni `echec::avec`.
+#[test]
+fn un_refus_n_est_jamais_un_texte() {
+    let partout = regex::Regex::new(r"Result<.*,\s*String\s*>|\bphrase_de\b|\bobjet_en_tete\b|echec::(A_PART|avec)\b").unwrap();
+    // Dans le socle, `A_PART` et `avec` ne nomment que le refus en texte (ailleurs, `A_PART` nomme les cases d'une fiche).
+    let socle = regex::Regex::new(r"\bA_PART\b|\bfn avec\b").unwrap();
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let texte = if p.starts_with(espace().join("socle")) { &socle } else { &partout };
+        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
+            if let Some(m) = partout.find(l).or_else(|| texte.find(l)) {
+                fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str()));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un refus est un `Echec` (`socle::echec::R`), ce qu'il porte a part dans `a_part` :\n{}", fautes.join("\n"));
 }
 
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
