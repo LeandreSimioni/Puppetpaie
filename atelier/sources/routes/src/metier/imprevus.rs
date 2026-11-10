@@ -38,8 +38,8 @@ pub(crate) fn refus_magasin(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-pub(crate) fn magasin<T, E: Into<String>>(r: Result<T, E>) -> R<T> {
-    r.map_err(refus_magasin)
+pub(crate) fn magasin<T>(r: R<T>) -> R<T> {
+    r.map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 /// Les arrets de travail du magasin des imprevus (`imprevus/AAAA-MM.json`, genre `arret`), dans l'ordre des mois du
