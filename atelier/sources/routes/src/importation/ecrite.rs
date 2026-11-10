@@ -79,10 +79,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     if ent.idcc.portee() != Some(base.idcc.as_str()) {
         return Ok(None);
     }
-    let (an, eff) = (ctx.aujourdhui.an, ctx.effectif().map_err(Echec::from)?);
-    if droit::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
-        return Ok(None);
-    }
+    let eff = ctx.effectif().map_err(Echec::from)?;
     let faits: HashSet<String> = declarations::casc::mois_regularises(ctx).map_err(Echec::from)?.into_iter().collect();
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
     let mut dispo: BTreeSet<String> = BTreeSet::new();
@@ -92,6 +89,10 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let contrat = base.dsn.contrat.clone();
     let mut par_mois: Vec<(String, Decimal)> = Vec::new();
     for m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
+        // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien.
+        if crate::importation::casc::exemptee_au_mois(ctx, &eff, m)? {
+            continue;
+        }
         // Une DSN importee dont le fichier manque ne se controle pas : l'alerte le dit.
         let chemin = match dsn_importee(ctx, m) {
             Ok(Some(c)) => c,

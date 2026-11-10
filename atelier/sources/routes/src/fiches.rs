@@ -476,7 +476,7 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     };
     let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
-    let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx)? } else { (false, false) };
+    let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
     let ouverte = |piece: Piece, case: &str| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
@@ -499,16 +499,19 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
 /// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::Effectif`) : la
 /// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
 /// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
-/// de la CASC-SVP quand la compagnie compte cinquante salaries et que sa fiche, telle qu'elle est enregistree, dit un CSE
-/// (`droit::fiche::ChampsEntreprise::exemption_casc`). Un effectif inconnu n'ouvre rien : c'est lui que « Pour
-/// démarrer » demande (`Effectif::a_dire`).
-fn pieces_de_l_effectif(ctx: &Contexte) -> R<(bool, bool)> {
+/// de la CASC-SVP quand la compagnie compte cinquante salaries et que la fiche `entreprise`, telle qu'elle est saisie, dit
+/// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`). La saisie revient dans la fiche par sa forme, case par case
+/// (`reporter`, sans nommer aucune case) : la cle se tire de la fiche typee. Un effectif inconnu n'ouvre rien : c'est lui
+/// que « Pour démarrer » demande (`Effectif::a_dire`).
+fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> {
     let (jour, eff) = (ctx.aujourdhui, ctx.effectif().map_err(plain)?);
     let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
     let Some(cse) = cse else { return Ok((false, false)) };
     let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour).map_err(plain)?;
-    let casc = cinquante.is_some_and(|c| ctx.entreprise.exemption_casc(&c, &cse).is_some());
-    Ok((lue, casc))
+    let Some(cinquante) = cinquante else { return Ok((lue, false)) };
+    let mut saisie = ctx.entreprise.clone();
+    reporter::<FicheEntrepriseDatee>(&mut saisie, &Saisie::de_la_fiche("entreprise", &ctx.entreprise)?, entreprise)?;
+    Ok((lue, saisie.exemption_casc(&cinquante, &cse).is_some()))
 }
 
 /// LES CASES DU METIER (`droit::fiche::Piece::Metier`) QUE LA FICHE `nom` MONTRE : celles que la grille du metier de
