@@ -17,12 +17,13 @@ use serde::{Deserialize, Serialize};
 
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
+use socle::echec::R;
 
 pub const ALPHABET_CODE: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /// Un code a six signes derriere son prefixe (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la personne).
 /// Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
-pub fn code_au_hasard(prefixe: &str) -> Result<String, String> {
+pub fn code_au_hasard(prefixe: &str) -> R<String> {
     let alphabet = ALPHABET_CODE.as_bytes();
     let limite = 256 - 256 % alphabet.len();
     let mut code = String::from(prefixe);
@@ -39,7 +40,7 @@ pub fn code_au_hasard(prefixe: &str) -> Result<String, String> {
 }
 
 /// `code_fiche` : `FIC-` puis six signes tires au hasard dans `ALPHABET_CODE`.
-pub fn code_fiche() -> Result<String, String> {
+pub fn code_fiche() -> R<String> {
     code_au_hasard("FIC-")
 }
 
@@ -310,7 +311,7 @@ pub fn date_lue(texte: &str) -> Option<String> {
 
 /// (code ISO, codification UE) d'un pays de la liste nomme en francais, ou de son code a deux lettres ;
 /// `None` pour ce que la liste ne connait pas.
-pub fn pays_lu(texte: &str) -> Result<Option<(String, Option<&'static str>)>, String> {
+pub fn pays_lu(texte: &str) -> R<Option<(String, Option<&'static str>)>> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
     let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
@@ -377,7 +378,7 @@ pub struct BanqueLue {
 
 /// `fiche_depuis_reponses` : (les cases lues de la fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Une liste
 /// livree (les pays) qui ne se lit pas refuse.
-pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> Result<(FicheLue, Vec<String>), String> {
+pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue, Vec<String>)> {
     let mut d = FicheLue::default();
     let mut illisible: Vec<String> = Vec::new();
     // Une reponse dite : une question sans reponse, ou a la reponse vide, ne dit rien.
