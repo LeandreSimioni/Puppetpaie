@@ -388,7 +388,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
             let cles = compagnie::maj::cles_de_l_editeur();
-            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
+            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(refuse)?;
             en_json(complete)
         }
         Route::AdministrateurDeposer => {

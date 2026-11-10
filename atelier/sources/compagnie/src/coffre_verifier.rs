@@ -80,7 +80,7 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
         }
     };
     let coffre = Coffre::du_poste(&ctx.racine, "");
-    if !coffre.disponible(nom).map_err(crate::coffre::vers_route)? {
+    if !coffre.disponible(nom)? {
         return Err(erreur(Classe::Refuse, format!("Aucun mot de passe {} : rien à vérifier.", nom)));
     }
     if nom == COURRIEL {

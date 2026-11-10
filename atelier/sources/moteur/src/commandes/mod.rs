@@ -72,7 +72,7 @@ impl Cadre {
             Ok(false) => {}
             // Un coffre illisible : la phrase le dit, et la lecture du secret refusera.
             Err(e) => {
-                eprintln!("{}", socle::echec::phrase_de(&e.message));
+                eprintln!("{}", e.phrase);
                 return;
             }
         }
@@ -84,8 +84,8 @@ impl Cadre {
         eprintln!();
         eprintln!("Le coffre de ce poste ne s'ouvre pas avec sa cle. Ouverture de la seance : le mot de passe du logiciel, une");
         eprintln!("fois, pour {} h.", ::compagnie::demande::HEURES_SEANCE);
-        if let ::compagnie::demande::Verdict::Refuse(phrase) = ::compagnie::demande::ouvrir_seance(&self.racine) {
-            eprintln!("! {}", phrase);
+        if let ::compagnie::demande::Verdict::Refuse(e) = ::compagnie::demande::ouvrir_seance(&self.racine) {
+            eprintln!("! {}", String::from(e));
         }
     }
 }

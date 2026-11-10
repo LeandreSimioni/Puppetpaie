@@ -172,34 +172,21 @@ impl Usage {
 
 // ------------------------------------------------------------------ les refus
 
-/// Un refus : sa classe et sa phrase.
-#[derive(Debug, Clone)]
-pub struct Echec {
-    pub classe: Classe,
-    pub message: String,
-}
-
-pub type R<T> = Result<T, Echec>;
-
-/// Le refus du coffre tel qu'un geste le rend (`socle::echec::Echec`) : sa classe et sa phrase.
-pub fn vers_route(x: Echec) -> socle::echec::Echec {
-    socle::echec::Echec { classe: Some(x.classe), phrase: x.message, a_part: None }
-}
-
-fn echec(classe: Classe, message: impl Into<String>) -> Echec {
-    Echec { classe, message: message.into() }
-}
+use socle::echec::{erreur as echec, APart, Echec, R};
 
 /// `Coffre` : le coffre refuse, la phrase est ecrite pour etre lue.
+#[track_caller]
 fn refus(message: impl Into<String>) -> Echec {
     echec(Classe::Coffre, message)
 }
 
 /// Le refus du coffre, son chemin a part.
+#[track_caller]
 fn refus_a(message: impl Into<String>, p: &Path) -> Echec {
-    refus(socle::echec::avec(message, socle::echec::APart { chemin: Some(affiche(p)), ..socle::echec::APart::default() }))
+    Echec { a_part: Some(APart { chemin: Some(affiche(p)), ..APart::default() }), ..refus(message) }
 }
 
+#[track_caller]
 fn oserr(e: &std::io::Error, p: &Path) -> Echec {
     echec(Classe::Disque, socle::fichiers::panne_fichier(e, p))
 }
@@ -791,8 +778,10 @@ impl Coffre {
 
     /// Le refus d'un coffre qui n'est pas au format de cette version : ce qu'il faut reposer ; le chemin et ce qui ne va
     /// pas a part.
+    #[track_caller]
     fn refus_de_format(&self, detail: String) -> Echec {
-        refus(socle::echec::avec(
+        let a_part = APart { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..APart::default() };
+        Echec { a_part: Some(a_part), ..refus(
             "Le coffre n'est pas au format de cette version -- il est plus \
              ancien, ou abime. Il ne se convertit pas : le supprimer, avec \
              le jeton Google et la cle de signature qui sont fermes de la \
@@ -803,8 +792,7 @@ impl Coffre {
              \x20 route coffre-poser, service courriel, compte <adresse>\n\
              Puis relier le Drive, et refaire une cle de signature si ce poste \
              publie les mises a jour.",
-            socle::echec::APart { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..socle::echec::APart::default() },
-        ))
+        ) }
     }
 
     /// Un coffre neuf : (cle maitresse, le contenu a ecrire). L'enveloppe du
@@ -843,7 +831,7 @@ impl Coffre {
         if let Some(cle) = self.cle_poste(false)? {
             match desceller(&cle, &d64(&contenu.enveloppes.poste)?, AAD_POSTE) {
                 Ok(m) => return Ok(Some(m)),
-                Err(x) if x.classe == Classe::Coffre => {}
+                Err(x) if x.classe == Some(Classe::Coffre) => {}
                 Err(x) => return Err(x),
             }
         }
@@ -851,7 +839,7 @@ impl Coffre {
             let r = deriver(mdp, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
             return match r {
                 Ok(m) => Ok(Some(m)),
-                Err(x) if x.classe == Classe::Coffre => Ok(None),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(None),
                 Err(x) => Err(x),
             };
         }
@@ -897,14 +885,14 @@ impl Coffre {
         let Some(scelles) = &contenu.secrets else { return Ok(BTreeMap::new()) };
         let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
         let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
-        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| echec(Classe::Illisible, m))
+        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })
     }
 
     fn poste_ouvre(&self, enveloppes: &Enveloppes, maitresse: &[u8]) -> R<bool> {
         let Some(cle) = self.cle_poste(false)? else { return Ok(false) };
         match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
             Ok(m) => Ok(m == maitresse),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1011,7 +999,7 @@ impl Coffre {
         match self.lire_fichier() {
             Ok(Some(c)) => Ok(c.fiches),
             Ok(None) => Ok(BTreeMap::new()),
-            Err(x) if x.classe == Classe::Coffre => Ok(BTreeMap::new()),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(BTreeMap::new()),
             Err(x) => Err(x),
         }
     }
@@ -1126,7 +1114,7 @@ impl Coffre {
     pub fn ouverture_exigee(&self) -> R<bool> {
         match self.lire_fichier() {
             Ok(c) => Ok(c.is_some_and(|c| c.enveloppes.motdepasse.is_some())),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1154,14 +1142,14 @@ impl Coffre {
         let contenu = match self.lire_fichier() {
             Ok(Some(c)) => c,
             Ok(None) => return Ok(false),
-            Err(x) if x.classe == Classe::Coffre => return Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => return Ok(false),
             Err(x) => return Err(x),
         };
         let Some(e) = &contenu.enveloppes.motdepasse else { return Ok(false) };
         let r = deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
         match r {
             Ok(_) => Ok(true),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1189,14 +1177,19 @@ impl Coffre {
         if !existe(&p)? {
             return Ok(None);
         }
-        let illisible = |detail: String| echec(Classe::CoffreIllisible, socle::echec::avec("La seance gardee ne se lit pas.", socle::echec::APart { detail: Some(detail), ..socle::echec::APart::default() }));
+        let illisible = |detail: String| Echec {
+            a_part: Some(APart { detail: Some(detail), ..APart::default() }),
+            ..echec(Classe::CoffreIllisible, "La seance gardee ne se lit pas.")
+        };
         let clair = match lire_octets(&p).and_then(|o| desceller(&cle, &o, AAD_GARDEE)) {
             Ok(c) => c,
-            Err(x) if x.classe == Classe::Coffre => return Err(illisible(x.message)),
+            Err(x) if x.classe == Some(Classe::Coffre) => return Err(illisible(x.phrase)),
             Err(x) => return Err(x),
         };
         let texte = String::from_utf8(clair).map_err(|e| illisible(e.to_string()))?;
-        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.").map(Some).map_err(|e| illisible(e.into()))
+        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.")
+            .map(Some)
+            .map_err(|e| Echec { classe: Some(Classe::CoffreIllisible), ..e })
     }
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et
@@ -1205,7 +1198,7 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == Classe::CoffreIllisible => {
+            Err(x) if x.classe == Some(Classe::CoffreIllisible) => {
                 self.oublier_ouverture_gardee()?;
                 return Ok(None);
             }
@@ -1230,7 +1223,7 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == Classe::CoffreIllisible => return Ok(None),
+            Err(x) if x.classe == Some(Classe::CoffreIllisible) => return Ok(None),
             Err(x) => return Err(x),
         };
         Ok(Some(d.fin).filter(|f| *f >= self.heure()))

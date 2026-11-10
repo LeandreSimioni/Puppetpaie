@@ -559,7 +559,7 @@ mod tests {
         assert!(!neuf.join("target").exists());
         // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.
         let ailleurs = base.join("maj-installation").join("logiciel");
-        assert!(deballer(&installation, &ailleurs).unwrap_err().contains("archive d'installation"));
+        assert!(deballer(&installation, &ailleurs).unwrap_err().phrase.contains("archive d'installation"));
         assert!(!ailleurs.exists());
         let _ = std::fs::remove_dir_all(&base);
     }

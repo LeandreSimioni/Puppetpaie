@@ -11,15 +11,15 @@ pub fn commande(args: &[String]) -> i32 {
     let drapeau = |n: &str| args.iter().any(|a| a == n);
     let r = if drapeau("--appliquer") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
-            Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into()),
+            Ok(true) => Err(socle::echec::refus("PuppetPaie tourne : fermer la fenetre, puis appliquer")),
             Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
-            Err(e) => Err(String::from(e)),
+            Err(e) => Err(e),
         }
     } else if drapeau("--revenir") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
-            Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into()),
+            Ok(true) => Err(socle::echec::refus("PuppetPaie tourne : fermer la fenetre, puis revenir")),
             Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v))),
-            Err(e) => Err(String::from(e)),
+            Err(e) => Err(e),
         }
     } else {
         Ok(verifier(!drapeau("--sans-telecharger")))
@@ -30,7 +30,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            dire!("! {}", e);
+            dire!("! {}", String::from(e));
             2
         }
     }

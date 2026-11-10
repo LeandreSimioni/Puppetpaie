@@ -256,7 +256,7 @@ fn en_liste(noms: &[String]) -> String {
 
 /// Le coffre de la compagnie `racine` exige-t-il un mot de passe ?
 fn exigee(poste: &Poste, racine: &Path) -> Result<bool, String> {
-    poste.coffre(racine).ouverture_exigee().map_err(|e| e.message)
+    poste.coffre(racine).ouverture_exigee().map_err(String::from)
 }
 
 /// Le mot de passe ouvre-t-il le coffre de la compagnie `racine` ?
@@ -264,7 +264,7 @@ fn ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> Result<bool, String>
     if motdepasse.is_empty() {
         return Ok(false);
     }
-    poste.coffre(racine).verifier_ouverture(motdepasse).map_err(|e| e.message)
+    poste.coffre(racine).verifier_ouverture(motdepasse).map_err(String::from)
 }
 
 /// Le mot de passe ouvre-t-il le coffre de cette compagnie ?
@@ -433,7 +433,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
         return Err("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé.".into());
     }
     let coffre = poste.coffre(racine);
-    let deja = coffre.ouverture_exigee().map_err(|e| e.message)?;
+    let deja = coffre.ouverture_exigee().map_err(String::from)?;
     let actuel = actuel.filter(|a| !a.is_empty());
     if deja {
         match actuel {
@@ -442,7 +442,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
             Some(_) => {}
         }
     }
-    let octets = coffre.preparer_ouverture(admin, actuel).map_err(|e| format!("{} Rien n'a changé.", e.message.trim_end_matches(" Rien n'a ete pose.")))?;
+    let octets = coffre.preparer_ouverture(admin, actuel).map_err(|e| String::from(e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose.")))))?;
     let chemin = coffre.chemin();
     let avant = tel_qu_il_est(&chemin)?;
     remplacer(&chemin, &octets).map_err(|m| format!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", socle::echec::phrase_de(&m)))?;
@@ -484,7 +484,7 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
         return Err("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé.".into());
     }
     let coffre = poste.coffre(racine);
-    let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| format!("{} Rien n'a changé.", e.message.trim_end_matches(" Rien n'a ete pose.")))?;
+    let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| String::from(e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose.")))))?;
     let rel = relatif(inst, racine)?;
     let avant_registre = lire_registre(inst)?;
     let reste: Vec<EntreeRegistre> = avant_registre.iter().filter(|e| Some(&e.dossier) != rel.as_ref()).cloned().collect();
@@ -516,7 +516,7 @@ pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, pos
         let coffre = poste.coffre(r);
         let octets = coffre
             .preparer_ouverture(nouveau, Some(actuel))
-            .map_err(|e| format!("{} : {} Rien n'a changé, dans aucune compagnie.", nom, e.message.trim_end_matches(" Rien n'a ete pose.")))?;
+            .map_err(|e| String::from(e.reformuler(|m| format!("{} : {} Rien n'a changé, dans aucune compagnie.", nom, m.trim_end_matches(" Rien n'a ete pose.")))))?;
         let chemin = coffre.chemin();
         let avant = tel_qu_il_est(&chemin)?;
         prets.push((chemin, octets, avant));
@@ -1128,7 +1128,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
                     "",
                     "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
                 );
-                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|p| erreur(Classe::PreuveInsuffisante, p))?
+                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|e| Echec { classe: Some(Classe::PreuveInsuffisante), ..e })?
             }
         };
         if !ouvre_une(&Poste::de_ce_poste(), &groupe, &m)? {

@@ -6,8 +6,7 @@ use socle::echec::Classe;
 use std::path::Path;
 
 use droit::contexte::Contexte;
-use socle::echec::R;
-use socle::echec::erreur;
+use socle::echec::{erreur, APart, Echec, R};
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
 #[derive(Default, Clone)]
@@ -31,7 +30,8 @@ impl Preuve {
 /// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse.
 fn cle_de_version(v: &str) -> R<Vec<i64>> {
     v.trim().split('.').map(|x| x.trim().parse::<i64>()).collect::<Result<Vec<i64>, _>>().map_err(|e| {
-        erreur(Classe::Illisible, socle::echec::avec("Un numéro de version ne se lit pas : le signaler au développeur.", socle::echec::APart { detail: Some(format!("« {} » : {}", v, e)), ..socle::echec::APart::default() }))
+        let a_part = APart { detail: Some(format!("« {} » : {}", v, e)), ..APart::default() };
+        Echec { a_part: Some(a_part), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
     })
 }
 
@@ -42,7 +42,7 @@ pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
     let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|m| erreur(Classe::Illisible, m))?)? {
+    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(crate::en(Classe::Illisible))?)? {
         return Ok(String::new());
     }
     Ok(format!(
@@ -95,8 +95,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
         return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
     }
     let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::coffre::vers_route;
-    if !coffre.ouverture_exigee().map_err(vers)? {
+    if !coffre.ouverture_exigee()? {
         return Err(erreur(
             Classe::PreuveInsuffisante,
             "Aucun mot de passe du logiciel n'est pose : rien ne peut partir en reel. Le poser d'abord : la fenêtre PuppetPaie le demande à sa première ouverture. Rien n'est parti.",
@@ -107,7 +106,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
         let acte = crate::demande::Acte::nouveau(quoi, mois_attendu, a_qui);
         return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
             crate::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
-            crate::demande::Verdict::Refuse(phrase) => Err(erreur(Classe::PreuveInsuffisante, phrase)),
+            crate::demande::Verdict::Refuse(e) => Err(Echec { classe: Some(Classe::PreuveInsuffisante), ..e }),
         };
     };
     if let Some(m) = preuve.mois_recopie.as_deref().filter(|m| !m.is_empty()) {
@@ -116,7 +115,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
         }
     }
     // Aucun mot de passe tape n'ouvre rien.
-    let ouvre = preuve.motdepasse.as_deref().map(|m| coffre.verifier_ouverture(m)).transpose().map_err(vers)?;
+    let ouvre = preuve.motdepasse.as_deref().map(|m| coffre.verifier_ouverture(m)).transpose()?;
     if ouvre != Some(true) {
         return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'est parti."));
     }
@@ -130,12 +129,11 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, mois_att
 /// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
 pub fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
     let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = crate::coffre::vers_route;
-    if !coffre.disponible(service).map_err(vers)? {
+    if !coffre.disponible(service)? {
         return Err(erreur(
             Classe::Refuse,
             format!("Mot de passe {} absent : ni dans l'environnement, ni au coffre.\n  route coffre-poser, service {}", service, service),
         ));
     }
-    coffre.lire(service, crate::coffre::DEPOT, true, ouverture).map_err(vers)
+    coffre.lire(service, crate::coffre::DEPOT, true, ouverture)
 }

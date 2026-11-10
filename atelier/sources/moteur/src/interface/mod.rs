@@ -608,7 +608,7 @@ impl Fenetre {
             self.ouvrir(racine);
             return Ok(());
         }
-        let exigee = compagnie::coffre::Coffre::du_poste(&racine, "").ouverture_exigee().map_err(|e| e.message)?;
+        let exigee = compagnie::coffre::Coffre::du_poste(&racine, "").ouverture_exigee().map_err(String::from)?;
         // UNE COMPAGNIE DE L'ADMINISTRATEUR, quand son mot de passe a deja ete tape dans cette fenetre : elle s'ouvre sans
         // le redemander (il ouvre encore son coffre : c'est verifie, pas suppose).
         if exigee && self.administrateur_ouvre(&racine) {
@@ -822,7 +822,7 @@ impl Fenetre {
             }
             ("verifier", Phase::MotDePasse { racine, .. }) => {
                 let motdepasse = texte(args, 0)?;
-                if !compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(motdepasse).map_err(|e| e.message)? {
+                if !compagnie::coffre::Coffre::du_poste(&racine, "").verifier_ouverture(motdepasse).map_err(String::from)? {
                     return Err("Mot de passe refusé.".into());
                 }
                 self.retenir_administrateur(&racine, motdepasse);

@@ -27,7 +27,7 @@ fn autre_poste(c: &Coffre) -> Coffre {
 }
 
 fn lire(c: &Coffre, ouverture: Option<&str>) -> Result<Option<String>, String> {
-    c.lire("net-entreprises", CONSULTATION, false, ouverture).map_err(|e| e.message)
+    c.lire("net-entreprises", CONSULTATION, false, ouverture).map_err(String::from)
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn le_mot_de_passe_du_logiciel_ouvre_l_enveloppe_et_rien_d_autre() {
     assert!(!c.verifier_ouverture("sesame-123 ").unwrap());
     assert!(!c.verifier_ouverture("").unwrap());
     assert!(!String::from_utf8_lossy(&std::fs::read(c.chemin()).unwrap()).contains("sesame-123"));
-    assert!(c.poser_ouverture("12345", None).unwrap_err().message.starts_with("Mot de passe du logiciel trop court : 6 caracteres"));
+    assert!(c.poser_ouverture("12345", None).unwrap_err().phrase.starts_with("Mot de passe du logiciel trop court : 6 caracteres"));
     assert!(c.oublier_ouverture(None).unwrap());
     assert!(!c.ouverture_exigee().unwrap() && !c.chemin().exists());
 }
@@ -92,17 +92,7 @@ fn sans_cle_ni_mot_de_passe_le_coffre_refuse_et_le_dit() {
     c.poser("net-entreprises", "unvraimotdepasse", None).unwrap();
     std::fs::remove_file(c.chemin_cle()).unwrap();
     assert!(lire(&c, None).unwrap_err().contains("et elle est absente"));
-    assert!(c.poser("urssaf", "unvraimotdepasse", None).unwrap_err().starts_with_ce_coffre());
-}
-
-trait Phrase {
-    fn starts_with_ce_coffre(&self) -> bool;
-}
-
-impl Phrase for compagnie::coffre::Echec {
-    fn starts_with_ce_coffre(&self) -> bool {
-        self.message.starts_with("Ce coffre ne s'ouvre pas ici")
-    }
+    assert!(c.poser("urssaf", "unvraimotdepasse", None).unwrap_err().phrase.starts_with("Ce coffre ne s'ouvre pas ici"));
 }
 
 #[test]
@@ -133,14 +123,14 @@ fn scrypt_est_celui_de_la_rfc_7914_et_refuse_les_parametres_d_un_fichier_piege()
     for (n, r, p) in [(3, 8, 1), (2, 0, 1), (131072, 8, 1)] {
         assert!(deriver("x", &kdf("scrypt", n, r, p, "AAAA")).is_err(), "n={} r={} p={}", n, r, p);
     }
-    assert!(deriver("x", &kdf("argon2", 1024, 8, 1, "AAAA")).unwrap_err().message.contains("argon2"), "le refus nomme l'algorithme");
+    assert!(deriver("x", &kdf("argon2", 1024, 8, 1, "AAAA")).unwrap_err().phrase.contains("argon2"), "le refus nomme l'algorithme");
 }
 
 #[test]
 fn l_ouverture_gardee_vaut_pour_son_coffre_et_expire() {
     let c = coffre();
     c.poser_ouverture("sesame-123", None).unwrap();
-    assert!(c.garder_ouverture("faux-faux", "2026-10-04T02:05").unwrap_err().message.starts_with("Mot de passe du logiciel refuse"));
+    assert!(c.garder_ouverture("faux-faux", "2026-10-04T02:05").unwrap_err().phrase.starts_with("Mot de passe du logiciel refuse"));
     assert_eq!(c.ouverture_gardee().unwrap(), None);
     c.garder_ouverture("sesame-123", "2026-10-04T02:05").unwrap();
     assert!(!String::from_utf8_lossy(&std::fs::read(c.chemin_gardee().unwrap()).unwrap()).contains("sesame-123"));

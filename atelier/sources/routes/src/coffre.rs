@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use compagnie::coffre::{Coffre, Echec as EchecCoffre};
+use compagnie::coffre::Coffre;
 use crate::gestes::administrateur::Poste;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
@@ -26,7 +26,6 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
-use compagnie::coffre::vers_route;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
@@ -469,7 +468,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
             &["Celui qui ouvre les compagnies de l'administrateur.".to_string(), "La frappe ne s'affiche pas.".to_string()],
             "mot de passe (rien ne s'affiche) : ",
         )
-        .map_err(refus)?,
+        .map_err(|e| Echec { classe: Some(Classe::Refuse), ..e })?,
     };
     if nom == Route::AdministrateurRattacher {
         // Une compagnie qui a deja son mot de passe le donne aussi : c'est lui que celui de l'administrateur remplace.
@@ -516,8 +515,7 @@ fn refus(m: impl Into<String>) -> Echec {
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
 pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
     let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
-    let vers = vers_route;
-    if !coffre.ouverture_exigee().map_err(vers)? {
+    if !coffre.ouverture_exigee()? {
         return Ok(());
     }
     let Some(mdp) = motdepasse else {
@@ -526,13 +524,13 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
         let acte = compagnie::demande::Acte::nouveau(quoi, "", "");
         return match compagnie::demande::autoriser_acte(racine, &acte) {
             compagnie::demande::Verdict::Accepte => Ok(()),
-            compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(
-                Classe::PreuveInsuffisante,
-                format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, phrase.replace("Rien n'est parti", "Rien n'a ete modifie")),
-            )),
+            compagnie::demande::Verdict::Refuse(e) => Err(Echec {
+                classe: Some(Classe::PreuveInsuffisante),
+                ..e.reformuler(|m| format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, m.replace("Rien n'est parti", "Rien n'a ete modifie")))
+            }),
         };
     };
-    if !coffre.verifier_ouverture(mdp).map_err(vers)? {
+    if !coffre.verifier_ouverture(mdp)? {
         return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'a ete modifie."));
     }
     Ok(())
@@ -542,7 +540,7 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
 fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<String> {
     match donne {
         Some(v) => Ok(v),
-        None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(refus),
+        None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(|e| Echec { classe: Some(Classe::Refuse), ..e }),
     }
 }
 
@@ -557,13 +555,8 @@ fn actuel(mdp: Option<&str>) -> Option<String> {
 
 /// Le refus du coffre : `Coffre` se rend `Refuse` (la page le montre tel quel), tout le reste (`Disque`...) garde
 /// sa classe.
-fn en_operation(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(if x.classe == Classe::Coffre { Classe::Refuse } else { x.classe }), phrase: x.message, a_part: None }
-}
-
-/// Le refus du coffre tel quel (`coffre.oublier_ouverture` ne l'attrapait pas).
-fn en_coffre(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(x.classe), phrase: x.message, a_part: None }
+fn en_operation(x: Echec) -> Echec {
+    Echec { classe: if x.classe == Some(Classe::Coffre) { Some(Classe::Refuse) } else { x.classe }, ..x }
 }
 
 /// L'heure de Paris, a la minute.
@@ -748,7 +741,7 @@ fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
-    coffre(ctx).oublier_ouverture(actuel(mdp).as_deref()).map_err(en_coffre)?;
+    coffre(ctx).oublier_ouverture(actuel(mdp).as_deref())?;
     coffre_etat(ctx)
 }
 
@@ -862,7 +855,7 @@ impl Jeton {
         // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
         let brut = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e))?;
         let clair = compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
-            format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", e.message)
+            String::from(e.reformuler(|m| format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", m)))
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
         socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).").map_err(String::from)
@@ -957,7 +950,7 @@ fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoo
     let brut = socle::json_ascii::dumps(&ecrit, None, false, false);
     let scelle = compagnie::coffre::Coffre::du_poste(racine, "")
         .proteger(brut.as_bytes(), DESCRIPTION)
-        .map_err(|e| erreur_google(format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", e.message)))?;
+        .map_err(|e| Echec { classe: Some(Classe::Google), ..e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)) })?;
     let dossier = config(racine);
     std::fs::create_dir_all(&dossier).map_err(|e| erreur_google(socle::echec::du_disque(&dossier, &e)))?;
     let chemin = dossier.join(FICHIER_JETON);
@@ -1094,7 +1087,7 @@ fn coffre_etat(ctx: &Contexte) -> R<EtatDuCoffre> {
 /// rappels y lisent les acces qui manquent (`routes::rappels`).
 pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
     let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
-    let secrets = coffre.services().map_err(vers_route)?;
+    let secrets = coffre.services()?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = compagnie::bridage::branchement(racine)?.joue();
     let mut services = Vec::new();
@@ -1129,8 +1122,8 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             oublier: None,
         });
     }
-    let mot_de_passe_pose = coffre.ouverture_exigee().map_err(vers_route)?;
-    let cle_poste = coffre.cle_posee().map_err(vers_route)?;
+    let mot_de_passe_pose = coffre.ouverture_exigee()?;
+    let cle_poste = coffre.cle_posee()?;
     Ok(EtatDuCoffre {
         phrase: String::new(),
         services,

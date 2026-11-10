@@ -728,11 +728,10 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
         return Ok(true);
     }
     let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = |x: compagnie::coffre::Echec| Echec { classe: Some(x.classe), phrase: x.message, a_part: None };
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => a,
-        _ => match coffre.compte_pose("courriel").map_err(vers)? {
+        _ => match coffre.compte_pose("courriel")? {
             Some(a) => a,
             None => return Ok(false),
         },
@@ -740,7 +739,7 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
     if adresse.trim().is_empty() {
         return Ok(false);
     }
-    coffre.disponible("courriel").map_err(vers)
+    coffre.disponible("courriel")
 }
 
 /// Une demande de fiche partie et pas encore revenue : son code, a qui, quand, et ce que la page en dit.

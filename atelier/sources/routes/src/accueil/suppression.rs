@@ -205,17 +205,17 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&str>, a
 /// moteur le demande lui-meme (`demande::mot_de_passe_de_l_acte`). Un coffre sans mot de passe du logiciel ne prouve rien.
 fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) -> Result<(), String> {
     let coffre = poste.coffre(racine);
-    if !coffre.ouverture_exigee().map_err(|e| e.message)? {
+    if !coffre.ouverture_exigee().map_err(String::from)? {
         return Err("Aucun mot de passe du logiciel n'est posé pour cette compagnie : rien ne prouve qui la supprime. Rien n'a été supprimé.".into());
     }
     let tape = match motdepasse.filter(|m| !m.is_empty()) {
         Some(m) => m.to_string(),
         None => {
             let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), "", "");
-            compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| format!("{} Rien n'a été supprimé.", m))?
+            compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| String::from(m.reformuler(|p| format!("{} Rien n'a été supprimé.", p))))?
         }
     };
-    if !coffre.verifier_ouverture(&tape).map_err(|e| e.message)? {
+    if !coffre.verifier_ouverture(&tape).map_err(String::from)? {
         return Err("Mot de passe du logiciel refusé. Rien n'a été supprimé.".into());
     }
     Ok(())

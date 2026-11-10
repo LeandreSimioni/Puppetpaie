@@ -376,7 +376,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
     } else {
         match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.message)),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.phrase)),
             (Ok(avec_mot_de_passe), Ok(etat), Ok(ici)) => {
                 let poses: Vec<String> = etat
                     .iter()
