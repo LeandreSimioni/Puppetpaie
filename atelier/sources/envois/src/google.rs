@@ -5,11 +5,10 @@
 
 use serde::Deserialize;
 
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::{erreur, Classe, R};
 
+use crate::drive::ErreurGoogle;
 use crate::transport::{envoyer, Panne, Requete};
-
-type R<T> = Result<T, Echec>;
 
 /// L'adresse des jetons de Google.
 pub const JETONS: &str = "https://oauth2.googleapis.com/token";
@@ -42,9 +41,9 @@ impl socle::forme::ReponseDUnTiers for ReponseJeton {}
 
 /// Le texte d'une reponse de Google lu en sa forme `T`, par la porte des tiers ; une reponse qui ne se lit pas rend
 /// `phrase`.
-pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> Result<T, String> {
-    let texte = String::from_utf8(brut).map_err(|e| socle::echec::avec(phrase, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
-    socle::forme::lire_reponse_tiers(&texte, phrase).map_err(String::from)
+pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> R<T> {
+    let texte = String::from_utf8(brut).map_err(|e| socle::echec::refus_avec(phrase, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
+    socle::forme::lire_reponse_tiers(&texte, phrase)
 }
 
 /// L'ERREUR QUE GOOGLE REND : celle de l'autorisation (`{"error": "invalid_grant", "error_description": …}`) ou celle d'une
@@ -151,9 +150,9 @@ fn brute(p: Panne) -> (Classe, String) {
     }
 }
 
-/// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(phrase))` pour un refus
-/// de Google, `Err` pour une panne brute. `adresse` : `JETONS`, ou un serveur local.
-pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafraichissement: &str, delai: u64) -> R<Result<String, String>> {
+/// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
+/// de Google, traduit, `Err` pour une panne brute. `adresse` : `JETONS`, ou un serveur local.
+pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafraichissement: &str, delai: u64) -> R<Result<String, ErreurGoogle>> {
     let corps = encoder(&[
         ("client_id", application.client_id.clone()),
         ("client_secret", application.client_secret.clone()),
@@ -175,15 +174,15 @@ pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafr
             // Une reponse 200 sans jeton d'acces, ou illisible, est un refus de Google comme un autre : une phrase.
             let reponse: ReponseJeton = match lue(brut, "Google a rendu une reponse illisible a la demande de jeton. Reessayer plus tard.") {
                 Ok(r) => r,
-                Err(phrase) => return Ok(Err(phrase)),
+                Err(e) => return Ok(Err(ErreurGoogle::google(String::from(e)))),
             };
             match reponse.access_token.filter(|t| !t.is_empty()) {
                 Some(acces) => Ok(Ok(acces)),
-                None => Ok(Err("Google n'a pas rendu de jeton d'acces. Reessayer plus tard ; si cela dure, lier de nouveau le compte.".into())),
+                None => Ok(Err(ErreurGoogle::google("Google n'a pas rendu de jeton d'acces. Reessayer plus tard ; si cela dure, lier de nouveau le compte."))),
             }
         }
         Err(panne) => match phrase_de_panne(panne) {
-            Ok(phrase) => Ok(Err(phrase)),
+            Ok(phrase) => Ok(Err(ErreurGoogle::google(phrase))),
             Err((classe, message)) => Err(erreur(classe, message)),
         },
     }

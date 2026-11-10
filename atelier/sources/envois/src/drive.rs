@@ -236,14 +236,14 @@ impl Adresses {
 /// l'adresse du compte. Ce module n'ouvre jamais le coffre.
 pub struct Autorisation {
     pub application: Application,
-    pub rafraichissement: Result<Option<String>, String>,
+    pub rafraichissement: Result<Option<String>, ErreurGoogle>,
     pub compte: Option<String>,
 }
 
 /// Le jeton d'acces ne vit qu'en memoire.
 pub struct Client {
     application: Application,
-    rafraichissement: Result<Option<String>, String>,
+    rafraichissement: Result<Option<String>, ErreurGoogle>,
     compte: Option<String>,
     acces: Option<String>,
     adresses: Adresses,
@@ -268,12 +268,12 @@ impl Client {
         if let Some(a) = self.acces.as_ref().filter(|a| !a.is_empty()) {
             return Ok(a.clone());
         }
-        let Some(rafraichissement) = self.rafraichissement.clone().map_err(ErreurGoogle::google)?.filter(|r| !r.is_empty()) else {
+        let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.is_empty()) else {
             return Err(ErreurGoogle::google(
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
             ));
         };
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(60))?.map_err(ErreurGoogle::google)?;
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(60))??;
         self.acces = Some(acces.clone());
         Ok(acces)
     }
@@ -285,7 +285,7 @@ impl Client {
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
     fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
-        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::nouvelle(Classe::Google, m))
+        lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::nouvelle(Classe::Google, String::from(m)))
     }
 
     /// `appel` sans lecture du JSON : les octets de la reponse, tels quels (le contenu d'un fichier, `telecharger`). Le

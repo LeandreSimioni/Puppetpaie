@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use crate::google::{encoder, lue, phrase_de_panne, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
 use crate::transport::{envoyer, Requete};
 
@@ -54,8 +54,9 @@ fn echapper(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#x27;")
 }
 
+#[track_caller]
 fn refus(message: impl Into<String>) -> Echec {
-    Echec { classe: Some(socle::echec::Classe::Refuse), phrase: message.into(), a_part: None }
+    socle::echec::erreur(Classe::Refuse, message)
 }
 
 /// Les deux adresses que l'autorisation appelle : les jetons et l'adresse du compte. Les vraies par defaut ; l'appelant
@@ -188,7 +189,7 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
 /// La reponse de Google lue en sa forme `T`, ou la phrase de la panne.
 fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Echec> {
     match envoyer(requete) {
-        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(refus),
+        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| Echec { classe: Some(Classe::Refuse), ..e }),
         Err(panne) => match phrase_de_panne(panne) {
             Ok(phrase) => Err(refus(phrase)),
             Err((_, message)) => Err(refus(format!("Google ne repond pas : {}. Aucune autorisation enregistree.", message))),

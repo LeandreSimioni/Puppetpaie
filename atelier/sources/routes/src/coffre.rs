@@ -915,7 +915,7 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
     let (rafraichissement, compte) = match Jeton::de(racine) {
         Jeton::Absent => (Ok(None), None),
         Jeton::Lu(j) => (Ok(Some(j.rafraichissement)), Some(j.compte)),
-        Jeton::Illisible(phrase) => (Err(phrase), None),
+        Jeton::Illisible(phrase) => (Err(envois::drive::ErreurGoogle::google(phrase)), None),
     };
     let autorisation = envois::drive::Autorisation { application, rafraichissement, compte };
     Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()))
@@ -1035,7 +1035,7 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
     let (application, _) = application?;
     match jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &jeton.rafraichissement, DELAI)? {
         Ok(_) => Ok(etat(Some(jeton.compte), true, None, accordees)),
-        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme), accordees)),
+        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme.message), accordees)),
     }
 }
 
