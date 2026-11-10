@@ -1778,7 +1778,7 @@ fn version_de_la_dsn<'a>(ctx: &Contexte, o: &'a Objet, departs: &Departs, mois: 
 /// Ce que la version `version` dit de `mois` (`Objet::vue` de sa saisie).
 fn vue_de_la_version(o: &Objet, version: stock::Version, mois: &str) -> R<Option<crate::saisie::Carte>> {
     let saisie = version.saisie().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "saisie"))?;
-    Ok(o.d_apres_la_saisie(saisie).vue(mois)?)
+    o.d_apres_la_saisie(saisie).vue(mois)
 }
 
 /// LA PAIE ECRITE DE `mois` DE LA VERSION `version` de l'engagement `o` (une validation, celle qu'une modification va

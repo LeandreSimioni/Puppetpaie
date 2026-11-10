@@ -66,7 +66,7 @@ fn cle(o: &Objet) -> Option<(String, String)> {
 /// LA LECTURE D'UN FICHIER DE PAIES : celui de `mois`, en sa forme, tel que le geste l'a lu ou que le brouillon le tient
 /// (`stock::lire_dans` : la meme forme tant que ses octets sont les memes).
 fn fichier(racine: &std::path::Path, mois: &str) -> Resultat<Option<Arc<FichierDesPaies>>> {
-    stock::lire_dans(racine, mois)
+    stock::lire_dans(racine, mois).map_err(String::from)
 }
 
 /// L'entree de l'engagement `o` dans le fichier de `mois`, telle qu'elle est ecrite.
