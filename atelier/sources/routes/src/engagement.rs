@@ -190,8 +190,8 @@ pub(super) fn maintenant() -> String {
 
 /// L'ENGAGEMENT QU'UNE CARTE MONTRE : celui que designe son identite, que le moteur lui a rendue
 /// (`engagement::stock::identites`). Refus : une identite que l'ecran de `mois` ne montre pas.
-fn designe(ctx: &Contexte, mois: &str, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
-    engagement::stock::designe(&ctx.racine, Mois::lire(mois)?, id).map_err(|e| e.reclasser(Classe::Refuse))
+fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
+    engagement::stock::designe(&ctx.racine, mois, id).map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 
@@ -215,11 +215,10 @@ pub(crate) struct ChargeValider {
 /// geste aussi.
 pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Validation> {
     let ChargeValider { mois, engagement: id } = carte;
-    let texte = &mois.to_string();
-    let _verrou = crate::mois::avant_d_ecrire(ctx, texte)?;
+    let _verrou = crate::mois::avant_d_ecrire(ctx, mois)?;
     let brouillon = engagement::stock::Brouillon::ouvrir(&ctx.racine);
     // Ce qui se valide est le brouillon ecrit, lu en sa forme (`engagement::carte::Brouillon`).
-    crate::mois::brouillon_ecrit(ctx, texte, &id)?;
+    crate::mois::brouillon_ecrit(ctx, mois, &id)?;
     let (i, o) = engagement::stock::designe(&ctx.racine, mois, &id)?;
     if o.est_valide() {
         return Err(refus(format!("{} : cet engagement est déjà validé ; il se modifie d'un geste. Rien n'est écrit.", engagement::etats::qui_de(ctx, &o))));
@@ -264,7 +263,6 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
 /// norme ne permet plus de declarer (`crate::regularisation::refus_non_declarable`) ; une saisie qui ne se calcule pas.
 fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification> {
     let ChargeModifier { mois, engagement: id, changements, confirme, jour } = charge;
-    let mois = &mois.to_string();
     // Le jour du mois de la carte ou un terme change, quand on le dit (le 1er sinon).
     if let Some(j) = jour.filter(|j| !(1..=31).contains(j)) {
         return Err(refus(format!("« le {} » : un jour du mois est attendu, de 1 à 31. Rien n'est écrit.", j)));
@@ -289,7 +287,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
         }
     };
     brouillon.ecrire()?;
-    let vue = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)?;
+    let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
     if let Some(e) = vue.as_ref().and_then(|d| d.engagements.get(i)) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
@@ -325,12 +323,12 @@ fn vaut_a_partir_du(j: &socle::date::Jour) -> String {
 /// LE JOUR D'OU VAUT UN TERME que la carte de `mois` change dans un contrat paye au mois, `o` avant et `devenu` apres : le
 /// dernier changement date de ce mois, s'il n'etait pas deja ecrit. `None` : la carte ne change aucun terme a ce mois
 /// (le premier mois du contrat dit ses termes de son debut).
-fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, mois: &str) -> R<Option<socle::date::Jour>> {
+fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, mois: Mois) -> R<Option<socle::date::Jour>> {
     if !devenu.mensuel()? {
         return Ok(None);
     }
     let du_mois = |x: &engagement::stock::Objet| -> Vec<engagement::stock::Avenant> {
-        x.avenants().iter().filter(|a| a.depuis.mois_civil().to_string() == mois).cloned().collect()
+        x.avenants().iter().filter(|a| a.depuis.mois_civil() == mois).cloned().collect()
     };
     let apres = du_mois(devenu);
     Ok((apres != du_mois(o)).then(|| apres.iter().map(|a| a.depuis).max()).flatten())
@@ -339,9 +337,8 @@ fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, 
 /// La modification elle-meme, dans le brouillon de fichiers ouvert : la carte de `mois` de l'engagement `o`, de rang
 /// `i`, prend ses changements ; l'engagement se rouvre, prend la carte changee et se revalide. Ce qu'elle rend dit si
 /// elle s'ecrit (`Issue::Ecrite`).
-fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
+fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: usize, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
     let qui = engagement::etats::qui_de(ctx, o);
-    let lu = Mois::lire(mois)?;
     let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;
     changements.appliquer(ctx, lu, &mut carte, |_| qui.clone()).map_err(|e| e.reclasser(Classe::Refuse))?;
@@ -353,7 +350,7 @@ fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let devenu = engagement::stock::objets(&ctx.racine)?.into_iter().find(|x| x.fichier == o.fichier && x.rang == o.rang);
     let depuis = match devenu.as_ref() {
-        Some(d) => a_partir_de(o, d, mois)?,
+        Some(d) => a_partir_de(o, d, lu)?,
         None => None,
     };
     if let Some(devenu) = devenu {
@@ -417,27 +414,27 @@ pub(crate) fn ce_que_le_changement_entraine(ctx: &Contexte, v: &engagement::etat
                     out.push(phrase);
                 }
             }
-            ARefaire::Bulletin { mois, .. } => out.push(un_bulletin_rectificatif(&mois.to_string())),
-            ARefaire::Dsn { mois, .. } => out.push(la_dsn_qui_change(&mut m, ctx, &mois.to_string())?),
+            ARefaire::Bulletin { mois, .. } => out.push(un_bulletin_rectificatif(mois)),
+            ARefaire::Dsn { mois, .. } => out.push(la_dsn_qui_change(&mut m, ctx, mois)?),
         }
     }
     Ok(out)
 }
 
 /// « un bulletin rectificatif de janvier 2026 » : la paie partie de `mois` se refait.
-fn un_bulletin_rectificatif(mois: &str) -> String {
+fn un_bulletin_rectificatif(mois: Mois) -> String {
     format!("un bulletin rectificatif {}", crate::regularisation::de_mois_en_clair(mois))
 }
 
 /// Ce qui arrive a la DSN deposee de `mois` quand sa paie change, comme toute modification d'un mois declare
 /// (`crate::regularisation::modification_de_l_engagement`) : un annule-et-remplace jusqu'a la limite, ensuite la correction
 /// dans la DSN qui porte (`compagnie::etat_dsn::dsn_qui_porte`).
-fn la_dsn_qui_change(m: &mut crate::etapes::Moteur, ctx: &Contexte, mois: &str) -> R<String> {
+fn la_dsn_qui_change(m: &mut crate::etapes::Moteur, ctx: &Contexte, mois: Mois) -> R<String> {
     use crate::regularisation::{de_mois_en_clair, DsnDeposee};
     let de = de_mois_en_clair(mois);
-    Ok(match crate::regularisation::modification_de_l_engagement(m, ctx, Mois::lire(mois)?)? {
+    Ok(match crate::regularisation::modification_de_l_engagement(m, ctx, mois)? {
         Some(DsnDeposee::Corrigee { porteur }) => {
-            format!("la correction dans la DSN {} (celle {}, déposée, ne se remplace plus)", de_mois_en_clair(&porteur), de)
+            format!("la correction dans la DSN {} (celle {}, déposée, ne se remplace plus)", de_mois_en_clair(porteur), de)
         }
         Some(DsnDeposee::Remplacee { limite }) => {
             format!("un annule-et-remplace de la DSN {}, admis jusqu'au {} à minuit", de, limite.jj_mm_aaaa())
@@ -454,7 +451,7 @@ fn la_dsn_qui_change(m: &mut crate::etapes::Moteur, ctx: &Contexte, mois: &str) 
 /// qui est parti) ; renvoyee avec `confirme`, l'engagement devient non actif (`engagement::etats::desactiver`) et la
 /// phrase dit ce que cela rend a faire (la DSN d'un mois a corriger). Rien ne part de lui-meme.
 fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
-    let mois = &charge.mois.to_string();
+    let mois = charge.mois;
     let _verrou = crate::mois::avant_d_ecrire(ctx, mois)?;
     let (i, o) = designe(ctx, mois, &charge.engagement)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;

@@ -80,7 +80,7 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
         if let Some(declarees) =
-            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
+            engagement::etats::correction_due(ctx, &v, departs, mois, Some(porteur)).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
         {
             out.push(Due { valide: v, rang, declarees });
         }

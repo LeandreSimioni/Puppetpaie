@@ -2,17 +2,18 @@
 
 use droit::contexte::Contexte;
 use socle::echec::{Classe, R};
+use socle::mois::Mois;
 
 /// Les arrets que la DSN de `mois` doit reporter : ceux du magasin des imprevus que la regle du bloc 60 y met
 /// (`declarations::dsn::Arret::a_reporter` : les arrets qui croisent le mois, et ceux d'un mois anterieur saisis apres le
 /// depart de sa DSN), lus en leur forme (`engagement::imprevus::ArretSaisi`).
-pub(crate) fn arrets_pour(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<declarations::dsn::Arret>> {
-    socle::mois::Mois::lire(mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+pub(crate) fn arrets_pour(ctx: &Contexte, mois: Mois, departs: &engagement::departs::Departs) -> R<Vec<declarations::dsn::Arret>> {
+    let texte = mois.to_string();
     let mut out = Vec::new();
     for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         let engagement::imprevus::Imprevu::Arret(saisi) = imp else { continue };
         let arret = declarations::dsn::Arret { saisi };
-        if arret.a_reporter(mois, departs).map_err(|m| m.reclasser(Classe::Illisible))? {
+        if arret.a_reporter(&texte, departs).map_err(|m| m.reclasser(Classe::Illisible))? {
             out.push(arret);
         }
     }

@@ -41,7 +41,7 @@ use engagement::{self, LignePaie};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
-use socle::mois::Mois;
+use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
@@ -441,8 +441,7 @@ dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajust
 /// Un mois neuf s'ouvre VIDE, avec le
 /// dernier taux saisi -- `null` quand le dossier n'a encore aucun cachet (R12 :
 /// aucun texte ne fixe un taux de cachet, la compagnie le saisit).
-pub(crate) fn squelette(ctx: &Contexte, mois: &str) -> R<VueDuMois> {
-    let mois = Mois::lire(mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
     Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.and_then(socle::forme::NombreLu::de_f64), ..VueDuMois::vide(mois) })
 }
 
@@ -551,20 +550,19 @@ fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
 
 /// La route `saisie`.
 fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
-    let texte_mois = mois.to_string();
     let existe = engagement::stock::a_une_saisie(&ctx.racine, mois)?;
     // Un mois neuf s'ouvre VIDE, avec le dernier taux saisi (`squelette`) ; un mois que des engagements touchent, tel qu'ils
     // le montrent.
     let saisie = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(vue) => vue,
-        None => squelette(ctx, &texte_mois)?,
+        None => squelette(ctx, mois)?,
     };
     let defauts = defauts_de_la_saisie(ctx, &saisie)?;
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
-    let importes = import::mois::cartes(ctx, &texte_mois)?;
-    let ferme = ferme_aux_neufs(ctx, &texte_mois)?;
+    let importes = import::mois::cartes(ctx, &mois.to_string())?;
+    let ferme = ferme_aux_neufs(ctx, mois)?;
     // CE QUE L'ECRAN DIT DE LA SAISIE : pour un mois importe, `ferme_aux_neufs`.
     let phrase = match (&ferme, existe) {
         (Some(f), _) => f.clone(),
@@ -625,8 +623,8 @@ pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (String, Option<String>) {
 
 /// Les engagements que le mois montre (`engagement::stock::vue_du_mois`), avec la cle du salarie ; vide si aucun
 /// engagement ne le touche. Une carte qui ne nomme pas son salarie est sautee.
-pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<(IdSalarie, SaisieCarte)>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)? else {
+pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalarie, SaisieCarte)>> {
+    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else {
         return Ok(Vec::new());
     };
     Ok(data.engagements.into_iter().filter_map(|e| Some((e.salarie.clone()?, e))).collect())
@@ -646,10 +644,10 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<(IdSalari
 /// engagement, pour le fichier du mois, est le contrat tel qu'il a ete signe, et une ligne de cachets a dater, au taux du
 /// contrat, sinon au dernier saisi (la page ne choisit pas de taux ; un dossier qu'on ne sait pas relire, ou qui n'a
 /// encore aucun cachet, R12, n'en propose aucun : la ligne reste a completer).
-fn contrats_en_cours(ctx: &Contexte, mois: &str) -> R<Vec<EnCours>> {
+fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
     let mut vus: HashSet<(String, String, String)> = HashSet::new();
-    for i in engagement::importe::qui_continuent(&ctx.racine, Mois::lire(mois)?)? {
+    for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
@@ -710,9 +708,9 @@ fn contrats_en_cours(ctx: &Contexte, mois: &str) -> R<Vec<EnCours>> {
 }
 
 fn contrats_en_cours_route(ctx: &Contexte, mois: Mois) -> R<ContratsEnCours> {
-    let contrats = contrats_en_cours(ctx, &mois.to_string())?;
+    let contrats = contrats_en_cours(ctx, mois)?;
     // Ce que l'ecran dit en posant les contrats qui ne sont pas encore repris : qui, et que ses jours restent a poser.
-    let de_mois = socle::texte::de(&Mois::en_clair(&mois.to_string()));
+    let de_mois = socle::texte::de(&mois.libelle(Graphie::Accentuee));
     let noms: Vec<&str> = contrats.iter().filter(|c| !c.deja_repris).map(|c| c.nom.as_str()).collect();
     let reprise = match noms.len() {
         0 => None,
@@ -846,20 +844,20 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
 /// LES CONTRATS QUI TOUCHENT `mois`, pour le calendrier des mois passes. Deux sources : un mois qui a son fichier de paie
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
-fn contrats_passes(ctx: &Contexte, mois: &str, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
+fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
     let (premier, dernier) = (format!("{}-01", mois), format!("{}-31", mois));
     let voulu = |cle: &str| salarie.is_none_or(|s| s.as_str() == cle);
     let spectacles = Spectacles::nouveau(ctx);
 
-    let mut couverts: HashSet<String> = HashSet::new();
+    let mut couverts: HashSet<Mois> = HashSet::new();
     // Un contrat sur plusieurs mois est dans chacun de ses fichiers de mois, avec les memes bornes : on le garde une
     // fois, de preference tel que le fichier du mois regarde l'ecrit (c'est lui qui a les jours joues).
     let mut vus: HashMap<(String, String, String), usize> = HashMap::new();
     let mut out: Vec<Passe> = Vec::new();
-    let mut connus = engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from).collect::<Vec<_>>();
+    let mut connus = engagement::stock::mois_saisis(&ctx.racine)?;
     connus.reverse();
-    for mc in &connus {
-        couverts.insert(mc.clone());
+    for &mc in &connus {
+        couverts.insert(mc);
         for (cle, e) in engagements_du_mois(ctx, mc)? {
             let (debut, fin) = bornes_brutes(&e);
             // Un contrat sans jour finit le jour ou il commence.
@@ -883,7 +881,7 @@ fn contrats_passes(ctx: &Contexte, mois: &str, salarie: Option<&IdSalarie>) -> R
             let dates = jours_joues(&e);
             let ident = (cle.to_string(), debut.clone(), fin.clone());
             let deja = vus.get(&ident).copied();
-            if deja.is_some() && mc.as_str() != mois {
+            if deja.is_some() && mc != mois {
                 continue;
             }
             let jours = match e.jours.as_ref().and_then(socle::forme::NombreLu::as_f64).filter(|j| *j != 0.0) {
@@ -901,7 +899,7 @@ fn contrats_passes(ctx: &Contexte, mois: &str, salarie: Option<&IdSalarie>) -> R
                 jours: Some(jours),
                 titre: titre_de(spec, numero.as_deref()),
                 numero_objet: numero,
-                dates: dates.into_iter().filter(|j| j.chars().take(7).eq(mois.chars())).collect(),
+                dates: dates.into_iter().filter(|j| j.get(..7).and_then(Mois::du_texte) == Some(mois)).collect(),
                 source: "paie",
             };
             match deja {
@@ -919,7 +917,7 @@ fn contrats_passes(ctx: &Contexte, mois: &str, salarie: Option<&IdSalarie>) -> R
         }
         // Un mois produit ici se tait dans l'historique : ce sont les memes contrats, declares deux fois pendant le
         // double run.
-        if couverts.contains(&a.fin.chars().take(7).collect::<String>()) || !voulu(&a.salarie) {
+        if a.fin.get(..7).and_then(Mois::du_texte).is_some_and(|m| couverts.contains(&m)) || !voulu(&a.salarie) {
             continue;
         }
         let spec = a.numero_objet.as_deref().and_then(|n| spectacles.par_objet.get(n).copied());
@@ -943,7 +941,7 @@ fn contrats_passes(ctx: &Contexte, mois: &str, salarie: Option<&IdSalarie>) -> R
 }
 
 fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsPasses> {
-    let contrats = contrats_passes(ctx, &c.mois.to_string(), c.salarie.as_ref())?;
+    let contrats = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
     Ok(ContratsPasses {
         phrase: format!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
         mois: c.mois,
@@ -977,8 +975,8 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
 
 
 /// `refuser_si_clos` : un exercice cloture ne bouge plus.
-pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: &str) -> R<()> {
-    let annee: String = mois.chars().take(4).collect();
+pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: Mois) -> R<()> {
+    let annee = format!("{:04}", mois.annee());
     if let Some(clos) = crate::rappels::exercice_clos(ctx, &annee)? {
         let le: String = clos.le.chars().take(10).collect();
         return Err(refus(format!(
@@ -995,19 +993,18 @@ pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: &str) -> R<()> {
 /// declaration deja faite ne se regenere pas (regle 4). Ce mois se finit dans l'ancien logiciel. Rien ne passe outre.
 /// Rend la phrase qui le dit (`None` : le mois recoit des engagements) ; la route `saisie` la rend a la page, les
 /// ecritures et l'apercu d'une carte neuve refusent avec elle.
-fn ferme_aux_neufs(ctx: &Contexte, mois: &str) -> R<Option<String>> {
-    let lu = Mois::lire(mois)?;
-    let importes = engagement::importe::du_mois(&ctx.racine, lu)?;
-    Ok(importes.iter().any(|i| i.paies().contains_key(&lu)).then(|| {
+fn ferme_aux_neufs(ctx: &Contexte, mois: Mois) -> R<Option<String>> {
+    let importes = engagement::importe::du_mois(&ctx.racine, mois)?;
+    Ok(importes.iter().any(|i| i.paies().contains_key(&mois)).then(|| {
         format!(
             "Le mois de {} porte des paies importées de votre ancien logiciel : il ne reçoit pas d'engagement neuf. Finissez ce mois \
              dans l'ancien logiciel.",
-            socle::mois::Mois::en_clair(mois)
+            mois.libelle(Graphie::Accentuee)
         )
     }))
 }
 
-fn refuser_si_importe(ctx: &Contexte, mois: &str) -> R<()> {
+fn refuser_si_importe(ctx: &Contexte, mois: Mois) -> R<()> {
     match ferme_aux_neufs(ctx, mois)? {
         Some(phrase) => Err(refus(format!("{} Rien n'est écrit.", phrase))),
         None => Ok(()),
@@ -1019,12 +1016,12 @@ fn refuser_si_importe(ctx: &Contexte, mois: &str) -> R<()> {
 /// borne que l'echeancier, les rappels et le panneau lisent : `compagnie::etat_dsn::premier_mois_du`), une fois l'echeance
 /// de sa DSN passee (`echeance_dsn`). Avant elle, une compagnie qui commence saisit ce mois, et sa DSN se depose a temps.
 /// Un mois qui a deja des engagements se modifie.
-pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: &str) -> R<()> {
+pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: Mois) -> R<()> {
     // Sans premiere embauche dite, aucun mois ne la precede.
     let Some(embauche) = ctx.entreprise.premiere_embauche.dite() else { return Ok(()) };
-    if mois < embauche.iso()[..7].to_string().as_str()
-        && declarations::echeance_dsn::de_la_compagnie(ctx, mois)?.passee_au(&ctx.aujourdhui)
-        && !engagement::stock::a_une_saisie(&ctx.racine, Mois::lire(mois)?)?
+    if mois < Mois::du_jour(&embauche)
+        && declarations::echeance_dsn::de_la_compagnie(ctx, &mois.to_string())?.passee_au(&ctx.aujourdhui)
+        && !engagement::stock::a_une_saisie(&ctx.racine, mois)?
     {
         return Err(refus(format!(
             "{} precede la premiere embauche de la compagnie ({}) : aucune DSN n'y est due, rien ne s'y saisit. Si la \
@@ -1042,17 +1039,17 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: &str) 
 /// puis s'ecrit entier (`ecrire_une_carte`). Rend l'identite de l'engagement ecrit, le brouillon tel qu'il est ecrit, et
 /// ce qui lui manque pour etre valide.
 fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
-    let mois = c.mois.to_string();
-    let _verrou = avant_d_ecrire(ctx, &mois)?;
+    let mois = c.mois;
+    let _verrou = avant_d_ecrire(ctx, mois)?;
     let (mut brouillon, id) = match c.carte {
         CarteVisee::Neuve(n) => (Brouillon::neuf(n), None),
-        CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, &mois, &id)?, Some(id)),
+        CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, mois, &id)?, Some(id)),
     };
-    c.changements.appliquer(ctx, c.mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
-    let id = ecrire_une_carte(ctx, &mois, id.as_ref(), &brouillon.en_carte())?;
-    let brouillon = brouillon_ecrit(ctx, &mois, &id)?;
-    let (k, _) = engagement::stock::designe(&ctx.racine, c.mois, &id)?;
-    let vue = engagement::stock::vue_du_mois(&ctx.racine, c.mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", Mois::en_clair(&mois))))?;
+    c.changements.appliquer(ctx, mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
+    let brouillon = brouillon_ecrit(ctx, mois, &id)?;
+    let (k, _) = engagement::stock::designe(&ctx.racine, mois, &id)?;
+    let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", mois.libelle(Graphie::Accentuee))))?;
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
     let a = maintenant();
@@ -1071,11 +1068,10 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
 
 /// LE BROUILLON QU'ECRIT L'ENGAGEMENT `id` de l'ecran de `mois` : sa vue de ce mois (`engagement::stock::Objet::vue`),
 /// lue en brouillon.
-pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: &str, id: &Identite) -> R<Brouillon> {
-    let lu = Mois::lire(mois)?;
-    let (_, o) = engagement::stock::designe(&ctx.racine, lu, id).map_err(|m| m.reclasser(Classe::Refuse))?;
+pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: Mois, id: &Identite) -> R<Brouillon> {
+    let (_, o) = engagement::stock::designe(&ctx.racine, mois, id).map_err(|m| m.reclasser(Classe::Refuse))?;
     let qui = engagement::etats::qui_de(ctx, &o);
-    let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
+    let vue = o.vue(mois)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))
 }
 
@@ -1084,7 +1080,7 @@ pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: &str, id: &Identite) -> R<Br
 /// n'a pas fini), puis les trois refus du mois : des paies importees (`refuser_si_importe`), un exercice clos
 /// (`refuser_si_clos`), un mois d'avant la premiere embauche (`refuser_si_avant_la_premiere_embauche`). Le verrou rendu
 /// se garde jusqu'a la fin de l'ecriture.
-pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: &str) -> R<std::sync::MutexGuard<'static, ()>> {
+pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: Mois) -> R<std::sync::MutexGuard<'static, ()>> {
     static ECRITURE_EN_COURS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     // Une ecriture tombee en tenant le verrou ne le garde pas : il se reprend.
     let verrou = match ECRITURE_EN_COURS.lock() {
@@ -1101,22 +1097,21 @@ pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: &str) -> R<std::sync::MutexGu
 /// (absente : un engagement neuf). Un mois sans fichier le prend avec ce qu'il dit par defaut (`squelette` : le cachet et
 /// la date de paiement du mois). Une carte a laquelle il manque un fait s'ecrit aussi : seule la validation refuse. Rend
 /// l'identite de l'engagement ecrit. L'appelant tient le verrou (`avant_d_ecrire`).
-pub(crate) fn ecrire_une_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie: &SaisieCarte) -> R<Identite> {
+pub(crate) fn ecrire_une_carte(ctx: &Contexte, lu: Mois, id: Option<&Identite>, saisie: &SaisieCarte) -> R<Identite> {
     // UN ENGAGEMENT NEUF, OU LE BROUILLON QUI DEMENAGE, S'ECRIT DANS SON PREMIER MOIS (`engagement::stock::ou_s_ecrit`) : ce
     // mois-la passe les memes refus que celui de la carte, et donne ce qu'il dit par defaut.
-    let lu = Mois::lire(mois)?;
     let fichier = engagement::stock::ou_s_ecrit(&ctx.racine, lu, id, saisie).map_err(|m| m.reclasser(Classe::Refuse))?;
     let ecrit_dans = match id {
         Some(id) => Some(engagement::stock::designe(&ctx.racine, lu, id).map_err(|m| m.reclasser(Classe::Refuse))?.1.fichier),
         None => None,
     };
     if fichier != lu && ecrit_dans != Some(fichier) {
-        refuser_si_importe(ctx, &fichier.to_string())?;
-        refuser_si_clos(ctx, &fichier.to_string())?;
+        refuser_si_importe(ctx, fichier)?;
+        refuser_si_clos(ctx, fichier)?;
     }
-    let id = engagement::stock::ecrire_la_carte(ctx, lu, id, saisie, &squelette(ctx, &fichier.to_string())?).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let id = engagement::stock::ecrire_la_carte(ctx, lu, id, saisie, &squelette(ctx, fichier)?).map_err(|m| m.reclasser(Classe::Refuse))?;
     // UN MOIS FAIT EN DEMO, retravaille dans la compagnie gardee : il cesse d'etre « de demo » (`suppression::sortir_de_la_demo`).
-    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| m.reclasser(Classe::Disque))?;
+    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, lu).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(id)
 }
 

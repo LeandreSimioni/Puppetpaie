@@ -20,7 +20,7 @@ pub(crate) struct ContratAuJour {
     pub numero: Option<String>,
     pub debut: String,
     pub(crate) fin: Option<String>,
-    pub(crate) mois: String,
+    pub(crate) mois: socle::mois::Mois,
     pub(crate) spectacle: Option<String>,
     pub(crate) mensuel: bool,
     pub(crate) nature: Option<droit::natures::NatureDeContrat>,

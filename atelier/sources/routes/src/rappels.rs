@@ -695,11 +695,10 @@ fn premier_mois(ctx: &Contexte) -> R<Option<Mois>> {
 
 /// La DSN d'un mois que les rappels ne reclament pas : faite, ou a venir.
 fn dsn_a_venir(st: &Etat, mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
-    let texte = mois.to_string();
-    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, &texte)?;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, &mois.to_string())?;
     let titre = formater(&modele.titre, &[("de_mois", socle::texte::de(&mois.libelle(Graphie::Accentuee)))])?;
     let mut e = Echeance::nouveau(DSN, format!("dsn:{}", mois), titre, String::new(), Some(mois.suivant()));
-    e.etat = if !etat_dsn::due(st.ctx, socle::mois::Mois::lire(&texte)?, None)? { Fait } else if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
+    e.etat = if !etat_dsn::due(st.ctx, mois, None)? { Fait } else if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
     e.due = false;
     e.mois = Some(mois);
     e.detail = dsn_detail(modele, &echeance)?;
@@ -784,8 +783,8 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
         return Ok(None);
     }
     // `{jour_dsn}` : le jour de janvier ou la DSN de decembre de l'annee d'avant est due, reporte (`echeance_dsn`).
-    let decembre = Mois::nouveau(precedente, 12)?.to_string();
-    let dsn_decembre = declarations::echeance_dsn::de_la_compagnie(ctx, &decembre)?;
+    let decembre = Mois::nouveau(precedente, 12)?;
+    let dsn_decembre = declarations::echeance_dsn::de_la_compagnie(ctx, &decembre.to_string())?;
     let valeurs = [("annee", annee.to_string()), ("annee_precedente", precedente.to_string()), ("jour_dsn", dsn_decembre.jour.jour.to_string())];
     let courant = st.aujourdhui.mois_civil();
     let mut x = Echeance::nouveau(cle, format!("{}:{}", cle, annee), formater(&e.titre, &valeurs)?, String::new(), Some(debut));
@@ -806,7 +805,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
         x.cle = format!("{}:{}", CLOTURE, precedente);
         // LA CLOTURE VIENT APRES LA DSN DE DECEMBRE : tant qu'elle n'est pas partie, c'est son rappel qui parle.
         x.quand = format!("après la DSN de décembre, due {}", dsn_decembre.phrase());
-        let partie = etat_dsn::du_mois(ctx, socle::mois::Mois::lire(&decembre)?, None)?;
+        let partie = etat_dsn::du_mois(ctx, decembre, None)?;
         x.due = x.due && (partie.partie() || partie.refusee());
         x.etat = if x.etat == EnRetard && !x.due { AFaire } else { x.etat };
         if x.due {
@@ -1004,8 +1003,8 @@ pub(crate) fn exercice_clos(ctx: &Contexte, annee: &str) -> R<Option<crate::gest
 }
 
 /// Les mois de l'annee connus du dossier.
-pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: &str) -> R<Vec<String>> {
-    let mut v: Vec<String> = super::ouverture::mois_connus(&ctx.racine)?.into_iter().map(|m| m.0).filter(|m| m.starts_with(annee)).collect();
+pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: &str) -> R<Vec<Mois>> {
+    let mut v: Vec<Mois> = super::ouverture::mois_connus(&ctx.racine)?.into_iter().map(|m| m.0).filter(|m| format!("{:04}", m.annee()) == annee).collect();
     v.sort();
     Ok(v)
 }
@@ -1034,12 +1033,12 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: i32, faites: &Cochees) -> Vec<Spec
 
 /// Le mois le plus recent dont la DSN reelle est partie et n'a pas ete
 /// refusee -- passee, ou en attente de son bilan.
-fn derniere_dsn_passee(st: &Etat) -> R<Option<String>> {
+fn derniere_dsn_passee(st: &Etat) -> R<Option<Mois>> {
     let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
     let mut passes = Vec::new();
     for m in mois {
         if !etat_dsn::du_mois(st.ctx, m, None)?.a_faire() {
-            passes.push(m.to_string());
+            passes.push(m);
         }
     }
     Ok(passes.into_iter().max())
@@ -1052,9 +1051,8 @@ fn derniere_dsn_passee(st: &Etat) -> R<Option<String>> {
 fn mois_a_declarer(st: &Etat) -> R<Vec<Mois>> {
     let dernier = st.aujourdhui.mois_civil().precedent();
     let depuis = derniere_dsn_passee(st)?;
-    let mut premier = match &depuis {
-        // Un signalement se date par le jour de son evenement (`AAAA-MM-JJ`) : son mois en est le debut.
-        Some(d) => Mois::lire(d.get(..7).ok_or_else(|| erreur(Classe::Illisible, format!("Le mois d'une DSN partie ne se lit pas : {}.", d)))?)?.suivant(),
+    let mut premier = match depuis {
+        Some(d) => d.suivant(),
         None => dernier,
     };
     if let (Some(borne), None) = (premier_mois(st.ctx)?, &depuis) {
@@ -1083,10 +1081,10 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
 
 /// `(nom, chemin)` de la DSN mensuelle du dossier du mois, la premiere dans l'ordre de
 /// `crate::etapes::ordre_de_depot` ; une DSN qui ne se lit pas se refuse.
-fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
+fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, String)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
-    let dossier = st.racine().join("sorties").join(mois);
+    let dossier = st.racine().join("sorties").join(mois.to_string());
     if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }
@@ -1110,14 +1108,13 @@ fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
 }
 
 /// Combien d'engagements le mois montre, et combien sont valides.
-fn engagements_valides(ctx: &Contexte, mois: &str) -> R<(i64, i64)> {
-    let valides = engagement::etats::valides_du_mois(ctx, Mois::lire(mois)?)?;
+fn engagements_valides(ctx: &Contexte, mois: Mois) -> R<(i64, i64)> {
+    let valides = engagement::etats::valides_du_mois(ctx, mois)?;
     Ok((valides.len() as i64, valides.iter().filter(|v| **v).count() as i64))
 }
 
 fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
-    let mois = le_mois.to_string();
-    let mois = mois.as_str();
+    let mois = le_mois;
     let lib = le_mois.libelle(Graphie::Accentuee);
     let mut r = Echeance::nouveau(
         DSN,
@@ -1130,14 +1127,14 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     // L'echeance : `echeance_dsn`, le 5 ou le 15 du mois suivant selon l'effectif, reporte au jour ouvre suivant un
     // samedi, un dimanche ou un jour ferie (R. 133-14, I), a midi. Passee, ce n'est plus un rappel, c'est un retard --
     // et on le dit.
-    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, mois)?;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, &mois.to_string())?;
     r.etat = if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
     r.date = Some(echeance.jour);
     r.quand = echeance.phrase();
     r.source = formater(&modele.source, &[])?;
     r.echeance_depot = Some(echeance.dite());
 
-    if !engagement::stock::a_une_saisie(&st.ctx.racine, Mois::lire(mois)?)? {
+    if !engagement::stock::a_une_saisie(&st.ctx.racine, mois)? {
         r.etape = A_SAISIR.into();
         r.detail = format!(
             "Aucun engagement saisi pour {}. S'il n'y a eu aucun cachet, une DSN « néant » se dépose quand même : le mois s'écrit vide, puis se dépose.",
@@ -1149,7 +1146,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     r.engagements = engagements;
     r.validees = validees;
 
-    let etat = etat_dsn::du_mois(st.ctx, socle::mois::Mois::lire(mois)?, None)?;
+    let etat = etat_dsn::du_mois(st.ctx, mois, None)?;
     if etat.refusee() {
         r.etape = A_CORRIGER.into();
         let motif = match etat.anomalies.as_deref() {
@@ -1193,11 +1190,11 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
 
 /// Ce que la DSN de `mois` declare en plus pour les mois dont l'ancien logiciel a depose la DSN, dit comme la page Paie
 /// le dit (`import::mois::dsn_de_l_ancien_logiciel`).
-fn ajouter_les_mois_de_l_ancien_logiciel(st: &Etat, mois: &str, r: &mut Echeance) -> R<()> {
-    for m in engagement::stock::mois_saisis(st.racine())?.into_iter().map(String::from).filter(|m| m.as_str() < mois) {
-        let Some(d) = import::mois::dsn_de_l_ancien_logiciel(st.ctx, &m)? else { continue };
-        if d.porteur == mois && d.engagements > 0 {
-            let lib = socle::mois::Mois::lire(&m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Illisible))?;
+fn ajouter_les_mois_de_l_ancien_logiciel(st: &Etat, mois: Mois, r: &mut Echeance) -> R<()> {
+    for m in engagement::stock::mois_saisis(st.racine())?.into_iter().filter(|&m| m < mois) {
+        let Some(d) = import::mois::dsn_de_l_ancien_logiciel(st.ctx, &m.to_string())? else { continue };
+        if mois == d.porteur && d.engagements > 0 {
+            let lib = m.libelle(Graphie::Accentuee);
             r.detail.push_str(&format!(" {} : {}", socle::texte::capitaliser(&lib), d.phrase));
         }
     }

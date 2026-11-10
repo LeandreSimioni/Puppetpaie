@@ -240,7 +240,7 @@ struct Regularisations {
 /// Les corrections d'un mois d'origine.
 #[derive(Debug, Serialize)]
 struct CorrectionsDuMois {
-    mois: String,
+    mois: socle::mois::Mois,
     corrections: Vec<CorrectionDite>,
 }
 
@@ -257,8 +257,8 @@ struct CorrectionDite {
 /// (`crate::regularisation::corrections_du_mois`) : celles deja portees par la DSN d'un mois suivant, puis celles a porter.
 fn regularisations(ctx: &Contexte) -> R<Regularisations> {
     let mut out = Vec::new();
-    for mois in engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from) {
-        let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, &mois)?;
+    for mois in engagement::stock::mois_saisis(&ctx.racine)? {
+        let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
         let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: socle::ecran::Pastille::de(if fait { "fait" } else { "a_faire" }, etat) };
         let mut corrections: Vec<CorrectionDite> = portees.into_iter().map(|c| dite(c, "portée", true)).collect();
         corrections.extend(a_porter.into_iter().map(|c| dite(c, "à porter", false)));
@@ -305,8 +305,8 @@ struct ExercicesDits {
 struct ExerciceDit {
     infos_dit: String,
     annee: String,
-    mois: Vec<String>,
-    dsn_acceptees: Vec<String>,
+    mois: Vec<socle::mois::Mois>,
+    dsn_acceptees: Vec<socle::mois::Mois>,
     clos: Option<crate::gestes::exercice_ecrit::ExerciceNote>,
     pastille: socle::ecran::Pastille,
     export: Option<ExportDeLAnnee>,
@@ -334,19 +334,19 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
 fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
-    let mois_tous: Vec<String> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
-    let mut annees: BTreeSet<String> = mois_tous.iter().map(|m| m.chars().take(4).collect()).collect();
+    let mois_tous: Vec<socle::mois::Mois> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
+    let mut annees: BTreeSet<String> = mois_tous.iter().map(|m| format!("{:04}", m.annee())).collect();
     annees.extend(clos.keys().cloned());
     let mut out = Vec::new();
     for a in annees.iter().rev() {
-        let mut mois: Vec<String> = mois_tous.iter().filter(|x| x.starts_with(a.as_str())).cloned().collect();
+        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| format!("{:04}", x.annee()) == *a).copied().collect();
         mois.sort();
         let fichier = format!("Compta_{}.csv", a);
         let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
         let mut acceptees = Vec::new();
-        for x in &mois {
-            if compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(x)?, None)?.partie() {
-                acceptees.push(x.clone());
+        for &x in &mois {
+            if compagnie::etat_dsn::du_mois(ctx, x, None)?.partie() {
+                acceptees.push(x);
             }
         }
         let export = match chemin.exists() {
@@ -380,11 +380,10 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
 /// compagnie fictive joue le depot (`archivage::DriveJoue`) : la meme liste, rien ne part.
 fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     use crate::gestes::archivage;
-    let mois = charge.mois.to_string();
     let joue = compagnie::bridage::branchement(&ctx.racine)?.joue();
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
-    let r = archivage::archiver(&ctx.racine, &mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| e.echec)?;
+    let r = archivage::archiver(&ctx.racine, charge.mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| e.echec)?;
     let dossier = format!("{}/{}", r.racine_drive, r.mois);
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
     let ou = format!("{} › {}", r.racine_drive, r.mois);
@@ -408,7 +407,7 @@ struct ChargeArchiver {
 #[derive(Debug, Serialize)]
 struct Archive {
     phrase: String,
-    mois: String,
+    mois: socle::mois::Mois,
     dossier: String,
     compte: Option<String>,
     fichiers: Vec<FichierDepose>,

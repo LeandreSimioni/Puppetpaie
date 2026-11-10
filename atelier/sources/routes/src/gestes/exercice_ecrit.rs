@@ -22,6 +22,7 @@ use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
+use socle::mois::Mois;
 use socle::num::{zero2, Decimal};
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, zip, Entree};
@@ -55,8 +56,8 @@ fn maintenant() -> String {
 // ------------------------------------------------------------------ le journal des depots
 
 /// Une DSN est-elle partie pour ce mois, et pas refusee au bilan ? (`compagnie::etat_dsn`)
-fn dsn_acceptee(ctx: &Contexte, mois: &str) -> R<bool> {
-    Ok(compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?.partie())
+fn dsn_acceptee(ctx: &Contexte, mois: Mois) -> R<bool> {
+    Ok(compagnie::etat_dsn::du_mois(ctx, mois, None)?.partie())
 }
 
 // ------------------------------------------------------------------ l'export compta
@@ -66,7 +67,7 @@ pub(crate) struct ExportCompta {
     pub(crate) annee: String,
     pub(crate) du: u32,
     pub(crate) au: u32,
-    pub(crate) mois: Vec<String>,
+    pub(crate) mois: Vec<Mois>,
     pub(crate) ecritures: Vec<Ecriture>,
     pub(crate) total_debit: Decimal,
     pub(crate) total_credit: Decimal,
@@ -98,7 +99,7 @@ pub(crate) struct ExportComptaRendu {
     annee: String,
     du: u32,
     au: u32,
-    mois: Vec<String>,
+    mois: Vec<Mois>,
     ecritures: Vec<EcritureRendue>,
     total_debit: String,
     total_credit: String,
@@ -166,11 +167,10 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let propre = ctx.racine.join(documents::plan_comptable::PLAN_COMPTABLE);
     let origine = if propre.exists() { documents::plan_comptable::PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
-    let mut mois: Vec<String> = Vec::new();
+    let mut mois: Vec<Mois> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
-        let lu = socle::mois::Mois::lire(&m)?;
-        let n = lu.numero();
-        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, lu).map_err(|e| e.reclasser(Classe::Refuse))? {
+        let n = m.numero();
+        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? {
             mois.push(m);
         }
     }
@@ -183,13 +183,13 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
     }
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
-    for m in &mois {
-        if !ctx.racine.join("sorties").join(m).is_dir() {
+    for &m in &mois {
+        if !ctx.racine.join("sorties").join(m.to_string()).is_dir() {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
         }
-        ecritures.extend(ecritures_du_mois(ctx, m, &plan, &departs)?);
+        ecritures.extend(ecritures_du_mois(ctx, &m.to_string(), &plan, &departs)?);
     }
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
@@ -220,9 +220,9 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
-        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, socle::mois::Mois::lire(&mois)?, None).map_err(|e| e.reclasser(Classe::Refuse))? {
-            m.insert(mois, e);
+    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| format!("{:04}", x.annee()) == annee) {
+        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
+            m.insert(mois.to_string(), e);
         }
     }
     Ok(m)
@@ -299,7 +299,7 @@ pub(crate) struct ExerciceNote {
     empreinte: String,
     fichiers: u64,
     forcee: bool,
-    sans_dsn: Vec<String>,
+    sans_dsn: Vec<Mois>,
 }
 
 /// Une cloture retiree : la cloture telle qu'elle etait, son annee, quand et par qui elle l'a ete.
@@ -313,16 +313,16 @@ struct ExerciceRouvertNote {
     empreinte: String,
     fichiers: u64,
     forcee: bool,
-    sans_dsn: Vec<String>,
+    sans_dsn: Vec<Mois>,
     annee: String,
     rouvert_le: String,
     rouvert_par: String,
 }
 
 impl Exercices {
-    /// La cloture de l'annee de `mois_ou_annee` (`AAAA` ou `AAAA-MM`), ou `None`.
-    pub(crate) fn de(&self, mois_ou_annee: &str) -> Option<&ExerciceNote> {
-        self.clos.get(mois_ou_annee.get(..4)?)
+    /// La cloture de l'annee `annee` (`AAAA`), ou `None`.
+    pub(crate) fn de(&self, annee: &str) -> Option<&ExerciceNote> {
+        self.clos.get(annee)
     }
 
     /// Les annees closes, et leur cloture.
@@ -378,16 +378,16 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
     }
     let mois = mois_de_l_annee(ctx, annee)?;
-    let mut sans_dsn: Vec<String> = Vec::new();
-    for m in &mois {
-        if engagement::stock::a_une_saisie(&ctx.racine, socle::mois::Mois::lire(m)?).map_err(|e| e.reclasser(Classe::Refuse))? && !dsn_acceptee(ctx, m)? {
-            sans_dsn.push(m.clone());
+    let mut sans_dsn: Vec<Mois> = Vec::new();
+    for &m in &mois {
+        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? && !dsn_acceptee(ctx, m)? {
+            sans_dsn.push(m);
         }
     }
     if !sans_dsn.is_empty() && !forcer {
         return Err(refus(format!(
             "Pas de DSN réelle acceptée pour {}. La clôture vient APRÈS la dernière DSN ; déposer d'abord, ou forcer en le sachant.",
-            sans_dsn.join(", ")
+            sans_dsn.iter().map(Mois::to_string).collect::<Vec<_>>().join(", ")
         )));
     }
 
@@ -404,28 +404,28 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mut entrees: Vec<Entree> = Vec::new();
     // Les engagements qui touchent l'annee : le fichier de chacun de ses mois, et celui du mois ou commence un engagement
     // qui court encore dans l'annee (un contrat commence l'annee d'avant).
-    let mut fichiers_engagements: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for m in &mois {
-        fichiers_engagements.insert(m.clone());
-        for o in engagement::stock::objets_du_mois(&ctx.racine, socle::mois::Mois::lire(m)?).map_err(|e| e.reclasser(Classe::Refuse))? {
-            fichiers_engagements.insert(o.fichier.to_string());
+    let mut fichiers_engagements: std::collections::BTreeSet<Mois> = std::collections::BTreeSet::new();
+    for &m in &mois {
+        fichiers_engagements.insert(m);
+        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? {
+            fichiers_engagements.insert(o.fichier);
         }
     }
-    for f in &fichiers_engagements {
-        let s = engagement::stock::chemin(&ctx.racine, socle::mois::Mois::lire(f)?);
+    for &f in &fichiers_engagements {
+        let s = engagement::stock::chemin(&ctx.racine, f);
         if s.exists() {
             entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::stock::DOSSIER, f))?);
         }
     }
     // Les paies de chaque mois de l'annee.
-    for m in &mois {
-        let s = engagement::paies::chemin(&ctx.racine, socle::mois::Mois::lire(m)?);
+    for &m in &mois {
+        let s = engagement::paies::chemin(&ctx.racine, m);
         if s.exists() {
             entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::paies::DOSSIER, m))?);
         }
     }
     for m in &mois {
-        let d = ctx.racine.join("sorties").join(m);
+        let d = ctx.racine.join("sorties").join(m.to_string());
         if d.is_dir() {
             let mut fichiers = Vec::new();
             fichiers_sous(&d, &mut fichiers)?;

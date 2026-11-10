@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 use compagnie::installation::{self, Compagnie};
 use crate::gestes::administrateur::Poste;
 use socle::echec::{refus, refus_avec, Lieu, R};
+use socle::mois::Mois;
 
 /// La mention de demo d'une compagnie gardee.
 pub(crate) const FICHIER_DEMO: &str = "config/demo.json";
@@ -307,7 +308,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     let mention = FichierDemo {
         creee_le,
         gardee_le: socle::paris::maintenant(),
-        mois: engagement::stock::mois_saisis(racine)?.into_iter().map(String::from).collect(),
+        mois: engagement::stock::mois_saisis(racine)?,
         quoi: QUOI_DEMO.to_string(),
     };
     socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &mention, 2)?;
@@ -387,7 +388,7 @@ pub struct Reponse {
 struct FichierDemo {
     creee_le: String,
     gardee_le: String,
-    mois: Vec<String>,
+    mois: Vec<Mois>,
     quoi: String,
 }
 
@@ -408,7 +409,7 @@ fn lire_la_demo(racine: &Path) -> R<Option<FichierDemo>> {
 pub(crate) struct MentionDemo {
     creee_le: String,
     gardee_le: String,
-    mois: Vec<String>,
+    mois: Vec<Mois>,
     phrase: String,
 }
 
@@ -433,10 +434,10 @@ pub(crate) fn mention(racine: &Path) -> R<Option<MentionDemo>> {
 /// `engagement::stock::poser_la_saisie`, `ecrire_la_carte`) est un mois qu'on entend
 /// declarer : il sort de la mention (`config/demo.json`, `mois`), et la page ne le dit plus « fait en demo ». Rien a faire
 /// pour une compagnie sans mention, ni pour un mois qui n'y est pas.
-pub(crate) fn sortir_de_la_demo(racine: &Path, mois: &str) -> R<()> {
+pub(crate) fn sortir_de_la_demo(racine: &Path, mois: Mois) -> R<()> {
     let Some(mut d) = lire_la_demo(racine)? else { return Ok(()) };
     let avant = d.mois.len();
-    d.mois.retain(|m| m != mois);
+    d.mois.retain(|&m| m != mois);
     if d.mois.len() == avant {
         return Ok(());
     }

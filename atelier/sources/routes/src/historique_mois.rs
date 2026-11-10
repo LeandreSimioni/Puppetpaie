@@ -418,9 +418,9 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 /// Les documents du mois : les fichiers de `sorties/<mois>/` (`mois_connus`, la liste de l'Historique) et les PDF de
 /// `sorties/<mois>/envoi/` (`pieces_de_l_envoi`). Une archive `.zip` n'est que l'emballage
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
-fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
+fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
-    let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| m == mois).flat_map(|(_, n)| n);
+    let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.ends_with(".zip")) {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
     }
@@ -438,7 +438,7 @@ fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
-    for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
+    for b in import::mois::bulletins_repris(&ctx.racine, &mois.to_string())? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
         out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie), chemin: b.chemin, fichier: None });
     }
@@ -1107,7 +1107,6 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
 
 /// `historique-mois {mois}`.
 fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
-    let mois = le_mois.to_string();
     // Les lignes du mois ; un signalement porte le mois de son evenement.
     let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let recus = etats::contrats_recus(&lignes);
@@ -1151,7 +1150,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
     envois.sort_by(|a, b| (&b.quand, b.mode == "reel").cmp(&(&a.quand, a.mode == "reel")));
-    let documents = documents(ctx, &mois, &lignes)?;
+    let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })
 }

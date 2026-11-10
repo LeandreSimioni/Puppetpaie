@@ -732,7 +732,7 @@ pub(crate) struct EnvoiDeLArret {
     pub type_declaration: Option<String>,
     ordre: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
     fichier: Option<String>,
     pub quand: String,
 }
@@ -868,11 +868,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
     let declare = declare_lu.map(|j| j.iso());
     // Les mois qu'un arret traverse ; une suspension, ou un arret repris avant son jour declare, n'en traverse aucun.
-    let mut traverses: Vec<String> = Vec::new();
+    let mut traverses: Vec<socle::mois::Mois> = Vec::new();
     if let Some(p) = declare_lu {
         let d = engagement::imprevus::dernier_jour(lu).map_err(|m| m.reclasser(Classe::Illisible))?;
         if p <= d {
-            traverses = socle::mois::Mois::entre(&p, &d).iter().map(socle::mois::Mois::to_string).collect();
+            traverses = socle::mois::Mois::entre(&p, &d);
         }
     }
     let saisi = match lu {
@@ -881,18 +881,18 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     };
     // Une DSN mensuelle a reporte l'imprevu : celle d'un mois qu'il traverse, partie apres sa saisie ; ou, un arret, la DSN suivante
     // qui reporte l'arret saisi apres le depart de celles de ses mois (`Arret::a_reporter`).
-    let reporte = |mois: &str, quand: &str| -> R<bool> {
-        if traverses.iter().any(|m| m == mois) {
+    let reporte = |mois: socle::mois::Mois, quand: &str| -> R<bool> {
+        if traverses.contains(&mois) {
             return Ok(quand.replace('T', " ") >= *saisi);
         }
         match &arret {
-            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| m.reclasser(Classe::Illisible)),
+            Some(arret) => arret.a_reporter(&mois.to_string(), &departs).map_err(|m| m.reclasser(Classe::Illisible)),
             None => Ok(false),
         }
     };
     let mut partis = Vec::new();
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
-        let (mois, quand) = (e.mois.map(|m| m.to_string()), e.quand.clone());
+        let (mois, quand) = (e.mois, e.quand.clone());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration.clone() else { continue };
         let type_declaration = d.type_declaration.clone();
@@ -901,12 +901,12 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             None => None,
         };
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie.as_str() == salarie);
-        let dans = |m: &str| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
+        let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
         match (nature.as_str(), dj, mois) {
             ("04" | "05", Some(dj), _) if declare.is_some() && d.evenement == declare && du_salarie => {
-                partis.push(EnvoiDeLArret { fichier: dans(&dj[..7]), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
+                partis.push(EnvoiDeLArret { fichier: dans(&&dj[..7]), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
-            ("01", _, Some(mois)) if reporte(&mois, &quand)? => {
+            ("01", _, Some(mois)) if reporte(mois, &quand)? => {
                 partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}

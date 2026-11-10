@@ -142,7 +142,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
         let natures = natures.iter().map(|x| NatureProposee { cle: x.cle, libelle: x.libelle.clone(), demande: demande(x, en_cours) }).collect();
         // Le mois de la derniere DSN qui l'a declare, tel que l'ecran le lit (« de novembre 2026 »).
         let mois_au = c.payes.map(|(_, au)| au.mois_civil());
-        let au_dit: Option<String> = mois_au.map(|m| crate::regularisation::de_mois_en_clair(&m.to_string()));
+        let au_dit: Option<String> = mois_au.map(crate::regularisation::de_mois_en_clair);
         let nom = nom_du_salarie(racine, &salarie)?;
         let periode: String = c.payes.iter().map(|(du, au)| format!(", du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa())).collect();
         let dit = format!(

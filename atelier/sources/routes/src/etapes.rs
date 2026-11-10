@@ -29,7 +29,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::echeances::Echeance;
 use socle::date::Jour;
-use socle::mois::Mois;
+use socle::mois::{Graphie, Mois};
 use engagement;
 use engagement::etats::ARefaire;
 use engagement::numeros::NumeroContrat;
@@ -727,9 +727,9 @@ pub(crate) fn a_refaire_de(ctx: &Contexte, e: &engagement::etats::Etat, departs:
 
 /// Les contrats de `mois` dont l'avenant est a faire signer : `(cle du salarie, numero)` des engagements dont les clauses
 /// ont change depuis la version sur laquelle le contrat est parti (`a_refaire_parmi`, les contrats seuls).
-pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: &str) -> R<HashSet<(String, String)>> {
+pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(String, String)>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let etats = engagement::etats::du_mois(ctx, Mois::lire(mois)?, &departs)?;
+    let etats = engagement::etats::du_mois(ctx, mois, &departs)?;
     let avenant = |s: engagement::departs::Envoi| s == engagement::departs::Envoi::Contrat;
     let mut out = HashSet::new();
     for e in &etats {
@@ -774,7 +774,7 @@ pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock
 /// en `detail.etablissement`, le principal s'il est tu) : seuls comptent les engagements qui en relevent
 /// (`nic_de_l_engagement`). La paie de l'un d'eux a change depuis la version sur laquelle elle est partie
 /// (`refaire` : `Moteur::a_refaire_du_mois`), ou ils ne sont plus ceux qu'elle a emportes (`versions`) : un engagement ajoute, ou retire.
-pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: &str, derniere: &envois::journal::Ligne, etats: &[engagement::etats::Etat], refaire: &mut dyn FnMut(&engagement::etats::Etat) -> R<Rc<Vec<ARefaire>>>) -> R<bool> {
+pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: Mois, derniere: &envois::journal::Ligne, etats: &[engagement::etats::Etat], refaire: &mut dyn FnMut(&engagement::etats::Etat) -> R<Rc<Vec<ARefaire>>>) -> R<bool> {
     // Une ligne qui ne dit pas ce qu'elle a emporte ne se compare a rien.
     let Some(emportes) = derniere.versions() else { return Ok(false) };
     let nic = match derniere.etablissement() {
@@ -788,7 +788,7 @@ pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: &str, derniere: &envois::journ
         }
     }
     for e in &siens {
-        if refaire(e)?.iter().any(|a| matches!(a, ARefaire::Dsn { mois: ref m, .. } if m == mois)) {
+        if refaire(e)?.iter().any(|a| matches!(a, ARefaire::Dsn { mois: m, .. } if *m == mois)) {
             return Ok(true);
         }
     }
@@ -810,7 +810,7 @@ pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: &str, derniere: &envois::journ
 /// UNE CORRECTION PORTEE, telle que l'empreinte de la saisie la retient (`Moteur::portees`) : le mois corrige, le
 /// salarie, le contrat et la version. Elle s'ecrit en liste.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct Portee(String, String, Option<NumeroContrat>, u64);
+pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, u64);
 
 /// Ce dont l'empreinte d'une saisie qui porte des corrections se calcule (`Moteur::empreinte_saisie_avec`).
 #[derive(Serialize)]
@@ -931,8 +931,8 @@ struct ContratComplet {
     premier_mois: bool,
     dernier_mois: bool,
     chevrons: super::mois::Chevrons,
-    depuis: String,
-    jusqu_a: String,
+    depuis: Mois,
+    jusqu_a: Mois,
     repris: bool,
     ecrit: bool,
     ailleurs: bool,
@@ -970,10 +970,11 @@ impl ContratDit {
         matches!(self, ContratDit::Complet(c) if c.ailleurs)
     }
 
-    fn depuis(&self) -> &str {
+    /// « novembre 2026 » : le premier mois du contrat ; rien pour un contrat a completer.
+    fn depuis(&self) -> String {
         match self {
-            ContratDit::Complet(c) => &c.depuis,
-            ContratDit::ACompleter(_) => "",
+            ContratDit::Complet(c) => c.depuis.libelle(Graphie::Accentuee),
+            ContratDit::ACompleter(_) => String::new(),
         }
     }
 
@@ -1011,7 +1012,7 @@ struct EtatDpae {
 /// Un CDI en cours, d'un mois d'apres son embauche : le mois de sa signature.
 #[derive(Debug, Clone)]
 pub(crate) struct CdiEnCours {
-    signe_en: String,
+    signe_en: Mois,
 }
 
 /// LA PASTILLE CONTRAT D'UN ENGAGEMENT (`etat_signature`). `fait` : quand le contrat (ou son dernier avenant) est parti ;
@@ -1308,16 +1309,16 @@ pub(crate) struct Remplacement {
 pub struct Moteur<'a> {
     ctx: &'a Contexte,
     globales: Option<Rc<Globales>>,
-    fichiers: HashMap<String, Rc<Deposables>>,
+    fichiers: HashMap<Mois, Rc<Deposables>>,
     /// LES ENGAGEMENTS TELS QU'ILS SONT ECRITS, sans recalcul d'eux-memes (`engagement::etats::tels_qu_ecrits`) : ce que
     /// lit `mois_a_ouvrir`, qui regarde chaque mois passe a l'ouverture et ne calcule rien.
     ecrit: bool,
     /// CE QU'IL A LU D'UN MOIS, une fois pour sa vie (une route, l'etat garde d'un mois) : la saisie chargee
     /// (`charger_saisie`), ce qui est a refaire de chaque engagement valide (`a_refaire_du_mois`, par mois, salarie et
     /// numero) et l'etat de chaque engagement (`etat_par_engagement`).
-    saisies: HashMap<String, Rc<SaisieMois>>,
-    refaire: HashMap<(String, String, String), Rc<Vec<ARefaire>>>,
-    lignes: HashMap<String, Rc<Vec<Ligne>>>,
+    saisies: HashMap<Mois, Rc<SaisieMois>>,
+    refaire: HashMap<(Mois, String, String), Rc<Vec<ARefaire>>>,
+    lignes: HashMap<Mois, Rc<Vec<Ligne>>>,
 }
 
 impl<'a> Moteur<'a> {
@@ -1360,23 +1361,23 @@ impl<'a> Moteur<'a> {
 
     /// La saisie d'un mois, chargee sans calculer la paie : ses engagements qui ne manquent de rien
     /// (`mois::manques_de_la_saisie`), et ce qui manque a chacun de ses engagements, dans son ordre.
-    fn charger_saisie(&mut self, mois: &str) -> R<Rc<SaisieMois>> {
-        if let Some(s) = self.saisies.get(mois) {
+    fn charger_saisie(&mut self, mois: Mois) -> R<Rc<SaisieMois>> {
+        if let Some(s) = self.saisies.get(&mois) {
             return Ok(s.clone());
         }
         let s = Rc::new(self.saisie_chargee(mois)?);
-        self.saisies.insert(mois.to_string(), s.clone());
+        self.saisies.insert(mois, s.clone());
         Ok(s)
     }
 
     /// CE QUI EST A REFAIRE de l'engagement `e` de `mois` (`a_refaire_de`), compare une fois.
-    fn a_refaire_du_mois(&mut self, mois: &str, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
+    fn a_refaire_du_mois(&mut self, mois: Mois, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
         let carte = &e.objet().brut.saisie.carte;
         // Rien n'est parti d'un engagement en saisie : rien n'est a refaire.
         let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref().filter(|n| !n.is_empty())) else {
             return Ok(Rc::new(Vec::new()));
         };
-        let cle = (mois.to_string(), salarie.to_string(), numero.to_string());
+        let cle = (mois, salarie.to_string(), numero.to_string());
         if let Some(r) = self.refaire.get(&cle) {
             return Ok(r.clone());
         }
@@ -1385,8 +1386,7 @@ impl<'a> Moteur<'a> {
         Ok(r)
     }
 
-    fn saisie_chargee(&mut self, mois: &str) -> R<SaisieMois> {
-        let lu = Mois::lire(mois)?;
+    fn saisie_chargee(&mut self, lu: Mois) -> R<SaisieMois> {
         let mut data = engagement::vue_requise(self.racine(), lu).map_err(classer_saisie)?;
         let manques = super::mois::manques_de_la_saisie(self.ctx, &data);
         let objets = engagement::stock::objets_du_mois(self.racine(), lu)?;
@@ -1422,17 +1422,16 @@ impl<'a> Moteur<'a> {
     /// `etat_par_engagement` : ou en est CHAQUE engagement du mois (ce que les etapes lisent ; la route n'en rend que ce
     /// que la page lit, `LigneDePage`).
     pub(crate) fn etat_par_engagement(&mut self, le_mois: Mois) -> R<Rc<Vec<Ligne>>> {
-        let mois = &le_mois.to_string();
-        if let Some(l) = self.lignes.get(mois) {
+        if let Some(l) = self.lignes.get(&le_mois) {
             return Ok(l.clone());
         }
         let l = Rc::new(self.lignes_du_mois(le_mois)?);
-        self.lignes.insert(mois.to_string(), l.clone());
+        self.lignes.insert(le_mois, l.clone());
         Ok(l)
     }
 
     fn lignes_du_mois(&mut self, le_mois: Mois) -> R<Vec<Ligne>> {
-        let mois = &le_mois.to_string();
+        let mois = le_mois;
         // UN MOIS SANS ENGAGEMENT N'EST PAS UNE ERREUR.
         if !engagement::stock::a_une_saisie(self.racine(), le_mois)? {
             return Ok(Vec::new());
@@ -1475,8 +1474,8 @@ impl<'a> Moteur<'a> {
                 },
                 None => None,
             };
-            let mois_du_contrat: Vec<String> = p.engagement.mois_du_contrat().iter().map(Mois::to_string).collect();
-            let (Some(depuis), Some(jusqu_a)) = (mois_du_contrat.first().cloned(), mois_du_contrat.last().cloned()) else {
+            let mois_du_contrat = p.engagement.mois_du_contrat();
+            let (Some(&depuis), Some(&jusqu_a)) = (mois_du_contrat.first(), mois_du_contrat.last()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
             let premier_mois = p.engagement.premier_mois();
@@ -1581,9 +1580,8 @@ impl<'a> Moteur<'a> {
             if nat.mensuelle() && nat.duree_indeterminee && !premier_mois {
                 let recu = g.recus.get(&k);
                 let signe_en = match recu {
-                    Some(r) => r.chars().take(7).collect::<String>(),
-                    // Les mois du contrat ne sont jamais vides (lus plus haut).
-                    None => mois_du_contrat[0].clone(),
+                    Some(r) => Mois::lire(&r.chars().take(7).collect::<String>())?,
+                    None => depuis,
                 };
                 signature.cdi_en_cours = Some(CdiEnCours { signe_en });
             }
@@ -1591,7 +1589,7 @@ impl<'a> Moteur<'a> {
             let documents_le = p.engagement.numero.as_deref().and_then(|n| {
                 departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le.clone()).max()
             });
-            let bulletin = refaire.iter().any(|a| matches!(a, ARefaire::Bulletin { mois: m, .. } if m == mois));
+            let bulletin = refaire.iter().any(|a| matches!(a, ARefaire::Bulletin { mois: m, .. } if *m == mois));
             let documents = etat_documents(documents_le, bulletin);
             let vue = Vue {
                 salarie: Some(cle.clone()),
@@ -1624,8 +1622,7 @@ impl<'a> Moteur<'a> {
     /// LA LIGNE D'UN ENGAGEMENT JAMAIS VALIDE AUQUEL IL MANQUE UN FAIT : rien ne se calcule sur lui, rien n'est parti ;
     /// il dit qui, quand, et ce qui lui manque. Ses carres disent « à compléter » (`Point::de`). L'engagement se lit tel
     /// que sa saisie l'ecrit (`Objet::vue`).
-    fn ligne_a_completer(&self, mois: &str, o: &engagement::stock::Objet, manque: &str) -> R<Vue> {
-        let lu = Mois::lire(mois)?;
+    fn ligne_a_completer(&self, lu: Mois, o: &engagement::stock::Objet, manque: &str) -> R<Vue> {
         let Some(e) = o.vue(lu)? else {
             return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement du mois ne se lit pas dans ce mois."));
         };
@@ -1646,7 +1643,7 @@ impl<'a> Moteur<'a> {
             Some(n) => Some(n.proprietes()?.libelle.clone()),
             None => None,
         };
-        let premier_mois = o.premier_mois() == mois;
+        let premier_mois = o.premier_mois() == lu;
         let debut = match e.debut_lu() {
             d if d.is_empty() => None,
             d => Some(Jour::lire(&d)?),
@@ -1684,11 +1681,10 @@ impl<'a> Moteur<'a> {
     /// `fichiers_deposables` : les fichiers d'un mois qu'on peut deposer, par
     /// acte, le dernier ecrit en tete.
     pub(crate) fn fichiers_deposables(&mut self, mois: Mois) -> R<Rc<Deposables>> {
-        let mois = &mois.to_string();
-        if let Some(v) = self.fichiers.get(mois) {
+        if let Some(v) = self.fichiers.get(&mois) {
             return Ok(v.clone());
         }
-        let dossier = self.racine().join("sorties").join(mois);
+        let dossier = self.racine().join("sorties").join(mois.to_string());
         let rendu = if !dossier.is_dir() {
             Deposables::default()
         } else {
@@ -1716,7 +1712,7 @@ impl<'a> Moteur<'a> {
             Deposables { dsn: ranger(dsn)?, dpae: ranger(dpae)? }
         };
         let rendu = Rc::new(rendu);
-        self.fichiers.insert(mois.to_string(), rendu.clone());
+        self.fichiers.insert(mois, rendu.clone());
         Ok(rendu)
     }
 
@@ -1729,7 +1725,7 @@ impl<'a> Moteur<'a> {
     /// perime comme une paie du mois qui change. `None` si rien ne se lit ni ne se corrige.
     pub(crate) fn empreinte_saisie(&self, mois: Mois) -> R<Option<String>> {
         let departs = self.departs()?;
-        self.empreinte_saisie_avec(mois, || declarations::produire_regularisations::regularisations_pour(self.ctx, &mois.to_string(), &departs).map(|r| Self::portees(&r)))
+        self.empreinte_saisie_avec(mois, || Self::portees(&declarations::produire_regularisations::regularisations_pour(self.ctx, &mois.to_string(), &departs)?))
     }
 
     /// `empreinte_saisie`, sur les corrections portees que `portees` lit (`Moteur::portees`) : la fabrication de la DSN,
@@ -1745,8 +1741,8 @@ impl<'a> Moteur<'a> {
     }
 
     /// Ce que l'empreinte de la saisie retient de chaque correction portee (`Portee`).
-    pub(crate) fn portees(regs: &[declarations::produire_regularisations::Reg]) -> Vec<Portee> {
-        regs.iter().map(|r| Portee(r.mois.clone(), r.apres.salarie.id.to_string(), r.apres.engagement.numero.clone(), r.version)).collect()
+    pub(crate) fn portees(regs: &[declarations::produire_regularisations::Reg]) -> R<Vec<Portee>> {
+        regs.iter().map(|r| Ok(Portee(Mois::lire(&r.mois)?, r.apres.salarie.id.to_string(), r.apres.engagement.numero.clone(), r.version))).collect()
     }
 
     /// `limite` : le dernier jour ou un annule-et-remplace est admis, jusqu'a minuit : la veille de l'echeance de depot
@@ -1820,7 +1816,7 @@ impl<'a> Moteur<'a> {
     pub(crate) fn etat_remplacement(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Remplacement> {
         let faits = self.depots_reels(le_mois, nic)?;
         let lim = self.limite(le_mois)?;
-        let mois = &le_mois.to_string();
+        let mois = le_mois;
         let admis = self.ctx.aujourdhui <= lim;
         let mut out = Remplacement {
             mois: le_mois,
@@ -1855,7 +1851,7 @@ impl<'a> Moteur<'a> {
             0
         } else {
             let departs = self.departs()?;
-            let plusieurs = !self.ctx.entreprise_du_mois(mois)?.secondaires().is_empty();
+            let plusieurs = !self.ctx.entreprise_du_mois(&mois.to_string())?.secondaires().is_empty();
             let voulu = nic.map(str::to_string).or_else(|| self.nic());
             let mut n = 0;
             for e in self.etats_du_mois(le_mois)? {
@@ -1863,7 +1859,7 @@ impl<'a> Moteur<'a> {
                 if plusieurs && nic_de_l_engagement(self.ctx, &e)?.as_deref() != voulu.as_deref() {
                     continue;
                 }
-                if engagement::etats::correction_due(self.ctx, v, &departs, le_mois, Mois::lire("9999-12")?)?.is_some() {
+                if engagement::etats::correction_due(self.ctx, v, &departs, le_mois, None)?.is_some() {
                     n += 1;
                 }
             }
@@ -1924,11 +1920,10 @@ impl<'a> Moteur<'a> {
     /// `nic` : pour la DSN d'une compagnie a plusieurs etablissements, celle de cet etablissement (son en-tete,
     /// S21.G00.11.001) ; aucun : le premier fichier, quel qu'il soit.
     fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&str>) -> R<Option<(&'static str, Deposable, Option<String>)>> {
-        let mois = &le_mois.to_string();
         // « Ecrite » pour une DSN : le meme critere que l'horloge, l'accueil et les rappels (`depart::mois_ecrit`,
         // la DSN mensuelle notee au journal des ecritures), pas un fichier pose dans `sorties/<mois>/`. Un mois passe lu a
         // l'ouverture (`ecrit`) ne demande que ce qui reste, pas le geste qui l'ouvre.
-        if self.ecrit || (quoi == DSN && !crate::gestes::depart::mois_ecrit(self.racine(), mois)?) {
+        if self.ecrit || (quoi == DSN && !crate::gestes::depart::mois_ecrit(self.racine(), le_mois)?) {
             return Ok(None);
         }
         let fichiers = self.fichiers_deposables(le_mois)?;
@@ -2003,10 +1998,9 @@ impl<'a> Moteur<'a> {
     /// etape a l'autre. L'etape `suivante` est la premiere qui a quelque chose a faire de notre cote. Aucun montant : le
     /// brut n'est jamais lu.
     pub(crate) fn bilan_du_mois(&mut self, le_mois: Mois) -> R<Bilan> {
-        let mois = &le_mois.to_string();
         // UN MOIS TENU AVANT CE LOGICIEL : ses etapes se sont faites ailleurs ; chaque case le dit (« mois importé »),
         // sans geste. Ce que l'import en dit (`import::mois::etapes`) se lit tel qu'il est.
-        if let Some(vue) = import::mois::vue(self.ctx, mois)? {
+        if let Some(vue) = import::mois::vue(self.ctx, &le_mois.to_string())? {
             use import::mois::Teinte;
             let b = import::mois::etapes(&vue);
             let colonnes = vec!["G".to_string()];
@@ -2172,7 +2166,7 @@ impl<'a> Moteur<'a> {
             (false, _) => None,
             (true, rien_du_tout) => Some(format!(
                 "Aucun engagement en {} : {}",
-                Mois::en_clair(mois),
+                le_mois.libelle(Graphie::Accentuee),
                 if rien_du_tout { "rien à faire" } else { "ni DPAE, ni contrat, ni document" }
             )),
         };
@@ -2228,8 +2222,7 @@ impl<'a> Moteur<'a> {
     /// l'echeance a midi, l'annule-et-remplace jusqu'a la veille a minuit). INFERENCE : un depot refuse n'ouvre pas
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Groupe> {
-        let mois = &le_mois.to_string();
-        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, &le_mois.to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
         let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
@@ -2265,14 +2258,14 @@ impl<'a> Moteur<'a> {
         if modifiee {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
-            let suivant = compagnie::etat_dsn::dsn_qui_porte(self.ctx, mois)?;
-            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant).map_err(|m| m.reclasser(Classe::Illisible))?;
-            let a = deposer_dsn(Mois::lire(&suivant)?, nic, format!("Déposer la DSN de {}…", Mois::en_clair(&suivant)));
+            let suivant = Mois::lire(&compagnie::etat_dsn::dsn_qui_porte(self.ctx, &le_mois.to_string())?)?;
+            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant.to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
+            let a = deposer_dsn(suivant, nic, format!("Déposer la DSN de {}…", suivant.libelle(Graphie::Accentuee)));
             return Ok(Groupe::de(
                 EtatCase::AFaire,
                 None,
                 String::new(),
-                format!("à corriger dans la DSN de {}", Mois::en_clair(&suivant)),
+                format!("à corriger dans la DSN de {}", suivant.libelle(Graphie::Accentuee)),
                 Some(echeance_dsn(e2.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 (declarations::echeance_dsn)")),
                 Some(a),
             ));
@@ -2289,8 +2282,7 @@ impl<'a> Moteur<'a> {
     /// correction dans la DSN suivante » ; `produire_regularisations::regularisations_pour`). Sinon, rien n'est a faire.
     /// Ne lit que ce qui est ecrit.
     fn dsn_a_declarer(&mut self, le_mois: Mois, nic: Option<&str>) -> R<bool> {
-        let mois = &le_mois.to_string();
-        let plusieurs = !self.ctx.entreprise_du_mois(mois)?.secondaires().is_empty();
+        let plusieurs = !self.ctx.entreprise_du_mois(&le_mois.to_string())?.secondaires().is_empty();
         let voulu = nic.map(str::to_string).or_else(|| self.nic());
         let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)?.as_deref() == voulu.as_deref()) };
         for e in self.etats_du_mois(le_mois)? {
@@ -2300,16 +2292,15 @@ impl<'a> Moteur<'a> {
         }
         let departs = self.departs()?;
         for mm in engagement::stock::mois_saisis(self.racine())? {
-            let m = mm.to_string();
-            if m.as_str() >= mois.as_str() {
+            if mm >= le_mois {
                 break;
             }
-            if !declarations::produire_regularisations::se_corrige_ailleurs(self.ctx, &departs, &m)? {
+            if !declarations::produire_regularisations::se_corrige_ailleurs(self.ctx, &departs, &mm.to_string())? {
                 continue;
             }
             for e in self.etats_du_mois(mm)? {
                 let Some(v) = e.valide() else { continue };
-                if de_l_etablissement(self.ctx, &e.objet().brut)? && engagement::etats::correction_due(self.ctx, v, &departs, mm, le_mois)?.is_some() {
+                if de_l_etablissement(self.ctx, &e.objet().brut)? && engagement::etats::correction_due(self.ctx, v, &departs, mm, Some(le_mois))?.is_some() {
                     return Ok(true);
                 }
             }
@@ -2324,21 +2315,20 @@ impl<'a> Moteur<'a> {
 
     // ------------------------------------------------------- les autres routes
 
-    /// `exercice_clos` : l'annee de ce mois est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
-    pub(crate) fn exercice_clos(&self, mois_ou_annee: &str) -> R<bool> {
-        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(mois_ou_annee).is_some())
+    /// `exercice_clos` : l'annee `annee` est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
+    pub(crate) fn exercice_clos(&self, annee: i32) -> R<bool> {
+        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(&annee.to_string()).is_some())
     }
 
     /// `mois_a_ouvrir` : le plus ancien mois passe dont une etape n'est pas
     /// verte, sinon le mois du calendrier.
     fn mois_a_ouvrir(&mut self) -> R<MoisAOuvrir> {
         let courant = self.ctx.aujourdhui.mois_civil();
-        let courant_texte = courant.to_string();
         // A L'OUVERTURE, RIEN NE SE CALCULE : les groupes d'un mois passe se tirent de ce qui est ecrit.
         self.ecrit = true;
         // Un mois passe sans engagement dont la DSN est due (ce que les rappels reclament) s'ouvre aussi.
         for m in crate::rappels::mois_a_parcourir(self.ctx, self.ctx.aujourdhui)? {
-            if m >= courant || self.exercice_clos(&m.to_string())? {
+            if m >= courant || self.exercice_clos(m.annee())? {
                 continue;
             }
             let reste = self.etapes_restantes(m)?;
@@ -2348,7 +2338,7 @@ impl<'a> Moteur<'a> {
                 return Ok(MoisAOuvrir { phrase, mois: m, courant, reste });
             }
         }
-        let phrase = format!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", Mois::en_clair(&courant_texte));
+        let phrase = format!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", courant.libelle(Graphie::Accentuee));
         Ok(MoisAOuvrir { phrase, mois: courant, courant, reste: Vec::new() })
     }
 
@@ -2377,11 +2367,10 @@ impl<'a> Moteur<'a> {
         };
         let mut attente = Vec::new();
         for le_mois in mois {
-            let m = le_mois.to_string();
             if !engagement::stock::a_une_saisie(self.racine(), le_mois)? {
                 continue;
             }
-            let s = self.charger_saisie(&m)?;
+            let s = self.charger_saisie(le_mois)?;
             let etats_m = engagement::etats::tels_qu_ecrits(self.ctx, le_mois, &departs)?;
             // La DPAE part de l'engagement valide : un engagement en saisie n'a rien a declarer. Chacun retrouve son embauche
             // par son identite (salarie, numero du contrat).
@@ -2394,7 +2383,7 @@ impl<'a> Moteur<'a> {
                 };
                 // Seule la DPAE partie se compare (`debut_declare`) : les paies parties ne se relisent pas ici, sauf
                 // quand le mois a deja compare tout ce qui est a refaire (`a_refaire_du_mois`).
-                let refaire: Vec<ARefaire> = match self.refaire.get(&(m.clone(), cle.to_string(), numero.to_string())) {
+                let refaire: Vec<ARefaire> = match self.refaire.get(&(le_mois, cle.to_string(), numero.to_string())) {
                     Some(r) => r.iter().filter(|a| matches!(a, ARefaire::Dpae { .. })).cloned().collect(),
                     None => engagement::etats::a_refaire_parmi(self.ctx, v, &departs, &|s| s == engagement::departs::Envoi::Dpae)?,
                 };
@@ -2496,7 +2485,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement valide ne dit pas son premier jour."));
     };
     let debut_dit = debut.jj_mm_aaaa();
-    let depuis = Mois::en_clair(p.contrat.depuis());
+    let depuis = p.contrat.depuis();
     let route = |a: Action| Some(Geste::Route(a));
 
     let (etat, phrase, geste) = match pt.dpae {
@@ -2517,7 +2506,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let ailleurs = p.contrat.ailleurs();
     let dossier = p.contrat.dossier();
     let nom_contrat = match cdi {
-        Some(c) if !ailleurs => format!("CDI, signé en {}", Mois::en_clair(&c.signe_en)),
+        Some(c) if !ailleurs => format!("CDI, signé en {}", c.signe_en.libelle(Graphie::Accentuee)),
         _ => "Contrat".to_string(),
     };
     let par_dit = if s.par == Some("imprime") { "imprimé" } else { "envoyé" };
@@ -2647,7 +2636,7 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
         return choix(false, false, EtatCase::Fait, "contrat commencé avant PuppetPaie : rien à déclarer ici".into());
     }
     if !p.contrat.premier_mois() {
-        let depuis = Mois::en_clair(p.contrat.depuis());
+        let depuis = p.contrat.depuis();
         return choix(false, false, EtatCase::Fait, format!("contrat en cours depuis {} — sa DPAE a été faite ce mois-là", depuis));
     }
     // RIEN NE PART D'UN ENGAGEMENT EN SAISIE : le depot le refuserait, et les autres avec lui.
@@ -2694,9 +2683,9 @@ pub(crate) struct DocumentsPartis {
 
 /// LES DOCUMENTS PARTIS DE `mois`, par salarie : le dernier envoi de ceux dont tous les engagements valides du mois sont
 /// partis.
-pub(crate) fn documents_partis(ctx: &Contexte, mois: &str, etats: &[engagement::etats::Etat], lignes: &[envois::journal::Ligne]) -> R<HashMap<String, DocumentsPartis>> {
+pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::etats::Etat], lignes: &[envois::journal::Ligne]) -> R<HashMap<String, DocumentsPartis>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let resumes = etats::resumes_des_documents(lignes, Mois::lire(mois)?);
+    let resumes = etats::resumes_des_documents(lignes, mois);
     let mut out: HashMap<String, DocumentsPartis> = HashMap::new();
     // Les documents d'un salarie partent ensemble, pour tous ses engagements valides du mois : un engagement valide dont
     // ils ne sont pas partis (valide apres leur envoi) les rend a envoyer, avec son bulletin.
@@ -2802,10 +2791,10 @@ pub(crate) fn etat_signature(
 /// LES ENGAGEMENTS NON ACTIFS que `mois` montrerait (`engagement::etats::non_actifs_du_mois`), pour qu'ils se lisent :
 /// le salarie, son nom, le contrat, depuis quand, et ce que leur desactivation rend a faire (`a_faire`). L'engagement se
 /// lit tel qu'il est ecrit (`brut`).
-fn non_actifs(ctx: &Contexte, mois: &str) -> R<Vec<NonActif>> {
+fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, Mois::lire(mois)?)? {
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois)? {
         let b = &*n.objet().brut;
         let cle = b.saisie.carte.salarie.as_ref().map(ToString::to_string);
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.
@@ -2869,7 +2858,7 @@ pub(crate) fn les_deux_etats(ctx: &Contexte, mois: Mois) -> R<(Rendu, Bilan)> {
         n => format!("Engagements du mois : {}.", n),
     };
     let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
-    let par = EtatParEngagement { phrase, phrases, mois, engagements, non_actifs: non_actifs(ctx, &mois.to_string())? };
+    let par = EtatParEngagement { phrase, phrases, mois, engagements, non_actifs: non_actifs(ctx, mois)? };
     let bilan = m.bilan_du_mois(mois)?;
     Ok((Rendu::de(&par)?, bilan))
 }

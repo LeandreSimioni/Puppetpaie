@@ -205,7 +205,7 @@ pub struct Regularisation {
 /// Ce que demande une regularisation (`regularisation`).
 #[derive(Default)]
 pub struct Demande {
-    pub mois: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
     pub annee: Option<String>,
     pub toutes_les_annees: bool,
     pub jusqu_a: Option<String>,
@@ -255,8 +255,8 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         .into_iter()
         .filter(|m| m.as_str() >= depuis.as_str() && !faits.contains(m))
         .collect();
-    if let Some(m) = d.mois.as_ref().filter(|m| !m.is_empty()) {
-        candidats.retain(|x| x == m);
+    if let Some(m) = d.mois {
+        candidats.retain(|x| m == *x);
     } else if let (Some(a), false) = (d.annee.as_ref().filter(|a| !a.is_empty()), d.toutes_les_annees) {
         candidats.retain(|x| x.starts_with(a.as_str()));
     }

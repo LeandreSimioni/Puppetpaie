@@ -26,7 +26,7 @@ pub(crate) struct FichierArchive {
 /// `Archivage`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Archivage {
-    pub mois: String,
+    pub mois: socle::mois::Mois,
     pub racine_drive: String,
     pub compte: Option<String>,
     pub fichiers: Vec<FichierArchive>,
@@ -41,12 +41,8 @@ fn sortie_absente(dossier: &Path) -> ErreurGoogle {
 ///
 /// `client` : `None` pour le vrai (`Client::nouveau`, construit APRES les controles du dossier,
 /// pour qu'un mois absent se dit avant tout refus du client).
-pub(crate) fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
-    // `..` ou `../config` archiverait le dossier `config` (coffre et jeton compris), `2026-06/envoi` les fiches de
-    // salaries une a une : seul `AAAA-MM` est un mois.
-    if !socle::mois::Mois::lire(mois).is_ok() {
-        return Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Mois illisible : '{}' (AAAA-MM attendu).", mois)));
-    }
+pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
+    let mois = &le_mois.to_string();
     let dossier = racine.join("sorties").join(mois);
     if !dossier.exists() {
         return Err(sortie_absente(&dossier));
@@ -82,7 +78,7 @@ pub(crate) fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Op
         let nom = r.nom.or(Some(nom_local));
         deposes.push(FichierArchive { nom, octets, remplace: r.remplace });
     }
-    Ok(Archivage { mois: mois.to_string(), racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
+    Ok(Archivage { mois: le_mois, racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
 }
 
 /// LE DRIVE JOUE d'une compagnie fictive (ses envois sont joues, `bridage::branchement`) : le depot se deroule, chaque

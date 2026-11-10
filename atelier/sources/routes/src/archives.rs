@@ -204,8 +204,8 @@ pub(crate) struct PieceDeLEnvoi {
 
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
 /// a imprimer, qui reunit celles de plusieurs salaries).
-pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: &str) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = ctx.racine.join("sorties").join(mois).join("envoi");
+pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
+    let envoi = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
     if !envoi.exists() {
         return Ok(Vec::new());
     }
@@ -224,9 +224,14 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: &str) -> R<Vec<PieceDeLEnv
 // -------------------------------------------------------------- dossier-formes
 
 
+/// Les mois qu'il y a matiere a exporter (`documents::etats_paie::mois_disponibles`), dans l'ordre.
+fn mois_disponibles(ctx: &Contexte) -> R<Vec<Mois>> {
+    documents::etats_paie::mois_disponibles(ctx)?.into_keys().map(|m| Mois::lire(&m)).collect()
+}
+
 /// Les années des mois, de la plus récente à la plus ancienne.
-fn annees_de(dispo: &[String]) -> Vec<String> {
-    let mut annees: Vec<String> = dispo.iter().map(|m| m.chars().take(4).collect::<String>()).collect::<HashSet<_>>().into_iter().collect();
+fn annees_de(dispo: &[Mois]) -> Vec<String> {
+    let mut annees: Vec<String> = dispo.iter().map(|m| format!("{:04}", m.annee())).collect::<HashSet<_>>().into_iter().collect();
     annees.sort();
     annees.reverse();
     annees
@@ -255,7 +260,7 @@ struct FormesDuDossier {
     phrase: String,
     salaries: Vec<SalariePropose>,
     categories: Vec<CategorieProposee>,
-    mois: Vec<String>,
+    mois: Vec<Mois>,
     annees: Vec<String>,
     boite_liee: bool,
     dossier: String,
@@ -281,7 +286,7 @@ fn salaries_de_la_page(ctx: &Contexte) -> Vec<SalariePropose> {
 fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
     let salaries = salaries_de_la_page(ctx);
     // `periodes_exportables` : les mois, puis (sans rien en dire) le logiciel du comptable.
-    let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
+    let mois = mois_disponibles(ctx)?;
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
     let categories: Vec<CategorieProposee> = crate::dossier_salarie::CATEGORIES.iter().map(|c| CategorieProposee { categorie: c, quoi: crate::dossier_salarie::libelle_de(c) }).collect();
@@ -375,7 +380,7 @@ fn taxe_due_une_annee(ctx: &Contexte, annees: &[String]) -> R<bool> {
 #[derive(Debug, Serialize)]
 struct ExportsPossibles {
     phrase: String,
-    mois: Vec<String>,
+    mois: Vec<Mois>,
     annees: Vec<String>,
     etats: Vec<documents::plan_comptable::EtatLivre>,
     formats: Vec<documents::plan_comptable::FormatLivre>,
@@ -401,12 +406,11 @@ struct EcranDesExports {
 
 /// Les mois et les annees qu'il y a matiere a exporter, les etats, les formats, et le logiciel du comptable.
 fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
-    let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
+    let mois = mois_disponibles(ctx)?;
     let t = tables();
     // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
     let permanents = match (mois.first(), mois.last()) {
         (Some(premier), Some(dernier)) => {
-            let (premier, dernier) = (Mois::lire(premier)?, Mois::lire(dernier)?);
             engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour())?.ouverts()
         }
         _ => false,
@@ -529,7 +533,7 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeExporter {
     etat: String,
-    mois: Option<String>,
+    mois: Option<Mois>,
     annee: Option<AnneeDite>,
     toutes_les_annees: Option<bool>,
     regroupement: Option<String>,
@@ -632,6 +636,11 @@ pub(crate) enum Exporte {
 }
 
 /// `exporter`, avant la mise en JSON.
+/// La DSN d'un mois telle que les etats des organismes la lisent (`gestes::depart::dsn_du_mois`).
+fn dsn_du_mois(ctx: &Contexte, mois: &str, nic: Option<&str>) -> R<Option<(declarations::dsn::Fabriquee, bool)>> {
+    crate::gestes::depart::dsn_du_mois(ctx, Mois::lire(mois)?, nic)
+}
+
 pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     use documents::etats_paie::Demande;
     let etat = c.etat.clone();
@@ -647,7 +656,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     let regroupement = if demande("regroupement") { choisi("regroupement", &c.regroupement, &forme.regroupements)? } else { String::new() };
     let format = if forme.formats.is_empty() { String::new() } else { choisi("format", &c.format, &forme.formats)? };
     let d = Demande {
-        mois: c.mois.clone(),
+        mois: c.mois.map(|m| m.to_string()),
         annee: c.annee.as_ref().map(AnneeDite::texte),
         toutes: c.toutes_les_annees == Some(true),
         regroupement,
@@ -659,7 +668,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         departs: envois::journal::lu(&ctx.racine).map(|j| j.departs)?,
     };
     if etat == "regularisation-casc-svp" {
-        let demande = crate::importation::casc::Demande { mois: d.mois.clone(), annee: d.annee.clone(), toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, ..Default::default() };
+        let demande = crate::importation::casc::Demande { mois: c.mois, annee: d.annee.clone(), toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, ..Default::default() };
         let mut r = crate::importation::casc::regularisation(ctx, &demande)?;
         if d.ecrire {
             crate::importation::casc::ecrire(ctx, &mut r)?;
@@ -676,8 +685,8 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         "etat-des-virements" => documents::etats_paie::etat_des_virements(ctx, &d),
         "prelevement-a-la-source" => documents::etats_paie::prelevement_a_la_source(ctx, &d),
         "cotisations-par-organisme" => declarations::etats_organismes::cotisations_par_organisme(ctx, &d),
-        "versements-organismes" => declarations::etats_organismes::versements_organismes(ctx, &d, &crate::gestes::depart::dsn_du_mois),
-        "bordereau-urssaf" => declarations::etats_organismes::bordereau_urssaf(ctx, &d, &crate::gestes::depart::dsn_du_mois),
+        "versements-organismes" => declarations::etats_organismes::versements_organismes(ctx, &d, &dsn_du_mois),
+        "bordereau-urssaf" => declarations::etats_organismes::bordereau_urssaf(ctx, &d, &dsn_du_mois),
         "fcap-svp" => declarations::etats_organismes::fcap_svp(ctx, &d),
         "afdas-2642" => declarations::etats_organismes::afdas_2642(ctx, &d),
         "paritarisme-branche" => declarations::etats_organismes::paritarisme_branche(ctx, &d),
@@ -1055,7 +1064,7 @@ struct DroitsDUnSalarie {
 #[derive(Debug, Serialize)]
 struct Droits {
     phrase: &'static str,
-    mois: String,
+    mois: Mois,
     phrases: Vec<String>,
     salaries: Vec<DroitsDUnSalarie>,
 }
@@ -1070,8 +1079,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     let mois = match c.mois {
         Some(m) => m,
         None => ctx.aujourdhui.mois_civil(),
-    }
-    .to_string();
+    };
     let engs = engagement::cumul::lire_engagements(ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
     let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
     let mut salaries = Vec::new();
@@ -1122,7 +1130,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         if anniv.is_none() {
             notes.push("Fenêtre déduite du dernier contrat déclaré : la date anniversaire que France Travail notifie (anniversaire_droits, dans la fiche du salarié) prime sur ce calcul.".to_string());
         }
-        let colonnes = tableau_cumul(ctx, cle, &mois, &engs)?;
+        let colonnes = tableau_cumul(ctx, cle, &mois.to_string(), &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
         let heures = |n: i64| format!("{} h", n);
         let tableau = TableauDesDroits {

@@ -25,6 +25,7 @@ use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::dossier_du_code;
+use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{reporter, vue, SorteDeFiche};
 use crate::temps::TempsDeLaCase;
@@ -950,8 +951,8 @@ const SORTES: [(&str, &str); 6] =
 
 /// `mois_connus` : les mois saisis et les mois produits, du plus recent au plus
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
-pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(String, Vec<String>)>> {
-    let mut vus: BTreeSet<String> = engagement::stock::mois_saisis(racine)?.into_iter().map(String::from).collect();
+pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
+    let mut vus: BTreeSet<Mois> = engagement::stock::mois_saisis(racine)?.into_iter().collect();
     // Les entrees d'un dossier (aucune s'il n'existe pas) ; un dossier qui ne se lit pas se refuse.
     let entrees = |d: &Path| -> R<Vec<std::fs::DirEntry>> {
         match std::fs::read_dir(d) {
@@ -960,13 +961,12 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(String, Vec<String>)>> {
             Err(e) => Err(socle::echec::du_disque(d, &e)),
         }
     };
-    let mut dossiers: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
     for e in entrees(&racine.join("sorties"))? {
-        let nom = e.file_name().to_string_lossy().into_owned();
         // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-        if matches!(socle::mois::Mois::lire(&nom), Ok(_)) && e.path().is_dir() {
-            vus.insert(nom.clone());
-            dossiers.insert(nom, e.path());
+        if let Some(mois) = Mois::du_texte(&e.file_name().to_string_lossy()).filter(|_| e.path().is_dir()) {
+            vus.insert(mois);
+            dossiers.insert(mois, e.path());
         }
     }
     let mut out = Vec::new();
@@ -1008,7 +1008,7 @@ impl serde::Serialize for DsnDuBilan {
 /// incomplete) ne dit que ses fichiers (`MoisDuBilan::nu`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MoisDuBilan {
-    mois: String,
+    mois: Mois,
     produit: bool,
     dsn: Option<DsnDuBilan>,
     saisi_dit: &'static str,
@@ -1034,9 +1034,9 @@ pub(crate) struct MoisDuBilan {
 
 impl MoisDuBilan {
     /// Un mois dont la DSN ne se lit pas : ses fichiers, et rien a corriger.
-    fn nu(mois: &str, fichiers: &[String]) -> MoisDuBilan {
+    fn nu(mois: Mois, fichiers: &[String]) -> MoisDuBilan {
         MoisDuBilan {
-            mois: mois.to_string(),
+            mois,
             produit: !fichiers.is_empty(),
             dsn: None,
             saisi_dit: "saisi",
@@ -1061,15 +1061,16 @@ impl MoisDuBilan {
 /// a. L'etat de la DSN : « passee » (bilan OK), « refusee », « attente »,
 /// « a_deposer », « en_retard » ; la meme lecture que les
 /// rappels : le journal des depots, et lui seul.
-fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
+fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
-    for (nom, noms) in mois {
+    for &(le_mois, ref noms) in mois {
+        let nom = &le_mois.to_string();
         let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, nom).map_err(|m| m.reclasser(Classe::Illisible))?;
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
         // L'ETAT DE LA DSN, lu une fois (`compagnie::etat_dsn`) ; une DSN a deposer passee l'echeance est en retard.
         let importe = compagnie::etat_dsn::importe(&ctx.racine, nom)?;
-        let lu = compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(nom)?, None)?;
+        let lu = compagnie::etat_dsn::du_mois(ctx, le_mois, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
         let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
@@ -1095,7 +1096,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             // La DSN de l'ancien logiciel, et la saisie qui ajoute au mois : ce qui reste a declarer va dans une DSN
             // suivante (`import::mois::dsn_de_l_ancien_logiciel`).
             Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, nom)?.is_some_and(|d| d.engagements > 0),
-            Etat::Passee => m.etat_remplacement(socle::mois::Mois::lire(nom)?, None)?.a_envoyer,
+            Etat::Passee => m.etat_remplacement(le_mois, None)?.a_envoyer,
             Etat::Attente => false,
             _ => true,
         };
@@ -1112,7 +1113,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
         };
         let quand = if depose { lu.quand.clone() } else { None };
         out.push(MoisDuBilan {
-            mois: nom.clone(),
+            mois: le_mois,
             produit: !noms.is_empty(),
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
             saisi_dit: "saisi",
@@ -1132,7 +1133,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             a_faire,
             sortes,
             fichiers: noms.clone(),
-            clos: Some(m.exercice_clos(nom)?),
+            clos: Some(m.exercice_clos(le_mois.annee())?),
         });
     }
     Ok(out)
@@ -1143,6 +1144,7 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
     let mut mois = mois_connus(&ctx.racine)?;
     // Les mois tenus avant ce logiciel sont des mois comme les autres : l'Historique les montre aussi.
     for im in import::mois::mois_importes(&ctx.racine)? {
+        let im = Mois::lire(&im)?;
         if !mois.iter().any(|(x, _)| *x == im) {
             mois.push((im, Vec::new()));
         }
@@ -1152,7 +1154,7 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
     // le bilan des mois ne se fait pas.
     Ok(match bilan_des_mois(m, ctx, &mois) {
         Ok(b) => (b, None),
-        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
+        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(*nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
     })
 }
 

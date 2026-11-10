@@ -226,7 +226,7 @@ pub struct DernierDeclare {
 pub fn dernier_declare(
     ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str,
 ) -> R<Option<DernierDeclare>> {
-    let declarees = engagement::etats::paies_declarees(ctx, o, departs, socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire(mois_courant)?)?;
+    let declarees = engagement::etats::paies_declarees(ctx, o, departs, socle::mois::Mois::lire(mois)?, Some(socle::mois::Mois::lire(mois_courant)?))?;
     let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
     let mut etat = de_la_paie(ctx, &derniere.paie, mois)?;
     let mut rappels = Decimal::ZERO;

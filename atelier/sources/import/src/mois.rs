@@ -84,7 +84,7 @@ pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAn
     for e in engagement::etats::du_mois(ctx, lu, &departs)? {
         // Un engagement valide ne s'y declare que si sa correction est due ; un engagement en saisie, toujours.
         if let Some(v) = e.valide() {
-            if engagement::etats::correction_due(ctx, v, &departs, lu, socle::mois::Mois::lire(&porteur)?)?.is_none() {
+            if engagement::etats::correction_due(ctx, v, &departs, lu, Some(socle::mois::Mois::lire(&porteur)?))?.is_none() {
                 continue;
             }
         }
