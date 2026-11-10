@@ -506,7 +506,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let ent = documents::avenant::ent_du_mois(ctx, &s_mois)?;
     // UN SALARIE SANS COURRIEL n'empeche pas les autres : son contrat ne part pas par courriel, il s'imprime ; les
     // autres partent. Les adresses se lisent avant d'ecrire le moindre PDF : un refus ne laisse rien sur le disque.
-    let (par_salarie, noms_sans) = avec_et_sans_courriel(contrats_choisis(ctx, &d.choisis, &mois, &paies)?)?;
+    let (par_salarie, noms_sans) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
 
     let aujourdhui = ctx.aujourdhui.iso();
     let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();
@@ -636,7 +636,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     }
 
     if messages.is_empty() {
-        return Err(refus(format!("Aucun contrat a envoyer pour {}.", mois)));
+        return Err(refus(aucun_contrat_a_envoyer(&mois)));
     }
     // La version de l'engagement sur laquelle chaque contrat part, lue avant l'envoi.
     let versions = envois::journal::versions_des_contrats(ctx, &contrats, &departs).map_err(Echec::from)?;
@@ -719,6 +719,34 @@ impl DemandeDeSignature<'_> {
     pub(crate) fn rappel(&self, salarie: &str, numero: Option<&str>) -> bool {
         !self.remplace && self.etat(salarie, numero).is_some_and(|c| c.demande_par_courriel)
     }
+
+    /// LES CONTRATS QUE LA DEMANDE FAIT PARTIR : ceux qu'elle choisit (`contrats_choisis`). Sans selection (ni contrat
+    /// ni salarie nomme), un contrat deja revenu signe n'a rien a faire dans la demande : il n'est pas choisi. Nomme, il
+    /// reste, et `verifier_demande` dit pourquoi il ne part pas.
+    fn contrats(&self, ctx: &Contexte, paies: &[Paie]) -> R<ParSalarie> {
+        let choisis = contrats_choisis(ctx, &self.choisis, self.mois, paies)?;
+        let nomme = self.choisis.contrats.is_some() || self.choisis.salaries.as_ref().is_some_and(|l| !l.is_empty());
+        if nomme {
+            return Ok(choisis);
+        }
+        let mut gardes: ParSalarie = Vec::new();
+        for (cle, ps, rangs) in choisis {
+            let (ps, rangs): (Vec<Paie>, Vec<usize>) =
+                ps.into_iter().zip(rangs).filter(|(p, _)| self.etat(&cle, p.engagement.numero.as_deref()).is_none_or(|c| c.recu_le.is_none())).unzip();
+            if !ps.is_empty() {
+                gardes.push((cle, ps, rangs));
+            }
+        }
+        if gardes.is_empty() {
+            return Err(refus(aucun_contrat_a_envoyer(self.mois)));
+        }
+        Ok(gardes)
+    }
+}
+
+/// « Aucun contrat a envoyer pour 2026-11. » : la demande ne fait rien partir.
+fn aucun_contrat_a_envoyer(mois: &str) -> String {
+    format!("Aucun contrat a envoyer pour {}.", mois)
 }
 
 /// Ce que la demande dit d'elle-meme avant que rien ne parte : ce qu'elle dira (`avertissements`), le nombre de contrats
@@ -736,7 +764,7 @@ pub(crate) struct DemandeVerifiee {
 pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<DemandeVerifiee> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, d.mois, None, &departs)?;
-    let (par_salarie, _) = avec_et_sans_courriel(contrats_choisis(ctx, &d.choisis, d.mois, &paies)?)?;
+    let (par_salarie, _) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
     let cles: Vec<(String, Option<String>)> = par_salarie.iter().flat_map(|(k, ps, _)| ps.iter().map(|p| (k.clone(), p.engagement.numero.as_deref().map(String::from)))).collect();
     let mut verifiee = DemandeVerifiee { avertissements: Vec::new(), contrats: cles.len(), rappels: 0 };
     for (salarie, numero) in &cles {
