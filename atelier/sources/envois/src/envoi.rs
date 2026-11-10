@@ -485,7 +485,7 @@ pub fn envoyer_suivi(
     // LA SIGNATURE DE LA COMPAGNIE : tout courriel passe ici, il la prend ici. Trop lourde, rien ne part.
     let signature = match client.racine().map(crate::signature_courriel::du_poste) {
         Some(Ok(s)) => s,
-        Some(Err(m)) => return Err(ErreurEnvoi { message: m, partis: Vec::new(), echoue: premier.destinataire.clone() }),
+        Some(Err(m)) => return Err(ErreurEnvoi { message: String::from(m), partis: Vec::new(), echoue: premier.destinataire.clone() }),
         None => None,
     };
     for message in messages {
