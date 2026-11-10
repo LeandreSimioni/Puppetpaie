@@ -8,8 +8,13 @@ sont transcrits en entier, d'après les images des pages, le 04/11/2026
 `accord-interbranche-prevoyance-avenant7-20210906.md`, sans les noms des signataires) ;
 les avenants 6 et 8 le 10/11/2026 (`accord-interbranche-prevoyance-avenant6-20200414.md`, par `pdftotext` ;
 `accord-interbranche-prevoyance-avenant8-20250521.md`, d'après les images) ; aucun ne parle du maintien des garanties
-après la fin du contrat (CSS L. 911-8). Le texte de base du 20/12/2006 et les avenants 1 à 4 ne sont pas déposés ;
-c'est là que le vérificateur des sources lit leurs citations.
+après la fin du contrat (CSS L. 911-8). Le texte de base du 20/12/2006 et les avenants 1 à 4, relevés par Léandre
+(scans du SMA), sont déposés et transcrits le 10/11/2026 (`accord-interbranche-prevoyance-20061220.md`,
+`accord-interbranche-prevoyance-avenant1-20080616.md` à `…-avenant4-20111222.md`). L'avenant 1 du 16/06/2008 est un
+texte consolidé qui se substitue « à l'intégralité des dispositions » de l'accord de 2006 (art. IV.1er). Aucun de ces
+textes ne parle du maintien des garanties après la fin du contrat ; les prestations décès se versent dès lors qu'il a
+été cotisé au moins une fois au cours des 24 derniers mois civils (avenant 1, art. II.4.1). C'est là que le
+vérificateur des sources lit leurs citations.
 
 Ils tranchent l'**article 45 du titre II de la CCN 3097** (production
 cinématographique), qui portait la prévoyance des techniciens intermittents
