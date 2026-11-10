@@ -675,7 +675,7 @@ fn mois_puppetpaie(
     if siennes.is_empty() {
         return Ok(pages);
     }
-    let ent = ctx.pour_un_modele(&ctx.entreprise_du_mois(mois)?);
+    let ent = ctx.pour_un_modele(&ctx.entreprise_du_mois(Mois::lire(mois)?));
     let lib = socle::mois::Mois::en_clair(mois);
 
     // Les paies dont on tire les contrats d'un mois pas encore ecrit : celles de la saisie
@@ -1267,7 +1267,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     }
     if cats.contains(&RECAPITULATIF) {
         let (m, a, toutes) = p.bornes();
-        let mut recaps = Recapitulatifs::nouveau(ctx, m, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+        let mut recaps = Recapitulatifs::nouveau(ctx, m.as_deref().map(Mois::lire).transpose()?, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {

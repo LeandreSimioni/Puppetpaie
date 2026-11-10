@@ -308,11 +308,10 @@ pub struct Colonne {
 pub fn tableau_cumul(
     ctx: &Contexte,
     salarie: &str,
-    mois: &str,
+    mois: socle::mois::Mois,
     engagements: &[Declare],
 ) -> R<Vec<Colonne>> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let mois = socle::mois::Mois::lire(mois)?;
     let annee = mois.annee();
     let (debut_mois, fin_mois) = (mois.premier_jour(), mois.dernier_jour());
     let ne = naissance(ctx, salarie)?;

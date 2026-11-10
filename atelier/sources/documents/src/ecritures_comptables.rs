@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::mois::Mois;
 use socle::num::{eur2, zero2, Decimal};
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
@@ -27,7 +28,7 @@ pub struct Ecriture {
     /// Le spectacle (le brut, les frais) ou le salarie (le net, une retenue) que la ligne porte ; aucun pour une charge,
     /// un tiers ou le prelevement a la source.
     pub analytique: Option<String>,
-    pub mois: String,
+    pub mois: Mois,
     /// Le sous-compte individuel du salarie, quand le plan en tient un (`net.par_salarie`).
     pub auxiliaire: Option<String>,
     /// Le libelle du sous-compte : le salarie.
@@ -39,18 +40,17 @@ pub struct Ecriture {
 }
 
 /// La date de l'ecriture d'un mois (son dernier jour, AAAA-MM-JJ) et son libelle (« Decembre 2026 »).
-fn date_et_libelle(mois: &str) -> R<(String, String)> {
-    let mois = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
-    Ok((mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre)))
+fn date_et_libelle(mois: Mois) -> (String, String) {
+    (mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre))
 }
 
 /// Une ecriture pour le mois, depuis les paies validees.
 /// Le brut par spectacle, la charge patronale et le tiers par ligne de bulletin, le prelevement a la source retenu
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
-pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
-    let paies = engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
-    let (date, lib_mois) = date_et_libelle(mois)?;
+pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
+    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let (date, lib_mois) = date_et_libelle(mois);
     let jrn = plan.journal.clone();
     let zero = zero2();
 
@@ -191,7 +191,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
             debit: eur2(debit),
             credit: eur2(credit),
             analytique: analytique.map(str::to_string),
-            mois: mois.to_string(),
+            mois,
             auxiliaire: auxiliaire.map(str::to_string),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
             piece: String::new(),

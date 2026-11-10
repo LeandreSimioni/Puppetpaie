@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use droit::contexte::Contexte;
 use socle::echec::Classe;
+use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use socle::num::{eur2, Decimal};
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
@@ -17,7 +18,7 @@ use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sect
 
 /// Un contrat par mois de paie, vu des etats du personnel.
 struct ContratMois {
-    mois: String,
+    mois: Mois,
     cle: String,
     fiche: droit::fiche::ChampsSalarie,
     salarie: String,
@@ -38,11 +39,11 @@ struct ContratMois {
 fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
     let mut out = Vec::new();
     for m in p.mois.clone() {
-        for paie in lecture.paies(&m)?.iter() {
+        for paie in lecture.paies(m)?.iter() {
             let e = &paie.engagement;
             let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie.emploi.en_texte());
             out.push(ContratMois {
-                mois: m.clone(),
+                mois: m,
                 cle: paie.salarie.id.to_string(),
                 fiche: paie.salarie.champs.clone(),
                 salarie: qui(&paie.salarie)?,
@@ -72,7 +73,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in &contrats {
         let mut l = Ligne::nouvelle();
-        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
+        l.m("mois", c.mois).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
         l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", jj(&c.debut)).ot("fin", c.fin.as_deref().map(jj));
         l.od("brut", c.brut);
         lignes.push(l);
@@ -83,7 +84,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut t = Tableau::nouveau("contrats", "Liste des contrats", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
+    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
     t.colonnes = vec![
         col_t("mois", "Mois de paie"),
         col_t("contrat", "Contrat"),
@@ -302,8 +303,8 @@ pub struct ActeDuJournal {
     /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
     pub quoi: String,
     pub main_propre: bool,
-    /// Le mois qu'il declare (`AAAA-MM`), s'il en declare un.
-    pub mois: Option<String>,
+    /// Le mois qu'il declare, s'il en declare un.
+    pub mois: Option<Mois>,
     pub mode: String,
     pub accepte: bool,
     /// Le fichier parti, s'il y en a un.
@@ -318,11 +319,8 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut lignes = Vec::new();
     for l in journal {
         // Un acte porte le mois qu'il declare ; un acte annuel se range au mois ou il a eu lieu.
-        let m: String = match &l.mois {
-            Some(m) => m.clone(),
-            None => l.quand.chars().take(7).collect(),
-        };
-        if m.chars().count() != 7 || !p.contient(&m) {
+        let Some(m) = l.mois.or_else(|| l.quand.get(..7).and_then(Mois::du_texte)) else { continue };
+        if !p.contient(m) {
             continue;
         }
         let mut x = Ligne::nouvelle();
@@ -335,7 +333,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
             (false, None) => l.quoi.clone(),
         };
         x.t("acte", acte);
-        x.t("mois", m).t("mode", l.mode.clone()).t("issue", if l.accepte { "accepté" } else { "refusé ou échoué" });
+        x.m("mois", m).t("mode", l.mode.clone()).t("issue", if l.accepte { "accepté" } else { "refusé ou échoué" });
         x.ot("fichier", l.fichier.clone()).t("destinataire", l.destinataire.clone()).t("reponse", reponse(&l.reponse)).t("origine", l.origine.clone());
         lignes.push(x);
     }
@@ -343,9 +341,9 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
         return Err(refus(format!("Aucun acte au journal sur la période ({}).", p.libelle)));
     }
     let mut t = Tableau::nouveau("journal-des-declarations", "Journal des déclarations et envois", p.libelle.clone());
-    t.mois = lignes.iter().map(|l| l.texte("mois")).collect::<BTreeSet<_>>().into_iter().collect();
+    t.mois = lignes.iter().filter_map(|l| l.mois("mois")).collect::<BTreeSet<_>>().into_iter().collect();
     t.avec_total = false;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
+    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
     t.colonnes = vec![
         col_t("quand", "Date"),
         col_t("acte", "Acte"),

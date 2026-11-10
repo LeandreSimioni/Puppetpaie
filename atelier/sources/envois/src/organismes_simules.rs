@@ -78,7 +78,7 @@ pub struct RefusAnnonce {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rubrique: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
 }
 
 /// UNE ANNONCE GARDEE : son jour, ce qu'elle annonce (une seule de ses trois cases), et, une fois servie, le flux du
@@ -195,11 +195,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             if r.code.is_empty() || r.message.is_empty() {
                 return Err(erreur(Classe::Illisible, "refus : le code et le message de l'anomalie sont attendus."));
             }
-            let mois = dit(r.mois);
-            if let Some(m) = &mois {
-                Mois::lire(m).map_err(|e| socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, e.phrase)).reclasser(Classe::Illisible))?;
-            }
-            gardee.refus = Some(RefusAnnonce { code: r.code, message: r.message, rubrique: dit(r.rubrique), mois });
+            gardee.refus = Some(RefusAnnonce { code: r.code, message: r.message, rubrique: dit(r.rubrique), mois: r.mois });
         }
     }
     let mut m = charger(racine)?;
@@ -353,13 +349,13 @@ fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnn
         return Ok(None);
     }
     let depot = jour_iso(l.quand())?;
-    let mois = mois_de(l)?.to_string();
+    let mois = mois_de(l)?;
     for a in memoire.annonces.iter_mut() {
         let Some(r) = a.refus.clone() else { continue };
         if a.servi_par.is_some() {
             continue;
         }
-        if a.jour()? <= depot && r.mois.as_deref().is_none_or(|m| m == mois) {
+        if a.jour()? <= depot && r.mois.is_none_or(|m| m == mois) {
             a.servi_par = Some(flux.to_string());
             return Ok(Some(r));
         }

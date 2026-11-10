@@ -34,6 +34,7 @@ use crate::branchement::Branchement;
 use crate::releve_retours::{self, Client};
 use crate::suites::Suites;
 use socle::echec::Echec;
+use socle::mois::Mois;
 
 /// Trois mois de releve : la retention des documents de la plate-forme (guide API v6.8, §8.2). 92 jours couvrent trois
 /// mois civils, quels qu'ils soient.
@@ -219,7 +220,7 @@ pub struct MensuellesVues {
 /// (l'atelier, un autre poste) ; le journal du dossier ne sait que ce qu'il a envoye.
 ///
 /// Deux lectures, sur les bilans de nature 11 archives dans `retours/` pour ce SIREN et cette base (`essai_reel`) :
-/// - l'ordre de chaque mensuelle (nature 01) recue le mois `constitution` (`AAAA-MM`). Le mois de reception du bilan
+/// - l'ordre de chaque mensuelle (nature 01) recue le mois `constitution`. Le mois de reception du bilan
 ///   (`date_reception`) tient lieu de mois de constitution : la date de constitution est le jour meme ou le fichier
 ///   s'ecrit (`dsn::generer`), et un fichier se depose ce jour-la ou plus tard ; la lecture ne peut donc que surestimer
 ///   l'ordre (un fichier ecrit le 31 et depose le 1er compte pour le mois suivant), jamais le sous-estimer, et trop
@@ -227,10 +228,11 @@ pub struct MensuellesVues {
 /// - le rang que la plate-forme cite dans un refus (« d'ordre 20261021 inferieur (ou egal) au dernier ordre accepte
 ///   20261030 ») : AAAAMM + ordre, exact, quel que soit le jour du bilan.
 ///
-/// `mois` (`AAAA-MM`) : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
-pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: &str, mois: &str) -> Result<MensuellesVues, Echec> {
+/// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
+pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
     let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
-    let aaaamm = constitution.replace('-', "");
+    let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
+    let recu_ce_mois = constitution.to_string();
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     let mut vues = MensuellesVues::default();
     for (_, p) in bilans_archives(racine)? {
@@ -239,8 +241,8 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         if bilan.essai_reel.as_deref() != Some(base) {
             continue;
         }
-        let du_mois_recu = bilan.recu_le.as_deref().is_some_and(|r| r.starts_with(constitution));
-        let du_mois_declare = bilan.mois.is_some_and(|m| m.to_string() == mois);
+        let du_mois_recu = bilan.recu_le.as_deref().is_some_and(|r| r.starts_with(&recu_ce_mois));
+        let du_mois_declare = bilan.mois == Some(mois);
         let mut du_siren = false;
         for d in crate::retours::declarations_du_bilan(&octets)? {
             if d.nature_declaration.as_deref() != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {

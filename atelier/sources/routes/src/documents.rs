@@ -336,7 +336,7 @@ fn aer_manquantes(ctx: &Contexte, mois: &str) -> R<Vec<String>> {
 /// `ecrire_documents::paies_aux_numeros_declares`) ; ce qui les empeche de se lire se refuse.
 fn paies_de_la_periode(ctx: &Contexte, periode: &str) -> R<Vec<engagement::calcul::Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, periode, None, &departs)?;
+    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(periode)?, None, &departs)?;
     Ok(paies)
 }
 
@@ -350,7 +350,8 @@ fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<String, Vec<engagem
     // `documents::aer` demande les paies d'un mois sans refus possible : le premier refus est garde, et rendu apres.
     let mut faute: Option<Echec> = None;
     let attendues = {
-        let mut du_mois = |m: &str| -> Vec<engagement::calcul::Paie> {
+        let mut du_mois = |m: Mois| -> Vec<engagement::calcul::Paie> {
+            let m = &m.to_string();
             if let Some(p) = par_mois.get(m) {
                 return p.clone();
             }
@@ -365,7 +366,7 @@ fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<String, Vec<engagem
                 }
             }
         };
-        documents::aer::periodes_attendues(periode, cle, &mut du_mois)
+        documents::aer::periodes_attendues(Mois::lire(periode)?, cle, &mut du_mois)
     };
     if let Some(e) = faute {
         return Err(e);
@@ -810,7 +811,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     if pieces.is_empty() {
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", Mois::en_clair(&mois))));
     }
-    let versions = journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle))?;
+    let versions = journal::versions_du_mois(ctx, Mois::lire(&mois)?, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle))?;
     let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, &mois)?;
@@ -967,10 +968,10 @@ pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::P
 #[allow(clippy::type_complexity)]
 fn declaration_de_la_correction(ctx: &Contexte, mois: &str) -> R<Option<Box<dyn Fn(&str) -> String>>> {
     let departs = journal::lu(&ctx.racine).map(|j| j.departs)?;
-    if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
+    if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, Mois::lire(mois)?)? {
         return Ok(None);
     }
-    let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
+    let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, Mois::lire(mois)?)?.to_string();
     let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
     let mut porteurs: HashMap<String, String> = HashMap::new();
     for c in portees {
@@ -1041,7 +1042,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: &str, seulement: Option<&[Str
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id.to_string())).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(refus_de_preparation)?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, Mois::lire(mois)?, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(refus_de_preparation)?;
     let messages: Vec<envoi::Message> = choix.garder(messages, |m| m.cle.as_str()).into_iter().filter(|m| cles.contains(&m.cle)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
     if !sans.is_empty() {
@@ -1067,7 +1068,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: &str, 
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     // LA VERSION SUR LAQUELLE ILS PARTENT, engagement par engagement des salaries servis.
     let servis: Vec<&str> = messages.iter().map(|m| m.cle.as_str()).collect();
-    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
+    let versions = journal::versions_du_mois(ctx, Mois::lire(mois)?, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
     verifier_preuve(ctx, Some(preuve), mois, "envoi des documents du mois aux salaries", &a_qui)?;

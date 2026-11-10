@@ -77,12 +77,12 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         return Ok(None);
     }
     let eff = ctx.effectif()?;
-    let faits: HashSet<String> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
+    let faits: HashSet<String> = declarations::casc::mois_regularises(ctx)?.into_iter().map(|m| m.to_string()).collect();
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
     let mut dispo: BTreeSet<String> = BTreeSet::new();
     dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois.to_string()));
     dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from));
-    let depuis = base.depuis.clone();
+    let depuis = base.depuis.to_string();
     let contrat = base.dsn.contrat.clone();
     let mut par_mois: Vec<(String, Decimal)> = Vec::new();
     for m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {

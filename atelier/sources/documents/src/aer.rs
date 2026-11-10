@@ -52,6 +52,7 @@ use fabrique_pdf::formulaire::ChampLu;
 use engagement::cachet;
 use socle::date::Jour;
 use socle::echec::refus;
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 /// Les champs du cadre 5, et rien d'autre.
@@ -527,7 +528,7 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
 /// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMut(&str) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
+pub fn periodes_attendues(periode: Mois, cle: &str, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
     let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).iter().filter(|p| de_lui(p)) {
@@ -536,12 +537,12 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
             continue;
         }
         let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
-        let mut m = e.debut.iso()[..7].to_string();
-        while m.as_str() < periode {
-            for q in paies_du_mois(&m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
+        let mut m = e.debut.mois_civil();
+        while m < periode {
+            for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
                 out.push(PaieAer::du_mois(q)?);
             }
-            m = socle::mois::Mois::lire(&m)?.suivant().to_string();
+            m = m.suivant();
         }
         if !e.sans_paie() {
             out.push(PaieAer::du_mois(p)?);

@@ -37,7 +37,7 @@ const TYPES: [(&str, &str); 5] = depot::TYPES;
 /// Les paies validees du mois, a leurs numeros declares.
 fn saisie_aux_numeros_declares(ctx: &Contexte, mois: &str) -> R<Vec<Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1)
+    paies_aux_numeros_declares(ctx, Mois::lire(mois)?, None, &departs).map(|t| t.1)
 }
 
 // ------------------------------------------------------------------ recapitulatif_dsn
@@ -494,7 +494,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         (Vec::new(), None)
     } else {
         match crate::gestes::depart::refabriquer(ctx, std::path::Path::new(&chemin), mois, a.etablissement())? {
-            Some(f) => (declarations::ordres_paiement::decrire(&f.ordres, &mois_t, ctx.echeance_dsn()?)?, None),
+            Some(f) => (declarations::ordres_paiement::decrire(&f.ordres, Mois::lire(&mois_t)?, ctx.echeance_dsn()?)?, None),
             None => (Vec::new(), Some("Ce fichier ne dit plus ce que disent les paies du mois : le refaire (Produire la DSN) avant de le déposer.")),
         }
     };

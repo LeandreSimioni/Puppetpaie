@@ -34,7 +34,7 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
             "  {}  {:<4}  {:<8}  {}{}",
             super::dit(a.quand.as_deref()),
             v.mode.nom(),
-            super::dit(a.mois.as_deref()),
+            super::dit(a.mois.map(|m| m.to_string()).as_deref()),
             a.flux,
             if v.deja { "   [deja au journal]" } else { "" }
         );

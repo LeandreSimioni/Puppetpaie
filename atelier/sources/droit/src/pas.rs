@@ -10,6 +10,7 @@ use crate::contexte::Contexte;
 use crate::fiche::{Lue, Montant, TauxPas};
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use socle::date::{jours_du_mois, Jour};
+use socle::mois::Mois;
 use socle::num::nombre;
 use socle::fichiers::repr;
 use socle::echec::{refus, Echec, R};
@@ -156,21 +157,19 @@ pub fn recus(ctx: &Contexte, cle: &str) -> R<Vec<TauxPas>> {
 /// articles-20261030.md`) : s'il valait pour les versements qu'elle declare, chaque DSN deposee avant eux serait a
 /// refaire par sa propre reponse, et son annule-et-remplace par la sienne. INFERENCE (les textes supposent la DSN deposee
 /// apres le versement) : un taux en retour de la DSN du mois `M` ne vaut pas pour la paie de `M`, ni d'un mois d'avant.
-fn en_retour_d_un_mois_qui_n_est_pas_avant(e: &TauxPas, mois: Option<&str>) -> bool {
-    let retour = e.en_retour_de.dite().map(|m| m.to_string()).filter(|r| !r.is_empty());
-    mois.zip(retour).is_some_and(|(m, retour)| retour.as_str() >= m)
+fn en_retour_d_un_mois_qui_n_est_pas_avant(e: &TauxPas, mois: Option<Mois>) -> bool {
+    mois.zip(e.en_retour_de.dite()).is_some_and(|(m, retour)| *retour >= m)
 }
 
 /// Le jour ou un taux recu commence de valoir dans la fiche (`depuis` de sa valeur datee) : le jour de sa mise a
 /// disposition `mad`, et, en retour de la DSN du mois `en_retour_de`, pas avant le premier jour du mois qui suit
 /// (`en_retour_d_un_mois_qui_n_est_pas_avant`). Deux comptes rendus du meme jour, l'un pour le mois, l'autre en retour
 /// de sa DSN, ne s'ecrasent donc pas.
-pub fn date_d_effet(mad: Jour, en_retour_de: Option<&str>) -> R<Jour> {
-    let premier_d_apres = en_retour_de.map(|m| socle::mois::Mois::lire(m).map(|m| m.suivant().premier_jour())).transpose()?;
-    Ok(match premier_d_apres {
-        Some(p) => p.max(mad),
+pub fn date_d_effet(mad: Jour, en_retour_de: Option<Mois>) -> Jour {
+    match en_retour_de {
+        Some(m) => m.suivant().premier_jour().max(mad),
         None => mad,
-    })
+    }
 }
 
 /// LE TAUX DU SALARIE AU JOUR `le`, pour la paie du mois `mois` : de ceux qu'il a recus, le dernier mis a disposition au
@@ -182,7 +181,7 @@ pub fn date_d_effet(mad: Jour, en_retour_de: Option<&str>) -> R<Jour> {
 /// jour ; la retenue est « effectuée par le débiteur lors du paiement » (CGI, art. 1671, 1, meme fichier) : un taux
 /// transmis apres le paiement d'un salaire ne vaut pas pour lui. Aucun taux recu avant ce jour : aucun (la grille de
 /// l'article 204 H s'applique).
-fn en_vigueur<'a>(recus: &'a [TauxPas], le: Jour, mois: Option<&str>) -> Option<&'a TauxPas> {
+fn en_vigueur<'a>(recus: &'a [TauxPas], le: Jour, mois: Option<Mois>) -> Option<&'a TauxPas> {
     recus.iter().filter(|e| mise_a_disposition(e).is_some_and(|d| d <= le) && !en_retour_d_un_mois_qui_n_est_pas_avant(e, mois)).last()
 }
 
@@ -331,7 +330,7 @@ pub fn rubriques_par_defaut(
 /// applicable, c'est la grille. Un taux perime compte pour rien.
 /// UN CALCUL DEPEND DU TAUX DE SON SALARIE A SON JOUR : il le note (`pas <cle> <jour> <mois>`, `empreinte`), et un taux
 /// recu qui le change le fait recalculer.
-pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<&str>) -> R<Option<Triplet>> {
+pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let t = triplet(ctx, cle, le, mois)?;
     if let Some(j) = le {
         socle::fichiers::noter_valeur(&cle_d_empreinte(cle, j, mois), empreinte_du_triplet(&t));
@@ -340,14 +339,14 @@ pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<&str
 }
 
 /// La cle sous laquelle `taux_dgfip` note le taux du salarie `cle` au jour `le` pour la paie de `mois`.
-fn cle_d_empreinte(cle: &str, le: Jour, mois: Option<&str>) -> String {
+fn cle_d_empreinte(cle: &str, le: Jour, mois: Option<Mois>) -> String {
     match mois {
         Some(m) => format!("pas {} {} {}", cle, le.iso(), m),
         None => format!("pas {} {}", cle, le.iso()),
     }
 }
 
-fn triplet(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<&str>) -> R<Option<Triplet>> {
+fn triplet(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let s = situation(ctx, cle, le, mois)?;
     if s.situation != VALIDE {
         return Ok(None);
@@ -371,7 +370,7 @@ pub fn empreinte(ctx: &Contexte, cle_notee: &str) -> R<Option<String>> {
     }) else {
         return Ok(None);
     };
-    Ok(Some(empreinte_du_triplet(&triplet(ctx, cle, Some(Jour::lire(jour)?), mois)?)))
+    Ok(Some(empreinte_du_triplet(&triplet(ctx, cle, Some(Jour::lire(jour)?), mois.map(Mois::lire).transpose()?)?)))
 }
 
 /// La fiche d'un salarie sans ses taux recus : ce qu'une paie lit de la fiche hors du taux, qu'elle lit au jour de son
@@ -448,7 +447,7 @@ pub struct Situation {
 
 /// Ou en est le taux d'un salarie au jour `le`, pour la paie du mois `mois` (`en_vigueur`). Ne refuse que si sa fiche est
 /// illisible.
-pub fn situation(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<&str>) -> R<Situation> {
+pub fn situation(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Situation> {
     let le = le_jour(ctx, le);
     let recus = recus(ctx, cle)?;
     let e = en_vigueur(&recus, le, mois);
@@ -490,7 +489,7 @@ fn archive(ctx: &Contexte, cle: &str) -> bool {
 }
 
 /// Le meme tableau pour plusieurs salaries, dans l'ordre alphabetique. Sans liste : ceux des fiches, moins les archives.
-pub fn diagnostic(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<&str>) -> R<Vec<Situation>> {
+pub fn diagnostic(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<Situation>> {
     let cles: BTreeSet<String> = match cles {
         Some(c) => c.iter().cloned().collect(),
         None => ctx.salaries.keys().filter(|c| !archive(ctx, c)).map(|c| c.to_string()).collect(),
@@ -501,7 +500,7 @@ pub fn diagnostic(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, moi
 /// Les phrases a dire au depot de la DSN et a la production des bulletins (`depart::sans_taux_recu`), une par salarie
 /// dont la paie prendrait la grille de l'article 204 H, III (CGI, art. 1671, 2 : « A défaut de taux transmis par
 /// l'administration ») : ce que sa fiche sait des taux recus. Vide si tout va bien.
-pub fn avertissements(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<&str>) -> R<Vec<String>> {
+pub fn avertissements(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<String>> {
     let mut lignes = Vec::new();
     for s in diagnostic(ctx, cles, le, mois)? {
         let mut ligne = format!("{} : ", ctx.nomme(&s.salarie));
@@ -584,16 +583,16 @@ mod tests {
     fn le_taux_en_retour_de_la_dsn_d_un_mois_vaut_pour_les_mois_qui_suivent() {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
-        let id = |le: &str, mois: &str| en_vigueur(&recus, Jour::lire(le).unwrap(), Some(mois)).and_then(|e| e.identifiant.en_texte());
+        let id = |le: &str, mois: &str| en_vigueur(&recus, Jour::lire(le).unwrap(), Some(Mois::lire(mois).unwrap())).and_then(|e| e.identifiant.en_texte());
         assert_eq!(id("2026-12-31", "2026-12"), Some("157352475".to_string()));
         assert_eq!(id("2027-01-05", "2026-12"), Some("157352475".to_string()));
         assert_eq!(id("2027-01-31", "2027-01"), Some("713288315".to_string()));
+        let decembre = Mois::lire("2026-12").unwrap();
         let demande = vec![taux("480747943", "20261221184328", None)];
-        assert!(en_vigueur(&demande, Jour::lire("2026-12-31").unwrap(), Some("2026-12")).is_some());
+        assert!(en_vigueur(&demande, Jour::lire("2026-12-31").unwrap(), Some(decembre)).is_some());
         let mad = Jour::lire("2026-12-21").unwrap();
-        assert_eq!(date_d_effet(mad, Some("2026-12")).unwrap(), Jour::lire("2027-01-01").unwrap());
-        assert_eq!(date_d_effet(mad, Some("2026-11")).unwrap(), mad);
-        assert_eq!(date_d_effet(mad, None).unwrap(), mad);
-        assert!(date_d_effet(mad, Some("décembre")).is_err());
+        assert_eq!(date_d_effet(mad, Some(decembre)), Jour::lire("2027-01-01").unwrap());
+        assert_eq!(date_d_effet(mad, Some(decembre.precedent())), mad);
+        assert_eq!(date_d_effet(mad, None), mad);
     }
 }

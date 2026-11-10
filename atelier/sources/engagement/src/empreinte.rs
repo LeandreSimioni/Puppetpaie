@@ -33,7 +33,7 @@ pub const MOTEUR: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("ENGAGEMEN
 /// salarie, une valeur datee apres le mois n'en sont pas : elles ne font pas recalculer cette paie.
 pub(crate) fn fiches(ctx: &Contexte, mois: Mois, salarie: &str, spectacle: Option<&str>) -> R<(String, String)> {
     let cle = socle::ecriture::json_en_ligne(&(mois, salarie, spectacle));
-    Ok((format!("fiches {}", cle), empreinte_fiches(&ctx.du_mois(&mois.to_string())?, salarie, spectacle)))
+    Ok((format!("fiches {}", cle), empreinte_fiches(&ctx.du_mois(mois)?, salarie, spectacle)))
 }
 
 fn empreinte_fiches(ctx: &Contexte, salarie: &str, spectacle: Option<&str>) -> String {

@@ -121,9 +121,8 @@ impl Versement {
         }
     }
 
-    /// Le jour du versement de la paie du mois `mois` (AAAA-MM) dont la periode finit le `fin_periode`.
-    pub fn jour(&self, mois: &str, fin_periode: Jour) -> R<Jour> {
-        let mois = Mois::lire(mois)?;
+    /// Le jour du versement de la paie du mois `mois` dont la periode finit le `fin_periode`.
+    pub fn jour(&self, mois: Mois, fin_periode: Jour) -> R<Jour> {
         match *self {
             Versement::FinDuMois => Ok(mois.dernier_jour()),
             Versement::FinDuContrat => Ok(fin_periode),
@@ -136,10 +135,10 @@ impl Versement {
     }
 }
 
-/// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` (AAAA-MM) : le dernier jour du
+/// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` : le dernier jour du
 /// mois suivant (CCH-13 de S21.G00.50.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 61-62).
-pub fn au_plus_tard_en_dsn(mois: &str) -> R<Jour> {
-    Ok(Mois::lire(mois)?.suivant().dernier_jour())
+pub fn au_plus_tard_en_dsn(mois: Mois) -> Jour {
+    mois.suivant().dernier_jour()
 }
 
 /// Le dernier jour ou se regle le salaire d'un artiste de cirque dont le contrat a duree determinee finit le `fin` :
@@ -150,10 +149,10 @@ pub fn au_plus_tard_cirque_1285(fin: &Jour) -> R<Jour> {
 
 /// Le refus d'un versement le `verse` pour `qui`, paye au titre du mois `mois` ; `fin_cirque` : la fin du contrat a duree
 /// determinee d'un artiste de cirque en convention 1285, quand elle tombe dans ce mois. `None` : les textes l'admettent.
-pub fn refus(qui: &str, verse: &Jour, mois: &str, fin_cirque: Option<&Jour>) -> R<Option<String>> {
+pub fn refus(qui: &str, verse: &Jour, mois: Mois, fin_cirque: Option<&Jour>) -> R<Option<String>> {
     let corriger = "Choisir un jour plus tôt : sur la carte (« Payé le »), ou dans la configuration (« Jour du versement \
                     des permanents » ou « des intermittents »).";
-    let limite = au_plus_tard_en_dsn(mois)?;
+    let limite = au_plus_tard_en_dsn(mois);
     if *verse > limite {
         return Ok(Some(format!(
             "{} : versé le {}, après le {}, dernier jour où la DSN de ce mois peut déclarer un versement (norme DSN, \
@@ -192,11 +191,12 @@ mod tests {
     /// suivant (le decalage de paie, BOI-IR-PAS-30-10-30-20, § 50) passe.
     #[test]
     fn un_versement_apres_le_mois_qui_suit_se_refuse() {
-        let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour("2026-12", j("2026-12-31")).unwrap();
+        let decembre = Mois::lire("2026-12").unwrap();
+        let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour(decembre, j("2026-12-31")).unwrap();
         assert_eq!(cinq, j("2027-01-05"));
-        assert_eq!(refus("X", &cinq, "2026-12", None).unwrap(), None);
-        assert_eq!(refus("X", &j("2027-01-31"), "2026-12", None).unwrap(), None);
-        assert!(refus("X", &j("2027-02-01"), "2026-12", None).unwrap().is_some_and(|m| m.contains("CCH-13")));
+        assert_eq!(refus("X", &cinq, decembre, None).unwrap(), None);
+        assert_eq!(refus("X", &j("2027-01-31"), decembre, None).unwrap(), None);
+        assert!(refus("X", &j("2027-02-01"), decembre, None).unwrap().is_some_and(|m| m.contains("CCH-13")));
     }
 
     /// CCNEAC, art. X.3.5.4 : le salaire d'un artiste de cirque en CDD se regle au plus tard la premiere semaine du mois
@@ -204,9 +204,10 @@ mod tests {
     #[test]
     fn un_artiste_de_cirque_de_la_1285_est_paye_la_premiere_semaine_qui_suit_son_contrat() {
         let fin = j("2026-10-28");
-        assert_eq!(refus("X", &j("2026-11-07"), "2026-10", Some(&fin)).unwrap(), None);
-        assert!(refus("X", &j("2026-11-10"), "2026-10", Some(&fin)).unwrap().is_some_and(|m| m.contains("X.3.5.4")));
+        let octobre = fin.mois_civil();
+        assert_eq!(refus("X", &j("2026-11-07"), octobre, Some(&fin)).unwrap(), None);
+        assert!(refus("X", &j("2026-11-10"), octobre, Some(&fin)).unwrap().is_some_and(|m| m.contains("X.3.5.4")));
         // Hors du cirque de la 1285, le 10 du mois suivant passe.
-        assert_eq!(refus("X", &j("2026-11-10"), "2026-10", None).unwrap(), None);
+        assert_eq!(refus("X", &j("2026-11-10"), octobre, None).unwrap(), None);
     }
 }

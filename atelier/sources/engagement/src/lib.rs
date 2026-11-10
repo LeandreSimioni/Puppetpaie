@@ -657,7 +657,7 @@ impl Engagement {
     pub fn date_du_versement(&self) -> R<Jour> {
         match self.date_paiement {
             Some(d) => Ok(d),
-            None => self.versement.jour(&self.mois.to_string(), self.fin_periode()?),
+            None => self.versement.jour(self.mois,self.fin_periode()?),
         }
     }
 
@@ -1110,7 +1110,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
         }
         _ => None,
     };
-    droit::versement::refus(qui, &verse, &eng.mois.to_string(), fin_cirque.as_ref())
+    droit::versement::refus(qui, &verse, eng.mois, fin_cirque.as_ref())
 }
 
 fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {

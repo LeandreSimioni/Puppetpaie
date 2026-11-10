@@ -8,7 +8,7 @@
 
 use declarations::dsn_lue::DsnLue;
 use socle::echec::{Classe, Echec, R};
-use socle::texte::{ascii_nfkd, strip};
+use socle::texte::ascii_nfkd;
 
 pub const NATURE_TEST: &str = "01";
 pub use declarations::dsn_lue::{MENSUELLE, NATURE_REEL};
@@ -111,14 +111,9 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
 
 // ----------------------------------------------------------------- verifier
 
-/// La confirmation recopiee, sans les blancs de part et d'autre.
-fn nettoye(s: &str) -> &str {
-    strip(s)
-}
-
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
-pub fn verifier(a: &DsnLue, reel: bool, mois_confirme: Option<&str>, presence_prouvee: bool) -> R<()> {
+pub fn verifier(a: &DsnLue, reel: bool, presence_prouvee: bool) -> R<()> {
     let nature_envoi = a.nature_envoi.as_deref();
     if reel && nature_envoi != Some(NATURE_REEL) {
         let porte = match nature_envoi {
@@ -135,17 +130,6 @@ pub fn verifier(a: &DsnLue, reel: bool, mois_confirme: Option<&str>, presence_pr
     }
     if reel {
         let attendu = a.confirmation_attendue().map_err(|m| m.reclasser(Classe::DepotRefuse))?;
-        if let Some(m) = mois_confirme.filter(|m| !m.is_empty()) {
-            if nettoye(m) != attendu {
-                return Err(depot_refuse(format!(
-                    "{} confirme '{}' alors que le fichier declare '{}'. Rien n'est parti.",
-                    if a.est_signalement() { "Jour de l'evenement" } else { "Mois" },
-                    nettoye(m),
-                    attendu
-                )));
-            }
-            return Ok(());
-        }
         if !presence_prouvee {
             return Err(depot_refuse(format!(
                 "Un depot REEL demande une preuve : reecrire {} ({}), ou retaper le mot de passe du logiciel.",

@@ -1092,13 +1092,16 @@ forme! {
     }
 }
 
-forme! {
-    /// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin.
-    pub struct ContributionDsn {
-        pub contribution: String,
-        pub lignes: Vec<String>,
-        pub en_dsn_depuis: String,
-    }
+/// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin. Son premier mois en DSN
+/// n'a pas de valeur par defaut : elle ne prend pas la forme `forme!`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionDsn {
+    pub contribution: String,
+    pub lignes: Vec<String>,
+    pub en_dsn_depuis: socle::mois::Mois,
+    pub source: Option<Fondement>,
+    pub note: Option<String>,
 }
 
 forme! {

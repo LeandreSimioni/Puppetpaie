@@ -7,12 +7,12 @@ use socle::echec::{Classe, R};
 /// (`declarations::dsn::Arret::a_reporter` : les arrets qui croisent le mois, et ceux d'un mois anterieur saisis apres le
 /// depart de sa DSN), lus en leur forme (`engagement::imprevus::ArretSaisi`).
 pub(crate) fn arrets_pour(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<declarations::dsn::Arret>> {
-    socle::mois::Mois::lire(mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let le_mois = socle::mois::Mois::lire(mois).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mut out = Vec::new();
     for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         let engagement::imprevus::Imprevu::Arret(saisi) = imp else { continue };
         let arret = declarations::dsn::Arret { saisi };
-        if arret.a_reporter(mois, departs).map_err(|m| m.reclasser(Classe::Illisible))? {
+        if arret.a_reporter(le_mois, departs).map_err(|m| m.reclasser(Classe::Illisible))? {
             out.push(arret);
         }
     }

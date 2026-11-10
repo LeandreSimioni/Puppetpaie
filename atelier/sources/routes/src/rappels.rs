@@ -690,13 +690,13 @@ pub(crate) fn echeances(st: &Etat) -> R<Vec<Echeance>> {
 
 /// Le premier mois de la compagnie (`etat_dsn::premier_mois_du`), s'il y en a un.
 fn premier_mois(ctx: &Contexte) -> R<Option<Mois>> {
-    Ok(etat_dsn::premier_mois_du(ctx)?.filter(|p| !p.is_empty()).map(|p| Mois::lire(&p)).transpose()?)
+    etat_dsn::premier_mois_du(ctx)
 }
 
 /// La DSN d'un mois que les rappels ne reclament pas : faite, ou a venir.
 fn dsn_a_venir(st: &Etat, mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     let texte = mois.to_string();
-    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, &texte)?;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, mois)?;
     let titre = formater(&modele.titre, &[("de_mois", socle::texte::de(&mois.libelle(Graphie::Accentuee)))])?;
     let mut e = Echeance::nouveau(DSN, format!("dsn:{}", mois), titre, String::new(), Some(mois.suivant()));
     e.etat = if !etat_dsn::due(st.ctx, socle::mois::Mois::lire(&texte)?, None)? { Fait } else if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
@@ -785,7 +785,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     }
     // `{jour_dsn}` : le jour de janvier ou la DSN de decembre de l'annee d'avant est due, reporte (`echeance_dsn`).
     let decembre = Mois::nouveau(precedente, 12)?.to_string();
-    let dsn_decembre = declarations::echeance_dsn::de_la_compagnie(ctx, &decembre)?;
+    let dsn_decembre = declarations::echeance_dsn::de_la_compagnie(ctx, Mois::lire(&decembre)?)?;
     let valeurs = [("annee", annee.to_string()), ("annee_precedente", precedente.to_string()), ("jour_dsn", dsn_decembre.jour.jour.to_string())];
     let courant = st.aujourdhui.mois_civil();
     let mut x = Echeance::nouveau(cle, format!("{}:{}", cle, annee), formater(&e.titre, &valeurs)?, String::new(), Some(debut));
@@ -1130,7 +1130,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     // L'echeance : `echeance_dsn`, le 5 ou le 15 du mois suivant selon l'effectif, reporte au jour ouvre suivant un
     // samedi, un dimanche ou un jour ferie (R. 133-14, I), a midi. Passee, ce n'est plus un rappel, c'est un retard --
     // et on le dit.
-    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, mois)?;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, le_mois)?;
     r.etat = if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
     r.date = Some(echeance.jour);
     r.quand = echeance.phrase();
@@ -1195,8 +1195,8 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
 /// le dit (`import::mois::dsn_de_l_ancien_logiciel`).
 fn ajouter_les_mois_de_l_ancien_logiciel(st: &Etat, mois: &str, r: &mut Echeance) -> R<()> {
     for m in engagement::stock::mois_saisis(st.racine())?.into_iter().map(String::from).filter(|m| m.as_str() < mois) {
-        let Some(d) = import::mois::dsn_de_l_ancien_logiciel(st.ctx, &m)? else { continue };
-        if d.porteur == mois && d.engagements > 0 {
+        let Some(d) = import::mois::dsn_de_l_ancien_logiciel(st.ctx, Mois::lire(&m)?)? else { continue };
+        if d.porteur.to_string() == mois && d.engagements > 0 {
             let lib = socle::mois::Mois::lire(&m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Illisible))?;
             r.detail.push_str(&format!(" {} : {}", socle::texte::capitaliser(&lib), d.phrase));
         }

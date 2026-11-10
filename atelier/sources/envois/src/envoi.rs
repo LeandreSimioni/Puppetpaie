@@ -146,7 +146,7 @@ pub fn formater(modele: &str, champs: &[(&str, String)]) -> String {
 
 /// Ce que le salarie declare a son actualisation France Travail du mois (`recap_france_travail`) : une ligne par
 /// contrat, sur ce qui a ete fait DANS LE MOIS. Rien pour un permanent : chaine vide.
-pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> R<String> {
+pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &str) -> R<String> {
     let mut lignes: Vec<String> = Vec::new();
     for p in paies {
         let e = &p.engagement;
@@ -189,7 +189,6 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> R<S
     if lignes.is_empty() {
         return Ok(String::new());
     }
-    let m = socle::mois::Mois::lire(mois)?;
     let (an, nom_mois) = (m.annee(), m.nom(socle::mois::Graphie::Accentuee));
     Ok(format!(
         "Pour ton actualisation France Travail {} {}, employeur {} :\n{}\nCe sont les chiffres de ton bulletin ; \
@@ -340,12 +339,11 @@ pub const RIEN_DANS_LE_RESUME: &str = "  - le détail de ton bulletin ; tes jour
 pub fn preparer_avec(
     paies: &[Paie],
     ent: &droit::fiche::ChampsEntreprise,
-    mois: &str,
+    m: socle::mois::Mois,
     dossier: &Path,
     renvois: &std::collections::HashMap<String, Renvoi>,
     a_part: &std::collections::HashMap<String, Vec<&'static str>>,
 ) -> R<Vec<Message>> {
-    let m = socle::mois::Mois::lire(mois)?;
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
     let mut vus: Vec<String> = Vec::new();
     let mut messages = Vec::new();
@@ -397,7 +395,7 @@ pub fn preparer_avec(
             notes.push(NOTE_SANS_ATTESTATION_FCTU);
         }
         let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| socle::fichiers::absent("nom_affichage"))?.to_string();
-        let mut ft = recap_france_travail(&siennes, mois, &nom_affichage)?;
+        let mut ft = recap_france_travail(&siennes, m, &nom_affichage)?;
         if !ft.is_empty() && !notes.is_empty() {
             ft = format!("\n{}", ft);
         }

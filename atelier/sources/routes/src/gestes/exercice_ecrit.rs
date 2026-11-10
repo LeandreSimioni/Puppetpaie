@@ -140,7 +140,7 @@ impl ExportCompta {
                     debit: e.debit.to_string(),
                     credit: e.credit.to_string(),
                     analytique: e.analytique,
-                    mois: e.mois,
+                    mois: e.mois.to_string(),
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })
@@ -189,7 +189,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
         }
-        ecritures.extend(ecritures_du_mois(ctx, m, &plan, &departs)?);
+        ecritures.extend(ecritures_du_mois(ctx, socle::mois::Mois::lire(m)?, &plan, &departs)?);
     }
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());

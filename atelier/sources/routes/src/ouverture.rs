@@ -1064,17 +1064,18 @@ impl MoisDuBilan {
 fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
     for (nom, noms) in mois {
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, nom).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let le_mois = socle::mois::Mois::lire(nom)?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
         // L'ETAT DE LA DSN, lu une fois (`compagnie::etat_dsn`) ; une DSN a deposer passee l'echeance est en retard.
-        let importe = compagnie::etat_dsn::importe(&ctx.racine, nom)?;
-        let lu = compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(nom)?, None)?;
+        let importe = compagnie::etat_dsn::importe(&ctx.racine, le_mois)?;
+        let lu = compagnie::etat_dsn::du_mois(ctx, le_mois, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
         let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
-        if importe && !import::mois::bulletins_repris(&ctx.racine, nom)?.is_empty() {
+        if importe && !import::mois::bulletins_repris(&ctx.racine, le_mois)?.is_empty() {
             sortes.insert(0, "bulletins repris");
         }
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
@@ -1094,8 +1095,8 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
             _ if importe => false,
             // La DSN de l'ancien logiciel, et la saisie qui ajoute au mois : ce qui reste a declarer va dans une DSN
             // suivante (`import::mois::dsn_de_l_ancien_logiciel`).
-            Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, nom)?.is_some_and(|d| d.engagements > 0),
-            Etat::Passee => m.etat_remplacement(socle::mois::Mois::lire(nom)?, None)?.a_envoyer,
+            Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, le_mois)?.is_some_and(|d| d.engagements > 0),
+            Etat::Passee => m.etat_remplacement(le_mois, None)?.a_envoyer,
             Etat::Attente => false,
             _ => true,
         };
@@ -1142,7 +1143,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(String, Vec<String>)]
 fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<String>)> {
     let mut mois = mois_connus(&ctx.racine)?;
     // Les mois tenus avant ce logiciel sont des mois comme les autres : l'Historique les montre aussi.
-    for im in import::mois::mois_importes(&ctx.racine)? {
+    for im in import::mois::mois_importes(&ctx.racine)?.into_iter().map(|m| m.to_string()) {
         if !mois.iter().any(|(x, _)| *x == im) {
             mois.push((im, Vec::new()));
         }

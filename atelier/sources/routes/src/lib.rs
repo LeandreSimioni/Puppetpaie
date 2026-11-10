@@ -221,7 +221,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // se font sous les valeurs qui valaient alors, jamais sous celles d'aujourd'hui. Un mois qui ne se lit pas refuse la
     // route, rien ne s'ecrit.
     let ctx = match charge.mois()? {
-        Some(m) => contexte(o)?.du_mois(&m.to_string())?,
+        Some(m) => contexte(o)?.du_mois(m)?,
         None => contexte(o)?,
     };
     let porte = Porte { route, ctx: &ctx, options: o };

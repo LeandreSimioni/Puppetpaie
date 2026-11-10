@@ -889,15 +889,14 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             .map(|e| e.engagement)
             .ok_or_else(|| refus(format!("La compagnie n'a encore aucun engagement validé de {} : l'aperçu remplit le modèle avec l'un d'eux.", nat.nom_du_contrat())))?,
     };
-    let mois = vise.mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &departs)?;
+    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, vise.mois, None, &departs)?;
     let p = paies
         .into_iter()
         .find(|p| p.salarie.id.to_string() == vise.salarie && p.engagement.debut == vise.debut)
         .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste (`engagements` de modele-contrat).", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
     let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
-    let ent = documents::avenant::ent_du_mois(ctx, &mois)?;
+    let ent = documents::avenant::ent_du_mois(ctx, vise.mois);
     let d = ctx.racine.join("sorties").join("apercus");
     std::fs::create_dir_all(&d).map_err(|e| disque(&d, e))?;
     let (sorte, quoi) = match c.partie {

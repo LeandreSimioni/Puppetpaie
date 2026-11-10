@@ -712,7 +712,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     }
     let cle = p.salarie.id.to_string();
     let fin = e.fin_periode()?;
-    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(e.date_du_versement()?), Some(&e.mois.to_string()))?;
+    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
     let t = |j: Jour| (j.an, j.mois, j.jour);
     let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
@@ -745,7 +745,7 @@ pub fn prelevement_de_la_correction(
     let difference = socle::num::sub(apres.net_imposable, net_imposable_declare);
     let e = &apres.engagement;
     let cle = apres.salarie.id.to_string();
-    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(fin), Some(&versement.to_string()))?;
+    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(fin), Some(versement))?;
     let bareme = ctx.bareme(&debut)?;
     let t = |j: Jour| (j.an, j.mois, j.jour);
     let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
@@ -798,7 +798,7 @@ fn mois_lu(data: &crate::saisie::VueDuMois) -> crate::saisie::CeQueLeMoisDit {
 /// n'entre ni dans le calcul ni dans l'empreinte d'une paie ecrite. DES AUTRES ENGAGEMENTS DU MOIS, ELLE NE LIT QUE CEUX
 /// DE SON SALARIE : le calcul ne prend qu'eux, et ce qui refuse la paie d'un salarie n'empeche pas celle d'un autre.
 fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<PaieEcrite>> {
-    let ctx = &ctx.du_mois(&mois.to_string())?;
+    let ctx = &ctx.du_mois(mois)?;
     let mut data = stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| socle::refus!("{} : aucune saisie", mois))?;
     let tous = std::mem::take(&mut data.engagements);
     let salaries: Vec<IdSalarie> =
@@ -1365,7 +1365,7 @@ fn decision_de_l_editeur(raison: &str) -> bool {
 fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R<Rafraichi> {
     // Au contexte du mois, quel que soit le jour de celui qui lit : ce que l'empreinte relit (les fiches) vaut au mois paye.
     let present = mois_present(ctx);
-    let ctx = &ctx.du_mois(&mois.to_string())?;
+    let ctx = &ctx.du_mois(mois)?;
     // Ce qui ne tient plus : le rang dans l'ecran, l'engagement, sa paie ecrite du mois, et si ses documents sont partis.
     let mut a_refaire: Vec<(usize, Objet, Option<PaieEcrite>, bool)> = Vec::new();
     let mut relues = empreinte::Relues::default();
@@ -1502,7 +1502,7 @@ fn reporter(ctx: &Contexte, o: &Objet, premier: Mois, departs: &Departs) -> R<()
     let Some(cle) = &o.carte().salarie else { return Ok(()) };
     let present = mois_present(ctx);
     for mois in crate::paies::mois_payes(&ctx.racine).into_iter().filter(|m| *m > premier && *m <= present) {
-        let ctx = &ctx.du_mois(&mois.to_string())?;
+        let ctx = &ctx.du_mois(mois)?;
         let mut relues = empreinte::Relues::default();
         for e in tels_qu_ecrits(ctx, mois, departs)? {
             let Etat::Partis(p) = e else { continue };

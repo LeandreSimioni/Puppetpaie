@@ -560,7 +560,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let mois = c.mois.to_string();
     let (salarie, debut) = (c.salarie.as_str(), c.debut.iso());
     // Les paies telles que la DSN les a declarees, sans rien ecrire.
-    let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
+    let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(&mois)?, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
     // LE CONTRAT, pas le salarie : son numero, celui que l'ecran affiche (ou que la releve a lu) ; sans numero, l'engagement
     // de ce salarie qui commence ce jour-la.
     let numero = c.numero.as_deref().filter(|n| !n.is_empty());
@@ -924,7 +924,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &
 pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature> {
     let mois_t = mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_t, None, &departs)?;
+    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(&mois_t)?, None, &departs)?;
     let mut m = Moteur::nouveau(ctx);
     let g = m.globales()?;
     let demandes_par_courriel = etats::contrats_demandes_par_courriel(&m.lignes()?);
@@ -1255,7 +1255,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let Some(parti) = envois::etats::contrat_parti(&lignes, salarie, Some(numero_voulu)) else { return Ok(None) };
     let mois_parti = parti.mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_parti, None, &departs)?;
+    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(&mois_parti)?, None, &departs)?;
     // La paie de CE contrat : celle qui porte son numero.
     let Some(numero_parti) = parti.numero.as_ref().map(|n| n.to_string()) else {
         return Err(erreur(Classe::Refuse, format!("Le contrat parti de {} du {} ne porte pas de numéro : il ne se compare pas à l'engagement.", salarie, c.debut.jj_mm_aaaa())));
@@ -1278,7 +1278,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let (paies, i, mois_compare) = match &mois_effet {
         Some(me) => {
-            let (_d, ps) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, me, None, &departs)?;
+            let (_d, ps) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(me)?, None, &departs)?;
             let j = etats::paie_du_contrat(&ps, salarie, &numero_parti)?
                 .ok_or_else(|| erreur(Classe::Refuse, format!("Aucune paie de {} en {} pour le contrat n° {}.", salarie, socle::mois::Mois::en_clair(me), numero_parti)))?;
             (ps, j, me.clone())
@@ -1299,7 +1299,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let p = &paies[i];
     let g = m.globales()?;
     let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(salarie.to_string(), parti.numero.as_ref().map(|n| n.to_string()))), &parti);
-    let ent = documents::avenant::ent_du_mois(ctx, &mois_parti)?;
+    let ent = documents::avenant::ent_du_mois(ctx, Mois::lire(&mois_parti)?);
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
     let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_deref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
     let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
@@ -1388,7 +1388,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     };
     let mois_t = mois.to_string();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_t, None, &departs)?;
+    let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, Mois::lire(&mois_t)?, None, &departs)?;
     let Some(i) = etats::paie_du_contrat(&paies, salarie, numero)? else { return Ok(None) };
     let p = &paies[i];
     if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {

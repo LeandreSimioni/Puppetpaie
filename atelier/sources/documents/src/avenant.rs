@@ -423,15 +423,10 @@ pub fn modification_d_apercu(m: &Modele, v: &Valeurs) -> R<Modification> {
 }
 
 /// La fiche entreprise, avec la licence du mois et les gabarits de la compagnie.
-pub fn ent_du_mois(ctx: &Contexte, mois: &str) -> R<droit::contexte::EntrepriseDuDocument> {
+pub fn ent_du_mois(ctx: &Contexte, mois: Mois) -> droit::contexte::EntrepriseDuDocument {
     let mut ent = ctx.entreprise.clone();
-    // Un jour (`AAAA-MM-JJ`) dit son mois par ses sept premiers caracteres.
-    let m = match mois.get(..7) {
-        Some(m) => m,
-        None => mois,
-    };
-    ent.licence_spectacle = ctx.licence(&Mois::lire(m)?.premier_jour());
-    Ok(ctx.pour_un_modele(&ent))
+    ent.licence_spectacle = ctx.licence(&mois.premier_jour());
+    ctx.pour_un_modele(&ent)
 }
 
 /// `contrat.marqueurs(p, ent)` pour une paie (sa forme ecrite ou canonique, `paie_ecrite::FormeDePaie`). `numero` : le

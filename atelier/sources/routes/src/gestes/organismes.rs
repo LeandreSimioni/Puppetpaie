@@ -122,7 +122,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let (lu, enregistre) = match porte.route {
         Route::OrganismesContrats => {
             let c: ChargeOrganismes = charge.lire()?;
-            (lire(ctx, c.mois.as_deref())?, false)
+            (lire(ctx, c.mois.as_deref().map(str::trim).filter(|m| !m.is_empty()).map(socle::mois::Mois::lire).transpose()?)?, false)
         }
         Route::OrganismesEnregistrer => {
             let c: ChargeEnregistrer = charge.lire()?;
@@ -144,7 +144,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     };
     let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
     let mut encarts = vec![crate::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
-    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", socle::mois::Mois::en_clair(&lu.mois))));
+    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", lu.mois.libelle(socle::mois::Graphie::Accentuee))));
     if lu.a_saisir {
         encarts.push(crate::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
@@ -168,5 +168,5 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         let temps = temps.iter().position(|t| t.champ == ligne.cle).map(|i| temps.swap_remove(i));
         contrats.push(ContratDit { ligne, periode, temps });
     }
-    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois, contrats, encarts })
+    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois.to_string(), contrats, encarts })
 }

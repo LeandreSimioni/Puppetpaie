@@ -1300,9 +1300,9 @@ impl Contexte {
         self
     }
 
-    /// Le contexte du mois `AAAA-MM` : sa configuration lue au dernier jour du mois.
-    pub fn du_mois(&self, mois: &str) -> R<Contexte> {
-        self.au(&Mois::lire(mois)?.dernier_jour())
+    /// Le contexte du mois : sa configuration lue au dernier jour du mois.
+    pub fn du_mois(&self, mois: Mois) -> R<Contexte> {
+        self.au(&mois.dernier_jour())
     }
 
     /// La fiche entreprise a `jour`.
@@ -1644,16 +1644,15 @@ PSS_H_METROP).",
         derniere.into_iter().flatten().filter(|e| e.nic.portee() != principal).cloned().collect()
     }
 
-    /// La fiche entreprise d'un mois `AAAA-MM` : lue au dernier jour du mois, avec chaque autre etablissement ouvert un
+    /// La fiche entreprise d'un mois : lue au dernier jour du mois, avec chaque autre etablissement ouvert un
     /// jour au moins du mois (`etablissements_entre`).
-    pub fn entreprise_du_mois(&self, mois: &str) -> R<ChampsEntreprise> {
-        let mois = Mois::lire(mois)?;
+    pub fn entreprise_du_mois(&self, mois: Mois) -> ChampsEntreprise {
         let dernier = mois.dernier_jour();
         let mut ent = self.entreprise_au(&dernier);
         if let Some(l) = etablissements_entre(self.fiches.entreprise.etablissements.as_deref(), &mois.premier_jour(), &dernier) {
             ent.etablissements = Some(l);
         }
-        Ok(ent)
+        ent
     }
 
     /// La fiche entreprise `ent` telle qu'un document de cette compagnie la lit (`EntrepriseDuDocument`).

@@ -47,7 +47,7 @@ use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::num::{add, div, mul, Decimal};
 
-const MOIS_DE_DECLARATION: &str = "03";
+const MOIS_DE_DECLARATION: u32 = 3;
 pub const CODE_CONTRIBUTION: &str = "079";
 pub const CODE_EXONERATION: &str = "080";
 pub const CTP: &str = "998";
@@ -198,11 +198,11 @@ compte rendu metier de nature 118 (code A01) : relever les retours. Rien n'est e
 
 /// Ce que la DSN de mars de l'annee N+1 porte au titre de N, ou `None` (un autre mois ; une fiche qui ne dit pas cinquante salaries ;
 /// une compagnie qui ne doit pas la taxe d'apprentissage pour N, ou qui n'atteint pas 250 salaries). Le moteur la porte sur l'etablissement principal.
-pub fn declaration(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Option<Csa>> {
-    if mois.len() != 7 || &mois[5..7] != MOIS_DE_DECLARATION {
+pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement::departs::Departs) -> R<Option<Csa>> {
+    if mois.numero() != MOIS_DE_DECLARATION {
         return Ok(None);
     }
-    let n: i32 = mois[..4].parse::<i32>().map_err(|_| socle::refus!("mois illisible : {}", mois))? - 1;
+    let n = mois.annee() - 1;
     // Redevable de la taxe d'apprentissage (L. 6242-1, I) : le motif de non-assujettissement de la fiche.
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, n)? {
         return Ok(None);

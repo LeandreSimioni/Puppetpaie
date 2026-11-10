@@ -438,7 +438,7 @@ fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
-    for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
+    for b in import::mois::bulletins_repris(&ctx.racine, socle::mois::Mois::lire(mois)?)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
         out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie), chemin: b.chemin, fichier: None });
     }

@@ -113,7 +113,7 @@ fn versions_du_signalement(ctx: &Contexte, mois: Mois, octets: &[u8]) -> R<Vec<V
     let texte = String::from_utf8_lossy(octets);
     let numeros: Vec<String> =
         texte.lines().filter_map(|l| l.strip_prefix("S21.G00.40.009,")).map(|v| v.trim().trim_matches('\'').to_string()).collect();
-    envois::journal::versions_du_mois(ctx, &mois.to_string(), &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.iter().any(|n| n == numero))}
+    envois::journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.iter().any(|n| n == numero))}
 
 /// La derniere porte -- une copie de developpement ne declare rien en reel.
 fn refuser_si_copie(ctx: &Contexte, quoi: &str) -> R<()> {
@@ -142,9 +142,9 @@ fn ordre_d_essai_du_fichier(calcule: Option<i64>, chemin: &Path) -> R<Option<i64
 /// Le mois de constitution (`AAAA-MM`) d'une DSN (S20.G00.05.007). La rubrique est obligatoire pour toute nature de
 /// declaration (norme DSN, `atelier/reference/norme-dsn/dsn-note-differentielle-ct-2026.1.2-vers-2027.1.2-20251224.txt`,
 /// l. 4838 : « S20.G00.05.007 Date de constitution du fichier O O O O O O O ») : une DSN qui ne la dit pas se refuse.
-fn mois_de_constitution(a: &DsnLue) -> R<String> {
+fn mois_de_constitution(a: &DsnLue) -> R<Mois> {
     match a.depot {
-        Some(j) => Ok(j.mois_civil().to_string()),
+        Some(j) => Ok(j.mois_civil()),
         None => Err(erreur(Classe::Illisible, "Cette DSN ne dit pas sa date de constitution (S20.G00.05.007, obligatoire) : elle ne part pas.")),
     }
 }
@@ -176,11 +176,11 @@ fn ordre_lu(o: &str) -> R<i64> {
 /// autre poste, comptent pour l'ordre sans s'afficher), plus un. Une mensuelle du mois deja
 /// acceptee dans la base d'essai, meme venue d'ailleurs, fait partir l'essai en annule-et-remplace. Trop grand ne coute
 /// rien ; trop petit, c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
-fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, constitution: &str) -> R<Option<i64>> {
+fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, constitution: Mois) -> R<Option<i64>> {
     let mois = &le_mois.to_string();
     let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.reel() && !l.signalement()).collect();
-    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, true, constitution, mois)?;
+    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, true, constitution, le_mois)?;
     if essais.is_empty() && !vues.du_mois_acceptee {
         return Ok(None);
     }
@@ -217,7 +217,7 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     // (`ordre_signalements::dernier_ordre_des_mensuelles`) : une mensuelle reelle envoyee d'un autre poste compte, comme
     // a la production (`depart::forme_a_produire`).
     let constitution = mois_de_constitution(a)?;
-    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, &constitution, mois)?;
+    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, constitution, le_mois)?;
     let dernier = match dernier {
         Some(d) => d.max(vues.ordre),
         None if vues.du_mois_acceptee || vues.ordre > 0 => vues.ordre,
@@ -290,7 +290,7 @@ pub fn deposer_dsn_dans(
     let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
     let apercu = declarations::dsn_lue::lire(&octets, "")?;
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
-    depot::verifier(&apercu, reel, None, true)?;
+    depot::verifier(&apercu, reel, true)?;
     // LE MOIS QUE LE FICHIER DECLARE ; un signalement se date par son evenement, sa ligne par le mois de ce jour.
     let le_mois = apercu.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}). Rien n'est parti.", declarations::dsn_lue::SANS_MOIS)))?;
     let evenement = if apercu.est_signalement() { apercu.evenement().map(|j| j.iso()) } else { None };
@@ -397,7 +397,7 @@ pub fn deposer_dsn_dans(
 
     // UN ESSAI DE PLUS SUR UN MOIS DEJA ESSAYE part en annule-et-remplace, a l'ordre suivant : la base de test
     // garde les essais. JAMAIS PLUS BAS QUE L'ORDRE DU FICHIER.
-    let ordre_test = if reel || apercu.est_signalement() { None } else { prochain_ordre_de_test(ctx, le_mois, nic, &mois_de_constitution(&apercu)?)? };
+    let ordre_test = if reel || apercu.est_signalement() { None } else { prochain_ordre_de_test(ctx, le_mois, nic, mois_de_constitution(&apercu)?)? };
     let ordre_test = ordre_test.max(ordre_d_essai);
     let ordre_test = ordre_d_essai_du_fichier(ordre_test, &chemin)?;
 
@@ -421,7 +421,7 @@ pub fn deposer_dsn_dans(
                 false
             }
         };
-        let mut v = envois::journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, garder)?;
+        let mut v = envois::journal::versions_du_mois(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, garder)?;
         if let Some(x) = faute.into_inner() {
             return Err(x);
         }
@@ -540,7 +540,7 @@ pub(crate) fn deposer_dpae_avec(
         .collect::<R<_>>()?;
     // La version de chaque engagement dont l'embauche part : une date d'embauche qui change ensuite le dit.
     let declare = |cle: &str, n: &str| embauches.iter().any(|x| x.salarie.as_str() == cle && x.numero.as_deref() == Some(n));
-    let versions = envois::journal::versions_du_mois(ctx, &mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, n, _| declare(cle, n))?;
+    let versions = envois::journal::versions_du_mois(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, n, _| declare(cle, n))?;
     let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement: None, reel, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: None, versions: &versions };
     let c = match donne.as_deref_mut() {
         Some(c) => Some(c),
@@ -590,7 +590,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
     if retenues.is_empty() {
         return dit;
     }
-    let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, mois, ctx.aujourdhui, false) {
+    let fichiers = match Mois::lire(mois).and_then(|m| ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, m, ctx.aujourdhui, false)) {
         Ok(f) => f,
         Err(e) => {
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase));

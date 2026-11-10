@@ -11,6 +11,7 @@
 
 use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
+use socle::mois::Mois;
 use crate::usages::{lignes, rubrique_valeur};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -52,10 +53,10 @@ struct Base {
 struct Version {
     #[allow(dead_code)]
     libelle: String,
-    /// Les mois principaux declares (`AAAA-MM`) d'une DSN mensuelle en cette version.
-    mensuelle: Plage,
+    /// Les mois principaux declares d'une DSN mensuelle en cette version.
+    mensuelle: Plage<Mois>,
     /// Les jours de constitution (`AAAA-MM-JJ`) d'un signalement en cette version.
-    signalements: Plage,
+    signalements: Plage<String>,
     /// La table des usages (un fichier de `logiciel/donnees/`).
     usages: String,
     /// La table des formats.
@@ -71,25 +72,25 @@ struct Version {
     note: String,
 }
 
-/// Une plage de mois ou de jours, bornes ouvertes si absentes ; la comparaison de textes de meme forme suffit.
+/// Une plage de mois ou de jours, bornes ouvertes si absentes ; les jours se comparent en textes de meme forme.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Plage {
-    du: Option<String>,
-    au: Option<String>,
+struct Plage<T> {
+    du: Option<T>,
+    au: Option<T>,
     #[allow(dead_code)]
     note: String,
 }
 
-impl Plage {
-    fn couvre(&self, v: &str) -> bool {
-        self.du.as_deref().is_none_or(|d| d <= v) && self.au.as_deref().is_none_or(|a| v <= a)
+impl<T: PartialOrd + std::fmt::Display> Plage<T> {
+    fn couvre(&self, v: &T) -> bool {
+        self.du.as_ref().is_none_or(|d| d <= v) && self.au.as_ref().is_none_or(|a| v <= a)
     }
 
     /// « du 2027-01 au 2027-12 », « ... » pour une borne ouverte.
     fn dite(&self) -> String {
-        let borne = |b: &Option<String>| match b {
-            Some(b) => b.clone(),
+        let borne = |b: &Option<T>| match b {
+            Some(b) => b.to_string(),
             None => "...".to_string(),
         };
         format!("du {} au {}", borne(&self.du), borne(&self.au))
@@ -205,9 +206,9 @@ impl Norme {
 }
 
 /// La plage d'une version que `quelle` choisit (la mensuelle, les signalements).
-type QuellePlage = fn(&Version) -> &Plage;
+type QuellePlage<T> = fn(&Version) -> &Plage<T>;
 
-fn choisir(quelle: QuellePlage, valeur: &str) -> R<Option<Norme>> {
+fn choisir<T: PartialOrd + std::fmt::Display>(quelle: QuellePlage<T>, valeur: &T) -> R<Option<Norme>> {
     let b = base()?;
     let siennes: Vec<&String> = b.versions.iter().filter(|(_, e)| quelle(e).couvre(valeur)).map(|(k, _)| k).collect();
     match siennes.as_slice() {
@@ -223,13 +224,13 @@ fn choisir(quelle: QuellePlage, valeur: &str) -> R<Option<Norme>> {
     }
 }
 
-fn plages(quelle: QuellePlage) -> R<String> {
+fn plages<T: PartialOrd + std::fmt::Display>(quelle: QuellePlage<T>) -> R<String> {
     Ok(base()?.versions.iter().map(|(k, e)| format!("{} {}", k, quelle(e).dite())).collect::<Vec<_>>().join(" ; "))
 }
 
-/// La version d'une DSN mensuelle, d'apres son mois principal declare (`AAAA-MM`).
-pub fn de_la_mensuelle(mois: &str) -> R<Norme> {
-    match choisir(|e| &e.mensuelle, mois)? {
+/// La version d'une DSN mensuelle, d'apres son mois principal declare.
+pub fn de_la_mensuelle(mois: Mois) -> R<Norme> {
+    match choisir(|e| &e.mensuelle, &mois)? {
         Some(n) => Ok(n),
         None => Err(refus_avec(
             format!(

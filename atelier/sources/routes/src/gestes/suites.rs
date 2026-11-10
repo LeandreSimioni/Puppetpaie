@@ -55,10 +55,10 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
     let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
-    let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
+    let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
         let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
         let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
-        (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some("01")).then(|| l.mois().map(|m| m.to_string())).flatten()
+        (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some("01")).then(|| l.mois()).flatten()
     };
     let mut tous = Vec::new();
     for (retour, chemin) in crm {
@@ -75,7 +75,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
                 type_taux: x.releve.type_taux.clone(),
                 identifiant: x.releve.identifiant.clone(),
                 mis_a_disposition,
-                en_retour_de: en_retour_de.clone(),
+                en_retour_de,
             });
         }
     }

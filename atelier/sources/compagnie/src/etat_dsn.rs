@@ -87,7 +87,7 @@ impl EtatDsn {
 
 /// L'état de la DSN de `mois` ; `nic` : l'établissement (`None` : le principal ; les états du journal sont les siens).
 pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
-    let mois = &le_mois.to_string();
+    let mois = le_mois;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     if let Some(e) = etats::etat_dsn_du_mois(&lignes, le_mois, nic, ctx.entreprise.nic_principal()) {
         let quand = etats::quand_lisible(&e.quand);
@@ -119,8 +119,7 @@ pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
 }
 
 /// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
-pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
-    let mois = socle::mois::Mois::lire(mois)?;
+pub fn importe(racine: &std::path::Path, mois: Mois) -> R<bool> {
     if engagement::stock::a_une_saisie(racine, mois)? {
         return Ok(false);
     }
@@ -130,19 +129,17 @@ pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
 /// LA DSN QUE L'IMPORT A LUE POUR `mois` (`engagement::importe::dsn_deposee`), que la saisie touche aussi le mois ou
 /// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
 /// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
-pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: &str) -> R<Option<Option<String>>> {
-    Ok(engagement::importe::dsn_deposee(racine, socle::mois::Mois::lire(mois)?)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
+pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: Mois) -> R<Option<Option<String>>> {
+    Ok(engagement::importe::dsn_deposee(racine, mois)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
 }
 
 /// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par
 /// l'ancien logiciel, `engagement::importe::dsn_deposee`). Une correction se declare dans la DSN suivante (cahier
 /// technique DSN 2026.1, § 2.1.2.1, `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`).
-pub fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
-    let partie = |m: &str| -> R<bool> { Ok(du_mois(ctx, socle::mois::Mois::lire(m)?, None)?.partie()) };
-    let suivant = |m: &str| -> R<String> { Ok(socle::mois::Mois::lire(m)?.suivant().to_string()) };
-    let mut porteur = suivant(mois)?;
-    while partie(&porteur)? {
-        porteur = suivant(&porteur)?;
+pub fn dsn_qui_porte(ctx: &Contexte, mois: Mois) -> R<Mois> {
+    let mut porteur = mois.suivant();
+    while du_mois(ctx, porteur, None)?.partie() {
+        porteur = porteur.suivant();
     }
     Ok(porteur)
 }
@@ -151,9 +148,9 @@ pub fn dsn_qui_porte(ctx: &Contexte, mois: &str) -> R<String> {
 /// premier mois du est celui de sa premiere embauche (`premiere_embauche` de la fiche Entreprise) ; sans cette date, une
 /// compagnie qui n'a ni paie saisie ni DSN au journal n'a encore rien a declarer avant le mois courant (des fiches ne
 /// sont pas un passe). `None` : rien ne borne -- une compagnie qui a deja des paies ou des declarations.
-pub fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
+pub fn premier_mois_du(ctx: &Contexte) -> R<Option<Mois>> {
     if let Some(j) = ctx.entreprise.premiere_embauche.dite() {
-        return Ok(Some(socle::mois::Mois::du_jour(j).to_string()));
+        return Ok(Some(Mois::du_jour(j)));
     }
     if !engagement::stock::mois_saisis(&ctx.racine)?.is_empty() {
         return Ok(None);
@@ -162,7 +159,7 @@ pub fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
     if journal.lignes.iter().any(|l| l.acte() == envois::journal::Acte::Dsn) {
         return Ok(None);
     }
-    Ok(Some(ctx.aujourdhui.mois_civil().to_string()))
+    Ok(Some(ctx.aujourdhui.mois_civil()))
 }
 
 /// LA DSN DE `mois` EST-ELLE DUE pour l'etablissement `nic` (`Null` : le principal) ? « La DSN est mensuelle et
@@ -172,7 +169,7 @@ pub fn premier_mois_du(ctx: &Contexte) -> R<Option<String>> {
 /// avec ou sans salarie, a partir du premier mois du (`premier_mois_du`), tant qu'elle reste a faire
 /// (`EtatDsn::a_faire`). LE SEUL ENDROIT QUI LE DIT : l'echeancier, les rappels et le panneau des etapes le lisent.
 pub fn due(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<bool> {
-    if premier_mois_du(ctx)?.is_some_and(|p| mois.to_string() < p) {
+    if premier_mois_du(ctx)?.is_some_and(|p| mois < p) {
         return Ok(false);
     }
     Ok(du_mois(ctx, mois, nic)?.a_faire())

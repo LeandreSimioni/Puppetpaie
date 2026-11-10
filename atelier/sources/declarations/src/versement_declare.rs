@@ -14,6 +14,7 @@ use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 /// Les rubriques d'un versement que l'annulation reprend, et si elles portent un montant (a changer de signe).
@@ -175,7 +176,7 @@ fn frais_de(lignes: &[(String, String)], quoi: &str) -> R<Decimal> {
 /// Le versement que la paie declaree `p` de `mois` a fait partir, tel que les fonctions de la mensuelle l'ecrivent
 /// (`dsn::versement_ecrit`) : ses rubriques (bloc 50 a part, sans le bloc 52), les affiliations du contrat, et ses
 /// montants, ceux de la paie. Refus : une rubrique que l'annulation ne sait pas reprendre, un montant net social absent.
-pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: &str) -> R<VersementDeclare> {
+pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
     let quoi = format!("la paie declaree de {}", mois);
     let numero = p.engagement.numero.clone().ok_or_else(|| socle::refus!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
     let ecrit = crate::dsn::versement_ecrit(ctx, p, mois)?;
@@ -224,9 +225,9 @@ pub struct DernierDeclare {
 /// du mois d'origine ; la date de debut, la derniere declaree (`engagement::etats::debut_declare`). `None` : aucune DSN
 /// n'a declare ce contrat pour `mois`.
 pub fn dernier_declare(
-    ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str,
+    ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: Mois, mois_courant: Mois,
 ) -> R<Option<DernierDeclare>> {
-    let declarees = engagement::etats::paies_declarees(ctx, o, departs, socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire(mois_courant)?)?;
+    let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, mois_courant)?;
     let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
     let mut etat = de_la_paie(ctx, &derniere.paie, mois)?;
     let mut rappels = Decimal::ZERO;
@@ -250,7 +251,7 @@ pub fn dernier_declare(
         etat.rappels_net_social = rappels;
     }
     etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
-    if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, socle::mois::Mois::lire(mois_courant)?)? {
+    if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
         etat.debut_contrat = Some(socle::date::Jour::lire(&d)?.jjmmaaaa());
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());

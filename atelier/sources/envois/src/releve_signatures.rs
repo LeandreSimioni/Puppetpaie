@@ -21,6 +21,7 @@ use crate::envoi::{self, Message};
 use crate::etats::Attendue;
 use crate::journal::{self, ContratAttendu, DetailContresigne, Envoi, Ligne, Mode};
 use socle::echec::R;
+use socle::mois::{Graphie, Mois};
 use socle::paris::maintenant;
 
 /// La fin du nom de l'exemplaire contresigne d'un contrat (le contrat parti, `<souche>` ; contresigne, `<souche>_signe.pdf`) :
@@ -49,7 +50,7 @@ const CORPS_CONTRESIGNE: &str = "Bonjour {prenom},\n\nNous avons bien reçu ta s
 /// Une signature trouvee, notee, contresignee (si elle a pu l'etre).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SignatureRecue {
-    pub mois: String,
+    pub mois: Mois,
     pub salarie: String,
     pub nom: String,
     pub code: String,
@@ -220,9 +221,8 @@ pub struct Contresigne<'a> {
     pub signataire: &'a str,
     pub raison: &'a str,
     pub expediteur: &'a str,
-    /// L'annee et le nom du mois de la demande, pour l'objet.
-    pub an: i32,
-    pub nom_mois: &'a str,
+    /// Le mois de la demande, pour l'objet.
+    pub mois: Mois,
 }
 
 /// LE CONTRAT CONTRESIGNE, RENVOYE AU SALARIE, puis sa ligne `contrat-contresigne` au journal. `qui` : la ligne.
@@ -258,7 +258,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
                     None => SUJET_CONTRESIGNE_SANS_SPECTACLE.to_string(),
                 }
             } else {
-                envoi::formater(SUJET_CONTRESIGNE_PLURIEL, &[("mois", c.nom_mois.to_string()), ("annee", c.an.to_string())])
+                envoi::formater(SUJET_CONTRESIGNE_PLURIEL, &[("mois", c.mois.nom(Graphie::Accentuee).to_string()), ("annee", c.mois.annee().to_string())])
             },
             if nb == 1 { "ton contrat d'engagement".to_string() } else { format!("tes {} contrats d'engagement (un par page)", nb) },
         )

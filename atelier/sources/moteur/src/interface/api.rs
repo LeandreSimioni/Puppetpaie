@@ -159,8 +159,8 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             // sa duree, l'etat du mois qu'elle touche, ce que le refus portait pour la page ; et la trace -- l'endroit du
             // code et la chaine des echecs. Le fil et la machine s'y ajoutent dans `incidents::noter`.
             let (mois, mois_illisible) = match charge.mois() {
-                Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
-                    Ok(etat) => (etat, None),
+                Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, m) {
+                    Ok(etat) => (Some(etat), None),
                     Err(e) => (None, Some(e.en_lignes())),
                 },
                 Ok(None) => (None, None),

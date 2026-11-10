@@ -571,9 +571,9 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
 /// LES VERSIONS QU'UN ENVOI EMPORTE : pour chaque engagement valide que `mois` montre et que `garder` retient (la cle du
 /// salarie, le numero du contrat, l'engagement), sa version. Ce que la ligne du journal de l'envoi porte : elles se lisent
 /// AVANT l'envoi, qui ne part pas d'un engagement a revalider (`Valide::a_revalider`).
-pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
+pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: Mois, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
     let mut out = Vec::new();
-    for e in engagement::etats::du_mois(ctx, socle::mois::Mois::lire(mois)?, departs)? {
+    for e in engagement::etats::du_mois(ctx, mois, departs)? {
         let Some(v) = e.valide() else { continue };
         let brut = &*v.objet().brut;
         let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };
@@ -596,7 +596,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
     let mut out: Vec<Version> = Vec::new();
     for m in mois {
         let siens = |cle: &str, n: &str, _: &engagement::stock::Ecrit| contrats.iter().any(|c| c.mois == m && c.salarie.as_str() == cle && c.numero_dit() == Some(n));
-        for x in versions_du_mois(ctx, &m.to_string(), departs, siens)? {
+        for x in versions_du_mois(ctx, m, departs, siens)? {
             if !out.contains(&x) {
                 out.push(x);
             }
