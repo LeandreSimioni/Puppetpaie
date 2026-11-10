@@ -1055,7 +1055,7 @@ pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Pa
     let mut paie_des = |lignes: Vec<crate::LignePaie>| {
         let mut e = eng.clone();
         e.lignes = lignes;
-        calculer_du_mois(ctx, &e, precedentes).map_err(String::from)
+        calculer_du_mois(ctx, &e, precedentes)
     };
     match crate::maintien::au_net(&eng.lignes, &mut paie_des)? {
         None => calculer_du_mois(ctx, eng, precedentes),

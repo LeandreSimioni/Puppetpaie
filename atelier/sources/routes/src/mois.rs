@@ -1136,7 +1136,7 @@ pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Opti
         // Ce qui empeche de les lire manque aussi a l'engagement.
         match engagement::maintien::indemnites_a_dire(ctx, e, &mois) {
             Ok(manque) => manque,
-            Err(m) => Some(m),
+            Err(m) => Some(String::from(m)),
         }
     };
     let valides: Vec<Option<String>> = tous.iter().map(a_dire).collect();
