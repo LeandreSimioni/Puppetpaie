@@ -282,7 +282,7 @@ pub struct PageAem {
 
 /// Les pages du PDF qui sont des AEM (ou leur notice), lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> R<Vec<PageAem>> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| refus(e.phrase()))?;
+    let r = crate::releve::du_pdf(chemin).map_err(crate::releve::Refus::en_echec)?;
     let pages: Vec<Vec<Mot>> = r.releve.pages.iter().map(mots_de).collect();
     let notices: Vec<bool> = pages.iter().map(|m| est_notice(m)).collect();
     let mut out = Vec::new();

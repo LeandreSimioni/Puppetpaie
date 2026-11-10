@@ -391,7 +391,7 @@ fn lire_pdf(f: &mut Fichier) {
         }
         Err(crate::releve::Refus::Releve(e)) => {
             f.sorte = Sorte::Illisible;
-            f.raison = Some(format!("PDF dont le releve ne se lit pas ({})", e));
+            f.raison = Some(format!("PDF dont le releve ne se lit pas ({})", e.phrase));
             return;
         }
     };

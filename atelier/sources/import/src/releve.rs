@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::SystemTime;
 
+use socle::echec::Echec;
+
 /// Une boite sur la page : x0, y0, x1, y1, dans le repere de la page non tournee.
 pub type Boite = [f64; 4];
 
@@ -71,16 +73,17 @@ pub struct Releve {
 pub enum Refus {
     /// La fabrique ne l'ouvre pas (sa raison, qui commence par le chemin).
     Fabrique(String),
-    /// Le releve rendu ne se lit pas.
-    Releve(String),
+    /// Le releve rendu ne se lit pas : son refus.
+    Releve(Echec),
 }
 
 impl Refus {
-    /// La phrase des lecteurs.
-    pub fn phrase(&self) -> String {
+    /// Le refus des lecteurs.
+    #[track_caller]
+    pub fn en_echec(self) -> Echec {
         match self {
-            Refus::Fabrique(r) => format!("PDF que la fabrique n'ouvre pas : {}", r),
-            Refus::Releve(e) => format!("releve du PDF illisible ({})", e),
+            Refus::Fabrique(r) => socle::echec::refus(format!("PDF que la fabrique n'ouvre pas : {}", r)),
+            Refus::Releve(e) => e.reformuler(|p| format!("releve du PDF illisible ({})", p)),
         }
     }
 }
@@ -123,7 +126,7 @@ pub fn du_pdf(chemin: &Path) -> Result<Rc<Releve>, Refus> {
         return Ok(r);
     }
     let (texte, avertissements) = fabrique_pdf::inspection::inspecter(&chemin.to_string_lossy()).map_err(|r| Refus::Fabrique(r.0))?;
-    let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(|e| Refus::Releve(e.into()))?;
+    let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(Refus::Releve)?;
     let r = Rc::new(Releve { releve, avertissements });
     MEMO.with(|m| {
         let mut m = m.borrow_mut();

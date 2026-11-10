@@ -137,7 +137,7 @@ pub struct PageCertificat {
 
 /// Les pages du PDF qui sont des certificats d'emploi Congés Spectacles, lues. Les autres pages n'y sont pas.
 pub fn lire(chemin: &Path) -> socle::echec::R<Vec<PageCertificat>> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| socle::echec::refus(e.phrase()))?;
+    let r = crate::releve::du_pdf(chemin).map_err(crate::releve::Refus::en_echec)?;
     Ok(r.releve.pages.iter().enumerate().filter_map(|(i, p)| lire_page(p, i + 1)).collect())
 }
 

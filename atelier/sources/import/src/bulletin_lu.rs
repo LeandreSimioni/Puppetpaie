@@ -48,7 +48,7 @@
 
 use std::path::Path;
 use socle::date::Jour;
-use socle::echec::{refus, R};
+use socle::echec::R;
 use socle::num::Decimal;
 
 /// La table de lecture, dans `logiciel/donnees/`.
@@ -1062,7 +1062,7 @@ pub fn lire(chemin: &Path) -> R<Vec<Lecture>> {
 
 /// La meme, avec une table donnee.
 pub fn lire_avec(chemin: &Path, table: &Table) -> R<Vec<Lecture>> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| refus(e.phrase()))?;
+    let r = crate::releve::du_pdf(chemin).map_err(crate::releve::Refus::en_echec)?;
     let avertissements = &r.avertissements;
     Ok(r.releve
         .pages
