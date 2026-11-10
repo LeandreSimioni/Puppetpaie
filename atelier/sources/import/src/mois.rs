@@ -18,14 +18,13 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieLue, PaieVersee};
 use envois::etats;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, Echec, R};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
 fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {
-    engagement::importe::du_mois(racine, mois).map_err(Echec::from)
-}
+    engagement::importe::du_mois(racine, mois)}
 
 /// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde : sa copie (relative a la compagnie), et le
 /// salarie qu'il paie.
@@ -176,7 +175,7 @@ fn jours_du_mois(dates: &[DatesTravaillees], mois: &str) -> R<Vec<String>> {
             if j == b {
                 break;
             }
-            j = j.plus_jours(1).map_err(|m| erreur(Classe::CalculImpossible, m))?;
+            j = j.plus_jours(1).map_err(|m| Echec { classe: Some(Classe::CalculImpossible), ..m })?;
         }
     }
     out.sort();
