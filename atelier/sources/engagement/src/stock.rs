@@ -592,7 +592,7 @@ impl Objet {
             Some(m) => faits[m].lignes(),
             None => self.carte().lignes(),
         };
-        Ok(crate::lignes_du_planning(&self.racine, source, mois)?)
+        crate::lignes_du_planning(&self.racine, source, mois)
     }
 }
 

@@ -78,7 +78,7 @@ fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
 
 /// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
 fn jour_de_paie(paie: &Paie) -> Resultat<Jour> {
-    paie.engagement.fin_periode()
+    paie.engagement.fin_periode().map_err(String::from)
 }
 
 fn premier_jour(paie: &Paie) -> Option<String> {

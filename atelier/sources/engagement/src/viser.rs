@@ -193,7 +193,7 @@ fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
 pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vise: Decimal) -> R<Visee> {
     let mut data = data.clone();
     // Une ligne au tarif de la convention a son taux : elle n'est pas une ligne sans taux.
-    crate::saisie_au_tarif(ctx, &mut data).map_err(RefusVisee::Calcul)?;
+    crate::saisie_au_tarif(ctx, &mut data).map_err(String::from).map_err(RefusVisee::Calcul)?;
     poser_taux_provisoires(ctx, &mut data, rangs)?;
     let essai = |facteur: Decimal| -> R<(VueDuMois, Vec<Paie>, Decimal)> {
         let mut d = data.clone();
@@ -208,7 +208,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vi
                  (cachet, service, heure, journee...) avec sa quantite ; le taux, lui, peut rester vide.",
             ));
         }
-        let paies = crate::charger_donnees(ctx, &d).map_err(RefusVisee::Calcul)?.paies;
+        let paies = crate::charger_donnees(ctx, &d).map_err(String::from).map_err(RefusVisee::Calcul)?.paies;
         let atteint = somme(&paies, rangs, cible)?;
         Ok((d, paies, atteint))
     };

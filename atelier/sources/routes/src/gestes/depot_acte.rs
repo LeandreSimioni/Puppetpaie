@@ -636,8 +636,8 @@ fn paies_des_embauches(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree
         embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())
     };
     let mut paies = Vec::new();
-    for e in engagement::engagements_de_la_saisie(ctx, &data).map_err(o)? {
-        let p = engagement::embauche(ctx, &e).map_err(o)?;
+    for e in engagement::engagements_de_la_saisie(ctx, &data).map_err(String::from).map_err(o)? {
+        let p = engagement::embauche(ctx, &e).map_err(String::from).map_err(o)?;
         if declaree(&p) {
             paies.push(p);
         }

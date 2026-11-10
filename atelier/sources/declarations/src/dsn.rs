@@ -3234,7 +3234,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> Resultat<HashMap<String
     for &k in &["brut", "csg", "brut_x115", "brut_x110"] {
         out.insert(k.to_string(), somme(&tous, &|i| b[i][k]));
     }
-    let mensuelle: Vec<bool> = paies.iter().map(|p| p.engagement.nat().map(|n| n.mensuelle())).collect::<Resultat<_>>()?;
+    let mensuelle: Vec<bool> = paies.iter().map(|p| p.engagement.nat().map(|n| n.mensuelle())).collect::<socle::echec::R<_>>()?;
     let perm = |i: usize| mensuelle[i];
     let inter = |i: usize| !mensuelle[i];
     out.insert("brut_permanent".into(), somme(&perm, &|i| assiette(&b[i], "brut")));

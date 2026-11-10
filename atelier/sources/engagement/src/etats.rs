@@ -329,7 +329,7 @@ impl Etat {
 pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let c = o.carte();
     let nat = c.nature_lue()?;
-    Ok(crate::signe_ailleurs_de(&ctx.racine, &nat, c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?, &crate::debut_brut(&o.brut), c.numero.as_deref(), &o.fichier)?)
+    crate::signe_ailleurs_de(&ctx.racine, &nat, c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?, &crate::debut_brut(&o.brut), c.numero.as_deref(), &o.fichier)
 }
 
 /// Qui est l'engagement `o`, pour une phrase de l'ecran : « MARTIN Lou (contrat du 20/11/2026) » (`crate::salarie_nomme`).

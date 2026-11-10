@@ -489,8 +489,8 @@ fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<f64>> {
 fn avec_les_lignes_calculees_des_permanents(ctx: &Contexte, saisie: VueDuMois) -> R<VueDuMois> {
     let paies = match engagement::lue_sans_paie(ctx, &saisie) {
         Ok(p) => p,
-        Err(m) if engagement::saisie_incomplete(&m) => return Ok(saisie),
-        Err(m) => return Err(crate::etapes::classer_saisie(m)),
+        Err(m) if engagement::saisie_incomplete(&m.phrase) => return Ok(saisie),
+        Err(m) => return Err(crate::etapes::classer_saisie(m.into())),
     };
     let mut engagements = Vec::new();
     for (e, p) in saisie.engagements.iter().zip(&paies) {
@@ -1159,7 +1159,7 @@ pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Opti
                 gardes.push(e.clone());
                 manques.push(None);
             }
-            Err(m) => manques.push(Some(m)),
+            Err(m) => manques.push(Some(m.into())),
         }
     }
     manques
@@ -1387,7 +1387,7 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> 
         lues.push(lue);
     }
     let calculees = if lues.iter().any(Option::is_none) {
-        engagement::pour_l_ecran(ctx, data).map_err(|m| refus_du_calcul(ctx, data, m))?.paies
+        engagement::pour_l_ecran(ctx, data).map_err(|m| refus_du_calcul(ctx, data, m.into()))?.paies
     } else {
         Vec::new()
     };

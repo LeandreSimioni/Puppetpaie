@@ -1391,7 +1391,7 @@ impl<'a> Moteur<'a> {
     }
 
     fn saisie_chargee(&mut self, mois: &str) -> R<SaisieMois> {
-        let mut data = engagement::vue_requise(self.racine(), mois).map_err(classer_saisie)?;
+        let mut data = engagement::vue_requise(self.racine(), mois).map_err(String::from).map_err(classer_saisie)?;
         let manques = super::mois::manques_de_la_saisie(self.ctx, &data);
         let objets = engagement::stock::objets_du_mois(self.racine(), mois).map_err(plain)?;
         let mut identites = engagement::stock::identites(&objets);
@@ -1399,7 +1399,7 @@ impl<'a> Moteur<'a> {
         identites.retain(|_| m.next().is_some_and(Option::is_none));
         let mut m = manques.iter();
         data.engagements.retain(|_| m.next().is_some_and(Option::is_none));
-        let mut paies = engagement::lue_sans_paie(self.ctx, &data).map_err(classer_saisie)?;
+        let mut paies = engagement::lue_sans_paie(self.ctx, &data).map_err(String::from).map_err(classer_saisie)?;
         engagement::numeros::numeroter_les_contrats(self.ctx, &mut paies, &self.departs()?).map_err(plain)?;
         Ok(SaisieMois { paies, identites, manques })
     }

@@ -343,7 +343,7 @@ fn comparer_une(
         ..Default::default()
     };
     let data = crate::saisie::VueDuMois { mois: socle::mois::Mois::lire(mois)?, taux_cachet: None, engagements: vec![e] };
-    let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
+    let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m.into()))?;
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
         let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est("atmp")));
@@ -355,7 +355,7 @@ fn comparer_une(
         if let (Some(f), Some(applique)) = (facteur, applique) {
             let notifie = (applique / dec_f64(f)?).round_dp(2);
             ctx = ctx.avec_le_taux_atmp_lu(an, notifie);
-            saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
+            saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m.into()))?;
         }
     }
     let paie = saisie.paies.first().ok_or("le calcul ne rend aucune paie")?;
