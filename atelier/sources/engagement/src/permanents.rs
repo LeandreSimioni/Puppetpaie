@@ -92,8 +92,12 @@ impl Permanents {
 
 impl Objet {
     /// LE JOUR OU L'ENGAGEMENT EST PAYE AU MOIS, et cette nature : son debut si sa premiere carte l'est, sinon le jour de
-    /// l'avenant qui lui donne une nature payee au mois ; `None` s'il ne l'est jamais, ou ne dit pas encore son debut.
+    /// l'avenant qui lui donne une nature payee au mois ; `None` s'il ne l'est jamais, ou ne dit pas encore son debut ou
+    /// sa nature (un contrat repris dont la nature est a dire, `routes::importation::nature` : rien ne le paie encore).
     pub fn au_mois_depuis(&self) -> Resultat<Option<(Jour, Arc<Nature>)>> {
+        if self.carte().nature.as_deref().is_none_or(|n| n.trim().is_empty()) {
+            return Ok(None);
+        }
         let premiere = self.carte().nature_lue()?;
         if premiere.mensuelle() {
             let debut = crate::debut_brut(&self.brut);
