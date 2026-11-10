@@ -103,7 +103,7 @@ struct Lu {
     /// La cle du NIR, quand le bulletin l'imprime.
     cle_nir: Option<String>,
     /// Le mois de la fin de periode.
-    mois: String,
+    mois: Mois,
     /// Le mois a des engagements saisis (`mois_saisis`).
     mois_saisi: bool,
     compteurs: R<Compteurs>,
@@ -234,7 +234,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // 2. Les bulletins, page par page.
     let table = Table::livree().map_err(|m| m.reformuler(|p| format!("La table de lecture des bulletins ne se lit pas : {}", p)).reclasser(Classe::Refuse))?;
-    let saisis: HashSet<String> = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?.into_iter().map(String::from).collect();
+    let saisis: HashSet<Mois> = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?.into_iter().collect();
     let mut pages: BTreeMap<usize, Vec<PageCr>> = BTreeMap::new();
     let mut illisibles: BTreeMap<usize, String> = BTreeMap::new();
     let mut lus: Vec<Lu> = Vec::new();
@@ -330,13 +330,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             *par_logiciel.entry(logiciel).or_default() += 1;
             du = du.into_iter().chain([b.debut]).min();
             au = au.into_iter().chain([b.fin]).max();
-            let mois = b.fin.mois_civil().to_string();
+            let mois = b.fin.mois_civil();
             let infos = InfosPage {
                 logiciel: b.logiciel.clone(),
                 numero: b.numero.clone(),
                 debut: Some(b.debut.iso()),
                 fin: Some(b.fin.iso()),
-                mois: Some(mois.clone()),
+                mois: Some(mois.to_string()),
                 ..InfosPage::default()
             };
             let refus = |sort: Sort, raison: String, infos: InfosPage| PageCr { page: l.page, sort, raison, infos };
@@ -471,27 +471,27 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // Ce qui est saisi ici : (salarie, mois) que paie un engagement saisi. Un bulletin qui en est, sans paie declaree
     // du meme salarie et du meme mois a completer (DSN de cet apercu, paie importee), est « deja saisi ».
-    let mut saisis_ici: HashSet<(String, String)> = HashSet::new();
+    let mut saisis_ici: HashSet<(String, Mois)> = HashSet::new();
     if lus.iter().any(|l| l.mois_saisi) {
         let objets = engagement::stock::objets(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
         for o in objets.iter().filter(|o| !o.importe_seul()) {
             let Some(cle) = &o.brut.saisie.carte.salarie else { continue };
             for l in lus.iter().filter(|l| l.mois_saisi) {
-                if o.couvre(Mois::lire(&l.mois)?).map_err(|m| m.reclasser(Classe::Refuse))? {
-                    saisis_ici.insert((cle.to_string(), l.mois.clone()));
+                if o.couvre(l.mois).map_err(|m| m.reclasser(Classe::Refuse))? {
+                    saisis_ici.insert((cle.to_string(), l.mois));
                 }
             }
         }
     }
-    let declarees: HashSet<(String, String)> = ap
+    let declarees: HashSet<(String, Mois)> = ap
         .paies
         .iter()
         .chain(historique_paies.iter())
-        .filter_map(|x| Some((x.paie.nir.clone()?, x.mois.to_string())))
+        .filter_map(|x| Some((x.paie.nir.clone()?, x.mois)))
         .collect();
     let mut gardes: Vec<Lu> = Vec::new();
     for l in lus {
-        if saisis_ici.contains(&(cle_de(&l.nir), l.mois.clone())) && !declarees.contains(&(l.nir.clone(), l.mois.clone())) {
+        if saisis_ici.contains(&(cle_de(&l.nir), l.mois)) && !declarees.contains(&(l.nir.clone(), l.mois)) {
             let raison = format!("le mois {} de ce salarié est saisi ici, sans paie déclarée à compléter : non repris", l.mois);
             pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort: Sort::DejaSaisi, raison, infos: infos_de(&l, None) });
             continue;
@@ -585,7 +585,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     ap.reponse.avertissements.extend(avertissements_aem);
 
     let mut reponse = std::mem::take(&mut ap.reponse);
-    let seuil = format!("{:04}-{:02}", ctx.aujourdhui.an - 1, ctx.aujourdhui.mois);
+    let seuil = Mois::nouveau(ctx.aujourdhui.an - 1, ctx.aujourdhui.mois)?;
     let mut nouvelles_fiches = 0usize;
     let chemin_de = |l: &Lu| tri.fichiers[l.fichier].chemin.clone();
 
@@ -801,7 +801,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             continue;
         }
         // Un numero d'objet est lu sur un bulletin au moins : il a son premier et son dernier mois.
-        let (Some(premier), Some(dernier)) = (rangs.iter().map(|&k| lus[k].mois.clone()).min(), rangs.iter().map(|&k| lus[k].mois.clone()).max()) else { continue };
+        let (Some(premier), Some(dernier)) = (rangs.iter().map(|&k| lus[k].mois).min(), rangs.iter().map(|&k| lus[k].mois).max()) else { continue };
         let sp = SpectacleDesPieces {
             titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
@@ -824,10 +824,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     // 7b. Les numeros d'objet des AEM en PDF qu'aucune fiche, aucune DSN ni aucun bulletin ne connait : un spectacle a
     // creer, sans titre (l'AEM ne l'imprime pas), comme ceux des AEM deposees.
-    let mut objets_aem: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut objets_aem: BTreeMap<String, Vec<Mois>> = BTreeMap::new();
     for a in certificats.iter().filter_map(|c| c.aem.as_ref()) {
-        if let (Some(o), Some(m)) = (a.numero_objet.as_deref().filter(|o| !o.is_empty()), &a.mois) {
-            objets_aem.entry(o.to_uppercase()).or_default().push(m.to_string());
+        if let (Some(o), Some(m)) = (a.numero_objet.as_deref().filter(|o| !o.is_empty()), a.mois) {
+            objets_aem.entry(o.to_uppercase()).or_default().push(m);
         }
     }
     for (numero, mois) in objets_aem {
@@ -862,19 +862,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         Dsn(usize),
         Historique((Mois, String, String)),
     }
-    let mut index: HashMap<(String, String, String), Vec<(String, String, Cible)>> = HashMap::new();
+    let mut index: HashMap<(String, String, String), Vec<(Mois, String, Cible)>> = HashMap::new();
     // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
     // (S21.G00.40.001 et .010, un CDI sans fin), le bulletin de la periode payee ; les dates ne la rapprochent donc pas.
     // Le numero du contrat (S21.G00.40.009, que le versement rappelle en S21.G00.51.010) et le mois, si : un bulletin qui
     // imprime son numero se rattache a la paie que la DSN du mois declare sous ce numero.
-    let mut par_numero: HashMap<(String, String, String), Vec<(String, String, Cible)>> = HashMap::new();
+    let mut par_numero: HashMap<(String, Mois, String), Vec<(Mois, String, Cible)>> = HashMap::new();
     // Sans numero imprime, la regle de l'ecriture (`import::ecrite::rapprocher`, « un contrat a cheval sur deux mois ») :
     // le bulletin complete la paie declaree du meme mois dont le contrat contient sa periode, quand il n'y en a qu'une.
     // (debut, fin, contrat, cible) ; une fin absente : le contrat court encore.
-    let mut par_mois: HashMap<(String, String), Vec<(String, Option<String>, String, Cible)>> = HashMap::new();
-    let mut vus: HashSet<(String, String, String)> = HashSet::new();
-    // (mois, NIR, contrat, debut, fin) d'une paie, en texte. Une paie sans NIR ne se rattache a aucun bulletin.
-    let reperes = |x: &PaieLue| (x.mois.to_string(), x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut.map(|j| j.iso()), x.paie.fin.map(|j| j.iso()));
+    let mut par_mois: HashMap<(String, Mois), Vec<(String, Option<String>, String, Cible)>> = HashMap::new();
+    let mut vus: HashSet<(Mois, String, String)> = HashSet::new();
+    // (mois, NIR, contrat, debut, fin) d'une paie. Une paie sans NIR ne se rattache a aucun bulletin.
+    let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut.map(|j| j.iso()), x.paie.fin.map(|j| j.iso()));
     for (k, x) in ap.paies.iter().enumerate() {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
@@ -932,19 +932,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         }
         let (debut, fin) = (l.b.debut.iso(), l.b.fin.iso());
-        let mut candidats: Vec<(String, String, Cible)> = index.get(&(l.nir.clone(), debut.clone(), fin.clone())).into_iter().flatten().cloned().collect();
+        let mut candidats: Vec<(Mois, String, Cible)> = index.get(&(l.nir.clone(), debut.clone(), fin.clone())).into_iter().flatten().cloned().collect();
         if candidats.is_empty() {
             if let Some(n) = l.b.contrat.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
-                candidats = par_numero.get(&(l.nir.clone(), l.mois.clone(), n.to_string())).into_iter().flatten().cloned().collect();
+                candidats = par_numero.get(&(l.nir.clone(), l.mois, n.to_string())).into_iter().flatten().cloned().collect();
             }
         }
         if candidats.is_empty() {
-            let contient: Vec<(String, String, Cible)> = par_mois
-                .get(&(l.nir.clone(), l.mois.clone()))
+            let contient: Vec<(Mois, String, Cible)> = par_mois
+                .get(&(l.nir.clone(), l.mois))
                 .into_iter()
                 .flatten()
                 .filter(|(d, f, _, _)| *d <= debut && f.as_ref().is_none_or(|f| fin <= *f))
-                .map(|(_, _, contrat, cible)| (l.mois.clone(), contrat.clone(), cible.clone()))
+                .map(|(_, _, contrat, cible)| (l.mois, contrat.clone(), cible.clone()))
                 .collect();
             if contient.len() == 1 {
                 candidats = contient;
@@ -954,11 +954,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             candidats.retain(|c| !matches!(&c.2, Cible::Historique(k) if de_bulletin.contains(k)));
         }
         if candidats.len() > 1 {
-            let memes: Vec<(String, String, Cible)> = candidats.iter().filter(|c| c.0 == l.mois).cloned().collect();
+            let memes: Vec<(Mois, String, Cible)> = candidats.iter().filter(|c| c.0 == l.mois).cloned().collect();
             if memes.len() == 1 {
                 candidats = memes;
             } else {
-                let mois: Vec<String> = candidats.iter().map(|c| c.0.clone()).collect();
+                let mois: Vec<String> = candidats.iter().map(|c| c.0.to_string()).collect();
                 let raison = format!("plusieurs paies déclarées pour les mêmes dates ({}) : le bulletin ne se rattache à aucune", mois.join(", "));
                 pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort: Sort::Incoherent, raison, infos });
                 continue;
@@ -1000,7 +1000,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 };
                 let mut paie = PaieVersee::vide(contrat, Declaration::Bulletin);
                 (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
-                let x = PaieLue { mois: Mois::lire(&l.mois)?, salarie: salarie.clone(), paie };
+                let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
                 (x, "bulletin", avant)
             }
@@ -1474,7 +1474,7 @@ fn infos_de(l: &Lu, salarie: Option<&str>) -> InfosPage {
         salarie: salarie.map(String::from),
         debut: Some(l.b.debut.iso()),
         fin: Some(l.b.fin.iso()),
-        mois: Some(l.mois.clone()),
+        mois: Some(l.mois.to_string()),
         ..InfosPage::default()
     }
 }
@@ -1819,7 +1819,7 @@ fn licences_lues(lus: &[Lu]) -> Vec<(String, String)> {
     for x in lus {
         if let Some(n) = x.b.entreprise.licence.as_deref().filter(|n| !n.is_empty()) {
             if licences.last().is_none_or(|p| p.1 != n) {
-                licences.push((x.mois.clone(), n.to_string()));
+                licences.push((x.mois.to_string(), n.to_string()));
             }
         }
     }

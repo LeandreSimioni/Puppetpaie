@@ -333,7 +333,7 @@ pub(crate) struct Apercu {
 /// son bulletin, et sans lui l'apercu le dit (`phrase`).
 #[derive(Clone, Debug)]
 pub(crate) struct SansNets {
-    pub(crate) mois: String,
+    pub(crate) mois: socle::mois::Mois,
     pub(crate) nir: String,
     pub(crate) contrat: String,
     pub(crate) qui: String,
@@ -352,7 +352,7 @@ impl SansNets {
             "{}, contrat {} ({}) : {}, sans dire ses nets ni son prélèvement à la source, et aucun bulletin ne les donne. L'engagement est repris sans ses nets : importez son bulletin.",
             self.qui,
             self.contrat,
-            socle::mois::Mois::en_clair(&self.mois),
+            self.mois.libelle(socle::mois::Graphie::Accentuee),
             pourquoi
         )
     }
@@ -651,6 +651,7 @@ pub(crate) fn apercu_lu(
         if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
             continue;
         }
+        let mois = socle::mois::Mois::lire(mois)?;
         let c = v.contrat.as_ref();
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
@@ -661,11 +662,11 @@ pub(crate) fn apercu_lu(
                 Some(s) => libelle_de(&s.individu),
                 None => nir.clone(),
             };
-            sans_nets.push(SansNets { mois: mois.clone(), nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
+            sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
         let paie = paie_declaree(v, objet);
-        paies.push(engagement::importe::PaieLue { mois: socle::mois::Mois::lire(mois)?, salarie: cle_de(nir), paie });
+        paies.push(engagement::importe::PaieLue { mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {
         source: source.to_string(),
@@ -863,14 +864,14 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
     }
     let (mut dsn, mut bulletins) = (Reprise::default(), Reprise::default());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).
-    let mut mois_dsn: BTreeSet<String> = BTreeSet::new();
+    let mut mois_dsn: BTreeSet<socle::mois::Mois> = BTreeSet::new();
     for x in paies {
         let le = x.paie.importe_le.as_deref();
         let mois = x.mois.to_string();
         // Une paie declaree par une DSN et completee par un bulletin compte des deux cotes : elle a les deux sources.
         if x.paie.declare_par == Declaration::Dsn {
             dsn.voir(Some(&mois), Some(&mois), le);
-            mois_dsn.insert(mois.clone());
+            mois_dsn.insert(x.mois);
         }
         if x.paie.declare_par == Declaration::Bulletin || x.paie.bulletin.is_some() {
             bulletins.voir(Some(&mois), Some(&mois), le);
