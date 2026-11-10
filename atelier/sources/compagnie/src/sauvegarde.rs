@@ -213,10 +213,6 @@ fn depuis_quand(depuis: Naif, maintenant: Naif) -> String {
     }
 }
 
-/// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive ; une heure qui ne se lit pas abime l'index.
-fn naif(quand: &str) -> Result<Naif, ErreurGoogle> {
-    Naif::lire(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::Lieu { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
-}
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
 pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<String>, ErreurGoogle> {
@@ -224,13 +220,10 @@ pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<Stri
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
     let mut tous: Vec<(&String, Naif, &str, bool)> = Vec::new();
     for (cle, e) in echecs {
-        let depuis = naif(&e.depuis)?;
+        let depuis = e.depuis.naif();
         tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant.depuis(depuis) >= UNE_JOURNEE));
     }
-    let complete = match &index.derniere_complete {
-        Some(c) => Some(naif(c)?),
-        None => None,
-    };
+    let complete = index.derniere_complete.map(|c| c.naif());
     let durent: Vec<_> = tous.iter().filter(|t| t.3).collect();
     let (retenus, par_l_item): (Vec<_>, bool) = if !durent.is_empty() {
         (durent, true)
@@ -393,7 +386,7 @@ pub struct Index {
     pub dossiers: BTreeMap<String, String>,
     pub fichiers: BTreeMap<String, Etat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub derniere_complete: Option<String>,
+    pub derniere_complete: Option<socle::paris::HeureDeSaisie>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub echecs: Option<BTreeMap<String, EchecIndexe>>,
 }
@@ -402,15 +395,11 @@ pub struct Index {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EchecIndexe {
-    pub depuis: String,
+    pub depuis: socle::paris::HeureDeSaisie,
     pub passages: i64,
     pub cause: String,
 }
 
-/// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
-fn index_illisible(a_part: socle::echec::Lieu) -> ErreurGoogle {
-    ErreurGoogle::from(socle::echec::refus_avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part).reclasser(Classe::Illisible))
-}
 
 /// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
 pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {

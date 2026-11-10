@@ -187,7 +187,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 let cle = r.cle();
                 let e = match anciens.get(&cle) {
                     Some(a) => EchecIndexe { depuis: a.depuis.clone(), passages: a.passages + 1, cause: r.cause.clone() },
-                    None => EchecIndexe { depuis: quand.clone(), passages: 1, cause: r.cause.clone() },
+                    None => EchecIndexe { depuis: socle::paris::HeureDeSaisie::de(maintenant), passages: 1, cause: r.cause.clone() },
                 };
                 (cle, e)
             })
@@ -196,8 +196,8 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     // La derniere sauvegarde complete : celle que l'index d'avant disait deja, sinon le passage d'avant s'il etait complet.
     let derniere_complete = match &index {
         _ if echecs.is_empty() => None,
-        Some(Index { derniere_complete: Some(c), .. }) => Some(c.clone()),
-        Some(i) if anciens.is_empty() && !i.quand.is_empty() => Some(i.quand.clone()),
+        Some(Index { derniere_complete: Some(c), .. }) => Some(*c),
+        Some(i) if anciens.is_empty() && !i.quand.is_empty() => socle::paris::HeureDeSaisie::lire(&i.quand),
         _ => None,
     };
     let nouvel_index = Index {

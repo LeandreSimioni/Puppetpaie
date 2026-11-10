@@ -809,7 +809,7 @@ pub fn edition() -> String {
 pub struct AnneeRetenue {
     pub paies: u64,
     pub poste: String,
-    pub parti_le: String,
+    pub parti_le: socle::paris::InstantEcrit,
 }
 
 /// `config/diagnostic.json`, TEL QU'IL S'ECRIT : l'interrupteur de l'envoi (`envoi` : absent ou vrai, les incidents

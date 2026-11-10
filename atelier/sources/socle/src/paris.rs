@@ -253,6 +253,11 @@ impl MinuteEcrite {
 pub struct HeureDeSaisie(Naif);
 
 impl HeureDeSaisie {
+    /// L'heure de Paris de cet instant, tronquee a la minute.
+    pub fn de(t: Moment) -> HeureDeSaisie {
+        HeureDeSaisie(MinuteEcrite::de(t).0)
+    }
+
     /// L'heure de Paris a cet instant (`socle::temps`), tronquee a la minute.
     pub fn maintenant() -> HeureDeSaisie {
         HeureDeSaisie(MinuteEcrite::maintenant().0)

@@ -65,7 +65,7 @@ fn parties(racine: &Path) -> R<Option<BTreeMap<String, AnneeRetenue>>> {
 /// Retient que `annee` est partie, sans toucher au reste du fichier (l'identite du poste, l'interrupteur).
 fn retenir(racine: &Path, annee: i32, paies: usize, poste: &str) -> R<()> {
     let mut c = incidents::lire_config(racine)?;
-    let retenue = AnneeRetenue { paies: paies as u64, poste: poste.to_string(), parti_le: socle::paris::maintenant() };
+    let retenue = AnneeRetenue { paies: paies as u64, poste: poste.to_string(), parti_le: socle::paris::InstantEcrit::maintenant() };
     c.paies_annuelles.get_or_insert_with(BTreeMap::new).insert(annee.to_string(), retenue);
     incidents::ecrire_config(racine, &c)
 }
@@ -158,7 +158,7 @@ pub fn annees_parties(racine: &Path) -> R<Vec<AnneePartie>> {
 pub struct AnneePartie {
     pub annee: i64,
     pub paies: u64,
-    pub parti_le: Option<String>,
+    pub parti_le: Option<socle::paris::InstantEcrit>,
     pub contenu: ContenuParti,
 }
 

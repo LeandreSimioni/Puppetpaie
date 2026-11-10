@@ -586,13 +586,13 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
             combien: 1,
             partis: 1,
             en_attente: 0,
-            premiere: a.parti_le.clone(),
-            derniere: a.parti_le.clone(),
-            parti_le: a.parti_le.clone(),
+            premiere: a.parti_le.map(|q| q.iso()),
+            derniere: a.parti_le.map(|q| q.iso()),
+            parti_le: a.parti_le.map(|q| q.iso()),
             contenu: Contenu::Paies(a.contenu.clone()),
-            dernier_dit: if let Some(q) = &a.parti_le { format!("dernier le {}", socle::ecran::quand(q)) } else { "pas encore parti".to_string() },
+            dernier_dit: if let Some(q) = &a.parti_le.map(|q| q.iso()) { format!("dernier le {}", socle::ecran::quand(q)) } else { "pas encore parti".to_string() },
             quoi_dit: "nombre de paies",
-            pastille: match &a.parti_le {
+            pastille: match &a.parti_le.map(|q| q.iso()) {
                 Some(q) => Pastille::de("fait", &format!("parti le {}", socle::ecran::quand(q))),
                 None => Pastille::de("information", "pas encore parti"),
             },
@@ -708,7 +708,7 @@ fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, de
     };
     if let (true, Some(a)) = (envoi, annee) {
         let mut paies = format!("nombre de paies de {}", a.annee);
-        if let Some(q) = &a.parti_le {
+        if let Some(q) = &a.parti_le.map(|q| q.iso()) {
             paies.push_str(&format!(" parti le {}", socle::ecran::quand(q)));
         }
         compte = Some(match compte {
