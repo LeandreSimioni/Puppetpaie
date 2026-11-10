@@ -111,7 +111,7 @@ fn lire_s_il_est_la<T: DeserializeOwned>(p: &Path, phrase: &str) -> Result<Optio
     if !p.is_file() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(p, phrase).map(Some)
+    socle::forme::lire_fichier(p, phrase).map(Some).map_err(String::from)
 }
 
 /// La vraie compagnie : `prive/` a cote du code, sinon le code lui-meme.
@@ -270,7 +270,7 @@ pub fn couleur(racine: &Path) -> Result<String, String> {
     let p = racine.join(AFFICHAGE);
     match lire_s_il_est_la::<Affichage>(&p, "La couleur de la compagnie (config/affichage.json) ne se lit pas.")? {
         Some(a) if couleur_valide(&a.couleur) => Ok(a.couleur),
-        Some(a) => Err(socle::echec::abime(&p, format!("la couleur « {} » n'a pas la forme #RRGGBB", a.couleur))),
+        Some(a) => Err(socle::echec::abime(&p, format!("la couleur « {} » n'a pas la forme #RRGGBB", a.couleur)).into()),
         None => Ok(COULEUR_DE_LA_CHARTE.to_string()),
     }
 }
@@ -316,7 +316,7 @@ fn sous_dossiers(dossier: &Path) -> Result<Vec<PathBuf>, String> {
     let entrees = match std::fs::read_dir(dossier) {
         Ok(it) => it,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(socle::echec::du_disque(dossier, &e)),
+        Err(e) => return Err(socle::echec::du_disque(dossier, &e).into()),
     };
     let mut v = Vec::new();
     for e in entrees {
@@ -365,7 +365,7 @@ pub fn a_tenir_a_jour(b: &Path) -> Result<Vec<PathBuf>, String> {
         let date = match std::fs::metadata(&journal).and_then(|m| m.modified()) {
             Ok(d) => Some(d),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(socle::echec::du_disque(&journal, &e)),
+            Err(e) => return Err(socle::echec::du_disque(&journal, &e).into()),
         };
         datees.push((date, c.racine));
     }
@@ -506,7 +506,7 @@ fn retirer_dossier(d: &Path) -> Result<(), String> {
     match std::fs::remove_dir_all(d) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(socle::echec::du_disque(d, &e)),
+        Err(e) => Err(socle::echec::du_disque(d, &e).into()),
     }
 }
 
@@ -522,7 +522,7 @@ pub fn figer_origine(racine: &Path) -> Result<(), String> {
     let provisoire = o.with_extension("part");
     retirer_dossier(&provisoire)?;
     copier_arbre(racine, &provisoire, Path::new(""), &PROPRES_AU_POSTE).map_err(|e| socle::echec::du_disque(&provisoire, &e))?;
-    std::fs::rename(&provisoire, &o).map_err(|e| socle::echec::du_disque(&o, &e))
+    std::fs::rename(&provisoire, &o).map_err(|e| socle::echec::du_disque(&o, &e).into())
 }
 
 /// La fictive revient a sa photo d'origine ; ce qui appartient au poste est garde. Rend (nom, deja).
@@ -551,7 +551,7 @@ pub fn remettre_a_zero(inst: &Path, id: &str) -> Result<(String, bool), String> 
         let octets = match std::fs::read(&source) {
             Ok(o) => o,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(socle::echec::du_disque(&source, &e)),
+            Err(e) => return Err(socle::echec::du_disque(&source, &e).into()),
         };
         let cible = neuve.join(rel);
         let d = dessus(&cible);

@@ -1216,7 +1216,7 @@ fn jour_saisi(ctx: &Contexte, t: &str, quoi: &str) -> R<Option<Jour>> {
     if t.trim().is_empty() {
         return Ok(None);
     }
-    let j = Jour::lire(t.trim()).map_err(|m| refus(format!("{} : {}. Rien n'est ecrit.", quoi, m)))?;
+    let j = Jour::lire(t.trim()).map_err(|m| refus(format!("{} : {}. Rien n'est ecrit.", quoi, String::from(m))))?;
     if j > ctx.aujourdhui {
         return Err(refus(format!(
             "{} au {} : c'est apres aujourd'hui ({}). Un fait deja survenu ne se date pas dans le futur. Rien n'est ecrit.",
@@ -1481,11 +1481,11 @@ fn jour_tape(t: &Option<String>) -> Option<Jour> {
 fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &str, dernier: Jour, debut: Jour, fin: Jour) -> R<Result<ArretSaisi, String>> {
     let cle = match ctx.cle_du_salarie(salarie) {
         Ok(cle) => cle,
-        Err(m) => return Ok(Err(m)),
+        Err(m) => return Ok(Err(m.into())),
     };
     let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, tape(&c.contrat)) {
         Ok(contrat) => contrat,
-        Err(e) => return Ok(Err(e.message)),
+        Err(e) => return Ok(Err(e.into())),
     };
     let Some(motif) = tape(&c.motif) else { return Ok(Err("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {

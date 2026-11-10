@@ -215,12 +215,12 @@ impl Suspend for Imprevu {
 
 /// Un jour ecrit, lu.
 fn jour(x: &str) -> Resultat<Jour> {
-    Jour::lire(x)
+    Jour::lire(x).map_err(String::from)
 }
 
 /// Un jour dit et non vide, lu.
 fn jour_dit(x: &Option<String>) -> Resultat<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()
+    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose().map_err(String::from)
 }
 
 impl Imprevu {
@@ -271,7 +271,7 @@ pub fn verifier(imp: &Imprevu) -> Resultat<()> {
     for (k, x) in [("ij_brute", &a.ij_brute), ("ij_nette", &a.ij_nette), ("ij_brute_majoree", &a.ij_brute_majoree), ("ij_nette_majoree", &a.ij_nette_majoree)] {
         if let Some(x) = x.as_ref().filter(|x| x.vrai()) {
             if x.dec_avec_echelle()? <= Decimal::ZERO {
-                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()));
+                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()).into());
             }
         }
     }
@@ -391,7 +391,7 @@ de leur premier jour). Chacun se saisit une fois ; le moteur en tire la ligne de
 de chaque DSN mensuelle dont le mois le croise, et, pour un arret, son signalement (nature 04, 05).",
         mois
     );
-    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois: mois.to_string(), imprevus }, 2)
+    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois: mois.to_string(), imprevus }, 2).map_err(String::from)
 }
 
 /// Le jour qui range un imprevu dans le magasin : le dernier jour travaille d'un arret, le premier jour d'une suspension.
@@ -419,13 +419,13 @@ pub fn dernier_jour_declare(arret: &ArretSaisi) -> Resultat<Jour> {
 
 /// Le premier jour d'absence d'un arret (`premier_jour`).
 pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> Resultat<Jour> {
-    dernier_jour_declare(arret)?.plus_jours(1)
+    dernier_jour_declare(arret)?.plus_jours(1).map_err(String::from)
 }
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
 pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> Resultat<Jour> {
     match jour_dit(&arret.reprise)? {
-        Some(r) => r.plus_jours(-1),
+        Some(r) => r.plus_jours(-1).map_err(String::from),
         None => jour(&arret.fin_previsionnelle),
     }
 }
@@ -514,7 +514,7 @@ fn numeros_compatibles(a: Option<&str>, b: Option<&str>) -> bool {
 
 /// Le motif de suspension (`permanents-base.json`, section `suspensions`), s'il existe.
 pub fn motif_de_suspension(code: &str) -> Resultat<Option<MotifDeSuspension>> {
-    droit::permanents::motif_de_suspension(code)
+    droit::permanents::motif_de_suspension(code).map_err(String::from)
 }
 
 /// Ce que le motif d'une suspension interdit de declarer : un motif inconnu, ou le 200 (conges payes).
@@ -527,7 +527,8 @@ pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> Resultat<MotifDeSu
                 if code.is_empty() { "absent".to_string() } else { format!("inconnu ({})", repr(code)) }
             ),
             "motif",
-        ));
+        )
+        .into());
     };
     if let Some(pourquoi) = &m.ne_se_declare_pas {
         return Err(format!(
@@ -865,7 +866,7 @@ nomme cette absence. Rien n'est calcule.",
                     dernier.jj_mm_aaaa(),
                     code,
                     libelle_du_motif(&motif)
-                ), "arrets-base.json"));
+                ), "arrets-base.json").into());
             };
             lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, quantite, taux })));
             absents += jours;
@@ -1015,7 +1016,7 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
         let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
         for c in cachets_de_la_saisie(ctx, data, &mois, imp.salarie(), &premier, &dernier)? {
             let i = c.engagement;
-            let dates: Vec<String> = c.dates.iter().map(|x| Jour::lire(x).map(|j| j.jj_mm_aaaa())).collect::<Resultat<_>>()?;
+            let dates: Vec<String> = c.dates.iter().map(|x| Jour::lire(x).map(|j| j.jj_mm_aaaa())).collect::<socle::echec::R<_>>()?;
             let quoi = if est_un_arret(imp) {
                 let motif = droit::arrets::motif_d_arret(imp.motif())?;
                 format!(
@@ -1059,7 +1060,7 @@ mod tests {
     }
 
     fn lu(cles: &Cles) -> socle::num::Resultat<Imprevu> {
-        socle::forme::lire_texte(&texte(cles), ILLISIBLE)
+        socle::forme::lire_texte(&texte(cles), ILLISIBLE).map_err(String::from)
     }
 
     fn pose(cles: &mut Cles, cle: &str, valeur: &str) {

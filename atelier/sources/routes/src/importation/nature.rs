@@ -329,7 +329,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         })?;
         match champ {
             Demande::Debut | Demande::Fin => {
-                let j = Jour::lire(&v).map_err(|m| refus(format!("{} : rien n'a été écrit.", m)))?.iso();
+                let j = Jour::lire(&v).map_err(|m| refus(format!("{} : rien n'a été écrit.", String::from(m))))?.iso();
                 if champ == Demande::Debut && j > du {
                     return Err(refus(format!(
                         "Le contrat de {} ne peut pas commencer le {} : un bulletin le paie dès le {}. Rien n'a été écrit.",
@@ -394,7 +394,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         None => du.as_str(),
     };
     let depuis = Jour::lire(commence)
-        .map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", m)))?;
+        .map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", String::from(m))))?;
     let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;

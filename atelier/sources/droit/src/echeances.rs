@@ -15,7 +15,7 @@
 use serde::ser::SerializeStruct;
 
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Une echeance : le jour, ce qui le precede (« avant le », « au plus tard le »), l'heure s'il y en a une (« à midi »),
 /// et le texte depose qui la donne.
@@ -62,7 +62,7 @@ impl serde::Serialize for Echeance {
 }
 
 /// Le `n`-ieme jour ouvrable apres `depuis` (`n` > 0) ou avant lui (`n` < 0), `depuis` exclu.
-pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> Resultat<Jour> {
+pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> R<Jour> {
     let pas = if n < 0 { -1 } else { 1 };
     let (mut jour, mut reste) = (*depuis, n.abs());
     while reste > 0 {
@@ -87,7 +87,7 @@ pub fn dpae(debut: &Jour) -> Echeance {
 /// La remise du contrat a duree determinee d'un engagement qui commence le `debut` : deux jours ouvrables apres
 /// l'embauche (L. 1242-13), ou plus tot si la couche de la convention `idcc` le dit pour ce metier (`code_emploi`, quand
 /// l'engagement ou la fiche le dit).
-pub fn remise_du_contrat(debut: &Jour, idcc: Option<&str>, code_emploi: Option<&str>, chomes: Option<&str>) -> Resultat<Echeance> {
+pub fn remise_du_contrat(debut: &Jour, idcc: Option<&str>, code_emploi: Option<&str>, chomes: Option<&str>) -> R<Echeance> {
     let loi = jour_ouvrable(debut, 2, chomes)?;
     let mut e = Echeance {
         jour: loi,

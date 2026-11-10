@@ -86,8 +86,8 @@ impl<T> From<Result<T, ErreurPas>> for Rendu<T> {
     fn from(r: Result<T, ErreurPas>) -> Rendu<T> {
         match r {
             Ok(v) => Rendu::Ok(v),
-            Err(ErreurPas::SansGrille(m)) => Rendu::SansGrille(socle::echec::phrase_de(&m).to_string()),
-            Err(autre) => Rendu::Erreur(socle::echec::phrase_de(autre.message()).to_string()),
+            Err(ErreurPas::SansGrille(m)) => Rendu::SansGrille(m.phrase),
+            Err(ErreurPas::Autre(m)) => Rendu::Erreur(m.phrase),
         }
     }
 }

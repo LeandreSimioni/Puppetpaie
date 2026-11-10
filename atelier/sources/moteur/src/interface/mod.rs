@@ -213,7 +213,7 @@ fn cle_du_dossier(p: &Path) -> PathBuf {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => p.to_path_buf(),
         Err(e) => {
-            eprintln!("{}", socle::echec::du_disque(&p, &e));
+            eprintln!("{}", String::from(socle::echec::du_disque(&p, &e)));
             p.to_path_buf()
         }
     }
@@ -240,7 +240,7 @@ fn version() -> String {
     let p = installation::logiciel().join("VERSION");
     match std::fs::read_to_string(&p) {
         Ok(v) => compagnie::maj::version_lue(&v),
-        Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e)),
+        Err(e) => format!("illisible ({})", String::from(socle::echec::du_disque(&p, &e))),
     }
 }
 
@@ -270,7 +270,7 @@ fn empreinte() -> String {
             let nom = e.file_name().to_string_lossy().into_owned();
             if matches!(e.file_type(), Ok(t) if t.is_file()) && (nom.ends_with(".css") || nom.ends_with(".js")) {
                 let nom = if dossier.is_empty() { nom } else { format!("{}/{}", dossier, nom) };
-                let sig = socle::fichiers::signature(&ressources().join(&nom));
+                let sig = socle::fichiers::signature(&ressources().join(&nom)).map_err(String::from);
                 noms.push((nom, sig));
             }
         }
@@ -337,7 +337,7 @@ fn fichier_de_la_page(chemin: &str) -> Result<Option<(Vec<u8>, &'static str)>, S
     if !vrai.starts_with(&racine) || !vrai.is_file() {
         return Ok(None);
     }
-    std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e))
+    std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e).into())
 }
 
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`navigateur::dossier_local`).
@@ -353,7 +353,7 @@ fn jeton(local: &Path) -> Result<String, String> {
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e).into()),
     }
     let mut o = [0u8; 24];
     getrandom::fill(&mut o).map_err(|e| format!("Le jeton de la fenetre ne se tire pas au hasard : {}", e))?;
@@ -384,7 +384,7 @@ fn logo_en_ligne(logo: &Path) -> Option<String> {
     match std::fs::read(logo) {
         Ok(o) => Some(format!("data:{};base64,{}", mime, socle::base64::ecrire(&o))),
         Err(e) => {
-            eprintln!("Un logo de l'accueil ne se lit pas : {}", socle::echec::du_disque(&logo, &e));
+            eprintln!("Un logo de l'accueil ne se lit pas : {}", String::from(socle::echec::du_disque(&logo, &e)));
             None
         }
     }
@@ -792,7 +792,7 @@ impl Fenetre {
                 };
             }
             let tableau = routes::gestes::administrateur::rattachees(&inst).map_err(socle::echec::Echec::from).and_then(|rattachees| {
-                let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(|e| e.message))).collect();
+                let par = rattachees.iter().map(|r| (r.clone(), self.file_de(r).tableau().map_err(String::from))).collect();
                 routes::gestes::administrateur::tableau_de(&inst, par)
             });
             return RouteReponse::de(nom, tableau.and_then(|t| Rendu::de(&t)));
@@ -887,7 +887,7 @@ impl Fenetre {
                 };
                 return match socle::forme::lire_texte::<Vec<Argument>>(texte, "Les arguments d'un geste de la fenêtre sont une liste de textes et de oui-non.") {
                     Ok(args) => Reponse::json(200, &self.lanceur(nom, &args)),
-                    Err(m) => refus(400, Classe::DemandeIllisible, m),
+                    Err(m) => refus(400, Classe::DemandeIllisible, m.into()),
                 };
             }
             #[cfg(feature = "atelier")]
@@ -1085,7 +1085,7 @@ impl Fenetre {
         let lire = || -> Result<Vec<u8>, String> {
             let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele: modele.cle().to_string() }).map_err(|e| e.phrase())?;
             let a: routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| x.phrase)?;
-            socle::base64::lire(&a.pdf).map_err(|e| format!("L'aperçu du bulletin ne se lit pas : {}.", e))
+            socle::base64::lire(&a.pdf).map_err(|e| format!("L'aperçu du bulletin ne se lit pas : {}.", String::from(e)))
         };
         match lire() {
             Ok(octets) if octets.starts_with(b"%PDF") => Reponse::nouvelle(200, "application/pdf", octets)

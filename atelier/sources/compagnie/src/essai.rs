@@ -151,8 +151,8 @@ fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> String {
 
 /// La case typee de `t`, ou le refus de sa forme (`droit::fiche::texte_borne!` : les zones de la DPAE), qui ne cite pas la
 /// valeur : la phrase du type l'ouvre entre guillemets, elle en est retiree.
-fn case<T>(cle: &str, lire: fn(&str) -> Result<T, String>, t: &str) -> Result<T, String> {
-    lire(t).map_err(|f| mal_formee(cle, &f.replace(&format!("« {} »", t), "La valeur")))
+fn case<T>(cle: &str, lire: fn(&str) -> socle::echec::R<T>, t: &str) -> Result<T, String> {
+    lire(t).map_err(|f| mal_formee(cle, &f.phrase.replace(&format!("« {} »", t), "La valeur")))
 }
 
 /// Un texte qui peut etre vide : vide, il n'est pas dit.

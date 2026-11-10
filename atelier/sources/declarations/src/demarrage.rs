@@ -123,8 +123,8 @@ pub struct PourDemarrer {
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
 fn champ_entreprise(cle: &str) -> Resultat<crate::champs::Champ> {
     crate::champs::champ("entreprise", cle)
-        .map_err(|e| e.message)?
-        .ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
+        .map_err(String::from)?
+        .ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)).into())
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
@@ -159,7 +159,7 @@ fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Opt
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
 pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> Resultat<bool> {
     let c = champ_entreprise("licence_spectacle")?;
-    let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(|e| e.message)?;
+    let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(String::from)?;
     Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
 
@@ -203,7 +203,7 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> Resultat<Option<droit::nature
 
 /// La fiche typee `fiche` de la fiche `nom`, dans la forme d'une saisie, pour dire ce qui lui manque.
 fn saisie<F: Serialize + ?Sized>(nom: &str, fiche: &F) -> Resultat<crate::champs::Saisie> {
-    crate::champs::Saisie::de_la_fiche(nom, fiche).map_err(|e| e.message)
+    crate::champs::Saisie::de_la_fiche(nom, fiche).map_err(String::from)
 }
 
 /// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
@@ -250,7 +250,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // CE QUE LES ACTES EXIGENT DES FICHES (`exige_par` de `champs-base.json`, que chaque acte lit aussi :
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
-    for m in crate::champs::manquants("entreprise", &saisie("entreprise", ent)?).map_err(|e| e.message)? {
+    for m in crate::champs::manquants("entreprise", &saisie("entreprise", ent)?).map_err(String::from)? {
         if m.cle == documents::conges_spectacles::CLE_ADHERENT && !intermittents {
             continue;
         }
@@ -262,7 +262,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             Some(n) => n,
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("salarie", &saisie("salarie", &s.champs)?).map_err(|e| e.message)? {
+        for m in crate::champs::manquants("salarie", &saisie("salarie", &s.champs)?).map_err(String::from)? {
             out.push(ligne(m, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -274,7 +274,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             Some(t) => t.to_string(),
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("spectacle", &saisie("spectacle", sp)?).map_err(|e| e.message)? {
+        for m in crate::champs::manquants("spectacle", &saisie("spectacle", sp)?).map_err(String::from)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.to_string());
@@ -338,7 +338,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ("premiere_embauche")?;
         let m = match effectif.atteint(11, an) {
-            Err(m) => m,
+            Err(m) => m.into(),
             Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
         };
         out.push(manque("premiere_embauche", libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", ENTREPRISE, Some("premiere_embauche"), m)?);
@@ -384,7 +384,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
             }
         }
     }
-    if let Err(m) = bareme {
+    if let Err(m) = bareme.map_err(String::from) {
         if m.contains("AT/MP") {
             out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), m)?);
         } else if !m.contains("Effectif") {

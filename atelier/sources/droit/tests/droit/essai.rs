@@ -17,7 +17,7 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     // Un CDD de six mois au plus : un jour par semaine, deux semaines au plus.
     let jules = plafond(&cdd, &j("2026-01-12"), Some(&j("2026-06-30")), Some("05"), false, Some("3090")).unwrap();
     assert_eq!(jours(jules.clone()), Some(14));
-    let refus = refuser_au_dela(30, jules.as_ref(), "VARENNE Jules").unwrap_err();
+    let refus = refuser_au_dela(30, jules.as_ref(), "VARENNE Jules").unwrap_err().phrase;
     assert!(refus.contains("L. 1242-10") && refus.contains("14 jours"), "{}", refus);
     assert!(refuser_au_dela(14, jules.as_ref(), "VARENNE Jules").is_ok());
     // Trois semaines de contrat : trois jours ; un contrat d'usage de trois jours : un jour.
@@ -38,5 +38,5 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), true, Some("3090")).unwrap()), Some(59));
     assert_eq!(plafond(&cdi, &debut, None, Some("01"), false, None).unwrap(), None);
     let cadre = plafond(&cdi, &debut, None, Some("04"), false, None).unwrap();
-    assert!(refuser_au_dela(121, cadre.as_ref(), "X").unwrap_err().contains("L. 1221-19"));
+    assert!(refuser_au_dela(121, cadre.as_ref(), "X").unwrap_err().phrase.contains("L. 1221-19"));
 }

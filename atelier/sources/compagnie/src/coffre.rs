@@ -183,7 +183,7 @@ pub type R<T> = Result<T, Echec>;
 
 /// Le refus du coffre tel qu'un geste le rend (`socle::echec::Echec`) : sa classe et sa phrase.
 pub fn vers_route(x: Echec) -> socle::echec::Echec {
-    socle::echec::Echec { classe: Some(x.classe), message: x.message }
+    socle::echec::Echec { classe: Some(x.classe), phrase: x.message, a_part: None }
 }
 
 fn echec(classe: Classe, message: impl Into<String>) -> Echec {
@@ -779,7 +779,7 @@ impl Coffre {
         }
         let brut = lire_octets(&p)?;
         let lu = match std::str::from_utf8(&brut) {
-            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| socle::echec::phrase_de(&m)),
+            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| m.phrase()),
             Err(e) => Err(e.to_string()),
         };
         match lu {
@@ -1196,7 +1196,7 @@ impl Coffre {
             Err(x) => return Err(x),
         };
         let texte = String::from_utf8(clair).map_err(|e| illisible(e.to_string()))?;
-        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.").map(Some).map_err(illisible)
+        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.").map(Some).map_err(|e| illisible(e.into()))
     }
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et

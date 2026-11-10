@@ -562,7 +562,7 @@ fn ranger(mut t: Table) -> Table {
 fn table(nom: &str) -> R<&'static [Champ]> {
     let chemin = dossier_du_code().join("champs-base.json");
     let t = TABLE
-        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").map(ranger))
+        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").map(ranger).map_err(String::from))
         .as_ref()
         .map_err(|m| plain(m.clone()))?;
     // Lu une fois par processus (le code livre ne change pas sous la fenetre), mais note a chaque usage : un calcul
@@ -1742,7 +1742,7 @@ fn faute_des_jours(v: &Valeur) -> Option<String> {
         _ => Err(illisible.clone()),
     };
     let faute = match lus {
-        Ok(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err(),
+        Ok(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(String::from),
         Err(e) => Some(e),
     };
     faute.map(|e| match e.split_once(" : ") {
@@ -1931,7 +1931,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     }
     // LE JOUR DU VERSEMENT DES SALAIRES se lit comme la paie le lira (`droit::versement`).
     if droit::versement::CLES.contains(&c.cle) {
-        return Ok(droit::versement::Versement::lire(v).err());
+        return Ok(droit::versement::Versement::lire(v).err().map(String::from));
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.

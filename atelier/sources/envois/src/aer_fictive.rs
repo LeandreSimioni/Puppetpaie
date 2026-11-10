@@ -57,7 +57,7 @@ const BLANC: &str = "#FFFFFF";
 
 /// Une rubrique que la DSN doit porter (`quoi` la dit en mots, `rubrique` va a part).
 fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> Resultat<&'a str> {
-    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique))
+    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique).into())
 }
 
 /// Le contrat releve-t-il de l'attestation Cinema Spectacle ? Ce que France Travail lit de la DSN : un CDD (40.007 = 02)
@@ -93,7 +93,7 @@ fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois:
     let Some(fichier) = l.fichier.filter(|f| !f.is_empty()) else { return Ok(None) };
     let p = std::path::Path::new(&fichier);
     let chemin = if p.is_absolute() { p.to_path_buf() } else { ctx.racine.join("sorties").join(m.to_string()).join(&fichier) };
-    declarations::dsn_lue::lire_une_dsn(&chemin).map_err(|e| e.message)
+    declarations::dsn_lue::lire_une_dsn(&chemin).map_err(String::from)
 }
 
 /// Le jour du premier versement de l'individu `nir` dans la DSN `d`.
@@ -534,7 +534,7 @@ fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom:
 /// DSN declare la fin d'un contrat d'usage (cinq periodes par PDF, les mois anterieurs du contrat lus dans les DSN
 /// reelles deposees). `None` : aucune AER Cinema Spectacle n'est due ce mois-ci, France Travail ne publie rien.
 pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> Resultat<Option<Vec<u8>>> {
-    let d = declarations::dsn_lue::lire(dsn, "").map_err(|e| e.message)?;
+    let d = declarations::dsn_lue::lire(dsn, "").map_err(String::from)?;
     let le_mois = d.mois.ok_or("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)")?;
     let mois = socle::mois::Mois::lire(mois)?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.

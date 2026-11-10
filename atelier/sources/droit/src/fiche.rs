@@ -17,7 +17,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -34,7 +35,7 @@ pub trait Lue<T> {
     }
 
     /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`).
-    fn exigee(&self, cle: &str) -> Resultat<&T> {
+    fn exigee(&self, cle: &str) -> R<&T> {
         self.dite().ok_or_else(|| socle::fichiers::absent(cle))
     }
 
@@ -63,7 +64,7 @@ pub trait Lue<T> {
     }
 
     /// Le texte d'une case que l'acte exige : vide, le refus la nomme (`cle`).
-    fn ecrite<'a>(&'a self, cle: &str) -> Resultat<&'a str>
+    fn ecrite<'a>(&'a self, cle: &str) -> R<&'a str>
     where
         T: AsRef<str> + 'a,
     {
@@ -137,17 +138,17 @@ pub enum Montant {
 
 impl Montant {
     /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un flottant ou un texte illisible se refuse.
-    pub fn decimal(&self) -> Resultat<Decimal> {
+    pub fn decimal(&self) -> R<Decimal> {
         match self {
             Montant::Entier(i) => Ok(Decimal::from(*i)),
             Montant::Naturel(u) => Ok(Decimal::from(*u)),
             Montant::Flottant(x) => socle::num::dec_f64(*x),
-            Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::num::illisible(s)),
+            Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
         }
     }
 
     /// Le decimal, un flottant gardant son echelle telle qu'elle s'ecrit (`130.0`) ; un texte se lit sans virgule.
-    pub fn avec_echelle(&self) -> Resultat<Decimal> {
+    pub fn avec_echelle(&self) -> R<Decimal> {
         match self {
             Montant::Flottant(x) => socle::num::dec_texte(&socle::date::repr_flottant(*x)),
             Montant::Texte(s) => socle::num::dec_texte(s),
@@ -156,7 +157,7 @@ impl Montant {
     }
 
     /// Le decimal, un flottant par sa forme la plus courte (`socle::num::dec_f64`) ; un texte se lit sans virgule.
-    pub fn dec(&self) -> Resultat<Decimal> {
+    pub fn dec(&self) -> R<Decimal> {
         match self {
             Montant::Flottant(x) => socle::num::dec_f64(*x),
             Montant::Texte(s) => socle::num::dec_texte(s),
@@ -166,21 +167,21 @@ impl Montant {
 
 
     /// Le flottant ; un texte se lit sans virgule.
-    pub fn flottant(&self) -> Resultat<f64> {
+    pub fn flottant(&self) -> R<f64> {
         match self {
             Montant::Entier(i) => Ok(*i as f64),
             Montant::Naturel(u) => Ok(*u as f64),
             Montant::Flottant(x) => Ok(*x),
-            Montant::Texte(s) => s.trim().parse::<f64>().map_err(|_| socle::num::illisible(s)),
+            Montant::Texte(s) => s.trim().parse::<f64>().map_err(|_| socle::echec::refus(socle::num::illisible(s))),
         }
     }
 
     /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
     /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
-    pub fn entier(&self) -> Resultat<Option<i64>> {
+    pub fn entier(&self) -> R<Option<i64>> {
         match self {
             Montant::Entier(i) => Ok(Some(*i)),
-            Montant::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::num::illisible(s)),
+            Montant::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
             Montant::Naturel(_) | Montant::Flottant(_) => Ok(None),
         }
     }
@@ -255,9 +256,9 @@ macro_rules! texte_borne {
     (@commun $nom:ident, $unite:literal) => {
         impl $nom {
             /// Le texte `texte`, ou ce qui le refuse.
-            pub fn lire(texte: &str) -> Result<$nom, String> {
+            pub fn lire(texte: &str) -> R<$nom> {
                 match Self::faute(texte) {
-                    Some(f) => Err(f),
+                    Some(f) => Err(socle::echec::refus(f)),
                     None => Ok($nom(texte.to_string())),
                 }
             }
@@ -284,7 +285,7 @@ macro_rules! texte_borne {
 
         impl<'de> Deserialize<'de> for $nom {
             fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $nom::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
             }
         }
 
@@ -459,10 +460,10 @@ impl EchelonCcneac {
     }
 
     /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
-    pub fn lire(texte: &str) -> Result<EchelonCcneac, String> {
+    pub fn lire(texte: &str) -> R<EchelonCcneac> {
         match socle::num::entier_de_chiffres(texte.trim()).filter(|n| (1..=12).contains(n)) {
             Some(n) => Ok(EchelonCcneac(n as u8)),
-            None => Err(format!(
+            None => Err(socle::refus!(
                 "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
                 texte
             )),
@@ -474,7 +475,7 @@ impl EchelonCcneac {
         if texte.is_empty() {
             return None;
         }
-        Self::lire(texte).err()
+        Self::lire(texte).err().map(|e| e.phrase)
     }
 }
 
@@ -492,7 +493,7 @@ impl<'de> Deserialize<'de> for EchelonCcneac {
             socle::forme::NombreEcrit::Flottant(x) => socle::date::repr_flottant(x),
             socle::forme::NombreEcrit::Texte(t) => t,
         };
-        EchelonCcneac::lire(&ecrit).map_err(serde::de::Error::custom)
+        EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
@@ -515,7 +516,7 @@ impl RaisonSociale {
 
     /// Ses deux lignes de la DPAE (`LIGNE` chacune au plus) : la premiere aussi longue que les mots le permettent, la
     /// seconde le reste, vide quand tout tient sur la premiere ; sinon, la phrase qui dit quoi faire.
-    pub fn en_deux_lignes(texte: &str) -> Result<(String, String), String> {
+    pub fn en_deux_lignes(texte: &str) -> R<(String, String)> {
         if caracteres(texte) <= Self::LIGNE {
             return Ok((texte.to_string(), String::new()));
         }
@@ -523,7 +524,7 @@ impl RaisonSociale {
         let deux = (1..=Self::LIGNE).rev().find(|&i| c[i] == ' ').map(|i| (c[..i].iter().collect::<String>(), c[i + 1..].iter().collect::<String>()));
         match deux {
             Some((premiere, seconde)) if caracteres(&seconde) <= Self::LIGNE => Ok((premiere, seconde)),
-            _ => Err(format!(
+            _ => Err(socle::refus!(
                 "« {} » ne tient pas en deux lignes de {} caractères coupées entre deux mots, ce que la DPAE écrit (norme DPAE \
 v5.3, zone « Nom ou raison sociale », lignes 1 et 2). Abrégez le mot le plus long, ou la fin",
                 texte,
@@ -544,7 +545,7 @@ Abrégez-la",
                 Self::LONGUEUR
             ));
         }
-        Self::en_deux_lignes(texte).err()
+        Self::en_deux_lignes(texte).err().map(|e| e.phrase)
     }
 }
 
@@ -1194,7 +1195,7 @@ pub struct AVenir<T> {
 /// LA VALEUR D'AVANT DIT UN CHANGEMENT : celle qui precede la suite des valeurs que `meme` tient pour celle en vigueur
 /// (une meme valeur reecrite, d'une autre provenance, n'en est pas une), jusqu'a la veille du debut de cette suite ; vide,
 /// il n'y en a pas. Ses reecritures restent dans `toutes`.
-pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T) -> bool) -> Resultat<Temps<T>> {
+pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T) -> bool) -> R<Temps<T>> {
     let mut toutes: Vec<Datee<T>> = Vec::new();
     for e in valeurs_datees(liste) {
         if toutes.last().is_some_and(|d| d.depuis == e.depuis) {
@@ -1799,7 +1800,7 @@ impl ChampsSalarie {
     }
 
     /// Le pays de naissance tel que la DSN le declare (S21.G00.30.015, `socle::pays::de_naissance`).
-    pub fn pays_de_naissance(&self) -> Resultat<Option<String>> {
+    pub fn pays_de_naissance(&self) -> R<Option<String>> {
         let qui = [self.prenom.portee(), self.nom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" ").trim().to_string();
         self.pays_naissance.as_ref().map(|code| socle::pays::de_naissance(code, &qui)).transpose()
     }
@@ -1829,7 +1830,7 @@ impl ChampsEntreprise {
 
     /// Le NIC du siege, puis celui de chaque autre etablissement : une DSN par etablissement. Chacun s'exige : sans lui,
     /// la DSN de l'etablissement ne s'ecrit pas.
-    pub fn nics(&self) -> Resultat<Vec<String>> {
+    pub fn nics(&self) -> R<Vec<String>> {
         std::iter::once(self.nic.ecrite("nic")).chain(self.secondaires().iter().map(|e| e.nic.ecrite("etablissements.nic"))).map(|n| n.map(str::to_string)).collect()
     }
 
@@ -1990,7 +1991,7 @@ pub type Spectacles = FichierDeFiches<IdSpectacle, FicheSpectacleDatee>;
 /// LA LECTURE D'UN FICHIER DE FICHES (`config/entreprise.json` en `FicheEntrepriseDatee`, `config/salaries.json` en
 /// `Salaries`, `config/spectacles.json` en `Spectacles`), la seule : `fichier` le nomme dans les refus, qui disent la cle
 /// fautive jusqu'a sa case et quoi faire.
-pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str) -> Resultat<T> {
+pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str) -> R<T> {
     socle::forme::lire_fichier_en_phrase(chemin, |cle, detail| refus_de_fiche(fichier, cle, detail))
 }
 
@@ -2012,13 +2013,13 @@ fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
 
 /// Les champs d'une fiche a un jour (ou toute forme d'une fiche), lus de `v` (une charge, une fiche composee) : le
 /// refus nomme la cle jusqu'a sa case.
-pub fn lire_champs<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), quoi: &str) -> Resultat<T> {
+pub fn lire_champs<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), quoi: &str) -> R<T> {
     socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_de_fiche(quoi, chemin, detail))
 }
 
 /// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se
 /// refuse en nommant la cle jusqu'a sa case, et rien n'est ecrit.
-pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> Resultat<T> {
+pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> R<T> {
     socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
 }
 

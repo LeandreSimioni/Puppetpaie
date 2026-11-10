@@ -161,7 +161,7 @@ impl std::error::Error for ErreurGoogle {}
 
 impl From<socle::echec::Echec> for ErreurGoogle {
     fn from(e: socle::echec::Echec) -> Self {
-        ErreurGoogle { classe: e.classe, message: e.message, statut: None }
+        ErreurGoogle { classe: e.classe, message: e.into(), statut: None }
     }
 }
 

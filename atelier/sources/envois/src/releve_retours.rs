@@ -57,7 +57,7 @@ impl Panne {
             Some(c) => c,
             None => Classe::Illisible,
         };
-        Panne::de(classe, e.message)
+        Panne::de(classe, e.into())
     }
 
     pub fn est_api(&self) -> bool {
@@ -66,7 +66,7 @@ impl Panne {
 
     /// La panne comme un refus de route : sa classe et sa phrase.
     pub fn en_echec(self) -> Echec {
-        Echec { classe: Some(self.classe), message: self.message }
+        Echec { classe: Some(self.classe), phrase: self.message, a_part: None }
     }
 }
 

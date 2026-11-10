@@ -41,7 +41,7 @@ fn qui_est_declare_a_la_caisse() {
     assert!(!affilie(&cdd, &staffeur("3090"), &debut, Some(&trois_mois)).unwrap(), "la liste 7 ne le nomme pas");
     assert!(!affilie(&cdd, &sans_metier, &debut, Some(&trois_mois)).unwrap(), "un metier hors de la nomenclature");
     assert!(!affilie(&cdi, &comedien, &debut, None).unwrap(), "un CDI");
-    assert!(affilie(&cdd, &comedien, &debut, None).unwrap_err().contains("sans terme"));
+    assert!(affilie(&cdd, &comedien, &debut, None).unwrap_err().phrase.contains("sans terme"));
 }
 
 /// La fiche telle que la paie la lit : ses champs, et la convention de l'employeur.

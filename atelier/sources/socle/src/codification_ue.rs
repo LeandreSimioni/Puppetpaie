@@ -22,7 +22,7 @@
 //! pas le pays de nationalite, seulement `30.013` : rien a inventer. Un pays de la liste ecrit la ne compte pas comme
 //! hors liste (il se choisit dans la liste, la codification s'en deduit) ; la France non plus (01 refuse).
 
-use crate::num::Resultat;
+use crate::echec::{refus, R};
 
 /// Les Etats membres de l'Union (TUE art. 52 § 1, sans le Royaume-Uni), en codes ISO a deux lettres, la France a part.
 pub const UNION: [&str; 26] = [
@@ -77,7 +77,7 @@ impl Nationalite {
 /// Ce qui ne va pas dans le pays de nationalite ecrit hors de la liste (`pays_nationalite_hors_liste`), avant toute
 /// codification : un pays de la liste a cote, ou un pays que la liste connait (son nom ou son code). `None` : rien a
 /// dire (pas de pays hors liste, ou un pays que la liste ne connait pas).
-pub fn faute_hors_liste(fiche: &Nationalite) -> Resultat<Option<String>> {
+pub fn faute_hors_liste(fiche: &Nationalite) -> R<Option<String>> {
     let Some(hors) = fiche.hors.clone() else { return Ok(None) };
     if let Some(pays) = fiche.pays.clone() {
         return Ok(Some(format!(
@@ -110,60 +110,60 @@ pub fn faute_hors_liste(fiche: &Nationalite) -> Resultat<Option<String>> {
 /// (la fiche ne dit pas si c'est l'EEE ou le reste du monde) ; un pays et un code qui se contredisent. Un pays de
 /// nationalite hors de la liste livree (`pays.rs`) refuse aussi, sauf ecrit comme tel (`pays_nationalite_hors_liste`) :
 /// la codification est alors celle que l'administrateur a choisie.
-pub fn codification_ue(fiche: &Nationalite) -> Resultat<String> {
+pub fn codification_ue(fiche: &Nationalite) -> R<String> {
     let code = fiche.code.clone();
     if let Some(m) = faute_hors_liste(fiche)? {
-        return Err(m);
+        return Err(refus(m));
     }
     if let Some(hors) = fiche.hors.clone() {
         return match code.as_deref() {
-            None => Err(format!(
+            None => Err(refus(format!(
                 "Le pays de nationalité de {} (« {} ») n'est pas dans la liste du logiciel : la nationalité que la DSN \
                  déclare ne s'en déduit pas. Dans sa fiche, la choisir (S21.G00.30.013, cahier technique DSN p. 173 : \
                  02 Union européenne, 03 Espace économique européen hors Union, 04 reste du monde).",
                 fiche.qui,
                 hors
-            )),
-            Some("01") => Err(format!(
+            ))),
+            Some("01") => Err(refus(format!(
                 "La fiche de {} dit la nationalité française (01) et un pays de nationalité hors de la liste (« {} ») : \
                  la France est dans la liste. Choisir 02, 03 ou 04, ou la France dans « Pays de nationalité ».",
                 fiche.qui,
                 hors
-            )),
+            ))),
             Some(c) => Ok(c.to_string()),
         };
     }
     let Some(pays) = fiche.pays.clone() else {
         return match code.as_deref() {
             None => Err(crate::fichiers::absent("code_nationalite_dsn")),
-            Some("03") => Err(format!(
+            Some("03") => Err(refus(format!(
                 "La nationalité de {} est codée 03 sans pays de nationalité. La norme DSN \
                  fait du 03 l'Espace économique européen hors Union (Islande, Liechtenstein, Norvège), et le reste du monde \
                  est 04 (S21.G00.30.013, cahier technique p. 173). Dans sa fiche, indiquer son pays de nationalité, ou \
                  choisir de nouveau la nationalité (04 pour un pays hors Union et hors EEE).",
                 fiche.qui
-            )),
+            ))),
             Some(c) => Ok(c.to_string()),
         };
     };
     // LE PAYS SE LIT DANS LA LISTE LIVREE (`pays.rs`) : un code qu'elle ne connait pas refuse ; un territoire
     // prend la codification de son pays de rattachement.
     let Some(p) = crate::pays::du_code(&pays)? else {
-        return Err(crate::pays::inconnu_nationalite(&format!("Le pays de nationalité de {}", fiche.qui), &pays));
+        return Err(refus(crate::pays::inconnu_nationalite(&format!("Le pays de nationalité de {}", fiche.qui), &pays)));
     };
     let iso = p.code.clone();
     let attendu = crate::pays::codification(&p);
     match code.as_deref() {
         // Un code 03 ou 02 que le pays contredit d'un cran (03 pour un pays hors EEE, 02 pour l'Islande, le
         // Liechtenstein ou la Norvege) se recode depuis le pays : le pays tranche.
-        Some(c) if c != attendu && !(c == "03" && attendu == "04") && !(c == "02" && attendu == "03") => Err(format!(
+        Some(c) if c != attendu && !(c == "03" && attendu == "04") && !(c == "02" && attendu == "03") => Err(refus(format!(
             "La fiche de {} dit la nationalité {} et le pays de nationalité {}, qui se déclare {} (S21.G00.30.013 : 01 \
              France, 02 Union européenne, 03 EEE hors Union, 04 reste du monde). Corriger l'un ou l'autre dans sa fiche.",
             fiche.qui,
             c,
             iso,
             attendu
-        )),
+        ))),
         _ => Ok(attendu.to_string()),
     }
 }

@@ -65,6 +65,7 @@ pub fn commande(args: &[String]) -> i32 {
         return 2;
     };
     let r = socle::forme::lire_fichier::<DescriptionLue>(Path::new(description), "La description des bulletins ne se lit pas.")
+        .map_err(String::from)
         .and_then(|d| fabriquer(d, gabarit, Path::new(dossier)));
     match r {
         Ok(faits) => {
@@ -451,7 +452,7 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
     let mut jours_travailles: BTreeSet<Jour> = BTreeSet::new();
     for (d, f) in &b.dates {
         for k in 0..=f.moins(d) {
-            jours_travailles.insert(d.plus_jours(k).map_err(|m| format!("bulletin {} : {}", b.rang, m))?);
+            jours_travailles.insert(d.plus_jours(k).map_err(|m| format!("bulletin {} : {}", b.rang, String::from(m)))?);
         }
     }
     let jours = Decimal::from(jours_travailles.len());
@@ -459,14 +460,14 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> Resultat<Calcule> {
     // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
     // prorata des jours remuneres pour les autres intermittents.
     let t = |j: &Jour| (j.an, j.mois, j.jour);
-    let resoudre = |annee: i32| pss(annee);
+    let resoudre = |annee: i32| pss(annee).map_err(socle::echec::Echec::from);
     let plafond = if b.permanent {
         droit::plafond::plafond_permanent(t(&b.debut), t(&b.fin), None, &resoudre)
     } else {
         let dates: Vec<_> = jours_travailles.iter().map(t).collect();
         droit::plafond::plafond_urssaf(t(&b.debut), t(&b.fin), jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
-    .map_err(|m| format!("bulletin {} : {}", b.rang, m))?;
+    .map_err(|m| format!("bulletin {} : {}", b.rang, String::from(m)))?;
     let assiette_csg = eur2(brut * assiette_csg());
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);

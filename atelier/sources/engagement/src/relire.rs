@@ -42,7 +42,7 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
     };
     let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {
-        return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paies"));
+        return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paies").into());
     }
     for (e, p) in engs.iter_mut().zip(paies) {
         // Le numero est celui de l'engagement, pose quand le contrat part ; une paie validee avant ne le porte pas.

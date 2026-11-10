@@ -148,7 +148,7 @@ impl Norme {
         let b = base()?;
         match b.versions.iter().find(|(k, _)| *k == self.version) {
             Some((_, v)) => Ok(lire(v)),
-            None => Err(socle::echec::livree(BASE, &format!("versions.{}", self.version))),
+            None => Err(socle::echec::livree(BASE, &format!("versions.{}", self.version)).into()),
         }
     }
 

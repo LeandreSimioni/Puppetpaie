@@ -45,7 +45,7 @@ fn os(chemin: &Path, e: std::io::Error) -> Echec {
     erreur(Classe::Disque, socle::echec::du_disque(chemin, &e))
 }
 
-fn valeur(m: String) -> Echec {
+fn valeur(m: impl Into<String>) -> Echec {
     erreur(Classe::Illisible, m)
 }
 

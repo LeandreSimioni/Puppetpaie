@@ -257,7 +257,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 /// code et du meme taux que celle en vigueur, d'ou qu'elle vienne, n'est pas un changement.
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
     let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
-    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()));
+    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()).map_err(|e| e.phrase));
     let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| erreur(Classe::Illisible, m))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {
@@ -285,7 +285,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
-fn dire(lu: Option<Result<droit::forme_bareme::TauxAtmp, String>>, an: i32, nom: &Option<String>) -> (String, String) {
+fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: i32, nom: &Option<String>) -> (String, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
             Some(v) => (format!("Taux AT/MP {} : {}{}.", an, en_pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
@@ -294,7 +294,7 @@ fn dire(lu: Option<Result<droit::forme_bareme::TauxAtmp, String>>, an: i32, nom:
                 format!("999ZZ : la compagnie n'a pas encore reçu de notification de la CARSAT. La DSN le déclare ainsi, sans taux. Aucun texte ne dit quel taux le bulletin cotise en attendant : le logiciel ne calcule pas la paie de {} tant que le code et le taux notifiés ne sont pas inscrits.", an),
             ),
         },
-        Some(Err(m)) => (format!("Taux AT/MP {} : à inscrire.", an), m),
+        Some(Err(m)) => (format!("Taux AT/MP {} : à inscrire.", an), m.into()),
         None => (
             format!("Taux AT/MP {} : pas encore dit.", an),
             format!("Le code risque et le taux AT/MP de {} ne sont pas dits : ils sont sur la notification de la CARSAT, et s'inscrivent ici avec la date à partir de laquelle ils valent.", an),

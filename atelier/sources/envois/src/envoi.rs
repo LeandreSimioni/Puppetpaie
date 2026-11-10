@@ -144,7 +144,7 @@ pub fn formater(modele: &str, champs: &[(&str, String)]) -> String {
 }
 
 fn cle_absente(cle: &str) -> String {
-    socle::fichiers::absent(cle)
+    socle::fichiers::absent(cle).into()
 }
 
 /// Ce que le salarie declare a son actualisation France Travail du mois (`recap_france_travail`) : une ligne par
@@ -787,7 +787,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
         if adresse_simple(a) {
             Ok(())
         } else {
-            Err(socle::echec::a_la_cle("Une adresse courriel ne se lit pas : la corriger.", "adresse", a))
+            Err(socle::echec::a_la_cle("Une adresse courriel ne se lit pas : la corriger.", "adresse", a).into())
         }
     };
     adresse(expediteur)?;
@@ -971,7 +971,7 @@ fn frontiere_libre(base: String, texte: &[u8]) -> String {
 /// Huit octets des aleas du systeme ; un systeme qui n'en donne pas refuse.
 fn huit_aleas() -> Result<u64, String> {
     let mut o = [0u8; 8];
-    socle::temps::aleas(&mut o).map_err(|e| format!("Le systeme ne donne pas d'aleas : {}.", e))?;
+    socle::temps::aleas(&mut o).map_err(|e| format!("Le systeme ne donne pas d'aleas : {}.", String::from(e)))?;
     Ok(u64::from_le_bytes(o))
 }
 

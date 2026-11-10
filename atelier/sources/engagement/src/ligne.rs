@@ -62,9 +62,9 @@ impl Chiffre {
             Chiffre::Nombre(n) => match (n.as_i64(), n.as_u64()) {
                 (Some(i), _) => Ok(Decimal::from(i)),
                 (_, Some(u)) => Ok(Decimal::from(u)),
-                _ => socle::num::dec_f64(n.en_f64()),
+                _ => socle::num::dec_f64(n.en_f64()).map_err(String::from),
             },
-            Chiffre::Texte(s) => socle::num::dec_texte(s),
+            Chiffre::Texte(s) => socle::num::dec_texte(s).map_err(String::from),
         }
     }
 
@@ -141,7 +141,7 @@ impl DateDeLigne {
 
     /// Le jour lu.
     pub fn lu(&self) -> Resultat<Jour> {
-        Jour::lire(self.jour())
+        Jour::lire(self.jour()).map_err(String::from)
     }
 
     /// Le lieu que la date dit d'elle-meme, tel qu'il est ecrit ; `None` s'il est vide.
@@ -384,7 +384,7 @@ pub struct Marques {
 
 /// La forme canonique d'un decimal : sa forme ecrite normalisee (`socle::num::nombre`).
 fn canon(x: Decimal) -> Resultat<Decimal> {
-    socle::num::dec_texte(&socle::num::nombre(x))
+    socle::num::dec_texte(&socle::num::nombre(x)).map_err(String::from)
 }
 
 impl LignePaie {
@@ -991,7 +991,7 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
         let Some(code) = l.rubrique.clone() else {
             return Err(refus("elle dit sa rubrique (« rubrique »).".to_string()));
         };
-        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(refus)?).map_err(refus)?;
+        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(refus)?).map_err(|e| refus(e.into()))?;
         out.push(l.ranger(&r).map_err(refus)?);
     }
     Ok(out)

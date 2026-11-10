@@ -39,7 +39,7 @@ const TYPES: [(&str, &str); 5] = depot::TYPES;
 /// Les paies validees du mois, a leurs numeros declares.
 fn saisie_aux_numeros_declares(ctx: &Contexte, mois: &str) -> Result<Vec<Paie>, String> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1).map_err(|r| r.message)
+    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1).map_err(String::from)
 }
 
 // ------------------------------------------------------------------ recapitulatif_dsn
@@ -169,7 +169,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) 
                 Ok(e) if e == nic => {}
                 Ok(_) => continue,
                 Err(m) => {
-                    sans_comparaison = Some(m);
+                    sans_comparaison = Some(m.into());
                     break;
                 }
             }

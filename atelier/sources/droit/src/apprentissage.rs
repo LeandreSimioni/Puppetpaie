@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::fiche::{ChampsEntreprise, Lue};
 use crate::source::forme_notee;
@@ -46,7 +46,7 @@ pub const MILLESIME_ASSOCIATIONS_REDEVABLES: i32 = 2026;
 pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: (i32, u32) = (2026, 3);
 
 /// La table MNATA livree : (code, libelle).
-pub fn motifs_mnata() -> Resultat<Vec<(String, String)>> {
+pub fn motifs_mnata() -> R<Vec<(String, String)>> {
     static CACHE: OnceLock<FormeGardee<TableMnata>> = OnceLock::new();
     let t = forme_en_cache(&CACHE, "mnata-base.json", "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
     Ok(t.motifs.iter().map(|m| (m.code.trim().to_string(), m.libelle.trim().to_string())).collect())
@@ -59,14 +59,14 @@ pub fn champ_du_motif() -> String {
 
 /// Le motif MNATA que dit la fiche entreprise, avec son libelle, lu dans la table livree : `None` quand la fiche n'en dit
 /// pas ; refus quand il n'est pas dans la table (la DSN n'admet que ses valeurs, CRE-11 de 44.004).
-pub fn motif_de_la_fiche(ent: &ChampsEntreprise) -> Resultat<Option<(String, String)>> {
+pub fn motif_de_la_fiche(ent: &ChampsEntreprise) -> R<Option<(String, String)>> {
     let Some(motif) = ent.taxe_apprentissage_motif_non_assujettissement.code() else {
         return Ok(None);
     };
     let motifs = motifs_mnata()?;
     match motifs.iter().find(|(c, _)| *c == motif) {
         Some(m) => Ok(Some(m.clone())),
-        None => Err(format!(
+        None => Err(socle::refus!(
             "Le motif de non-assujettissement a la taxe d'apprentissage de la fiche (« {} ») n'est pas dans la table MNATA \
 de la DSN (S21.G00.44.004 : {}). {}. Rien n'est ecrit.",
             motif,
@@ -83,7 +83,7 @@ de la DSN (S21.G00.44.004 : {}). {}. Rien n'est ecrit.",
 /// bordereau de chaque mois (`dsn::lignes_bordereau`, `dsn::lignes_regularisees`), le solde d'avril
 /// (`dsn::solde_taxe_apprentissage`) et le bloc 44 de decembre (`blocs`) lisent cette meme decision : le fichier des
 /// organismes garde ses lignes 992/993, comme ses lignes qui dependent du statut ou de l'effectif.
-pub fn taxe_apprentissage_non_due(ent: &ChampsEntreprise, an: i32) -> Resultat<bool> {
+pub fn taxe_apprentissage_non_due(ent: &ChampsEntreprise, an: i32) -> R<bool> {
     Ok(motif_de_la_fiche(ent)?.is_some_and(|(code, _)| !(code == MNATA_ASSOCIATIONS && an >= MILLESIME_ASSOCIATIONS_REDEVABLES)))
 }
 
@@ -93,7 +93,7 @@ pub fn taxe_apprentissage_non_due(ent: &ChampsEntreprise, an: i32) -> Resultat<b
 /// et la seule : le bareme du contrat (`bareme::bareme_taxe_apprentissage` : la ligne du bulletin et la cotisation
 /// individuelle 130 du bloc 81) et le bordereau (`dsn::lignes_bordereau`, `dsn::lignes_regularisees` : CTP 992 et 993)
 /// la lisent ici, pour que les trois faces disent la meme chose.
-pub fn taxe_apprentissage_non_due_au_mois(ent: &ChampsEntreprise, an: i32, mois: u32) -> Resultat<bool> {
+pub fn taxe_apprentissage_non_due_au_mois(ent: &ChampsEntreprise, an: i32, mois: u32) -> R<bool> {
     Ok(motif_de_la_fiche(ent)?.is_some_and(|(code, _)| !(code == MNATA_ASSOCIATIONS && (an, mois) >= PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES)))
 }
 

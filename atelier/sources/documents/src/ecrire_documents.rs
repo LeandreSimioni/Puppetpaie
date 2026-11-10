@@ -15,11 +15,7 @@ use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
 
 fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
-    erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
-}
-
-fn valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
+    Echec { classe: Some(Classe::Disque), ..socle::echec::du_disque(&chemin, &e) }
 }
 
 /// La suite des numeros de chaque annee, sous la racine de la compagnie.
@@ -72,7 +68,7 @@ pub fn compteurs(racine: &std::path::Path) -> R<Compteurs> {
     socle::forme::lire_fichier_en_phrase(&p, |cle, _| {
         format!("Les compteurs de numéros de la compagnie (config/compteurs.json) ne se lisent pas{} : le fichier se corrige à la main.", if cle.is_empty() { String::new() } else { format!(" ({})", cle) })
     })
-    .map_err(valeur)
+    .map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })
 }
 
 /// `Contexte.prochain_continu` : une sequence qui ne repart pas a 1 chaque an. La LECTURE balaie toutes les

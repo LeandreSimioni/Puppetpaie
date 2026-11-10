@@ -67,7 +67,7 @@ impl ErreurFilet {
 
     /// L'exception qui remonte de la route.
     pub fn en_echec(self) -> Echec {
-        Echec { classe: self.classe.or(Some(Classe::Filet)), message: self.message }
+        Echec { classe: self.classe.or(Some(Classe::Filet)), phrase: self.message, a_part: None }
     }
 }
 
@@ -262,7 +262,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
             Ok(t) => match socle::forme::lire_texte::<RefusDuServeur>(t.trim_start_matches('\u{feff}'), "corps de la réponse illisible") {
                 Ok(r) if !r.erreur.is_empty() => r.erreur,
                 Ok(_) => propre,
-                Err(e) => format!("{} ({})", propre, socle::echec::phrase_de(&e).trim_end_matches('.')),
+                Err(e) => format!("{} ({})", propre, e.phrase().trim_end_matches('.')),
             },
         },
     }
@@ -296,7 +296,7 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action:
                 Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
             };
             socle::forme::lire_texte::<T>(texte, "réponse illisible")
-                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", socle::echec::phrase_de(&e).trim_end_matches('.')), 0))
+                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase().trim_end_matches('.')), 0))
         }
         Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), code)),
         Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),

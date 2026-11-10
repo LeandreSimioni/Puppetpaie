@@ -45,7 +45,7 @@ fn avec_etat<T: serde::Serialize>(classe: Classe, message: impl Into<String>, et
     struct Etat<'a, T> {
         etat: &'a T,
     }
-    Echec { classe: Some(classe), message: socle::echec::avec(message, Etat { etat }) }
+    Echec { classe: Some(classe), phrase: socle::echec::avec(message, Etat { etat }), a_part: None }
 }
 
 // -------------------------------------------------------- la repetition avant l'irreversible

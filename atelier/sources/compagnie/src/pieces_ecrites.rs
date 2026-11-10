@@ -13,10 +13,6 @@ fn os(chemin: &Path, e: std::io::Error) -> Echec {
     erreur(Classe::Disque, socle::echec::du_disque(chemin, &e))
 }
 
-fn valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
-}
-
 /// Le journal des pieces ecrites, sous la racine de la compagnie.
 const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
 
@@ -66,7 +62,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
                 socle::fichiers::nom_du(cible),
                 match socle::date::Jour::lire(&le) {
                     Ok(j) => j.jj_mm_aaaa(),
-                    Err(e) => return Err(valeur(e)),
+                    Err(e) => return Err(Echec { classe: Some(Classe::Illisible), ..e }),
                 }
             ),
         )),
@@ -88,7 +84,7 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
     if !p.exists() {
         return Ok(std::collections::BTreeMap::new());
     }
-    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(valeur)
+    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })
 }
 
 /// QUAND LE MOTEUR A ECRIT CETTE PIECE (`AAAA-MM-JJTHH:MM`), lu au journal des ecritures (`noter_piece_ecrite`) ; `None`

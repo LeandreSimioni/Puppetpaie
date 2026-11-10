@@ -2,7 +2,7 @@
 //! nominatif (cotisation 129), le bordereau (CTP 987) et le bloc S21.G00.44 (013/014). Le droit la juge sur ce que la
 //! DSN ecrit d'un contrat : nature (40.007), dispositif (40.008), motif de recours (40.021).
 
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::natures::Nature;
 
@@ -16,9 +16,9 @@ pub fn le_contrat(numero: Option<&str>, salarie: &str) -> String {
 }
 
 /// Un contrat ouvre-t-il la contribution CPF-CDD ? `qui` nomme le contrat dans un refus (`le_contrat`).
-pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Option<&str>, qui: &str) -> Resultat<bool> {
+pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Option<&str>, qui: &str) -> R<bool> {
     let Some(nature) = nature else {
-        return Err(format!("La nature de {} ne dit pas son code (S21.G00.40.007) : le signaler au développeur.", qui));
+        return Err(socle::refus!("La nature de {} ne dit pas son code (S21.G00.40.007) : le signaler au développeur.", qui));
     };
     // « titulaires d'un contrat à durée déterminée » : la nature 02 (CDD de droit prive) seule.
     if nature != "02" {
@@ -32,7 +32,7 @@ pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Opti
         // L. 1242-2 ». Le contrat vendanges (04) est un emploi saisonnier (INFERENCE).
         Some("03" | "04") => return Ok(false),
         None => {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Dites pourquoi ce CDD est conclu (« Motif du CDD », sur la carte de l'engagement) : {} n'en dit pas le motif.\n\
 Le motif dit si le contrat ouvre la contribution CPF-CDD (code du travail, L. 6331-6 : pas un CDD saisonnier) ; la DSN \
 le déclare (S21.G00.40.021).",
@@ -44,7 +44,7 @@ le déclare (S21.G00.40.021).",
     // D. 6331-72 : contrats d'accompagnement dans l'emploi, d'apprentissage, de professionnalisation, et ceux de
     // L. 6321-9 -- tous portent un dispositif de politique publique (40.008), et le moteur n'en ecrit aucun.
     if let Some(dispositif) = dispositif.filter(|d| *d != "99") {
-        return Err(format!(
+        return Err(socle::refus!(
             "Un CDD sous le dispositif de politique publique {1} (S21.G00.40.008), {0}. D. 6331-72 du code du travail en \
 exclut certains de la contribution CPF-CDD (contrats d'accompagnement dans l'emploi, d'apprentissage, de \
 professionnalisation, ceux de L. 6321-9) : le moteur ne sait pas lequel c'est, et ne declare pas le bloc \
@@ -66,9 +66,9 @@ pub fn codes_de(nat: &Nature, motif_recours: Option<&str>) -> (Option<String>, O
 /// Le contrat de nature `nat` paie-t-il la contribution CPF-CDD ? C'est la ou le calcul lit le motif de recours saisi :
 /// un CDD sans motif refuse (le motif dit s'il est saisonnier), un motif que la nature n'a pas aussi
 /// (`Nature::motif_recours_refuse`).
-pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<&str>, qui: &str) -> Resultat<bool> {
+pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<&str>, qui: &str) -> R<bool> {
     if let Some(refus) = nat.code("S21.G00.40.021").is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
-        return Err(refus);
+        return Err(socle::echec::refus(refus));
     }
     let (n, d, m) = codes_de(nat, motif_recours);
     ouvre_cpf_cdd(n.as_deref(), d.as_deref(), m.as_deref(), qui)

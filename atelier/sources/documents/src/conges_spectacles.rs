@@ -298,7 +298,8 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
     if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
         return Err(Echec {
             classe: Some(Classe::Illisible),
-            message: format!(
+            a_part: None,
+            phrase: format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
                 repr_flottant(h)
@@ -309,7 +310,8 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
     if eng.cachets != n || eng.jours != n {
         return Err(Echec {
             classe: Some(Classe::Illisible),
-            message: format!(
+            a_part: None,
+            phrase: format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
                 eng.cachets,
@@ -376,7 +378,8 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 None => {
                     return Err(Echec {
                         classe: Some(Classe::Illisible),
-                        message: format!(
+                        a_part: None,
+            phrase: format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
                             e.nomme(),
                             nb,
@@ -407,7 +410,8 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
             };
             return Err(Echec {
                 classe: Some(Classe::Illisible),
-                message: format!(
+                a_part: None,
+            phrase: format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
                     qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
                 ),
@@ -438,7 +442,7 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
 }
 
 fn cle_absente(k: &str) -> Echec {
-    Echec { classe: Some(Classe::Manque), message: socle::fichiers::absent(k) }
+    Echec { classe: Some(Classe::Manque), ..socle::fichiers::absent(k) }
 }
 
 // --------------------------------------------------------------------- rendu
@@ -615,7 +619,7 @@ pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocume
     if ent.congesspectacles_adherent.remplie().is_none() {
         return Err(Echec {
             classe: Some(Classe::Illisible),
-            message: socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent"),
+            ..socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent")
         });
     }
     let mut tous: Vec<(Certificat, &PaieCs)> = Vec::new();
@@ -687,6 +691,6 @@ mod tests {
     #[test]
     fn des_heures_sur_le_31_mars_refusent() {
         let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(6.0));
-        assert!(decouper(&c).unwrap_err().message.contains("porteur d'heures (6.0 h)"));
+        assert!(decouper(&c).unwrap_err().phrase.contains("porteur d'heures (6.0 h)"));
     }
 }

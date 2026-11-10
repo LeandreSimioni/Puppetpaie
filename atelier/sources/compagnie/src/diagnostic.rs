@@ -331,7 +331,7 @@ fn construire(racine: &Path) -> Personnes {
                     ajouter(noms, format!("salarié n°{}", numero_de(&fiche, rang)), &mut inconnues);
                 }
             }
-            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", socle::echec::phrase_de(&e))),
+            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", e.phrase())),
         }
     }
     let entreprise = racine.join(droit::contexte::ENTREPRISE);
@@ -351,7 +351,7 @@ fn construire(racine: &Path) -> Personnes {
                 }
                 ajouter(noms, "compagnie".to_string(), &mut inconnues);
             }
-            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", socle::echec::phrase_de(&e))),
+            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", e.phrase())),
         }
     }
     tous.sort_by_key(|m| std::cmp::Reverse(m.len()));
@@ -1214,7 +1214,7 @@ fn page_vue() -> &'static Mutex<Option<PageDite>> {
 pub fn noter_gestes(racine: &Path, texte: &str) {
     let lot: LotDeGestes = match socle::forme::lire_texte(texte, "Les gestes de la page ne se lisent pas.") {
         Ok(l) => l,
-        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {}", e)),
+        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {}", String::from(e))),
     };
     let forme = |s: &str, limite: usize| texte_en_forme(Some(racine), s.trim(), limite);
     if let Some(p) = lot.page {

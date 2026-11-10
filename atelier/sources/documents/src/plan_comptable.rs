@@ -107,7 +107,7 @@ pub fn tables() -> &'static Tables {
     static T: OnceLock<Tables> = OnceLock::new();
     T.get_or_init(|| match socle::forme::lire_texte(include_str!("exports_tables.json"), "Les tables des exports livrées ne se lisent pas : le signaler au développeur.") {
         Ok(t) => t,
-        Err(m) => unreachable!("exports_tables.json : {}", m),
+        Err(m) => unreachable!("exports_tables.json : {}", m.phrase),
     })
 }
 

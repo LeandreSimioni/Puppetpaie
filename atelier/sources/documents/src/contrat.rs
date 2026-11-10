@@ -99,7 +99,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
         }
         un.signature = signature.as_deref().map(chemin_texte);
         refuser_ce_que_le_modele_tairait(modele, &v)?;
-        crate::contrat_ecrit::refuser_un_modele_incomplet(modele, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
+        crate::contrat_ecrit::refuser_un_modele_incomplet(modele, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), phrase: m, a_part: None })?;
         documents.push(Document::Modele(un));
     }
     Ok(enveloppe(Style::Contrat, ent, documents))
@@ -124,7 +124,8 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
     if valeurs.get(&TAUX).is_none() && lu.cite(TAUX) {
         return Err(Echec {
             classe: Some(Classe::ModeleIncomplet),
-            message: socle::echec::avec(
+            a_part: None,
+            phrase: socle::echec::avec(
                 format!(
                     "{} cite le taux du cachet, et le contrat de {} n'a aucun taux de cachet : il ne paie aucun cachet, et ni l'engagement ni le mois n'en écrivent. Le moteur n'en invente pas. Écrire la rémunération de ce modèle par le détail de la rémunération, qui la dit quelle que soit sa forme (le modèle de base le fait), ou porter le taux sur une ligne de cachet de l'engagement. Rien n'est écrit.",
                     modele.nom,
@@ -139,7 +140,8 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
         if !lu.cite(cle) {
             return Err(Echec {
                 classe: Some(Classe::ModeleIncomplet),
-                message: socle::echec::avec(
+                a_part: None,
+            phrase: socle::echec::avec(
                     format!(
                         "{} ne cite pas ce que le contrat de {} lui verse hors brut ({}) : le contrat le tairait. Ajouter à l'article « Rémunération » de ce modèle un alinéa [si {}] qui le cite (le modèle de base le fait). Rien n'est écrit.",
                         modele.nom,
@@ -183,7 +185,7 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
     v.extend(extra);
     if let Some(contrat) = du_contrat {
         refuser_ce_que_le_modele_tairait(contrat, &v)?;
-        crate::contrat_ecrit::refuser_un_modele_incomplet(contrat, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })?;
+        crate::contrat_ecrit::refuser_un_modele_incomplet(contrat, &nat, &v).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), phrase: m, a_part: None })?;
     }
     let mut un = document_modele(lu, &v);
     un.modifications = Some(modifs.to_vec());
@@ -222,12 +224,12 @@ pub fn ecrire_avenant(
     ailleurs: bool,
 ) -> R<()> {
     if modifs.is_empty() {
-        return Err(Echec { classe: Some(Classe::Illisible), message: "Rien n'a changé : pas d'avenant à écrire.".into() });
+        return Err(Echec { classe: Some(Classe::Illisible), phrase: "Rien n'a changé : pas d'avenant à écrire.".into(), a_part: None });
     }
     let dits = crate::contrat_ecrit::manques_de_l_avenant(&modele.avenant.texte);
     if !dits.is_empty() {
         let quoi_faire = if modele.base { "C'est un défaut du logiciel : le signaler." } else { "Corriger l'avenant de ce modèle (Configuration › Modèles de contrat)." };
-        return Err(Echec { classe: Some(Classe::ModeleIncomplet), message: format!("L'avenant de {} ne se fait pas : {} {} Rien n'est parti.", modele.nom, dits.join(" "), quoi_faire) });
+        return Err(Echec { classe: Some(Classe::ModeleIncomplet), a_part: None, phrase: format!("L'avenant de {} ne se fait pas : {} {} Rien n'est parti.", modele.nom, dits.join(" "), quoi_faire) });
     }
     let extra = Valeurs::from([
         (Marqueur::AvenantNumero, numero.to_string()),

@@ -35,6 +35,13 @@ impl From<String> for Echec {
     }
 }
 
+/// Le refus du socle ou du droit, par le pont du socle (`From<socle::echec::Echec> for String`).
+impl From<socle::echec::Echec> for Echec {
+    fn from(e: socle::echec::Echec) -> Echec {
+        Echec::Autre(e.into())
+    }
+}
+
 type R<T> = Result<T, Echec>;
 
 fn impossible<T>(m: String) -> R<T> {

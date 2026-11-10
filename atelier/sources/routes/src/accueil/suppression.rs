@@ -252,7 +252,7 @@ fn effacer(racine: &Path) -> Result<(), String> {
     })?;
     // Ce qui resiste reste cache, et part au lancement suivant (`effacer_les_restes`).
     if let Err(e) = std::fs::remove_dir_all(&cache) {
-        eprintln!("{}", socle::echec::du_disque(&cache, &e));
+        eprintln!("{}", String::from(socle::echec::du_disque(&cache, &e)));
     }
     Ok(())
 }
@@ -398,7 +398,7 @@ fn lire_la_demo(racine: &Path) -> Result<Option<FichierDemo>, String> {
     if !p.is_file() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "La mention de démo de la compagnie (config/demo.json) ne se lit pas.").map(Some)
+    socle::forme::lire_fichier(&p, "La mention de démo de la compagnie (config/demo.json) ne se lit pas.").map(Some).map_err(String::from)
 }
 
 /// LA MENTION DE DEMO d'une compagnie gardee, telle que la page la montre : quand elle a ete creee et gardee, les mois
@@ -439,5 +439,5 @@ pub(crate) fn sortir_de_la_demo(racine: &Path, mois: &str) -> Result<(), String>
     if d.mois.len() == avant {
         return Ok(());
     }
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &d, 2)
+    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &d, 2).map_err(String::from)
 }

@@ -389,7 +389,7 @@ fn refus(m: impl Into<String>) -> Echec {
 }
 
 #[track_caller]
-fn plain(m: String) -> Echec {
+fn plain(m: impl Into<String>) -> Echec {
     socle::echec::noter_et(None, m)
 }
 

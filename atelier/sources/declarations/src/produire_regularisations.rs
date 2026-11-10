@@ -209,7 +209,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(refus_valeur)? != nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e })? != nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
@@ -297,7 +297,7 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
 /// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
 fn decidee_le(le: &str) -> R<Option<Jour>> {
     match le.get(..10) {
-        Some(jour) => Jour::lire(jour).map(Some).map_err(refus_valeur),
+        Some(jour) => Jour::lire(jour).map(Some).map_err(|e| Echec { classe: Some(Classe::Illisible), ..e }),
         None => Ok(None),
     }
 }

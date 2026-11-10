@@ -39,7 +39,7 @@ pub struct Organisme {
 /// La table livree, lue par sa forme.
 pub fn base() -> Resultat<Arc<BaseUrssaf>> {
     static CACHE: OnceLock<FormeGardee<BaseUrssaf>> = OnceLock::new();
-    forme_en_cache(&CACHE, "urssaf-dpae-base.json", "La table des Urssaf livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, "urssaf-dpae-base.json", "La table des Urssaf livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok).map_err(String::from)
 }
 
 impl BaseUrssaf {

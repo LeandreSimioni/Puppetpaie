@@ -25,7 +25,7 @@ use socle::num::{add, dec_f64, div, mul, sub, Decimal, Resultat};
 /// spectacle `sp` (un contrat paye au mois n'en a pas).
 pub fn idcc_du_contrat(idcc: &str, sp: Option<&droit::fiche::Spectacle>, sal: &droit::fiche::ChampsSalarie) -> Resultat<String> {
     let Some(sp) = sp.filter(|s| s.emission_tv_1734.dite() == Some(&true)) else { return Ok(idcc.to_string()) };
-    droit::minima::idcc_du_contrat(idcc, &SpectacleDuContrat { emission_tv_1734: true, cle: &sp.cle }, sal)
+    droit::minima::idcc_du_contrat(idcc, &SpectacleDuContrat { emission_tv_1734: true, cle: &sp.cle }, sal).map_err(String::from)
 }
 
 /// La case `cle` du spectacle de la paie lue pour une condition (`droit::minima::case_lue`) ; `None` : la paie n'a pas de
@@ -103,7 +103,7 @@ fn premiere_partie(c: &Convention) -> Resultat<String> {
 
 /// Ce qui manque a la table livree, nomme par sa cle.
 fn manque(cle: &str) -> String {
-    socle::echec::livree("minima-conventionnels.json", cle)
+    socle::echec::livree("minima-conventionnels.json", cle).into()
 }
 
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.
@@ -137,7 +137,7 @@ impl<'a> Cx<'a> {
             return Ok(Some(lue));
         }
         match self.paie.engagement.nat()?.au_mois() {
-            Some(au) => case_lue(self.fiche.permanent.ouvrir(&au), cle),
+            Some(au) => case_lue(self.fiche.permanent.ouvrir(&au), cle).map_err(String::from),
             None => Ok(None),
         }
     }
@@ -286,7 +286,8 @@ impl<'a> Cx<'a> {
                     crate::qui_de(self.fiche)?
                 ),
                 "echelon_ccneac",
-            ));
+            )
+            .into());
         };
         Ok((e.rang(), format!("échelon {} de la fiche", e)))
     }
@@ -514,10 +515,11 @@ impl<'a> Cx<'a> {
                         a.ans
                     ),
                     &a.champ,
-                ));
+                )
+                .into());
             };
             let Some(n) = ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) else {
-                return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
+                return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte).into());
             };
             if n < a.ans {
                 return Ok(false);
@@ -712,7 +714,8 @@ impl<'a> Cx<'a> {
                     crate::qui_de(self.fiche)?
                 ),
                 "poste_depuis",
-            ));
+            )
+            .into());
         };
         let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
         let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));

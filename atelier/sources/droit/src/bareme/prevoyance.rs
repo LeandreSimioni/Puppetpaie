@@ -3,7 +3,8 @@
 //! pas. Le catalogue porte le minimum de la branche ; ce que la compagnie souscrit se dit sur sa fiche
 //! (`prevoyance_permanents`), et le moteur le confronte a ce minimum.
 
-use super::{alsace_moselle, arrondi4, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, Resultat, SalarieDuContrat};
+use super::{alsace_moselle, arrondi4, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
+use socle::echec::R;
 use crate::fiche::{ExtensionT2, Lue};
 use crate::natures::AuMois;
 use socle::echec::APart;
@@ -163,7 +164,7 @@ forme! {
 }
 
 /// Le catalogue livre.
-pub fn catalogue() -> Resultat<Arc<Catalogue>> {
+pub fn catalogue() -> R<Arc<Catalogue>> {
     static CACHE: OnceLock<FormeGardee<Catalogue>> = OnceLock::new();
     forme_en_cache(&CACHE, "prevoyance-conventionnelle-base.json", "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -176,7 +177,7 @@ impl Catalogue {
 }
 
 /// Le financement du paritarisme de la convention `idcc` (le FCAP-SVP de la 3090), si elle en a un.
-pub fn financement(idcc: &str) -> Resultat<Option<Financement>> {
+pub fn financement(idcc: &str) -> R<Option<Financement>> {
     Ok(catalogue()?.regime(idcc).and_then(|r| r.financement_paritarisme.clone()))
 }
 
@@ -186,14 +187,14 @@ fn derniere<'a>(table: &'a Datees, jour: Option<&Jour>) -> Option<(&'a Jour, Dec
 }
 
 /// La convention a-t-elle un regime de sante a elle ?
-pub fn a_un_regime_de_sante(ent: &ChampsEntreprise) -> Resultat<bool> {
+pub fn a_un_regime_de_sante(ent: &ChampsEntreprise) -> R<bool> {
     let c = catalogue()?;
     Ok(ent.idcc.portee().and_then(|i| c.regime(i)).is_some_and(|r| r.sante.is_some()))
 }
 
 /// La complementaire sante que la CONVENTION fixe, quand elle en fixe une ; `None` si la convention n'a pas de section
 /// `sante`.
-pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: Option<&Jour>) -> Resultat<Option<Mutuelle>> {
+pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: Option<&Jour>) -> R<Option<Mutuelle>> {
     let c = catalogue()?;
     let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
     let Some(sante) = c.regime(idcc).and_then(|r| r.sante.as_ref()) else { return Ok(None) };
@@ -201,7 +202,7 @@ pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContr
         return Ok(Some(Mutuelle::Sans));
     }
     let Some((_, mut total)) = derniere(&sante.taux, fin) else {
-        return Err(format!(
+        return Err(socle::refus!(
             "Complementaire sante des permanents, convention {} : aucun taux \
 en vigueur au {} dans le catalogue de branche.",
             idcc,
@@ -221,7 +222,7 @@ en vigueur au {} dans le catalogue de branche.",
     // La part de l'employeur est celle que la compagnie a decidee (au moins le minimum de la convention) : elle seule la
     // connait.
     let Some(choix) = choix else {
-        return Err(format!(
+        return Err(socle::refus!(
             "Fiche Entreprise, « Santé des permanents », part employeur : à remplir. La convention {} en met au moins {} % \
 à la charge de l'employeur ; la part de la compagnie est sur son contrat de complémentaire santé.",
             idcc,
@@ -230,7 +231,7 @@ en vigueur au {} dans le catalogue de branche.",
     };
     let part = choix.decimal()?;
     if part < minimum || part > Decimal::ONE_HUNDRED {
-        return Err(format!(
+        return Err(socle::refus!(
             "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 la convention {} met au moins {} % de la cotisation sante a la \
 charge de l'employeur (XII.2.1.11), et pas plus de 100.",
@@ -244,7 +245,7 @@ charge de l'employeur (XII.2.1.11), et pas plus de 100.",
 }
 
 /// `super::minimum_sante`.
-pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> Resultat<Option<(Decimal, String)>> {
+pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Decimal, String)>> {
     let c = catalogue()?;
     let Some(m) = ent.idcc.portee().and_then(|i| c.regime(i)).and_then(|r| r.sante_minimum.as_ref()) else { return Ok(None) };
     let annexe = ent.annexe_convention.code();
@@ -261,12 +262,12 @@ fn pcf(x: f64) -> String {
 
 /// Le regime conventionnel de cette convention collective ; refuse quand la convention n'est pas relevee ou pas
 /// confirmee.
-pub fn regime(idcc: &str) -> Resultat<Regime> {
+pub fn regime(idcc: &str) -> R<Regime> {
     let c = catalogue()?;
     let idcc = idcc.trim();
     let Some(reg) = c.regime(idcc).filter(|_| !idcc.is_empty()) else {
         let connues: Vec<&str> = c.conventions.iter().map(|(k, _)| k.as_str()).collect();
-        return Err(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention collective n'est pas relevée : le signaler au développeur.",
             APart {
                 detail: Some(format!(
@@ -289,7 +290,7 @@ decouvre le jour ou le salarie en a besoin.",
         ));
     };
     if reg.applicable == Some(false) {
-        return Err(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention n'est pas encore vérifiée : le signaler au développeur.",
             APart {
                 detail: Some(format!(
@@ -381,7 +382,7 @@ fn seuil(reg: &Regime, cadre: bool) -> i64 {
 /// an d'anciennete dans la branche du secteur prive du spectacle vivant ; pour les cadres, des l'embauche » (fiche
 /// produit Audiens, `atelier/reference/sources/audiens-3090-prevoyance-sante-fiche-produit-2021.txt`, l. 102-106).
 /// Ce temps dans la branche est un fait que seule la fiche dit (`prevoyance_branche_depuis`) : il se demande.
-fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>) -> Resultat<(bool, String)> {
+fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>) -> R<(bool, String)> {
     let seuil = seuil(reg, cadre);
     if seuil <= 0 {
         return Ok((true, "due des l'embauche".to_string()));
@@ -396,7 +397,7 @@ fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool
             return Ok((true, format!("{} mois d'anciennete dans l'entreprise, donc au moins autant dans la branche (seuil {})", m, seuil)));
         }
     }
-    Err(format!(
+    Err(socle::refus!(
         "{} : depuis quand travaille-t-il dans le spectacle vivant ? Sa prévoyance commence après {} mois \
 dans la branche, chez nous ou dans une autre compagnie, et il n'en a que {} ici. À dire sur sa fiche, \
 Configuration › Salariés, « Dans la branche depuis » : le jour où il y est entré ; s'il n'y travaillait pas \
@@ -413,7 +414,7 @@ nouveau le laisserait sans couverture pendant un an.",
 
 /// (taux minimum de tranche 1, d'ou il vient) pour ce salarie ; `None` : ni la convention (elle fixe la repartition,
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
-fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> Resultat<Option<(f64, String)>> {
+fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> R<Option<(f64, String)>> {
     let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {} %", reg.texte, pcf(t))));
     let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux))).filter(|(_, t)| *t != 0.0);
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
@@ -473,7 +474,7 @@ fn part_t2(b: &Bloc) -> f64 {
 }
 
 /// Ce qu'un permanent cotise en prevoyance ce mois-la.
-pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> Resultat<Cotisation> {
+pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> R<Cotisation> {
     let idcc = entreprise.idcc.ecrite("idcc")?;
     let reg = a_la_date(regime(idcc)?, fin);
     let ent = entreprise.permanent.ouvrir(au_mois).prevoyance_permanents.dite();
@@ -484,7 +485,7 @@ pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Op
         return Ok(Cotisation { sans_regime: true, ..Cotisation::default() });
     }
     if reg.contrat_requis == Some(true) && !contrat {
-        return Err(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention suit le contrat de la compagnie : poser ses taux dans la fiche entreprise, « Prévoyance des permanents ».",
             APart {
                 detail: Some(format!(
@@ -518,7 +519,7 @@ lus sur le contrat ou l'appel de cotisations. Rien n'est calcule.",
     let taux = if contrat {
         let pour = if cadre { "cadres" } else { "non-cadres" };
         let Some(t1_contrat) = ent_taux.and_then(|t| if cadre { t.t1_cadre.dite() } else { t.t1_non_cadre.dite() }) else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents » : le regime \
 est « contrat d'entreprise » mais son taux {} manque. Un contrat \
 d'entreprise remplace le taux conventionnel : il faut le dire \
@@ -529,7 +530,7 @@ minimum de la branche.",
         };
         let propose = t1_contrat.flottant()?;
         if let Some((mini, origine)) = minimum.as_ref().filter(|(mini, _)| propose + 1e-9 < *mini) {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents », taux {} : \
 {} % : c'est sous le minimum de la branche ({} %, {}).\n  \
 Une entreprise peut souscrire mieux que la convention, \
@@ -549,7 +550,7 @@ Corriger le contrat, ou revenir au regime conventionnel.",
         match minimum {
             Some((mini, _)) => mini,
             None => {
-                return Err(format!(
+                return Err(socle::refus!(
                     "Prévoyance des permanents, convention {} : {} ne fixe pas de taux de tranche 1 ; celui du contrat de \
 la compagnie se pose dans la fiche Entreprise, « Prévoyance des permanents ».",
                     idcc, reg.texte
@@ -559,11 +560,12 @@ la compagnie se pose dans la fiche Entreprise, « Prévoyance des permanents ».
     };
 
     if cadre && part_pat < catalogue()?.obligation_cadre.part_patronale {
-        return Err("Fiche Entreprise, « Prévoyance des permanents » : la part \
+        return Err(socle::echec::refus(
+            "Fiche Entreprise, « Prévoyance des permanents » : la part \
 patronale d'un cadre ne peut pas descendre sous 100 % -- les \
 1,50 % de la tranche A sont dus << a titre exclusif >> par \
-l'employeur (ANI du 17/11/2017, art. 1er)."
-            .to_string());
+l'employeur (ANI du 17/11/2017, art. 1er).",
+        ));
     }
 
     let mut t1 = repartir(taux, part_pat);
@@ -588,7 +590,7 @@ l'employeur (ANI du 17/11/2017, art. 1er)."
             ExtensionT2::Cadres => o.cadres,
         });
         let (Some(opt), Some(propre)) = (opt, propre) else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "L'extension T2 << {} >> n'existe pas dans le regime de la \
 convention {}.",
                 ext.as_str(),
@@ -619,7 +621,7 @@ fn anniversaire(depuis: &Jour, seuil: i64) -> Option<Jour> {
 
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` (bloc S21.G00.70), selon la meme regle que
 /// sa cotisation (`cotisation`, `ouverture`).
-pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> Resultat<super::AffiliationPrevoyance> {
+pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> R<super::AffiliationPrevoyance> {
     use super::AffiliationPrevoyance as A;
     let cot = cotisation(sal, au_mois, cadre, Some(fin), entreprise)?;
     if !cot.due {
@@ -635,7 +637,7 @@ pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &
     }
     match sal.date_anciennete.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
         Some(j) => Ok(A::AuPlusTardLe(j)),
-        None => Err(format!(
+        None => Err(socle::refus!(
             "{} : la prevoyance s'ouvre apres {} mois d'anciennete dans la branche, et sa fiche ne date ni son \
 entree dans la branche (« Dans la branche depuis ») ni son anciennete (« Dans la compagnie depuis »).",
             nom_du_salarie(sal),

@@ -461,7 +461,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         Err(e) => match std::fs::remove_file(&fichier) {
             Ok(()) => Err(e),
             Err(x) if x.kind() == std::io::ErrorKind::NotFound => Err(e),
-            Err(x) => Err(socle::echec::Echec { classe: e.classe, message: format!("{} {}", e.message, socle::echec::du_disque(&fichier, &x)) }),
+            Err(x) => Err(socle::echec::Echec { classe: e.classe, phrase: format!("{} {}", String::from(e), String::from(socle::echec::du_disque(&fichier, &x))), a_part: None }),
         },
     }
 }
@@ -502,9 +502,9 @@ pub fn partir(racine: &Path) -> BilanMessages {
         Err(e) => {
             let reste = match en_ordre(racine) {
                 Ok(l) => l.iter().filter(|l| en_attente(l)).count(),
-                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", e.message, f.message)), occupe: false },
+                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", String::from(e), String::from(f))), occupe: false },
             };
-            BilanMessages { partis: 0, reste, erreur: Some(e.message), occupe: false }
+            BilanMessages { partis: 0, reste, erreur: Some(e.into()), occupe: false }
         }
     }
 }

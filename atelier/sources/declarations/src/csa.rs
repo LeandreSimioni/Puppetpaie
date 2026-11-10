@@ -143,7 +143,7 @@ impl Effectifs {
         if !socle::fichiers::existe(&chemin) {
             return Ok(Effectifs { _quoi: None, annees: None });
         }
-        socle::forme::lire_fichier(&chemin, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")
+        socle::forme::lire_fichier(&chemin, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.").map_err(String::from)
     }
 
     /// La valeur du code `code` du CRM 118 pour l'annee `annee`, s'il est ecrit.
@@ -213,7 +213,7 @@ pub fn declaration(ctx: &Contexte, mois: &str, departs: &engagement::departs::De
             "DSN de mars {}, contribution supplementaire a l'apprentissage {} : {}",
             n + 1,
             n,
-            m
+            String::from(m)
         )
     })?;
     if !assujettie {

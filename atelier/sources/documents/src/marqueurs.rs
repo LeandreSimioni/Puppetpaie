@@ -199,15 +199,15 @@ impl ModeleLu {
     pub fn du_fichier(chemin: &Path) -> Result<ModeleLu, Echec> {
         let octets = std::fs::read(chemin).map_err(|e| {
             let classe = if e.kind() == std::io::ErrorKind::NotFound { Classe::FichierAbsent } else { Classe::Disque };
-            Echec { classe: Some(classe), message: socle::fichiers::panne_fichier(&e, chemin) }
+            Echec { classe: Some(classe), phrase: socle::fichiers::panne_fichier(&e, chemin), a_part: None }
         })?;
-        let texte = String::from_utf8(octets).map_err(|e| Echec { classe: Some(Classe::Illisible), message: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()) })?;
+        let texte = String::from_utf8(octets).map_err(|e| Echec { classe: Some(Classe::Illisible), phrase: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()), a_part: None })?;
         // Le refus nomme le fichier ; un chemin sans nom de fichier se nomme entier.
         let nom = match chemin.file_name() {
             Some(n) => n.to_string_lossy().into_owned(),
             None => chemin.to_string_lossy().into_owned(),
         };
-        ModeleLu::lire(&texte, &nom).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), message: m })
+        ModeleLu::lire(&texte, &nom).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), phrase: m, a_part: None })
     }
 
     /// Le modele cite-t-il `m` ?

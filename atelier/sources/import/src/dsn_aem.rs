@@ -360,7 +360,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             };
             let brut_texte = champ(&l, 659, 668);
             let Some(brut_cts) = decimal_lu(&brut_texte) else {
-                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), message: socle::num::illisible(&brut_texte) });
+                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::num::illisible(&brut_texte), a_part: None });
             };
             let mut brut = brut_cts / socle::num::Decimal::from(100);
             brut = brut.round_dp(2);

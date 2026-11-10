@@ -240,7 +240,7 @@ fn lire_config<T: serde::de::DeserializeOwned>(cfg: &Path, nom: &str) -> R<Optio
     if !p.exists() {
         return Ok(None);
     }
-    droit::fiche::lire_fichier(&p, &format!("prive/config/{}", nom)).map(Some)
+    droit::fiche::lire_fichier(&p, &format!("prive/config/{}", nom)).map(Some).map_err(String::from)
 }
 
 /// Les valeurs à ne jamais publier, lues hors du dépôt (`<racine>/prive/config/`), dans l'ordre où on les lit, une fois
@@ -460,7 +460,7 @@ fn contenu(p: &Path) -> R<Option<Vec<u8>>> {
     match std::fs::read(p) {
         Ok(o) => Ok(Some(o)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(socle::echec::du_disque(p, &e)),
+        Err(e) => Err(socle::echec::du_disque(p, &e).into()),
     }
 }
 

@@ -406,7 +406,7 @@ macro_rules! saisie_de {
             impl<'de> Deserialize<'de> for $t {
                 fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$t, D::Error> {
                     use serde::de::{DeserializeSeed, Error};
-                    champs::lecture($nom).map_err(|e| D::Error::custom(e.message))?.deserialize(d).map($t)
+                    champs::lecture($nom).map_err(|e| D::Error::custom(String::from(e)))?.deserialize(d).map($t)
                 }
             }
         )*
@@ -919,7 +919,7 @@ fn fiche_refusee(nom: &str, anomalies: &[Anomalie]) -> R<Echec> {
     }
     let erreurs_dit = if phrases.len() > 1 { format!("{} erreurs", phrases.len()) } else { "Une erreur".to_string() };
     let message = format!("La fiche n'est pas écrite : {}", phrases.join(" ; "));
-    Ok(Echec { classe: Some(Classe::FicheRefusee), message: socle::echec::avec(message, FicheRefusee { anomalies, erreurs_dit }) })
+    Ok(Echec { classe: Some(Classe::FicheRefusee), phrase: socle::echec::avec(message, FicheRefusee { anomalies, erreurs_dit }), a_part: None })
 }
 
 /// Pose sur chaque anomalie le libelle de sa case, celui que la fiche montre.

@@ -721,7 +721,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> Resultat<Option<droit::pa
     let avance: Decimal = p.bases.get(crate::maintien::IJ_ASSIETTE_PAS).into_iter().sum();
     droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)
         .map(Some)
-        .map_err(|e| e.message().to_string())
+        .map_err(|e| socle::echec::Echec::from(e).into())
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de
@@ -751,7 +751,7 @@ pub fn prelevement_de_la_correction(
     let t = |j: Jour| (j.an, j.mois, j.jour);
     let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)
-        .map_err(|e| e.message().to_string())?;
+        .map_err(socle::echec::Echec::from)?;
     let prelevement = if difference < Decimal::ZERO {
         match taux_origine.filter(|t| !t.is_empty()) {
             Some(t) => Some(pct(difference, socle::num::dec_texte(t)?)),
@@ -804,7 +804,7 @@ fn calculer_les_rangs(ctx: &Contexte, mois: &str, rangs: &[usize]) -> Resultat<V
     let mut data = stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| format!("{} : aucune saisie", mois))?;
     let tous = std::mem::take(&mut data.engagements);
     let salaries: Vec<IdSalarie> =
-        rangs.iter().map(|i| tous.get(*i).and_then(|e| e.salarie.clone()).ok_or_else(|| socle::fichiers::absent("salarie"))).collect::<Resultat<_>>()?;
+        rangs.iter().map(|i| tous.get(*i).and_then(|e| e.salarie.clone()).ok_or_else(|| socle::fichiers::absent("salarie"))).collect::<socle::echec::R<_>>()?;
     let mut gardes = Vec::new();
     let mut places = vec![None; tous.len()];
     for (i, mut e) in tous.into_iter().enumerate() {

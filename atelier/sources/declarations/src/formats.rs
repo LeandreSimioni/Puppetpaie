@@ -163,7 +163,7 @@ impl Lecteur {
         match c {
             'd' => Ok(Elt::Chiffre),
             's' => Ok(Elt::Espace),
-            c if c.is_ascii_alphanumeric() => Err(socle::echec::a_la_cle("Un format de la norme livrée ne se lit pas : le signaler au développeur.", "format", c)),
+            c if c.is_ascii_alphanumeric() => Err(socle::echec::a_la_cle("Un format de la norme livrée ne se lit pas : le signaler au développeur.", "format", c).into()),
             c => Ok(Elt::Car(c)),
         }
     }

@@ -139,7 +139,7 @@ pub(crate) fn lire_au<T: serde::de::DeserializeOwned>(
     jour: &socle::date::Jour,
     organisation: Option<&str>,
     phrase: &str,
-) -> socle::num::Resultat<(T, Vec<socle::date::Jour>)> {
+) -> socle::echec::R<(T, Vec<socle::date::Jour>)> {
     LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.map(str::to_string), retenues: Vec::new() }));
     let lu = socle::forme::lire_fichier::<T>(fichier, phrase);
     let lecture = LECTURE.with(|l| l.borrow_mut().take());
@@ -172,11 +172,12 @@ pub(crate) mod datee {
         LECTURE.with(|l| {
             let mut l = l.borrow_mut();
             let lecture = l.as_mut().ok_or_else(|| D::Error::custom("une valeur datée ne se lit qu'à une date"))?;
-            retenir(entrees, lecture).map_err(D::Error::custom)
+            // Le refus devient le texte de l'erreur de serde, ce qu'il porte a part compris (`From<Echec> for String`).
+            retenir(entrees, lecture).map_err(|e| D::Error::custom(String::from(e)))
         })
     }
 
-    fn retenir<T>(entrees: Vec<Entree<T>>, lecture: &mut super::Lecture) -> Result<T, String> {
+    fn retenir<T>(entrees: Vec<Entree<T>>, lecture: &mut super::Lecture) -> socle::echec::R<T> {
         let mut datees: Vec<(Option<Jour>, T)> = Vec::new();
         for e in entrees {
             let depuis = e.depuis.as_deref().map(Jour::lire).transpose()?;
@@ -200,7 +201,7 @@ pub(crate) mod datee {
             .into_iter()
             .filter(|(j, _)| j.is_none_or(|j| j <= jour))
             .last()
-            .ok_or_else(|| format!("aucune valeur ne s'applique au {}", jour.jj_mm_aaaa()))?;
+            .ok_or_else(|| socle::refus!("aucune valeur ne s'applique au {}", jour.jj_mm_aaaa()))?;
         lecture.retenues.extend(depuis);
         Ok(v)
     }
@@ -1164,17 +1165,17 @@ pub struct TauxAtmp {
     pub depuis: Option<socle::date::Jour>,
     pub provenance: Option<crate::fiche::ProvenanceAtmp>,
     pub notification: Option<crate::fiche::NotificationAtmp>,
-    pub manque: Option<String>,
+    pub manque: Option<socle::echec::Echec>,
 }
 
 /// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas
 /// lire, la cle a part.
-pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::num::Resultat<(Pile, Vec<socle::date::Jour>)> {
+pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
     lire_au(fichier, jour, organisation, "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.")
 }
 
 /// LA SURCOUCHE DE LA COMPAGNIE `fichier` : la phrase d'un refus dit ce que la compagnie corrige, la cle a part.
-pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::num::Resultat<Surcouche> {
+pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::echec::R<Surcouche> {
     socle::forme::lire_fichier(fichier, "Le barème propre à la compagnie (config/baremes) porte une clé ou une valeur que le moteur ne sait pas lire : la corriger, ou le signaler au développeur.")
 }
 

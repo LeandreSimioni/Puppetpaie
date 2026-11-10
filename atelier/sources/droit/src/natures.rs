@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -632,7 +632,7 @@ const ILLISIBLE: &str = "Les natures de contrat livrées avec le logiciel ne se 
 
 /// LA SEULE LECTURE DE `contrats-base.json` : sa forme, puis ce qu'elle ne dit pas seule (le type de contrat de la DPAE
 /// est l'un des trois du Format 120).
-fn lu() -> Resultat<Arc<Contrats>> {
+fn lu() -> R<Arc<Contrats>> {
     static CACHE: OnceLock<FormeGardee<Contrats>> = OnceLock::new();
     forme_en_cache(&CACHE, "contrats-base.json", ILLISIBLE, |f: Fichier| {
         let mut natures = Vec::new();
@@ -650,7 +650,7 @@ fn lu() -> Resultat<Arc<Contrats>> {
 /// La categorie d'emploi d'un classement conventionnel (S21.G00.40.002), telle que le contrat ecrit l'imprime
 /// (`categories_d_emploi` de `contrats-base.json`, libelles de la norme ; R1221-34, 3°). L'`artiste` qui n'est pas cadre
 /// (03, 04) : « non-cadre », la categorie de sa convention (3090, art. 6.3 ; 1285, art. XI.2.1), pas le libelle du 05.
-pub fn categorie_d_emploi(classement: &str, artiste: bool) -> Resultat<Option<String>> {
+pub fn categorie_d_emploi(classement: &str, artiste: bool) -> R<Option<String>> {
     let c = &lu()?.categories;
     if artiste && !matches!(classement, "03" | "04") {
         return Ok(Some(c.artiste_non_cadre.libelle.clone()));
@@ -659,19 +659,19 @@ pub fn categorie_d_emploi(classement: &str, artiste: bool) -> Resultat<Option<St
 }
 
 /// Toutes les natures, dans l'ordre du fichier.
-pub fn natures() -> Resultat<Arc<Vec<Arc<Nature>>>> {
+pub fn natures() -> R<Arc<Vec<Arc<Nature>>>> {
     Ok(lu()?.natures.clone())
 }
 
 /// Une nature par sa cle : une nature se dit, elle ne se devine pas (regle 6). Refuse une cle inconnue.
-pub fn nature(cle: &str) -> Resultat<Arc<Nature>> {
+pub fn nature(cle: &str) -> R<Arc<Nature>> {
     let lus = lu()?;
     if let Some(n) = lus.natures.iter().find(|n| n.cle == cle) {
         return Ok(n.clone());
     }
     let mut connues: Vec<&str> = lus.natures.iter().map(|n| n.cle.as_str()).collect();
     connues.sort();
-    Err(format!("Nature de contrat inconnue : {}. Connues : {}.", repr(&cle), connues.join(", ")))
+    Err(socle::refus!("Nature de contrat inconnue : {}. Connues : {}.", repr(&cle), connues.join(", ")))
 }
 
 #[cfg(test)]

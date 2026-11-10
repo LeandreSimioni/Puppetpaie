@@ -31,6 +31,14 @@ pub mod temps;
 pub mod texte;
 pub mod verrou;
 
+/// UN REFUS ORDINAIRE DONT LA PHRASE SE COMPOSE (`format!`) : `echec::refus`, son endroit note la ou il s'ecrit.
+#[macro_export]
+macro_rules! refus {
+    ($($arg:tt)*) => {
+        $crate::echec::refus(format!($($arg)*))
+    };
+}
+
 /// Ecrit une ligne sur la sortie standard. Un tuyau ferme (`| head`) n'est pas une erreur du programme.
 #[macro_export]
 macro_rules! dire {

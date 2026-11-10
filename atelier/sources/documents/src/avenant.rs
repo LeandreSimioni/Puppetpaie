@@ -71,7 +71,7 @@ pub fn normaliser(texte: &str) -> String {
 
 /// Une case texte de la fiche du salarie, que le modele exige : vide, elle se refuse en se nommant.
 fn case<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
-    c.ecrite(cle).map(str::to_string)
+    c.ecrite(cle).map(str::to_string).map_err(String::from)
 }
 
 /// La forme lisible d'une case de la fiche du salarie si elle est dite, la forme declaree sinon (`case`).

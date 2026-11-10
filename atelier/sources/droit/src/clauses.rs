@@ -15,7 +15,8 @@ use serde::Deserialize;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -443,7 +444,7 @@ forme! {
 }
 
 /// Le catalogue livre. Une clause que la convention laisse a la loi n'est pas aussi relevee.
-pub fn table() -> Resultat<Arc<Table>> {
+pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
     forme_en_cache(&CACHE, FICHIER, "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
         for (idcc, c) in &t.conventions {
@@ -470,7 +471,7 @@ impl Table {
 }
 
 /// Les clauses relevees de cette convention, ou `None` si elles ne le sont pas (ou si la compagnie n'a pas d'IDCC).
-pub fn releve(idcc: Option<&str>) -> Resultat<Option<Convention>> {
+pub fn releve(idcc: Option<&str>) -> R<Option<Convention>> {
     Ok(table()?.convention(idcc).cloned())
 }
 
@@ -479,7 +480,8 @@ fn p(n: &Nombre) -> P {
     P::depuis(n.0)
 }
 
-fn manque(cle: &str) -> String {
+#[track_caller]
+fn manque(cle: &str) -> socle::echec::Echec {
     socle::echec::livree(FICHIER, cle)
 }
 
@@ -508,7 +510,7 @@ fn mots_du_nom(nom: &str) -> std::collections::BTreeSet<String> {
 /// L'IDCC d'une convention que le bulletin nomme sans son numéro : celle, seule, dont le libellé de la table (le
 /// titre de la convention dans KALI) porte tous les mots distinctifs du nom imprimé. Un nom que plusieurs conventions
 /// portent (« spectacle », « production »), ou qu'aucune ne porte entier, ne donne rien : rien ne se devine (règle 1).
-pub fn idcc_nomme(nom: &str) -> Resultat<Option<String>> {
+pub fn idcc_nomme(nom: &str) -> R<Option<String>> {
     let lus = mots_du_nom(nom);
     if lus.is_empty() {
         return Ok(None);
@@ -533,7 +535,7 @@ pub fn categorie_en_mots(c: &str) -> String {
 
 /// La categorie `c` dite par la convention `idcc`, telle que le bulletin l'imprime (la premiere phrase de son libelle),
 /// ou `None` si la convention ne la nomme pas.
-pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> Resultat<Option<String>> {
+pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> R<Option<String>> {
     let t = table()?;
     let dite = t.convention(idcc).and_then(|conv| conv.categories.as_ref()).and_then(|s| s.valeurs.iter().find(|(k, _)| k == c));
     let premiere_phrase = |l: &str| match l.split_once(". ") {
@@ -571,7 +573,7 @@ pub struct Profil {
 
 /// `au_mois` : la cle de la piece d'un permanent, quand l'engagement lu est paye au mois ; sans elle, la categorie que
 /// la fiche dit ne se lit pas (elle n'est demandee qu'a un salarie au mois).
-pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> Resultat<Profil> {
+pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -645,7 +647,7 @@ pub struct PreavisDit {
     pub pourquoi: Option<String>,
 }
 
-pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<&str>, age: Option<Decimal>) -> Resultat<PreavisDit> {
+pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<&str>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -758,7 +760,7 @@ pub fn par_bandes(bandes: &[Bande], annees: P) -> P {
 
 impl Bareme {
     /// Les mois de salaire de `annees` d'anciennete : par bandes, sinon par tranches.
-    pub fn mois(&self, annees: P) -> Resultat<P> {
+    pub fn mois(&self, annees: P) -> R<P> {
         match (&self.bandes, &self.taux) {
             (Some(b), _) => Ok(par_bandes(b, annees)),
             (None, Some(t)) => Ok(tranches(t, annees)),
@@ -770,7 +772,7 @@ impl Bareme {
 // ----------------------------------------------- l'indemnite de licenciement
 /// La clause d'annexe qui s'applique a ce salarie, ou `None`. Le personnel technique de l'annexe I se lit sur la
 /// GRILLE du metier.
-pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<&str>) -> Resultat<Option<ClauseDAnnexe>> {
+pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<&str>) -> R<Option<ClauseDAnnexe>> {
     let t = table()?;
     let par = t
         .convention(idcc)
@@ -811,7 +813,7 @@ pub fn indemnite_licenciement(
     reference: Decimal,
     motif: Option<&str>,
     age: Option<Decimal>,
-) -> Resultat<Indemnite> {
+) -> R<Indemnite> {
     let (a, ref_, age) = (P::depuis(anciennete), P::depuis(reference), age.map(P::depuis));
     let pas_releve = |pourquoi: String| Indemnite { releve: false, du: false, bas: None, haut: None, lectures: Vec::new(), hors_primes: false, article: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -976,7 +978,7 @@ impl Retraite {
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.
-pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> Resultat<Retraite> {
+pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
     let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1022,7 +1024,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, ref
 }
 
 /// L'indemnite conventionnelle de depart volontaire a la retraite : un palier, pas un cumul.
-pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> Resultat<Retraite> {
+pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
     let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1088,7 +1090,7 @@ fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090>
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<&str>) -> Resultat<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<&str>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some("artiste") {
         return Ok(false);
@@ -1109,7 +1111,7 @@ pub fn prime_anciennete<'j>(
     e: &DitParLEngagement,
     jour: &Jour,
     jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<&'j str>,
-) -> Resultat<Option<Prime>> {
+) -> R<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));

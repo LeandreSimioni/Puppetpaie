@@ -148,7 +148,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             match socle::codification_ue::codification_ue(&f.nationalite()) {
                 Ok(code) => nationalite(&code),
                 Err(pourquoi) => {
-                    a_preciser.insert(format!("{} : {}", c.salarie, pourquoi));
+                    a_preciser.insert(format!("{} : {}", c.salarie, String::from(pourquoi)));
                     Some("à préciser dans la fiche")
                 }
             }

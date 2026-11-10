@@ -206,7 +206,7 @@ pub fn rendre_simulee(racine: &Path) -> Result<(), String> {
         quand: Some(socle::paris::maintenant()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
+    socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2).map_err(String::from)
 }
 
 /// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas. L'un et
@@ -286,7 +286,7 @@ pub fn lire(scenario: &Path) -> Result<Vec<Geste>, String> {
         .lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty())
-        .map(|(i, l)| socle::forme::lire_texte(l, "Un geste du scenario ne se lit pas.").map_err(|e| format!("{} ligne {} : {}", f.display(), i + 1, socle::echec::phrase_de(&e))))
+        .map(|(i, l)| socle::forme::lire_texte(l, "Un geste du scenario ne se lit pas.").map_err(|e| format!("{} ligne {} : {}", f.display(), i + 1, e.phrase())))
         .collect()
 }
 
@@ -535,7 +535,7 @@ fn rejouer_les_gestes(
                 let racine = racine_nommee(&racines, &derniere, compagnie).ok_or(format!("geste {} : `annoncer` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
                 let annonce = g.annonce.as_ref().ok_or(format!("geste {} : `annoncer` sans annonce", n))?;
                 let b = compagnie::bridage::branchement(&racine).map_err(|m| format!("geste {} : {}", n, m))?;
-                envois::organismes_simules::annoncer(&racine, b, annonce).map_err(|e| format!("geste {} : {}", n, e.message))?;
+                envois::organismes_simules::annoncer(&racine, b, annonce).map_err(|e| format!("geste {} : {}", n, String::from(e)))?;
             }
             Some(Genre::Etat) => {
                 let Some(racine) = racine_nommee(&racines, &derniere, compagnie) else {
@@ -544,12 +544,12 @@ fn rejouer_les_gestes(
                 };
                 let cle = g.cle.as_deref().ok_or(format!("geste {} : `etat` sans cle", n))?;
                 let o = Options::de_la_compagnie(&racine);
-                let refait = crate::service::contexte(&o).map_err(|m| socle::echec::Echec { classe: None, message: m }).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
+                let refait = crate::service::contexte(&o).map_err(|m| socle::echec::Echec { classe: None, phrase: m, a_part: None }).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
                 crate::remettre_le_fil();
                 // Comme une route : l'etat refait reussit, ou refuse, comme il l'a fait au banc (`ok`, vrai s'il est tu).
                 let attendu = g.a_reussi();
                 match refait {
-                    Err(e) if attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, e.message)),
+                    Err(e) if attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, String::from(e))),
                     Ok(()) if !attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} reussit au rejeu, refuse a l'enregistrement", n, heure(t), cle)),
                     // Le refus attendu, le meme qu'au banc.
                     Err(refus) => drop(refus),
@@ -563,7 +563,7 @@ fn rejouer_les_gestes(
                 for (_, racine) in &r.compagnies {
                     match crate::horloge::rattraper(racine, Some(jour), true) {
                         Ok(fait) => r.horloge.extend(fait.iter().map(|p| format!("{} {}", heure(t), p))),
-                        Err(e) => r.ecarts.push(format!("geste {} ({}) : l'horloge refuse : {}", n, heure(t), e.message)),
+                        Err(e) => r.ecarts.push(format!("geste {} ({}) : l'horloge refuse : {}", n, heure(t), String::from(e))),
                     }
                 }
             }
@@ -802,7 +802,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> Result<(), Stri
         quand: fin.map(heure),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2)
+    socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2).map_err(String::from)
 }
 
 const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lectures] [--jusqu-au AAAA-MM-JJ]\n\

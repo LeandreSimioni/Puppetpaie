@@ -240,7 +240,7 @@ pub fn commande(args: &[String]) -> i32 {
     let aujourdhui = match droit::contexte::aujourdhui_sans_note() {
         Ok(j) => j,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", String::from(m));
             return 1;
         }
     };
@@ -629,7 +629,7 @@ fn lire_texte(p: &Path) -> R<String> {
 
 /// Le releve d'un texte (`releve.json`), en sa forme.
 fn lire_releve(p: &Path) -> R<ReleveDUnTexte> {
-    socle::forme::lire_texte(&lire_texte(p)?, &format!("{} ne se lit pas.", p.display()))
+    socle::forme::lire_texte(&lire_texte(p)?, &format!("{} ne se lit pas.", p.display())).map_err(String::from)
 }
 
 fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {

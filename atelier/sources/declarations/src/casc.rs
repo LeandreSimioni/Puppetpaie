@@ -36,7 +36,7 @@ pub fn lue(ctx: &Contexte) -> Resultat<Option<CascSvp>> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier de la CASC-SVP de la compagnie (config/casc-svp.json) ne se lit pas : le signaler au développeur.").map(Some)
+    socle::forme::lire_fichier(&p, "Le fichier de la CASC-SVP de la compagnie (config/casc-svp.json) ne se lit pas : le signaler au développeur.").map(Some).map_err(String::from)
 }
 
 /// `mois_regularises` : les mois de `config/casc-svp.json` regularises hors DSN, tries (un fichier absent n'en

@@ -711,7 +711,7 @@ fn plur(k: usize, un: &'static str, des: &'static str) -> &'static str {
 /// celui du moteur.
 pub(crate) fn classer_saisie(message: String) -> Echec {
     let incomplete = engagement::saisie_incomplete(&message);
-    Echec { classe: if incomplete { Some(Classe::SaisieIncomplete) } else { None }, message }
+    Echec { classe: if incomplete { Some(Classe::SaisieIncomplete) } else { None }, phrase: message, a_part: None }
 }
 
 /// Quand le contrat (ou son dernier avenant) de l'engagement `numero` du salarie `cle` est parti (`departs`) ; rien s'il
@@ -2463,7 +2463,7 @@ fn le_jour(t: &str) -> R<String> {
         Some(x) => x,
         None => t,
     };
-    let jour = Jour::lire(tete).map_err(|e| erreur(Classe::Illisible, socle::echec::a_la_cle("Un instant du journal des envois ne se lit pas.", "quand", e)))?;
+    let jour = Jour::lire(tete).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Un instant du journal des envois ne se lit pas.", "quand", String::from(e)) })?;
     Ok(format!("le {}", jour.jj_mm_aaaa()))
 }
 

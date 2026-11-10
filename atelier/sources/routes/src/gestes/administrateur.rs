@@ -130,7 +130,7 @@ fn absolu(p: &Path) -> Result<PathBuf, String> {
     let c = match std::fs::canonicalize(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
-        Err(e) => return Err(socle::echec::du_disque(p, &e)),
+        Err(e) => return Err(socle::echec::du_disque(p, &e).into()),
     };
     Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
         Some(s) => PathBuf::from(s),
@@ -164,9 +164,9 @@ fn lire_registre(inst: &Path) -> Result<Vec<EntreeRegistre>, String> {
 fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> Result<(), String> {
     let p = inst.join(FICHIER);
     if entrees.is_empty() {
-        return socle::ecriture::effacer(&p);
+        return socle::ecriture::effacer(&p).map_err(String::from);
     }
-    socle::ecriture::ecrire_json(&p, &Registre { quoi: QUOI_DU_REGISTRE.into(), compagnies: entrees.to_vec() }, 2)
+    socle::ecriture::ecrire_json(&p, &Registre { quoi: QUOI_DU_REGISTRE.into(), compagnies: entrees.to_vec() }, 2).map_err(String::from)
 }
 
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
@@ -358,7 +358,7 @@ fn remplacer(chemin: &Path, octets: &[u8]) -> Result<(), String> {
     }
     std::fs::rename(&tmp, chemin).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        socle::echec::du_disque(&chemin, &e)
+        socle::echec::du_disque(&chemin, &e).into()
     })
 }
 
@@ -367,7 +367,7 @@ fn tel_qu_il_est(chemin: &Path) -> Result<Option<Vec<u8>>, String> {
     match std::fs::read(chemin) {
         Ok(o) => Ok(Some(o)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(socle::echec::du_disque(chemin, &e)),
+        Err(e) => Err(socle::echec::du_disque(chemin, &e).into()),
     }
 }
 
@@ -375,7 +375,7 @@ fn tel_qu_il_est(chemin: &Path) -> Result<Option<Vec<u8>>, String> {
 fn remettre(chemin: &Path, avant: &Option<Vec<u8>>) -> Result<(), String> {
     match avant {
         Some(o) => remplacer(chemin, o),
-        None => socle::ecriture::effacer(chemin),
+        None => socle::ecriture::effacer(chemin).map_err(String::from),
     }
 }
 
@@ -798,7 +798,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
     let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, &ctx.aujourdhui.iso());
-    let rappels = crate::rappels::rappels(ctx).map_err(|e| erreur(Classe::Refuse, e.message))?;
+    let rappels = crate::rappels::rappels(ctx).map_err(|e| Echec { classe: Some(Classe::Refuse), ..e })?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
     for r in &rappels.rappels {
@@ -820,7 +820,7 @@ fn o_de(o: &Options, racine: &Path) -> Options {
 fn refaire_compagnie(o: &Options, racine: &Path) -> Result<TableauCompagnie, String> {
     let oc = o_de(o, racine);
     let ctx = crate::service::contexte(&oc)?;
-    tableau_compagnie(&ctx).map_err(|e| e.message)
+    tableau_compagnie(&ctx).map_err(String::from)
 }
 
 /// UNE COMPAGNIE DU TABLEAU DE L'ADMINISTRATEUR : son identifiant et sa couleur a l'accueil, son nom, le jour de son
@@ -954,7 +954,7 @@ pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
         .into_iter()
         .map(|r| {
             let f = r.join(TABLEAU);
-            let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.") } else { Err("Pas encore lu : le tableau se fait.".to_string()) };
+            let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.").map_err(String::from) } else { Err("Pas encore lu : le tableau se fait.".to_string()) };
             (r, t)
         })
         .collect();

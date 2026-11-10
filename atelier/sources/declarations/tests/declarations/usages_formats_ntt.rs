@@ -46,7 +46,7 @@ fn chemin() -> std::path::PathBuf {
 }
 
 fn lu() -> Oracle {
-    socle::forme::lire_fichier(&chemin(), "L'oracle des usages et des formats ne se lit pas.").unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)))
+    socle::forme::lire_fichier(&chemin(), "L'oracle des usages et des formats ne se lit pas.").unwrap_or_else(|e| panic!("{}", e.phrase))
 }
 
 fn reecrire() -> bool {

@@ -64,7 +64,7 @@ fn entier(c: &Chiffre) -> Resultat<i64> {
 
 /// Un jour de l'arret dit et non vide, lu.
 fn jour_dit(x: &Option<String>) -> Resultat<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()
+    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose().map_err(String::from)
 }
 
 /// Les deux textes qu'un arret met en jeu.
@@ -103,7 +103,7 @@ impl Droits {
 
 /// L'origine d'un arret, lue sur son motif ; `None` pour un motif sans maintien (maternite, paternite...).
 pub fn origine(imp: &ArretSaisi) -> Resultat<Option<Origine>> {
-    Origine::du_motif(&imp.motif)
+    Origine::du_motif(&imp.motif).map_err(String::from)
 }
 
 /// LES DROITS D'UN ARRET : a l'anciennete au premier jour de l'absence (D1226-8), comptee depuis la date d'anciennete de la
@@ -188,7 +188,7 @@ pub fn fin_possible(r: &Regime, premier: &Jour, fin_arret: &Jour) -> Resultat<Jo
             None => return Ok(fin_arret.clone()),
         }
     }
-    debut.plus_jours(total - 1)
+    debut.plus_jours(total - 1).map_err(String::from)
 }
 
 /// Les jours deja indemnises, pour le texte `t`, dans les douze mois qui precedent le premier jour de `imp` : ceux des
@@ -592,7 +592,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> Resultat<Result<IjDeP
             // Le SMIC du plafond, au bareme de son annee : sans lui, rien ne se propose.
             let smic = match ctx.smic(&veille) {
                 Ok(s) => Decimal::try_from(s).map_err(|_| format!("SMIC illisible : {}", s))?,
-                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi))),
+                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
             };
             let combien = p.mois;
             let (mut bruts, mut jour) = (Vec::new(), veille.clone());
@@ -623,7 +623,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> Resultat<Result<IjDeP
             }
             let mensuel = match ctx.plafond_securite_sociale(premier.an) {
                 Ok((mensuel, _)) => mensuel,
-                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi))),
+                Err(pourquoi) => return Ok(Err(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
             };
             let brut = match paie(&veille.mois_civil().to_string())? {
                 Ok(b) => b,

@@ -781,7 +781,7 @@ mod tests {
     }
 
     fn proteger_un_acte(m: &Monde) -> Result<String, String> {
-        crate::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(|e| e.message)
+        crate::preuve::verifier_preuve(&m.ctx(), None, "2026-09", "depot REEL d'une DSN", "net-entreprises").map_err(String::from)
     }
 
     // ------------------------------------------------------------ le mot de passe tape ouvre tout
@@ -792,9 +792,9 @@ mod tests {
         let mauvais = "Pas-le-bon-mot-de-passe-77";
         crate::coffre::retenir_mot_de_passe_tape(mauvais);
         for r in [
-            crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.message),
+            crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(String::from),
             crate::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.to_string()),
-            crate::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.message),
+            crate::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(String::from),
         ] {
             let dit = r.expect_err("un mauvais mot de passe ne doit rien ouvrir");
             for secret in [NET, BOITE, LOGICIEL, mauvais] {

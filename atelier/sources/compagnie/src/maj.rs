@@ -174,7 +174,7 @@ pub fn nom_d_installation(version: &str, systeme: &str) -> String {
 /// La version d'un logiciel : son fichier `VERSION`. Un logiciel qui ne la dit pas se refuse.
 pub fn courante(code: &Path) -> R<String> {
     let p = code.join("VERSION");
-    socle::fichiers::lire_texte(&p).map(|v| v.trim().to_string()).map_err(|e| socle::echec::du_disque(&p, &e))
+    socle::fichiers::lire_texte(&p).map(|v| v.trim().to_string()).map_err(|e| socle::echec::du_disque(&p, &e).into())
 }
 
 /// Le dossier du logiciel (`logiciel/`) qui porte ce programme : le parent du dossier du code.
@@ -220,11 +220,11 @@ fn lire_forme<T: serde::de::DeserializeOwned>(p: &Path, phrase: &str) -> R<Optio
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(p, phrase).map(Some)
+    socle::forme::lire_fichier(p, phrase).map(Some).map_err(String::from)
 }
 
 pub fn ecrire_json<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
-    socle::ecriture::ecrire_json(p, v, 1)
+    socle::ecriture::ecrire_json(p, v, 1).map_err(String::from)
 }
 
 /// L'INSTALLATION : le dossier qui porte `logiciel/`, et a cote les compagnies (`prive/`, `compagnies/`, les fictives) et
@@ -343,7 +343,7 @@ fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -
             c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
         }
         // En essai, le garde-fou reseau : rien ne sort de la machine (une panne de reseau, comme hors ligne).
-        let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (HORS_LIGNE, format!("{} : {}", url, e)))?.build().into();
+        let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (HORS_LIGNE, format!("{} : {}", url, String::from(e))))?.build().into();
         let mut r = agent.get(&url).call().map_err(|e| {
             let mot = if matches!(e, ureq::Error::StatusCode(_)) { INTROUVABLE } else { HORS_LIGNE };
             (mot, format!("{} : {}", url, e))
@@ -353,7 +353,7 @@ fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -
         return lire_tout(&mut lecteur, attendus).map_err(|e| (HORS_LIGNE, format!("{} : {}", url, e)));
     }
     let p = Path::new(depot).join(nom);
-    let dit = |e: std::io::Error| (INTROUVABLE, socle::echec::du_disque(&p, &e));
+    let dit = |e: std::io::Error| (INTROUVABLE, String::from(socle::echec::du_disque(&p, &e)));
     let mut f = std::fs::File::open(&p).map_err(dit)?;
     let attendus = f.metadata().map_err(dit)?.len();
     lire_tout(&mut f, Some(attendus)).map_err(dit)
@@ -517,7 +517,7 @@ pub fn condensat(octets: &[u8]) -> String {
 }
 
 pub fn b64(t: &str) -> R<Vec<u8>> {
-    socle::base64::lire(t)
+    socle::base64::lire(t).map_err(String::from)
 }
 
 /// Les cles publiques dont une archive est acceptee : celle du poste de l'editeur (`CLE_PUBLIQUE`) et celle du flux de
@@ -1093,7 +1093,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
                 }
             }
         }
-        let pose = ecarter(nom).and_then(|_| std::fs::rename(neuves.join(nom), &d).map_err(|e| socle::echec::du_disque(&d, &e)));
+        let pose = ecarter(nom).and_then(|_| std::fs::rename(neuves.join(nom), &d).map_err(|e| socle::echec::du_disque(&d, &e).into()));
         match pose {
             Ok(()) => {
                 if let Some(e) = nouvelle.posees.get(nom) {
@@ -1553,7 +1553,7 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
     };
     a.vue = true;
     if let Err(e) = ecrire_appliquee(&chemin, &a) {
-        noter(inst, &socle::echec::du_disque(&chemin, &e));
+        noter(inst, &String::from(socle::echec::du_disque(&chemin, &e)));
     }
     let calcul = a.calcul.trim();
     if calcul.is_empty() {

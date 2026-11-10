@@ -35,7 +35,7 @@
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::fiche::Lue;
 use crate::natures::Nature;
@@ -60,7 +60,7 @@ pub enum Versement {
 
 impl Versement {
     /// La case telle qu'elle s'ecrit ; `Err` : ce qu'elle attend.
-    pub fn lire(texte: &str) -> Result<Versement, String> {
+    pub fn lire(texte: &str) -> R<Versement> {
         let t = socle::texte::sans_accent(texte).to_lowercase();
         let mots: Vec<&str> = t.split_whitespace().collect();
         let t = mots.join(" ");
@@ -83,20 +83,20 @@ impl Versement {
         };
         match n.parse::<u32>() {
             Ok(q) if (1..=31).contains(&q) => Ok(Versement::Fixe { quantieme: q, mois_suivant }),
-            _ => Err(format!("{} attendu", FORMES)),
+            _ => Err(socle::refus!("{} attendu", FORMES)),
         }
     }
 
     /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat` (`cle_de`) ; absente : le dernier
     /// jour du mois.
-    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> Resultat<Versement> {
+    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> R<Versement> {
         let dit = match nat.au_mois() {
             Some(au_mois) => &ent.permanent.ouvrir(&au_mois).date_de_versement_permanents,
             None => &ent.date_de_versement_intermittents,
         };
         match dit.portee() {
             Some(t) => Versement::lire(t).map_err(|_| {
-                format!(
+                socle::refus!(
                     "Le jour du versement des {} que dit la configuration, « {} », ne se lit pas : écrire {} \
                      (Configuration › Entreprise).",
                     if nat.mensuelle() { "permanents" } else { "intermittents" },
@@ -122,7 +122,7 @@ impl Versement {
     }
 
     /// Le jour du versement de la paie du mois `mois` (AAAA-MM) dont la periode finit le `fin_periode`.
-    pub fn jour(&self, mois: &str, fin_periode: Jour) -> Resultat<Jour> {
+    pub fn jour(&self, mois: &str, fin_periode: Jour) -> R<Jour> {
         let mois = Mois::lire(mois)?;
         match *self {
             Versement::FinDuMois => Ok(mois.dernier_jour()),
@@ -130,7 +130,7 @@ impl Versement {
             Versement::Fixe { quantieme, mois_suivant } => {
                 let m = if mois_suivant { mois.suivant() } else { mois };
                 let jour = quantieme.min(m.jours());
-                m.jour(jour).ok_or_else(|| format!("Le {} du mois n'existe pas.", jour))
+                m.jour(jour).ok_or_else(|| socle::refus!("Le {} du mois n'existe pas.", jour))
             }
         }
     }
@@ -138,19 +138,19 @@ impl Versement {
 
 /// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` (AAAA-MM) : le dernier jour du
 /// mois suivant (CCH-13 de S21.G00.50.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 61-62).
-pub fn au_plus_tard_en_dsn(mois: &str) -> Resultat<Jour> {
+pub fn au_plus_tard_en_dsn(mois: &str) -> R<Jour> {
     Ok(Mois::lire(mois)?.suivant().dernier_jour())
 }
 
 /// Le dernier jour ou se regle le salaire d'un artiste de cirque dont le contrat a duree determinee finit le `fin` :
 /// « au plus tard, la 1re semaine du mois suivant la fin dudit contrat » (CCNEAC, art. X.3.5.4) ; le 7, par inference.
-pub fn au_plus_tard_cirque_1285(fin: &Jour) -> Resultat<Jour> {
+pub fn au_plus_tard_cirque_1285(fin: &Jour) -> R<Jour> {
     fin.mois_civil().suivant().premier_jour().plus_jours(6)
 }
 
 /// Le refus d'un versement le `verse` pour `qui`, paye au titre du mois `mois` ; `fin_cirque` : la fin du contrat a duree
 /// determinee d'un artiste de cirque en convention 1285, quand elle tombe dans ce mois. `None` : les textes l'admettent.
-pub fn refus(qui: &str, verse: &Jour, mois: &str, fin_cirque: Option<&Jour>) -> Resultat<Option<String>> {
+pub fn refus(qui: &str, verse: &Jour, mois: &str, fin_cirque: Option<&Jour>) -> R<Option<String>> {
     let corriger = "Choisir un jour plus tôt : sur la carte (« Payé le »), ou dans la configuration (« Jour du versement \
                     des permanents » ou « des intermittents »).";
     let limite = au_plus_tard_en_dsn(mois)?;

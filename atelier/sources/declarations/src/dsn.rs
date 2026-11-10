@@ -102,7 +102,7 @@ impl Fichier {
     /// La case `cle` d'une fiche, que la rubrique exige : vide, elle refuse en se nommant.
     pub fn add_case<T: AsRef<str>>(&mut self, rubrique: &str, case: &Option<T>, cle: &str) -> Resultat<()> {
         match case {
-            None => Err(socle::fichiers::absent(cle)),
+            None => Err(socle::fichiers::absent(cle).into()),
             Some(t) => {
                 self.add(rubrique, t.as_ref());
                 Ok(())
@@ -159,12 +159,12 @@ pub fn contact_emetteur(f: &mut Fichier, ent: &ChampsEntreprise) -> Resultat<()>
                     Some(c) => format!("vaut « {} », ni 01 ni 02", c),
                     None => "manque".to_string(),
                 }
-            ), "declarant_dsn.civilite"))
+            ), "declarant_dsn.civilite").into())
         }
     };
     f.add("S10.G00.02.001", civilite);
     if decl.nom_prenom.remplie().is_none() {
-        return Err(socle::echec::cle("Le nom de la personne que les organismes contactent manque : le saisir dans Configuration › Entreprise, « Qui les organismes contactent ». Il s'écrit en S10.G00.02.002 et S20.G00.07.001. Rien n'est écrit.", "declarant_dsn.nom_prenom"));
+        return Err(socle::echec::cle("Le nom de la personne que les organismes contactent manque : le saisir dans Configuration › Entreprise, « Qui les organismes contactent ». Il s'écrit en S10.G00.02.002 et S20.G00.07.001. Rien n'est écrit.", "declarant_dsn.nom_prenom").into());
     }
     f.add_case("S10.G00.02.002", &decl.nom_prenom, "nom_prenom")?;
     f.add_case("S10.G00.02.004", &decl.email, "email")?;
@@ -609,7 +609,7 @@ pub struct ContributionDuMois {
 pub fn bases(p: &Paie, bar: &Pile) -> Resultat<HashMap<String, Decimal>> {
     let b = &p.bases;
     let mut out = HashMap::new();
-    let lue = |cle: &str| -> Resultat<Decimal> { b.get(cle).copied().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, cle)) };
+    let lue = |cle: &str| -> Resultat<Decimal> { b.get(cle).copied().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, cle).into()) };
     out.insert("brut".into(), p.brut);
     out.insert("brut_cs".into(), lue("brut_cs")?);
     out.insert("csg".into(), p.base_csg);
@@ -643,7 +643,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> Resultat<HashMap<String, Decimal>> {
 }
 
 fn base(bases: &HashMap<String, Decimal>, cle: &str) -> Resultat<Decimal> {
-    bases.get(cle).copied().ok_or_else(|| socle::fichiers::absent(cle))
+    bases.get(cle).copied().ok_or_else(|| socle::fichiers::absent(cle).into())
 }
 
 /// Les bases assujetties que la deduction forfaitaire specifique abat (
@@ -679,7 +679,7 @@ pub fn cle_abattue(p: &Paie, bloc78: &str, cle: &str) -> Resultat<String> {
 (aucun texte déposé ne la dit). Rien n'est écrit.",
         qui_contrat(p),
         bloc78
-    ), cle))
+    ), cle).into())
 }
 
 /// Le brut que la paie declare en 51 de type 001 : sous deduction forfaitaire specifique, le brut abattu. Guide Urssaf
@@ -827,7 +827,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> Resultat<Vec<Cotisation>> {
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
         if l.montant.is_some() && l.code81.is_none() {
-            return Err(socle::echec::livree("baremes", "cotisations_dsn.code81"));
+            return Err(socle::echec::livree("baremes", "cotisations_dsn.code81").into());
         }
         let unifie = l.code81.as_deref() == Some(AGIRC_ARRCO_UNIFIE);
         out.push(l);
@@ -1222,7 +1222,8 @@ declare.",
                 ent.idcc.portee().into_iter().map(|i| format!(" (convention {})", i)).collect::<String>()
             ),
             "sante_dispense",
-        ));
+        )
+        .into());
     }
     Ok(Some(AffiliationsDuPermanent { prevoyance, sante: dispense.is_none() && suspendue.is_none(), au_mois }))
 }
@@ -1278,7 +1279,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
                                 qui_contrat(p),
                                 e.debut.jj_mm_aaaa(),
                                 j.jj_mm_aaaa()
-                            ), "prevoyance_branche_depuis"));
+                            ), "prevoyance_branche_depuis").into());
                         }
                     }
                 }
@@ -1362,7 +1363,8 @@ compagnie ; rien n'est declare.",
                 Some(n) => format!("niveau « {} »", n),
                 None => "rien".to_string(),
             },
-        )),
+        )
+        .into()),
     }
 }
 
@@ -1556,7 +1558,7 @@ finit pas tout seul, et le motif commande les droits du salarie a l'assurance ch
         e.fin.iter().map(|f| f.jjmmaaaa()).collect::<String>(),
         nat.libelle,
         connus.join(", ")
-    ), "motif_rupture"))
+    ), "motif_rupture").into())
 }
 
 /// Le numero d'un contrat dans une phrase ; `rien` s'il n'en a pas.
@@ -1604,7 +1606,7 @@ compte l'anciennete declaree en S21.G00.86.003. C'est le jour de son embauche, q
 engagement pose et l'import au premier contrat lu ; cette fiche ne la dit pas, et elle ne se devine pas. La saisir sur \
 la fiche : le jour ou la personne est entree dans la compagnie.",
             qui_fiche(s, cle)
-        ), "date_anciennete"));
+        ), "date_anciennete").into());
     };
     let jours = fin_m.moins(&depuis) + 1;
     if jours < 1 {
@@ -1616,7 +1618,7 @@ p. 322). Corriger la date sur la fiche : le jour ou la personne est entree dans 
             depuis.jj_mm_aaaa(),
             fin_m.jj_mm_aaaa(),
             jours
-        ), "date_anciennete"));
+        ), "date_anciennete").into());
     }
     Ok(jours)
 }
@@ -1748,7 +1750,7 @@ pub fn bloc_contrat_fctu(
                 "Bareme {} : le taux AT/MP manque (sa valeur et son code risque). C'est le taux AT/MP notifie a l'etablissement, \
 declare en S21.G00.40.043 ; il ne se devine pas.",
                 bar.annee
-            ), "taux_atmp"))
+            ), "taux_atmp").into())
         }
     };
     // Les statuts se lisent, ou refusent (`statuts_du_contrat`), avant qu'une ligne du contrat soit ecrite.
@@ -2028,7 +2030,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> Resultat<()> {
 fn pas_du_versement(
     taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
 ) -> Resultat<(Option<droit::fiche::Montant>, Option<String>, Option<String>, Decimal)> {
-    let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT).map_err(|e| e.message().to_string())?;
+    let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT).map_err(socle::echec::Echec::from)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
 }
 
@@ -2409,7 +2411,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
                 "La paie de {} pour {} ne porte pas de prelevement a la source. Revalider l'engagement.",
                 p.salarie.id.to_string(),
                 e.mois
-            ), "pas"))
+            ), "pas").into())
         }
     };
     f.add_ecrit("S21.G00.50.006", taux.as_ref().map(droit::fiche::Montant::ecrit))?;
@@ -3147,7 +3149,8 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> Resultat<String> {
         return Err(socle::echec::cle(
             "Le bareme du mois n'a pas de taux AT/MP, et un CTP de la DSN le porte. C'est le taux notifie par l'Assurance Maladie (Configuration › Entreprise). Rien n'est ecrit.",
             "taux_atmp.valeur",
-        ));
+        )
+        .into());
     };
     let mut valeur = valeur;
     if ctp.statut.as_deref() == Some("artiste") {
@@ -3191,7 +3194,7 @@ fn technicien(p: &Paie) -> bool {
 fn code_declare(c: &Cotisation) -> Resultat<&str> {
     match &c.code81 {
         Some(code) => Ok(code),
-        None => Err(socle::echec::livree("baremes", "cotisations_dsn.code81")),
+        None => Err(socle::echec::livree("baremes", "cotisations_dsn.code81").into()),
     }
 }
 
@@ -3386,7 +3389,7 @@ signaler au développeur. Rien n'est écrit.",
             ),
             socle::echec::APart { fichier: Some("organismes-base.json".into()), cle: Some(k[plafonnee("").len()..].to_string()), ..Default::default() },
         )),
-        None => Err(socle::echec::livree("organismes-base.json", &k)),
+        None => Err(socle::echec::livree("organismes-base.json", &k).into()),
     }
 }
 
@@ -3433,7 +3436,7 @@ impl Seuils {
 /// `assujettissement::taxe_apprentissage_non_due_au_mois` pour un mois `AAAA-MM`.
 fn taxe_apprentissage_non_due_du_mois(ent: &ChampsEntreprise, mois: &str) -> Resultat<bool> {
     let m = Mois::lire(mois)?;
-    droit::apprentissage::taxe_apprentissage_non_due_au_mois(ent, m.annee(), m.numero())
+    droit::apprentissage::taxe_apprentissage_non_due_au_mois(ent, m.annee(), m.numero()).map_err(String::from)
 }
 
 fn lignes_bordereau(
@@ -3848,9 +3851,9 @@ caisses) se paie par prelevement SEPA sur ce compte, et la norme exige les deux 
 SIG-13). Les saisir dans Configuration › Paiement des cotisations (le compte et son BIC, \
 sur le RIB de la compagnie). Rien n'est ecrit.",
             manque.join(" et ")
-        ), "banque"));
+        ), "banque").into());
     }
-    ent.banque.exigee("banque")
+    ent.banque.exigee("banque").map_err(String::from)
 }
 
 /// Le prelevement a la source que CE fichier retient : la somme des S21.G00.50.009 (versements du mois et
@@ -4150,7 +4153,7 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
 fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: &str) -> Resultat<Pile> {
-    bareme::surcharger((*ctx.bareme(&Mois::lire(mois)?.premier_jour())?).clone(), ent, nic)
+    bareme::surcharger((*ctx.bareme(&Mois::lire(mois)?.premier_jour())?).clone(), ent, nic).map_err(String::from)
 }
 
 /// LE BLOC 40 DECLARE du contrat de `p` (regle 4 : il se lit, il ne se recalcule pas), pour le bloc Changements contrat
@@ -4240,12 +4243,12 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
         Some(n) => n,
         None => s.id.to_string(),
     };
-    let mut saisies = vec![("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(|e| e.message)?)];
+    let mut saisies = vec![("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", ent).map_err(String::from)?)];
     for s in &vues {
-        saisies.push(("salarie", format!("la fiche de {}", nomme(s)), crate::champs::Saisie::de_la_fiche("salarie", &s.champs).map_err(|e| e.message)?));
+        saisies.push(("salarie", format!("la fiche de {}", nomme(s)), crate::champs::Saisie::de_la_fiche("salarie", &s.champs).map_err(String::from)?));
     }
     let fiches: Vec<(&str, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    match crate::champs::refus_des_manques("dsn", &fiches, if caisse_conges { &[] } else { &[documents::conges_spectacles::CLE_ADHERENT] }).map_err(|e| e.message)? {
+    match crate::champs::refus_des_manques("dsn", &fiches, if caisse_conges { &[] } else { &[documents::conges_spectacles::CLE_ADHERENT] }).map_err(String::from)? {
         Some(m) => Err(m),
         None => Ok(()),
     }
@@ -4410,7 +4413,7 @@ etablissement, chacun avec ses salaries. Rien n'est ecrit.",
             nic,
             egares.into_iter().collect::<Vec<_>>().join(", "),
             if n > 1 { "nent" } else { "t" }
-        ), "etablissement"));
+        ), "etablissement").into());
     }
     let caisse = paies.iter().map(Paie::declaree_a_la_caisse_des_conges).collect::<Resultat<Vec<bool>>>()?.contains(&true);
     exiges(ent0, paies.iter().map(|p| &p.salarie).chain(regs.iter().map(|r| &r.apres.salarie)), caisse)?;
@@ -5095,7 +5098,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
 pub fn en_latin1(texte: &str) -> Resultat<Vec<u8>> {
     texte
         .chars()
-        .map(|c| if (c as u32) < 256 { Ok(c as u8) } else { Err(socle::echec::a_la_cle("Un texte de la DSN porte un caractère que la norme n'admet pas : le retirer de la fiche qui le porte.", "caractere", c)) })
+        .map(|c| if (c as u32) < 256 { Ok(c as u8) } else { Err(socle::echec::a_la_cle("Un texte de la DSN porte un caractère que la norme n'admet pas : le retirer de la fiche qui le porte.", "caractere", c).into()) })
         .collect()
 }
 
@@ -5103,7 +5106,7 @@ pub fn ecrire(texte: &str, chemin: &Path) -> Resultat<()> {
     if let Some(d) = chemin.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e))?;
     }
-    std::fs::write(chemin, en_latin1(texte)?).map_err(|e| socle::echec::du_disque(&chemin, &e))
+    std::fs::write(chemin, en_latin1(texte)?).map_err(|e| socle::echec::du_disque(&chemin, &e).into())
 }
 
 #[cfg(test)]

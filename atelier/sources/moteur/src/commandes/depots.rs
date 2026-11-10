@@ -86,20 +86,20 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
 /// Le reseau injoignable ou coupe, ou le coffre qui ne s'ouvre pas : une phrase et un code, pas un plantage.
 fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
     if matches!(e.classe, Some(Classe::Reseau | Classe::DelaiDepasse)) {
-        dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", e.message);
+        dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", String::from(e));
         return 1;
     }
     // Le coffre ferme et la seance refusee : « rien ici ne l'ouvre » est une phrase pour l'utilisateur, pas un defaut du logiciel.
     // Code 2, comme « le mot de passe n'est nulle part ».
     if e.classe == Some(Classe::Coffre) {
-        dire!("{}", e.message);
+        dire!("{}", String::from(e));
         return 2;
     }
     cadre.plantage(e)
 }
 
 fn ko(m: String) -> Echec {
-    Echec { classe: None, message: m }
+    Echec { classe: None, phrase: m, a_part: None }
 }
 
 const JOUR: i64 = 86_400;
@@ -111,11 +111,11 @@ fn secondes(j: &Jour) -> i64 {
 /// La plage de recherche, en heures locales naives. Par defaut, les 30 derniers jours.
 fn fenetre(args: &Args) -> Result<(i64, i64), Echec> {
     let fin = match args.texte("jusqu-a") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), message: m })?) + 23 * 3600 + 59 * 60 + 59,
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?) + 23 * 3600 + 59 * 60 + 59,
         None => socle::paris::maintenant_naif(),
     };
     let debut = match args.texte("depuis") {
-        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), message: m })?),
+        Some(j) => secondes(&Jour::lire(j).map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?),
         None => fin - 30 * JOUR,
     };
     Ok((debut, fin))
@@ -123,6 +123,6 @@ fn fenetre(args: &Args) -> Result<(i64, i64), Echec> {
 
 /// Le jour d'une heure locale naive, en `JJ/MM/AAAA`.
 fn jour_de(t: i64) -> Result<String, Echec> {
-    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).ok_or_else(|| Echec { classe: Some(Classe::Illisible), message: format!("{} n'est pas une heure du calendrier", t) })
+    Jour::depuis_jours_unix(t.div_euclid(JOUR)).map(|j| j.jj_mm_aaaa()).ok_or_else(|| Echec { classe: Some(Classe::Illisible), phrase: format!("{} n'est pas une heure du calendrier", t), a_part: None })
 }
 

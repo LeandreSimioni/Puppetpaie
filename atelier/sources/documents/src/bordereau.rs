@@ -80,10 +80,10 @@ fn date_table(texte: &str) -> Resultat<Option<Jour>> {
     }
     let p: Vec<&str> = texte.split('-').collect();
     if p.len() != 3 {
-        return Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", texte));
+        return Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", texte).into());
     }
     let n = |s: &str| -> Resultat<i64> {
-        s.trim().parse::<i64>().map_err(|_| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", s))
+        s.trim().parse::<i64>().map_err(|_| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", s).into())
     };
     let (an, x, y) = (n(p[0])?, n(p[1])?, n(p[2])?);
     let (mois, jour) = if y > 12 { (x, y) } else { (y, x) };

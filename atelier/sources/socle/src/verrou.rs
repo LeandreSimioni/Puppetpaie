@@ -10,7 +10,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::num::Resultat;
+use crate::echec::R;
 
 /// Au-dela, un verrou est tenu pour abandonne (10 minutes).
 pub const DELAI_VERROU: i64 = 600;
@@ -57,7 +57,7 @@ fn age_secondes(chemin: &Path) -> std::io::Result<i64> {
 /// Prend le verrou, ou rend qui le tient. Un verrou plus vieux que `delai`
 /// est leve, une fois, puis on retente. Une erreur d'ecriture (dossier
 /// absent...) est une erreur, pas un verrou tenu.
-pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> Resultat<Result<(), Verrouille>> {
+pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<(), Verrouille>> {
     for essai in [1, 2] {
         match OpenOptions::new().write(true).create_new(true).open(chemin) {
             Ok(mut f) => {
@@ -101,7 +101,7 @@ pub struct Verrou {
 }
 
 impl Verrou {
-    pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> Resultat<Result<Verrou, Verrouille>> {
+    pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<Verrou, Verrouille>> {
         Ok(prendre(chemin, marque, delai)?.map(|_| Verrou { chemin: chemin.to_path_buf(), marque: marque.to_string() }))
     }
 }

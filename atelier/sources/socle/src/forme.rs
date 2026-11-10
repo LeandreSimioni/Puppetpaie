@@ -14,21 +14,24 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::echec::APart;
-use crate::num::Resultat;
+use crate::echec::{refus_avec, APart, Echec, R};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+// Un refus de lecture se note la ou la forme se lit (`#[track_caller]`), pas ici : aucune fermeture ne le construit.
+
 /// La donnee `v` lue en `T`. `phrase` est celle du refus, pour l'ecran (« Le barème livré ne se lit pas : le signaler au
 /// développeur. ») ; le chemin de la cle et le detail vont a part.
-pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> Resultat<T> {
-    serde_path_to_error::deserialize(v).map_err(|e| refus(phrase, None, &e))
+#[track_caller]
+pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
+    match serde_path_to_error::deserialize(v) { Ok(t) => Ok(t), Err(e) => Err(refus(phrase, None, &e)) }
 }
 
 /// Le texte JSON `texte` lu en `T` (`lire`, sans passer par une `Value`).
-pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> Resultat<T> {
+#[track_caller]
+pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> R<T> {
     let mut d = serde_json::Deserializer::from_str(texte);
-    serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, None, &e))
+    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus(phrase, None, &e)) }
 }
 
 /// UNE FORME QUI EST LA REPONSE D'UN TIERS (Google, qui ajoute des cles a ses reponses sans prevenir) : elle se declare
@@ -40,22 +43,25 @@ pub trait ReponseDUnTiers: DeserializeOwned {}
 /// cles connues et typees : une cle exigee qui manque, ou d'un autre type, refuse la reponse. Une cle que le tiers ajoute
 /// et que `T` ne declare pas est ignoree a la porte : ni lue, ni gardee, ni transmise. Sans cela, une cle neuve de Google
 /// couperait la connexion et le Drive jusqu'a une nouvelle version.
-pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> Resultat<T> {
+#[track_caller]
+pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> R<T> {
     lire_texte(texte, phrase)
 }
 
 /// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
 /// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, comme `lire`.
-pub fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> Resultat<U>
+#[track_caller]
+pub fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
 where
     S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
 {
     let mut suivi = serde_path_to_error::Track::new();
-    table.deserialize(serde_path_to_error::Deserializer::new(v, &mut suivi)).map_err(|e| refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e)))
+    match table.deserialize(serde_path_to_error::Deserializer::new(v, &mut suivi)) { Ok(u) => Ok(u), Err(e) => Err(refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e))) }
 }
 
 /// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
-pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> Resultat<U>
+#[track_caller]
+pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> R<U>
 where
     T: serde::Serialize + ?Sized,
     S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
@@ -66,24 +72,26 @@ where
 /// Le fichier JSON `fichier` lu en `T` (`lire_texte`, sa lecture notee au registre d'un calcul suivi :
 /// `fichiers::lire_texte`). Le disque qui refuse se dit par `echec::du_disque` ; une forme fausse par `phrase`, le
 /// chemin du fichier, la cle et le detail a part.
-pub fn lire_fichier<T: DeserializeOwned>(fichier: &Path, phrase: &str) -> Resultat<T> {
-    let texte = crate::fichiers::lire_texte(fichier).map_err(|e| crate::echec::du_disque(fichier, &e))?;
+#[track_caller]
+pub fn lire_fichier<T: DeserializeOwned>(fichier: &Path, phrase: &str) -> R<T> {
+    let texte = match crate::fichiers::lire_texte(fichier) { Ok(t) => t, Err(e) => return Err(crate::echec::du_disque(fichier, &e)) };
     let mut d = serde_json::Deserializer::from_str(&texte);
-    serde_path_to_error::deserialize(&mut d).map_err(|e| refus(phrase, Some(fichier), &e))
+    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus(phrase, Some(fichier), &e)) }
 }
 
 /// UNE DONNEE DONT LES VALEURS NE S'AFFICHENT JAMAIS (l'identite d'une vraie compagnie, `compagnie::essai`) : le
 /// texte JSON `texte` lu en `T`, comme `lire_texte`, jusqu'a sa fin. Son refus ne dit que le chemin de la cle fautive, et
 /// ce qui ne va pas sans la valeur : la cle qui manque, la cle inconnue (son nom), la forme attendue, la ligne et la
 /// colonne d'un texte qui n'est pas du JSON. Le message de serde, qui peut citer la valeur, ne sort pas.
-pub fn lire_texte_sans_valeur<T: DeserializeOwned>(texte: &str, phrase: &str) -> Resultat<T> {
+#[track_caller]
+pub fn lire_texte_sans_valeur<T: DeserializeOwned>(texte: &str, phrase: &str) -> R<T> {
     let mut d = serde_json::Deserializer::from_str(texte);
-    let t = serde_path_to_error::deserialize(&mut d).map_err(|e| refus_sans_valeur(phrase, &e.path().to_string(), e.inner()))?;
-    d.end().map_err(|e| refus_sans_valeur(phrase, ".", &e))?;
-    Ok(t)
+    let t = match serde_path_to_error::deserialize(&mut d) { Ok(t) => t, Err(e) => return Err(refus_sans_valeur(phrase, &e.path().to_string(), e.inner())) };
+    match d.end() { Ok(()) => Ok(t), Err(e) => Err(refus_sans_valeur(phrase, ".", &e)) }
 }
 
-fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> String {
+#[track_caller]
+fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> Echec {
     let detail = match e.classify() {
         serde_json::error::Category::Data => {
             let m = e.to_string();
@@ -105,7 +113,7 @@ fn refus_sans_valeur(phrase: &str, chemin: &str, e: &serde_json::Error) -> Strin
         }
         _ => Some(format!("ce n'est pas un JSON lisible (ligne {}, colonne {})", e.line(), e.column())),
     };
-    crate::echec::avec(phrase, APart { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..APart::default() })
+    refus_avec(phrase, APart { cle: Some(if chemin == "." { String::new() } else { chemin.to_string() }), detail, ..APart::default() })
 }
 
 /// La longueur, en octets, de l'objet JSON qui ouvre `texte` (ce qu'un refus porte a part, `echec::avec`), s'il en
@@ -118,10 +126,11 @@ pub fn objet_en_tete(texte: &str) -> Option<usize> {
     }
 }
 
-fn refus(phrase: &str, fichier: Option<&Path>, e: &serde_path_to_error::Error<serde_json::Error>) -> String {
+#[track_caller]
+fn refus(phrase: &str, fichier: Option<&Path>, e: &serde_path_to_error::Error<serde_json::Error>) -> Echec {
     let cle = e.path().to_string();
     let detail = en_clair(&e.inner().to_string());
-    crate::echec::avec(
+    refus_avec(
         phrase,
         APart {
             chemin: fichier.map(|f| f.to_string_lossy().into_owned()),
@@ -177,10 +186,10 @@ pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Dec
             Ok(u.into())
         }
         fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Self::Value, E> {
-            crate::num::dec_f64(x).map_err(E::custom)
+            crate::num::dec_f64(x).map_err(|e| E::custom(e.phrase))
         }
         fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-            crate::num::dec_texte(s).map_err(E::custom)
+            crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
         }
     }
     d.deserialize_any(EnDecimal)
@@ -443,23 +452,26 @@ where
 
 /// `lire`, quand la phrase du refus nomme elle-meme la cle fautive : `phrase(chemin, detail)` la compose (le fichier
 /// d'une compagnie, qu'elle corrige : `droit::fiche`).
-pub fn lire_en_phrase<T: DeserializeOwned>(v: &Value, phrase: impl Fn(&str, &str) -> String) -> Resultat<T> {
-    serde_path_to_error::deserialize(v).map_err(|e| refus_en_phrase(&phrase, &e))
+#[track_caller]
+pub fn lire_en_phrase<T: DeserializeOwned>(v: &Value, phrase: impl Fn(&str, &str) -> String) -> R<T> {
+    match serde_path_to_error::deserialize(v) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
 }
 
 /// `lire_en_phrase`, du fichier JSON `fichier` (sa lecture notee au registre d'un calcul suivi, `fichiers::lire_texte`) ;
 /// le disque qui refuse se dit par `echec::du_disque`.
-pub fn lire_fichier_en_phrase<T: DeserializeOwned>(fichier: &Path, phrase: impl Fn(&str, &str) -> String) -> Resultat<T> {
-    let texte = crate::fichiers::lire_texte(fichier).map_err(|e| crate::echec::du_disque(fichier, &e))?;
+#[track_caller]
+pub fn lire_fichier_en_phrase<T: DeserializeOwned>(fichier: &Path, phrase: impl Fn(&str, &str) -> String) -> R<T> {
+    let texte = match crate::fichiers::lire_texte(fichier) { Ok(t) => t, Err(e) => return Err(crate::echec::du_disque(fichier, &e)) };
     let mut d = serde_json::Deserializer::from_str(&texte);
-    serde_path_to_error::deserialize(&mut d).map_err(|e| refus_en_phrase(&phrase, &e))
+    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
 }
 
-fn refus_en_phrase(phrase: &impl Fn(&str, &str) -> String, e: &serde_path_to_error::Error<serde_json::Error>) -> String {
+#[track_caller]
+fn refus_en_phrase(phrase: &impl Fn(&str, &str) -> String, e: &serde_path_to_error::Error<serde_json::Error>) -> Echec {
     let chemin = e.path().to_string();
     let chemin = if chemin == "." { String::new() } else { chemin };
     let detail = en_clair(&e.inner().to_string());
-    crate::echec::avec(phrase(&chemin, &detail), APart { cle: Some(chemin), detail: Some(detail).filter(|d| !d.is_empty()), ..APart::default() })
+    refus_avec(phrase(&chemin, &detail), APart { cle: Some(chemin), detail: Some(detail).filter(|d| !d.is_empty()), ..APart::default() })
 }
 
 // ------------------------------------------------------------------ les formes partagees
@@ -478,10 +490,11 @@ type CacheDesFormes = Mutex<HashMap<(PathBuf, TypeId), (Arc<Vec<u8>>, Forme)>>;
 /// se note au registre : l'appelant dit ce qu'il lit (les engagements se comptent par leur saisie, `engagement::stock`).
 /// Partage : on ne la modifie pas ; deux lectures du meme contenu rendent la meme forme (`Arc::ptr_eq`). Un JSON
 /// illisible se dit par `echec::du_disque`, une forme fausse par `phrase`, la cle et le detail a part (`lire`).
-pub fn partagee<T: DeserializeOwned + Send + Sync + 'static>(chemin: &Path, phrase: &str) -> Resultat<Option<Arc<T>>> {
+#[track_caller]
+pub fn partagee<T: DeserializeOwned + Send + Sync + 'static>(chemin: &Path, phrase: &str) -> R<Option<Arc<T>>> {
     static CACHE: OnceLock<CacheDesFormes> = OnceLock::new();
     let cle = (chemin.to_path_buf(), TypeId::of::<T>());
-    let en_t = |f: Forme| f.downcast::<T>().map_err(|_| "Une forme partagée n'a pas le type de sa lecture : le signaler au développeur.".to_string());
+    let en_t = |f: Forme| f.downcast::<T>().map_err(|_| crate::echec::refus("Une forme partagée n'a pas le type de sa lecture : le signaler au développeur."));
     if let Some(lu) = GESTE.with(|g| g.borrow().as_ref().and_then(|l| l.get(&cle).cloned())) {
         return lu.map(en_t).transpose();
     }
@@ -492,7 +505,7 @@ pub fn partagee<T: DeserializeOwned + Send + Sync + 'static>(chemin: &Path, phra
             garder_dans_le_geste(cle, None);
             return Ok(None);
         }
-        Err(e) => return Err(crate::fichiers::panne_fichier(&e, chemin)),
+        Err(e) => return Err(crate::echec::refus(crate::fichiers::panne_fichier(&e, chemin))),
     };
     let deja = crate::memoire::tenu(cache).get(&cle).filter(|(vus, _)| **vus == octets).map(|(_, f)| f.clone());
     let f = match deja {
@@ -509,14 +522,15 @@ pub fn partagee<T: DeserializeOwned + Send + Sync + 'static>(chemin: &Path, phra
 
 /// Les octets JSON du fichier `chemin` lus en `T` : un JSON illisible se dit par `echec::du_disque`, une forme fausse par
 /// `phrase`, la cle et le detail a part.
-fn des_octets<T: DeserializeOwned>(chemin: &Path, octets: &[u8], phrase: &str) -> Resultat<T> {
+#[track_caller]
+fn des_octets<T: DeserializeOwned>(chemin: &Path, octets: &[u8], phrase: &str) -> R<T> {
     let mut d = serde_json::Deserializer::from_slice(octets);
-    let t = serde_path_to_error::deserialize(&mut d).map_err(|e| match e.inner().classify() {
-        serde_json::error::Category::Data => refus(phrase, None, &e),
-        _ => crate::echec::du_disque(&chemin, e.inner()),
-    })?;
-    d.end().map_err(|e| crate::echec::du_disque(&chemin, &e))?;
-    Ok(t)
+    let t = match serde_path_to_error::deserialize(&mut d) {
+        Ok(t) => t,
+        Err(e) if e.inner().classify() == serde_json::error::Category::Data => return Err(refus(phrase, None, &e)),
+        Err(e) => return Err(crate::echec::du_disque(&chemin, e.inner())),
+    };
+    match d.end() { Ok(()) => Ok(t), Err(e) => Err(crate::echec::du_disque(&chemin, &e)) }
 }
 
 thread_local! {

@@ -89,7 +89,7 @@ struct Vers {
 
 fn base() -> Resultat<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
-    forme_en_cache(&CACHE, BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok).map_err(String::from)
 }
 
 /// Le code tel que la fiche le porte : sans espace, en majuscules.

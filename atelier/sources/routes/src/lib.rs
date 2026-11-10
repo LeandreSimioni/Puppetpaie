@@ -273,7 +273,8 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // Les mots de passe et les comptes (`routes::coffre`), le filet et les messages au developpeur (`routes::filet`) ne
     // dependent d'aucun de ces manques : leur refus se dit seul.
     match rendu {
-        Err(Echec { classe, message }) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && classe != Some(Classe::EnvoiBride) => {
+        Err(e) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && e.classe != Some(Classe::EnvoiBride) => {
+            let (classe, message) = (e.classe, String::from(e));
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
             let message = if message.contains(socle::echec::A_PART) {
                 message
@@ -284,7 +285,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
                     Err(e) => format!("{} {}", message, e),
                 }
             };
-            Err(Echec { classe, message })
+            Err(Echec { classe, phrase: message, a_part: None })
         }
         autre => autre,
     }
@@ -324,7 +325,7 @@ impl<'a> PhraseNotee<'a> {
             sans_contexte: true,
         };
         if let Err(e) = compagnie::incidents::noter(racine, &note) {
-            compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)));
+            compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", e.phrase()));
         }
     }
 }

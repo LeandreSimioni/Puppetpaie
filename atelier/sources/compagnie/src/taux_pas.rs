@@ -8,8 +8,8 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
 
-pub fn ko(m: String) -> Echec {
-    Echec { classe: None, message: m }
+pub fn ko(m: impl Into<String>) -> Echec {
+    Echec { classe: None, phrase: m.into(), a_part: None }
 }
 
 /// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --

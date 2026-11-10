@@ -101,7 +101,7 @@ fn jours_option(x: Option<f64>) -> Resultat<String> {
 
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
 fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> Resultat<String> {
-    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle))
+    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle).into())
 }
 
 
@@ -325,7 +325,7 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> Resultat<S
 
 pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> Resultat<(String, String)> {
     let Some(idcc_compagnie) = ent.idcc.portee() else {
-        return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc").into());
     };
     let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
     let libelle = if idcc == "1734" {
@@ -1425,7 +1425,7 @@ pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, de
 
 /// Le texte d'une case de la fiche, exigee : vide, elle se refuse en se nommant.
 fn exige(c: &Option<String>, cle: &str) -> Resultat<String> {
-    c.ecrite(cle).map(str::to_string)
+    c.ecrite(cle).map(str::to_string).map_err(String::from)
 }
 
 /// Le modele du bulletin que la fiche du salarie choisit, `None` si elle n'en choisit pas.

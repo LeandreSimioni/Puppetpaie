@@ -21,7 +21,7 @@ use socle::num::{dec_f64, eur2, Decimal, Resultat};
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
 fn jour_de_l_avenant(eng: &Engagement) -> Resultat<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui()).map_err(String::from)
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul
@@ -37,7 +37,7 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jo
     crate::fiche_du_salarie(ctx, &eng.salarie)?;
     let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &debut, &fin)?;
     jours.extend(jour_de_l_avenant(eng)?);
-    droit::periodes::decouper(debut, fin, jours)
+    droit::periodes::decouper(debut, fin, jours).map_err(String::from)
 }
 
 /// Les engagements des periodes elementaires `bornes` de `eng` : chacun borne a sa periode, sur les termes du contrat
@@ -68,7 +68,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
     let quotite_apres = eng.quotite()?;
     let avenant = jour_de_l_avenant(eng)?;
-    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
+    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle).into()).and_then(|c| c.dec());
     let (salaire_avant, quotite_avant) = match &eng.avant {
         Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
         None => (salaire_apres, quotite_apres),

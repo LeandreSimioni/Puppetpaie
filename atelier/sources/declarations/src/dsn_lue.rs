@@ -1141,7 +1141,7 @@ mod tests {
         assert_eq!((socle::num::q2(rappel.brut.unwrap()), rappel.cachets.normalize().to_string()), ("30.00".to_string(), "1".to_string()));
         assert_eq!(d.contrats[0].fin_declaree.map(|j| j.iso()).as_deref(), Some("2026-08-31"));
         let faux = "S20.G00.05.005,'01082026'\nS21.G00.30.001,'1'\nS21.G00.50.001,'31082026'\nS21.G00.51.001,'01082026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.013,'12,5'\n";
-        assert!(lire(faux.as_bytes(), "essai.dsn").unwrap_err().message.contains("« 12,5 », qui n'est pas un montant"));
+        assert!(lire(faux.as_bytes(), "essai.dsn").unwrap_err().phrase.contains("« 12,5 », qui n'est pas un montant"));
     }
 
     /// UN VERSEMENT DE DEUX CONTRATS attribue a chacun ce que la norme rattache a son numero : ses remunerations

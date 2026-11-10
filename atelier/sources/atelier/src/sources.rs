@@ -113,7 +113,7 @@ pub struct ARelever {
 /// Le manifeste livre (`donnees/sources.json`, a cote des autres referentiels).
 pub fn manifeste(code: &Path) -> R<Manifeste> {
     let p = code.join(MANIFESTE);
-    socle::forme::lire_fichier(&p, &format!("{} ne se lit pas.", p.display()))
+    socle::forme::lire_fichier(&p, &format!("{} ne se lit pas.", p.display())).map_err(String::from)
 }
 
 /// Ou vivent les copies : `atelier/reference/sources/` de l'installation (`maj::installation`), c'est-a-dire du depot,
@@ -192,7 +192,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
         // La transcription ne se confronte a aucun condensat : c'est l'original qui fait foi.
         let transcription_presente = s.transcription.as_ref().map(|t| d.join(t).is_file());
         let conforme = if presente { Some(sha256(&std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e))?) == s.sha256) } else { None };
-        let releve = Jour::lire(&s.releve_le).map_err(|e| format!("sources.json : « {} », releve_le : {}", ident, e))?;
+        let releve = Jour::lire(&s.releve_le).map_err(|e| format!("sources.json : « {} », releve_le : {}", ident, String::from(e)))?;
         out.push(EtatSource {
             ident: ident.clone(),
             titre: s.titre.clone(),

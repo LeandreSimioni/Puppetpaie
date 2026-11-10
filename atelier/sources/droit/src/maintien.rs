@@ -16,7 +16,8 @@
 
 use crate::natures::Nature;
 use crate::clauses;
-use socle::num::{div, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{div, Decimal};
 
 /// Ce qui a cause l'arret, quand c'est une maladie ou un accident : le champ `origine` d'un motif S21.G00.60.001 de
 /// `arrets-base.json` (`crate::arrets`).
@@ -32,7 +33,7 @@ pub enum Origine {
 impl Origine {
     /// L'origine d'un motif d'arret (`arrets-base.json`), ou `None` pour un motif qui n'appelle pas de maintien (ou
     /// que la norme ne connait pas).
-    pub fn du_motif(code: &str) -> Resultat<Option<Origine>> {
+    pub fn du_motif(code: &str) -> R<Option<Origine>> {
         Ok(crate::arrets::motif_d_arret(code)?.and_then(|m| m.origine))
     }
 
@@ -102,7 +103,7 @@ pub fn fraction(taux: Decimal) -> Decimal {
 
 /// Ce que la loi garantit (L1226-1, D1226-1 a D1226-3, D1226-8) a un salarie de cette nature et de cette anciennete au
 /// premier jour de l'absence.
-pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> Resultat<Droit> {
+pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> R<Droit> {
     if let Some(refus) = crate::permanents::droit_au_maintien(Some(nature), anciennete_mois)? {
         return Ok(Droit::PasDu(refus));
     }
@@ -123,11 +124,12 @@ pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> Res
 
 // ------------------------------------------------------------------ la convention
 
-fn manque(ou: &str, cle: &str) -> String {
+#[track_caller]
+fn manque(ou: &str, cle: &str) -> socle::echec::Echec {
     socle::echec::livree(ou, cle)
 }
 
-fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> Resultat<Vec<Tranche>> {
+fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
     l.iter()
         .map(|t| {
             let duree = match (t.pendant_ij, t.mois, t.jours) {
@@ -145,7 +147,7 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> Resultat<Vec<Tranche>
 /// `None` quand elle ne prevoit rien (la loi seule s'applique). La clause de l'accident du travail vaut quand elle couvre
 /// l'origine (`couvre`, les origines que l'article nomme), sauf passe
 /// `comme_maladie_apres_mois` d'anciennete ; celle de la maladie sinon (une maladie, un accident « non professionnel »).
-pub fn conventionnel(idcc: Option<&str>, anciennete_mois: Decimal, origine: Origine) -> Resultat<Option<Droit>> {
+pub fn conventionnel(idcc: Option<&str>, anciennete_mois: Decimal, origine: Origine) -> R<Option<Droit>> {
     let Some(sec) = clauses::releve(idcc)?.and_then(|c| c.maintien_de_salaire) else { return Ok(None) };
     let accident = sec.accident_du_travail.filter(|at| {
         at.couvre.contains(&origine) &&at.comme_maladie_apres_mois.is_none_or(|apres| anciennete_mois < apres.0)

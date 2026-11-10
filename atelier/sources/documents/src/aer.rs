@@ -167,7 +167,7 @@ pub struct Cadre5 {
 
 /// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
 fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
-    c.ecrite(cle).map(str::to_string)
+    c.ecrite(cle).map(str::to_string).map_err(String::from)
 }
 
 impl Cadre5 {

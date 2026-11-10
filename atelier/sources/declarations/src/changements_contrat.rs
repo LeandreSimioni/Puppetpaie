@@ -317,7 +317,7 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
 p. 217).",
                 qui(p),
                 date.jj_mm_aaaa()
-            ), "date_modification"));
+            ), "date_modification").into());
         }
         identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.021".to_string(), avant.to_string())]);
     }
@@ -455,7 +455,7 @@ n'est ecrit.",
                 None => ancienne.to_string(),
             },
             nouveau.jj_mm_aaaa()
-        ), "decidee_le"));
+        ), "decidee_le").into());
     };
     let date = decidee.min(fin_mois);
     let mut fin = debut;

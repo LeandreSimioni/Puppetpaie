@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// `fctu-base.json` : les codes de la norme propres au signalement de fin de contrat de travail unique.
 #[derive(Debug, Clone, Deserialize)]
@@ -113,7 +113,7 @@ pub struct NotificationRupture {
 }
 
 /// `fctu-base.json`, lu par sa forme.
-pub fn base() -> Resultat<BaseFctu> {
+pub fn base() -> R<BaseFctu> {
     static CACHE: std::sync::OnceLock<FormeGardee<BaseFctu>> = std::sync::OnceLock::new();
     let b = forme_en_cache(&CACHE, "fctu-base.json", "Les codes du signalement de fin de contrat livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*b).clone())
@@ -140,7 +140,7 @@ impl Nomenclature {
 
 /// Les codes S21.G00.52.001 d'une indemnite compensatrice de preavis (`types_preavis.codes_52_de_l_indemnite_de_preavis` :
 /// 023, 032 ; cahier technique 2026.1, p. 253).
-pub fn codes_52_de_l_indemnite_de_preavis() -> Resultat<Vec<String>> {
+pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<String>> {
     Ok(base()?.types_preavis.codes_52_de_l_indemnite_de_preavis)
 }
 
@@ -149,7 +149,7 @@ pub fn codes_52_de_l_indemnite_de_preavis() -> Resultat<Vec<String>> {
 /// libelle). `None` s'ils s'accordent, sinon pourquoi non. Le drapeau `indemnite_de_preavis` du type (`fctu-base.json`) :
 /// `versee` (02) veut une ligne, `aucune` (01, 03, 10, 60, 61, 90) n'en veut pas, un type sans
 /// drapeau (50, 51) n'est pas confronte. Un type inconnu refuse.
-pub fn desaccord_du_preavis(type_preavis: &str, versees: &[(String, String)]) -> Resultat<Option<String>> {
+pub fn desaccord_du_preavis(type_preavis: &str, versees: &[(String, String)]) -> R<Option<String>> {
     let types = base()?.types_preavis;
     let t = types.du_code(type_preavis).ok_or_else(|| {
         format!("Type de preavis {} inconnu de la norme (S21.G00.63.001). Les types sont dans fctu-base.json.", repr(type_preavis))

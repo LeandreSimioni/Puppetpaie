@@ -209,7 +209,7 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
 // ------------------------------------------------------------ le bloc
 
 fn effectif_atteint(ctx: &Contexte, seuil: i64, annee_paie: i32, quoi: &str) -> Resultat<bool> {
-    ctx.effectif()?.atteint(seuil, annee_paie).map_err(|m| format!("Bloc S21.G00.44 (assujettissement fiscal), {} : {}", quoi, m))
+    ctx.effectif()?.atteint(seuil, annee_paie).map_err(|m| format!("Bloc S21.G00.44 (assujettissement fiscal), {} : {}", quoi, String::from(m)))
 }
 
 /// Les CTP du bordereau (`ctp_urssaf` du fichier des organismes), sans ceux de la taxe d'apprentissage (992, 993) quand
@@ -229,7 +229,7 @@ pub fn ctp_sans_la_taxe_non_due(ctps: Vec<droit::organismes::Ctp>, non_due: bool
 fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[String], an: i32) -> Resultat<Bloc44> {
     let paye = ctp.iter().any(|c| CTP_TAXE_APPRENTISSAGE.contains(&c.as_str()));
     let champ = champ_du_motif();
-    let motif = motif_de_la_fiche(ent).map_err(|e| format!("DSN de decembre {} : {}", an, e))?;
+    let motif = motif_de_la_fiche(ent).map_err(|e| format!("DSN de decembre {} : {}", an, String::from(e)))?;
     let Some((code, libelle)) = motif else {
         if paye {
             return Ok(Bloc44 { code: "001", montant: None, motif: None });
@@ -241,7 +241,7 @@ assujettissement », qui exige son motif (S21.G00.44.004, table MNATA de la norm
 compagnie doit la taxe (code du travail L. 6241-1), c'est la table livrée qui est en défaut : aucune saisie de la \
 compagnie ne la corrige. Rien n'est écrit.",
             an, CTP_TAXE_APPRENTISSAGE[0], CTP_TAXE_APPRENTISSAGE[1], champ
-        ), "ctp_urssaf"));
+        ), "ctp_urssaf").into());
     };
     if code == MNATA_ASSOCIATIONS && an >= MILLESIME_ASSOCIATIONS_REDEVABLES {
         return Err(format!(
@@ -258,7 +258,7 @@ Rien n'est écrit.",
 bordereau la paie (CTP {} ou {} de la table livrée). L'un des deux est faux : {}, \
 ou la table livrée. Rien n'est écrit.",
             an, code, CTP_TAXE_APPRENTISSAGE[0], CTP_TAXE_APPRENTISSAGE[1], champ
-        ), "ctp_urssaf"));
+        ), "ctp_urssaf").into());
     }
     // Le code vient de la table livree : `Bloc44.code` est statique, le motif ne l'est pas.
     Ok(Bloc44 { code: "002", montant: None, motif: Some(code) })

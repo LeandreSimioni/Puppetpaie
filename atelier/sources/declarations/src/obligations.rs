@@ -232,7 +232,7 @@ impl DeBase {
 
 /// Une valeur que la base doit porter, et qu'elle ne porte pas.
 pub fn livree(cle: &str) -> String {
-    socle::echec::livree("obligations-base.json", cle)
+    socle::echec::livree("obligations-base.json", cle).into()
 }
 
 /// `obligations-base.json`, lu par sa forme (une fois tant que le fichier ne change pas).

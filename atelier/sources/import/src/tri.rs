@@ -245,7 +245,7 @@ impl Trieur {
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
                 Err(e) => {
                     f.sorte = Sorte::Dsn;
-                    f.raison = Some(e.message);
+                    f.raison = Some(e.into());
                 }
                 Ok(_) => {
                     f.sorte = Sorte::Illisible;

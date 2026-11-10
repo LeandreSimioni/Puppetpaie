@@ -53,14 +53,14 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         2
     };
     if let Err(e) = refuser_si_pas_redirige(cadre, Organisme::Google, "la restauration depuis le Drive") {
-        return refus(Some(socle::echec::Classe::Refuse), &e.message);
+        return refus(Some(socle::echec::Classe::Refuse), &String::from(e));
     }
     if !routes::coffre::autorise(&cadre.racine) {
         return refus(Some(socle::echec::Classe::Google), "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
     }
     let racine_drive = match args.exige("racine-drive") {
         Ok(r) => r,
-        Err(e) => return refus(e.classe, &e.message),
+        Err(e) => return refus(e.classe, &String::from(e)),
     };
     // `DOSSIER` : ou ecrire ; sans lui, le dossier des donnees de la commande (voir l'en-tete).
     let cible = match args.texte("dossier").filter(|d| !d.is_empty()) {

@@ -558,12 +558,12 @@ fn actuel(mdp: Option<&str>) -> Option<String> {
 /// Le refus du coffre : `Coffre` se rend `Refuse` (la page le montre tel quel), tout le reste (`Disque`...) garde
 /// sa classe.
 fn en_operation(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(if x.classe == Classe::Coffre { Classe::Refuse } else { x.classe }), message: x.message }
+    Echec { classe: Some(if x.classe == Classe::Coffre { Classe::Refuse } else { x.classe }), phrase: x.message, a_part: None }
 }
 
 /// Le refus du coffre tel quel (`coffre.oublier_ouverture` ne l'attrapait pas).
 fn en_coffre(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(x.classe), message: x.message }
+    Echec { classe: Some(x.classe), phrase: x.message, a_part: None }
 }
 
 /// L'heure de Paris, a la minute.
@@ -865,7 +865,7 @@ impl Jeton {
             format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", e.message)
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
-        socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).")
+        socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).").map_err(String::from)
     }
 }
 
@@ -939,7 +939,7 @@ fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, "lier le compte Google")?;
-    let (application, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
+    let (application, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), ..e })?;
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {

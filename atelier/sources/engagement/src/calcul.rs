@@ -477,7 +477,7 @@ impl Paie {
     /// Le titre du spectacle, ou pour un permanent le libelle de sa nature de contrat.
     pub fn titre(&self) -> Resultat<String> {
         match &self.spectacle {
-            Some(s) => s.titre.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent("titre")),
+            Some(s) => s.titre.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent("titre").into()),
             None => Ok(self.engagement.nat()?.libelle.clone()),
         }
     }
@@ -920,7 +920,7 @@ impl Assiettes {
     }
 }
 
-fn pss_du_contexte(ctx: &Contexte) -> impl Fn(i32) -> Resultat<(Decimal, Decimal)> + '_ {
+fn pss_du_contexte(ctx: &Contexte) -> impl Fn(i32) -> socle::echec::R<(Decimal, Decimal)> + '_ {
     move |a| ctx.plafond_securite_sociale(a).map(|(m, h)| (Decimal::from(m), Decimal::from(h)))
 }
 
@@ -1031,7 +1031,7 @@ pub(crate) fn date_d_anciennete(fiche: &ChampsSalarie, debut: &Jour) -> Jour {
 /// pas se refuse : rien ne le devine.
 pub(crate) fn statut_de(sal: &ChampsSalarie) -> Resultat<&'static str> {
     sal.statut.dite().map(|s| s.as_str()).ok_or_else(|| {
-        socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut")
+        socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut").into()
     })
 }
 
@@ -1079,7 +1079,7 @@ fn calculer_du_mois(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R
 
 /// L'assiette d'une rubrique : le calcul ne cotise pas sur une assiette que la rubrique ne dit pas.
 fn base_de(r: &Rubrique) -> Resultat<&str> {
-    r.base.as_deref().ok_or_else(|| socle::fichiers::absent("base"))
+    r.base.as_deref().ok_or_else(|| socle::fichiers::absent("base").into())
 }
 
 /// Le taux patronal d'une rubrique, s'il n'est pas nul.
@@ -1222,7 +1222,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
 /// son contrat et la fiche qu'elle a lue.
 pub(crate) fn declaree_a_la_caisse_des_conges(p: &Paie) -> Resultat<bool> {
     let e = &p.engagement;
-    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.debut, e.fin.as_ref())
+    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.debut, e.fin.as_ref()).map_err(String::from)
 }
 
 /// La meme question pour la saisie `e` d'un contrat paye au mois, avant que son engagement ne soit construit (le solde de
@@ -1235,7 +1235,7 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
     let dit = |c: &Option<String>| c.clone().filter(|x| !x.is_empty());
     let emploi = EmploiEngagement { code_emploi_ft: dit(&e.code_emploi_ft).or_else(|| dit(&e.metier)), ..Default::default() };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);
-    droit::caisse_conges::affilie(&nat, &fiche, &debut, Some(fin))
+    droit::caisse_conges::affilie(&nat, &fiche, &debut, Some(fin)).map_err(String::from)
 }
 
 /// LA PERIODE D'ESSAI QUE L'ENGAGEMENT STIPULE ne depasse pas la duree maximale de son contrat (`droit::essai` : C. trav.
@@ -1251,7 +1251,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     let jours = lu.ceil() as i64;
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
     let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().map(|s| s.as_str()), artiste, ctx.entreprise.idcc.portee())?;
-    droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
+    droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle)).map_err(String::from)
 }
 
 /// La paie d'un engagement sur sa periode (la periode de paie, ou une periode elementaire), dans l'ordre du §7. La
@@ -1604,7 +1604,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         } else {
             par_rubrique
                 .iter()
-                .map(|b| b.lire(&cle_base).ok_or_else(|| socle::fichiers::absent(&cle_base)))
+                .map(|b| b.lire(&cle_base).ok_or_else(|| socle::fichiers::absent(&cle_base).into()))
                 .collect::<Resultat<_>>()?
         };
         let (mut m_pat, mut m_sal) = (zero, zero);
@@ -1821,7 +1821,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
             _ => None,
         };
-        return plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), tp, &pss_du_contexte(ctx));
+        return plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), tp, &pss_du_contexte(ctx)).map_err(String::from);
     }
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
@@ -1834,7 +1834,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         dates_travail: e.dates_travail.iter().map(tuple).collect(),
         jours: e.jours,
     };
-    pour_paie(&ep, &pss_du_contexte(ctx))
+    pour_paie(&ep, &pss_du_contexte(ctx)).map_err(String::from)
 }
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la
@@ -1856,7 +1856,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> Resultat<Decimal> {
-    plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), None, &pss_du_contexte(ctx))
+    plafond_permanent(tuple(&e.debut_periode()?), tuple(&e.fin_periode()?), None, &pss_du_contexte(ctx)).map_err(String::from)
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.
@@ -1911,7 +1911,7 @@ impl PlafondTempsPartiel {
             .iter()
             .find(|(_, c)| *c == code)
             .map(|(p, _)| *p)
-            .ok_or_else(|| socle::echec::a_la_cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel", code))
+            .ok_or_else(|| socle::echec::a_la_cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel", code).into())
     }
 }
 

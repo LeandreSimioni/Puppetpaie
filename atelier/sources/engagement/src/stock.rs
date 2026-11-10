@@ -362,7 +362,7 @@ pub(crate) fn lire_dans<T: FichierDuStock>(racine: &Path, mois: &str) -> Resulta
     if let Some(f) = Brouillon::lu::<T>(racine, mois) {
         return Ok(Some(f));
     }
-    socle::forme::partagee(&chemin_dans(racine, T::DOSSIER, mois), T::ILLISIBLE)
+    socle::forme::partagee(&chemin_dans(racine, T::DOSSIER, mois), T::ILLISIBLE).map_err(String::from)
 }
 
 /// Le fichier de `mois` ne porte-t-il que des engagements importes seuls (`Objet::importe_seul`) ? Un tel mois n'a pas de
@@ -1323,7 +1323,7 @@ pub fn commence_avant_le_logiciel(racine: &Path, debut: &str, mois: &str) -> Res
 
 /// Le jour `AAAA-MM-JJ` de `mois` qui est le premier, pour les bornes d'un contrat.
 pub fn premier_jour(mois: &str) -> Resultat<Jour> {
-    Mois::lire(mois).map(Mois::premier_jour)
+    Mois::lire(mois).map(Mois::premier_jour).map_err(String::from)
 }
 
 /// Le mois a-t-il une saisie : un fichier, ou un engagement qui le touche ?

@@ -539,7 +539,7 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     }
     match routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
         Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
-        Err(e) => json!({"ok": false, "erreur": e.message}),
+        Err(e) => json!({"ok": false, "erreur": String::from(e)}),
     }
 }
 

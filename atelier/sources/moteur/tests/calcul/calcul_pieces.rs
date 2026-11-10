@@ -16,7 +16,7 @@ fn decimal(v: &Value) -> Result<rust_decimal::Decimal, String> {
         Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
             (Some(i), _, _) => Ok(i.into()),
             (_, Some(u), _) => Ok(u.into()),
-            (_, _, Some(f)) => socle::num::dec_f64(f),
+            (_, _, Some(f)) => socle::num::dec_f64(f).map_err(String::from),
             _ => Err(format!("nombre illisible : {}", n)),
         },
         autre => Err(format!("nombre attendu, lu {}", autre)),
@@ -39,16 +39,16 @@ fn canon_valeur(v: &Value) -> Result<Value, String> {
 }
 
 /// La section `reduction_generale` d'un bareme de la grille, lue comme la pile la lit.
-fn section(bar: &Value) -> Result<Option<droit::forme_bareme::ReductionGenerale>, String> {
+fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ReductionGenerale>> {
     bar.get("reduction_generale").filter(|v| !v.is_null()).map(|v| socle::forme::lire(v, "section illisible")).transpose()
 }
 
 
 /// `{"ok": canon(v)}` ou `{"refus": message}`.
-fn essai(r: Result<Value, String>) -> Value {
+fn essai<E: Into<String>>(r: Result<Value, E>) -> Value {
     match r {
         Ok(v) => json!({"ok": canon_valeur(&v).unwrap()}),
-        Err(e) => json!({"refus": socle::echec::phrase_de(&e)}),
+        Err(e) => json!({"refus": socle::echec::phrase_de(&e.into())}),
     }
 }
 

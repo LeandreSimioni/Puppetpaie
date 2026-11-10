@@ -183,7 +183,7 @@ impl Depenses {
 fn dec(v: Nombre, nom: &str, millesime: i32) -> Resultat<Decimal> {
     let x = v.0;
     if x.is_sign_negative() && !x.is_zero() {
-        return Err(socle::echec::a_la_cle(&format!("La déclaration OETH de {} porte un chiffre négatif.", millesime), nom, x.to_string()));
+        return Err(socle::echec::a_la_cle(&format!("La déclaration OETH de {} porte un chiffre négatif.", millesime), nom, x.to_string()).into());
     }
     Ok(x)
 }
@@ -230,7 +230,8 @@ Rien n'est ecrit.",
                 ou
             ),
             &manque.join(", "),
-        ));
+        )
+        .into());
     };
     let eff = dec(effectif, "effectif_assujettissement", millesime)?;
     let mut d = Declaration {
@@ -432,7 +433,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> Resultat<Decimal> 
     let socle = droit::contexte::socle_livre_lu(millesime)?;
     let liste = match socle.as_ref().map(|s| &s.smic_horaire) {
         Some(l) if !l.is_empty() => l,
-        _ => return dec_f64(ctx.smic(&jour)?),
+        _ => return dec_f64(ctx.smic(&jour)?).map_err(String::from),
     };
     let mut entrees: Vec<&droit::forme_bareme::Datee> = liste.iter().collect();
     // Une valeur sans `depuis` est celle de tout temps (`droit::forme_bareme::Datee`) : elle vient avant les autres.
@@ -456,5 +457,5 @@ fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: i32) -> Resultat<bool> 
             return Ok(false);
         }
     }
-    ctx.effectif()?.atteint(SEUIL, millesime + 1).map_err(|m| format!("Déclaration OETH de {} : {}", millesime, m))
+    ctx.effectif()?.atteint(SEUIL, millesime + 1).map_err(|m| format!("Déclaration OETH de {} : {}", millesime, String::from(m)))
 }

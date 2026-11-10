@@ -1776,7 +1776,7 @@ fn verifier(arret: &ArretSaisi) -> R<()> {
     match signalement::verifier(&declarations::dsn::Arret { saisi: arret.clone() }, signalement::ARRET, None) {
         Ok(_) => Ok(()),
         Err(signalement::Echec::Impossible(m)) => Err(erreur(Classe::Illisible, m)),
-        Err(signalement::Echec::Autre(m)) => Err(Echec { classe: None, message: m }),
+        Err(signalement::Echec::Autre(m)) => Err(Echec { classe: None, phrase: m, a_part: None }),
     }
 }
 
@@ -2217,7 +2217,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
 }
 
 #[track_caller]
-fn plain(m: String) -> Echec {
+fn plain(m: impl Into<String>) -> Echec {
     socle::echec::noter_et(None, m)
 }
 

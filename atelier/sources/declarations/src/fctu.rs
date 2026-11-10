@@ -45,6 +45,13 @@ impl From<&str> for Echec {
     }
 }
 
+/// Le refus du socle ou du droit, par le pont du socle (`From<socle::echec::Echec> for String`).
+impl From<socle::echec::Echec> for Echec {
+    fn from(e: socle::echec::Echec) -> Echec {
+        Echec::Autre(e.into())
+    }
+}
+
 impl Echec {
     pub fn message(&self) -> &str {
         match self {
@@ -59,7 +66,7 @@ fn type_de_declaration(code: &str) -> Option<&'static str> {
 
 /// `fctu-base.json`, lu par sa forme (`droit::preavis::base`).
 fn nomenclatures() -> Resultat<droit::preavis::BaseFctu> {
-    droit::preavis::base()
+    droit::preavis::base().map_err(String::from)
 }
 
 /// `FinDeContrat.libelle_preavis` : le libelle du type de preavis, « ? » s'il est inconnu.
@@ -72,7 +79,7 @@ pub fn libelle_preavis(type_preavis: &str) -> Resultat<String> {
 
 /// Le code par defaut d'une nomenclature.
 fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> Resultat<String> {
-    n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
+    n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi).into())
 }
 
 /// La fin d'un contrat, telle qu'elle se declare (dates AAAA-MM-JJ). Le dernier jour travaille et paye
@@ -100,7 +107,7 @@ fn numero_dit(e: &Engagement) -> &str {
 }
 
 fn d(s: &str) -> Resultat<Jour> {
-    Jour::lire(s)
+    Jour::lire(s).map_err(String::from)
 }
 
 // ------------------------------------------------ le dernier jour travaille et paye

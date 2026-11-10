@@ -60,7 +60,7 @@ fn dit(p: &Path) -> Option<bool> {
         Ok(e) => bride_selon(&e.edition),
         // Il ne debloque pas ; le developpeur le saura (le fil du moteur).
         Err(illisible) => {
-            crate::diagnostic::noter_moteur(&format!("bridage : {}", socle::echec::phrase_de(&illisible)));
+            crate::diagnostic::noter_moteur(&format!("bridage : {}", illisible.phrase()));
             None
         }
     }
@@ -133,7 +133,7 @@ pub fn basculer() -> Result<(), String> {
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
 /// d'un scenario (`routes::scenario`).
 pub fn brider(inst: &Path) -> Result<(), String> {
-    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
+    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2).map_err(String::from)
 }
 
 /// Le geste, sur l'installation `inst`.
@@ -150,4 +150,5 @@ pub fn basculer_de(inst: &Path) -> Result<(), String> {
         },
         2,
     )
+    .map_err(String::from)
 }

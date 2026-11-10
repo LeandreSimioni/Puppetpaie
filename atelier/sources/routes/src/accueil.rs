@@ -456,7 +456,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration.
     let mut saisie = declarations::champs::Saisie::default();
     saisie.poser("nom_affichage", declarations::champs::Valeur::Texte(nom.clone()));
-    crate::fiches::deriver("entreprise", &mut saisie, false, &|_| true).map_err(|e| e.message)?;
+    crate::fiches::deriver("entreprise", &mut saisie, false, &|_| true).map_err(String::from)?;
     // Toute la configuration est datee (`droit::fiche::dater`) : la premiere valeur vaut de tout temps.
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());

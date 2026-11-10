@@ -140,7 +140,7 @@ impl Charge {
         match self.0.get("mois").and_then(Value::as_str).filter(|m| !m.is_empty()) {
             Some(m) => socle::mois::Mois::lire(m)
                 .map(Some)
-                .map_err(|e| erreur(Classe::Illisible, socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", e))),
+                .map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", String::from(e)) }),
             None => Ok(None),
         }
     }
@@ -435,7 +435,7 @@ fn separer(message: &str) -> (String, Result<APart, String>) {
     for m in morceaux {
         match socle::forme::objet_en_tete(m) {
             Some(n) => {
-                let lu = socle::forme::lire_texte::<APart>(&m[..n], "Ce qu'un refus porte à part ne se lit pas.");
+                let lu = socle::forme::lire_texte::<APart>(&m[..n], "Ce qu'un refus porte à part ne se lit pas.").map_err(String::from);
                 a_part = match (a_part, lu) {
                     (Ok(mut a), Ok(b)) => {
                         a.reunir(b);
@@ -458,9 +458,10 @@ impl Refus {
     /// Ce qu'il porte a part et qui ne se lit pas en sa forme (`APart`) est un defaut du logiciel : le refus le dit, sa
     /// phrase gardee, la raison a part.
     pub fn de(route: Option<Route>, e: Echec) -> Refus {
-        let (phrase, a_part) = separer(&e.message);
+        let classe = e.classe;
+        let (phrase, a_part) = separer(&String::from(e));
         let (classe, phrase, a_part) = match a_part {
-            Ok(a) => (e.classe, phrase, Some(a).filter(|a| !a.est_vide())),
+            Ok(a) => (classe, phrase, Some(a).filter(|a| !a.est_vide())),
             Err(illisible) => (
                 Some(Classe::DefautDuLogiciel),
                 format!("Défaut du logiciel : ce que ce refus porte à part ne se lit pas. {}", phrase),

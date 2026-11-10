@@ -462,7 +462,7 @@ struct DuMois<'a> {
 /// se dit sur la sortie d'erreur.
 fn recalcul_refuse(racine: &Path, mois: &str, refus: &str) {
     if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), refus, None, "engagement::etats::du_mois", DuMois { mois }, None) {
-        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message));
+        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", e.phrase());
     }
 }
 
@@ -853,7 +853,7 @@ pub fn envoi_actif(racine: &Path) -> bool {
     match envoi(racine) {
         Ok(actif) => actif,
         Err(e) => {
-            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", socle::echec::phrase_de(&e.message)));
+            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", e.phrase()));
             false
         }
     }
@@ -1064,7 +1064,7 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
         Ok(true) => {}
         Ok(false) => return bilan,
         Err(e) => {
-            bilan.erreur = Some(e.message);
+            bilan.erreur = Some(e.into());
             return bilan;
         }
     }
@@ -1077,12 +1077,12 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
             return bilan;
         }
         Err(m) => {
-            bilan.erreur = Some(m);
+            bilan.erreur = Some(m.into());
             return bilan;
         }
     };
     if let Err(e) = passage(racine, &mut bilan) {
-        bilan.erreur = Some(e.message);
+        bilan.erreur = Some(e.into());
     }
     bilan
 }

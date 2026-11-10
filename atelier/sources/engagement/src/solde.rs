@@ -82,12 +82,12 @@ fn idcc(ctx: &Contexte) -> Option<&str> {
 
 fn profil(ctx: &Contexte, e: &Carte) -> Resultat<clauses::Profil> {
     let fiche = crate::fiche_du_salarie(ctx, e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?.champs;
-    clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?)
+    clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?).map_err(String::from)
 }
 
 /// Le decimal d'un nombre des clauses, tel qu'il s'ecrit.
 fn de_p(x: clauses::P) -> Resultat<Decimal> {
-    socle::num::dec_texte(&x.to_string())
+    socle::num::dec_texte(&x.to_string()).map_err(String::from)
 }
 
 /// CE QUE L'ENGAGEMENT `e` DIT DU SALARIE la ou la fiche le dit aussi (`clauses::DitParLEngagement`) : son statut, son
@@ -565,7 +565,7 @@ fn delai_de_prevenance(
                  ne donne un delai de prevenance que si le contrat stipule une periode d'essai d'au moins une semaine. \
                  La saisie ne dit pas celle du contrat, en jours ; le moteur ne la devine pas.",
                 qui
-            ), "periode_essai_jours"));
+            ), "periode_essai_jours").into());
         };
         if essai.dec_avec_echelle()? < minimum {
             stc.avertissements.push(info(format!(
@@ -591,7 +591,7 @@ fn delai_de_prevenance(
              pas dite (« Notifiée le »). Le delai de prevenance de L1221-25 se compte depuis elle, selon la presence \
              du salarie ; le moteur ne la devine pas.",
             qui
-        ), "notification_rupture"));
+        ), "notification_rupture").into());
     };
     let debut = debut_de(e)?;
     if notification < debut || notification > *fin {
@@ -810,7 +810,7 @@ fn indemnite_de_rupture(
                     qui,
                     clauses::nom(idcc),
                     cdd
-                ), &rubrique));
+                ), &rubrique).into());
             }
             ouvert = true;
         }
@@ -898,7 +898,7 @@ fn indemnite_de_rupture(
                 euros(cb),
                 euros(ch),
                 euros(m_legal)
-            ), &rubrique));
+            ), &rubrique).into());
         }
         montant = bas;
     } else {
@@ -941,7 +941,7 @@ fn indemnite_de_rupture(
                  obligatoire ? S'il ne l'est pas, son indemnite n'est pas \
                  imposable (CGI 80 duodecies 6°) ; s'il l'est, elle l'est. Le dire sur l'engagement.",
                 qui
-            ), "en_droit_a_la_retraite"));
+            ), "en_droit_a_la_retraite").into());
         };
         if droit {
             rubrique = "indemnite_rupture_conventionnelle_imposable".into();
@@ -1199,7 +1199,7 @@ fn indemnite_de_licenciement(
 
 /// L'article d'une indemnite que la convention releve (`clauses::indemnite_licenciement`) : une convention relevee le dit.
 fn article_de(conv: &clauses::Indemnite) -> Resultat<&str> {
-    conv.article.as_deref().ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement.article"))
+    conv.article.as_deref().ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement.article").into())
 }
 
 /// Le nom qu'un administrateur voit dans la liste des rubriques.
@@ -1224,6 +1224,7 @@ fn indemnite_conventionnelle(
         motif,
         age(ctx, e)?,
     )
+    .map_err(String::from)
 }
 
 fn lectures(conv: &clauses::Indemnite) -> Resultat<String> {
@@ -1307,7 +1308,7 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<(Vec<Deci
 /// Le brut que portent des lignes deja construites, sans les charger : la
 /// meme somme que `calcul.calculer`.
 fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> Resultat<Decimal> {
-    let requis = |x: Option<Decimal>, cle: &str| -> Resultat<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle)) };
+    let requis = |x: Option<Decimal>, cle: &str| -> Resultat<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle).into()) };
     let mut total = zero2();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;

@@ -19,7 +19,7 @@ fn chaque_modele_livre_se_lit_et_porte_les_mentions_de_l1242_12_et_r1221_34() {
     for f in std::fs::read_dir(MODELES).unwrap() {
         let p = f.unwrap().path();
         if p.extension().is_some_and(|e| e == "modele") {
-            ModeleLu::du_fichier(&p).unwrap_or_else(|r| panic!("{} : {}", p.display(), r.message));
+            ModeleLu::du_fichier(&p).unwrap_or_else(|r| panic!("{} : {}", p.display(), r.phrase));
         }
     }
     for nature in ["cddu_spectacle", "cdd", "cdi"] {

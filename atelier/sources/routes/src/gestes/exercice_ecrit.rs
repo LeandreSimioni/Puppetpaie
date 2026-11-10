@@ -393,7 +393,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     // L'export compta fait partie de ce qu'on garde : on l'ecrit si absent.
     let (fichier_export, manques) = match export_compta(ctx, annee, 1, 12, true) {
         Ok(e) => (e.fichier, Vec::new()),
-        Err(e) if est_une_erreur_d_operation(&e) => (None, vec![format!("export compta : {}", e.message)]),
+        Err(e) if est_une_erreur_d_operation(&e) => (None, vec![format!("export compta : {}", String::from(e))]),
         Err(e) => return Err(e),
     };
 

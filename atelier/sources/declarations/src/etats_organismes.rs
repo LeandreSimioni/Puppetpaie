@@ -313,7 +313,7 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
         let mut une = false;
         for nic in ctx.entreprise.nics().map_err(refus)? {
             let etablissement = if Some(nic.as_str()) == principal { None } else { Some(nic.as_str()) };
-            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| refus(e.message))? {
+            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| refus(String::from(e)))? {
                 out.push((m.clone(), nic, f, partie));
                 une = true;
             }

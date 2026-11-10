@@ -208,7 +208,7 @@ fn dossier_des_transcripts(projets: &Path, depot: &Path) -> Result<Option<PathBu
 }
 
 fn date(f: &Path) -> Result<SystemTime, String> {
-    std::fs::metadata(f).and_then(|m| m.modified()).map_err(|e| socle::echec::du_disque(f, &e))
+    std::fs::metadata(f).and_then(|m| m.modified()).map_err(|e| socle::echec::du_disque(f, &e).into())
 }
 
 fn plus_recent(fichiers: Vec<PathBuf>) -> Result<Option<PathBuf>, String> {

@@ -6,7 +6,7 @@
 //! et un format entame ne revient pas en arriere (`20260315` n'est pas lu en `JJMMAAAA`). Ce parcours est celui des
 //! fichiers deja ecrits : une date lue aujourd'hui se lit comme elle s'est toujours lue.
 
-use crate::num::Resultat;
+use crate::echec::{refus, R};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Jour {
@@ -46,11 +46,9 @@ impl Jour {
     }
 
     /// Une date ecrite dans l'un des cinq formats.
-    pub fn lire(texte: &str) -> Resultat<Jour> {
-        match Jour::du_texte(texte) {
-            Some(j) => Ok(j),
-            None => Err(format!("date illisible : {}", repr_texte(texte.trim()))),
-        }
+    #[track_caller]
+    pub fn lire(texte: &str) -> R<Jour> {
+        match Jour::du_texte(texte) { Some(j) => Ok(j), None => Err(refus(format!("date illisible : {}", repr_texte(texte.trim())))) }
     }
 
     /// Le jour que `texte` ecrit, s'il en ecrit un (`lire` dit pourquoi il n'en ecrit pas) : une phrase qui cite un jour
@@ -129,17 +127,19 @@ impl Jour {
     }
 
     /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999.
-    pub fn plus_jours(&self, n: i64) -> Resultat<Jour> {
-        Jour::depuis_ordinal(self.ordinal() + n).ok_or_else(|| HORS_CALENDRIER.to_string())
+    #[track_caller]
+    pub fn plus_jours(&self, n: i64) -> R<Jour> {
+        match Jour::depuis_ordinal(self.ordinal() + n) { Some(j) => Ok(j), None => Err(refus(HORS_CALENDRIER)) }
     }
 
     /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne
     /// l'a pas.
-    pub fn plus_mois(&self, n: i64) -> Resultat<Jour> {
+    #[track_caller]
+    pub fn plus_mois(&self, n: i64) -> R<Jour> {
         let total = self.an as i64 * 12 + (self.mois as i64 - 1) + n;
         let (an, mois) = (total.div_euclid(12) as i32, (total.rem_euclid(12) + 1) as u32);
         let jour = self.jour.min(jours_du_mois(an, mois));
-        Jour::nouveau(an, mois, jour).ok_or_else(|| date_impossible(an, mois, jour))
+        match Jour::nouveau(an, mois, jour) { Some(j) => Ok(j), None => Err(refus(date_impossible(an, mois, jour))) }
     }
 
     /// `(self - autre).days`.

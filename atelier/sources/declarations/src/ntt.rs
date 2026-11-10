@@ -48,7 +48,8 @@ pub fn numero(siren: &str, salarie: &FicheSalarie) -> Resultat<String> {
             ),
             "siren",
             repr(&siren),
-        ));
+        )
+        .into());
     }
     let Some(matricule) = salarie.code_salarie.portee().map(strip) else {
         return Err(format!(
@@ -133,7 +134,7 @@ pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie:
 
 /// CCH-12 et CCH-14, verifies sur le fichier seul, relu (`dsn_lue::lire`).
 pub fn verifier_fichier(texte: &str) -> Resultat<()> {
-    refuser_les_doublons(&crate::dsn_lue::lire(texte.as_bytes(), "").map_err(|e| e.message)?.individus)
+    refuser_les_doublons(&crate::dsn_lue::lire(texte.as_bytes(), "").map_err(String::from)?.individus)
 }
 
 fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> Resultat<()> {

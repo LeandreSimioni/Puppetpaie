@@ -384,7 +384,7 @@ fn agent(delai: u64, url: &str) -> Result<ureq::Agent, Panne> {
     if tls {
         c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
-    let c = socle::garde_reseau::regler(c, url).map_err(Panne::Reseau)?;
+    let c = socle::garde_reseau::regler(c, url).map_err(|e| Panne::Reseau(e.into()))?;
     Ok(c.build().into())
 }
 

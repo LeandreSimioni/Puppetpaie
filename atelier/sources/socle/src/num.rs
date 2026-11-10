@@ -6,14 +6,16 @@
 
 use rust_decimal::prelude::*;
 use crate::d28::P;
+use crate::echec::{refus, R};
 pub use rust_decimal::Decimal;
 
-/// Un refus du moteur : le message dit quoi faire.
+/// Le refus en texte des couches qui ne rendent pas encore `echec::R` (`From<Echec> for String` les y convertit).
 pub type Resultat<T> = Result<T, String>;
 
 /// Le decimal d'un nombre ecrit en texte (`"12.5"`, `" 1e3 "`), blancs autour ignores.
-pub fn dec_texte(s: &str) -> Resultat<Decimal> {
-    Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())).map_err(|_| illisible(s))
+#[track_caller]
+pub fn dec_texte(s: &str) -> R<Decimal> {
+    match Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())) { Ok(d) => Ok(d), Err(_) => Err(refus(illisible(s))) }
 }
 
 /// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
@@ -41,18 +43,17 @@ pub fn flottant(d: Decimal) -> f64 {
 }
 
 /// Le decimal d'un flottant, par sa forme ecrite la plus courte.
-pub fn dec_f64(x: f64) -> Resultat<Decimal> {
+#[track_caller]
+pub fn dec_f64(x: f64) -> R<Decimal> {
     if !x.is_finite() {
-        return Err(format!("nombre non fini : {}", x));
+        return Err(refus(format!("nombre non fini : {}", x)));
     }
     // Un flottant entier garde sa decimale : `1.0`.
     let mut s = format!("{}", x);
     if !s.contains(['.', 'e', 'E']) && x.abs() < 1e16 {
         s.push_str(".0");
     }
-    Decimal::from_str(&s)
-        .or_else(|_| Decimal::from_scientific(&s))
-        .map_err(|_| format!("nombre hors de portee : {}", s))
+    match Decimal::from_str(&s).or_else(|_| Decimal::from_scientific(&s)) { Ok(d) => Ok(d), Err(_) => Err(refus(format!("nombre hors de portee : {}", s))) }
 }
 
 /// Deux decimales, la moitie toujours vers le haut (jamais au pair) : le cent le plus proche, le milieu au cent superieur

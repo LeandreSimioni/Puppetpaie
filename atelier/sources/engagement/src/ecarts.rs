@@ -203,7 +203,7 @@ fn comparer_une(
 ) -> Result<Vec<Ecart>, String> {
     let fin = Mois::lire(mois)?.dernier_jour();
     let annee = &mois[..4];
-    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
+    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m.into()))?;
     if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
         return Err(format!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
     }
@@ -213,7 +213,7 @@ fn comparer_une(
         return Err("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche".into());
     }
     let salarie = brut.salarie.as_ref().ok_or("l'engagement importé ne nomme pas son salarié")?;
-    let fiche = ctx.salarie(&salarie).map_err(|m| a_refaire(c, m))?;
+    let fiche = ctx.salarie(&salarie).map_err(|m| a_refaire(c, m.into()))?;
     // LE STATUT ET L'EMPLOI DE CETTE PAIE sont ceux que son bulletin imprime (`emploi_imprime`) ; ce qu'il ne dit pas
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.
@@ -321,7 +321,7 @@ fn comparer_une(
     // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
     let spectacle = match (mensuelle, dit(&p.spectacle)) {
         (true, _) => None,
-        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
+        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m.into()))?.cle),
         (false, None) => dit(&p.numero_objet).and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.portee() == Some(n.as_str())).map(|(k, _)| k.clone())),
     };
     let e = crate::saisie::Carte {

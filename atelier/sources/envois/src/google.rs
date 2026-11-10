@@ -44,7 +44,7 @@ impl socle::forme::ReponseDUnTiers for ReponseJeton {}
 /// `phrase`.
 pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> Result<T, String> {
     let texte = String::from_utf8(brut).map_err(|e| socle::echec::avec(phrase, socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))?;
-    socle::forme::lire_reponse_tiers(&texte, phrase)
+    socle::forme::lire_reponse_tiers(&texte, phrase).map_err(String::from)
 }
 
 /// L'ERREUR QUE GOOGLE REND : celle de l'autorisation (`{"error": "invalid_grant", "error_description": …}`) ou celle d'une

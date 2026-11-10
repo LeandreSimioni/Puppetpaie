@@ -28,7 +28,7 @@ fn releve(e: &Engagement) -> Value {
     };
     let nombre = |o: Option<f64>| match o {
         None => Ok(Value::Null),
-        Some(x) => socle::num::dec_f64(x).map(|v| Value::String(socle::num::nombre(v))),
+        Some(x) => socle::num::dec_f64(x).map(|v| Value::String(socle::num::nombre(v))).map_err(String::from),
     };
     let mut extras = Map::new();
     extras.insert("dates_du_contrat".into(), essai(Ok(iso(&jours))));
@@ -59,6 +59,7 @@ fn les_engagements_fabriques_et_leurs_refus() {
             charge[k] = v.clone();
         }
         c["attendu"] = socle::forme::lire::<engagement::Assemble>(&charge, "L'engagement à fabriquer ne se lit pas.")
+            .map_err(String::from)
             .and_then(|a| Engagement::nouveau(&racine, &a, &qui))
             .map_or_else(|m| json!({"refus": socle::echec::phrase_de(&m)}), |e| releve(&e));
         refus += c["attendu"].get("refus").is_some() as usize;

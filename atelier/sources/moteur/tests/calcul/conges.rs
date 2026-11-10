@@ -9,8 +9,8 @@ fn jour(s: &str) -> Jour {
     Jour::lire(s).unwrap()
 }
 
-fn err(m: String) -> Value {
-    json!({"err": m})
+fn err(m: impl Into<String>) -> Value {
+    json!({"err": m.into()})
 }
 
 #[test]

@@ -100,7 +100,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
     match empechement(racine) {
         Ok(Some(r)) => return bilan(None, false, None, r, ""),
         Ok(None) => {}
-        Err(e) => return bilan(None, false, None, "", &e.message),
+        Err(e) => return bilan(None, false, None, "", &String::from(e)),
     }
     let Some(annee) = annee_due(ctx.aujourdhui) else {
         return bilan(None, false, None, "pas avant le 16 janvier", "");
@@ -108,16 +108,16 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
     match parties(racine) {
         Ok(Some(p)) if p.contains_key(&annee.to_string()) => return bilan(Some(annee), false, None, "deja parti", ""),
         Ok(_) => {}
-        Err(e) => return bilan(Some(annee), false, None, "", &e.message),
+        Err(e) => return bilan(Some(annee), false, None, "", &String::from(e)),
     }
     let client = match incidents::canal(racine) {
         Ok(Canal::Pret(c)) => c,
         Ok(Canal::Panne(e)) => return bilan(Some(annee), false, None, "", &e.message),
-        Err(e) => return bilan(Some(annee), false, None, "", &e.message),
+        Err(e) => return bilan(Some(annee), false, None, "", &String::from(e)),
     };
     let paies = match compter(ctx, annee) {
         Ok(n) => n,
-        Err(e) => return bilan(Some(annee), false, None, "", &format!("compte refuse : {}", e.message)),
+        Err(e) => return bilan(Some(annee), false, None, "", &format!("compte refuse : {}", String::from(e))),
     };
     if let Err(e) = client.compter_paies(annee, paies) {
         return bilan(Some(annee), false, Some(paies), "", &e.message);
@@ -126,7 +126,7 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
     match retenir(racine, annee, paies, &poste) {
         Ok(()) => bilan(Some(annee), true, Some(paies), "", ""),
         // Parti, mais pas retenu : le passage suivant le renverra, et le serveur remplace la meme annee.
-        Err(e) => bilan(Some(annee), true, Some(paies), "", &e.message),
+        Err(e) => bilan(Some(annee), true, Some(paies), "", &String::from(e)),
     }
 }
 

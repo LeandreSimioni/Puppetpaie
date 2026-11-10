@@ -14,8 +14,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::echec::APart;
-use crate::num::Resultat;
+use crate::echec::{refus, refus_avec, APart, R};
 
 const NS_M: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -64,10 +63,10 @@ struct Classeur {
 }
 
 impl Classeur {
-    fn ouvrir(chemin: &Path) -> Resultat<Classeur> {
+    fn ouvrir(chemin: &Path) -> R<Classeur> {
         let f = std::fs::File::open(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))?;
         let archive = zip::ZipArchive::new(f)
-            .map_err(|e| crate::echec::avec("Ce fichier n'est pas un classeur Excel lisible.", APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..APart::default() }))?;
+            .map_err(|e| refus_avec("Ce fichier n'est pas un classeur Excel lisible.", APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..APart::default() }))?;
         Ok(Classeur { archive, nom: chemin.display().to_string() })
     }
 
@@ -75,21 +74,21 @@ impl Classeur {
         self.archive.index_for_name(membre).is_some()
     }
 
-    fn lire(&mut self, membre: &str) -> Resultat<String> {
+    fn lire(&mut self, membre: &str) -> R<String> {
         let mut f = self
             .archive
             .by_name(membre)
             .map_err(|e| format!("{} : {} absent du classeur ({})", self.nom, membre, e))?;
         let mut octets = Vec::new();
         f.read_to_end(&mut octets).map_err(|e| format!("{} : {} illisible ({})", self.nom, membre, e))?;
-        String::from_utf8(octets).map_err(|_| format!("{} : {} n'est pas en UTF-8", self.nom, membre))
+        String::from_utf8(octets).map_err(|_| refus(format!("{} : {} n'est pas en UTF-8", self.nom, membre)))
     }
 }
 
-fn analyser<'a>(nom: &str, membre: &str, texte: &'a str) -> Resultat<roxmltree::Document<'a>> {
+fn analyser<'a>(nom: &str, membre: &str, texte: &'a str) -> R<roxmltree::Document<'a>> {
     let options = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
     roxmltree::Document::parse_with_options(texte, options)
-        .map_err(|e| format!("{} : {} illisible ({})", nom, membre, e))
+        .map_err(|e| refus(format!("{} : {} illisible ({})", nom, membre, e)))
 }
 
 fn est(n: &roxmltree::Node, ns: &str, nom: &str) -> bool {
@@ -113,10 +112,10 @@ fn texte_de(n: roxmltree::Node) -> String {
 }
 
 /// `C12` -> 2 (colonnes comptees depuis 0).
-fn colonne(reference: &str) -> Resultat<usize> {
+fn colonne(reference: &str) -> R<usize> {
     let lettres: Vec<char> = reference.chars().take_while(|c| c.is_ascii_uppercase()).collect();
     if lettres.is_empty() {
-        return Err(format!("reference de case illisible : {}", crate::fichiers::repr(reference)));
+        return Err(refus(format!("reference de case illisible : {}", crate::fichiers::repr(reference))));
     }
     let mut n: usize = 0;
     for c in lettres {
@@ -129,37 +128,37 @@ fn colonne(reference: &str) -> Resultat<usize> {
 }
 
 /// Un entier ecrit en texte (blancs autour admis).
-fn entier(texte: &str, quoi: &str) -> Resultat<i64> {
+fn entier(texte: &str, quoi: &str) -> R<i64> {
     texte.trim_matches(crate::texte::blanc)
         .parse::<i64>()
-        .map_err(|_| format!("{} illisible : {}", quoi, crate::fichiers::repr(texte)))
+        .map_err(|_| refus(format!("{} illisible : {}", quoi, crate::fichiers::repr(texte))))
 }
 
 /// Les noms des feuilles du classeur, dans l'ordre.
-pub fn feuilles(chemin: &Path) -> Resultat<Vec<String>> {
+pub fn feuilles(chemin: &Path) -> R<Vec<String>> {
     let mut c = Classeur::ouvrir(chemin)?;
     let texte = c.lire("xl/workbook.xml")?;
     noms_des_feuilles(&c.nom, &texte).map(|v| v.into_iter().map(|(nom, _)| nom).collect())
 }
 
 /// (nom, `r:id`) de chaque feuille de `xl/workbook.xml`.
-fn noms_des_feuilles(nom: &str, texte: &str) -> Resultat<Vec<(String, Option<String>)>> {
+fn noms_des_feuilles(nom: &str, texte: &str) -> R<Vec<(String, Option<String>)>> {
     let doc = analyser(nom, "xl/workbook.xml", texte)?;
     let sheets = enfant(doc.root_element(), "sheets")
-        .ok_or_else(|| crate::echec::avec("Ce classeur Excel n'a aucune feuille lisible.", APart { chemin: Some(nom.to_string()), ..APart::default() }))?;
+        .ok_or_else(|| refus_avec("Ce classeur Excel n'a aucune feuille lisible.", APart { chemin: Some(nom.to_string()), ..APart::default() }))?;
     sheets
         .children()
         .filter(|n| n.is_element())
         .map(|f| match f.attribute("name") {
             Some(n) => Ok((n.to_string(), f.attribute((NS_R, "id")).map(str::to_string))),
-            None => Err(crate::echec::avec("Une feuille de ce classeur Excel n'a pas de nom.", APart { chemin: Some(nom.to_string()), ..APart::default() })),
+            None => Err(refus_avec("Une feuille de ce classeur Excel n'a pas de nom.", APart { chemin: Some(nom.to_string()), ..APart::default() })),
         })
         .collect()
 }
 
 /// Les lignes de la feuille nommee, de haut en bas, chacune la liste de ses cases de la premiere colonne a la derniere
 /// renseignee ; une ligne absente du classeur est rendue vide. Une feuille inconnue refuse, en disant les feuilles.
-pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
+pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
     let mut c = Classeur::ouvrir(chemin)?;
     let classeur = c.lire("xl/workbook.xml")?;
     let liens = c.lire("xl/_rels/workbook.xml.rels")?;
@@ -172,7 +171,7 @@ pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
     }
     let Some(rid) = rid else {
         let liste: Vec<&str> = noms.iter().map(|(n, _)| n.as_str()).collect();
-        return Err(format!("feuille « {} » absente de {} (feuilles : {})", feuille, c.nom, liste.join(", ")));
+        return Err(refus(format!("feuille « {} » absente de {} (feuilles : {})", feuille, c.nom, liste.join(", "))));
     };
     let doc_liens = analyser(&c.nom, "xl/_rels/workbook.xml.rels", &liens)?;
     let mut cible = None;

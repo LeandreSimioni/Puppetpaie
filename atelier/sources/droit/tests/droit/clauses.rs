@@ -9,7 +9,8 @@ use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit,
 use droit::fiche::ChampsSalarie;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 use std::str::FromStr;
 
 // ------------------------------------------------------------- les entrees
@@ -81,13 +82,13 @@ pub(crate) fn avec(texte: &str, cle: &str, valeur: &str) -> String {
 }
 
 /// La fiche du releve, lue par sa forme : celle que la forme refuse ne parvient pas au droit.
-pub(crate) fn champs(texte: &str) -> Resultat<ChampsSalarie> {
+pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
     socle::forme::lire_texte(texte, "la fiche du releve")
 }
 
 /// Ce qu'un engagement dit du salarie, lu comme le lit `engagement::solde` : une case vide ne dit rien, un debut
 /// illisible refuse.
-pub(crate) fn dit(e: Option<&Eng>) -> Resultat<DitParLEngagement> {
+pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
     let debut = match dite(&e.debut) {
@@ -108,13 +109,13 @@ pub(crate) fn dit_ou_vide(t: &str) -> Option<&str> {
     Some(t).filter(|t| !t.is_empty())
 }
 
-pub(crate) fn profil_lu(idcc: &str, fiche: &str, eng: Option<&Eng>) -> Resultat<Profil> {
+pub(crate) fn profil_lu(idcc: &str, fiche: &str, eng: Option<&Eng>) -> R<Profil> {
     // Le profil d'un salarie au mois, comme le solde de tout compte le lit : sa fiche dit sa categorie.
     let au_mois = droit::natures::nature("cdi")?.au_mois();
     c::profil(dit_ou_vide(idcc), &champs(fiche)?, au_mois.as_ref(), &dit(eng)?)
 }
 
-pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<Resultat<Profil>> {
+pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<R<Profil>> {
     let mut out = Vec::new();
     for fi in &g.fiches {
         for en in &g.engagements {
@@ -126,7 +127,7 @@ pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<Resultat<P
     out
 }
 
-pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, motif: Option<&str>) -> Vec<Resultat<PreavisDit>> {
+pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, motif: Option<&str>) -> Vec<R<PreavisDit>> {
     g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(dit_ou_vide(idcc), categorie, dec(a), motif, age.as_deref().map(dec)))).collect()
 }
 
@@ -159,15 +160,15 @@ pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Op
     annees(g).into_iter().map(|a| c::paliers(paliers, prorata, a)).collect()
 }
 
-pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<Resultat<Option<c::ClauseDAnnexe>>> {
+pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
     g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), m.as_deref()))).collect()
 }
 
-pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> Resultat<Indemnite> {
+pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
     c::indemnite_licenciement(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), dec(anc), dec(r), motif, age.map(dec))
 }
 
-pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<Resultat<Indemnite>> {
+pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
     let mut out = Vec::new();
     for m in &g.motifs_l {
         for a in &g.anc_l {
@@ -181,23 +182,23 @@ pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -
     out
 }
 
-pub(crate) fn mise(idcc: &str, a: &str, r: &str) -> Resultat<Retraite> {
+pub(crate) fn mise(idcc: &str, a: &str, r: &str) -> R<Retraite> {
     c::indemnite_mise_a_la_retraite(dit_ou_vide(idcc), dec(a), dec(r))
 }
 
-pub(crate) fn depart(idcc: &str, a: &str, r: &str) -> Resultat<Retraite> {
+pub(crate) fn depart(idcc: &str, a: &str, r: &str) -> R<Retraite> {
     c::indemnite_depart_retraite(dit_ou_vide(idcc), dec(a), dec(r))
 }
 
-pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> Resultat<Retraite>) -> Vec<Resultat<Retraite>> {
+pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> R<Retraite>) -> Vec<R<Retraite>> {
     g.anc.iter().flat_map(|a| g.refs.iter().map(|r| f(a, r)).collect::<Vec<_>>()).collect()
 }
 
-pub(crate) fn prime(idcc: &str, annexe: &str, fiche: &str, eng: Option<&Eng>, j: &Jour, jauge: Option<&str>) -> Resultat<Option<Prime>> {
+pub(crate) fn prime(idcc: &str, annexe: &str, fiche: &str, eng: Option<&Eng>, j: &Jour, jauge: Option<&str>) -> R<Option<Prime>> {
     c::prime_anciennete(dit_ou_vide(idcc), dit_ou_vide(annexe), &champs(fiche)?, &dit(eng)?, j, |_| jauge)
 }
 
-pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> Vec<Resultat<Option<Prime>>> {
+pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> Vec<R<Option<Prime>>> {
     let mut out = Vec::new();
     for fi in &g.fiches_p {
         let fiche = avec(fi, "code_emploi_ft", code);
@@ -299,8 +300,8 @@ pub(crate) struct AnnexeLue {
 }
 
 /// Un resultat ecrit ; un refus, par sa phrase (ce qu'il porte a part nomme des chemins de la machine).
-pub(crate) fn rendu<T, U>(r: Resultat<T>, f: impl Fn(T) -> U) -> Rendu<U> {
-    r.map(f).map_err(|e| socle::echec::phrase_de(&e).to_string()).into()
+pub(crate) fn rendu<T, U>(r: R<T>, f: impl Fn(T) -> U) -> Rendu<U> {
+    match r { Ok(v) => Rendu::Ok(f(v)), Err(e) => Rendu::Err(e.phrase) }
 }
 
 pub(crate) fn profil_ecrit(p: Profil) -> ProfilLu {
@@ -354,7 +355,7 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
 }
 
 /// L'empreinte d'un bloc : ses resultats ecrits, un par ligne.
-fn bloc<T, U: Serialize>(r: Vec<Resultat<T>>, f: impl Fn(T) -> U + Copy) -> String {
+fn bloc<T, U: Serialize>(r: Vec<R<T>>, f: impl Fn(T) -> U + Copy) -> String {
     empreinte(&r.into_iter().map(|x| rendu(x, f)).collect::<Vec<_>>())
 }
 

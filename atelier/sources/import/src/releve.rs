@@ -123,7 +123,7 @@ pub fn du_pdf(chemin: &Path) -> Result<Rc<Releve>, Refus> {
         return Ok(r);
     }
     let (texte, avertissements) = fabrique_pdf::inspection::inspecter(&chemin.to_string_lossy()).map_err(|r| Refus::Fabrique(r.0))?;
-    let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(Refus::Releve)?;
+    let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(|e| Refus::Releve(e.into()))?;
     let r = Rc::new(Releve { releve, avertissements });
     MEMO.with(|m| {
         let mut m = m.borrow_mut();

@@ -12,7 +12,8 @@ use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::Nombre;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 use socle::texte::sigle;
 
 use crate::source::forme_notee;
@@ -383,7 +384,7 @@ pub struct CaseLue {
 /// LA CASE `cle` DE `fiche` LUE POUR UNE CONDITION (`fiche::case_en`) : absente, nulle ou vide, elle ne dit rien
 /// (`None`) ; dite, un oui ou un nombre non nul la rend vraie, et son texte est celui qu'elle ecrit (`True`, `12`, `1.5`,
 /// le texte tel quel). Une case de plusieurs valeurs ne se confronte a aucune condition : elle se refuse.
-pub fn case_lue<F: crate::fiche::Cases + ?Sized>(fiche: &F, cle: &str) -> Resultat<Option<CaseLue>> {
+pub fn case_lue<F: crate::fiche::Cases + ?Sized>(fiche: &F, cle: &str) -> R<Option<CaseLue>> {
     let lue = crate::fiche::case_en(fiche, cle, Lecture)
         .transpose()
         .map_err(|_| socle::echec::a_la_cle("Une condition de grille des minima nomme une case de plusieurs valeurs, qu'elle ne lit pas : le signaler au développeur.", cle, ""))?;
@@ -503,7 +504,7 @@ impl Attendu {
 const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne se lisent pas : le signaler au développeur.";
 
 /// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
-pub fn table() -> Resultat<Arc<Table>> {
+pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
     forme_en_cache(&CACHE, "minima-conventionnels.json", ILLISIBLE, Ok)
 }
@@ -522,7 +523,7 @@ pub struct SpectacleDuContrat<'a> {
 /// (`minima-conventionnels.json`, la note de la 1734). Le contrat le déclare (S21.G00.40.017), le bulletin l'imprime, le
 /// minimum lit sa grille. Artiste-interprète se lit au métier du catalogue (familles « Artistes », « Cirque et rue ») :
 /// un métier hors catalogue ne dit pas s'il l'est, l'IDCC se refuse (règle 1).
-pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> Resultat<String> {
+pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> R<String> {
     let idcc = idcc.to_string();
     if (idcc != "2642" && idcc != "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
         return Ok(idcc);
@@ -533,7 +534,7 @@ pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::
         None => None,
     };
     match metier.as_ref().and_then(|m| m.au_catalogue()).map(|f| f.famille.as_str()) {
-        None => Err(format!(
+        None => Err(socle::refus!(
             "Spectacle {}, émission de télévision (convention 1734) : le métier {} de {} n'est pas au catalogue, et \
              le logiciel ne sait pas s'il est artiste-interprète (1734) ou musicien, metteur en scène, artiste de \
              complément (convention de l'entreprise). Choisir un métier du catalogue.",

@@ -160,7 +160,7 @@ impl<T: Read + Write + ?Sized> Flux for T {}
 
 fn connecter(hote: &str, port: u16) -> Result<TcpStream, ErreurCourriel> {
     // En essai, le garde-fou reseau : aucune boite reelle.
-    socle::garde_reseau::directe(hote).map_err(injoignable)?;
+    socle::garde_reseau::directe(hote).map_err(|e| injoignable(String::from(e)))?;
     let delai = Duration::from_secs(DELAI);
     let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
     let mut derniere = None;
@@ -512,7 +512,7 @@ impl Courriel for Client {
         let mdp = self.mot_de_passe.clone();
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
-        socle::garde_reseau::directe(&hote).map_err(injoignable)?;
+        socle::garde_reseau::directe(&hote).map_err(|e| injoignable(String::from(e)))?;
         let tls = TlsParameters::builder(hote.clone()).build_rustls().map_err(|e| erreur(format!("TLS : {}", e)))?;
         let transport = SmtpTransport::builder_dangerous(hote.as_str())
             .port(port)
@@ -600,7 +600,7 @@ fn message_id_de(brut: &[u8]) -> Option<String> {
 /// `octets` octets des aleas du systeme, en hexadecimal ; un systeme qui n'en donne pas refuse.
 pub fn hexa_au_hasard(octets: usize) -> Result<String, ErreurCourriel> {
     let mut o = vec![0u8; octets];
-    socle::temps::aleas(&mut o).map_err(|e| erreur(format!("Le systeme ne donne pas d'aleas : {}.", e)))?;
+    socle::temps::aleas(&mut o).map_err(|e| erreur(format!("Le systeme ne donne pas d'aleas : {}.", String::from(e))))?;
     Ok(o.iter().map(|c| format!("{:02x}", c)).collect())
 }
 

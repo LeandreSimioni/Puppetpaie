@@ -127,7 +127,7 @@ pub fn jour_pose() -> Option<Jour> {
         Ok(v) if v.is_empty() => None,
         Ok(v) => match Jour::lire(&v) {
             Ok(jour) => Some(jour),
-            Err(e) => panic!("PUPPETPAIE_AUJOURDHUI illisible : {}", e),
+            Err(e) => panic!("PUPPETPAIE_AUJOURDHUI illisible : {}", e.phrase),
         },
         Err(std::env::VarError::NotPresent) => None,
         Err(e) => panic!("PUPPETPAIE_AUJOURDHUI illisible : {}", e),
@@ -231,7 +231,7 @@ pub fn instant_de(jour: Jour, heure: i64) -> f64 {
 /// DES ALEAS POUR UN IDENTIFIANT (le nom d'un courriel joue, une frontiere MIME, le flux d'un depot joue) : ceux du
 /// systeme, ou, au rejeu, la suite fixe (SHA-256 du rang du tirage). Jamais pour un secret : le coffre, la cle d'une
 /// mise a jour, l'autorisation Google tirent les leurs du systeme, toujours.
-pub fn aleas(o: &mut [u8]) -> Result<(), String> {
+pub fn aleas(o: &mut [u8]) -> crate::echec::R<()> {
     let pas = PAS_FICTIF.with_borrow(Clone::clone);
     let tirage = aleas_fixes_ici().then(|| {
         let rang = TIRAGES.get() + 1;
@@ -240,7 +240,7 @@ pub fn aleas(o: &mut [u8]) -> Result<(), String> {
         (rang, graine)
     });
     let Some((rang, graine)) = tirage else {
-        return getrandom::fill(o).map_err(|e| e.to_string());
+        return getrandom::fill(o).map_err(|e| crate::echec::refus(e.to_string()));
     };
     let mut bloc = 0u64;
     for morceau in o.chunks_mut(32) {

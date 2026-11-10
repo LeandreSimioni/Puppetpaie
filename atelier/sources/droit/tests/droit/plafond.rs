@@ -11,7 +11,7 @@
 
 use socle::num::Decimal;
 use droit::plafond::{plafond_urssaf, pour_paie, EngagementPlafond, Jour};
-use socle::num::Resultat;
+use socle::echec::R;
 use serde::Deserialize;
 use std::collections::HashMap;
 use crate::outils::typee::{chemin_donnee, code_livre, lire, lire_chemin};
@@ -47,8 +47,8 @@ struct Pss {
 }
 
 /// Le plafond de chaque annee d'une table `{annee: (mensuel, horaire)}`.
-fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> Resultat<(Decimal, Decimal)> + '_ {
-    move |annee| table.get(&annee).map(|(m, h)| (Decimal::from(*m), Decimal::from(*h))).ok_or_else(|| format!("pas de plafond pour {}", annee))
+fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<(Decimal, Decimal)> + '_ {
+    move |annee| table.get(&annee).map(|(m, h)| (Decimal::from(*m), Decimal::from(*h))).ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
 }
 
 fn jour(s: &str) -> Jour {
@@ -154,9 +154,9 @@ fn la_grille_depuis_le_texte() {
                                 (Ok(v), Ok(l)) => assert_eq!(l, v, "{:?}->{:?} {} cachets, artiste {}", debut, fin, c, artiste),
                                 (Err(()), Err(m)) if journees.is_empty() => {
                                     let regle = if artiste && duree < 5 { "arrete du 24/01/1975" } else { "BOSS, assiette generale, § 1090" };
-                                    assert!(m.contains(regle), "{}", m)
+                                    assert!(m.phrase.contains(regle), "{}", m.phrase)
                                 }
-                                (Err(()), Err(m)) => assert!(m.contains("2027"), "pas de plafond pour 2027 : {}", m),
+                                (Err(()), Err(m)) => assert!(m.phrase.contains("2027"), "pas de plafond pour 2027 : {}", m.phrase),
                                 _ => panic!("{:?}->{:?} {} cachets, artiste {} : texte {:?}, moteur {:?}", debut, fin, c, artiste, voulu, lu),
                             }
                         }
@@ -197,7 +197,7 @@ fn les_dates_et_le_mensuel() {
     assert_eq!(pour_paie(&e, &pss).unwrap(), dec("720.00"));
     assert_eq!(pour_paie(&e, &pss).unwrap(), plafond_urssaf(e.debut, e.fin, true, &pss, &e.dates_travail).unwrap());
     // Une journee dite (`jours`) et non datee refuse ; aucune journee dans la paie, aucun plafond.
-    let err = pour_paie(&EngagementPlafond { jours: 3, ..e.clone() }, &pss).unwrap_err();
+    let err = pour_paie(&EngagementPlafond { jours: 3, ..e.clone() }, &pss).unwrap_err().phrase;
     assert!(err.contains("3 jour(s) travaille(s) pour 2 date(s)"), "{}", err);
     assert_eq!(pour_paie(&EngagementPlafond { jours: 0, dates_travail: vec![], ..e.clone() }, &pss).unwrap(), dec("0.00"));
     // Un technicien : le prorata de ses jours remuneres (BOSS § 1090), 4005 x 2 / 31.
@@ -209,11 +209,11 @@ fn les_dates_et_le_mensuel() {
         debut: (2026, 1, 20), fin: (2026, 2, 10), dates_travail: vec![(2026, 1, 20), (2026, 1, 22), (2026, 1, 24)], jours: 3,
     };
     assert_eq!(pour_paie(&janvier, &pss).unwrap(), dec("387.58"));
-    let err = pour_paie(&EngagementPlafond { dates_travail: vec![(2026, 1, 20), (2026, 1, 22), (2026, 2, 3)], ..janvier }, &pss).unwrap_err();
+    let err = pour_paie(&EngagementPlafond { dates_travail: vec![(2026, 1, 20), (2026, 1, 22), (2026, 2, 3)], ..janvier }, &pss).unwrap_err().phrase;
     assert!(err.contains("hors de la periode de paie"), "{}", err);
     // Sans jour remunere date, rien ne se compte : refus.
     for (debut, fin, statut, quoi) in &c.sans_date {
-        let err = plafond_urssaf(jour(debut), jour(fin), statut == "artiste", &pss, &[]).unwrap_err();
+        let err = plafond_urssaf(jour(debut), jour(fin), statut == "artiste", &pss, &[]).unwrap_err().phrase;
         assert!(err.contains("0 jour(s) travaille(s) pour 0 date(s)"), "{} : {}", quoi, err);
     }
 }

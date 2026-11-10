@@ -55,7 +55,7 @@ fn echapper(t: &str) -> String {
 }
 
 fn refus(message: impl Into<String>) -> Echec {
-    Echec { classe: Some(socle::echec::Classe::Refuse),message: message.into() }
+    Echec { classe: Some(socle::echec::Classe::Refuse), phrase: message.into(), a_part: None }
 }
 
 /// Les deux adresses que l'autorisation appelle : les jetons et l'adresse du compte. Les vraies par defaut ; l'appelant

@@ -43,7 +43,7 @@ fn resolution(c: &CasResolu) -> Resolution {
             statut_conventionnel: r.statut_conventionnel,
             statut_categoriel_rc: r.statut_categoriel_rc.to_string(),
         },
-        Err(m) => Resolution::Refus(socle::echec::phrase_de(&m)),
+        Err(m) => Resolution::Refus(m.phrase),
     }
 }
 

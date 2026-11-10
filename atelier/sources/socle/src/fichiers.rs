@@ -3,7 +3,7 @@
 //! Le cache est cle par chemin ET par signature (date de modification,
 //! taille) : un fichier reecrit se relit.
 
-use crate::num::Resultat;
+use crate::echec::{refus, Echec, R};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -293,7 +293,7 @@ pub fn est_dossier(chemin: &Path) -> bool {
 
 /// Les `.json` d'un dossier, tries ; `None` s'il n'existe pas ; le disque qui refuse se dit (`echec::du_disque`). Note :
 /// ce qui apparait ou disparait dans le dossier change l'empreinte.
-pub fn lister(dossier: &Path) -> Resultat<Option<Vec<PathBuf>>> {
+pub fn lister(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
     let n = noms(dossier);
     noter("dossier", dossier, empreinte_des_noms(&n));
     match n {
@@ -318,7 +318,7 @@ pub fn dossier_du_code() -> PathBuf {
 /// fichier du code (`dossier_du_code`) se lit une fois. Les caches du moteur la demandaient a chaque service -- mille
 /// fois `norme-dsn-base.json` pour un seul `etat` --, et sous Windows chaque demande ouvre le fichier, que l'antivirus
 /// inspecte. Les fichiers de la compagnie, eux, se relisent toujours : une route les ecrit.
-pub fn signature(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
+pub fn signature(chemin: &Path) -> R<Option<(u128, u64)>> {
     let memo = CODE_FIGE.with(|c| c.borrow().as_ref().filter(|(code, _)| chemin.starts_with(code)).map(|(_, m)| m.get(chemin).copied()));
     match memo {
         Some(Some(s)) => Ok(s),
@@ -337,15 +337,15 @@ pub fn signature(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
 
 /// `None` pour un fichier absent : rien ne se garde de lui ; un fichier qui ne dit pas sa date (illisible, d'avant 1970)
 /// se refuse.
-fn signature_lue(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
+fn signature_lue(chemin: &Path) -> R<Option<(u128, u64)>> {
     // Un fichier absent n'a pas de signature : rien ne se garde de lui.
     if !chemin.is_file() {
         return Ok(None);
     }
-    let illisible = |e: std::io::Error| format!("{} ne dit pas sa date : {}", repr(&chemin.display().to_string()), e);
+    let illisible = |e: std::io::Error| refus(format!("{} ne dit pas sa date : {}", repr(&chemin.display().to_string()), e));
     let m = std::fs::metadata(chemin).map_err(illisible)?;
     let d = m.modified().map_err(illisible)?.duration_since(std::time::UNIX_EPOCH).map_err(|e| {
-        format!("{} est daté d'avant 1970 ({} s) : régler la date du fichier.", repr(&chemin.display().to_string()), e.duration().as_secs())
+        refus(format!("{} est daté d'avant 1970 ({} s) : régler la date du fichier.", repr(&chemin.display().to_string()), e.duration().as_secs()))
     })?;
     Ok(Some((d.as_nanos(), m.len())))
 }
@@ -387,7 +387,8 @@ pub type FormeGardee<T> = Mutex<Option<(PathBuf, Option<(u128, u64)>, Arc<T>)>>;
 /// construite par `construire` une fois tant que son fichier ne change pas (chemin, date, taille) ; servie du cache, elle
 /// se note quand meme au registre d'un calcul suivi. Un calcul la consulte a chaque champ : elle ne se relit pas a chaque
 /// fois.
-pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> Resultat<T>) -> Resultat<Arc<T>> {
+#[track_caller]
+pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
     let chemin = dossier_du_code().join(nom);
     let sig = signature(&chemin)?;
     let cache = cache.get_or_init(|| Mutex::new(None));
@@ -455,7 +456,8 @@ pub fn imprimable(c: char) -> bool {
 // la phrase nomme le champ, ce qui etait attendu et ce qui a ete lu.
 
 /// « champ 'prenom' absent ».
-pub fn absent(cle: &str) -> String {
+#[track_caller]
+pub fn absent(cle: &str) -> Echec {
     crate::echec::cle("Il manque une donnée attendue.", cle)
 }
 

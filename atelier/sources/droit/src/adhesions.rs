@@ -16,7 +16,7 @@ use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::Nombre;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::organismes::Adhesion;
 use crate::source::forme_notee;
@@ -86,7 +86,7 @@ forme_notee! {
 }
 
 /// LA LECTURE DE `casc-svp-base.json`, la seule, une fois tant que le fichier ne change pas.
-pub fn casc_svp_base() -> Resultat<Arc<CascSvp>> {
+pub fn casc_svp_base() -> R<Arc<CascSvp>> {
     static CACHE: OnceLock<FormeGardee<CascSvp>> = OnceLock::new();
     forme_en_cache(&CACHE, "casc-svp-base.json", "La table livrée de la CASC-SVP ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -98,7 +98,7 @@ pub fn casc_svp_base() -> Resultat<Arc<CascSvp>> {
 /// interne au message DSN (`atelier/reference/norme-dsn/texte/bloc-S21.G00.15.txt`, l. 112-117). La compagnie n'en
 /// saisit donc rien : `Contexte::organismes` la porte meme quand `config/organismes.json` ne la nomme pas.
 /// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::Effectif::cinquante`, `cse`).
-pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> Resultat<Option<Adhesion>> {
+pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> R<Option<Adhesion>> {
     let base = casc_svp_base()?;
     if ent.idcc.portee().map(str::trim) != Some(base.idcc.trim()) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);

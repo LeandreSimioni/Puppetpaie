@@ -357,7 +357,7 @@ impl Carte {
     /// La nature de son contrat ; une carte qui ne la dit pas se refuse (`crate::PAS_DE_NATURE`).
     pub fn nature_lue(&self) -> Resultat<std::sync::Arc<droit::natures::Nature>> {
         match self.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-            Some(n) => droit::natures::nature(n),
+            Some(n) => droit::natures::nature(n).map_err(String::from),
             None => Err(match &self.salarie {
                 Some(s) => format!("{}{}", s, crate::PAS_DE_NATURE),
                 None => format!("Cet engagement{}", crate::PAS_DE_NATURE),

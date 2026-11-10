@@ -591,9 +591,9 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
             }
             Ok(_) => match retours::membres_du_zip(o) {
                 Ok(m) => l.phrases.push(format!("Une archive de {} fichier{}, sans attestation.", m.len(), plur(m.len(), "", "s"))),
-                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
+                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", String::from(m))),
             },
-            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
+            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", String::from(m))),
         }
         return l;
     }
@@ -602,17 +602,17 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
     match retours::lire_rapport(o) {
         Ok(Some(rapport)) => return rapport_lu(&rapport, o, nature),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.into()),
     }
     match retours::lire_neores(o) {
         Ok(Some(crm)) => return neores_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.into()),
     }
     match retours::lire_crm_oc(o) {
         Ok(Some(crm)) => return crm_oc_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.into()),
     }
     let mut l = Lecture::nouvelle("Compte rendu");
     l.traduite = false;
@@ -680,7 +680,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
     if nature == retours::NATURE_TAUX_PAS {
         match retours::taux_pas_d_octets(o) {
             Ok(t) => l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", t.releves.len(), plur(t.releves.len(), "", "s"))),
-            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.message)),
+            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", String::from(m))),
         }
     }
     l.anomalies = rapport.anomalies.iter().map(Anomalie::du_rapport).collect();

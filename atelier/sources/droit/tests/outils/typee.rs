@@ -24,14 +24,14 @@ pub fn chemin_donnee(nom: &str) -> PathBuf {
 
 /// Un texte JSON lu par la porte du socle, dans son type.
 pub fn lu<T: DeserializeOwned>(texte: &str) -> T {
-    socle::forme::lire_texte(texte, "Le texte du test ne se lit pas.").unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)))
+    socle::forme::lire_texte(texte, "Le texte du test ne se lit pas.").unwrap_or_else(|e| panic!("{}", e.phrase))
 }
 
 /// Le fichier `chemin`, lu par la porte du socle, dans son type.
 pub fn lire_chemin<T: DeserializeOwned>(chemin: &Path) -> T {
     let texte = std::fs::read_to_string(chemin).unwrap_or_else(|e| panic!("{} illisible : {}", chemin.display(), e));
     socle::forme::lire_texte(&texte, &format!("{} ne se lit pas.", chemin.display()))
-        .unwrap_or_else(|e| panic!("{} : {}", chemin.display(), socle::echec::phrase_de(&e)))
+        .unwrap_or_else(|e| panic!("{} : {}", chemin.display(), e.phrase))
 }
 
 /// Le fichier `rel` sous `racine`.
@@ -153,11 +153,11 @@ pub enum Rendu<T> {
     Err(String),
 }
 
-impl<T> From<Result<T, String>> for Rendu<T> {
-    fn from(r: Result<T, String>) -> Rendu<T> {
+impl<T> From<Result<T, socle::echec::Echec>> for Rendu<T> {
+    fn from(r: Result<T, socle::echec::Echec>) -> Rendu<T> {
         match r {
             Ok(v) => Rendu::Ok(v),
-            Err(e) => Rendu::Err(e),
+            Err(e) => Rendu::Err(e.into()),
         }
     }
 }

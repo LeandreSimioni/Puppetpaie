@@ -51,7 +51,7 @@ pub(crate) fn compagnie_nommee(o: &Options) -> bool {
 
 /// La compagnie de la route, au jour de la route.
 pub(crate) fn contexte(o: &Options) -> Resultat<Contexte> {
-    Contexte::nouveau(&racine_de(o), o.date)
+    Contexte::nouveau(&racine_de(o), o.date).map_err(String::from)
 }
 
 /// `moteur route [--racine R] [--date D] [--texte]` : la demande sur l'entree standard. `None` : usage.

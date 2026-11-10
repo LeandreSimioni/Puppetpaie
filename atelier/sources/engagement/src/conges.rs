@@ -43,17 +43,17 @@ pub(crate) fn qui(ctx: &Contexte, e: &Carte) -> String {
 
 /// Le salarie que la carte `e` ecrit ; refus s'il n'est pas dit.
 pub(crate) fn salarie_de(e: &Carte) -> Resultat<&droit::contexte::IdSalarie> {
-    e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))
+    e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie").into())
 }
 
 /// Le debut que la carte `e` ecrit, lu ; refus s'il n'est pas dit.
 pub(crate) fn debut_de(e: &Carte) -> Resultat<Jour> {
-    Jour::lire(e.debut.as_deref().ok_or_else(|| socle::fichiers::absent("debut"))?)
+    Jour::lire(e.debut.as_deref().ok_or_else(|| socle::fichiers::absent("debut"))?).map_err(String::from)
 }
 
 /// Un jour dit et non vide de la carte, lu.
 pub(crate) fn jour_dit(x: &Option<String>) -> Resultat<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()
+    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose().map_err(String::from)
 }
 
 /// La regle qui paie le mois incomplet [`debut`, `fin`] (borne au mois [`debut_mois`, `fin_mois`]) du contrat de
@@ -134,11 +134,11 @@ pub(crate) fn dec_de(n: &NombreLu) -> Resultat<Decimal> {
 /// Les jours ouvrables d'un conge pris dans une entreprise qui chome `chomes` (`droit::conges::jours_ouvrables`).
 pub(crate) fn jours_ouvrables_de(c: &CongePris, chomes: Option<&str>) -> Resultat<i64> {
     let (debut, fin) = c.jours()?;
-    jours_ouvrables(&debut, &fin, chomes)
+    jours_ouvrables(&debut, &fin, chomes).map_err(String::from)
 }
 
 fn fin_mois_de(mois: &str) -> Resultat<Jour> {
-    Mois::lire(mois).map(Mois::dernier_jour)
+    Mois::lire(mois).map(Mois::dernier_jour).map_err(String::from)
 }
 
 // ------------------------------------------------ le compteur de conges
@@ -188,7 +188,7 @@ impl CompteurConges {
     pub fn indemnite_des_jours(&self, jours: Decimal, maintien: Decimal) -> Resultat<IndemniteDesJours> {
         let report = Acquisition { jours: self.acquis_report, remuneration: self.remuneration_report };
         let en_cours = Acquisition { jours: self.acquis, remuneration: self.remuneration_periode };
-        droit::permanents::indemnite_des_jours(jours, self.report_restant(), report, en_cours, maintien)
+        droit::permanents::indemnite_des_jours(jours, self.report_restant(), report, en_cours, maintien).map_err(String::from)
     }
 
     pub fn solde(&self) -> Decimal {
@@ -572,7 +572,7 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la_date: &Jour, moi
     let rep = reprise_conges(ctx, au, cle_salarie)?;
     let c = a.compteur;
     if a.avis_du_report > c.avertissements.len() {
-        return Err(socle::echec::cle("Le compteur de congés du mois d'avant ne se relit pas : revalider l'engagement de ce mois.", "avis_du_report"));
+        return Err(socle::echec::cle("Le compteur de congés du mois d'avant ne se relit pas : revalider l'engagement de ce mois.", "avis_du_report").into());
     }
     let (q_debut, q_fin) = (c.periode_debut, c.periode_fin);
     let mut tenue = Tenue { acquis: c.acquis, pris: c.pris, brut: c.remuneration_periode, avis: c.avertissements[a.avis_du_report..].to_vec() };
@@ -788,6 +788,7 @@ pub(crate) fn reprise_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &str) -> 
                 )
             })?
             .decimal()
+            .map_err(String::from)
     };
     Ok(Some(Reprise {
         date,

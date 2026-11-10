@@ -126,7 +126,7 @@ fn retenir(inst: &Path, creneau: u16) -> Result<(), String> {
         creneau,
         quoi: "Le creneau de la fenetre de cette installation (moteur/src/interface/instance.rs) : son port de page reste le meme d'un lancement a l'autre, et le navigateur y retrouve ce qu'il a retenu.".to_string(),
     };
-    socle::ecriture::ecrire_json(&inst.join(FICHIER), &r, 2)
+    socle::ecriture::ecrire_json(&inst.join(FICHIER), &r, 2).map_err(String::from)
 }
 
 /// Le creneau que vise une installation qui n'en a pas retenu : une empreinte de son dossier.

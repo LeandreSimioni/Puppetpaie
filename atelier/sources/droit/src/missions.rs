@@ -27,7 +27,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use socle::date::Jour;
 use socle::fichiers::dossier_du_code;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 
 use crate::source::forme_notee;
 
@@ -92,26 +93,26 @@ fn decimal(t: &str) -> Result<Decimal, rust_decimal::Error> {
 }
 
 /// La premiere ligne d'une table, son en-tete ; une table vide se refuse.
-fn en_tete<'a>(lignes: &mut impl Iterator<Item = &'a str>, fichier: &str) -> Resultat<&'a str> {
+fn en_tete<'a>(lignes: &mut impl Iterator<Item = &'a str>, fichier: &str) -> R<&'a str> {
     lignes.next().ok_or_else(|| socle::echec::livree(fichier, "en-tête"))
 }
 
 /// Le cache des tables, meme si un fil s'est arrete en le tenant : il ne garde qu'une lecture entiere.
-fn verrou<T>(m: &Mutex<T>) -> Resultat<std::sync::MutexGuard<'_, T>> {
-    m.lock().map_err(|_| "Le cache des tables des missions est empoisonné : relancer le logiciel.".to_string())
+fn verrou<T>(m: &Mutex<T>) -> R<std::sync::MutexGuard<'_, T>> {
+    m.lock().map_err(|_| socle::echec::refus("Le cache des tables des missions est empoisonné : relancer le logiciel."))
 }
 
-fn lire_texte(nom: &str) -> Resultat<String> {
+fn lire_texte(nom: &str) -> R<String> {
     let p = dossier_du_code().join(DOSSIER).join(nom);
     std::fs::read_to_string(&p).map_err(|e| socle::echec::du_disque(&p, &e))
 }
 
-fn construire() -> Resultat<Tables> {
+fn construire() -> R<Tables> {
     construire_de(&lire_texte("indemnites.csv")?, &lire_texte("change.csv")?, &lire_texte("villes.json")?)
 }
 
 /// Les tables, depuis leurs textes.
-fn construire_de(indemnites: &str, change: &str, villes: &str) -> Resultat<Tables> {
+fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
     let mut t = Tables::default();
     let texte = indemnites;
     let mut lignes = texte.lines();
@@ -156,11 +157,11 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> Resultat<Table
 }
 
 /// Les tables, lues une fois tant que leurs fichiers ne changent pas. Leur lecture ne se note pas au registre du calcul.
-fn tables() -> Resultat<Arc<Tables>> {
+fn tables() -> R<Arc<Tables>> {
     type Garde = Mutex<Option<(PathBuf, Vec<Option<(u128, u64)>>, Arc<Tables>)>>;
     static CACHE: OnceLock<Garde> = OnceLock::new();
     let dossier = dossier_du_code().join(DOSSIER);
-    let sig: Vec<_> = ["indemnites.csv", "change.csv", "villes.json"].iter().map(|f| socle::fichiers::signature(&dossier.join(f))).collect::<Resultat<_>>()?;
+    let sig: Vec<_> = ["indemnites.csv", "change.csv", "villes.json"].iter().map(|f| socle::fichiers::signature(&dossier.join(f))).collect::<R<_>>()?;
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     if let Some((d, s, t)) = verrou(cache)?.as_ref() {
         if *d == dossier && *s == sig && sig.iter().all(Option::is_some) {
@@ -179,17 +180,17 @@ fn en_vigueur<T: Clone>(lignes: &[Datee<T>], jour: &Jour) -> Option<T> {
 /// L'indemnite journaliere du lieu `code` (un pays, ou une ville que la table distingue) le jour `jour`, en euros
 /// (arrondie au centime). Refus : un lieu que la table ne connait pas, un jour qu'elle ne couvre pas, une monnaie sans
 /// taux de chancellerie a ce jour (rien ne se devine).
-pub fn du_jour(code: &str, jour: &Jour) -> Resultat<Indemnite> {
+pub fn du_jour(code: &str, jour: &Jour) -> R<Indemnite> {
     let t = tables()?;
-    let (nom, lignes) = t.indemnites.get(code).ok_or_else(|| format!("« {} » n'est pas un lieu de la table des indemnités de mission à l'étranger.", code))?;
-    let (monnaie, montant) = en_vigueur(lignes, jour).ok_or_else(|| format!("La table des indemnités de mission ne dit rien pour {} au {}.", nom, jour.jj_mm_aaaa()))?;
+    let (nom, lignes) = t.indemnites.get(code).ok_or_else(|| socle::refus!("« {} » n'est pas un lieu de la table des indemnités de mission à l'étranger.", code))?;
+    let (monnaie, montant) = en_vigueur(lignes, jour).ok_or_else(|| socle::refus!("La table des indemnités de mission ne dit rien pour {} au {}.", nom, jour.jj_mm_aaaa()))?;
     let change = if monnaie == "EUR" {
         Decimal::ONE
     } else {
         t.change
             .get(&(monnaie.clone(), code.to_string()))
             .and_then(|l| en_vigueur(l, jour))
-            .ok_or_else(|| format!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
+            .ok_or_else(|| socle::refus!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
     };
     Ok(Indemnite { euros: socle::num::eur2(montant * change), montant, monnaie, change })
 }
@@ -197,7 +198,7 @@ pub fn du_jour(code: &str, jour: &Jour) -> Resultat<Indemnite> {
 /// Les lieux a l'etranger que le choix « Lieu » d'une ligne de frais propose : `(code, nom)`, par nom. Un pays se nomme
 /// comme la liste des pays du logiciel (`socle::pays`) ; une ville, par `villes.json`, suivie de son pays. Un code que ni
 /// l'une ni l'autre ne nomme (un Etat disparu, une ligne d'avant 2006) n'est pas propose.
-pub fn lieux() -> Resultat<Vec<(String, String)>> {
+pub fn lieux() -> R<Vec<(String, String)>> {
     let t = tables()?;
     let mut out = Vec::new();
     for code in t.indemnites.keys() {
@@ -214,17 +215,17 @@ pub fn lieux() -> Resultat<Vec<(String, String)>> {
 }
 
 /// Le nom d'un lieu de la table, tel que `lieux` le propose.
-pub fn nom(code: &str) -> Resultat<Option<String>> {
+pub fn nom(code: &str) -> R<Option<String>> {
     Ok(lieux()?.into_iter().find(|(c, _)| c == code).map(|(_, n)| n))
 }
 
 /// DEUX TABLES RELEVEES, relues comme le moteur les lit (`moteur-atelier releve-missions`) : le nombre de lieux de la table des
 /// indemnites et de taux de chancellerie, ou ce qui ne se lit pas. Une table vide refuse.
-pub fn verifier(indemnites: &str, change: &str) -> Resultat<(usize, usize)> {
+pub fn verifier(indemnites: &str, change: &str) -> R<(usize, usize)> {
     let t = construire_de(indemnites, change, &lire_texte("villes.json")?)?;
     let taux: usize = t.change.values().map(Vec::len).sum();
     if t.indemnites.is_empty() || taux == 0 {
-        return Err("Une table relevée n'a aucune ligne lisible : rien n'est remplacé.".to_string());
+        return Err(socle::echec::refus("Une table relevée n'a aucune ligne lisible : rien n'est remplacé."));
     }
     Ok((t.indemnites.len(), taux))
 }
@@ -234,12 +235,12 @@ pub fn verifier(indemnites: &str, change: &str) -> Resultat<(usize, usize)> {
 /// recente d'avant, qui vaut encore ce jour-la (`en_vigueur`) ; une ligne sans date lisible, que `construire_de` ne lit
 /// pas, non plus. Le reste ne se lit plus et ne se livre pas ; la table
 /// relevee entiere se depose dans les sources (`moteur-atelier releve-missions`). L'en-tete et l'ordre des lignes restent.
-pub fn pour_les_paies(texte: &str, cles: &[&str], depuis: &Jour) -> Resultat<String> {
+pub fn pour_les_paies(texte: &str, cles: &[&str], depuis: &Jour) -> R<String> {
     let mut lignes = texte.split_inclusive('\n');
     let tete_brute = en_tete(&mut lignes, "table des missions")?;
     let tete = champs(tete_brute);
-    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| format!("table des missions : la colonne « {} » manque.", nom));
-    let c_cles: Vec<usize> = cles.iter().map(|c| col(c)).collect::<Resultat<_>>()?;
+    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::refus!("table des missions : la colonne « {} » manque.", nom));
+    let c_cles: Vec<usize> = cles.iter().map(|c| col(c)).collect::<R<_>>()?;
     let c_date = col("date")?;
     // Chaque ligne, avec son lieu et sa date quand elle les ecrit (une ligne a qui il en manque ne se lit pas).
     let lues: Vec<(&str, Option<(String, Jour)>)> = lignes

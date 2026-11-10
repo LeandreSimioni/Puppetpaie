@@ -316,7 +316,7 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
     let r = ouverture(ctx, &opt, Clients::default(), None);
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
-    let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, message: e.message })?;
+    let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| Echec { classe: e.classe, phrase: e.message, a_part: None })?;
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),
@@ -727,7 +727,7 @@ pub(super) fn refus(m: impl Into<String>) -> Echec {
 }
 
 #[track_caller]
-pub(crate) fn en_os(m: String) -> Echec {
+pub(crate) fn en_os(m: impl Into<String>) -> Echec {
     erreur(Classe::Disque, m)
 }
 
@@ -1132,7 +1132,7 @@ impl ReleveFiches {
     }
 }
 
-fn os(m: String) -> Echec {
+fn os(m: impl Into<String>) -> Echec {
     erreur(Classe::Disque, m)
 }
 
@@ -1324,7 +1324,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
         // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
         ("iban", "FR7630001007941234567890185".to_string()),
     ]);
-    let utiles = champs::utiles("salarie").map_err(|e| e.message)?;
+    let utiles = champs::utiles("salarie").map_err(String::from)?;
     // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
     let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
     let sujet = match bouton {
@@ -1402,7 +1402,7 @@ fn euros_ecrits(somme: &str) -> R<String> {
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee.to_string()), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
-    let couts = r.couts_de_l_annee().map_err(|e| Echec { classe: e.classe, message: e.message })?;
+    let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
     let dit = |liste: Vec<(String, documents::fiche_recapitulative::Cout)>| -> R<Vec<(String, CoutDit)>> {

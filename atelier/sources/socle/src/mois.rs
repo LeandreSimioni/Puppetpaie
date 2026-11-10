@@ -10,7 +10,7 @@
 //! un dossier : `../config` ou `2026-06/envoi` n'en sont pas.
 
 use crate::date::{jours_du_mois, repr_texte, Jour};
-use crate::num::Resultat;
+use crate::echec::{refus, Echec, R};
 
 /// Un mois civil, de 0001-01 a 9999-12. L'ordre est celui du calendrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
@@ -42,23 +42,23 @@ pub fn mois_impossible(mois: impl std::fmt::Display) -> String {
 
 impl Mois {
     /// Le mois `numero` (1 a 12) de l'annee `an` (1 a 9999) ; refus sinon.
-    pub fn nouveau(an: i32, numero: u32) -> Resultat<Mois> {
+    pub fn nouveau(an: i32, numero: u32) -> R<Mois> {
         if !(1..=9999).contains(&an) {
-            return Err(crate::date::annee_impossible(an));
+            return Err(refus(crate::date::annee_impossible(an)));
         }
         if !(1..=12).contains(&numero) {
-            return Err(mois_impossible(numero));
+            return Err(refus(mois_impossible(numero)));
         }
         Ok(Mois { an, numero })
     }
 
     /// Un mois ecrit `AAAA-MM` ; toute autre forme se refuse.
-    pub fn lire(texte: &str) -> Resultat<Mois> {
+    pub fn lire(texte: &str) -> R<Mois> {
         let b = texte.as_bytes();
         if !(b.len() == 7 && b[4] == b'-' && b[..4].iter().chain(&b[5..]).all(u8::is_ascii_digit)) {
-            return Err(format!("mois illisible : {} (attendu : AAAA-MM)", repr_texte(texte)));
+            return Err(refus(format!("mois illisible : {} (attendu : AAAA-MM)", repr_texte(texte))));
         }
-        Mois::nouveau(texte[..4].parse().map_err(|_| crate::date::HORS_CALENDRIER.to_string())?, texte[5..].parse().map_err(|_| crate::date::HORS_CALENDRIER.to_string())?)
+        Mois::nouveau(texte[..4].parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?, texte[5..].parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?)
     }
 
     /// Le mois ecrit `AAAA-MM`, s'il en est un (`lire` dit pourquoi un texte n'en est pas un).
@@ -74,12 +74,12 @@ impl Mois {
 
     /// Le mois tel qu'une DSN le declare (S20.G00.05.005) : `01MMAAAA`, le premier jour du mois ; toute autre forme se
     /// refuse.
-    pub fn de_la_dsn(texte: &str) -> Resultat<Mois> {
+    pub fn de_la_dsn(texte: &str) -> R<Mois> {
         let b = texte.as_bytes();
         if !(b.len() == 8 && b.starts_with(b"01") && b.iter().all(u8::is_ascii_digit)) {
-            return Err(format!("mois de DSN illisible : {} (attendu : 01MMAAAA)", repr_texte(texte)));
+            return Err(refus(format!("mois de DSN illisible : {} (attendu : 01MMAAAA)", repr_texte(texte))));
         }
-        Mois::nouveau(texte[4..].parse().map_err(|_| crate::date::HORS_CALENDRIER.to_string())?, texte[2..4].parse().map_err(|_| crate::date::HORS_CALENDRIER.to_string())?)
+        Mois::nouveau(texte[4..].parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?, texte[2..4].parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?)
     }
 
     /// Le mois du jour `j`.
@@ -127,10 +127,10 @@ impl Mois {
     }
 
     /// Le mois `n` mois plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
-    pub fn plus(self, n: i32) -> Resultat<Mois> {
+    pub fn plus(self, n: i32) -> R<Mois> {
         let rang = i64::from(self.an) * 12 + i64::from(self.numero) - 1 + i64::from(n);
-        let an = i32::try_from(rang.div_euclid(12)).map_err(|_| crate::date::HORS_CALENDRIER.to_string())?;
-        Mois::nouveau(an, (rang.rem_euclid(12) + 1) as u32).map_err(|_| crate::date::HORS_CALENDRIER.to_string())
+        let an = i32::try_from(rang.div_euclid(12)).map_err(|_| refus(crate::date::HORS_CALENDRIER))?;
+        Mois::nouveau(an, (rang.rem_euclid(12) + 1) as u32).map_err(|_| refus(crate::date::HORS_CALENDRIER))
     }
 
     /// Le mois suivant (decembre 9999 n'en a pas : il se rend lui-meme, aucun mois de paie n'y va).
@@ -203,16 +203,17 @@ impl std::fmt::Display for Mois {
 }
 
 impl std::str::FromStr for Mois {
-    type Err = String;
-    fn from_str(s: &str) -> Resultat<Mois> {
+    type Err = Echec;
+    fn from_str(s: &str) -> R<Mois> {
         Mois::lire(s)
     }
 }
 
+/// La lecture de serde (`try_from = "String"`), dont l'erreur est un texte qu'elle rend dans son propre refus.
 impl TryFrom<String> for Mois {
     type Error = String;
-    fn try_from(s: String) -> Resultat<Mois> {
-        Mois::lire(&s)
+    fn try_from(s: String) -> Result<Mois, String> {
+        Mois::lire(&s).map_err(|e| e.phrase)
     }
 }
 

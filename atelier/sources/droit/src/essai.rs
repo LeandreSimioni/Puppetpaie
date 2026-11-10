@@ -21,7 +21,7 @@
 //! contrat au meme quantieme (le dernier jour du mois s'il ne l'a pas), ce jour exclu.
 
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::natures::Nature;
 
@@ -33,7 +33,7 @@ pub struct Plafond {
 }
 
 /// Les jours calendaires de `n` mois a partir de `debut` (`Jour::plus_mois`, ce jour exclu).
-fn jours_de_mois(debut: &Jour, n: u32) -> Resultat<i64> {
+fn jours_de_mois(debut: &Jour, n: u32) -> R<i64> {
     Ok(debut.plus_mois(i64::from(n))?.moins(debut))
 }
 
@@ -41,7 +41,7 @@ fn jours_de_mois(debut: &Jour, n: u32) -> Resultat<i64> {
 /// classement conventionnel du salarie (S21.G00.40.002), `artiste` dit s'il est artiste du spectacle, `idcc` la
 /// convention de la compagnie. `None` quand le texte ne permet pas de le dire (un CDD sans terme, un CDI d'une
 /// categorie que la loi ne nomme pas, ou sans classement).
-pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<&str>, artiste: bool, idcc: Option<&str>) -> Resultat<Option<Plafond>> {
+pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<&str>, artiste: bool, idcc: Option<&str>) -> R<Option<Plafond>> {
     if !nat.duree_indeterminee {
         let Some(fin) = fin else { return Ok(None) };
         let duree = fin.moins(debut) + 1;
@@ -97,9 +97,9 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
 }
 
 /// LE REFUS D'UN ESSAI TROP LONG : `jours` stipules au-dela du `plafond` du contrat. `qui` nomme le contrat dans la phrase.
-pub fn refuser_au_dela(jours: i64, plafond: Option<&Plafond>, qui: &str) -> Resultat<()> {
+pub fn refuser_au_dela(jours: i64, plafond: Option<&Plafond>, qui: &str) -> R<()> {
     match plafond {
-        Some(p) if jours > p.jours => Err(format!(
+        Some(p) if jours > p.jours => Err(socle::refus!(
             "{} : une période d'essai de {} jours dépasse la durée maximale de ce contrat — {}. La ramener à {} jour{} au \
              plus, dans « Plus d'options › Contrat » de l'engagement.",
             qui,

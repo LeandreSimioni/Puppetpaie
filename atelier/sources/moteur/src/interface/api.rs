@@ -138,7 +138,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
                 let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
                 format!("erreur JS {} : {} ({}:{})", texte(&r.genre, 80), texte(&r.message, 200), texte(&r.fichier, 80), r.ligne)
             }
-            Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", socle::echec::phrase_de(&e.message)),
+            Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", e.phrase()),
         };
         compagnie::diagnostic::noter_moteur(&dit);
     } else {
@@ -161,10 +161,10 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             let (mois, mois_illisible) = match charge.mois() {
                 Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
                     Ok(etat) => (etat, None),
-                    Err(e) => (None, Some(e.message)),
+                    Err(e) => (None, Some(e.into())),
                 },
                 Ok(None) => (None, None),
-                Err(e) => (None, Some(e.message)),
+                Err(e) => (None, Some(e.into())),
             };
             let detail = RefusDeLaPage {
                 route: nom,
@@ -176,7 +176,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             };
             let trace = compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
             if let Err(e) = compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
-                compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, socle::echec::phrase_de(&e.message)));
+                compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, e.phrase()));
             }
         }
     }

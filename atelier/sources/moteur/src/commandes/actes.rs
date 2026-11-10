@@ -63,7 +63,8 @@ pub fn refuser_si_pas_redirige(cadre: &super::Cadre, organisme: Organisme, quoi:
     };
     Err(Echec {
         classe: Some(Classe::ActeReelRefuse),
-        message: format!(
+        a_part: None,
+        phrase: format!(
             "Ceci est le binaire de l'atelier (moteur-atelier) : {} irait au vrai serveur, que l'atelier ne tient pas. Poser {} sur un faux serveur local. Rien n'a ete modifie.",
             quoi, variable
         ),

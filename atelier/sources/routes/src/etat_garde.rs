@@ -166,7 +166,7 @@ impl Cle {
         match texte {
             OUVERTURE => Ok(Cle::Ouverture),
             TABLEAU => Ok(Cle::Tableau),
-            m => Mois::lire(m).map(Cle::Mois).map_err(|e| erreur(Classe::Illisible, socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", e))),
+            m => Mois::lire(m).map(Cle::Mois).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", String::from(e)) }),
         }
     }
 }
@@ -424,7 +424,7 @@ impl Serialize for ALaPage<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             // La reponse telle que la porte l'a ecrite, et non le texte qui la garde.
-            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
+            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(|e| serde::ser::Error::custom(String::from(e)))?.serialize(s),
             ALaPage::Faite(r) => r.serialize(s),
         }
     }
@@ -448,7 +448,7 @@ impl Dite for DuMois<'_> {
 fn du_mois(racine: &Path, bilan: &Bilan) -> R<Rendu> {
     let pose = compagnie::coffre::Coffre::du_poste(racine, "")
         .ouverture_exigee()
-        .map_err(|x| Echec { classe: Some(x.classe), message: x.message })?;
+        .map_err(|x| Echec { classe: Some(x.classe), phrase: x.message, a_part: None })?;
     Rendu::de(&DuMois { bilan, mot_de_passe_pose: pose })
 }
 
@@ -647,7 +647,7 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
             Ok(t) if t.empreinte == empreinte => return Ok(Garde::Tableau(Arc::new(t))),
             Ok(_) => {}
-            Err(m) => noter("le tableau gardé ne se lit pas, il se refait", &m),
+            Err(m) => noter("le tableau gardé ne se lit pas, il se refait", &String::from(m)),
         }
     }
     Ok(Garde::Tableau(Arc::new(crate::gestes::administrateur::tableau_compagnie(ctx)?)))
@@ -669,7 +669,7 @@ fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
             if let Garde::Ouverture(e) = &garde {
                 // Une ecriture impossible ne change rien au resultat : la prochaine lecture refera.
                 if let Err(m) = socle::ecriture::ecrire_json(&chemin(&ctx.racine), e.as_ref(), 0) {
-                    noter("l'état de l'ouverture ne s'écrit pas", &m);
+                    noter("l'état de l'ouverture ne s'écrit pas", &String::from(m));
                 }
             }
         }
@@ -691,7 +691,7 @@ fn ouverture_ecrite(racine: &Path) -> Option<EtatDeLOuverture> {
         Ok(e) if e.format == FORMAT && e.moteur == env!("PAIE_SOURCES") => Some(e),
         Ok(_) => None,
         Err(m) => {
-            noter("l'état de l'ouverture ne se lit pas, il se refait", &m);
+            noter("l'état de l'ouverture ne se lit pas, il se refait", &String::from(m));
             None
         }
     }
@@ -760,7 +760,7 @@ type Fait = Result<Garde, (Option<Classe>, String)>;
 fn refus(f: &Fait) -> R<Garde> {
     match f {
         Ok(g) => Ok(g.clone()),
-        Err((classe, message)) => Err(Echec { classe: *classe, message: message.clone() }),
+        Err((classe, message)) => Err(Echec { classe: *classe, phrase: message.clone(), a_part: None }),
     }
 }
 
@@ -845,7 +845,7 @@ impl Fil {
         match jour() {
             Ok(j) => Some(j),
             Err(e) => {
-                noter("le jour ne se lit pas", &e.message);
+                noter("le jour ne se lit pas", &String::from(e));
                 None
             }
         }
@@ -1032,7 +1032,7 @@ impl FileDesEtats {
                 if let Some((g, true)) = self.connu(cle, &jour) {
                     return Ok(g);
                 }
-                let ctx = crate::service::contexte(o).map_err(|m| Echec { classe: None, message: m })?;
+                let ctx = crate::service::contexte(o).map_err(|m| Echec { classe: None, phrase: m, a_part: None })?;
                 garde_juste(o, &ctx, cle)
             }));
             // Un calcul tombe a pu laisser son fil sale (un registre ouvert, les nombres « fideles ») : le travail
@@ -1050,7 +1050,7 @@ impl FileDesEtats {
         let rendu = refaire();
         match rendu {
             Ok(Ok(g)) => Ok(g),
-            Ok(Err(e)) => Err((e.classe, e.message)),
+            Ok(Err(e)) => Err((e.classe, String::from(e))),
             Err(p) => Err((Some(Classe::DefautDuLogiciel), format!("Défaut du logiciel : l'état de {} ne s'est pas refait (le calcul s'est arrêté : {}).", cle, pourquoi(p.as_ref())))),
         }
     }
@@ -1092,7 +1092,7 @@ impl FileDesEtats {
         let suivis = match mois_suivis(&self.racine) {
             Ok(s) => s,
             Err(e) => {
-                noter("les mois suivis ne se lisent pas", &e.message);
+                noter("les mois suivis ne se lisent pas", &String::from(e));
                 Vec::new()
             }
         };

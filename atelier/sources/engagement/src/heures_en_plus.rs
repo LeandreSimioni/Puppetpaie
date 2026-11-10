@@ -183,7 +183,7 @@ pub(crate) fn apres_les_cotisations(
     if !supplementaires.is_zero() {
         let annee = ctx.lue_au.an;
         let au_moins_20 = ctx.effectif()?.atteint(20, annee).map_err(|e| {
-            format!("La déduction patronale des heures supplémentaires dépend de l'effectif (CSS L241-18, L241-18-1 : moins de vingt salariés ou au moins vingt). {}", e)
+            format!("La déduction patronale des heures supplémentaires dépend de l'effectif (CSS L241-18, L241-18-1 : moins de vingt salariés ou au moins vingt). {}", String::from(e))
         })?;
         deduction = eur2(supplementaires * droit::heures_en_plus::deduction_par_heure(au_moins_20)?).min(tot_pat.max(Decimal::new(0, 2)));
         if !deduction.is_zero() {
@@ -209,7 +209,7 @@ pub(crate) fn apres_les_cotisations(
         .filter(|l| l.est("csg_ded"))
         .take(1)
         .map(|l| socle::num::dec_f64(l.taux_sal.ok_or("la ligne de CSG déductible n'a pas de taux salarial")?))
-        .sum::<Resultat<Decimal>>()?;
+        .sum::<socle::echec::R<Decimal>>()?;
     let csg_deductible = eur2(remuneration * abattement * taux_csg / Decimal::ONE_HUNDRED);
     let autres = sal(&|l| !(l.est("csg_ded") || l.est("csg_crds_nd") || l.est("mutuelle")));
     let leurs_cotisations = eur2(autres * remuneration / brut);

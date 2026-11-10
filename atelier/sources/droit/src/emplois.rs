@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::Contexte;
@@ -157,13 +157,13 @@ pub struct EmploiFt {
 const CATALOGUE_ILLISIBLE: &str = "Le catalogue des métiers livré avec le logiciel ne se lit pas : le signaler au développeur.";
 
 /// LA SEULE LECTURE D'`emplois-base.json`.
-pub fn base() -> Resultat<Arc<BaseEmplois>> {
+pub fn base() -> R<Arc<BaseEmplois>> {
     static CACHE: OnceLock<FormeGardee<BaseEmplois>> = OnceLock::new();
     forme_en_cache(&CACHE, "emplois-base.json", CATALOGUE_ILLISIBLE, Ok)
 }
 
 /// LA SEULE LECTURE DE `nomenclature-emplois-ft.json`.
-pub fn nomenclature() -> Resultat<Arc<Nomenclature>> {
+pub fn nomenclature() -> R<Arc<Nomenclature>> {
     static CACHE: OnceLock<FormeGardee<Nomenclature>> = OnceLock::new();
     forme_en_cache(&CACHE, "nomenclature-emplois-ft.json", "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -304,7 +304,7 @@ impl Metier {
 
 /// Un metier par son code (blancs et casse ignores), catalogue d'abord, nomenclature ensuite. `None` si le code n'existe
 /// nulle part.
-pub fn metier(code: &str) -> Resultat<Option<Metier>> {
+pub fn metier(code: &str) -> R<Option<Metier>> {
     let code = code.trim().to_uppercase();
     if code.is_empty() {
         return Ok(None);
@@ -332,7 +332,7 @@ pub struct ChampsDuMetier {
 /// Les sept champs declares pour ce metier (`emploi_affichage` compris).
 /// `cadre` a `None` prend le defaut du catalogue dans la convention `idcc` (`Metier::cadre_par_defaut`). Refuse un code
 /// inconnu.
-pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> Resultat<ChampsDuMetier> {
+pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
     let m = metier(code)?.ok_or_else(|| {
         format!(
             "Metier {} inconnu : ni dans le catalogue (emplois-base.json), ni \
@@ -341,7 +341,7 @@ pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&st
     })?;
     let est_cadre = match cadre.or_else(|| m.cadre_par_defaut(idcc)) {
         Some(c) => c,
-        None => return Err(format!("Le métier {} est hors catalogue : la fiche doit dire s'il est cadre.", repr(code))),
+        None => return Err(socle::refus!("Le métier {} est hors catalogue : la fiche doit dire s'il est cadre.", repr(code))),
     };
     let libelle = if feminin { m.feminin() } else { m.libelle() };
     Ok(ChampsDuMetier {
@@ -385,7 +385,7 @@ const UNE_VALEUR_PAR_MOIS: [&str; 5] = ["statut_categoriel_rc", "statut_conventi
 /// bornes : le refus ne garde que l'appel sur une periode qui n'aurait pas ete coupee. Le statut BOETH, qui ne change
 /// pas la paie, peut changer en cours de mois (40.072 se renseigne « pour le contrat concerne dans la periode
 /// declaree », p. 211 : celui de la fin).
-pub fn emploi_du_mois(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> Resultat<FicheSalarie> {
+pub fn emploi_du_mois(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<FicheSalarie> {
     let au_debut = ctx.salarie_au(cle, debut)?;
     let a_la_fin = ctx.salarie_au(cle, fin)?;
     for ((c, avant), (_, apres)) in valeurs_par_mois(&au_debut).into_iter().zip(valeurs_par_mois(&a_la_fin)) {
@@ -423,7 +423,7 @@ vaut pour tout ce mois-ci) ou le {} (il vaut a partir du mois suivant).",
 /// le `depuis` d'une de ces valeurs, quand la fiche de la veille et celle du jour different. C'est la que la paie du mois
 /// se decoupe en periodes elementaires (`periodes::bornes` ; norme DSN 2026.1, § 2.1.3.2, p. 28 : « passage de non
 /// cadre a cadre en cours de periode de paie »). Vide : le mois se paie d'un seul tenant.
-pub fn jours_de_changement(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> Resultat<Vec<Jour>> {
+pub fn jours_de_changement(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<Vec<Jour>> {
     let Some(brute) = ctx.salarie_brut(cle) else { return Ok(Vec::new()) };
     let mut jours: Vec<Jour> = Vec::new();
     for c in UNE_VALEUR_PAR_MOIS {
@@ -456,15 +456,15 @@ pub struct EmploiEngagement {
 
 /// La fiche salarie `sal` (lue a la date de la periode) telle qu'elle vaut POUR CET ENGAGEMENT : ce que l'engagement
 /// dit l'emporte ; le reste vient de la fiche.
-pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> Resultat<FicheSalarie> {
+pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
     // Un choix que l'engagement dit se lit comme la fiche le lirait (`fiche::Statut`...) : hors de la liste, il se refuse.
-    fn choix<T: serde::de::DeserializeOwned>(v: &str, cle: &str) -> Resultat<T> {
+    fn choix<T: serde::de::DeserializeOwned>(v: &str, cle: &str) -> R<T> {
         use serde::de::IntoDeserializer;
         let ecrit: serde::de::value::StrDeserializer<serde::de::value::Error> = v.into_deserializer();
         T::deserialize(ecrit)
-            .map_err(|_| format!("L'engagement dit « {} » pour {}, qui n'est pas un choix de la fiche du salarié.", v, cle.replace('_', " ")))
+            .map_err(|_| socle::refus!("L'engagement dit « {} » pour {}, qui n'est pas un choix de la fiche du salarié.", v, cle.replace('_', " ")))
     }
     let pris = [&eng.emploi, &eng.pcs_ese, &eng.code_emploi_ft, &eng.statut, &eng.statut_conventionnel, &eng.statut_categoriel_rc];
     let affichage = dit(&eng.emploi_affichage);
@@ -496,7 +496,7 @@ pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> Resultat<FicheSa
         out.emploi_affichage = Some(a);
     } else if let Some(code) = dit(&eng.code_emploi_ft) {
         if sal.code_emploi_ft.dite() != Some(&code) {
-            let m = metier(&code)?.ok_or_else(|| format!("Le métier {} de l'engagement n'est ni au catalogue ni dans la nomenclature France Travail.", repr(&code)))?;
+            let m = metier(&code)?.ok_or_else(|| socle::refus!("Le métier {} de l'engagement n'est ni au catalogue ni dans la nomenclature France Travail.", repr(&code)))?;
             out.emploi_affichage = Some(m.libelle());
         }
     }
@@ -524,14 +524,14 @@ pub struct MetierDuDeroulant {
 
 /// Le catalogue du spectacle vivant, le defaut cadre de chaque metier lu dans la convention `idcc`, pour un
 /// deroulant, dans l'ordre du fichier.
-pub fn catalogue(idcc: Option<&str>) -> Resultat<Vec<MetierDuDeroulant>> {
+pub fn catalogue(idcc: Option<&str>) -> R<Vec<MetierDuDeroulant>> {
     base()?
         .emplois
         .iter()
         .map(|(code, f)| {
             let m = Metier { code: code.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) };
             Ok(MetierDuDeroulant {
-                cadre_par_defaut: m.cadre_par_defaut(idcc).ok_or_else(|| format!("Metier {} : le catalogue ne dit pas s'il est cadre.", repr(code)))?,
+                cadre_par_defaut: m.cadre_par_defaut(idcc).ok_or_else(|| socle::refus!("Metier {} : le catalogue ne dit pas s'il est cadre.", repr(code)))?,
                 code: code.clone(),
                 libelle: f.libelle.clone(),
                 feminin: f.feminin.clone(),
@@ -549,7 +549,7 @@ pub fn catalogue(idcc: Option<&str>) -> Resultat<Vec<MetierDuDeroulant>> {
 /// Le metier du catalogue qu'un intitule imprime nomme (un bulletin d'un logiciel precedent : « MUSICIEN »), compare
 /// par `norme` (sans casse ni accents) a son libelle, a son feminin et a sa forme declaree. `(code, feminin)` quand un
 /// seul metier porte cet intitule ; `None` quand aucun, ou plusieurs (« SCRIPTE ») : on ne choisit pas entre eux.
-pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> Resultat<Option<(String, bool)>> {
+pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> R<Option<(String, bool)>> {
     let cherche = norme(intitule);
     if cherche.is_empty() {
         return Ok(None);
@@ -565,14 +565,14 @@ pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> Resultat<
 }
 
 /// IDCC -> le nom court de la convention.
-pub fn noms_des_conventions() -> Resultat<BTreeMap<String, String>> {
+pub fn noms_des_conventions() -> R<BTreeMap<String, String>> {
     Ok(base()?.conventions.clone())
 }
 
 /// Les familles du catalogue, dans l'ordre ou les
 /// montrer : les artistes d'abord, parce que c'est le cas de presque toutes
 /// les paies.
-pub fn familles() -> Resultat<Vec<String>> {
+pub fn familles() -> R<Vec<String>> {
     const ORDRE: [&str; 11] = [
         "Artistes", "Musique", "Cirque et rue", "Mise en scène et création", "Régie et plateau", "Son", "Lumière",
         "Décor et construction", "Costume, coiffure, maquillage", "Production et administration", "Audiovisuel dans le spectacle",
@@ -585,7 +585,7 @@ pub fn familles() -> Resultat<Vec<String>> {
 
 /// Ce qu'une fiche salarie declare (son code emploi, son statut, sa PCS-ESE ; vide : elle ne le dit pas), confronte au
 /// catalogue. Des phrases d'avertissement, jamais d'erreur : la fiche peut avoir raison contre le catalogue.
-pub fn controler_fiche(code_emploi_ft: &str, statut: &str, pcs_ese: &str) -> Resultat<Vec<String>> {
+pub fn controler_fiche(code_emploi_ft: &str, statut: &str, pcs_ese: &str) -> R<Vec<String>> {
     let mut avis = Vec::new();
     let code = code_emploi_ft.trim().to_uppercase();
     if code.is_empty() {

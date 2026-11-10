@@ -28,17 +28,17 @@ pub(crate) struct ContratAuJour {
     pub(crate) dit: Option<String>,
 }
 
-fn plain(m: String) -> Echec {
+fn plain(m: impl Into<String>) -> Echec {
     socle::echec::noter_et(None, m)
 }
 
 /// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
 #[track_caller]
-pub(crate) fn refus_magasin(m: String) -> Echec {
+pub(crate) fn refus_magasin(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-pub(crate) fn magasin<T>(r: Result<T, String>) -> R<T> {
+pub(crate) fn magasin<T, E: Into<String>>(r: Result<T, E>) -> R<T> {
     r.map_err(refus_magasin)
 }
 

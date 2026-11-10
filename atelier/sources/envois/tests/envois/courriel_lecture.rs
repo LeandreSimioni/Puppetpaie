@@ -91,7 +91,7 @@ fn reecrire() -> bool {
 
 #[test]
 fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
-    let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)));
+    let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", e.phrase));
     assert!(attendu.messages.len() > 200, "le fichier de cas est complet");
     let messages: Vec<MessageLu> = attendu
         .messages

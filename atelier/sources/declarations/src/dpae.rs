@@ -235,7 +235,7 @@ fn siret_de(ent: &ChampsEntreprise) -> Resultat<String> {
 fn medecine_de(ent: &ChampsEntreprise) -> Resultat<String> {
     match ent.medecine_travail.portee() {
         Some(mt) => Ok(strip(mt).to_string()),
-        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le code du service de santé au travail, que la DPAE exige : le lire sur l'adhésion au service de santé au travail, et le saisir dans Configuration › Entreprise.", "medecine_travail")),
+        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le code du service de santé au travail, que la DPAE exige : le lire sur l'adhésion au service de santé au travail, et le saisir dans Configuration › Entreprise.", "medecine_travail").into()),
     }
 }
 
@@ -383,7 +383,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                 &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
                 "code_urssaf",
                 repr(brut),
-            ));
+            )
+            .into());
         }
         // ET LE CODE DOIT EXISTER. Trois chiffres bien formes
         // suffisaient ; le point de depot, lui, repond << Code URSSAF invalide
@@ -396,7 +397,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                 "Le code Urssaf de la fiche entreprise n'est pas celui d'un organisme de recouvrement connu : le point de dépôt le refuserait. Le code se lit sur les bordereaux Urssaf de la compagnie.",
                 "code_urssaf",
                 repr(brut),
-            ));
+            )
+            .into());
         }
         ecrire_zone(&mut buf, "code_urssaf", a, b, v)?;
     }
@@ -452,7 +454,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> Resulta
                     nat.libelle
                 ),
                 "fin",
-            ));
+            )
+            .into());
         };
         poser(&mut buf, "date_fin", &fin.jjmmaaaa())?;
     } else {
@@ -477,17 +480,17 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> Resultat<Vec<S
     // `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`) : tout ce qui manque, d'un coup, avant d'ecrire.
     let mut saisies: Vec<(&str, String, crate::champs::Saisie)> = Vec::new();
     if let Some(e) = p.ent {
-        saisies.push(("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", &e.fiche).map_err(|e| e.message)?));
+        saisies.push(("entreprise", "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche("entreprise", &e.fiche).map_err(String::from)?));
     }
     for e in embauches {
         let qui = match e.salarie.nomme() {
             Some(n) => n,
             None => e.salarie.fiche.id.to_string(),
         };
-        saisies.push(("salarie", format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche("salarie", &e.salarie.champs).map_err(|e| e.message)?));
+        saisies.push(("salarie", format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche("salarie", &e.salarie.champs).map_err(String::from)?));
     }
     let fiches: Vec<(&str, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[]).map_err(|e| e.message)? {
+    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[]).map_err(String::from)? {
         return Err(m);
     }
     if embauches.is_empty() {
@@ -639,7 +642,7 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
 /// La nature de contrat de cette embauche. Une nature inconnue se refuse, son
 /// message entre guillemets.
 fn nature_de(e: &Embauche) -> Resultat<std::sync::Arc<natures::Nature>> {
-    natures::nature(&e.nature).map_err(|m| repr(&m))
+    natures::nature(&e.nature).map_err(|m| repr(&String::from(m)))
 }
 
 /// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.

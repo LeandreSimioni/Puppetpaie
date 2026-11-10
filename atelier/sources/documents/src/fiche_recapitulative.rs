@@ -24,7 +24,7 @@ fn est_erreur_operation(e: &Echec) -> bool {
 }
 
 fn copie(e: &Echec) -> Echec {
-    Echec { classe: e.classe, message: e.message.clone() }
+    e.clone()
 }
 
 /// CE QUE LES SPECTACLES ET LES SALARIES ONT COUTE dans l'annee `annee`, jusqu'au mois `jusqu_a` : chacun sous sa cle,

@@ -24,24 +24,24 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
     }
     if let Some(d) = &s.depot_refuse {
         if let Err(e) = noter_incident_depot(ctx, d) {
-            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.message));
+            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", String::from(e)));
         }
     }
     if !s.taux_pas.is_empty() {
         if let Err(e) = appliquer_taux_pas(ctx, &s.taux_pas) {
-            faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.message));
+            faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", String::from(e)));
         }
     }
     if !s.taux_atmp.is_empty() {
         match appliquer_taux_atmp(ctx, &s.taux_atmp) {
             Ok(a_faire) => faites.a_faire.extend(a_faire),
-            Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.message)),
+            Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", String::from(e))),
         }
     }
     if !s.aer.is_empty() {
         match crate::documents::ranger_aer(ctx, None, Some(&s.aer)) {
             Ok(a_faire) => faites.a_faire.extend(a_faire),
-            Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.message)),
+            Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", String::from(e))),
         }
     }
     Ok(faites)
@@ -108,7 +108,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, e.message));
+                a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, String::from(e)));
                 continue;
             }
         };

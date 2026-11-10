@@ -20,7 +20,7 @@ pub fn ecrire(description: &Description, chemin: &Path) -> Resultat<PathBuf> {
     let octets = fabriquer_octets(description)?;
     if let Err(e) = std::fs::write(chemin, &octets) {
         let _ = std::fs::remove_file(chemin);
-        return Err(socle::echec::du_disque(chemin, &e));
+        return Err(socle::echec::du_disque(chemin, &e).into());
     }
     Ok(chemin.to_path_buf())
 }
@@ -37,7 +37,7 @@ pub fn fabriquer_octets(description: &Description) -> Result<Vec<u8>, String> {
 
 /// Le PDF verrouille en AES-256 (mot de passe utilisateur vide, impression et copie seules).
 pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, String> {
-    fabrique_pdf::chiffrement::verrouiller_avec(octets, socle::temps::aleas).map_err(|r| r.0.replace('\n', " "))
+    fabrique_pdf::chiffrement::verrouiller_avec(octets, |o| socle::temps::aleas(o).map_err(String::from)).map_err(|r| r.0.replace('\n', " "))
 }
 
 // ------------------------------------------------------------------ l'assemblage
@@ -99,5 +99,5 @@ impl Drop for Temporaire {
 }
 
 fn avec(classe: Classe, message: impl Into<String>) -> Echec {
-    Echec { classe: Some(classe), message: message.into() }
+    Echec { classe: Some(classe), phrase: message.into(), a_part: None }
 }

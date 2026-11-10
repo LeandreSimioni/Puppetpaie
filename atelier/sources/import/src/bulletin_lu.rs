@@ -830,12 +830,12 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> Resultat<Vec<LigneTable>> {
             None => (None, None),
             Some(LigneEcrite::Rubrique(s)) => (Some(s.clone()), None),
             Some(LigneEcrite::Detail(d)) => match d.heures {
-                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o))),
+                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o)).into()),
                 h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
             },
         };
         if rubrique.as_deref() == Some("") {
-            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)));
+            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)).into());
         }
         let c = canon(libelle);
         if lignes.iter().any(|x| x.canon == c) {

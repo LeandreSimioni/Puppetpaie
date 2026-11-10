@@ -534,7 +534,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String>) {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
         Ok(b) => (matches!(b.versement_mobilite, Some(droit::forme_bareme::VersementMobiliteEcrit::Ecrit(_))), None),
-        Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", socle::echec::phrase_de(&e)))),
+        Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", e.phrase()))),
     }
 }
 
@@ -728,7 +728,7 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
         return Ok(true);
     }
     let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
-    let vers = |x: compagnie::coffre::Echec| Echec { classe: Some(x.classe), message: x.message };
+    let vers = |x: compagnie::coffre::Echec| Echec { classe: Some(x.classe), phrase: x.message, a_part: None };
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => a,

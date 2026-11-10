@@ -187,10 +187,11 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
 
 /// Le message entier, ses lignes mises bout a bout sur une seule, ou le nom de la classe quand le message est vide.
 fn motif_de(e: &Echec) -> String {
-    if e.message.trim().is_empty() {
+    let message = String::from(e.clone());
+    if message.trim().is_empty() {
         return e.classe_notee().to_string();
     }
-    e.message.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+    message.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// L'instant d'un pas, `AAAA-MM-JJTHH:MM:SS` a l'heure de Paris, en secondes UTC.
@@ -291,7 +292,7 @@ fn deposer_les_dsn(
         for reel in [false, true] {
             a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, reel).map_err(|mut e| {
                 if signalement {
-                    e.message = format!("le signalement {} ne part pas : {}", nom, e.phrase());
+                    e = Echec { phrase: format!("le signalement {} ne part pas : {}", nom, e.phrase()), a_part: None, ..e };
                 }
                 e
             })?);

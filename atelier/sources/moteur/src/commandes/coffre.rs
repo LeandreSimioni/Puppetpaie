@@ -35,7 +35,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(c) => c,
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
         Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
-            dire!("! {}", e.message);
+            dire!("! {}", String::from(e));
             2
         }
         Err(e) => cadre.plantage(e),
@@ -43,12 +43,12 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 fn vers(e: compagnie::coffre::Echec) -> Echec {
-    Echec { classe: None, message: e.message }
+    Echec { classe: None, phrase: e.message, a_part: None }
 }
 
 /// Le refus du coffre sous sa classe (`Coffre`, `Disque`...), pour que la commande sache s'il se rend en phrase.
 fn vers_classe(e: compagnie::coffre::Echec) -> Echec {
-    Echec { classe: Some(e.classe), message: e.message }
+    Echec { classe: Some(e.classe), phrase: e.message, a_part: None }
 }
 
 fn faire(cadre: &Cadre) -> Result<i32, Echec> {
@@ -111,7 +111,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             let fin = coffre
                 .fin_ouverture_gardee()
                 .map_err(vers_classe)?
-                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), message: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into() })?;
+                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), phrase: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into(), a_part: None })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
                 fin.replace('T', " a ")

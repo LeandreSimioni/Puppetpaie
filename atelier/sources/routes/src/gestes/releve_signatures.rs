@@ -75,7 +75,7 @@ pub(crate) fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> 
 
 
 #[track_caller]
-fn os(m: String) -> Echec {
+fn os(m: impl Into<String>) -> Echec {
     erreur(Classe::Disque, m)
 }
 
@@ -176,7 +176,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
             let fait = match &mention {
-                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.message),
+                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(String::from),
                 None => Err("la fiche du salarié ne dit pas son nom".to_string()),
             };
             match fait {
@@ -227,7 +227,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 Ok(_) => notes += 1,
                 Err(e) => r.incidents.push(format!(
                     "{} : la signature de {} est arrivee mais le contrat du {} n'a pas pu etre enregistre ({}) ; il n'est pas note signe.",
-                    a_nom, code, debut, e.message
+                    a_nom, code, debut, String::from(e)
                 )),
             }
         }
@@ -272,7 +272,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 let dernier = r.recues.len() - 1;
                 r.recues[dernier].renvoye = true;
             }
-            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, e.message, fichier_signe)),
+            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, String::from(e), fichier_signe)),
         }
     }
     client.fermer();

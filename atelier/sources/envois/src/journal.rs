@@ -51,7 +51,7 @@ pub fn empreinte(contenu: &[u8]) -> String {
 
 /// L'empreinte d'un fichier, comme le journal l'écrit.
 pub fn empreinte_fichier(chemin: &Path) -> Resultat<String> {
-    std::fs::read(chemin).map(|b| empreinte(&b)).map_err(|e| socle::echec::du_disque(&chemin, &e))
+    std::fs::read(chemin).map(|b| empreinte(&b)).map_err(|e| socle::echec::du_disque(&chemin, &e).into())
 }
 
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
@@ -135,7 +135,7 @@ fn abime(n: usize) -> String {
 /// Le refus du journal `p` dont la ligne `n` ne se lit pas : la phrase dit ce qui ne va pas (`quoi`), le chemin va a
 /// part (`echec::du_disque`).
 fn abime_a(p: &Path, n: usize, quoi: &str) -> String {
-    socle::echec::du_disque(&p, &format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, quoi))
+    socle::echec::du_disque(&p, &format!("Le journal des envois de la compagnie ne se lit pas : sa ligne {} est abîmée ({}).", n, quoi)).into()
 }
 
 impl Tenu {
@@ -215,7 +215,7 @@ impl Tenu {
 /// L'enregistrement de la ligne `n` du fichier `p`, lu strictement.
 fn lire_enregistrement(texte: &[u8], p: &Path, n: usize) -> Resultat<Enregistrement> {
     let texte = std::str::from_utf8(texte).map_err(|_| abime_a(p, n, "elle n'est pas du texte"))?;
-    socle::forme::lire_texte(texte, &abime(n)).map_err(|e| socle::echec::du_disque(&p, &e))
+    socle::forme::lire_texte(texte, &abime(n)).map_err(|e| e.au_fichier(p).into())
 }
 
 /// Un compte rendu d'organisme de plus, ou ce qu'il apporte au meme (sa nature, sa publication) deja range.
@@ -242,7 +242,7 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> Resultat<&'t m
             *t = Tenu::default();
             return Ok(t);
         }
-        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e).into()),
     };
     let vu = Some(vu(&meta, p)?);
     if tenus.get(p).is_some_and(|t| t.vu == vu) {
@@ -315,7 +315,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> Resultat
     let octets = match std::fs::read(&p) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(socle::echec::du_disque(&p, &e)),
+        Err(e) => return Err(socle::echec::du_disque(&p, &e).into()),
     };
     let mut gardes: std::collections::HashSet<String> = Default::default();
     let mut texte = String::new();
@@ -397,7 +397,7 @@ impl<D, R> Envoi<D, R> {
 pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: &str) -> Resultat<Ligne> {
     let (quand, origine) = commun_mut(&mut ligne);
     if !quand.is_empty() && origine.is_empty() {
-        return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine"));
+        return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine").into());
     }
     match DATE.with(|d| d.borrow().clone()) {
         Some((q, o)) => {

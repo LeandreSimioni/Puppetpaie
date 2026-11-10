@@ -14,7 +14,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::num::Resultat;
+use crate::echec::R;
 
 /// La forme `v` en valeur JSON, pour l'ecrire. Toute forme du logiciel s'ecrit : ses `Serialize` sont ceux de serde
 /// (derives), et les cles de ses tables sont des textes, des nombres ou des variantes unitaires. Une forme que serde
@@ -292,7 +292,7 @@ fn pair_a_egalite(x: f64, chiffres: String, exp: i32) -> String {
 
 /// Ecrit `donnees` dans `chemin` : cree le dossier, ecrit en
 /// LF, le JSON suivi d'un saut de ligne.
-pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> Resultat<()> {
+pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> R<()> {
     if let Some(dossier) = chemin.parent() {
         std::fs::create_dir_all(dossier).map_err(|e| crate::echec::du_disque(&dossier, &e))?;
     }
@@ -325,7 +325,7 @@ pub fn provisoire(chemin: &Path) -> std::path::PathBuf {
 
 
 /// Efface `chemin` s'il existe : le geste qui l'avait lu le relit (`forme::change_pendant_le_geste`).
-pub fn effacer(chemin: &Path) -> Resultat<()> {
+pub fn effacer(chemin: &Path) -> R<()> {
     match std::fs::remove_file(chemin) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(crate::echec::du_disque(&chemin, &e)),
         _ => {}
