@@ -283,7 +283,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
         pieces: c.signes.to_vec(),
         html: String::new(),
     };
-    envoi::envoyer(&[message], c.expediteur, client, None, None).map_err(|e| socle::echec::Echec::from(e.to_string()))?;
+    envoi::envoyer(&[message], c.expediteur, client, None, None)?;
     let noms_signes: Vec<String> = c.signes.iter().map(|p| socle::fichiers::nom_du(p)).collect();
     let detail = DetailContresigne { salarie: a.salarie.clone(), nom, code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
     let mut e = Envoi::nouveau(Mode::Reel, qui, true, c.de, "contrat contresigne renvoye au salarie", detail);

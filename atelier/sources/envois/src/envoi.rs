@@ -48,6 +48,7 @@ use documents::bulletin::{fmt_eur, fmt_heures};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::date::repr_flottant;
+use socle::echec::{refus, R};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
 #[derive(Debug, Clone, Default)]
@@ -143,13 +144,9 @@ pub fn formater(modele: &str, champs: &[(&str, String)]) -> String {
     sortie
 }
 
-fn cle_absente(cle: &str) -> String {
-    socle::fichiers::absent(cle).into()
-}
-
 /// Ce que le salarie declare a son actualisation France Travail du mois (`recap_france_travail`) : une ligne par
 /// contrat, sur ce qui a ete fait DANS LE MOIS. Rien pour un permanent : chaine vide.
-pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Result<String, String> {
+pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> R<String> {
     let mut lignes: Vec<String> = Vec::new();
     for p in paies {
         let e = &p.engagement;
@@ -205,9 +202,9 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Res
 }
 
 /// Un nombre d'heures en decimal : le flottant tel qu'il s'ecrit (`repr_flottant`).
-fn heures_en_decimal(h: f64) -> Result<Decimal, String> {
+fn heures_en_decimal(h: f64) -> R<Decimal> {
     let t = repr_flottant(h);
-    t.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&t)).map_err(|e| format!("heures illisibles ({}) : {}", t, e))
+    t.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&t)).map_err(|e| socle::refus!("heures illisibles ({}) : {}", t, e))
 }
 
 
@@ -249,7 +246,7 @@ pub struct Renvoi {
 /// spectacle, ses jours travailles, ses cachets, ses heures, son brut et son net a payer ; et les totaux. Le journal le
 /// garde a chaque envoi des documents (`routes::documents::expedier_envoi`) : c'est l'« ancien » que le courriel de renvoi
 /// compare a la paie refaite. Les montants et les heures s'ecrivent comme le bulletin les ecrit.
-pub fn resume_de(paies: &[&Paie]) -> Result<ResumeDePaie, String> {
+pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
     let mut contrats = Vec::new();
     let (mut brut, mut net) = (Decimal::ZERO, Decimal::ZERO);
     for p in paies {
@@ -347,12 +344,12 @@ pub fn preparer_avec(
     dossier: &Path,
     renvois: &std::collections::HashMap<String, Renvoi>,
     a_part: &std::collections::HashMap<String, Vec<&'static str>>,
-) -> Result<Vec<Message>, String> {
+) -> R<Vec<Message>> {
     let m = socle::mois::Mois::lire(mois)?;
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
     let mut vus: Vec<String> = Vec::new();
     let mut messages = Vec::new();
-    let cle_de = |s: &droit::fiche::SalarieDuContrat| -> Result<String, String> { Ok(s.id.to_string()) };
+    let cle_de = |s: &droit::fiche::SalarieDuContrat| -> R<String> { Ok(s.id.to_string()) };
     for p in paies {
         let s = &p.salarie;
         let cle = cle_de(s)?;
@@ -360,12 +357,12 @@ pub fn preparer_avec(
             continue;
         }
         vus.push(cle.clone());
-        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> Result<String, String> {
-            c.portee().map(str::to_string).ok_or_else(|| cle_absente(k))
+        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
+            c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
         }
         let email = s.email.dite().filter(|e| !e.is_empty());
         let Some(email) = email else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
                 texte(&s.nom, "nom")?,
                 texte(&s.prenom, "prenom")?
@@ -399,15 +396,15 @@ pub fn preparer_avec(
         if a_part_du("attestation_fctu") {
             notes.push(NOTE_SANS_ATTESTATION_FCTU);
         }
-        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| cle_absente("nom_affichage"))?.to_string();
+        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| socle::fichiers::absent("nom_affichage"))?.to_string();
         let mut ft = recap_france_travail(&siennes, mois, &nom_affichage)?;
         if !ft.is_empty() && !notes.is_empty() {
             ft = format!("\n{}", ft);
         }
-        let signataire = ent.signataire.dite().ok_or_else(|| cle_absente("signataire"))?;
+        let signataire = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
         let nom_signataire = match signataire.prenom_affichage.remplie() {
             Some(v) => v.to_string(),
-            None => signataire.prenom.ecrite("prenom").map_err(|_| cle_absente("prenom"))?.to_string(),
+            None => signataire.prenom.ecrite("prenom").map_err(|_| socle::fichiers::absent("prenom"))?.to_string(),
         };
         let courts: Vec<&str> = presents.iter().map(|p| p.court).collect();
         let mut champs = vec![
@@ -458,8 +455,8 @@ pub fn envoyer(
     client: &mut dyn Courriel,
     identifiants: Option<&mut Vec<String>>,
     copies: Option<&mut Vec<Vec<u8>>>,
-) -> Result<Vec<String>, String> {
-    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| e.message)
+) -> R<Vec<String>> {
+    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| refus(e.message))
 }
 
 /// Un envoi qui a echoue en route : la phrase de l'erreur, les adresses ou les messages sont REELLEMENT partis, et
@@ -497,7 +494,7 @@ pub fn envoyer_suivi(
             }
             None => (message, None),
         };
-        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { message: m, partis: faits.clone(), echoue: message.destinataire.clone() })?;
+        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { message: String::from(m), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
             Err(e) => {
@@ -757,13 +754,13 @@ pub struct Hasards<'a> {
     pub date: String,
     pub message_id: String,
     /// Une frontiere neuve a chaque appel (`=` x15, 19 chiffres, `==`).
-    pub frontiere: &'a mut dyn FnMut() -> Result<String, String>,
+    pub frontiere: &'a mut dyn FnMut() -> R<String>,
 }
 
 /// Le message complet, pieces jointes comprises, tel que `EmailMessage.as_bytes()` l'ecrit, l'expediteur precede du
 /// nom que la compagnie affiche (« Compagnie du Fil <adresse> ») ; sans nom, l'adresse
 /// seule.
-pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> Result<Vec<u8>, String> {
+pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
     let mut frontiere = frontiere_au_hasard;
     let domaine = match expediteur.rsplit_once('@') {
         Some((_, d)) => d,
@@ -777,23 +774,23 @@ pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> 
     en_mime_complet(message, expediteur, nom, hasards)
 }
 
-pub fn en_mime_avec(message: &Message, expediteur: &str, hasards: Hasards) -> Result<Vec<u8>, String> {
+pub fn en_mime_avec(message: &Message, expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
     en_mime_complet(message, expediteur, None, hasards)
 }
 
-fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> Result<Vec<u8>, String> {
+fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
     let Hasards { date, message_id, frontiere } = hasards;
-    let adresse = |a: &str| -> Result<(), String> {
+    let adresse = |a: &str| -> R<()> {
         if adresse_simple(a) {
             Ok(())
         } else {
-            Err(socle::echec::a_la_cle("Une adresse courriel ne se lit pas : la corriger.", "adresse", a).into())
+            Err(socle::echec::a_la_cle("Une adresse courriel ne se lit pas : la corriger.", "adresse", a))
         }
     };
     adresse(expediteur)?;
     adresse(&message.destinataire)?;
     if compte_lignes(&message.sujet) > 1 {
-        return Err("Header values may not contain linefeed or carriage return characters".to_string());
+        return Err(refus("Header values may not contain linefeed or carriage return characters"));
     }
     let mut racine_entetes = vec![
         match nom {
@@ -826,7 +823,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
     for piece in &message.pieces {
         let octets = std::fs::read(piece).map_err(|e| socle::echec::du_disque(&piece, &e))?;
         let nom = piece.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-            socle::echec::avec("Une pièce jointe n'a pas de nom.", socle::echec::APart { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::APart::default() })
+            socle::echec::refus_avec("Une pièce jointe n'a pas de nom.", socle::echec::APart { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::APart::default() })
         })?;
         let genre = genre_de(&nom);
         pieces.push(Noeud {
@@ -911,12 +908,12 @@ struct Noeud {
 }
 
 /// `BytesGenerator._write` : le corps d'abord (la frontiere en depend), puis les en-tetes, une ligne vide, le corps.
-fn ecrire_noeud(n: &Noeud, frontiere: &mut dyn FnMut() -> Result<String, String>) -> Result<Vec<u8>, String> {
+fn ecrire_noeud(n: &Noeud, frontiere: &mut dyn FnMut() -> R<String>) -> R<Vec<u8>> {
     let mut entetes = n.entetes.clone();
     let corps: Vec<u8> = match &n.corps {
         Corps::Texte(t) => t.clone(),
         Corps::Parties(parties) => {
-            let textes: Result<Vec<Vec<u8>>, String> = parties.iter().map(|p| ecrire_noeud(p, frontiere)).collect();
+            let textes: R<Vec<Vec<u8>>> =parties.iter().map(|p| ecrire_noeud(p, frontiere)).collect();
             let textes = textes?;
             let tout = textes.join(&b'\n');
             let b = frontiere_libre(frontiere()?, &tout);
@@ -969,32 +966,32 @@ fn frontiere_libre(base: String, texte: &[u8]) -> String {
 }
 
 /// Huit octets des aleas du systeme ; un systeme qui n'en donne pas refuse.
-fn huit_aleas() -> Result<u64, String> {
+fn huit_aleas() -> R<u64> {
     let mut o = [0u8; 8];
-    socle::temps::aleas(&mut o).map_err(|e| format!("Le systeme ne donne pas d'aleas : {}.", String::from(e)))?;
+    socle::temps::aleas(&mut o).map_err(|e| e.reformuler(|p| format!("Le systeme ne donne pas d'aleas : {}.", p)))?;
     Ok(u64::from_le_bytes(o))
 }
 
-fn frontiere_au_hasard() -> Result<String, String> {
+fn frontiere_au_hasard() -> R<String> {
     let jeton = huit_aleas()? >> 1;
     Ok(format!("{}{:019}==", "=".repeat(15), jeton))
 }
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
-pub fn nouveau_message_id(domaine: &str) -> Result<String, String> {
+pub fn nouveau_message_id(domaine: &str) -> R<String> {
     let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
     let centiemes = maintenant.as_millis() / 10;
     Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
 /// La date d'un en-tête de courriel, maintenant, à l'heure de Paris.
-fn date_locale() -> Result<String, String> {
+fn date_locale() -> R<String> {
     let t = socle::temps::secondes().floor() as i64;
     date_de(t)
 }
 
 /// La date RFC 5322 d'un instant (secondes unix), heure de Paris.
-pub fn date_de(t: i64) -> Result<String, String> {
+pub fn date_de(t: i64) -> R<String> {
     const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let decalage = socle::paris::decalage(t);
@@ -1219,7 +1216,7 @@ fn base64_lire(t: &str) -> Option<Vec<u8>> {
 
 // ------------------------------------------------------------------------------------- le pliage des en-tetes
 
-fn plier_entete(e: &Entete) -> Result<String, String> {
+fn plier_entete(e: &Entete) -> R<String> {
     Ok(match e {
         Entete::Adresse(nom, v) => plier_insecable(nom, v),
         Entete::De(nom, adresse) => plier_insecable("From", &de_nomme(nom, adresse)),
@@ -1556,7 +1553,7 @@ fn plier_en_mot_code(
     lignes: &mut Vec<String>,
     dernier_mot_code: Option<usize>,
     dernier_est_code: bool,
-) -> Result<usize, String> {
+) -> R<usize> {
     let mut a_coder = a_coder.to_string();
     if let Some(pos) = dernier_mot_code {
         let segment = lignes.last().unwrap()[pos..].to_string();
@@ -1618,7 +1615,7 @@ enum Morceau {
 }
 
 /// L'en-tete `nom: valeur` d'un texte libre, plie (nom et `: ` compris, \n final).
-fn plier_libre(nom: &str, valeur: &str) -> Result<String, String> {
+fn plier_libre(nom: &str, valeur: &str) -> R<String> {
     let mut lignes: Vec<String> = vec![format!("{}:", nom)];
     let jetons = jetons_de(valeur);
     if !jetons.is_empty() {

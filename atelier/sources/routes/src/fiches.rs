@@ -1053,7 +1053,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
     };
     let mut identifiants: Vec<String> = Vec::new();
     let demande = |message: Option<String>, expediteur: Option<String>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
-    if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
+    if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None).map_err(String::from) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e, demande(None, None), None)))?;
         return Err(echec_d_envoi(e));
     }

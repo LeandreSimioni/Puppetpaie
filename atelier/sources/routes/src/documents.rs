@@ -1044,7 +1044,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: &str, seulement: Option<&[Str
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id.to_string())).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(|m| refus_de_preparation(&m))?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(|m| refus_de_preparation(&String::from(m)))?;
     let messages: Vec<envoi::Message> = choix.garder(messages, |m| m.cle.as_str()).into_iter().filter(|m| cles.contains(&m.cle)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
     if !sans.is_empty() {

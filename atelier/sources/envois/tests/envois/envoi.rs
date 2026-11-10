@@ -51,7 +51,7 @@ fn envoyer_l_echec_au_troisieme_dit_qui_est_deja_parti() {
     let mut c = Boite { recus: recus.clone(), refuse: 2 };
     let messages = [message("a@exemple.fr"), message("b@exemple.fr"), message("c@exemple.fr"), message("d@exemple.fr")];
     let (mut ids, mut copies) = (Vec::new(), Vec::new());
-    let e = envoi::envoyer(&messages, "compagnie@gmail.com", &mut c, Some(&mut ids), Some(&mut copies)).unwrap_err();
+    let e = envoi::envoyer(&messages, "compagnie@gmail.com", &mut c, Some(&mut ids), Some(&mut copies)).unwrap_err().phrase;
     assert!(e.contains("a@exemple.fr") && e.contains("b@exemple.fr") && !e.contains("d@exemple.fr"), "{}", e);
     // Le quatrieme n'a pas ete tente ; les listes ne portent que ce qui est reellement parti.
     assert_eq!(recus.borrow().len(), 2);
