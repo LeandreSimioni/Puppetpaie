@@ -152,7 +152,7 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
     let identifiants = match client.rechercher(&format!("\"{}\"", code), 10) {
         Ok(i) => i,
         Err(e) => {
-            incidents.push(format!("Recherche de {} : {}", code, e));
+            incidents.push(format!("Recherche de {} : {}", code, String::from(e)));
             return Err(());
         }
     };
@@ -163,7 +163,7 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         let brut = match client.message_brut(&ident) {
             Ok(b) => b,
             Err(e) => {
-                incidents.push(format!("Lecture du message {} : {}", ident, e));
+                incidents.push(format!("Lecture du message {} : {}", ident, String::from(e)));
                 continue;
             }
         };

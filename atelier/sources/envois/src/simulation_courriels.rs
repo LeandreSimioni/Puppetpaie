@@ -12,8 +12,8 @@ use std::path::Path;
 use mailparse::{parse_mail, MailHeaderMap, ParsedMail};
 
 use droit::contexte::Contexte;
-use socle::echec::{Echec, R};
-use crate::courriel::{BoiteSimulee, Courriel, ErreurCourriel, DOSSIER_COURRIELS};
+use socle::echec::{erreur, Classe, Echec, R};
+use crate::courriel::{BoiteSimulee, Courriel, DOSSIER_COURRIELS};
 
 /// Le parametre MIME qui nomme une piece jointe (`Content-Disposition`), puis celui de son type (`Content-Type`).
 const PARAMETRE_FICHIER: &str = "filename";
@@ -524,18 +524,18 @@ impl Courriel for BoiteQuiRepond {
         Courriel::racine(&self.boite)
     }
 
-    fn envoyer(&mut self, message_mime: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
         self.boite.envoyer(message_mime)
     }
 
     /// Le code cherche, s'il a sa reponse : `[code]`.
-    fn rechercher(&mut self, requete: &str, _maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, requete: &str, _maximum: usize) -> R<Vec<String>> {
         let code = requete.trim_matches('"');
         Ok(if self.reponses.contains_key(code) { vec![code.to_string()] } else { Vec::new() })
     }
 
-    fn message_brut(&mut self, identifiant: &str) -> Result<Vec<u8>, ErreurCourriel> {
-        self.reponses.get(identifiant).cloned().ok_or_else(|| ErreurCourriel(format!("Message {} introuvable.", identifiant)))
+    fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>> {
+        self.reponses.get(identifiant).cloned().ok_or_else(|| erreur(Classe::Courriel, format!("Message {} introuvable.", identifiant)))
     }
 
     fn fermer(&mut self) {}

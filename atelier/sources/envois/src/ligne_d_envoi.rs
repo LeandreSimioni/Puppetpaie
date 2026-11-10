@@ -3,17 +3,11 @@
 //! note ce qui est quand meme parti.
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, Echec, R};
 use socle::mois::Mois;
 
 use crate::journal::{self, EnRoute, Envoi, Ligne, Mode, Version};
 
-
-/// L'erreur d'un envoi : celle du client (`Courriel`), ou, quand des messages etaient deja partis, celle qui le dit
-/// (`CourrielAvecAvertissement`).
-pub fn echec_d_envoi(message: String) -> Echec {
-    erreur(if message.contains("\nATTENTION, ") { Classe::CourrielAvecAvertissement } else { Classe::Courriel }, message)
-}
 
 /// L'envoi par courriel que `qui` fait du mois `mois`, en mode `reel` (une compagnie fictive aussi) : `versions`, celle de
 /// chaque engagement qu'il emporte (`journal::versions_du_mois`).

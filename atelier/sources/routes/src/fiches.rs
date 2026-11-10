@@ -23,7 +23,7 @@ use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
 use envois::journal;
-use envois::ligne_d_envoi::{echec_d_envoi, noter, par_courriel};
+use envois::ligne_d_envoi::{noter, par_courriel};
 use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -1053,9 +1053,9 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
     };
     let mut identifiants: Vec<String> = Vec::new();
     let demande = |message: Option<String>, expediteur: Option<String>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
-    if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None).map_err(String::from) {
-        noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e, demande(None, None), None)))?;
-        return Err(echec_d_envoi(e));
+    if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
+        noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &String::from(e.clone()), demande(None, None), None)))?;
+        return Err(e);
     }
     let detail = demande(identifiants.first().cloned(), Some(expediteur.clone()));
     let ligne = noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, true, &adresse, &format!("fiche demandee a {}", adresse), detail, None)))?;
@@ -1162,11 +1162,11 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 r.incidents.push(refus.phrase.to_string());
                 return Ok(r);
             }
-            if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+            if !compagnie::boite::disponible(&ctx.racine)? {
                 r.incidents.push("Aucune boite courriel : les fiches demandees ne peuvent pas etre relevees.".to_string());
                 return Ok(r);
             }
-            let vrai_client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+            let vrai_client = compagnie::boite::client_du_contexte(ctx)?;
             ouverte.insert(Box::new(vrai_client)).as_mut()
         }
     };
@@ -1177,7 +1177,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let identifiants = match client.rechercher(&format!("\"{}\"", code), 10) {
             Ok(i) => i,
             Err(e) => {
-                r.incidents.push(format!("Recherche de {} : {}", code, e));
+                r.incidents.push(format!("Recherche de {} : {}", code, String::from(e)));
                 break;
             }
         };
@@ -1189,7 +1189,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             let brut = match client.message_brut(&ident) {
                 Ok(b) => b,
                 Err(e) => {
-                    r.incidents.push(format!("Lecture du message {} : {}", ident, e));
+                    r.incidents.push(format!("Lecture du message {} : {}", ident, String::from(e)));
                     continue;
                 }
             };

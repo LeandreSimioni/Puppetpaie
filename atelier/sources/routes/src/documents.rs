@@ -25,7 +25,7 @@ use droit::contexte::Contexte;
 use envois::courriel::{BoiteSimulee, Courriel};
 use envois::envoi;
 use envois::journal;
-use envois::ligne_d_envoi::{echec_d_envoi, noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use socle::date::jour_iso;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::nom_du;
@@ -720,13 +720,13 @@ pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
     if branchement.joue() {
         return Ok(Box::new(BoiteSimulee::du_contexte(ctx)?));
     }
-    if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+    if !compagnie::boite::disponible(&ctx.racine)? {
         return Err(erreur(
             Classe::BoiteAbsente,
             socle::echec::cle("Aucune boîte courriel : poser le mot de passe d'application de la boîte dans Configuration › Mots de passe.", "courriel"),
         ));
     }
-    let client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+    let client = compagnie::boite::client_du_contexte(ctx)?;
     Ok(Box::new(client))
 }
 
@@ -1112,8 +1112,8 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: &str, 
                 documents.engager_servis(ctx, mois, &cles)?;
                 versions_servies = versions.iter().filter(|v| cles.contains(&v.salarie.as_str())).cloned().collect();
             }
-            noter_echec_d_envoi(ctx, journal::Ligne::Documents, le_mois, qui, &e.partis, &e.echoue, &e.message, detail(servis)?, Some(versions_servies))?;
-            return Err(echec_d_envoi(e.message));
+            noter_echec_d_envoi(ctx, journal::Ligne::Documents, le_mois, qui, &e.partis, &e.echoue, &String::from(e.echec.clone()), detail(servis)?, Some(versions_servies))?;
+            return Err(e.echec);
         }
     };
     // LES DOCUMENTS SONT PARTIS : leurs numeros s'ecrivent dans les paies des engagements, puis la ligne du journal dit

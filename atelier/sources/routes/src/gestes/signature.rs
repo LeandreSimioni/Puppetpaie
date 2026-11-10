@@ -32,7 +32,7 @@ use socle::echec::Echec;
 use socle::fichiers::nom_du;
 use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
-use envois::ligne_d_envoi::{echec_d_envoi, noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use envois::journal::{ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -666,8 +666,8 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         Err(e) => {
             let servis = versions_des_servis(&versions, &messages, e.partis.len());
             let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
-            noter_echec_d_envoi(ctx, Ligne::ContratSignature, Some(socle::mois::Mois::lire(&mois)?), "interface", &e.partis, &e.echoue, &e.message, detail, Some(servis))?;
-            return Err(echec_d_envoi(e.message));
+            noter_echec_d_envoi(ctx, Ligne::ContratSignature, Some(socle::mois::Mois::lire(&mois)?), "interface", &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, Some(servis))?;
+            return Err(e.echec);
         }
     };
     // L'identifiant de chaque message parti, sur chacun de ses contrats : la releve l'ecarte de ses candidats.
@@ -1185,8 +1185,8 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAve
             Err(e) => {
                 let servis = versions_des_servis(&versions, std::slice::from_ref(&message), e.partis.len());
                 let detail = DetailSignature { contrats: lignes_contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
-                noter_echec_d_envoi(ctx, Ligne::ContratSignature, le_mois, "interface", &e.partis, &e.echoue, &e.message, detail, Some(servis))?;
-                return Err(echec_d_envoi(e.message));
+                noter_echec_d_envoi(ctx, Ligne::ContratSignature, le_mois, "interface", &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, Some(servis))?;
+                return Err(e.echec);
             }
         };
         for c in lignes_contrats.iter_mut() {

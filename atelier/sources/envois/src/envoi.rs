@@ -46,9 +46,9 @@ use rust_decimal::Decimal;
 
 use documents::bulletin::{fmt_eur, fmt_heures};
 use engagement::calcul::Paie;
-use crate::courriel::Courriel;
+use crate::courriel::{de_la_boite, Courriel};
 use socle::date::repr_flottant;
-use socle::echec::{refus, R};
+use socle::echec::{refus, Classe, Echec, R};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
 #[derive(Debug, Clone, Default)]
@@ -456,14 +456,15 @@ pub fn envoyer(
     identifiants: Option<&mut Vec<String>>,
     copies: Option<&mut Vec<Vec<u8>>>,
 ) -> R<Vec<String>> {
-    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| refus(e.message))
+    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| e.echec)
 }
 
-/// Un envoi qui a echoue en route : la phrase de l'erreur, les adresses ou les messages sont REELLEMENT partis, et
-/// l'adresse du message qui n'est pas parti (retours Windows, C : le journal les note, jamais l'expediteur).
+/// Un envoi qui a echoue en route : son refus (de classe `Courriel`, ou `CourrielAvecAvertissement` quand des messages
+/// etaient deja partis), les adresses ou les messages sont REELLEMENT partis, et l'adresse du message qui n'est pas parti
+/// (retours Windows, C : le journal les note, jamais l'expediteur).
 #[derive(Debug, Clone)]
 pub struct ErreurEnvoi {
-    pub message: String,
+    pub echec: Echec,
     pub partis: Vec<String>,
     pub echoue: String,
 }
@@ -482,7 +483,7 @@ pub fn envoyer_suivi(
     // LA SIGNATURE DE LA COMPAGNIE : tout courriel passe ici, il la prend ici. Trop lourde, rien ne part.
     let signature = match client.racine().map(crate::signature_courriel::du_poste) {
         Some(Ok(s)) => s,
-        Some(Err(m)) => return Err(ErreurEnvoi { message: String::from(m), partis: Vec::new(), echoue: premier.destinataire.clone() }),
+        Some(Err(m)) => return Err(ErreurEnvoi { echec: de_la_boite(m), partis: Vec::new(), echoue: premier.destinataire.clone() }),
         None => None,
     };
     for message in messages {
@@ -494,22 +495,16 @@ pub fn envoyer_suivi(
             }
             None => (message, None),
         };
-        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { message: String::from(m), partis: faits.clone(), echoue: message.destinataire.clone() })?;
+        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: de_la_boite(m), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
+            Err(e) if faits.is_empty() => return Err(ErreurEnvoi { echec: e, partis: faits, echoue: message.destinataire.clone() }),
             Err(e) => {
-                let phrase = if faits.is_empty() {
-                    e.to_string()
-                } else {
-                    format!(
-                        "{} : {}\nATTENTION, {} message(s) etaient deja partis : {}",
-                        message.destinataire,
-                        e,
-                        faits.len(),
-                        faits.join(", ")
-                    )
+                let echec = Echec {
+                    classe: Some(Classe::CourrielAvecAvertissement),
+                    ..e.reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), faits.join(", ")))
                 };
-                return Err(ErreurEnvoi { message: phrase, partis: faits, echoue: message.destinataire.clone() });
+                return Err(ErreurEnvoi { echec, partis: faits, echoue: message.destinataire.clone() });
             }
         };
         faits.push(message.destinataire.clone());

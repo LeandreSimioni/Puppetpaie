@@ -39,7 +39,7 @@ use std::time::Duration;
 use imap_proto::{AttributeValue, MailboxDatum, Response, Status};
 
 use droit::contexte::Contexte;
-use socle::echec::R;
+use socle::echec::{Classe, Echec, R};
 
 pub const FICHIER_SERVEURS: &str = "courriel.json";
 /// Secondes, par connexion.
@@ -47,20 +47,16 @@ pub const DELAI: u64 = 60;
 pub const DOSSIER_RECEPTION: &str = "INBOX";
 pub const DOSSIER_COURRIELS: &str = "courriels-simules";
 
-/// La boite refuse, ou le reseau. Jamais un mot de passe dedans.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ErreurCourriel(pub String);
-
-impl std::fmt::Display for ErreurCourriel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
+/// La boite refuse, ou le reseau : un refus de classe `Courriel`. Jamais un mot de passe dedans.
+#[track_caller]
+fn erreur(m: impl Into<String>) -> Echec {
+    socle::echec::erreur(Classe::Courriel, m)
 }
 
-impl std::error::Error for ErreurCourriel {}
-
-fn erreur(m: impl Into<String>) -> ErreurCourriel {
-    ErreurCourriel(m.into())
+/// Un refus d'ailleurs (le disque, une lecture, la signature) survenu dans la boite ou en l'envoi : il devient un refus
+/// de la boite.
+pub fn de_la_boite(e: Echec) -> Echec {
+    Echec { classe: Some(Classe::Courriel), ..e }
 }
 
 /// La surface de `courriel.Client` : celle que `envoi` et la releve des signatures utilisent.
@@ -68,11 +64,11 @@ pub trait Courriel {
     /// L'adresse de la boite.
     fn compte(&self) -> &str;
     /// Envoie un message deja assemble ; rend son `Message-ID`.
-    fn envoyer(&mut self, message_mime: &[u8]) -> Result<String, ErreurCourriel>;
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<String>;
     /// Les UID des messages de la boite de reception qui contiennent le texte, les plus recents d'abord.
-    fn rechercher(&mut self, requete: &str, maximum: usize) -> Result<Vec<String>, ErreurCourriel>;
+    fn rechercher(&mut self, requete: &str, maximum: usize) -> R<Vec<String>>;
     /// Un message entier (RFC 822), par son UID.
-    fn message_brut(&mut self, identifiant: &str) -> Result<Vec<u8>, ErreurCourriel>;
+    fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>>;
     fn fermer(&mut self);
     /// La compagnie de la boite : c'est sa fiche qui porte la signature des courriels et le nom affiche
     /// (`signature_courriel`). Rien : les courriels partent tels que les modeles les ecrivent.
@@ -115,13 +111,13 @@ struct ServeursDits {
 }
 
 /// Gmail par defaut ; `config/courriel.json` change les cles `imap`, `port_imap`, `smtp`, `port_smtp`.
-pub fn serveurs(racine: &Path) -> Result<Serveurs, ErreurCourriel> {
+pub fn serveurs(racine: &Path) -> R<Serveurs> {
     let p = racine.join(socle::fichiers::CONFIG).join(FICHIER_SERVEURS);
     let mut s = Serveurs::gmail();
     if !p.exists() {
         return Ok(s);
     }
-    let dits: ServeursDits = socle::forme::lire_fichier(&p, "Les serveurs de la messagerie de la compagnie ne se lisent pas.").map_err(erreur)?;
+    let dits: ServeursDits = socle::forme::lire_fichier(&p, "Les serveurs de la messagerie de la compagnie ne se lisent pas.").map_err(de_la_boite)?;
     if let Some(h) = dits.imap {
         s.imap = h;
     }
@@ -148,7 +144,8 @@ pub fn traduire(texte: &str) -> String {
     texte.to_string()
 }
 
-fn injoignable(e: impl std::fmt::Display) -> ErreurCourriel {
+#[track_caller]
+fn injoignable(e: impl std::fmt::Display) -> Echec {
     erreur(format!("Serveur injoignable : {}", e))
 }
 
@@ -158,7 +155,7 @@ fn injoignable(e: impl std::fmt::Display) -> ErreurCourriel {
 pub trait Flux: Read + Write {}
 impl<T: Read + Write + ?Sized> Flux for T {}
 
-fn connecter(hote: &str, port: u16) -> Result<TcpStream, ErreurCourriel> {
+fn connecter(hote: &str, port: u16) -> R<TcpStream> {
     // En essai, le garde-fou reseau : aucune boite reelle.
     socle::garde_reseau::directe(hote).map_err(|e| injoignable(String::from(e)))?;
     let delai = Duration::from_secs(DELAI);
@@ -181,7 +178,7 @@ fn connecter(hote: &str, port: u16) -> Result<TcpStream, ErreurCourriel> {
 }
 
 /// La configuration TLS des connexions IMAP : racines du systeme (`rustls-platform-verifier`).
-fn configuration_tls() -> Result<Arc<rustls::ClientConfig>, ErreurCourriel> {
+fn configuration_tls() -> R<Arc<rustls::ClientConfig>> {
     use rustls_platform_verifier::BuilderVerifierExt;
     let fournisseur = Arc::new(rustls::crypto::ring::default_provider());
     let config = rustls::ClientConfig::builder_with_provider(fournisseur)
@@ -193,7 +190,7 @@ fn configuration_tls() -> Result<Arc<rustls::ClientConfig>, ErreurCourriel> {
     Ok(Arc::new(config))
 }
 
-fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, ErreurCourriel> {
+fn ouvrir_tls(hote: &str, port: u16) -> R<Box<dyn Flux>> {
     let tcp = connecter(hote, port)?;
     let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| erreur(format!("nom de serveur illisible : {}", e)))?;
     let connexion = rustls::ClientConnection::new(configuration_tls()?, nom).map_err(|e| erreur(format!("TLS : {}", e)))?;
@@ -221,7 +218,7 @@ pub struct Imap<F: Read + Write> {
 /// Un litteral plus gros que cela n'est pas un courriel que ce logiciel attend.
 const LITTERAL_MAXIMUM: usize = 256 * 1024 * 1024;
 
-fn quoter(texte: &str) -> Result<String, ErreurCourriel> {
+fn quoter(texte: &str) -> R<String> {
     if texte.chars().any(|c| c.is_control()) {
         return Err(erreur("Un caractere de controle ne passe pas dans une commande IMAP."));
     }
@@ -241,7 +238,7 @@ fn longueur_litteral(ligne: &[u8]) -> Option<usize> {
     chiffres.iter().try_fold(0usize, |n, c| n.checked_mul(10)?.checked_add(usize::from(c - b'0')))
 }
 
-fn es(e: std::io::Error) -> ErreurCourriel {
+fn es(e: std::io::Error) -> Echec {
     use std::io::ErrorKind::*;
     match e.kind() {
         TimedOut | WouldBlock => injoignable(format!("delai depasse ({})", e)),
@@ -251,7 +248,7 @@ fn es(e: std::io::Error) -> ErreurCourriel {
 
 impl<F: Read + Write> Imap<F> {
     /// Lit l'accueil du serveur, puis `LOGIN` et `EXAMINE` (lecture seule) du dossier.
-    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &str, dossier: &str) -> Result<Imap<F>, ErreurCourriel> {
+    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &str, dossier: &str) -> R<Imap<F>> {
         let mut imap = Imap { flux, tampon: Vec::new(), numero: 0 };
         let accueil = imap.lire_unite()?;
         if let Ok((_, Response::Data { status: Status::Bye, .. })) = Response::parse(&accueil) {
@@ -262,7 +259,7 @@ impl<F: Read + Write> Imap<F> {
         Ok(imap)
     }
 
-    fn lire_ligne(&mut self) -> Result<Vec<u8>, ErreurCourriel> {
+    fn lire_ligne(&mut self) -> R<Vec<u8>> {
         loop {
             if let Some(i) = self.tampon.iter().position(|b| *b == b'\n') {
                 return Ok(self.tampon.drain(..=i).collect());
@@ -276,7 +273,7 @@ impl<F: Read + Write> Imap<F> {
         }
     }
 
-    fn lire_octets(&mut self, n: usize) -> Result<Vec<u8>, ErreurCourriel> {
+    fn lire_octets(&mut self, n: usize) -> R<Vec<u8>> {
         while self.tampon.len() < n {
             let mut bloc = [0u8; 8192];
             let lus = self.flux.read(&mut bloc).map_err(es)?;
@@ -289,7 +286,7 @@ impl<F: Read + Write> Imap<F> {
     }
 
     /// Une reponse entiere : une ligne, et tout ce que ses litteraux `{n}` en font suivre, par leur longueur.
-    fn lire_unite(&mut self) -> Result<Vec<u8>, ErreurCourriel> {
+    fn lire_unite(&mut self) -> R<Vec<u8>> {
         let mut unite = Vec::new();
         loop {
             let ligne = self.lire_ligne()?;
@@ -307,7 +304,7 @@ impl<F: Read + Write> Imap<F> {
 
     /// Une commande, et les reponses qui lui sont propres jusqu'a la reponse etiquetee. Un refus (`NO`, `BAD`) est
     /// une erreur dont le texte est celui du serveur.
-    pub fn commande(&mut self, texte: &str) -> Result<Reponse, ErreurCourriel> {
+    pub fn commande(&mut self, texte: &str) -> R<Reponse> {
         self.numero += 1;
         let etiquette = format!("A{:04}", self.numero);
         let ligne = format!("{} {}\r\n", etiquette, texte);
@@ -356,14 +353,14 @@ impl<F: Read + Write> Imap<F> {
 
     /// `UID SEARCH TEXT "..."` : les UID, les plus recents d'abord, `maximum` au plus. Les guillemets de la syntaxe
     /// Gmail sont toleres et retires.
-    pub fn rechercher(&mut self, requete: &str, maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    pub fn rechercher(&mut self, requete: &str, maximum: usize) -> R<Vec<String>> {
         let texte = requete.trim().trim_matches('"');
         let r = self.commande(&format!("UID SEARCH TEXT {}", quoter(texte)?))?;
         Ok(r.recherche.iter().rev().take(maximum).map(|u| u.to_string()).collect())
     }
 
     /// `UID FETCH <uid> (BODY.PEEK[])` : un message entier, sans le marquer lu.
-    pub fn message_brut(&mut self, uid: &str) -> Result<Vec<u8>, ErreurCourriel> {
+    pub fn message_brut(&mut self, uid: &str) -> R<Vec<u8>> {
         if uid.is_empty() || !uid.bytes().all(|c| c.is_ascii_digit()) {
             return Err(erreur(format!("Message {} introuvable.", uid)));
         }
@@ -392,7 +389,7 @@ pub struct Client {
 impl Client {
     /// `compte` : l'adresse de la boite ; `mot_de_passe` : celui que l'appelant a lu au coffre (les espaces d'un mot de
     /// passe d'application se retirent ici). Les serveurs se lisent dans `config/courriel.json` de `racine`.
-    pub fn nouveau(racine: &Path, compte: &str, mot_de_passe: &str) -> Result<Client, ErreurCourriel> {
+    pub fn nouveau(racine: &Path, compte: &str, mot_de_passe: &str) -> R<Client> {
         Ok(Client {
             racine: racine.to_path_buf(),
             compte: compte.trim().to_lowercase(),
@@ -402,7 +399,7 @@ impl Client {
         })
     }
 
-    fn boite(&mut self) -> Result<&mut Imap<Box<dyn Flux>>, ErreurCourriel> {
+    fn boite(&mut self) -> R<&mut Imap<Box<dyn Flux>>> {
         if self.imap.is_none() {
             let flux = ouvrir_tls(&self.serveurs.imap, self.serveurs.port_imap)?;
             self.imap = Some(Imap::ouvrir(flux, &self.compte, &self.mot_de_passe, DOSSIER_RECEPTION)?);
@@ -456,7 +453,7 @@ const CHAMPS_DESTINATAIRES: [&str; 3] = ["To", "Cc", "Bcc"];
 
 /// Les adresses de `To`, `Cc` et `Bcc` (le premier en-tete de chaque nom, comme `m.get`). Un en-tete qui ne se lit pas
 /// en adresses refuse : le message ne part pas sans une partie de ses destinataires.
-fn destinataires(entetes: &[mailparse::MailHeader]) -> Result<Vec<String>, ErreurCourriel> {
+fn destinataires(entetes: &[mailparse::MailHeader]) -> R<Vec<String>> {
     let mut sortie = Vec::new();
     for champ in CHAMPS_DESTINATAIRES {
         let Some(valeur) = premier_entete(entetes, champ) else { continue };
@@ -482,7 +479,7 @@ impl Courriel for Client {
 
     /// Envoie un message deja assemble. Rend son `Message-ID` (ajoute s'il manque : c'est par lui que la releve
     /// reconnait nos propres envois).
-    fn envoyer(&mut self, message_mime: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
         use lettre::address::{Address, Envelope};
         use lettre::transport::smtp::authentication::Credentials;
         use lettre::transport::smtp::client::{Tls, TlsParameters};
@@ -525,11 +522,11 @@ impl Courriel for Client {
         Ok(ident)
     }
 
-    fn rechercher(&mut self, requete: &str, maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, requete: &str, maximum: usize) -> R<Vec<String>> {
         self.boite()?.rechercher(requete, maximum)
     }
 
-    fn message_brut(&mut self, identifiant: &str) -> Result<Vec<u8>, ErreurCourriel> {
+    fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>> {
         self.boite()?.message_brut(identifiant)
     }
 
@@ -544,7 +541,7 @@ impl Courriel for Client {
 
 /// La boite s'ouvre-t-elle avec ce client ? UNE tentative IMAP. Rend ce qui est ouvert, ou le refus de la boite --
 /// jamais le mot de passe.
-pub fn verifier(mut c: Client) -> Result<String, ErreurCourriel> {
+pub fn verifier(mut c: Client) -> R<String> {
     let ouverture = c.boite().map(|_| ());
     c.fermer();
     ouverture.map(|()| format!("boite {} ouverte ({}).", c.compte, c.serveurs.imap))
@@ -598,14 +595,14 @@ fn message_id_de(brut: &[u8]) -> Option<String> {
 }
 
 /// `octets` octets des aleas du systeme, en hexadecimal ; un systeme qui n'en donne pas refuse.
-pub fn hexa_au_hasard(octets: usize) -> Result<String, ErreurCourriel> {
+pub fn hexa_au_hasard(octets: usize) -> R<String> {
     let mut o = vec![0u8; octets];
-    socle::temps::aleas(&mut o).map_err(|e| erreur(format!("Le systeme ne donne pas d'aleas : {}.", String::from(e))))?;
+    socle::temps::aleas(&mut o).map_err(|e| de_la_boite(e.reformuler(|p| format!("Le systeme ne donne pas d'aleas : {}.", p))))?;
     Ok(o.iter().map(|c| format!("{:02x}", c)).collect())
 }
 
 /// `%Y%m%d-%H%M%S-%f` de l'heure de Paris : l'ordre des noms est celui des envois.
-fn horodatage_de(t: std::time::Duration) -> Result<String, ErreurCourriel> {
+fn horodatage_de(t: std::time::Duration) -> R<String> {
     let secondes = t.as_secs() as i64;
     let local = secondes + socle::paris::decalage(secondes);
     let j = socle::date::Jour::depuis_jours_unix(local.div_euclid(86_400)).ok_or_else(|| erreur("L'horloge du poste donne une date impossible."))?;
@@ -624,9 +621,9 @@ impl Courriel for BoiteSimulee {
 
     /// Ecrit le message dans `courriels-simules/` ; l'identifiant est son `Message-ID`, comme chez le vrai client :
     /// c'est par lui que la compagnie fictive retrouve ce qui est parti.
-    fn envoyer(&mut self, message_mime: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
         let dossier = self.racine.join(DOSSIER_COURRIELS);
-        std::fs::create_dir_all(&dossier).map_err(|e| erreur(socle::echec::du_disque(&dossier, &e)))?;
+        std::fs::create_dir_all(&dossier).map_err(|e| de_la_boite(socle::echec::du_disque(&dossier, &e)))?;
         // Un message sans `Message-ID` en recoit un, comme chez le vrai client.
         let ident = match message_id_de(message_mime) {
             Some(i) => i,
@@ -635,16 +632,16 @@ impl Courriel for BoiteSimulee {
         let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
         let nom = format!("{}_{}.eml", horodatage_de(maintenant)?, hexa_au_hasard(4)?);
         let chemin = dossier.join(&nom);
-        std::fs::write(&chemin, message_mime).map_err(|e| erreur(socle::echec::du_disque(&chemin, &e)))?;
+        std::fs::write(&chemin, message_mime).map_err(|e| de_la_boite(socle::echec::du_disque(&chemin, &e)))?;
         Ok(ident)
     }
 
-    fn rechercher(&mut self, _requete: &str, _maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, _requete: &str, _maximum: usize) -> R<Vec<String>> {
         Ok(Vec::new())
     }
 
     /// La boite simulee ne recoit rien : sa recherche ne trouve aucun message a lire.
-    fn message_brut(&mut self, identifiant: &str) -> Result<Vec<u8>, ErreurCourriel> {
+    fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>> {
         Err(erreur(format!("Message {} introuvable.", identifiant)))
     }
 

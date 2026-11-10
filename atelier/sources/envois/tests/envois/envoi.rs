@@ -4,7 +4,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use envois::courriel::{Courriel, ErreurCourriel};
+use envois::courriel::Courriel;
+use socle::echec::{erreur, Classe, R};
 use envois::envoi::{self, Message};
 
 /// Une boite en memoire dont l'envoi de rang `refuse` (a partir de 0) echoue.
@@ -17,18 +18,18 @@ impl Courriel for Boite {
     fn compte(&self) -> &str {
         "boite@exemple.invalid"
     }
-    fn envoyer(&mut self, m: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, m: &[u8]) -> R<String> {
         let n = self.recus.borrow().len();
         if n == self.refuse {
-            return Err(ErreurCourriel("le serveur refuse ce message".into()));
+            return Err(erreur(Classe::Courriel, "le serveur refuse ce message"));
         }
         self.recus.borrow_mut().push(m.to_vec());
         Ok(format!("<faux-{}@exemple.invalid>", n))
     }
-    fn rechercher(&mut self, _: &str, _: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, _: &str, _: usize) -> R<Vec<String>> {
         Ok(Vec::new())
     }
-    fn message_brut(&mut self, _: &str) -> Result<Vec<u8>, ErreurCourriel> {
+    fn message_brut(&mut self, _: &str) -> R<Vec<u8>> {
         Ok(Vec::new())
     }
     fn fermer(&mut self) {}

@@ -792,9 +792,9 @@ mod tests {
         let mauvais = "Pas-le-bon-mot-de-passe-77";
         crate::coffre::retenir_mot_de_passe_tape(mauvais);
         for r in [
-            crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(String::from),
-            crate::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.to_string()),
-            crate::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(String::from),
+            crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.phrase),
+            crate::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.phrase),
+            crate::preuve::motdepasse_organisme(&m.ctx(), "net-entreprises", None).map(|_| ()).map_err(|e| e.phrase),
         ] {
             let dit = r.expect_err("un mauvais mot de passe ne doit rien ouvrir");
             for secret in [NET, BOITE, LOGICIEL, mauvais] {

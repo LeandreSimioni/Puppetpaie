@@ -57,7 +57,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contrats::{AvenantVoulu, ChargeRecu, ChargeSignature, ContratASigner, ContratVise};
 use droit::contexte::Contexte;
-use envois::courriel::{Courriel, ErreurCourriel};
+use envois::courriel::Courriel;
 use socle::date::Jour;
 use socle::mois::Mois;
 use compagnie::preuve::Preuve;
@@ -138,15 +138,15 @@ impl Courriel for BoiteMuette {
         &self.compte
     }
 
-    fn envoyer(&mut self, _message_mime: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, _message_mime: &[u8]) -> R<String> {
         Ok(format!("<{}@fictive.puppetpaie>", envois::courriel::hexa_au_hasard(8)?))
     }
 
-    fn rechercher(&mut self, _requete: &str, _maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, _requete: &str, _maximum: usize) -> R<Vec<String>> {
         Ok(Vec::new())
     }
 
-    fn message_brut(&mut self, _identifiant: &str) -> Result<Vec<u8>, ErreurCourriel> {
+    fn message_brut(&mut self, _identifiant: &str) -> R<Vec<u8>> {
         Ok(Vec::new())
     }
 

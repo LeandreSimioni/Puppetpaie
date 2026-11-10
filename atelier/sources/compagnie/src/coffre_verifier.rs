@@ -34,7 +34,7 @@ pub const COURRIEL: &str = "courriel";
 pub type Authentifier<'a> = &'a mut dyn FnMut(&Contexte, &str, Option<String>) -> Result<(), Panne>;
 
 /// De quoi ouvrir la boite : `courriel.verifier` (une seule connexion IMAP).
-pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> Result<Ouverture, envois::courriel::ErreurCourriel>;
+pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> R<Ouverture>;
 
 /// LE VERDICT D'UNE TENTATIVE : le service essaye, si la session s'ouvre, la premiere ligne de ce qu'il a repondu, ce
 /// qu'il faut en faire quand la reponse le dit, et sa pastille (la session s'ouvre, fait ; l'organisme refuse, refuse).
@@ -85,7 +85,7 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
     }
     if nom == COURRIEL {
         // La boite : une connexion IMAP, une seule (`courriel.verifier`).
-        let o = boite(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+        let o = boite(ctx)?;
         return Ok(Verdict::de(nom, o.ok, o.message, o.conseil));
     }
     let mdp = mot_de_passe_de_consultation(ctx, nom)?;

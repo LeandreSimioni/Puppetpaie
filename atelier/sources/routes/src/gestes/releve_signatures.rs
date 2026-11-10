@@ -89,13 +89,13 @@ fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
         envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}
     }
-    if !compagnie::boite::disponible(&ctx.racine).map_err(|e| erreur(Classe::Courriel, e.0))? {
+    if !compagnie::boite::disponible(&ctx.racine)? {
         return Ok(Err(
             "Aucune boite courriel : les signatures ne peuvent pas etre relevees. Poser le mot de passe d'application de la boite (Configuration > Mots de passe)."
                 .to_string(),
         ));
     }
-    let vrai_client = compagnie::boite::client_du_contexte(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+    let vrai_client = compagnie::boite::client_du_contexte(ctx)?;
     Ok(Ok(Box::new(vrai_client)))
 }
 

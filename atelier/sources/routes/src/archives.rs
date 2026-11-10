@@ -24,7 +24,7 @@ use documents::etats_compta::ChoixCompta;
 use documents::plan_comptable::{controler_plan, tables};
 use droit::contexte::Contexte;
 use envois::envoi::{self, Message};
-use envois::ligne_d_envoi::{echec_d_envoi, noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::jour_iso;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -818,8 +818,8 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None) {
         Ok(p) => p,
         Err(e) => {
-            noter_echec_d_envoi(ctx, journal::Ligne::DossierSalarie, None, qui, &e.partis, &e.echoue, &e.message, detail, None)?;
-            return Err(echec_d_envoi(e.message));
+            noter_echec_d_envoi(ctx, journal::Ligne::DossierSalarie, None, qui, &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, None)?;
+            return Err(e.echec);
         }
     };
     noter(ctx, journal::Ligne::DossierSalarie(par_courriel(None, qui, true, &partis.join(", "), "", detail, None)))?;
@@ -958,8 +958,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
         Err(e) => {
-            noter_echec_d_envoi(ctx, journal::Ligne::RegularisationCasc, None, qui, &e.partis, &e.echoue, &e.message, detail, None)?;
-            return Err(echec_d_envoi(e.message));
+            noter_echec_d_envoi(ctx, journal::Ligne::RegularisationCasc, None, qui, &e.partis, &e.echoue, &String::from(e.echec.clone()), detail, None)?;
+            return Err(e.echec);
         }
     };
 
