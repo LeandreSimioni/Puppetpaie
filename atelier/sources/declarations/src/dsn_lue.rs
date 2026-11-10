@@ -160,7 +160,7 @@ pub struct IndividuDeclare {
     pub sexe: Option<String>,
     /// .006.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<NaissanceDeclaree>,
     /// .007.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lieu_naissance: Option<String>,
@@ -678,14 +678,47 @@ fn sexe_de_la_fiche(v: &str) -> String {
     }
 }
 
-/// `23071990` -> `1990-07-23` ; une date qui n'a pas ses huit chiffres est rendue telle quelle.
-fn jjmmaaaa(v: &str) -> String {
-    let c: Vec<char> = v.chars().collect();
-    if c.len() == 8 && c.iter().all(char::is_ascii_digit) {
-        let t = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-        format!("{}-{}-{}", t(4, 8), t(2, 4), t(0, 2))
-    } else {
-        v.to_string()
+/// UNE DATE DE NAISSANCE DECLAREE (S21.G00.30.006) : `JJMMAAAA`, dont le jour ou le mois peuvent etre inconnus, ecrits
+/// `00` ou `99` (cahier technique 2026.1, p. 172, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 175-178 :
+/// « Jour de naissance inconnu : 00MMAAAA ou 99MMAAAA, Mois de naissance inconnu : JJ00AAAA ou JJ99AAAA, Si jour et
+/// mois inconnus : 0000AAAA ou 9999AAAA » ; CSL 00 et CSL-11, l. 185-189). Elle se lit dans cette forme et elle seule,
+/// garde ses chiffres tels qu'ils sont declares (`jjmmaaaa`), et passe a la fiche en `AAAA-MM-JJ` (`iso`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NaissanceDeclaree {
+    jour: u32,
+    mois: u32,
+    an: i32,
+}
+
+impl NaissanceDeclaree {
+    /// Le motif de CSL 00 (`(0[0-9]|[1-2][0-9]|3[0-1]|99)(0[0-9]|1[0-2]|99)(18|19|20)[0-9]{2}`), et un jour du
+    /// calendrier quand le jour et le mois sont connus (CSL-11) ; `None` sinon.
+    pub fn lire(v: &str) -> Option<NaissanceDeclaree> {
+        if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
+        let (jour, mois, an) = (n(0, 2), n(2, 4), n(4, 8) as i32);
+        let inconnu = |x: u32| x == 0 || x == 99;
+        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (1800..=2099).contains(&an);
+        let calendrier = inconnu(jour) || inconnu(mois) || Jour::nouveau(an, mois, jour).is_some();
+        (forme && calendrier).then_some(NaissanceDeclaree { jour, mois, an })
+    }
+
+    /// `JJMMAAAA`, tel que declare.
+    pub fn jjmmaaaa(&self) -> String {
+        format!("{:02}{:02}{:04}", self.jour, self.mois, self.an)
+    }
+
+    /// `AAAA-MM-JJ`, le jour et le mois tels que declares.
+    pub fn iso(&self) -> String {
+        format!("{:04}-{:02}-{:02}", self.an, self.mois, self.jour)
+    }
+}
+
+impl Serialize for NaissanceDeclaree {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
     }
 }
 
@@ -897,16 +930,18 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S21.G00.30.001" => individus.push(IndividuDeclare { nir: v, ..IndividuDeclare::default() }),
-            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.006" | "S21.G00.30.007" | "S21.G00.30.008"
-            | "S21.G00.30.009" | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.018"
-            | "S21.G00.30.019" => {
+            "S21.G00.30.006" => {
+                let Some(i) = individu else { continue };
+                individus[i].date_naissance = fautes.valeur(k, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
+            }
+            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
+            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.018" | "S21.G00.30.019" => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match k {
                     "S21.G00.30.002" => &mut s.nom,
                     "S21.G00.30.004" => &mut s.prenom,
                     "S21.G00.30.005" => &mut s.sexe,
-                    "S21.G00.30.006" => &mut s.date_naissance,
                     "S21.G00.30.007" => &mut s.lieu_naissance,
                     "S21.G00.30.008" => &mut s.adresse,
                     "S21.G00.30.009" => &mut s.code_postal,
@@ -919,7 +954,6 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 };
                 *case = Some(match k {
                     "S21.G00.30.005" => sexe_de_la_fiche(&v),
-                    "S21.G00.30.006" => jjmmaaaa(&v),
                     _ => v,
                 });
             }

@@ -349,8 +349,8 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     etiquette(&mut p1, 30.0, 667.0, "NIR (n° de Sécurité sociale)");
     f.imprime(1, "SALARIE_NIR", [165.0, 658.0, 331.0, 670.0], &ind.nir, 8.5, Alignement::Gauche);
     etiquette(&mut p1, 30.0, 681.0, "Date de naissance");
-    // AAAA-MM-JJ (`IndividuDeclare::date_naissance`), le jour ou le mois a 00 s'il est inconnu.
-    if let Some(n) = ind.date_naissance.as_deref().filter(|n| n.len() == 10) {
+    // AAAA-MM-JJ (`NaissanceDeclaree::iso`), le jour ou le mois tels que declares s'il est inconnu.
+    if let Some(n) = ind.date_naissance.map(|n| n.iso()) {
         f.imprime(1, "SALARIE_DT_NAISSANCE_J", [123.0, 672.0, 149.0, 683.0], &n[8..], 8.5, Alignement::Centre);
         f.imprime(1, "SALARIE_DT_NAISSANCE_M", [155.0, 672.0, 181.0, 683.0], &n[5..7], 8.5, Alignement::Centre);
         f.imprime(1, "SALARIE_DT_NAISSANCE_A", [186.0, 672.0, 238.0, 683.0], &n[..4], 8.5, Alignement::Centre);
