@@ -4415,7 +4415,7 @@ etablissement, chacun avec ses salaries. Rien n'est ecrit.",
             if n > 1 { "nent" } else { "t" }
         ), "etablissement").into());
     }
-    let caisse = paies.iter().map(Paie::declaree_a_la_caisse_des_conges).collect::<Resultat<Vec<bool>>>()?.contains(&true);
+    let caisse = paies.iter().map(Paie::declaree_a_la_caisse_des_conges).collect::<socle::echec::R<Vec<bool>>>()?.contains(&true);
     exiges(ent0, paies.iter().map(|p| &p.salarie).chain(regs.iter().map(|r| &r.apres.salarie)), caisse)?;
     // La correction d'un mois decoupe en periodes elementaires : le declare relu (`versement_declare`) et le
     // corrige se comparent base par base, et un mois decoupe en a une par periode. Un chantier a part.

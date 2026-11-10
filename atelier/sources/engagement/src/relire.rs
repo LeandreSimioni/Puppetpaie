@@ -14,7 +14,7 @@ use socle::num::{Decimal, Resultat};
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
 /// engagement telles quelles (celles d'un permanent, deduites) et le plafond d'un temps partiel.
 pub fn ecrire(ctx: &Contexte, p: &Paie) -> Resultat<FormeDePaie<Avis>> {
-    p.forme(ctx, &Avis::clone, true)
+    p.forme(ctx, &Avis::clone, true).map_err(String::from)
 }
 
 /// Le flottant d'un decimal ecrit.
