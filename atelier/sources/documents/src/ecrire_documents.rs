@@ -83,7 +83,7 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
     let maintenant = socle::paris::iso_secondes(socle::temps::secondes()).replace('T', " ");
     let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
-    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })? {
         Ok(v) => Ok(v),
         Err(v) => Err(erreur(Classe::CompteursVerrouilles, v.message())),
     }
@@ -133,7 +133,7 @@ impl Reserves {
         }
         let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite));
         let importe = match suite {
-            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)?),
+            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?),
             Suite::CertificatCs => None,
         };
         // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
