@@ -100,7 +100,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &s
             out.push(MoisDeLAnnee::Calcules(m, paies.to_vec()));
             continue;
         }
-        if !engagement::stock::a_une_saisie(&ctx.racine, &m)? {
+        if !engagement::stock::a_une_saisie(&ctx.racine, socle::mois::Mois::lire(&m)?)? {
             continue;
         }
         if montants {

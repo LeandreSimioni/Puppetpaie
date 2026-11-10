@@ -67,16 +67,15 @@ fn importes(racine: &Path) -> R<Vec<Importe>> {
 }
 
 /// Le dernier mois repris : le plus recent que l'historique a verse (`AAAA-MM`) ; aucun sans paie reprise.
-fn dernier_mois(importes: &[Importe]) -> Option<String> {
-    importes.iter().flat_map(|i| i.paies().keys().cloned()).max()
+fn dernier_mois(importes: &[Importe]) -> Option<socle::mois::Mois> {
+    importes.iter().flat_map(|i| i.paies().keys().copied()).max()
 }
 
 /// Le premier et le dernier jour que les paies d'un engagement importe paient : ceux du bulletin dans son mois, sinon le
 /// mois entier. Rien pour un engagement sans paie.
 fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
     let mut bornes = Vec::new();
-    for (m, p) in i.paies() {
-        let mois = socle::mois::Mois::lire(m).map_err(|e| e.reclasser(Classe::Illisible))?;
+    for (&mois, p) in i.paies() {
         let dans = |j: Option<Jour>| j.filter(|j| mois.contient(j));
         let debut = match dans(p.debut) {
             Some(j) => j,
@@ -135,10 +134,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
     if par.is_empty() {
         return Ok(Vec::new());
     }
-    let suite = match dernier_mois(&importes) {
-        Some(m) => Some(socle::mois::Mois::lire(&m).map_err(|e| e.reclasser(Classe::Illisible))?.suivant()),
-        None => None,
-    };
+    let suite = dernier_mois(&importes).map(socle::mois::Mois::suivant);
     let natures = natures_permanentes()?;
     let mut out = Vec::new();
     for (salarie, c) in par {

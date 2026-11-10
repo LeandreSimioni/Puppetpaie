@@ -344,7 +344,7 @@ fn paies_de_la_periode(ctx: &Contexte, periode: &str) -> R<Vec<engagement::calcu
 /// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
 /// ne se lisent pas refusent la comparaison.
 fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<String, Vec<engagement::calcul::Paie>>, periode: &str, cle: &str) -> R<Option<Vec<documents::aer::PaieAer>>> {
-    if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
+    if !engagement::stock::a_une_saisie(&ctx.racine, socle::mois::Mois::lire(periode)?)? {
         return Ok(None);
     }
     // `documents::aer` demande les paies d'un mois sans refus possible : le premier refus est garde, et rendu apres.
@@ -578,7 +578,7 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: &str, doss
 /// ecrites), numerote. L'envoi des documents (`envoyer_documents`) prepare ses messages sur les memes paies que l'apercu.
 pub(crate) fn charger_le_mois(ctx: &Contexte, mois: &str) -> R<Vec<engagement::calcul::Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let Some((_, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, &departs)? else {
+    let Some((_, mut paies)) = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois)?, &departs)? else {
         return Ok(Vec::new());
     };
     documents::ecrire_documents::numeroter(ctx, &mut paies, Mois::lire(mois)?.annee(), &departs)?;
@@ -894,7 +894,7 @@ impl Choix {
 pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: &str) -> R<HashMap<String, Vec<String>>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut par_salarie: HashMap<String, Vec<(Option<String>, Vec<String>)>> = HashMap::new();
-    for e in engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
+    for e in engagement::etats::du_mois(ctx, socle::mois::Mois::lire(mois)?, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
         let Some(v) = e.valide() else { continue };
         let depuis = engagement::etats::a_refaire(ctx, v, &departs)?.into_iter().find_map(|a| match a {
             engagement::etats::ARefaire::Bulletin { mois: m, depuis } if m == mois => Some(depuis),
@@ -928,7 +928,7 @@ pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: &str) -> R<HashMap<Strin
 /// Le choix, pour le mois `mois`, sur ses paies validees (`crate::documents::charger_le_mois`).
 pub(crate) fn choisir(ctx: &Contexte, mois: &str, paies: &[engagement::calcul::Paie]) -> R<Choix> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?, &lignes)?;
+    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, socle::mois::Mois::lire(mois)?, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?, &lignes)?;
     let cles: Vec<String> = paies.iter().map(|p| p.salarie.id.to_string()).collect();
     let mut resumes: HashMap<String, envoi::ResumeDePaie> = HashMap::new();
     for cle in &cles {

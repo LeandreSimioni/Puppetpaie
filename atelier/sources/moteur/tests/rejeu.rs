@@ -147,7 +147,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     assert_eq!(dsn_de_decembre(), ["a_faire"], "la DSN de decembre porte la correction de novembre");
 
     let ctx = |jour: &str| droit::contexte::Contexte::nouveau(&racine, Some(socle::date::Jour::lire(jour).unwrap())).unwrap();
-    let na = engagement::etats::non_actifs_du_mois(&ctx("2026-12-16"), "2026-11").unwrap().pop().expect("l'engagement non actif");
+    let na = engagement::etats::non_actifs_du_mois(&ctx("2026-12-16"), socle::mois::Mois::lire("2026-11").unwrap()).unwrap().pop().expect("l'engagement non actif");
     let a_refaire = na.a_refaire(&envois::journal::lu(&racine).map(|j| j.departs).unwrap());
     assert!(a_refaire.iter().any(|a| matches!(a, ARefaire::Dsn { mois, .. } if mois == "2026-11")), "{:?}", a_refaire);
 
@@ -362,7 +362,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
     }
     fiches["DUNCAN"] = seconde;
     outils::ecrire(&racine, "config/salaries.json", &fiches);
-    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(&racine, "2026-11").unwrap().unwrap());
+    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(&racine, socle::mois::Mois::lire("2026-11").unwrap()).unwrap().unwrap());
     let mut carte = vue["engagements"][0].clone();
     carte["salarie"] = json!("DUNCAN");
     for k in ["numero", "numero_pour", "valide"] {
@@ -418,7 +418,7 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     let mut fiches = outils::lire(&racine, "config/salaries.json");
     fiches["FULLER"]["taux_pas"] = json!([{"valeur": null}, {"depuis": "2026-11-17", "valeur": {"taux": "4.30", "type": "01", "identifiant": "190151266", "mis_a_disposition": "20261117100000"}}]);
     outils::ecrire(&racine, "config/salaries.json", &fiches);
-    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(&racine, "2026-11").unwrap().unwrap());
+    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(&racine, socle::mois::Mois::lire("2026-11").unwrap()).unwrap().unwrap());
     let mut carte = vue["engagements"][0].clone();
     carte["date_paiement"] = json!("2026-12-20");
     for k in ["numero_pour", "valide"] {

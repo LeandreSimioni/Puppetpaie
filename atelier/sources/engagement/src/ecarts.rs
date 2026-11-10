@@ -102,7 +102,7 @@ pub struct Ecart {
 pub struct Comparaison {
     /// L'empreinte de la paie (`empreinte`).
     pub empreinte: String,
-    pub mois: String,
+    pub mois: Mois,
     /// Le logiciel que le lecteur a reconnu au bulletin ; `None` : un autre.
     pub logiciel: Option<String>,
     pub nature: NatureDeContrat,
@@ -169,7 +169,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
     let du_contrat = contrat.and_then(|c| c.jours).filter(|_| paies.len() == 1);
     paies
         .iter()
-        .filter_map(|(mois, p)| {
+        .filter_map(|(&mois, p)| {
             let empreinte = empreinte(imp, mois, p);
             if deja(&empreinte) {
                 return None;
@@ -177,7 +177,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone()).filter(|l| !l.is_empty());
             let mut c = Comparaison {
                 empreinte,
-                mois: mois.clone(),
+                mois,
                 logiciel,
                 nature,
                 statut: None,
@@ -197,14 +197,14 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
 fn comparer_une(
     racine: &Path,
     brut: &crate::saisie::Carte,
-    mois: &str,
+    mois: Mois,
     p: &PaieVersee,
     nature: NatureDeContrat,
     jours_comptes: Option<i64>,
     c: &mut Comparaison,
 ) -> R<Vec<Ecart>> {
-    let fin = Mois::lire(mois)?.dernier_jour();
-    let annee = &mois[..4];
+    let fin = mois.dernier_jour();
+    let annee = format!("{:04}", mois.annee());
     let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
     if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
         return Err(socle::refus!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
@@ -345,7 +345,7 @@ fn comparer_une(
         importe: Some(true),
         ..Default::default()
     };
-    let data = crate::saisie::VueDuMois { mois: socle::mois::Mois::lire(mois)?, taux_cachet: None, engagements: vec![e] };
+    let data = crate::saisie::VueDuMois { mois, taux_cachet: None, engagements: vec![e] };
     let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
@@ -496,7 +496,7 @@ fn a_refaire(c: &mut Comparaison, raison: Echec) -> Echec {
 
 /// L'empreinte de la paie `mois` de l'engagement importe `imp` : ce qui la reconnait d'une comparaison a l'autre (son
 /// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import).
-pub fn empreinte(imp: &Importe, mois: &str, p: &PaieVersee) -> String {
+pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> String {
     let brut = imp.objet().carte();
     let paie = PaieVersee { importe_le: None, ..p.clone() };
     let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));

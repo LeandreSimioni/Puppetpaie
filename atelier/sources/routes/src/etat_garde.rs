@@ -601,7 +601,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
     // (`{"mois": mois, "modifications": []}`, le mois enregistre), quand le mois a une saisie ; la page ne le redemande
     // que quand on modifie la saisie.
-    if engagement::stock::a_une_saisie(&ctx.racine, &mois.to_string())? {
+    if engagement::stock::a_une_saisie(&ctx.racine, mois)? {
         let apercu = ApercuEnregistre { mois, modifications: [] };
         let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.")?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
@@ -627,7 +627,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<Etat
     // Le mois que l'ouverture montre se lit avec elle : ses paies validees se recalculent ici (`engagement::etats::du_mois`),
     // pas apres l'ecriture de l'etat, qui serait aussitot perime. Ce qui refuse ici refusera a l'ecran du mois, qui le dit.
     if let Some(m) = ouvre {
-        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, &m.to_string(), &j.departs));
+        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, m, &j.departs));
         if let Err(e) = recalcul {
             noter(&format!("le recalcul de {} à l'ouverture refuse", m), &e);
         }

@@ -139,7 +139,7 @@ pub fn mois_disponibles(ctx: &Contexte) -> R<BTreeMap<String, &'static str>> {
 /// Les mois ou un engagement importe a ete paye : ce que l'import a lu de ses paies (`engagement::importe`).
 pub fn mois_importes(ctx: &Contexte) -> R<BTreeSet<String>> {
     let tous = engagement::importe::tous(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
-    Ok(tous.iter().flat_map(|i| i.paies().keys().cloned()).collect())
+    Ok(tous.iter().flat_map(|i| i.paies().keys().map(ToString::to_string)).collect())
 }
 
 /// Le libelle de la periode d'un etat : un mois, une annee, ou toutes les annees (de la premiere a la derniere de
@@ -235,7 +235,7 @@ fn mois_pris(dispo: &BTreeMap<String, &'static str>, quand: &Quand) -> R<Vec<Str
 /// La saisie de `mois` reduite a ses engagements valides, et leurs paies telles qu'elles ont ete validees : ce que
 /// lisent les etats et les exports.
 pub fn charger_mois(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<(engagement::saisie::VueDuMois, Vec<Paie>)> {
-    engagement::etats::validees_du_mois(ctx, mois, departs)
+    engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs)
         .map_err(|m| m.reclasser(Classe::Refuse))?
         .ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)))
 }
@@ -256,7 +256,7 @@ impl<'a> Lecture<'a> {
     /// Les paies du mois, calculees ou importees (`engagement::etats::paies_du_mois`).
     pub fn paies(&mut self, mois: &str) -> R<Rc<Vec<Paie>>> {
         if !self.paies.contains_key(mois) {
-            let paies = engagement::etats::paies_du_mois(self.ctx, mois, self.departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+            let paies = engagement::etats::paies_du_mois(self.ctx, socle::mois::Mois::lire(mois)?, self.departs).map_err(|m| m.reclasser(Classe::Refuse))?;
             self.paies.insert(mois.to_string(), Rc::new(paies));
         }
         Ok(Rc::clone(&self.paies[mois]))
@@ -465,10 +465,10 @@ fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option
 /// celles que l'import a lues), ce qu'il a fallu taire, et si ses numeros de contrat sont tous ecrits. Un montant que
 /// les pieces d'une paie importee ne disent pas reste vide (`Paie::dit`) ; aucun numero n'est invente.
 fn lignes_du_mois(ctx: &Contexte, mois: &str, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool)> {
-    if engagement::etats::validees_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?.is_none() && !mois_importes(ctx)?.contains(mois) {
+    if engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs).map_err(|m| m.reclasser(Classe::Refuse))?.is_none() && !mois_importes(ctx)?.contains(mois) {
         return Err(erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)));
     }
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let paies = engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let pas = crate::prelevement::des_paies(ctx, &paies, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (mut lignes, mut sans_pas) = (Vec::new(), Vec::new());
     for (p, r) in paies.iter().zip(pas.iter()) {

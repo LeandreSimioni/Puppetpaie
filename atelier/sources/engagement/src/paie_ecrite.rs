@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 use crate::{Avis, ContratEcrit, LignePaie};
@@ -209,7 +210,7 @@ pub struct FormeDEngagement {
     pub debut: Jour,
     pub fin: Option<Jour>,
     pub numero: Option<crate::numeros::NumeroContrat>,
-    pub mois: String,
+    pub mois: Mois,
     pub planning: Vec<Jour>,
     pub planning_lieux: BTreeMap<Jour, String>,
     #[serde(with = "entier")]
@@ -253,7 +254,7 @@ pub struct FormeDEngagement {
     pub sans_paie: bool,
     pub premier_mois: bool,
     pub dernier_mois: bool,
-    pub mois_du_contrat: Vec<String>,
+    pub mois_du_contrat: Vec<Mois>,
 }
 
 /// Un montant en texte normalise (`socle::num::nombre`), relu en decimal.

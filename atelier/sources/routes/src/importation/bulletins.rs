@@ -57,6 +57,7 @@ use droit::contexte::Contexte;
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
+use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
 use import::proposee;
@@ -466,7 +467,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let nir_de_cle: HashMap<String, String> = par_nir.iter().map(|(n, c)| (c.clone(), n.clone())).collect();
     let mut registre = Registre::de_l_historique(ctx, &nir_de_cle)?;
     let historique_paies = ri::paies_historique(ctx)?;
-    let hist_par_cle: HashMap<(String, String, String), PaieLue> = historique_paies.iter().map(|x| (x.cle(), x.clone())).collect();
+    let hist_par_cle: HashMap<(Mois, String, String), PaieLue> = historique_paies.iter().map(|x| (x.cle(), x.clone())).collect();
 
     // Ce qui est saisi ici : (salarie, mois) que paie un engagement saisi. Un bulletin qui en est, sans paie declaree
     // du meme salarie et du meme mois a completer (DSN de cet apercu, paie importee), est « deja saisi ».
@@ -476,7 +477,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         for o in objets.iter().filter(|o| !o.importe_seul()) {
             let Some(cle) = &o.brut.saisie.carte.salarie else { continue };
             for l in lus.iter().filter(|l| l.mois_saisi) {
-                if o.couvre(&l.mois).map_err(|m| m.reclasser(Classe::Refuse))? {
+                if o.couvre(Mois::lire(&l.mois)?).map_err(|m| m.reclasser(Classe::Refuse))? {
                     saisis_ici.insert((cle.to_string(), l.mois.clone()));
                 }
             }
@@ -486,7 +487,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         .paies
         .iter()
         .chain(historique_paies.iter())
-        .filter_map(|x| Some((x.paie.nir.clone()?, x.mois.clone())))
+        .filter_map(|x| Some((x.paie.nir.clone()?, x.mois.to_string())))
         .collect();
     let mut gardes: Vec<Lu> = Vec::new();
     for l in lus {
@@ -859,7 +860,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     #[derive(Clone, PartialEq)]
     enum Cible {
         Dsn(usize),
-        Historique((String, String, String)),
+        Historique((Mois, String, String)),
     }
     let mut index: HashMap<(String, String, String), Vec<(String, String, Cible)>> = HashMap::new();
     // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
@@ -873,7 +874,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut par_mois: HashMap<(String, String), Vec<(String, Option<String>, String, Cible)>> = HashMap::new();
     let mut vus: HashSet<(String, String, String)> = HashSet::new();
     // (mois, NIR, contrat, debut, fin) d'une paie, en texte. Une paie sans NIR ne se rattache a aucun bulletin.
-    let reperes = |x: &PaieLue| (x.mois.clone(), x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut.map(|j| j.iso()), x.paie.fin.map(|j| j.iso()));
+    let reperes = |x: &PaieLue| (x.mois.to_string(), x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut.map(|j| j.iso()), x.paie.fin.map(|j| j.iso()));
     for (k, x) in ap.paies.iter().enumerate() {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
@@ -890,7 +891,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // Une paie que l'historique tient d'un bulletin seul s'efface devant la DSN qui la declare (la DSN est lue apres le
     // bulletin : l'ordre inverse) : le bulletin complete la ligne DSN, et l'ecriture retire la ligne « bulletin »
     // (`import::ecrite::rapprocher`).
-    let mut de_bulletin: HashSet<(String, String, String)> = HashSet::new();
+    let mut de_bulletin: HashSet<(Mois, String, String)> = HashSet::new();
     for x in &historique_paies {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         if !vus.insert((mois.clone(), nir.clone(), contrat.clone())) {
@@ -999,7 +1000,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 };
                 let mut paie = PaieVersee::vide(contrat, Declaration::Bulletin);
                 (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
-                let x = PaieLue { mois: l.mois.clone(), salarie: salarie.clone(), paie };
+                let x = PaieLue { mois: Mois::lire(&l.mois)?, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
                 (x, "bulletin", avant)
             }

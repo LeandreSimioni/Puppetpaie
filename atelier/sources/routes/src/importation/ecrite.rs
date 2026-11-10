@@ -80,7 +80,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let faits: HashSet<String> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
     let mut dispo: BTreeSet<String> = BTreeSet::new();
-    dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois));
+    dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois.to_string()));
     dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from));
     let depuis = base.depuis.clone();
     let contrat = base.dsn.contrat.clone();
@@ -182,8 +182,8 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
 /// Une paie qu'un bulletin seul declare (`declare_par: "bulletin"`) s'efface devant la paie declaree des memes
 /// salarie, debut et fin, qu'elle complete (une seule ; plusieurs : celle du meme mois, sinon rien ne se rapproche).
 /// Rend le nombre de paies de bulletin laissees a cote de plusieurs paies declarees.
-fn rapprocher(par_cle: &mut BTreeMap<(String, String, String), PaieLue>) -> usize {
-    let de_bulletin: Vec<(String, String, String)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
+fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, String, String), PaieLue>) -> usize {
+    let de_bulletin: Vec<(socle::mois::Mois, String, String)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
     let mut ambigues = 0usize;
     for kb in de_bulletin {
         let b = par_cle[&kb].clone();
@@ -192,7 +192,7 @@ fn rapprocher(par_cle: &mut BTreeMap<(String, String, String), PaieLue>) -> usiz
         if salarie.is_empty() || salarie == crate::import::A_CREER {
             continue;
         }
-        let mut cibles: Vec<(String, String, String)> = par_cle
+        let mut cibles: Vec<(socle::mois::Mois, String, String)> = par_cle
             .iter()
             .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.debut == Some(debut) && x.paie.fin == Some(fin))
             .map(|(k, _)| k.clone())
@@ -331,7 +331,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // permanent (et les paies declarees de ces mois qu'aucun contrat ne porte) font un engagement par numero ; deux
     // numeros, deux contrats, comme la DSN les a declares. Un mois sans numero lu va au contrat declare a partir de lui,
     // sinon au dernier (inference : le numero du contrat en cours ce mois-la).
-    let mois_de = |g: &Groupe| -> Vec<String> { g.paies.iter().map(|p| p.mois.clone()).collect() };
+    let mois_de = |g: &Groupe| -> Vec<String> { g.paies.iter().map(|p| p.mois.to_string()).collect() };
     let du_permanent: HashSet<(String, String)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
@@ -532,7 +532,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
     // LES PAIES : on remplace ligne a ligne par la cle (mois, salarie, contrat). Une ligne de DSN qui arrive sur une ligne
     // completee par un bulletin garde ce que le bulletin a ecrit ; une paie de bulletin seul s'efface devant la paie
     // declaree qu'elle complete (`rapprocher`).
-    let mut par_cle: BTreeMap<(String, String, String), PaieLue> = BTreeMap::new();
+    let mut par_cle: BTreeMap<(socle::mois::Mois, String, String), PaieLue> = BTreeMap::new();
     for x in crate::import::paies_historique(ctx)? {
         par_cle.insert(x.cle(), x);
     }

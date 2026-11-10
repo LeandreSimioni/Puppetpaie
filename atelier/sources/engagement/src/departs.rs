@@ -6,6 +6,8 @@
 
 use std::collections::BTreeMap;
 
+use socle::mois::Mois;
+
 /// Ce qui part d'un engagement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Envoi {
@@ -25,10 +27,10 @@ pub enum Envoi {
 #[derive(Debug, Clone)]
 pub struct Depart {
     pub envoi: Envoi,
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     /// Le mois de la DSN qui a declare `mois` quand ce n'est pas la sienne : la correction d'un mois passe, portee par la
     /// DSN d'un mois suivant. `None` : la DSN du mois lui-meme.
-    pub par: Option<String>,
+    pub par: Option<Mois>,
     /// Le numero de l'avenant quand ce qui est parti est un avenant au contrat, pas le contrat.
     pub avenant: Option<String>,
     pub version: u64,

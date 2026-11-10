@@ -168,7 +168,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     };
     let nombre = |t: Option<socle::num::Decimal>| t.map(socle::num::nombre);
     let cas = |c: &Comparaison, p: &mut Propre| Cas {
-        mois: p.texte(&c.mois),
+        mois: p.texte(&c.mois.to_string()),
         logiciel: None,
         nature: c.nature,
         statut: p.option(&c.statut),

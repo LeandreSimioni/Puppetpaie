@@ -42,8 +42,8 @@ pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result
 fn refaire_les_engagements(ctx: &Contexte) -> Result<(), Echec> {
     let ctx = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
     let departs = envois::journal::lu(&ctx.racine)?.departs;
-    for mois in engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from) {
-        engagement::etats::du_mois(&ctx, &mois, &departs)?;
+    for mois in engagement::stock::mois_saisis(&ctx.racine)? {
+        engagement::etats::du_mois(&ctx, mois, &departs)?;
     }
     Ok(())
 }

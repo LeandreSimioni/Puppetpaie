@@ -289,7 +289,7 @@ pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: &str, nics: &[String], ecrit: &[
     if e.numero.as_deref().is_none_or(str::is_empty) {
         return Ok(Vec::new());
     }
-    if e.premier_mois()? {
+    if e.premier_mois() {
         return Ok(Vec::new());
     }
     let Some(decl) = declare else { return Ok(Vec::new()) };

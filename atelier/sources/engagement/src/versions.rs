@@ -189,7 +189,7 @@ pub fn changements(ctx: &Contexte, avant: Option<&Saisie>, apres: Option<&Saisie
     let rien = Carte::default();
     for m in mois {
         for c in changements_du_mois(ctx, ou_rien(a.faits.get(m), &rien), ou_rien(b.faits.get(m), &rien))? {
-            out.push(format!("En {} : {}", socle::mois::Mois::en_clair(&m.to_string()), c));
+            out.push(format!("En {} : {}", m.libelle(Graphie::Accentuee), c));
         }
     }
     Ok(out)
@@ -316,16 +316,16 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
 /// Une DSN se nomme par le mois de la DSN qui est partie : la correction d'un mois passe portee par la DSN d'un mois
 /// suivant (`Depart::par`) est « la DSN de décembre 2026 (correction de novembre 2026) ».
 pub(crate) fn quoi_du_depart(d: &Depart) -> String {
-    match (d.envoi, d.mois.as_deref()) {
+    match (d.envoi, d.mois) {
         (Envoi::Contrat, _) => match &d.avenant {
             Some(a) => format!("l'avenant n° {}", a),
             None => "le contrat".to_string(),
         },
         (Envoi::Dpae, _) => "la DPAE".to_string(),
-        (Envoi::Documents, Some(m)) => format!("les documents {}", de(&socle::mois::Mois::en_clair(m))),
-        (Envoi::Dsn, Some(m)) => match d.par.as_deref() {
-            Some(p) => format!("la DSN {} (correction {})", de(&socle::mois::Mois::en_clair(p)), de(&socle::mois::Mois::en_clair(m))),
-            None => format!("la DSN {}", de(&socle::mois::Mois::en_clair(m))),
+        (Envoi::Documents, Some(m)) => format!("les documents {}", de(&m.libelle(Graphie::Accentuee))),
+        (Envoi::Dsn, Some(m)) => match d.par {
+            Some(p) => format!("la DSN {} (correction {})", de(&p.libelle(Graphie::Accentuee)), de(&m.libelle(Graphie::Accentuee))),
+            None => format!("la DSN {}", de(&m.libelle(Graphie::Accentuee))),
         },
         (Envoi::Signalement, _) => "un signalement".to_string(),
         (_, None) => "un envoi".to_string(),
@@ -377,7 +377,7 @@ pub struct VersionDeLaFrise {
 /// LA FRISE de l'engagement valide `v` (`Frise`). `None` : aucune version passee, jamais modifie apres un envoi, ou la
 /// paie de `mois` est restee celle de la version d'avant (un contrat au mois change a partir d'un mois suivant : ce
 /// mois-ci reste tel qu'il est parti).
-pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str) -> R<Option<Frise>> {
+pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Option<Frise>> {
     let passees = v.versions();
     let paie_du_mois = |x: Version| -> R<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, mois)?.map(|p| p.paie.clone())) };
     let present = v.objet().brut.valide.as_ref().map(Version::Presente);
@@ -420,8 +420,8 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: &str) -> R<Opt
 /// décembre 2025 ». Le detail, envoi par envoi, est dans la frise.
 fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[Depart]) -> R<String> {
     let mut phrase = format!("Modifié le {}", jour_court(v.le()));
-    if let Some(m) = premier_mois_change(v)?.filter(|m| m.as_str() != v.objet().premier_mois()) {
-        phrase.push_str(&format!(", à partir de {}", socle::mois::Mois::en_clair(&m)));
+    if let Some(m) = premier_mois_change(v)?.filter(|m| *m != v.objet().premier_mois()) {
+        phrase.push_str(&format!(", à partir de {}", m.libelle(Graphie::Accentuee)));
     }
     let (mut contrat, mut dpae) = (false, false);
     let (mut documents, mut dsn) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
@@ -430,10 +430,10 @@ fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[De
             ARefaire::Avenant { .. } => contrat = true,
             ARefaire::Dpae { .. } => dpae = true,
             ARefaire::Bulletin { mois, .. } => {
-                documents.insert(Mois::lire(&mois)?);
+                documents.insert(mois);
             }
             ARefaire::Dsn { mois, .. } => {
-                dsn.insert(Mois::lire(&mois)?);
+                dsn.insert(mois);
             }
         }
     }
@@ -464,12 +464,12 @@ fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[De
 
 /// Le premier mois dont la paie a change au dernier changement de l'engagement valide `v` (sa derniere version passee
 /// contre son present) ; `None` si aucune ne se lit autrement, ou sans version passee.
-fn premier_mois_change(v: &Valide) -> R<Option<String>> {
+fn premier_mois_change(v: &Valide) -> R<Option<Mois>> {
     let (Some(passee), Some(valide)) = (v.versions().last(), v.objet().brut.valide.as_ref()) else { return Ok(None) };
     let (avant, present) = (Version::Passee(passee), Version::Presente(valide));
-    let paie = |x: Version, m: &str| -> R<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, m)?.map(|p| p.paie.clone())) };
+    let paie = |x: Version, m: Mois| -> R<_> { Ok(crate::etats::paie_ecrite_de_la_version(v.objet(), x, m)?.map(|p| p.paie.clone())) };
     for m in crate::paies::mois_ecrits(v.objet())? {
-        if paie(avant, &m)? != paie(present, &m)? {
+        if paie(avant, m)? != paie(present, m)? {
             return Ok(Some(m));
         }
     }

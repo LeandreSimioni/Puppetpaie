@@ -120,6 +120,7 @@ pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
 
 /// Le mois est-il tenu avant ce logiciel : aucun engagement de la saisie ne le touche, et un engagement importe le touche.
 pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
+    let mois = socle::mois::Mois::lire(mois)?;
     if engagement::stock::a_une_saisie(racine, mois)? {
         return Ok(false);
     }
@@ -130,7 +131,7 @@ pub fn importe(racine: &std::path::Path, mois: &str) -> R<bool> {
 /// non : `Some` du jour que le fichier de l'ancien logiciel porte (S20.G00.05.007, sa constitution ; aucun s'il n'en
 /// porte pas), pas celui d'un depot -- aucun bilan de la plate-forme n'est lu pour lui. `None` : aucune DSN.
 pub(crate) fn dsn_importee_le(racine: &std::path::Path, mois: &str) -> R<Option<Option<String>>> {
-    Ok(engagement::importe::dsn_deposee(racine, mois)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
+    Ok(engagement::importe::dsn_deposee(racine, socle::mois::Mois::lire(mois)?)?.map(|x| x.paie.depose_le.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())))
 }
 
 /// LA DSN QUI PORTE LES CORRECTIONS DE `mois` : la premiere DSN d'un mois suivant qui n'est pas partie (ni ici, ni par

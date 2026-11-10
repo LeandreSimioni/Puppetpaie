@@ -1560,7 +1560,7 @@ pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
     if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
         return Ok(None);
     }
-    let objets = engagement::stock::objets_du_mois(racine, mois)?;
+    let objets = engagement::stock::objets_du_mois(racine, socle::mois::Mois::lire(mois)?)?;
     let journal = envois::journal::lu(racine)?;
     let du_mois: Vec<DepotDit> = journal
         .lignes

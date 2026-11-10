@@ -181,7 +181,7 @@ impl Reserves {
 /// compteur propose). `reserves` : les numeros de bulletin qu'un envoi propose, que la route d'envoi ecrit plus loin. Un
 /// mois sans engagement valide n'a rien.
 pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Echec> {
-    let Some((data, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else {
+    let Some((data, mut paies)) = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs)? else {
         return Ok((engagement::saisie::VueDuMois::vide(socle::mois::Mois::lire(mois)?), Vec::new()));
     };
     let annee = data.mois.annee();

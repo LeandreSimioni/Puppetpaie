@@ -1111,7 +1111,7 @@ fn dsn_deposable(st: &Etat, mois: &str) -> R<Option<(String, String)>> {
 
 /// Combien d'engagements le mois montre, et combien sont valides.
 fn engagements_valides(ctx: &Contexte, mois: &str) -> R<(i64, i64)> {
-    let valides = engagement::etats::valides_du_mois(ctx, mois)?;
+    let valides = engagement::etats::valides_du_mois(ctx, Mois::lire(mois)?)?;
     Ok((valides.len() as i64, valides.iter().filter(|v| **v).count() as i64))
 }
 
@@ -1137,7 +1137,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     r.source = formater(&modele.source, &[])?;
     r.echeance_depot = Some(echeance.dite());
 
-    if !engagement::stock::a_une_saisie(&st.ctx.racine, mois)? {
+    if !engagement::stock::a_une_saisie(&st.ctx.racine, Mois::lire(mois)?)? {
         r.etape = A_SAISIR.into();
         r.detail = format!(
             "Aucun engagement saisi pour {}. S'il n'y a eu aucun cachet, une DSN « néant » se dépose quand même : le mois s'écrit vide, puis se dépose.",

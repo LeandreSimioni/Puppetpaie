@@ -812,7 +812,7 @@ fn engagements_de(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<EngagementAu
             continue;
         }
         let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), Jour::du_texte(&engagement::debut_brut(&o.brut))) else { continue };
-        let mois = Mois::lire(o.premier_mois())?;
+        let mois = o.premier_mois();
         v.push(EngagementAuChoix { engagement: EngagementVise { mois, salarie: salarie.to_string(), debut }, nom: engagement::etats::qui_de(ctx, &o) });
     }
     v.sort_by(|a, b| b.engagement.debut.cmp(&a.engagement.debut));

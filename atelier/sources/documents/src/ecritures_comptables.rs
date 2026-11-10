@@ -49,7 +49,7 @@ fn date_et_libelle(mois: &str) -> R<(String, String)> {
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
 pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let paies = engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(mois)?, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (date, lib_mois) = date_et_libelle(mois)?;
     let jrn = plan.journal.clone();
     let zero = zero2();

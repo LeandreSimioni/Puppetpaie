@@ -462,8 +462,8 @@ struct DuMois<'a> {
 /// UN RECALCUL QUE LE MOTEUR REFUSE A LA LECTURE D'UN ENGAGEMENT VALIDE (`engagement::etats::du_mois`) : l'engagement garde
 /// sa paie validee, l'utilisateur n'en voit rien, et l'editeur le recoit comme un incident. Un incident qui ne s'ecrit pas
 /// se dit sur la sortie d'erreur.
-fn recalcul_refuse(racine: &Path, mois: &str, refus: &socle::echec::Echec) {
-    let detail = DuMois { mois, a_part: refus.a_part.as_ref() };
+fn recalcul_refuse(racine: &Path, mois: socle::mois::Mois, refus: &socle::echec::Echec) {
+    let detail = DuMois { mois: &mois.to_string(), a_part: refus.a_part.as_ref() };
     if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), &refus.phrase, None, "engagement::etats::du_mois", detail, None) {
         eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", e.phrase);
     }

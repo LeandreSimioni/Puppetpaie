@@ -106,7 +106,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois()?, e.fin_mois()?);
+    let (debut, fin) = (e.debut_mois(), e.fin_mois());
     Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
 }
 
@@ -124,7 +124,7 @@ pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     if !nat.signalement_fctu(e.motif_rupture.as_deref().filter(|m| !m.is_empty())) {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois()?, e.fin_mois()?);
+    let (debut, fin) = (e.debut_mois(), e.fin_mois());
     Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
 }
 
@@ -325,7 +325,7 @@ impl PaieAer {
     /// 20241115.txt`).
     pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
-        let (d, f) = (e.debut_mois()?, e.fin_mois()?);
+        let (d, f) = (e.debut_mois(), e.fin_mois());
         let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
         let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
         let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };

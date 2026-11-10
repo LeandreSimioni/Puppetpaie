@@ -51,7 +51,7 @@ pub fn annee_due(aujourdhui: Jour) -> Option<i32> {
 pub fn compter(ctx: &Contexte, annee: i32) -> R<usize> {
     let mut n = 0;
     for m in 1..=12 {
-        n += engagement::paies::nombre(&ctx.racine, &format!("{:04}-{:02}", annee, m))?;
+        n += engagement::paies::nombre(&ctx.racine, socle::mois::Mois::nouveau(annee, m)?)?;
     }
     Ok(n)
 }

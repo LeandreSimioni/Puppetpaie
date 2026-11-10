@@ -893,7 +893,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         // Chaque paie comptee ici l'a ete au mois de son salarie, juste avant.
         let Some(&(heures_mois, cachets_mois)) = du_mois.get(&cle) else { continue };
         let qui = prenom(&p.salarie, p.salarie.id.as_str());
-        let mois = socle::mois::Mois::en_clair(&e.mois);
+        let mois = e.mois.libelle(socle::mois::Graphie::Accentuee);
         let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
             let mut v = Valeurs::new();
             v.insert("prenom".into(), val_texte(qui.clone()));
@@ -1014,8 +1014,8 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
     let (debut, fin, _) = f;
     let mut gain = Decimal::ZERO;
     let mut jours = Decimal::ZERO;
-    for mois in socle::mois::Mois::entre(debut, fin).iter().map(socle::mois::Mois::to_string) {
-        let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, &mois, departs)? else { continue };
+    for mois in socle::mois::Mois::entre(debut, fin) {
+        let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
             if p.salarie.id.to_string() != cle || e.sans_paie() || e.nat()?.mensuelle() {

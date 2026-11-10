@@ -548,14 +548,14 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
     if !au_salarie && (!l.accepte() || crate::etats::refuse_par_un_retour(l)) {
         return;
     }
-    let mois = matches!(envoi, Envoi::Documents | Envoi::Dsn).then(|| l.mois().map(|m| m.to_string())).flatten();
+    let mois = matches!(envoi, Envoi::Documents | Envoi::Dsn).then(|| l.mois()).flatten();
     let le = l.quand().to_string();
     for v in l.versions().into_iter().flatten() {
         // La correction d'un mois passe que la DSN porte : sa version est celle de l'engagement du mois corrige.
-        let corrige = (envoi == Envoi::Dsn).then(|| v.mois.map(|m| m.to_string())).flatten().filter(|m| Some(m) != mois.as_ref());
+        let corrige = (envoi == Envoi::Dsn).then_some(v.mois).flatten().filter(|m| Some(*m) != mois);
         let (m, par) = match corrige {
-            Some(c) => (Some(c), mois.clone()),
-            None => (mois.clone(), None),
+            Some(c) => (Some(c), mois),
+            None => (mois, None),
         };
         // Un avenant : la ligne du journal le dit (`acte`), et son contrat porte son numero.
         let avenant = l
@@ -573,7 +573,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
 /// AVANT l'envoi, qui ne part pas d'un engagement a revalider (`Valide::a_revalider`).
 pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: &str, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
     let mut out = Vec::new();
-    for e in engagement::etats::du_mois(ctx, mois, departs)? {
+    for e in engagement::etats::du_mois(ctx, socle::mois::Mois::lire(mois)?, departs)? {
         let Some(v) = e.valide() else { continue };
         let brut = &*v.objet().brut;
         let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };

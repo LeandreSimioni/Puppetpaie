@@ -7,6 +7,7 @@ use droit::contexte::Contexte;
 use droit::cumul::Declare;
 use socle::date::Jour;
 use socle::echec::R;
+use socle::mois::Mois;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
@@ -38,7 +39,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         // Un contrat qui continue ici : ce que les pieces attestent s'arrete a son dernier mois verse, la suite est
         // dans les paies de ce logiciel.
         let fin = match (i.continue_apres(), c.fin.as_deref()) {
-            (Some(dernier), _) => socle::mois::Mois::lire(&dernier)?.dernier_jour(),
+            (Some(dernier), _) => dernier.dernier_jour(),
             (None, Some(fin)) => Jour::lire(fin)?,
             (None, None) => continue,
         };
@@ -88,21 +89,21 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
 /// une seule fois.
 pub struct Passe<'a> {
     ctx: &'a Contexte,
-    jusqu_au: Option<String>,
+    jusqu_au: Option<Mois>,
     salaries: Option<std::collections::BTreeSet<String>>,
     departs: &'a crate::departs::Departs,
     importes: std::cell::RefCell<Option<Vec<Declare>>>,
-    lus: std::cell::RefCell<std::collections::BTreeMap<String, Vec<Declare>>>,
+    lus: std::cell::RefCell<std::collections::BTreeMap<Mois, Vec<Declare>>>,
 }
 
 impl<'a> Passe<'a> {
     pub fn lire(
         ctx: &'a Contexte,
-        jusqu_au: Option<&str>,
+        jusqu_au: Option<Mois>,
         salaries: Option<std::collections::BTreeSet<String>>,
         departs: &'a crate::departs::Departs,
     ) -> Passe<'a> {
-        Passe { ctx, jusqu_au: jusqu_au.map(str::to_string), salaries, departs, importes: Default::default(), lus: Default::default() }
+        Passe { ctx, jusqu_au, salaries, departs, importes: Default::default(), lus: Default::default() }
     }
 
     /// TOUT ce que la compagnie a declare, trie par (debut, fin, salarie) : les engagements importes, puis les paies.
@@ -114,9 +115,9 @@ impl<'a> Passe<'a> {
         if self.importes.borrow().is_none() {
             *self.importes.borrow_mut() = Some(lire_importes(ctx)?);
         }
-        let mut groupes: Vec<(String, Vec<Declare>)> = Vec::new();
+        let mut groupes: Vec<(Mois, Vec<Declare>)> = Vec::new();
         for p in paies_courantes.into_iter().flatten() {
-            let mois = p.engagement.mois.clone();
+            let mois = p.engagement.mois;
             let i = match groupes.iter().position(|(m, _)| *m == mois) {
                 Some(i) => i,
                 None => {
@@ -128,8 +129,8 @@ impl<'a> Passe<'a> {
                 groupes[i].1.push(e);
             }
         }
-        for stem in crate::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from) {
-            if groupes.iter().any(|(m, _)| *m == stem) || self.jusqu_au.as_deref().is_some_and(|j| stem.as_str() > j) {
+        for stem in crate::stock::mois_saisis(&ctx.racine)? {
+            if groupes.iter().any(|(m, _)| *m == stem) || self.jusqu_au.is_some_and(|j| stem > j) {
                 continue;
             }
             if let Some(es) = self.lus.borrow().get(&stem) {
@@ -138,14 +139,14 @@ impl<'a> Passe<'a> {
             }
             let sien = |v: &crate::etats::Valide| self.salaries.as_ref().is_none_or(|s| v.objet().carte().salarie.as_ref().is_some_and(|c| s.contains(c.as_str())));
             let mut es = Vec::new();
-            if let Some((_, paies)) = crate::etats::validees_du_mois_parmi(ctx, &stem, self.departs, &sien)? {
+            if let Some((_, paies)) = crate::etats::validees_du_mois_parmi(ctx, stem, self.departs, &sien)? {
                 for p in &paies {
                     if let Some(e) = engagement_de_paie(ctx, p)? {
                         es.push(e);
                     }
                 }
             }
-            self.lus.borrow_mut().insert(stem.clone(), es.clone());
+            self.lus.borrow_mut().insert(stem, es.clone());
             groupes.push((stem, es));
         }
         let mut tous: Vec<Declare> = self.importes.borrow().iter().flatten().cloned().collect();

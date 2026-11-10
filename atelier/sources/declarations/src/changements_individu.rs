@@ -167,8 +167,9 @@ impl<'a> Declarations<'a> {
             let mois = &self.mois[i];
             let ctx_m = self.ctx.du_mois(mois)?;
             let mut paies = Vec::new();
-            for e in engagement::etats::du_mois(self.ctx, mois, self.departs)? {
-                if let Some(p) = e.valide().map(|v| engagement::etats::paie_declaree(&ctx_m, v.objet(), self.departs, mois)).transpose()?.flatten() {
+            let lu = socle::mois::Mois::lire(mois)?;
+            for e in engagement::etats::du_mois(self.ctx, lu, self.departs)? {
+                if let Some(p) = e.valide().map(|v| engagement::etats::paie_declaree(&ctx_m, v.objet(), self.departs, lu)).transpose()?.flatten() {
                     paies.push(p);
                 }
             }

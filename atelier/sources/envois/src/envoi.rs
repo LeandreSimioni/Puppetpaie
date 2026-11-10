@@ -178,7 +178,7 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> R<S
             volume.join(" et ")
         };
         let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut));
-        if e.a_cheval()? && !e.dernier_mois()? {
+        if e.a_cheval() && !e.dernier_mois() {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
             let fin = e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de date de fin"))?;

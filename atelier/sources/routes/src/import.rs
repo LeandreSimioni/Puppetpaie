@@ -623,7 +623,7 @@ pub(crate) fn apercu_lu(
     }
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
-    let deja_paies: HashSet<(String, String, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieLue::cle).collect();
+    let deja_paies: HashSet<(String, String, String)> = paies_historique(ctx)?.iter().map(|p| { let (m, s, c) = p.cle(); (m.to_string(), s, c) }).collect();
     let cle_de = |nir: &str| match par_nir.get(nir) {
         Some(c) => c.clone(),
         None => A_CREER.to_string(),
@@ -665,7 +665,7 @@ pub(crate) fn apercu_lu(
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
         let paie = paie_declaree(v, objet);
-        paies.push(engagement::importe::PaieLue { mois: mois.clone(), salarie: cle_de(nir), paie });
+        paies.push(engagement::importe::PaieLue { mois: socle::mois::Mois::lire(mois)?, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {
         source: source.to_string(),
@@ -866,15 +866,14 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
     let mut mois_dsn: BTreeSet<String> = BTreeSet::new();
     for x in paies {
         let le = x.paie.importe_le.as_deref();
+        let mois = x.mois.to_string();
         // Une paie declaree par une DSN et completee par un bulletin compte des deux cotes : elle a les deux sources.
         if x.paie.declare_par == Declaration::Dsn {
-            dsn.voir(Some(&x.mois), Some(&x.mois), le);
-            if !x.mois.is_empty() {
-                mois_dsn.insert(x.mois.clone());
-            }
+            dsn.voir(Some(&mois), Some(&mois), le);
+            mois_dsn.insert(mois.clone());
         }
         if x.paie.declare_par == Declaration::Bulletin || x.paie.bulletin.is_some() {
-            bulletins.voir(Some(&x.mois), Some(&x.mois), le);
+            bulletins.voir(Some(&mois), Some(&mois), le);
         }
     }
     let copies = copies_reprises(racine)?;

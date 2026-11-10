@@ -969,7 +969,7 @@ pub struct Jeu<'a> {
 fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     let p = j.paie;
     let (sal, e, sp) = (&p.salarie, &p.engagement, &p.spectacle);
-    let conv = convention_du_contrat(ent, sp.as_ref(), sal, &e.fin_mois()?)?;
+    let conv = convention_du_contrat(ent, sp.as_ref(), sal, &e.fin_mois())?;
     let n = COLONNES;
     let nat = e.nat()?;
     let permanent = nat.mensuelle();
@@ -1154,7 +1154,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         }
         long.push(')');
         long
-    } else if e.a_cheval()? {
+    } else if e.a_cheval() {
         let fin = e.fin.ok_or_else(|| socle::refus!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
         format!(" (contrat du {} au {})", e.debut.jj_mm_aaaa(), fin.jj_mm_aaaa())
     } else {
@@ -1420,7 +1420,7 @@ pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, de
             au_cachet.insert(pa.salarie.id.to_string());
         }
     }
-    Ok(Passe::lire(ctx, Some(mois), Some(au_cachet), departs))
+    Ok(Passe::lire(ctx, Some(socle::mois::Mois::lire(mois)?), Some(au_cachet), departs))
 }
 
 

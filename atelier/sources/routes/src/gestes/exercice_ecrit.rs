@@ -168,8 +168,9 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
     let origine = if propre.exists() { documents::plan_comptable::PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
     let mut mois: Vec<String> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
-        let n = socle::mois::Mois::lire(&m)?.numero();
-        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, &m).map_err(|e| e.reclasser(Classe::Refuse))? {
+        let lu = socle::mois::Mois::lire(&m)?;
+        let n = lu.numero();
+        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, lu).map_err(|e| e.reclasser(Classe::Refuse))? {
             mois.push(m);
         }
     }
@@ -220,7 +221,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
     for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
-        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, &mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
+        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, socle::mois::Mois::lire(&mois)?, None).map_err(|e| e.reclasser(Classe::Refuse))? {
             m.insert(mois, e);
         }
     }
@@ -379,7 +380,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mois = mois_de_l_annee(ctx, annee)?;
     let mut sans_dsn: Vec<String> = Vec::new();
     for m in &mois {
-        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? && !dsn_acceptee(ctx, m)? {
+        if engagement::stock::a_une_saisie(&ctx.racine, socle::mois::Mois::lire(m)?).map_err(|e| e.reclasser(Classe::Refuse))? && !dsn_acceptee(ctx, m)? {
             sans_dsn.push(m.clone());
         }
     }
@@ -406,19 +407,19 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mut fichiers_engagements: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for m in &mois {
         fichiers_engagements.insert(m.clone());
-        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? {
-            fichiers_engagements.insert(o.fichier);
+        for o in engagement::stock::objets_du_mois(&ctx.racine, socle::mois::Mois::lire(m)?).map_err(|e| e.reclasser(Classe::Refuse))? {
+            fichiers_engagements.insert(o.fichier.to_string());
         }
     }
     for f in &fichiers_engagements {
-        let s = engagement::stock::chemin(&ctx.racine, f);
+        let s = engagement::stock::chemin(&ctx.racine, socle::mois::Mois::lire(f)?);
         if s.exists() {
             entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::stock::DOSSIER, f))?);
         }
     }
     // Les paies de chaque mois de l'annee.
     for m in &mois {
-        let s = engagement::paies::chemin(&ctx.racine, m);
+        let s = engagement::paies::chemin(&ctx.racine, socle::mois::Mois::lire(m)?);
         if s.exists() {
             entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::paies::DOSSIER, m))?);
         }

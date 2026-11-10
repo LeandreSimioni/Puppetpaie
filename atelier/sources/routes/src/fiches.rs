@@ -529,7 +529,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
     // (metier, statut dit par la carte, jour, salarie)
     let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine) {
-        let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, &f)? else { continue };
+        let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
             let s = &e.saisie;
             let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
@@ -861,7 +861,7 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -
             importes.extend(i.paies().keys().cloned());
         }
     }
-    Ok(partis.chain(importes).max())
+    Ok(partis.chain(importes).max().map(|m| m.to_string()))
 }
 
 /// LA DATE QU'UN CHANGEMENT DE FICHE PROPOSE, et pourquoi : le premier jour du mois qui suit le dernier mois parti

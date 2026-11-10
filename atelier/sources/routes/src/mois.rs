@@ -453,7 +453,7 @@ pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<f64>> {
     let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
     mois.reverse();
     for m in mois {
-        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, &m.to_string())? else { continue };
+        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, m)? else { continue };
         if let Some(t) = taux_du_mois(ctx, &data)? {
             return Ok(Some(t));
         }
@@ -552,10 +552,10 @@ fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
 /// La route `saisie`.
 fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let texte_mois = mois.to_string();
-    let existe = engagement::stock::a_une_saisie(&ctx.racine, &texte_mois)?;
+    let existe = engagement::stock::a_une_saisie(&ctx.racine, mois)?;
     // Un mois neuf s'ouvre VIDE, avec le dernier taux saisi (`squelette`) ; un mois que des engagements touchent, tel qu'ils
     // le montrent.
-    let saisie = match engagement::stock::vue_du_mois(&ctx.racine, &texte_mois)? {
+    let saisie = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(vue) => vue,
         None => squelette(ctx, &texte_mois)?,
     };
@@ -598,7 +598,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         defauts,
         nouvelle_carte,
         saisie: avec_les_lignes_calculees_des_permanents(ctx, saisie)?,
-        identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, &texte_mois)?),
+        identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
     })
 }
 // ------------------------------------------------------- les jours d'un engagement
@@ -626,7 +626,7 @@ pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (String, Option<String>) {
 /// Les engagements que le mois montre (`engagement::stock::vue_du_mois`), avec la cle du salarie ; vide si aucun
 /// engagement ne le touche. Une carte qui ne nomme pas son salarie est sautee.
 pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<(IdSalarie, SaisieCarte)>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else {
+    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)? else {
         return Ok(Vec::new());
     };
     Ok(data.engagements.into_iter().filter_map(|e| Some((e.salarie.clone()?, e))).collect())
@@ -649,7 +649,7 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<(IdSalari
 fn contrats_en_cours(ctx: &Contexte, mois: &str) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
     let mut vus: HashSet<(String, String, String)> = HashSet::new();
-    for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
+    for i in engagement::importe::qui_continuent(&ctx.racine, Mois::lire(mois)?)? {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
@@ -693,7 +693,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: &str) -> R<Vec<EnCours>> {
             debut,
             fin,
             numero,
-            depuis: i.continue_apres(),
+            depuis: i.continue_apres().map(|m| m.to_string()),
             taux_cachet,
             deja_repris: false,
             engagement,
@@ -826,10 +826,9 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             }
             continue;
         }
-        for (m, p) in i.paies() {
-            let lu = |j: Option<Jour>| j.map(|j| j.iso()).filter(|j| j.starts_with(m.as_str()));
+        for (&mois_paye, p) in i.paies() {
+            let lu = |j: Option<Jour>| j.filter(|j| mois_paye.contient(j)).map(|j| j.iso());
             // Une paie d'un permanent couvre son mois, des bornes qu'elle dit, sinon du premier au dernier jour.
-            let mois_paye = Mois::lire(m)?;
             let debut = match lu(p.debut) {
                 Some(d) => d,
                 None => mois_paye.premier_jour().iso(),
@@ -997,8 +996,9 @@ pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: &str) -> R<()> {
 /// Rend la phrase qui le dit (`None` : le mois recoit des engagements) ; la route `saisie` la rend a la page, les
 /// ecritures et l'apercu d'une carte neuve refusent avec elle.
 fn ferme_aux_neufs(ctx: &Contexte, mois: &str) -> R<Option<String>> {
-    let importes = engagement::importe::du_mois(&ctx.racine, mois)?;
-    Ok(importes.iter().any(|i| i.paies().contains_key(mois)).then(|| {
+    let lu = Mois::lire(mois)?;
+    let importes = engagement::importe::du_mois(&ctx.racine, lu)?;
+    Ok(importes.iter().any(|i| i.paies().contains_key(&lu)).then(|| {
         format!(
             "Le mois de {} porte des paies importées de votre ancien logiciel : il ne reçoit pas d'engagement neuf. Finissez ce mois \
              dans l'ancien logiciel.",
@@ -1024,7 +1024,7 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: &str) 
     let Some(embauche) = ctx.entreprise.premiere_embauche.dite() else { return Ok(()) };
     if mois < embauche.iso()[..7].to_string().as_str()
         && declarations::echeance_dsn::de_la_compagnie(ctx, mois)?.passee_au(&ctx.aujourdhui)
-        && !engagement::stock::a_une_saisie(&ctx.racine, mois)?
+        && !engagement::stock::a_une_saisie(&ctx.racine, Mois::lire(mois)?)?
     {
         return Err(refus(format!(
             "{} precede la premiere embauche de la compagnie ({}) : aucune DSN n'y est due, rien ne s'y saisit. Si la \
@@ -1051,8 +1051,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     c.changements.appliquer(ctx, c.mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
     let id = ecrire_une_carte(ctx, &mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, &mois, &id)?;
-    let (k, _) = engagement::stock::designe(&ctx.racine, &mois, &id)?;
-    let vue = engagement::stock::vue_du_mois(&ctx.racine, &mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", Mois::en_clair(&mois))))?;
+    let (k, _) = engagement::stock::designe(&ctx.racine, c.mois, &id)?;
+    let vue = engagement::stock::vue_du_mois(&ctx.racine, c.mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", Mois::en_clair(&mois))))?;
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
     let a = maintenant();
@@ -1072,9 +1072,10 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
 /// LE BROUILLON QU'ECRIT L'ENGAGEMENT `id` de l'ecran de `mois` : sa vue de ce mois (`engagement::stock::Objet::vue`),
 /// lue en brouillon.
 pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: &str, id: &Identite) -> R<Brouillon> {
-    let (_, o) = engagement::stock::designe(&ctx.racine, mois, id).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let lu = Mois::lire(mois)?;
+    let (_, o) = engagement::stock::designe(&ctx.racine, lu, id).map_err(|m| m.reclasser(Classe::Refuse))?;
     let qui = engagement::etats::qui_de(ctx, &o);
-    let vue = o.vue(mois)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
+    let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))
 }
 
@@ -1103,16 +1104,17 @@ pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: &str) -> R<std::sync::MutexGu
 pub(crate) fn ecrire_une_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie: &SaisieCarte) -> R<Identite> {
     // UN ENGAGEMENT NEUF, OU LE BROUILLON QUI DEMENAGE, S'ECRIT DANS SON PREMIER MOIS (`engagement::stock::ou_s_ecrit`) : ce
     // mois-la passe les memes refus que celui de la carte, et donne ce qu'il dit par defaut.
-    let fichier = engagement::stock::ou_s_ecrit(&ctx.racine, mois, id, saisie).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let lu = Mois::lire(mois)?;
+    let fichier = engagement::stock::ou_s_ecrit(&ctx.racine, lu, id, saisie).map_err(|m| m.reclasser(Classe::Refuse))?;
     let ecrit_dans = match id {
-        Some(id) => Some(engagement::stock::designe(&ctx.racine, mois, id).map_err(|m| m.reclasser(Classe::Refuse))?.1.fichier),
+        Some(id) => Some(engagement::stock::designe(&ctx.racine, lu, id).map_err(|m| m.reclasser(Classe::Refuse))?.1.fichier),
         None => None,
     };
-    if fichier != mois && ecrit_dans.as_deref() != Some(fichier.as_str()) {
-        refuser_si_importe(ctx, &fichier)?;
-        refuser_si_clos(ctx, &fichier)?;
+    if fichier != lu && ecrit_dans != Some(fichier) {
+        refuser_si_importe(ctx, &fichier.to_string())?;
+        refuser_si_clos(ctx, &fichier.to_string())?;
     }
-    let id = engagement::stock::ecrire_la_carte(ctx, mois, id, saisie, &squelette(ctx, &fichier)?).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let id = engagement::stock::ecrire_la_carte(ctx, lu, id, saisie, &squelette(ctx, &fichier.to_string())?).map_err(|m| m.reclasser(Classe::Refuse))?;
     // UN MOIS FAIT EN DEMO, retravaille dans la compagnie gardee : il cesse d'etre « de demo » (`suppression::sortir_de_la_demo`).
     crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(id)
@@ -1125,13 +1127,13 @@ pub(crate) fn ecrire_une_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>
 /// d'un arret venu apres elle (`engagement::maintien::indemnites_a_dire`).
 pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Option<Echec>> {
     let tous = &data.engagements;
-    let mois = data.mois.to_string();
+    let mois = data.mois;
     let a_dire = |e: &SaisieCarte| -> Option<Echec> {
         if !e.est_validee() {
             return None;
         }
         // Ce qui empeche de les lire manque aussi a l'engagement.
-        match engagement::maintien::indemnites_a_dire(ctx, e, &mois) {
+        match engagement::maintien::indemnites_a_dire(ctx, e, mois) {
             Ok(manque) => manque.map(socle::echec::refus),
             Err(m) => Some(m),
         }
@@ -1305,11 +1307,11 @@ pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, e: Echec) -> Ech
 fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCours>) -> R<(VueDuMois, Vec<Identite>)> {
     let texte = mois.to_string();
     // Un mois qu'aucun engagement ne touche encore se calcule vide.
-    let mut v = match engagement::stock::vue_du_mois(&ctx.racine, &texte)? {
+    let mut v = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(v) => v,
         None => VueDuMois::vide(mois),
     };
-    let ids = engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, &texte)?);
+    let ids = engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?);
     if ids.len() != v.engagements.len() {
         return Err(socle::refus!("{} : {} identités pour {} engagements.", Mois::en_clair(&texte), ids.len(), v.engagements.len()));
     }
@@ -1356,6 +1358,7 @@ pub(crate) struct PaieMontree {
 /// L'ecran rend chaque engagement valide tel que le moteur le lui a montre (`valide` pose) : il retrouve le sien, sur le
 /// disque, par son salarie et son numero de contrat (ecrit a la validation).
 pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> R<Vec<PaieMontree>> {
+    let mois = Mois::lire(mois)?;
     let disque = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let etats = if disque.is_some() { engagement::etats::du_mois(ctx, mois, &departs)? } else { Vec::new() };
@@ -1367,7 +1370,7 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> 
         if e.est_validee() {
             let sien = (e.salarie.clone(), e.numero_dit().map(String::from));
             // Un mois d'apres le present n'a pas encore de paie ecrite : l'engagement valide s'y calcule pour l'ecran.
-            let apres_le_present = mois > engagement::etats::mois_present(ctx).as_str();
+            let apres_le_present = mois > engagement::etats::mois_present(ctx);
             let mut trouve = None;
             for (j, x) in etats.iter().enumerate() {
                 let a_venir = apres_le_present && x.paie_ecrite(mois)?.is_none();
@@ -1427,7 +1430,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
-    if !e.dernier_mois()? {
+    if !e.dernier_mois() {
         return Ok(None);
     }
     Ok(Some(Rupture { porte, fin: Some(match e.fin {
@@ -1457,7 +1460,7 @@ fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: &str) -> R<Vec<&'static s
 /// Un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`) a ete signe ailleurs : il
 /// n'appelle que la case de son numero deja declare en DSN (`NUMERO_DIT`).
 fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Vec<&'static str>> {
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &e.debut.iso(), &e.mois)? {
+    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &e.debut.iso(), e.mois)? {
         return numero_a_dire(ctx, &e.salarie, &e.debut.iso());
     }
     if !engagement::contrat_a_signer(&ctx.racine, e)? {
@@ -1484,7 +1487,7 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
 fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: &str) -> R<Vec<&'static str>> {
     let debut = e.debut_lu();
     let Some(cle) = &e.salarie else { return Ok(Vec::new()) };
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
+    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, Mois::lire(mois)?)? {
         return numero_a_dire(ctx, cle, &debut);
     }
     if e.nature.is_none() {
@@ -1655,7 +1658,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         },
         None => None,
     };
-    let mois_du_contrat = e.mois_du_contrat()?;
+    let mois_du_contrat: Vec<String> = e.mois_du_contrat().iter().map(Mois::to_string).collect();
     // Le taux du cachet, tel que le contrat l'imprime : celui de la premiere ligne a l'unite « cachet » ; sans cachet, la
     // valeur ecrite, telle quelle, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
     let mut premier_cachet = None;
@@ -1696,7 +1699,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             Some(f) => format!("{} → {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None => format!("{} →", e.debut.jj_mm_aaaa()),
         };
-        if e.a_cheval()? {
+        if e.a_cheval() {
             bornes.push_str(&format!(" (paie du {} au {})", e.debut_periode()?.jj_mm_aaaa(), e.fin_periode()?.jj_mm_aaaa()));
         }
         m.push(bornes);
@@ -1721,11 +1724,11 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             t.push_str(&format!(" · n° {}", n));
         }
         if e.fin.is_some() {
-            if !e.premier_mois()? {
+            if !e.premier_mois() {
                 t.push_str(&format!(" — en cours depuis {}", Mois::en_clair(&e.debut.iso()[..7])));
             }
-            if !e.dernier_mois()? {
-                t.push_str(&format!(" — se poursuit en {}", Mois::en_clair(&e.debut_mois()?.mois_civil().suivant().to_string())));
+            if !e.dernier_mois() {
+                t.push_str(&format!(" — se poursuit en {}", Mois::en_clair(&e.debut_mois().mois_civil().suivant().to_string())));
             }
         }
         t
@@ -1744,9 +1747,9 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         debut: e.debut,
         fin: e.fin,
         contrat: ContratVu {
-            premier_mois: e.premier_mois()?,
-            dernier_mois: e.dernier_mois()?,
-            a_cheval: e.a_cheval()?,
+            premier_mois: e.premier_mois(),
+            dernier_mois: e.dernier_mois(),
+            a_cheval: e.a_cheval(),
             chevrons: chevrons_dits(e)?,
             sans_paie: e.sans_paie(),
             depuis: mois_du_contrat.first().cloned().ok_or_else(trop_courte)?,
@@ -1808,9 +1811,9 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
         Some(f) => format!("Contrat du {} au {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
         None => format!("Contrat du {}, sans date de fin", e.debut.jj_mm_aaaa()),
     };
-    let mois = e.mois_du_contrat()?;
-    let premier = e.debut_mois()?;
-    let avant = match e.premier_mois()? {
+    let mois: Vec<String> = e.mois_du_contrat().iter().map(Mois::to_string).collect();
+    let premier = e.debut_mois();
+    let avant = match e.premier_mois() {
         true => None,
         false => {
             let voisin = premier.plus_jours(-1)?.iso()[..7].to_string();
@@ -1820,7 +1823,7 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
             })
         }
     };
-    let apres = (!e.dernier_mois()?).then(|| {
+    let apres = (!e.dernier_mois()).then(|| {
         let suite = match (&e.fin, mois.last()) {
             (Some(_), Some(j)) => format!("se poursuit jusqu'en {}", clair(j)),
             _ => "se poursuit".to_string(),
@@ -2093,7 +2096,7 @@ fn nom_prenom(nom: Option<&str>, prenom: Option<&str>) -> Option<String> {
 /// `engagement::conges::reprise_conges`). `brut` : l'engagement tel que la saisie l'ecrit ; `v` : sa vue (`vue_paie`).
 fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie) -> R<()> {
     let debut = v.debut.iso();
-    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
+    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, Mois::lire(mois)?)? {
         return Ok(());
     }
     let qui = match nom_prenom(v.salarie.nom.as_deref(), v.salarie.prenom.as_deref()) {

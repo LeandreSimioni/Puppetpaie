@@ -495,7 +495,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     let jour = d.jour;
     let mois = &le_mois.to_string();
     let jour_iso = jour.iso();
-    let debuts: BTreeSet<String> = engagement::stock::objets_du_mois(d.racine, mois)
+    let debuts: BTreeSet<String> = engagement::stock::objets_du_mois(d.racine, le_mois)
         ?
         .iter()
         .filter(|o| !o.importe_seul())
@@ -562,7 +562,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     } else {
         // Les documents partent apres la validation : la paie partie d'un engagement revalide apres l'echeance repart, en
         // bulletin rectificatif, a l'instant de sa revalidation.
-        let revalide = engagement::stock::objets_du_mois(d.racine, mois)
+        let revalide = engagement::stock::objets_du_mois(d.racine, le_mois)
             ?
             .iter()
             .filter_map(|o| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect::<String>()))
@@ -830,11 +830,11 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
 /// manque un fait attend qu'on le complete, et un refus du moteur arrete le pas, qui le dit.
 fn valider_les_engagements(d: &HorlogeFictive, mois: &str, jusqu_au: Jour, quoi: &str, quand: &str) -> Vec<String> {
     pas(d, quoi, quand, |ctx| {
-        let objets = engagement::stock::objets_du_mois(&ctx.racine, mois)?;
-        let ids = engagement::stock::identites(&objets);
         let le_mois = socle::mois::Mois::lire(mois)?;
+        let objets = engagement::stock::objets_du_mois(&ctx.racine, le_mois)?;
+        let ids = engagement::stock::identites(&objets);
         // Un mois sans saisie n'a rien a valider.
-        let Some(vue) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(false) };
+        let Some(vue) = engagement::stock::vue_du_mois(&ctx.racine, le_mois)? else { return Ok(false) };
         let manques = crate::mois::manques_de_la_saisie(ctx, &vue);
         let mut fait = false;
         for ((o, id), manque) in objets.iter().zip(ids).zip(manques) {
@@ -880,7 +880,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
 
 /// Le jour et l'heure ou l'engagement de ce contrat a ete valide en dernier (`valide.le`) : `AAAA-MM-JJTHH:MM:SS`.
 fn revalide_le(ctx: &Contexte, mois: &str, salarie: &str, debut: &str) -> R<Option<String>> {
-    Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
+    Ok(engagement::stock::objets_du_mois(&ctx.racine, socle::mois::Mois::lire(mois)?)?.into_iter().find_map(|o| {
         let b = &*o.brut;
         let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == debut;
         sien.then(|| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect()))?
@@ -966,7 +966,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
 /// fait dont l'empreinte change se rejoue.
 fn empreinte_du_mois(racine: &Path, mois: &str) -> R<String> {
     // Un mois sans saisie, ou sans imprevus, ou sans fiche de suivi, a une empreinte : celle de ce qu'il n'a pas.
-    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None)?);
+    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, socle::mois::Mois::lire(mois)?, None)?);
     let mut tout = saisie.into_bytes();
     for f in [engagement::imprevus::dossier(racine).join(format!("{}.json", mois)), engagement::imprevus::dossier(racine).join("obligations.json")] {
         let octets = if socle::fichiers::existe(&f) { Some(std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?) } else { None };

@@ -690,7 +690,7 @@ fn meme_imprevu(a: &Imprevu, b: &Imprevu) -> R<bool> {
 
 /// Le fichier du magasin du mois de `jour` : tous les imprevus qu'il range.
 fn le_fichier(ctx: &Contexte, jour: &Jour) -> R<Vec<Imprevu>> {
-    magasin(imprevus::du_fichier(&ctx.racine, &jour.mois_civil().to_string()))
+    magasin(imprevus::du_fichier(&ctx.racine, jour.mois_civil()))
 }
 
 /// L'arret de ce salarie a ce dernier jour travaille : son indice, le fichier de son mois (tous imprevus compris), et
@@ -739,7 +739,7 @@ fn la_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<(usize, Vec<Impre
 /// Ecrit le fichier du mois de `jour` du magasin des imprevus (`imprevus/AAAA-MM.json`) : les arrets ET les suspensions
 /// qu'il range, tels que la liste les donne.
 fn ecrire(ctx: &Contexte, jour: &Jour, liste: Vec<Imprevu>) -> R<()> {
-    imprevus::ecrire(&ctx.racine, &jour.mois_civil().to_string(), liste).map_err(|m| m.reclasser(Classe::Disque))
+    imprevus::ecrire(&ctx.racine, jour.mois_civil(), liste).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// Ce qui est parti d'un imprevu (`obligations::ce_qui_est_parti` : les envois du journal, tels qu'il les lit).
@@ -1223,7 +1223,7 @@ impl Dit {
 
 /// Un cachet paye pendant l'imprevu : son mois tel que l'ecran le lit (« de novembre 2026 »), et chacun de ses jours.
 fn cachet_dit(c: imprevus::CachetPaye) -> R<Cachet> {
-    let mois_dit = crate::regularisation::de_mois_en_clair(&c.mois);
+    let mois_dit = crate::regularisation::de_mois_en_clair(&c.mois.to_string());
     let mut jours = Vec::new();
     for iso in &c.dates {
         let le = format!("{} le {}", c.libelle, clair(iso)?);
@@ -1903,7 +1903,7 @@ fn arret_oublier(ctx: &Contexte, c: &ChargeArretOublier) -> R<ReponseArret> {
 /// paies ecrites ; refus si aucun engagement ne le touche.
 fn validees(ctx: &Contexte, mois: &str) -> R<(VueDuMois, Vec<Paie>)> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    engagement::etats::validees_du_mois(ctx, mois, &departs)?.ok_or_else(|| refus(format!("Aucune saisie pour {}.", mois)))
+    engagement::etats::validees_du_mois(ctx, Mois::lire(mois)?, &departs)?.ok_or_else(|| refus(format!("Aucune saisie pour {}.", mois)))
 }
 
 /// L'engagement avec ses bornes : un contrat aux cachets ne les ecrit pas, il commence son premier jour travaille et
@@ -2499,12 +2499,11 @@ pub(crate) struct FinASignaler {
 pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     // Un signalement de fin ne se doit que pour un engagement valide, lu tel qu'il est ecrit (`tels_qu_ecrits`) : un
     // brouillon ne part pas, et ce qui ne fait que lire ne recalcule rien. Un mois sans saisie n'a aucune fin.
-    let texte = mois.to_string();
-    let Some(saisie) = engagement::stock::vue_du_mois(&ctx.racine, &texte)? else {
+    let Some(saisie) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else {
         return Ok(Vec::new());
     };
     let journal = envois::journal::lu(&ctx.racine)?;
-    let etats = engagement::etats::tels_qu_ecrits(ctx, &texte, &journal.departs)?;
+    let etats = engagement::etats::tels_qu_ecrits(ctx, mois, &journal.departs)?;
     let mut out = Vec::new();
     for (i, carte) in saisie.engagements.iter().enumerate() {
         if etats.get(i).and_then(|x| x.valide()).is_none() {

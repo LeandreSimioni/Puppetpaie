@@ -162,7 +162,7 @@ fn derniers_pris(ctx: &Contexte, annee: i32, departs: &Departs) -> R<HashMap<IdS
 }
 
 /// La meme, sans l'engagement `sauf` (son fichier et son rang) : celui qui recoit un nouveau numero.
-fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(&str, usize)>, departs: &Departs) -> R<HashMap<IdSalarie, i64>> {
+fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Mois, usize)>, departs: &Departs) -> R<HashMap<IdSalarie, i64>> {
     let mut pris: HashMap<IdSalarie, i64> = HashMap::new();
     let mut noter = |cle: IdSalarie, numero: &NumeroContrat| {
         if let Some((a, seq)) = numero.annee_et_rang() {
@@ -173,7 +173,7 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(&str, usize)>, d
         }
     };
     for o in stock::objets(&ctx.racine)? {
-        if sauf == Some((o.fichier.as_str(), o.rang)) {
+        if sauf == Some((o.fichier, o.rang)) {
             continue;
         }
         let (Some(cle), Some(n)) = (o.carte().salarie.clone(), NumeroContrat::du_texte(o.carte().numero.as_deref())?) else { continue };
@@ -220,10 +220,10 @@ fn porte_par_un_envoi(o: &Objet, cle: &str, n: &str, departs: &Departs) -> bool 
 /// Le contrat importe que `o` continue porte le sien : c'est le meme contrat, pas une copie -- le contrat d'usage qui
 /// continue ici (`importe::continue_par`).
 fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &str) -> R<bool> {
-    let continue_ = crate::importe::continue_par(&ctx.racine, o.carte())?.map(|i| (i.objet().fichier.clone(), i.objet().rang));
+    let continue_ = crate::importe::continue_par(&ctx.racine, o.carte())?.map(|i| (i.objet().fichier, i.objet().rang));
     Ok(stock::objets(&ctx.racine)?.into_iter().any(|x| {
-        (x.fichier.as_str(), x.rang) < (o.fichier.as_str(), o.rang)
-            && continue_.as_ref() != Some(&(x.fichier.clone(), x.rang))
+        (x.fichier, x.rang) < (o.fichier, o.rang)
+            && continue_ != Some((x.fichier, x.rang))
             && x.carte().numero.as_deref() == Some(n)
     }))
 }
@@ -269,7 +269,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: &str, departs: 
     }
     let annee = socle::date::Jour::lire(&debut)?.an;
     // Aucun numero pris cette annee : le premier sera le 1.
-    let pris = derniers_pris_sauf(ctx, annee, Some((o.fichier.as_str(), o.rang)), departs)?;
+    let pris = derniers_pris_sauf(ctx, annee, Some((o.fichier, o.rang)), departs)?;
     let dernier: i64 = pris.get(&cle).into_iter().copied().sum();
     let numero = former(&fiche, annee, dernier + 1)?;
     let e = o.brut_mut();

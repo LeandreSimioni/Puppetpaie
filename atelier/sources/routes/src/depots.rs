@@ -492,7 +492,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     // Les engagements valides du mois (rien ne part d'un engagement en saisie), vus comme des embauches, sans relire leur
     // paie.
     let journal = envois::journal::lu(&ctx.racine)?;
-    let data = engagement::etats::validees_du_mois(ctx, &mois, &journal.departs)?.map(|(d, _)| d)
+    let data = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(&mois)?, &journal.departs)?.map(|(d, _)| d)
         .ok_or_else(|| erreur(Classe::FichierAbsent, format!("Aucune saisie pour {}.", mois)))?;
     let paies: Vec<Paie> = {
         let engs = engagement::engagements_de_la_saisie(ctx, &data)?;
@@ -1098,7 +1098,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         let Some(j) = zone(e, "date_embauche")?.and_then(jour_jjmmaaaa) else { continue };
         let m_e = j.mois_civil().to_string();
         if !mois_vus.contains(&m_e) {
-            for etat in engagement::etats::tels_qu_ecrits(ctx, &m_e, &departs)? {
+            for etat in engagement::etats::tels_qu_ecrits(ctx, j.mois_civil(), &departs)? {
                 let Some(v) = etat.valide() else { continue };
                 let brut = &*v.objet().brut;
                 let Some(cle) = &brut.saisie.carte.salarie else { continue };

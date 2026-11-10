@@ -191,7 +191,7 @@ pub(super) fn maintenant() -> String {
 /// L'ENGAGEMENT QU'UNE CARTE MONTRE : celui que designe son identite, que le moteur lui a rendue
 /// (`engagement::stock::identites`). Refus : une identite que l'ecran de `mois` ne montre pas.
 fn designe(ctx: &Contexte, mois: &str, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
-    engagement::stock::designe(&ctx.racine, mois, id).map_err(|e| e.reclasser(Classe::Refuse))
+    engagement::stock::designe(&ctx.racine, Mois::lire(mois)?, id).map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 
@@ -215,11 +215,11 @@ pub(crate) struct ChargeValider {
 /// geste aussi.
 pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Validation> {
     let ChargeValider { mois, engagement: id } = carte;
-    let mois = &mois.to_string();
-    let _verrou = crate::mois::avant_d_ecrire(ctx, mois)?;
+    let texte = &mois.to_string();
+    let _verrou = crate::mois::avant_d_ecrire(ctx, texte)?;
     let brouillon = engagement::stock::Brouillon::ouvrir(&ctx.racine);
     // Ce qui se valide est le brouillon ecrit, lu en sa forme (`engagement::carte::Brouillon`).
-    crate::mois::brouillon_ecrit(ctx, mois, &id)?;
+    crate::mois::brouillon_ecrit(ctx, texte, &id)?;
     let (i, o) = engagement::stock::designe(&ctx.racine, mois, &id)?;
     if o.est_valide() {
         return Err(refus(format!("{} : cet engagement est déjà validé ; il se modifie d'un geste. Rien n'est écrit.", engagement::etats::qui_de(ctx, &o))));
@@ -289,7 +289,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
         }
     };
     brouillon.ecrire()?;
-    let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
+    let vue = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)?;
     if let Some(e) = vue.as_ref().and_then(|d| d.engagements.get(i)) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
@@ -341,12 +341,13 @@ fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, 
 /// elle s'ecrit (`Issue::Ecrite`).
 fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
     let qui = engagement::etats::qui_de(ctx, o);
-    let vue = o.vue(mois)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
+    let lu = Mois::lire(mois)?;
+    let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;
-    changements.appliquer(ctx, Mois::lire(mois)?, &mut carte, |_| qui.clone()).map_err(|e| e.reclasser(Classe::Refuse))?;
-    engagement::etats::modifier(ctx, mois, i)?;
-    engagement::stock::poser_la_saisie(ctx, mois, i, &carte.en_carte(), jour).map_err(|e| e.reclasser(Classe::Refuse))?;
-    if !engagement::etats::a_revalider_rouvert(ctx, mois, i)? {
+    changements.appliquer(ctx, lu, &mut carte, |_| qui.clone()).map_err(|e| e.reclasser(Classe::Refuse))?;
+    engagement::etats::modifier(ctx, lu, i)?;
+    engagement::stock::poser_la_saisie(ctx, lu, i, &carte.en_carte(), jour).map_err(|e| e.reclasser(Classe::Refuse))?;
+    if !engagement::etats::a_revalider_rouvert(ctx, lu, i)? {
         return Ok(Issue::Rien);
     }
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
@@ -361,8 +362,8 @@ fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement:
             return Err(erreur(Classe::ModificationNonDeclarable, texte));
         }
     }
-    let v = engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| {
-        match engagement::stock::vue_du_mois(&ctx.racine, mois) {
+    let v = engagement::etats::valider(ctx, lu, i, &departs).map_err(|m| {
+        match engagement::stock::vue_du_mois(&ctx.racine, lu) {
             Ok(Some(data)) => crate::mois::refus_du_calcul(ctx, &data, m),
             Ok(None) => m,
             Err(lu) => lu,
@@ -416,8 +417,8 @@ pub(crate) fn ce_que_le_changement_entraine(ctx: &Contexte, v: &engagement::etat
                     out.push(phrase);
                 }
             }
-            ARefaire::Bulletin { mois, .. } => out.push(un_bulletin_rectificatif(&mois)),
-            ARefaire::Dsn { mois, .. } => out.push(la_dsn_qui_change(&mut m, ctx, &mois)?),
+            ARefaire::Bulletin { mois, .. } => out.push(un_bulletin_rectificatif(&mois.to_string())),
+            ARefaire::Dsn { mois, .. } => out.push(la_dsn_qui_change(&mut m, ctx, &mois.to_string())?),
         }
     }
     Ok(out)
@@ -465,7 +466,7 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
             Err(m) => Err(m),
         };
     }
-    let n = engagement::etats::desactiver(ctx, mois, i, &departs)?;
+    let n = engagement::etats::desactiver(ctx, charge.mois, i, &departs)?;
     let a_faire = a_faire_en_phrases(&n.a_refaire(&departs));
     let phrase = if a_faire.is_empty() { "Engagement non actif.".to_string() } else { format!("Engagement non actif. À faire : {}.", a_faire.join(", ")) };
     Ok(Retrait { phrase, avertissement: None })
@@ -476,7 +477,7 @@ pub(crate) fn a_faire_en_phrases(a: &[engagement::etats::ARefaire]) -> Vec<Strin
     use engagement::etats::ARefaire;
     a.iter()
         .filter_map(|x| match x {
-            ARefaire::Dsn { mois, .. } => Some(format!("DSN de {} à corriger", socle::mois::Mois::en_clair(mois))),
+            ARefaire::Dsn { mois, .. } => Some(format!("DSN de {} à corriger", mois.libelle(socle::mois::Graphie::Accentuee))),
             _ => None,
         })
         .collect()

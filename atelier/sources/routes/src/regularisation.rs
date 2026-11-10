@@ -219,17 +219,18 @@ pub(crate) fn refus_non_declarable(
     };
     let meme_salarie = b_apres.saisie.carte.salarie.as_ref() == Some(&cle);
     for d in departs.de(&cle, &numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
-        let Some(mois) = d.mois.as_deref() else { continue };
-        if meme_salarie && apres.couvre(mois)? {
+        let Some(lu) = d.mois else { continue };
+        let mois = &lu.to_string();
+        if meme_salarie && apres.couvre(lu)? {
             continue;
         }
-        if !matches!(modification_de_l_engagement(m, ctx, socle::mois::Mois::lire(mois)?)?, Some(DsnDeposee::Corrigee { .. })) {
+        if !matches!(modification_de_l_engagement(m, ctx, lu)?, Some(DsnDeposee::Corrigee { .. })) {
             continue;
         }
         let nom = cle.to_string();
         let debut = Jour::lire(&engagement::debut_brut(&b_avant)).map_err(|m| m.reclasser(Classe::Illisible))?.jj_mm_aaaa();
-        let dsn = match departs.de(&cle, &numero).iter().find(|x| x.envoi == engagement::departs::Envoi::Dsn && x.mois.as_deref() == Some(mois)).and_then(|x| x.par.clone()) {
-            Some(par) => format!("dans la DSN {}, qui a porté la correction {}", de_mois_en_clair(&par), de_mois_en_clair(mois)),
+        let dsn = match departs.de(&cle, &numero).iter().find(|x| x.envoi == engagement::departs::Envoi::Dsn && x.mois == Some(lu)).and_then(|x| x.par) {
+            Some(par) => format!("dans la DSN {}, qui a porté la correction {}", de_mois_en_clair(&par.to_string()), de_mois_en_clair(mois)),
             None => format!("dans la DSN {}, qui ne se remplace plus", de_mois_en_clair(mois)),
         };
         return Ok(Some(format!(
@@ -352,22 +353,23 @@ pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Correcti
     if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok((Vec::new(), Vec::new()));
     }
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok((Vec::new(), Vec::new())) };
+    let lu = socle::mois::Mois::lire(mois)?;
+    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, lu)? else { return Ok((Vec::new(), Vec::new())) };
     let mut a_porter = Vec::new();
     for d in declarations::produire_regularisations::corrections_dues(ctx, mois, "9999-12", &departs)? {
         let apres = d.valide.paie(ctx, &data, d.rang)?;
         a_porter.push(avant_apres(mois, d.declarees.last().map(|x| &x.paie), &apres)?);
     }
     let mut portees = Vec::new();
-    for e in engagement::etats::du_mois(ctx, mois, &departs)? {
+    for e in engagement::etats::du_mois(ctx, lu, &departs)? {
         let Some(v) = e.valide() else { continue };
-        let declarees = engagement::etats::paies_declarees(ctx, v.objet(), &departs, mois, "9999-12").map_err(|e| e.reclasser(Classe::MoisNonRegularisable))?;
+        let declarees = engagement::etats::paies_declarees(ctx, v.objet(), &departs, lu, socle::mois::Mois::lire("9999-12")?).map_err(|e| e.reclasser(Classe::MoisNonRegularisable))?;
         for (i, x) in declarees.iter().enumerate() {
-            let Some(par) = &x.par else { continue };
+            let Some(par) = x.par.map(|p| p.to_string()) else { continue };
             let mut c = avant_apres(mois, i.checked_sub(1).map(|j| &declarees[j].paie), &x.paie)?;
             c.portee_par = Some(par.clone());
-            c.portee_par_dit = Some(de_mois_en_clair(par));
-            c.portee_dit = format!("portée par la DSN {}", de_mois_en_clair(par));
+            c.portee_par_dit = Some(de_mois_en_clair(&par));
+            c.portee_dit = format!("portée par la DSN {}", de_mois_en_clair(&par));
             portees.push(c);
         }
     }
@@ -380,10 +382,11 @@ pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: &str) -> R<(Vec<Correcti
 /// correction n'est plus due (`engagement::etats::correction_due`) ; sinon la DSN qui portera la suivante
 /// (`dsn_qui_porte`). Le versement de l'ecart d'un rectificatif est date du mois de cette DSN.
 pub(crate) fn dsn_qui_porte_la_correction(ctx: &Contexte, v: &engagement::etats::Valide, departs: &engagement::departs::Departs, mois: &str) -> R<String> {
-    if engagement::etats::correction_due(ctx, v, departs, mois, "9999-12")?.is_none() {
-        let declarees = engagement::etats::paies_declarees(ctx, v.objet(), departs, mois, "9999-12")?;
-        if let Some(par) = declarees.last().and_then(|d| d.par.clone()) {
-            return Ok(par);
+    let (lu, tous) = (socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire("9999-12")?);
+    if engagement::etats::correction_due(ctx, v, departs, lu, tous)?.is_none() {
+        let declarees = engagement::etats::paies_declarees(ctx, v.objet(), departs, lu, tous)?;
+        if let Some(par) = declarees.last().and_then(|d| d.par) {
+            return Ok(par.to_string());
         }
     }
     compagnie::etat_dsn::dsn_qui_porte(ctx, mois)

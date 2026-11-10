@@ -471,7 +471,7 @@ pub(crate) fn cle_de(p: &Paie) -> String {
 /// ecrites, sans numeros ; un mois sans saisie n'a rien.
 pub(crate) fn charger(ctx: &Contexte, mois: &str) -> R<(engagement::saisie::VueDuMois, Vec<Paie>)> {
     let vide = engagement::saisie::VueDuMois::vide(socle::mois::Mois::lire(mois).map_err(|m| m.reclasser(Classe::Illisible))?);
-    Ok(match engagement::etats::validees_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
+    Ok(match engagement::etats::validees_du_mois(ctx, vide.mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
         Some(x) => x,
         None => (vide, Vec::new()),
     })
@@ -497,8 +497,8 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
 /// jours que le bulletin imprime) et les jours travailles. `None` sans bulletin qui donne ses jours et ses cachets : le
 /// mois reste parmi les manquants (rien ne se devine).
-fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: &str) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
-    let Some(p) = i.paies().get(mois) else { return Ok(None) };
+fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
+    let Some(p) = i.paies().get(&mois) else { return Ok(None) };
     let Some(brut) = p.brut.map(eur2) else { return Ok(None) };
     let mut dates: Vec<String> = Vec::new();
     for d in &p.dates {
@@ -532,7 +532,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: &str) -> 
 fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> {
     let eng = &p.engagement;
     let cle = cle_de(p);
-    let mois_du = eng.mois_du_contrat()?;
+    let mois_du = eng.mois_du_contrat();
     let debut = eng.debut.iso();
     let mut manquants: Vec<String> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
@@ -542,7 +542,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
     let mut bruts = Decimal::new(0, 2);
     let mut jours = 0i64;
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
-    for m in mois_du.iter().filter(|m| **m < eng.mois) {
+    for &m in mois_du.iter().filter(|m| **m < eng.mois) {
         let ecrite = match eng.numero.as_deref() {
             Some(n) => engagement::etats::paie_ecrite_de(ctx, m, &cle, n, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Illisible))?).map_err(|e| e.reclasser(Classe::Illisible))?,
             None => None,
@@ -554,7 +554,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
                     lignes.extend(l);
                     jours += j;
                 }
-                None => manquants.push(m.clone()),
+                None => manquants.push(m.to_string()),
             }
             continue;
         };
@@ -562,13 +562,13 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
         let (brut_du_mois, jours_du_mois) = (eur2(paie.brut), paie.engagement.jours);
         bruts += brut_du_mois;
         jours += jours_du_mois;
-        mois_payes.push(MoisPaye { fin: socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?, jours: jours_du_mois, brut: brut_du_mois });
+        mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois });
     }
     let brut = bruts + eur2(p.brut);
     // Un contrat paye au mois n'a ni cachet ni date jouee : son certificat porte ses bornes, et ses jours travailles et son
     // brut mois par mois (`conges::lignes_du_mois`) ; le 31 mars le coupe entre deux mois.
     if eng.nat()?.mensuelle() {
-        let fin_du_mois = socle::mois::Mois::lire(&eng.mois).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
+        let fin_du_mois = eng.fin_mois();
         mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: eur2(p.brut) });
         let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: 0, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
         return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
@@ -627,9 +627,9 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
             continue;
         }
         let (cle, debut) = (cle_de(p), p.engagement.debut.iso());
-        if !p.engagement.dernier_mois()? {
+        if !p.engagement.dernier_mois() {
             poser(&mut dus, cle, debut, None);
-        } else if !p.engagement.a_cheval()? {
+        } else if !p.engagement.a_cheval() {
             poser(&mut dus, cle, debut, Some(paie_cs(p)?));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;
@@ -775,7 +775,7 @@ fn mois_puppetpaie(
     if categories.contains(CERTIFICATS_CS) && ecrit {
         let (pour_cs, avert) = certificats_dus(ctx, &paies)?;
         d.avertissements.extend(avert.into_iter().map(|a| format!("{} : {}", lib, a)));
-        let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
+        let ecrits = engagement::etats::numeros_des_documents(ctx, socle::mois::Mois::lire(mois)?, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
         let trouve = |cle: &str, debut: &str| pour_cs.iter().find(|(c, de, _)| c == cle && de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
         let mut tous: Vec<i64> = Vec::new();
@@ -944,7 +944,7 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<String>, p: &Periode, d: &mut 
     let (mut pages, mut manquent): (Vec<Page>, Vec<String>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
-        let (cle, mois, fichier) = (x.salarie.clone(), x.mois.clone(), b.fichier.clone());
+        let (cle, mois, fichier) = (x.salarie.clone(), x.mois.to_string(), b.fichier.clone());
         let page = b.page;
         if page < 1 {
             continue;

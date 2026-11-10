@@ -53,7 +53,7 @@ struct Entree {
 }
 
 /// Le fichier des paies de `mois`, pour le lire tel qu'il est sur le disque (l'archive de l'exercice).
-pub fn chemin(racine: &std::path::Path, mois: &str) -> std::path::PathBuf {
+pub fn chemin(racine: &std::path::Path, mois: Mois) -> std::path::PathBuf {
     stock::chemin_dans(racine, Dossier::Paies, mois)
 }
 
@@ -65,12 +65,12 @@ fn cle(o: &Objet) -> Option<(String, String)> {
 
 /// LA LECTURE D'UN FICHIER DE PAIES : celui de `mois`, en sa forme, tel que le geste l'a lu ou que le brouillon le tient
 /// (`stock::lire_dans` : la meme forme tant que ses octets sont les memes).
-fn fichier(racine: &std::path::Path, mois: &str) -> R<Option<Arc<FichierDesPaies>>> {
+fn fichier(racine: &std::path::Path, mois: Mois) -> R<Option<Arc<FichierDesPaies>>> {
     stock::lire_dans(racine, mois)
 }
 
 /// L'entree de l'engagement `o` dans le fichier de `mois`, telle qu'elle est ecrite.
-fn entree(o: &Objet, mois: &str) -> R<Option<Entree>> {
+fn entree(o: &Objet, mois: Mois) -> R<Option<Entree>> {
     let Some(cle) = cle(o) else { return Ok(None) };
     Ok(fichier(&o.racine, mois)?.and_then(|f| f.paies.iter().find(|e| (&e.salarie, &e.numero) == (&cle.0, &cle.1)).cloned()))
 }
@@ -78,12 +78,12 @@ fn entree(o: &Objet, mois: &str) -> R<Option<Entree>> {
 /// L'ECRITURE D'UNE PAIE : l'entree de `o` dans le fichier de `mois` (neuve s'il n'en a pas) passe par `change` ; une
 /// entree qui ne porte plus rien s'en va. Le fichier ne s'ecrit que s'il change. Refus : un engagement sans numero de
 /// contrat.
-fn ecrire(o: &Objet, mois: &str, change: impl FnOnce(&mut Entree)) -> R<()> {
+fn ecrire(o: &Objet, mois: Mois, change: impl FnOnce(&mut Entree)) -> R<()> {
     let (salarie, numero) = cle(o).ok_or_else(|| socle::refus!("{} : un engagement sans numero de contrat n'a pas de paie", mois))?;
     let lu = fichier(&o.racine, mois)?;
     let mut f = match &lu {
         Some(f) => (**f).clone(),
-        None => FichierDesPaies { mois: Mois::lire(mois)?, paies: Vec::new() },
+        None => FichierDesPaies { mois, paies: Vec::new() },
     };
     let place = f.paies.iter().position(|e| e.salarie == salarie && e.numero == numero);
     let mut e = match place {
@@ -108,31 +108,31 @@ fn ecrire(o: &Objet, mois: &str, change: impl FnOnce(&mut Entree)) -> R<()> {
 }
 
 /// La paie ecrite de `mois` de l'engagement `o`, celle de sa version presente ; `None` s'il n'en a pas.
-pub fn presente(o: &Objet, mois: &str) -> R<Option<Arc<PaieEcrite>>> {
+pub fn presente(o: &Objet, mois: Mois) -> R<Option<Arc<PaieEcrite>>> {
     Ok(entree(o, mois)?.and_then(|e| e.presente).map(Arc::new))
 }
 
 /// La paie de `mois` que la version passee `n` de l'engagement `o` avait ecrite ; `None` si elle n'en a pas.
-pub fn de_la_version(o: &Objet, n: u64, mois: &str) -> R<Option<PaieEcrite>> {
+pub fn de_la_version(o: &Objet, n: u64, mois: Mois) -> R<Option<PaieEcrite>> {
     Ok(entree(o, mois)?.and_then(|mut e| e.versions.remove(&n.to_string())))
 }
 
 /// Toutes les paies ecrites de `mois` de l'engagement `o` : la presente, puis celles des versions passees.
-pub fn ecrites(o: &Objet, mois: &str) -> R<Vec<PaieEcrite>> {
+pub fn ecrites(o: &Objet, mois: Mois) -> R<Vec<PaieEcrite>> {
     let Some(e) = entree(o, mois)? else { return Ok(Vec::new()) };
     Ok(e.presente.into_iter().chain(e.versions.into_values()).collect())
 }
 
 /// Les mois qui ont un fichier de paies, du plus ancien au plus recent.
-pub(crate) fn mois_payes(racine: &std::path::Path) -> Vec<String> {
+pub(crate) fn mois_payes(racine: &std::path::Path) -> Vec<Mois> {
     stock::fichiers_dans(racine, Dossier::Paies)
 }
 
 /// Les mois ou l'engagement `o` a une paie ecrite (presente ou d'une version passee), du premier au dernier.
-pub fn mois_ecrits(o: &Objet) -> R<Vec<String>> {
+pub fn mois_ecrits(o: &Objet) -> R<Vec<Mois>> {
     let mut out = Vec::new();
-    for m in stock::fichiers_dans(&o.racine, Dossier::Paies).into_iter().filter(|m| m.as_str() >= o.fichier.as_str()) {
-        if entree(o, &m)?.is_some() {
+    for m in stock::fichiers_dans(&o.racine, Dossier::Paies).into_iter().filter(|m| *m >= o.fichier) {
+        if entree(o, m)?.is_some() {
             out.push(m);
         }
     }
@@ -140,10 +140,10 @@ pub fn mois_ecrits(o: &Objet) -> R<Vec<String>> {
 }
 
 /// Les paies ecrites de la version presente de l'engagement `o`, par mois (`mois_ecrits`).
-pub fn presentes(o: &Objet) -> R<BTreeMap<String, PaieEcrite>> {
+pub fn presentes(o: &Objet) -> R<BTreeMap<Mois, PaieEcrite>> {
     let mut out = BTreeMap::new();
     for m in mois_ecrits(o)? {
-        if let Some(p) = presente(o, &m)? {
+        if let Some(p) = presente(o, m)? {
             out.insert(m, (*p).clone());
         }
     }
@@ -151,12 +151,12 @@ pub fn presentes(o: &Objet) -> R<BTreeMap<String, PaieEcrite>> {
 }
 
 /// Le nombre de paies ecrites de `mois`, celles des versions presentes des engagements.
-pub fn nombre(racine: &std::path::Path, mois: &str) -> R<usize> {
+pub fn nombre(racine: &std::path::Path, mois: Mois) -> R<usize> {
     Ok(fichier(racine, mois)?.iter().flat_map(|f| &f.paies).filter(|e| e.presente.is_some()).count())
 }
 
 /// La paie ecrite de `mois` de l'engagement `o` devient `paie` ; `None` la retire (les versions passees restent).
-pub(crate) fn poser(o: &Objet, mois: &str, paie: Option<PaieEcrite>) -> R<()> {
+pub(crate) fn poser(o: &Objet, mois: Mois, paie: Option<PaieEcrite>) -> R<()> {
     ecrire(o, mois, |e| e.presente = paie)
 }
 
@@ -164,8 +164,8 @@ pub(crate) fn poser(o: &Objet, mois: &str, paie: Option<PaieEcrite>) -> R<()> {
 /// numero (`de_la_version`).
 pub(crate) fn garder_la_version(o: &Objet, n: u64) -> R<()> {
     for m in mois_ecrits(o)? {
-        if let Some(p) = presente(o, &m)? {
-            ecrire(o, &m, |e| {
+        if let Some(p) = presente(o, m)? {
+            ecrire(o, m, |e| {
                 e.versions.insert(n.to_string(), (*p).clone());
             })?;
         }
@@ -176,7 +176,7 @@ pub(crate) fn garder_la_version(o: &Objet, n: u64) -> R<()> {
 /// Les paies de l'engagement `o`, presentes et passees, s'effacent de tous ses mois.
 pub(crate) fn effacer(o: &Objet) -> R<()> {
     for m in mois_ecrits(o)? {
-        ecrire(o, &m, |e| {
+        ecrire(o, m, |e| {
             e.presente = None;
             e.versions.clear();
         })?;

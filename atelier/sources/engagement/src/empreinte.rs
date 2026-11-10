@@ -20,6 +20,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::fichiers::{self, dossier_du_code};
 use socle::echec::R;
+use socle::mois::Mois;
 
 use crate::stock;
 
@@ -30,9 +31,9 @@ pub const MOTEUR: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("ENGAGEMEN
 /// L'entree des fiches dont depend la paie de `salarie` pour `mois`, sur `spectacle` : l'entreprise, la fiche du salarie
 /// et celle du spectacle, telles qu'elles valent au dernier jour du mois (`Contexte::du_mois`). La fiche d'un autre
 /// salarie, une valeur datee apres le mois n'en sont pas : elles ne font pas recalculer cette paie.
-pub(crate) fn fiches(ctx: &Contexte, mois: &str, salarie: &str, spectacle: Option<&str>) -> R<(String, String)> {
+pub(crate) fn fiches(ctx: &Contexte, mois: Mois, salarie: &str, spectacle: Option<&str>) -> R<(String, String)> {
     let cle = socle::ecriture::json_en_ligne(&(mois, salarie, spectacle));
-    Ok((format!("fiches {}", cle), empreinte_fiches(&ctx.du_mois(mois)?, salarie, spectacle)))
+    Ok((format!("fiches {}", cle), empreinte_fiches(&ctx.du_mois(&mois.to_string())?, salarie, spectacle)))
 }
 
 fn empreinte_fiches(ctx: &Contexte, salarie: &str, spectacle: Option<&str>) -> String {
@@ -45,8 +46,8 @@ fn empreinte_fiches(ctx: &Contexte, salarie: &str, spectacle: Option<&str>) -> S
 
 /// L'entree `fiches [mois, salarie, spectacle]` tient-elle encore ?
 fn fiches_tiennent(ctx: &Contexte, cle: &str, v: &str) -> R<bool> {
-    let (mois, salarie, spectacle) = socle::forme::lire_texte::<(String, String, Option<String>)>(cle, socle::echec::PAIE_ILLISIBLE)?;
-    Ok(fiches(ctx, &mois, &salarie, spectacle.as_deref())?.1 == v)
+    let (mois, salarie, spectacle) = socle::forme::lire_texte::<(Mois, String, Option<String>)>(cle, socle::echec::PAIE_ILLISIBLE)?;
+    Ok(fiches(ctx, mois, &salarie, spectacle.as_deref())?.1 == v)
 }
 
 /// Une entree de fichier qui est la saisie d'un mois : elle se compte par la saisie (`stock::cle_de_saisie`), pas par
@@ -93,13 +94,13 @@ pub fn tient(ctx: &Contexte, entrees: &BTreeMap<String, String>, relues: &mut Re
 /// Une decision de l'editeur rend-elle l'empreinte ecrite `ecrite` (d'une paie de `mois`) fausse ? Le code qui calcule
 /// a change (`MOTEUR`, ou un fichier livre avec le code), ou une regle datee s'applique au mois qu'elle n'avait pas.
 /// Rien ne se calcule.
-pub fn code_ou_regle_change(ctx: &Contexte, ecrite: &crate::paie_ecrite::Empreinte, mois: &str, relues: &mut Relues) -> R<bool> {
+pub fn code_ou_regle_change(ctx: &Contexte, ecrite: &crate::paie_ecrite::Empreinte, mois: Mois, relues: &mut Relues) -> R<bool> {
     let code = |k: &str| k == "moteur" || k.split_once(' ').is_some_and(|(_, c)| c.starts_with("code:"));
     let entrees: BTreeMap<String, String> = ecrite.entrees.iter().filter(|(k, _)| code(k)).map(|(k, v)| (k.clone(), v.clone())).collect();
     if !tient(ctx, &entrees, relues)? {
         return Ok(true);
     }
-    let fin = socle::mois::Mois::lire(mois)?.dernier_jour();
+    let fin = mois.dernier_jour();
     Ok(regles(ctx, &fin)?.iter().any(|x| !ecrite.regles.contains(x)))
 }
 
@@ -122,10 +123,10 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         return Ok(droit::pas::empreinte(ctx, k)?.is_some_and(|e| v == e));
     }
     if let Some((mois, salarie)) = k.strip_prefix(crate::conges::MENSUELS).and_then(|r| r.split_once(' ')) {
-        return Ok(v == crate::conges::empreinte_des_mensuels_d_avant(ctx, mois, salarie)?);
+        return Ok(v == crate::conges::empreinte_des_mensuels_d_avant(ctx, Mois::lire(mois)?, salarie)?);
     }
     if let Some((mois, salarie)) = k.strip_prefix("paies ").and_then(|r| r.split_once(' ')) {
-        return Ok(v == crate::etats::empreinte_des_paies_validees(ctx, mois, Some(salarie))?);
+        return Ok(v == crate::etats::empreinte_des_paies_validees(ctx, Mois::lire(mois)?, Some(salarie))?);
     }
     if let Some(salarie) = crate::imprevus::salarie_de_l_entree(k) {
         return Ok(v == crate::imprevus::empreinte_du_salarie(racine, salarie)?);
@@ -135,7 +136,7 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
             Some((m, s)) => (m, Some(s)),
             None => (reste, None),
         };
-        return Ok(stock::empreinte_de_la_saisie_du_mois(racine, mois, salarie)?.is_some_and(|e| v == e));
+        return Ok(stock::empreinte_de_la_saisie_du_mois(racine, Mois::lire(mois)?, salarie)?.is_some_and(|e| v == e));
     }
     Ok(fichiers::chemin_de(k, racine, &code).is_some_and(|(genre, p)| match genre.as_str() {
         "fichier" => v == fichiers::empreinte_fichier(&p),

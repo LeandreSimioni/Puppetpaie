@@ -273,7 +273,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(String, Vec<engagement::calcul::Paie>)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
     for m in &p.mois {
-        let paies = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
+        let paies = engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(m)?, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
         if paies.is_empty() {
             sans.push(m.clone());
         } else {

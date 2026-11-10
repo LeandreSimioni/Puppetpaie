@@ -182,7 +182,7 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<St
     let morceaux: Vec<String> = remuneration.iter().filter(|l| fait_le_brut(l)).map(ligne_citee).collect();
     let mut phrase = et(&morceaux);
     if !e.f.dernier_mois {
-        let quand = Mois::lire(&e.f.mois)?.libelle(socle::mois::Graphie::Accentuee);
+        let quand = e.f.mois.libelle(socle::mois::Graphie::Accentuee);
         if !e.f.planning.is_empty() {
             let n = e.f.planning.len();
             phrase += &format!(
@@ -214,7 +214,7 @@ fn periode_remuneration(e: &Eng) -> R<Option<String>> {
     if e.f.dernier_mois {
         return Ok(None);
     }
-    let mois = Mois::lire(&e.f.mois)?;
+    let mois = e.f.mois;
     let nom = mois.nom(socle::mois::Graphie::Accentuee);
     let de = if nom.chars().next().is_some_and(|c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
     Ok(Some(format!("le mois {}{} {}", de, nom, mois.annee())))
@@ -298,7 +298,7 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
 /// mois d'un contrat pour le contrat, le mois de l'avenant pour un avenant -- un contrat commence avant le logiciel n'a
 /// pas de bareme de son annee.
 pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: Option<&droit::fiche::Spectacle>, e: &Eng) -> R<Valeurs> {
-    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &Mois::lire(&e.f.mois)?.premier_jour())?;
+    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &e.f.mois.premier_jour())?;
     let sig = ent.signataire.exigee("signataire")?;
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {

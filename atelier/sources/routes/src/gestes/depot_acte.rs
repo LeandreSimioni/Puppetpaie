@@ -632,7 +632,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
 fn paies_des_embauches(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
     let o = |m: Echec| m.reclasser(Classe::Refuse);
     let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
-    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)? else { return Ok(Vec::new()) };
+    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois).map_err(o)?, &departs).map_err(o)? else { return Ok(Vec::new()) };
     let declaree = |p: &engagement::calcul::Paie| {
         let cle = p.salarie.id.to_string();
         embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())

@@ -729,7 +729,7 @@ pub(crate) fn a_refaire_de(ctx: &Contexte, e: &engagement::etats::Etat, departs:
 /// ont change depuis la version sur laquelle le contrat est parti (`a_refaire_parmi`, les contrats seuls).
 pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: &str) -> R<HashSet<(String, String)>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let etats = engagement::etats::du_mois(ctx, mois, &departs)?;
+    let etats = engagement::etats::du_mois(ctx, Mois::lire(mois)?, &departs)?;
     let avenant = |s: engagement::departs::Envoi| s == engagement::departs::Envoi::Contrat;
     let mut out = HashSet::new();
     for e in &etats {
@@ -1334,7 +1334,6 @@ impl<'a> Moteur<'a> {
     /// Les engagements de `mois`, dans l'ordre de l'ecran : recalcules d'eux-memes s'il le faut (`du_mois`), ou tels
     /// qu'ils sont ecrits (`ecrit`).
     pub(crate) fn etats_du_mois(&self, mois: Mois) -> R<Vec<engagement::etats::Etat>> {
-        let mois = &mois.to_string();
         let departs = self.departs()?;
         if self.ecrit {
             return engagement::etats::tels_qu_ecrits(self.ctx, mois, &departs);
@@ -1387,9 +1386,10 @@ impl<'a> Moteur<'a> {
     }
 
     fn saisie_chargee(&mut self, mois: &str) -> R<SaisieMois> {
-        let mut data = engagement::vue_requise(self.racine(), mois).map_err(classer_saisie)?;
+        let lu = Mois::lire(mois)?;
+        let mut data = engagement::vue_requise(self.racine(), lu).map_err(classer_saisie)?;
         let manques = super::mois::manques_de_la_saisie(self.ctx, &data);
-        let objets = engagement::stock::objets_du_mois(self.racine(), mois)?;
+        let objets = engagement::stock::objets_du_mois(self.racine(), lu)?;
         let mut identites = engagement::stock::identites(&objets);
         let mut m = manques.iter();
         identites.retain(|_| m.next().is_some_and(Option::is_none));
@@ -1434,7 +1434,7 @@ impl<'a> Moteur<'a> {
     fn lignes_du_mois(&mut self, le_mois: Mois) -> R<Vec<Ligne>> {
         let mois = &le_mois.to_string();
         // UN MOIS SANS ENGAGEMENT N'EST PAS UNE ERREUR.
-        if !engagement::stock::a_une_saisie(self.racine(), mois)? {
+        if !engagement::stock::a_une_saisie(self.racine(), le_mois)? {
             return Ok(Vec::new());
         }
         let s = self.charger_saisie(mois)?;
@@ -1475,12 +1475,12 @@ impl<'a> Moteur<'a> {
                 },
                 None => None,
             };
-            let mois_du_contrat = p.engagement.mois_du_contrat()?;
+            let mois_du_contrat: Vec<String> = p.engagement.mois_du_contrat().iter().map(Mois::to_string).collect();
             let (Some(depuis), Some(jusqu_a)) = (mois_du_contrat.first().cloned(), mois_du_contrat.last().cloned()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
-            let premier_mois = p.engagement.premier_mois()?;
-            let dernier_mois = p.engagement.dernier_mois()?;
+            let premier_mois = p.engagement.premier_mois();
+            let dernier_mois = p.engagement.dernier_mois();
             // Son etablissement (NIC) : la DSN qui le porte.
             let etablissement = nic_de_l_engagement(self.ctx, e)?;
             // LES ECHEANCES de l'engagement : sa DPAE (L. 1221-10) et la remise de son contrat (L. 1242-13, ou la couche
@@ -1496,7 +1496,7 @@ impl<'a> Moteur<'a> {
             };
             // RECALCULEE D'ELLE-MEME (`engagement::etats::du_mois`) : pourquoi, et quand.
             let recalcul = match e.valide() {
-                Some(v) => v.recalcul(mois)?,
+                Some(v) => v.recalcul(le_mois)?,
                 None => None,
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
@@ -1515,7 +1515,7 @@ impl<'a> Moteur<'a> {
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement)?,
                 ailleurs,
                 dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, &p.engagement.debut.iso())),
-                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &p.engagement.debut.iso(), mois)?,
+                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &p.engagement.debut.iso(), le_mois)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles
             // du contrat declare a la caisse qui finit (`crate::dossier_salarie::certificats_dus`), l'AER Cinema
@@ -1589,7 +1589,7 @@ impl<'a> Moteur<'a> {
             }
             // LES DOCUMENTS DE CET ENGAGEMENT, pour ce mois : son dernier envoi (`departs`), et son bulletin a refaire.
             let documents_le = p.engagement.numero.as_deref().and_then(|n| {
-                departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois.as_deref() == Some(mois) && d.par.is_none()).map(|d| d.le.clone()).max()
+                departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le.clone()).max()
             });
             let bulletin = refaire.iter().any(|a| matches!(a, ARefaire::Bulletin { mois: m, .. } if m == mois));
             let documents = etat_documents(documents_le, bulletin);
@@ -1613,7 +1613,7 @@ impl<'a> Moteur<'a> {
             };
             // LA FRISE : un engagement modifie apres un envoi dit quand, et ce qui a change de version en version.
             let frise = match e.valide() {
-                Some(v) => engagement::versions::frise(self.ctx, v, &departs, mois)?,
+                Some(v) => engagement::versions::frise(self.ctx, v, &departs, le_mois)?,
                 None => None,
             };
             out.push(Ligne::de(vue, le_mois, frise, id.clone())?);
@@ -1625,7 +1625,8 @@ impl<'a> Moteur<'a> {
     /// il dit qui, quand, et ce qui lui manque. Ses carres disent « à compléter » (`Point::de`). L'engagement se lit tel
     /// que sa saisie l'ecrit (`Objet::vue`).
     fn ligne_a_completer(&self, mois: &str, o: &engagement::stock::Objet, manque: &str) -> R<Vue> {
-        let Some(e) = o.vue(mois)? else {
+        let lu = Mois::lire(mois)?;
+        let Some(e) = o.vue(lu)? else {
             return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement du mois ne se lit pas dans ce mois."));
         };
         let cle = e.salarie.as_ref().map(ToString::to_string);
@@ -1650,7 +1651,7 @@ impl<'a> Moteur<'a> {
             d if d.is_empty() => None,
             d => Some(Jour::lire(&d)?),
         };
-        let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &d.iso(), mois)? } else { false };
+        let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &d.iso(), lu)? } else { false };
         let numero = match e.numero_dit() {
             Some(n) => Some(NumeroContrat::lire(n)?),
             None => None,
@@ -1734,7 +1735,6 @@ impl<'a> Moteur<'a> {
     /// `empreinte_saisie`, sur les corrections portees que `portees` lit (`Moteur::portees`) : la fabrication de la DSN,
     /// qui les a deja lues, les passe.
     pub(crate) fn empreinte_saisie_avec(&self, mois: Mois, portees: impl FnOnce() -> R<Vec<Portee>>) -> R<Option<String>> {
-        let mois = &mois.to_string();
         let vue = engagement::etats::empreinte_des_paies_validees(self.ctx, mois, None)?;
         let portees = portees()?;
         if portees.is_empty() {
@@ -1863,7 +1863,7 @@ impl<'a> Moteur<'a> {
                 if plusieurs && nic_de_l_engagement(self.ctx, &e)?.as_deref() != voulu.as_deref() {
                     continue;
                 }
-                if engagement::etats::correction_due(self.ctx, v, &departs, mois, "9999-12")?.is_some() {
+                if engagement::etats::correction_due(self.ctx, v, &departs, le_mois, Mois::lire("9999-12")?)?.is_some() {
                     n += 1;
                 }
             }
@@ -2309,12 +2309,12 @@ impl<'a> Moteur<'a> {
             }
             for e in self.etats_du_mois(mm)? {
                 let Some(v) = e.valide() else { continue };
-                if de_l_etablissement(self.ctx, &e.objet().brut)? && engagement::etats::correction_due(self.ctx, v, &departs, &m, mois)?.is_some() {
+                if de_l_etablissement(self.ctx, &e.objet().brut)? && engagement::etats::correction_due(self.ctx, v, &departs, mm, le_mois)?.is_some() {
                     return Ok(true);
                 }
             }
-            for n in engagement::etats::non_actifs_du_mois(self.ctx, &m)? {
-                if de_l_etablissement(self.ctx, &n.objet().brut)? && n.correction_due(self.ctx, &departs, &m, mois)?.is_some() {
+            for n in engagement::etats::non_actifs_du_mois(self.ctx, mm)? {
+                if de_l_etablissement(self.ctx, &n.objet().brut)? && n.correction_due(self.ctx, &departs, mm, le_mois)?.is_some() {
                     return Ok(true);
                 }
             }
@@ -2378,11 +2378,11 @@ impl<'a> Moteur<'a> {
         let mut attente = Vec::new();
         for le_mois in mois {
             let m = le_mois.to_string();
-            if !engagement::stock::a_une_saisie(self.racine(), &m)? {
+            if !engagement::stock::a_une_saisie(self.racine(), le_mois)? {
                 continue;
             }
             let s = self.charger_saisie(&m)?;
-            let etats_m = engagement::etats::tels_qu_ecrits(self.ctx, &m, &departs)?;
+            let etats_m = engagement::etats::tels_qu_ecrits(self.ctx, le_mois, &departs)?;
             // La DPAE part de l'engagement valide : un engagement en saisie n'a rien a declarer. Chacun retrouve son embauche
             // par son identite (salarie, numero du contrat).
             for e in &etats_m {
@@ -2413,7 +2413,7 @@ impl<'a> Moteur<'a> {
                     continue;
                 }
                 // Un contrat en cours se declare avec son premier mois.
-                if !p.engagement.premier_mois()? {
+                if !p.engagement.premier_mois() {
                     continue;
                 }
                 // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie : reculee, la DPAE de l'ancienne
@@ -2714,7 +2714,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: &str, etats: &[engagement::
         let dernier = departs
             .de(&cle, &numero)
             .iter()
-            .filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois.as_deref() == Some(mois) && d.par.is_none())
+            .filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois.is_some_and(|m| m == mois) && d.par.is_none())
             .map(|d| d.le.clone())
             .max();
         let Some(quand) = dernier else { continue };
@@ -2805,7 +2805,7 @@ pub(crate) fn etat_signature(
 fn non_actifs(ctx: &Contexte, mois: &str) -> R<Vec<NonActif>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois)? {
+    for n in engagement::etats::non_actifs_du_mois(ctx, Mois::lire(mois)?)? {
         let b = &*n.objet().brut;
         let cle = b.saisie.carte.salarie.as_ref().map(ToString::to_string);
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.

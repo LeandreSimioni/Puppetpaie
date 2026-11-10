@@ -1360,7 +1360,7 @@ fn provision_d_une_annee_importee(
             }
         }
         let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
-        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
+        let provision = engagement::conges::provision_du_compteur(cpt, socle::mois::Mois::lire(m)?, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.as_deref().map(str::to_string), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1397,7 +1397,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     continue;
                 }
                 let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut));
-                let Some(cpt) = engagement::conges::provision_conges_de(pa, &m, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
+                let Some(cpt) = engagement::conges::provision_conges_de(pa, socle::mois::Mois::lire(&m)?, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
                 a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }
             m
@@ -1563,7 +1563,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<String>)> = BTreeMap::new();
     for m in p.mois.clone() {
-        let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
+        let paies = match engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(&m)?, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));

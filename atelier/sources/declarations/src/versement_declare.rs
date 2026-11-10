@@ -226,7 +226,7 @@ pub struct DernierDeclare {
 pub fn dernier_declare(
     ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str,
 ) -> R<Option<DernierDeclare>> {
-    let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, mois_courant)?;
+    let declarees = engagement::etats::paies_declarees(ctx, o, departs, socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire(mois_courant)?)?;
     let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
     let mut etat = de_la_paie(ctx, &derniere.paie, mois)?;
     let mut rappels = Decimal::ZERO;
@@ -250,7 +250,7 @@ pub fn dernier_declare(
         etat.rappels_net_social = rappels;
     }
     etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
-    if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
+    if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, socle::mois::Mois::lire(mois_courant)?)? {
         etat.debut_contrat = Some(socle::date::Jour::lire(&d)?.jjmmaaaa());
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());

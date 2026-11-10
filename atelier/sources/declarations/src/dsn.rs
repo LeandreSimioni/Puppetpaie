@@ -322,7 +322,7 @@ fn emploi_declare(p: &Paie) -> (Option<String>, Option<String>, Option<String>) 
 /// en saisie n'y est pas : une declaration ne lit que l'engagement valide. Ils completent ceux qu'une declaration
 /// porte : la DSN d'un etablissement ne porte pas les contrats d'un autre, un signalement n'en porte qu'un.
 pub fn contrats_du_mois(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
-    Ok(engagement::etats::validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, paies)| paies).collect())
+    Ok(engagement::etats::validees_du_mois(ctx, Mois::lire(mois)?, departs)?.into_iter().flat_map(|(_, paies)| paies).collect())
 }
 
 /// `S21.G00.40.036` (code emplois multiples) du contrat `p` : « 02 - emplois multiples » si le salarie tient plus
@@ -420,12 +420,12 @@ impl Arret {
         let mut avant: Option<String> = None;
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
-            let Some(declarante) = d.par.as_deref().or(d.mois.as_deref()) else { continue };
+            let Some(declarante) = d.par.or(d.mois).map(|m| m.to_string()) else { continue };
             let le = minute(&d.le);
             if declarante == mois && le < saisi {
                 return Ok(false);
             }
-            if declarante < mois && avant.as_ref().is_none_or(|a| le > *a) {
+            if declarante.as_str() < mois && avant.as_ref().is_none_or(|a| le > *a) {
                 avant = Some(le);
             }
         }
@@ -1890,7 +1890,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     if let Some(fin) = fin_fctu {
         crate::fctu::bloc_62_63(f, fin, e)?;
-    } else if e.dernier_mois()? && fin_de_contrat {
+    } else if e.dernier_mois() && fin_de_contrat {
         let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add("S21.G00.62.001", fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
@@ -3939,12 +3939,12 @@ pub struct SoldeTa {
 /// dans la version sur laquelle la DSN est partie), ou sa paie ecrite si aucune DSN ne l'a encore declaree. Un
 /// engagement en saisie n'y est pas : rien ne part de lui. `nic` : les seuls salaries de cet etablissement.
 pub fn paies_declarees_du_mois(ctx: &Contexte, mois: &str, nic: Option<&str>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(Vec::new()) };
+    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)? else { return Ok(Vec::new()) };
     let ctx_m = ctx.du_mois(mois)?;
     let mut out = Vec::new();
-    for (i, e) in engagement::etats::du_mois(ctx, mois, departs)?.iter().enumerate() {
+    for (i, e) in engagement::etats::du_mois(ctx, Mois::lire(mois)?, departs)?.iter().enumerate() {
         let Some(v) = e.valide() else { continue };
-        let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, mois)? {
+        let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, Mois::lire(mois)?)? {
             Some(p) => p,
             None => v.paie(ctx, &data, i)?,
         };
@@ -4170,15 +4170,15 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: &str, etats: &[engagement::et
     while m >= premier_mois {
         // La compagnie telle qu'a la fin du mois declare (l'entreprise, ses etablissements) ; la fiche, celle que la paie declaree a lue.
         let ctx_m = Contexte::nouveau(&ctx.racine, Some(socle::mois::Mois::lire(&m)?.dernier_jour()))?;
-        if let Some(declaree) = engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, &m)? {
+        if let Some(declaree) = engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, Mois::lire(&m)?)? {
             // Les autres contrats du salarie declares ce mois-la : le code emplois multiples (40.036) s'ecrit avec eux.
             let mut autres = Vec::new();
-            for e in engagement::etats::tels_qu_ecrits(ctx, &m, departs)? {
+            for e in engagement::etats::tels_qu_ecrits(ctx, Mois::lire(&m)?, departs)? {
                 let Some(w) = e.valide() else { continue };
                 if w.objet().fichier == v.objet().fichier && w.objet().rang == v.objet().rang {
                     continue;
                 }
-                if let Some(q) = engagement::etats::paie_declaree(&ctx_m, w.objet(), departs, &m)? {
+                if let Some(q) = engagement::etats::paie_declaree(&ctx_m, w.objet(), departs, Mois::lire(&m)?)? {
                     autres.push(q);
                 }
             }
@@ -4427,7 +4427,7 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
     // Les etablissements, celui de cette DSN d'abord : un contrat declare ailleurs a change d'etablissement (bloc 41).
     let nics_courant_d_abord: Vec<String> = std::iter::once(nic.clone()).chain(ent0.nics()?.into_iter().filter(|n| *n != nic)).collect();
     // Ce qui est parti, et les engagements du mois : le bloc 40 declare de chaque contrat se lit dans sa version (`bloc_40_declare`).
-    let etats_du_mois = engagement::etats::tels_qu_ecrits(ctx, mois, departs)?;
+    let etats_du_mois = engagement::etats::tels_qu_ecrits(ctx, Mois::lire(mois)?, departs)?;
     let orgs = ctx.organismes()?;
     let lu = Mois::lire(mois)?;
     let debut_mois = lu.premier_jour();
@@ -4516,7 +4516,7 @@ retirer la ligne. Rien n'est ecrit.",
     // chaque paie (`imprevus::suspensions_du_mois`). Une suspension de cet etablissement dont le contrat manque ne serait
     // declaree nulle part : refus, comme pour l'arret.
     let mut suspendus_absents = Vec::new();
-    for imp in engagement::imprevus::du_mois(&ctx.racine, mois, Some(engagement::imprevus::SUSPENSION))? {
+    for imp in engagement::imprevus::du_mois(&ctx.racine, Mois::lire(mois)?, Some(engagement::imprevus::SUSPENSION))? {
         let fiche = engagement::imprevus::fiche_du_salarie(ctx, &imp)?;
         if bareme::etablissement_de(ent0, &fiche)? != nic {
             continue;
@@ -5003,7 +5003,7 @@ certificat de conformite du depot precedent.",
         for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
             let b = bar_de(&r.mois)?;
             let numero = (lot.len() + k + 1) as i64;
-            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.taux_pas_origine.as_deref(), mois)?;
+            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.taux_pas_origine.as_deref(), Mois::lire(mois)?)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
         f.contrat_unique = false;

@@ -48,12 +48,13 @@ pub struct Reg {
 /// corrige toujours ailleurs : sa DSN n'a pas ete faite ici et ne se refait pas ici (regle 4).
 pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str) -> R<bool> {
     use engagement::departs::Envoi;
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(|e| e.reclasser(Classe::Illisible))?.is_some() {
+    let lu = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
+    if engagement::importe::dsn_deposee(&ctx.racine, lu).map_err(|e| e.reclasser(Classe::Illisible))?.is_some() {
         return Ok(true);
     }
     let partie = departs
         .engagements()
-        .any(|(c, n)| departs.de(c, n).iter().any(|d| d.envoi == Envoi::Dsn && d.par.is_none() && d.mois.as_deref() == Some(mois)));
+        .any(|(c, n)| departs.de(c, n).iter().any(|d| d.envoi == Envoi::Dsn && d.par.is_none() && d.mois == Some(lu)));
     if !partie {
         return Ok(false);
     }
@@ -75,6 +76,7 @@ pub struct Due {
 /// engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
 pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
     let mut out = Vec::new();
+    let (mois, porteur) = (socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire(porteur)?);
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
         if let Some(declarees) =
@@ -100,7 +102,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
             continue;
         }
         out.extend(annulations(ctx, departs, &mois, mois_courant)?);
-        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, &mois)? else { continue };
+        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, socle::mois::Mois::lire(&mois)?)? else { continue };
         for d in corrections_dues(ctx, &mois, mois_courant, departs)? {
             let apres = d.valide.paie(ctx, &data, d.rang)?;
             let version = d.valide.version().ok_or_else(|| {
@@ -164,8 +166,9 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
 /// « annulation de la declaration initiale accompagnee si opportun d'une declaration corrective » ; ici, aucune).
 fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(|e| e.reclasser(Classe::Illisible))?.is_none() {
+    let (mois_lu, porteur) = (socle::mois::Mois::lire(mois)?, socle::mois::Mois::lire(mois_courant)?);
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois_lu).map_err(|e| e.reclasser(Classe::Illisible))? {
+        if n.correction_due(ctx, departs, mois_lu, porteur).map_err(|e| e.reclasser(Classe::Illisible))?.is_none() {
             continue;
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)

@@ -36,7 +36,7 @@ fn de_la_validation_a_l_attestation() {
     let (_, phrase) = refus(&valider(&c, "2026-03", None, &saisie("accroissement"), "2026-02-25"));
     assert!(phrase.contains("02 ("), "la phrase dit les motifs a choisir : {}", phrase);
     // Les changements d'un appel s'ecrivent tout ou rien : un motif refuse, la carte ne s'ecrit pas.
-    assert!(engagement::stock::vue_du_mois(&c, "2026-03").unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie.as_deref() != Some("FULLER"))), "un motif refuse : rien n'est ecrit");
+    assert!(engagement::stock::vue_du_mois(&c, socle::mois::Mois::lire("2026-03").unwrap()).unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie.as_deref() != Some("FULLER"))), "un motif refuse : rien n'est ecrit");
     reussi(&valider(&c, "2026-03", None, &saisie("02"), "2026-02-25"));
     // Le contrat CDD se fabrique depuis l'engagement valide : un modele qui tairait une mention de L1242-12 se refuse
     // (`documents::contrat_ecrit::manques`), le PDF imprime porte donc la nature, le motif de recours et le terme.

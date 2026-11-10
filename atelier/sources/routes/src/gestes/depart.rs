@@ -243,6 +243,7 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, le_mois: socl
 
 /// L'engagement de `mois` du salarie `cle` au contrat `numero`, actif ou non.
 fn engagement_de(ctx: &Contexte, mois: &str, cle: &str, numero: &str) -> R<engagement::stock::Objet> {
+    let mois = Mois::lire(mois)?;
     engagement::stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
         .chain(engagement::stock::non_actifs_du_mois(&ctx.racine, mois)?)
@@ -250,13 +251,13 @@ fn engagement_de(ctx: &Contexte, mois: &str, cle: &str, numero: &str) -> R<engag
             let b = &*o.brut;
             b.saisie.carte.salarie.as_deref() == Some(cle) && b.saisie.carte.numero.as_deref() == Some(numero)
         })
-        .ok_or_else(|| erreur(Classe::Illisible, format!("{} : aucun engagement de {} ne porte le contrat {} qu'une DSN partie a declare.", cle, socle::mois::Mois::en_clair(mois), numero)))
+        .ok_or_else(|| erreur(Classe::Illisible, format!("{} : aucun engagement de {} ne porte le contrat {} qu'une DSN partie a declare.", cle, mois.libelle(socle::mois::Graphie::Accentuee), numero)))
 }
 
 /// La paie de `mois` que la version `version` de l'engagement `o` (salarie `cle`, contrat `numero`) a ecrite
 /// (`engagement::etats::paie_de_la_version_n`).
 fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &str, numero: &str, mois: &str, version: u64) -> R<Paie> {
-    engagement::etats::paie_de_la_version_n(ctx, o, version, mois)?
+    engagement::etats::paie_de_la_version_n(ctx, o, version, Mois::lire(mois)?)?
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : la version {} du contrat {} n'a pas de paie de {}.", cle, version, numero, socle::mois::Mois::en_clair(mois))))
 }
 
@@ -467,7 +468,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     let mut avertissements: Vec<Avis> = Vec::new();
 
     // RIEN NE PART D'UN ENGAGEMENT EN SAISIE : la DSN declare les engagements valides du mois.
-    let valides = engagement::etats::valides_du_mois(ctx, mois)?;
+    let valides = engagement::etats::valides_du_mois(ctx, le_mois)?;
     let en_saisie = valides.iter().filter(|v| !**v).count();
     if en_saisie > 0 && en_saisie == valides.len() {
         return Err(erreur(
@@ -573,7 +574,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         }
     }
     // LES SUSPENSIONS (bloc 65) : chacune se declare entiere dans la DSN de chaque mois qu'elle traverse.
-    for s in crate::metier::imprevus::magasin(engagement::imprevus::du_mois(&ctx.racine, mois, Some(engagement::imprevus::SUSPENSION)))? {
+    for s in crate::metier::imprevus::magasin(engagement::imprevus::du_mois(&ctx.racine, le_mois, Some(engagement::imprevus::SUSPENSION)))? {
         let engagement::imprevus::Imprevu::Suspension(s) = s else { continue };
         avertissements.push(info(format!("Suspension declaree dans la DSN : {}, motif {}, du {} au {}.", s.salarie, s.motif, jour(&s.debut)?, jour(&s.fin)?)));
     }
@@ -669,7 +670,7 @@ impl DocumentsFabriques {
     pub(crate) fn engager(self, ctx: &Contexte, mois: &str) -> R<()> {
         self.reserves.valider(ctx)?;
         for (cle, numero, bulletin, ce) in &self.a_poser {
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, Mois::lire(mois)?, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
         }
         Ok(())
     }
@@ -694,7 +695,7 @@ impl DocumentsFabriques {
             if let Some((_, dernier)) = ce {
                 ce_max = Some(ce_max.into_iter().chain([*dernier]).fold(*dernier, i64::max));
             }
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, Mois::lire(mois)?, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
         }
         if let Some((an, n)) = bulletin_max {
             bornes.enregistrer(an, Suite::Bulletin, n);
@@ -714,7 +715,7 @@ impl DocumentsFabriques {
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: &str) -> R<documents::bulletin::Ecart> {
     let taux_parti = parti.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
     let d_net = apres.net_a_payer - parti.net_a_payer;
-    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_deref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_deref(), Mois::lire(mois_versement)?).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
         Some(montant) => {
@@ -782,7 +783,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
 
 pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: &str, cles: &[String], qui: &str) -> R<DocumentsFabriques> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let validees = engagement::etats::validees_du_mois(ctx, mois, &departs)?;
+    let validees = engagement::etats::validees_du_mois(ctx, Mois::lire(mois)?, &departs)?;
     let ent = ctx.pour_un_modele(&ctx.entreprise_du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?);
     if let Some((_, paies)) = &validees {
         exiges_des_bulletins(&ent, paies.iter().filter(|p| cles.contains(&cle_de(p)) && !p.engagement.sans_paie()))?;
@@ -791,7 +792,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: &str, cles: &[String], q
     let mut faits = DocumentsFabriques { _verrou: verrou, reserves: Reserves::default(), a_poser: Vec::new(), avertissements: Vec::new() };
     let Some((_data, paies)) = validees else { return Ok(faits) };
     faits.avertissements.extend(sans_taux_recu(ctx, paies.iter().filter(|p| cles.contains(&cle_de(p))))?);
-    let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
+    let ecrits = engagement::etats::numeros_des_documents(ctx, Mois::lire(mois)?, &departs)?;
     let an = annee_de(mois)?;
     let etiq = socle::mois::Mois::lire(mois).map(socle::mois::Mois::etiquette).map_err(|e| e.reclasser(Classe::Illisible))?;
     let sortie = ctx.racine.join("sorties").join(mois);
@@ -832,12 +833,13 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: &str, cles: &[String], q
     // quand elle ne se refait plus (`se_corrige_ailleurs`), il porte l'ecart avec ce bulletin, verse avec la paie du mois
     // dont la DSN declare la correction (`ecart_avec_le_bulletin_parti`).
     let clos = regularisations::se_corrige_ailleurs(ctx, &departs, mois)?;
-    let valides: Vec<engagement::etats::Valide> = engagement::etats::du_mois(ctx, mois, &departs)?.iter().filter_map(|e| e.valide().cloned()).collect();
+    let mois_lu = Mois::lire(mois)?;
+    let valides: Vec<engagement::etats::Valide> = engagement::etats::du_mois(ctx, mois_lu, &departs)?.iter().filter_map(|e| e.valide().cloned()).collect();
     let mut rectificatifs: HashMap<usize, documents::bulletin::Rectificatif> = HashMap::new();
     for i in 0..paies.len() {
         let Some(r) = ecrits.get(i).and_then(|e| e.rectifie.clone()) else { continue };
         let parti = match (clos, valides.get(i)) {
-            (true, Some(v)) => engagement::etats::paie_partie(ctx, v.objet(), &departs, mois)?.map(|p| (p, v)),
+            (true, Some(v)) => engagement::etats::paie_partie(ctx, v.objet(), &departs, mois_lu)?.map(|p| (p, v)),
             _ => None,
         };
         let ecart = match parti {
@@ -1507,7 +1509,7 @@ const SANS_NUMERO: &str = "(sans numéro)";
 
 /// La paie ecrite de `mois` que porte la version de l'engagement `o` dont le bulletin a le numero `numero`.
 fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: &str, numero: &str) -> R<Option<engagement::paie_ecrite::PaieEcrite>> {
-    Ok(engagement::paies::ecrites(o, mois)?.into_iter().find(|p| p.bulletin.as_deref() == Some(numero)))
+    Ok(engagement::paies::ecrites(o, Mois::lire(mois)?)?.into_iter().find(|p| p.bulletin.as_deref() == Some(numero)))
 }
 
 /// LES DOCUMENTS QU'A FAIT PARTIR LA LIGNE `lignes[rang]` (un envoi aux salaries de `mois`), refaits tels qu'ils sont
@@ -1530,15 +1532,16 @@ fn refaire_les_documents(ctx: &Contexte, mois: &str, lignes: &[envois::journal::
         let mut numeros: Vec<Option<String>> = Vec::new();
         let mut premiers_ce: Vec<Option<i64>> = Vec::new();
         let mut rectificatifs: HashMap<usize, documents::bulletin::Rectificatif> = HashMap::new();
-        for e in engagement::etats::du_mois(&ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
+        let mois_lu = Mois::lire(mois)?;
+        for e in engagement::etats::du_mois(&ctx, mois_lu, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
             let Some(v) = e.valide() else { continue };
-            let Some(p) = engagement::etats::paie_partie(&ctx, v.objet(), &jusqu_a, mois)? else { continue };
+            let Some(p) = engagement::etats::paie_partie(&ctx, v.objet(), &jusqu_a, mois_lu)? else { continue };
             let ecrite = match p.numero_bulletin.as_deref() {
                 Some(n) => paie_ecrite_au_bulletin(v.objet(), mois, n)?,
                 None => None,
             };
             if let Some(r) = ecrite.as_ref().and_then(|x| x.rectifie.as_deref()) {
-                let parti = if clos { engagement::etats::paie_partie(&ctx, v.objet(), &avant, mois)? } else { None };
+                let parti = if clos { engagement::etats::paie_partie(&ctx, v.objet(), &avant, mois_lu)? } else { None };
                 let ecart = match parti {
                     Some(parti) => {
                         let porteur = crate::regularisation::dsn_qui_porte_la_correction(&ctx, v, &avant, mois)?;
@@ -1584,7 +1587,7 @@ fn sans_taux_recu<'a>(ctx: &Contexte, paies: impl Iterator<Item = &'a Paie>) -> 
     // par la DGFiP, S21.G00.50.007) est la grille.
     for p in paies.filter(|p| p.pas.as_ref().is_some_and(|v| v.type_taux.as_deref() != Some("01"))) {
         let paye_le = p.engagement.date_du_versement()?;
-        let pourquoi = droit::pas::avertissements(ctx, Some(&[cle_de(p)]), Some(paye_le), Some(&p.engagement.mois))?;
+        let pourquoi = droit::pas::avertissements(ctx, Some(&[cle_de(p)]), Some(paye_le), Some(&p.engagement.mois.to_string()))?;
         let demande: String = compagnie::amorcage_demande::en_cours(ctx, &cle_de(p))?
             .map(|d| format!(" ; taux demandé le {}, réponse attendue avant le {}", d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa()))
             .into_iter()

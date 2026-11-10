@@ -17,6 +17,7 @@ use crate::Avis;
 use droit::contexte::Contexte;
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, R};
+use socle::mois::Mois;
 use socle::num::{dec_f64, eur2, Decimal};
 
 /// Les faits du mois, sur la carte d'un salarie paye au mois.
@@ -62,7 +63,7 @@ fn heures(x: &Option<NombreLu>) -> R<Decimal> {
 /// par mois, a temps `partiel` ou non : une ligne par majoration, au taux horaire du contrat majore. INFERENCE, ecrite
 /// comme telle : le taux horaire est le salaire mensuel du contrat sur ses heures par mois ; le BOSS (§ 310) y ajoute les
 /// primes qui sont la contrepartie du travail, que la carte ne distingue pas des autres.
-pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: &str, salaire: Decimal, quotite: Decimal, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
+pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, quotite: Decimal, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
     let (sup, a_50, comp) = (heures(&e.heures_supplementaires)?, heures(&e.heures_supplementaires_a_50)?, heures(&e.heures_complementaires)?);
     if sup.is_zero() && comp.is_zero() && a_50.is_zero() {
         return Ok((Vec::new(), Vec::new()));

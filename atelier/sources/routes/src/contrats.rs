@@ -1273,7 +1273,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let siens = version_validee(ctx, &mois_parti, salarie, paies[i].engagement.numero.as_deref(), &departs)?;
     let passee = siens.as_ref().and_then(|v| engagement::etats::version_au_depart(v, &departs, engagement::departs::Envoi::Contrat));
     let mois_effet = match (siens.as_ref(), passee) {
-        (Some(v), Some(x)) => engagement::etats::mois_du_changement(v, x)?.filter(|m| *m > mois_parti),
+        (Some(v), Some(x)) => engagement::etats::mois_du_changement(v, x)?.map(|m| m.to_string()).filter(|m| *m > mois_parti),
         _ => None,
     };
     let (paies, i, mois_compare) = match &mois_effet {
@@ -1287,10 +1287,11 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let effet = match (&mois_effet, siens.as_ref()) {
         (Some(me), Some(v)) => {
+            let me = socle::mois::Mois::lire(me)?;
             let dite = v.objet().vue(me)?.and_then(|x| x.date_modification.filter(|d| !d.is_empty()));
             match dite {
                 Some(d) => d,
-                None => engagement::stock::premier_jour(me)?.iso(),
+                None => me.premier_jour().iso(),
             }
         }
         _ => c.debut.iso(),
@@ -1310,10 +1311,11 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         (Some(v), Some(x)) => {
             let o = v.objet();
             let mut mois = engagement::paies::mois_ecrits(o)?;
-            mois.retain(|m| *m <= mois_compare);
+            let compare = socle::mois::Mois::lire(&mois_compare)?;
+            mois.retain(|m| *m <= compare);
             let mut trouvee = None;
             for m in mois.iter().rev() {
-                if let Some(p) = engagement::etats::paie_ecrite_de_la_version(o, x, m)? {
+                if let Some(p) = engagement::etats::paie_ecrite_de_la_version(o, x, *m)? {
                     trouvee = Some(p.paie.clone());
                     break;
                 }
@@ -1364,7 +1366,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
 
 /// La version validee de l'engagement de `salarie` qui porte le numero `numero`, parmi ceux de `mois`.
 fn version_validee(ctx: &Contexte, mois: &str, salarie: &str, numero: Option<&str>, departs: &engagement::departs::Departs) -> R<Option<engagement::etats::Valide>> {
-    Ok(engagement::etats::du_mois(ctx, mois, departs)?.into_iter().find_map(|e| {
+    Ok(engagement::etats::du_mois(ctx, socle::mois::Mois::lire(mois)?, departs)?.into_iter().find_map(|e| {
         let v = e.valide()?.clone();
         let b = &*v.objet().brut;
         (b.saisie.carte.salarie.as_deref() == Some(salarie) && b.saisie.carte.numero.as_deref() == numero).then_some(v)

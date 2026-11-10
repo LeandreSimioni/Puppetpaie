@@ -133,7 +133,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
     for cle in &cles {
         let mut besoin: Option<(usize, droit::pas::Situation)> = None;
         for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
-            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(&p.engagement.mois)).map_err(|e| e.reclasser(Classe::Illisible))?;
+            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(&p.engagement.mois.to_string())).map_err(|e| e.reclasser(Classe::Illisible))?;
             if s.situation == droit::pas::SANS_NIR || s.a_demander {
                 besoin = Some((i, s));
                 break;

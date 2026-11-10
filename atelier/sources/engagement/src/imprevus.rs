@@ -28,6 +28,7 @@ use droit::permanents::MotifDeSuspension;
 use droit::contexte::Contexte;
 use droit::fiche::SalarieDuContrat;
 use socle::date::Jour;
+use socle::mois::Mois;
 use crate::Avis;
 use socle::fichiers::repr;
 use socle::echec::R;
@@ -157,7 +158,7 @@ pub enum Imprevu {
 #[serde(deny_unknown_fields)]
 struct FichierDesImprevus {
     quoi: String,
-    mois: String,
+    mois: Mois,
     imprevus: Vec<Imprevu>,
 }
 
@@ -277,7 +278,7 @@ pub fn dossier(racine: &Path) -> PathBuf {
     racine.join(DOSSIER)
 }
 
-fn chemin(racine: &Path, mois: &str) -> PathBuf {
+fn chemin(racine: &Path, mois: Mois) -> PathBuf {
     dossier(racine).join(format!("{}.json", mois))
 }
 
@@ -362,12 +363,12 @@ fn siens_sans_noter(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) d'un salarie (`du_salarie`) qui croisent le mois `AAAA-MM`.
-pub fn du_mois_du_salarie(racine: &Path, mois: &str, genre_voulu: Option<&str>, cle: &str) -> R<Vec<Imprevu>> {
+pub fn du_mois_du_salarie(racine: &Path, mois: Mois, genre_voulu: Option<&str>, cle: &str) -> R<Vec<Imprevu>> {
     croisant(du_salarie(racine, cle)?, mois, genre_voulu)
 }
 
 /// Les imprevus que le fichier d'un mois du magasin range, verifies ; vide s'il n'existe pas.
-pub fn du_fichier(racine: &Path, mois: &str) -> R<Vec<Imprevu>> {
+pub fn du_fichier(racine: &Path, mois: Mois) -> R<Vec<Imprevu>> {
     let p = chemin(racine, mois);
     if !socle::fichiers::existe(&p) {
         return Ok(Vec::new());
@@ -376,14 +377,14 @@ pub fn du_fichier(racine: &Path, mois: &str) -> R<Vec<Imprevu>> {
 }
 
 /// Ecrit le fichier d'un mois du magasin.
-pub fn ecrire(racine: &Path, mois: &str, imprevus: Vec<Imprevu>) -> R<()> {
+pub fn ecrire(racine: &Path, mois: Mois, imprevus: Vec<Imprevu>) -> R<()> {
     let quoi = format!(
         "Les imprevus ranges en {} : arrets de travail (au mois du dernier jour travaille) et suspensions (au mois \
 de leur premier jour). Chacun se saisit une fois ; le moteur en tire la ligne de paie d'un permanent, le bloc 60 ou 65 \
 de chaque DSN mensuelle dont le mois le croise, et, pour un arret, son signalement (nature 04, 05).",
         mois
     );
-    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois: mois.to_string(), imprevus }, 2)
+    socle::ecriture::ecrire_json(&chemin(racine, mois), &FichierDesImprevus { quoi, mois, imprevus }, 2)
 }
 
 /// Le jour qui range un imprevu dans le magasin : le dernier jour travaille d'un arret, le premier jour d'une suspension.
@@ -468,12 +469,12 @@ pub fn arret_croise(arret: &ArretSaisi, debut: &Jour, fin: &Jour) -> R<bool> {
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) qui croisent le mois `AAAA-MM`.
-pub fn du_mois(racine: &Path, mois: &str, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
+pub fn du_mois(racine: &Path, mois: Mois, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
     croisant(tous(racine)?, mois, genre_voulu)
 }
 
-fn croisant(imprevus: Vec<Imprevu>, mois: &str, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
-    let (debut, fin) = (socle::mois::Mois::lire(mois)?.premier_jour(), socle::mois::Mois::lire(mois)?.dernier_jour());
+fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
+    let (debut, fin) = (mois.premier_jour(), mois.dernier_jour());
     let mut out = Vec::new();
     for imp in imprevus {
         if genre_voulu.is_some_and(|gv| gv != imp.genre()) {
@@ -545,7 +546,7 @@ pub struct Suspension {
 /// Les blocs S21.G00.65 d'une paie : chaque suspension du magasin qui suspend CE contrat et croise le mois que la DSN
 /// declare, avec son motif et ses DEUX dates entieres (65.002 et 65.003) -- la meme dans chaque mois qu'elle traverse,
 /// sans recopie (cahier technique DSN 2026.1, bloc S21.G00.65 p. 281, `atelier/reference/norme-dsn/texte/bloc-S21.G00.65.txt`).
-pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: &str) -> R<Vec<Suspension>> {
+pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Mois) -> R<Vec<Suspension>> {
     let cle = paie.salarie.id.to_string();
     let e = &paie.engagement;
     let qui = ctx.nomme(&cle);
@@ -751,8 +752,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
     let fiche = SalarieDuContrat::de(ctx.salarie(imp.salarie())?);
     let cle = fiche.id.to_string();
     let debut = Jour::lire(imp.contrat_debut())?;
-    let mois = debut.mois_civil().to_string();
-    let Some(data) = crate::stock::vue_du_mois(&ctx.racine, &mois)? else { return Ok(fiche) };
+    let Some(data) = crate::stock::vue_du_mois(&ctx.racine, debut.mois_civil())? else { return Ok(fiche) };
     for e in &data.engagements {
         let Some(debut_dit) = e.debut.as_deref().filter(|x| !x.is_empty()) else { continue };
         if Jour::lire(debut_dit)? != debut || e.salarie.as_deref() != Some(cle.as_str()) {
@@ -770,7 +770,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
 
 /// Les imprevus du contrat qui croisent le mois, du premier au dernier jour : le contrat de `salarie` (la cle que la carte
 /// ecrit) commence le `debut`, de numero `numero` (vide avant la validation).
-pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSalarie, debut: &Jour, numero: Option<&str>, mois: &str) -> R<Vec<Imprevu>> {
+pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSalarie, debut: &Jour, numero: Option<&str>, mois: Mois) -> R<Vec<Imprevu>> {
     crate::fiche_du_salarie(ctx, salarie)?;
     let cle = salarie.to_string();
     let mut out = Vec::new();
@@ -806,7 +806,7 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &droit::contexte::IdSala
 ///
 /// Rend aussi les jours travailles que les absences retirees ote du mois (un arret, une suspension non remuneree) :
 /// `conges::lignes_du_mois` en tire les jours travailles du mois.
-pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: &str, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
+pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
     let qui = crate::conges::qui(ctx, e);
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), 0i64);
     let nat = e.nature_lue()?;
@@ -930,9 +930,9 @@ pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> R<Vec<CachetPaye>> {
     if dernier < premier {
         return Ok(out);
     }
-    for mois in socle::mois::Mois::entre(&premier, &dernier).iter().map(socle::mois::Mois::to_string) {
-        let Some(data) = crate::stock::vue_du_mois(&ctx.racine, &mois)? else { continue };
-        out.extend(cachets_de_la_saisie(ctx, &data, &mois, &cle, &premier, &dernier)?);
+    for mois in Mois::entre(&premier, &dernier) {
+        let Some(data) = crate::stock::vue_du_mois(&ctx.racine, mois)? else { continue };
+        out.extend(cachets_de_la_saisie(ctx, &data, &cle, &premier, &dernier)?);
     }
     Ok(out)
 }
@@ -942,7 +942,7 @@ pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> R<Vec<CachetPaye>> {
 /// (AAAA-MM-JJ), sa quantite et son taux.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CachetPaye {
-    pub mois: String,
+    pub mois: Mois,
     pub engagement: usize,
     pub numero: Option<String>,
     pub spectacle: Option<String>,
@@ -954,7 +954,7 @@ pub struct CachetPaye {
     pub taux: Option<Decimal>,
 }
 
-fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, mois: &str, cle: &str, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
+fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &str, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
     for (i, e) in data.engagements.iter().enumerate() {
         if e.salarie.as_deref() != Some(cle) {
@@ -967,7 +967,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, mois: &
             }
             let rubrique = l.rubrique().to_string();
             out.push(CachetPaye {
-                mois: mois.to_string(),
+                mois: data.mois,
                 engagement: i,
                 numero: e.numero.clone(),
                 spectacle: e.spectacle.as_ref().map(ToString::to_string),
@@ -1002,10 +1002,9 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
     for cle in &salaries {
         siens.extend(du_salarie(&ctx.racine, cle)?);
     }
-    let mois = data.mois.to_string();
     for imp in &siens {
         let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
-        for c in cachets_de_la_saisie(ctx, data, &mois, imp.salarie(), &premier, &dernier)? {
+        for c in cachets_de_la_saisie(ctx, data, imp.salarie(), &premier, &dernier)? {
             let i = c.engagement;
             let dates: Vec<String> = c.dates.iter().map(|x| Jour::lire(x).map(|j| j.jj_mm_aaaa())).collect::<socle::echec::R<_>>()?;
             let quoi = if est_un_arret(imp) {

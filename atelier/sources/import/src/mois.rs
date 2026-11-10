@@ -24,7 +24,7 @@ use crate::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
 fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {
-    engagement::importe::du_mois(racine, mois)}
+    engagement::importe::du_mois(racine, socle::mois::Mois::lire(mois)?)}
 
 /// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde : sa copie (relative a la compagnie), et le
 /// salarie qu'il paie.
@@ -56,11 +56,11 @@ pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
 
 /// Les mois que les engagements importes touchent, qu'aucun engagement de la saisie ne touche.
 pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
-    let mois: BTreeSet<String> = engagement::importe::tous(racine)?.iter().flat_map(Importe::mois).collect();
+    let mois: BTreeSet<socle::mois::Mois> = engagement::importe::tous(racine)?.iter().flat_map(Importe::mois).collect();
     let mut out = Vec::new();
     for m in mois {
-        if !engagement::stock::a_une_saisie(racine, &m)? {
-            out.push(m);
+        if !engagement::stock::a_une_saisie(racine, m)? {
+            out.push(m.to_string());
         }
     }
     Ok(out)
@@ -74,16 +74,17 @@ pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`). La DSN de l'ancien logiciel ne se
 /// refait pas ici (regle 4).
 pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAncienLogiciel>> {
-    if engagement::importe::dsn_deposee(&ctx.racine, mois)?.is_none() {
+    let lu = socle::mois::Mois::lire(mois)?;
+    if engagement::importe::dsn_deposee(&ctx.racine, lu)?.is_none() {
         return Ok(None);
     }
     let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut n = 0;
-    for e in engagement::etats::du_mois(ctx, mois, &departs)? {
+    for e in engagement::etats::du_mois(ctx, lu, &departs)? {
         // Un engagement valide ne s'y declare que si sa correction est due ; un engagement en saisie, toujours.
         if let Some(v) = e.valide() {
-            if engagement::etats::correction_due(ctx, v, &departs, mois, &porteur)?.is_none() {
+            if engagement::etats::correction_due(ctx, v, &departs, lu, socle::mois::Mois::lire(&porteur)?)?.is_none() {
                 continue;
             }
         }
