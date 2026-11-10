@@ -110,7 +110,12 @@ pub(crate) struct Choisis {
 
 /// Une date ISO en JJ/MM/AAAA ; refus (`Illisible`) si elle ne se lit pas.
 pub(crate) fn jj(iso: &str) -> R<String> {
-    socle::date::Jour::lire(iso).map(|j| j.jj_mm_aaaa()).map_err(|m| m.reclasser(Classe::Illisible))
+    jour(iso).map(|j| j.jj_mm_aaaa())
+}
+
+/// Le jour qu'ecrit `iso` ; illisible, il se refuse.
+fn jour(iso: &str) -> R<socle::date::Jour> {
+    socle::date::Jour::lire(iso).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// « du 12/01/2026 au 30/06/2026 », ou « à partir du 12/01/2026 » pour un contrat sans terme.
@@ -461,11 +466,10 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         }
     }
     let mut saisies: HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)> = HashMap::new();
-    let aujourdhui_jj = ctx.aujourdhui.jj_mm_aaaa();
     let mut lignes_avenants: Vec<ContratParti> = Vec::new();
     for (salarie, aa) in avenants {
         for a in aa {
-            let (pdf, c, _) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs, &aujourdhui_jj)?;
+            let (pdf, c, _) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs)?;
             fichiers.push(pdf.to_string_lossy().into_owned());
             lignes_avenants.push(c);
         }
@@ -970,7 +974,6 @@ fn avenant_ecrit(
     a: &UnAvenant,
     saisies: &mut HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)>,
     departs: &engagement::departs::Departs,
-    aujourdhui_jj: &str,
 ) -> R<(PathBuf, ContratParti, Paie)> {
     let mois_a = a.mois;
     if !saisies.contains_key(&mois_a) {
@@ -1010,7 +1013,7 @@ fn avenant_ecrit(
                 let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
                 crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?
             };
-            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, &jj(&a.date_contrat)?, &jj(&a.effet)?, aujourdhui_jj, &modele, ailleurs)?;
+            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, jour(&a.date_contrat)?, jour(&a.effet)?, ctx.aujourdhui, &modele, ailleurs)?;
             f
         }
     };
@@ -1060,7 +1063,6 @@ pub(crate) struct Avenants {
 pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAvenant>)], client: &mut dyn Courriel) -> R<Avenants> {
     let (signataire, raison) = signataire_et_raison(ctx)?;
     let expediteur = client.compte().to_lowercase();
-    let aujourdhui_jj = ctx.aujourdhui.jj_mm_aaaa();
     // La saisie de chaque mois, lue une fois : rien ne l'ecrit pendant l'envoi.
     let mut saisies: HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)> = HashMap::new();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
@@ -1073,7 +1075,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAve
         let mut nommes: Vec<ContratNomme> = Vec::new();
         let mut sal: Option<droit::fiche::SalarieDuContrat> = None;
         for a in aa {
-            let (pdf, mut c, p) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs, &aujourdhui_jj)?;
+            let (pdf, mut c, p) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs)?;
             nommes.push(ContratNomme::de(&p)?);
             sal = Some(p.salarie.clone());
             c.adresse = a.destinataire.as_deref().map(|d| d.trim().to_lowercase());

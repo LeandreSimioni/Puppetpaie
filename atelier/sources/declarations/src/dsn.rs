@@ -3644,24 +3644,15 @@ pub struct Composant {
 
 /// La plus petite periode civile (trimestre, semestre, annee) qui contient les deux dates JJMMAAAA d'une base 78. Le
 /// trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
-fn periode_d_affectation(debut: &str, fin: &str) -> R<String> {
-    let lire = |d: &str| -> Option<(u32, u32)> {
-        if d.len() != 8 || !d.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let n = |a: usize, b: usize| d.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
-        Some((n(4, 8), n(2, 4)))
-    };
-    let ((a1, m1), (a2, m2)) = match (lire(debut), lire(fin)) {
-        (Some(x), Some(y)) if (1..=12).contains(&x.1) && (1..=12).contains(&y.1) => (x, y),
-        _ => return Err(refus!("S21.G00.55.004 : periode cotisee illisible ({} - {}).", debut, fin)),
-    };
+fn periode_d_affectation(debut: Jour, fin: Jour) -> R<String> {
+    let ((a1, m1), (a2, m2)) = ((debut.an, debut.mois), (fin.an, fin.mois));
     if a1 != a2 {
         return Err(refus!(
             "S21.G00.55.004 : une base de prevoyance couvre du {} au {}, a cheval sur deux annees civiles ; la periode \
 d'affectation est « une periode civile complete [...] contenant la ou les periodes cotisees » (norme p. 260) et aucune \
 ne les contient toutes deux. Rien n'est ecrit.",
-            debut, fin
+            debut.jjmmaaaa(),
+            fin.jjmmaaaa()
         ));
     }
     let (t1, t2) = ((m1 - 1) / 3 + 1, (m2 - 1) / 3 + 1);
@@ -3758,7 +3749,10 @@ contrats ouvert sur le mois déclaré. Rien n'est écrit.",
                 })?;
                 let montant: Decimal =
                     v.parse().map_err(|_| socle::echec::a_la_cle(&format!("Le montant de la cotisation {} ne se lit pas (S21.G00.81.004).", code81), "S21.G00.81.004", v))?;
-                let periode = periode_d_affectation(debut, fin)?;
+                let periode = match (crate::dsn_lue::jour_dsn(debut), crate::dsn_lue::jour_dsn(fin)) {
+                    (Some(d), Some(f)) => periode_d_affectation(d, f)?,
+                    _ => return Err(refus!("S21.G00.55.004 : periode cotisee illisible ({} - {}).", debut, fin)),
+                };
                 match out.iter_mut().find(|c| c.organisme == organisme && c.code == code && c.periode == periode) {
                     Some(c) => c.montant = add(c.montant, montant),
                     None => out.push(Composant { organisme, code, periode, montant: add(zero(), montant) }),
@@ -5107,8 +5101,8 @@ mod tests {
                 mois: regularises.iter().map(|m| Mois::lire(m).unwrap()).collect(),
                 montant: "0.00".into(),
                 calcule: "0.00".into(),
-                vire_le: "2025-01-15".into(),
-                note_le: "2025-01-16".into(),
+                vire_le: Jour::lire("2025-01-15").unwrap(),
+                note_le: Jour::lire("2025-01-16").unwrap(),
                 qui: "test".into(),
             }],
         };

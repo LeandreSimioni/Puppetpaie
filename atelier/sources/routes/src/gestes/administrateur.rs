@@ -720,7 +720,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 genre: Genre::Dsn,
                 titre: format!("DSN de {}", mois.libelle(socle::mois::Graphie::Accentuee)),
                 mois: Some(mois),
-                butoir: Some(e.jour.clone()),
+                butoir: Some(e.jour.iso()),
                 quand: Some(e.phrase.clone()),
                 detail: r.detail.clone(),
                 marche: marche.map(String::from),

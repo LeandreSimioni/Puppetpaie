@@ -1404,7 +1404,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     let modifications = documents::avenant::changements_en_clair(ctx, &nat, &changes)
         ?
         .into_iter()
-        .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour) })
+        .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour.iso()) })
         .collect::<Vec<_>>();
     // L'avenant prend effet au premier terme change ; rien de change, au debut du contrat.
     let effet = match changes.first() {

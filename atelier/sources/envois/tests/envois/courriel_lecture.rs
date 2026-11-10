@@ -71,7 +71,7 @@ impl Serialize for Reponses {
 #[serde(deny_unknown_fields)]
 struct DateLue {
     texte: String,
-    attendu: Option<String>,
+    attendu: Option<socle::date::Jour>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]

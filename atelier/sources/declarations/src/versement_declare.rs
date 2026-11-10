@@ -89,7 +89,7 @@ pub struct VersementDeclare {
     /// S21.G00.40.001 (JJMMAAAA) : la date de debut declaree, la DERNIERE (une correction deja portee a pu la changer).
     /// Une correction qui la change la declare en S21.G00.41.021 (fiche net-entreprises 1952). `None` : rien de declare
     /// (un contrat ajoute apres la limite).
-    pub debut_contrat: Option<String>,
+    pub debut_contrat: Option<socle::date::Jour>,
 }
 
 impl VersementDeclare {
@@ -197,7 +197,7 @@ pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
         lignes,
         affiliations: ecrit.affiliations,
         taux_pas,
-        debut_contrat: Some(p.engagement.debut.jjmmaaaa()),
+        debut_contrat: Some(p.engagement.debut),
     })
 }
 
@@ -252,7 +252,7 @@ pub fn dernier_declare(
     }
     etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
     if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
-        etat.debut_contrat = Some(d.jjmmaaaa());
+        etat.debut_contrat = Some(d);
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());
     let net_deja_verse = derniere.paie.net_a_payer;

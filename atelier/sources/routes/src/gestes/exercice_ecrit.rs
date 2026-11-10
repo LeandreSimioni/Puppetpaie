@@ -135,7 +135,7 @@ impl ExportCompta {
                 .into_iter()
                 .map(|e| EcritureRendue {
                     journal: e.journal,
-                    date: e.date,
+                    date: e.date.iso(),
                     compte: e.compte,
                     libelle: e.libelle,
                     debit: e.debit.to_string(),

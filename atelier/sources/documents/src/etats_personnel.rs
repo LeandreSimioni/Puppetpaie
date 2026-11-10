@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use droit::contexte::Contexte;
 use socle::echec::Classe;
+use socle::date::Jour;
 use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use socle::num::{eur2, Decimal};
@@ -28,9 +29,9 @@ struct ContratMois {
     emploi: Option<String>,
     spectacle: Option<String>,
     objet: Option<String>,
-    debut: String,
+    debut: Jour,
     /// La fin du contrat, sinon son dernier jour travaille.
-    fin: Option<String>,
+    fin: Option<Jour>,
     brut: Option<Decimal>,
 }
 
@@ -52,11 +53,8 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 emploi,
                 spectacle: titre_spectacle(paie),
                 objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
-                debut: e.debut.iso(),
-                fin: match e.fin {
-                    Some(f) => Some(f.iso()),
-                    None => e.dates_travail.last().map(|j| j.iso()),
-                },
+                debut: e.debut,
+                fin: e.fin.or(e.dates_travail.last().copied()),
                 brut: Some(eur2(paie.brut)),
             });
         }
@@ -74,7 +72,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for c in &contrats {
         let mut l = Ligne::nouvelle();
         l.m("mois", c.mois).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
-        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", jj(&c.debut)).ot("fin", c.fin.as_deref().map(jj));
+        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
         l.od("brut", c.brut);
         lignes.push(l);
     }
@@ -129,14 +127,14 @@ fn sexe(nir: Option<&str>) -> Option<&'static str> {
 pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut vus: BTreeSet<(String, Option<String>, String, Option<String>)> = BTreeSet::new();
+    let mut vus: BTreeSet<(String, Option<String>, Jour, Option<Jour>)> = BTreeSet::new();
     let mut a_preciser: BTreeSet<String> = BTreeSet::new();
-    // (entree AAAA-MM-JJ, nom, contrat) : l'ordre des embauches.
-    let mut rangees: Vec<((String, Option<String>, Option<String>), Ligne)> = Vec::new();
+    // (entree, nom, contrat) : l'ordre des embauches.
+    let mut rangees: Vec<((Jour, Option<String>, Option<String>), Ligne)> = Vec::new();
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     for c in contrats_de(&p, &mut lecture)? {
         // Un contrat qui deborde du mois apparait une fois par mois de paie : c'est UNE embauche.
-        if !vus.insert((c.cle.clone(), c.contrat.clone(), c.debut.clone(), c.fin.clone())) {
+        if !vus.insert((c.cle.clone(), c.contrat.clone(), c.debut, c.fin)) {
             continue;
         }
         let f = &c.fiche;
@@ -176,8 +174,8 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         );
         l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.portee()));
         l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.libelle_nature.clone()).ot("contrat", c.contrat.clone());
-        l.t("entree", jj(&c.debut)).ot("sortie", c.fin.as_deref().map(jj));
-        rangees.push(((c.debut.clone(), nom, c.contrat.clone()), l));
+        l.t("entree", c.debut.jj_mm_aaaa()).ot("sortie", c.fin.map(|j| j.jj_mm_aaaa()));
+        rangees.push(((c.debut, nom, c.contrat.clone()), l));
     }
     rangees.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes: Vec<Ligne> = Vec::new();

@@ -154,8 +154,8 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             identifiant: o.organisme.clone(),
             objet,
             montant: crate::dsn::mt(o.montant),
-            periode: PeriodeEnClair { du: debut.map(|j| j.iso()), au: fin.map(|j| j.iso()) },
-            date: date.map(|j| j.iso()),
+            periode: PeriodeEnClair { du: debut, au: fin },
+            date,
             quand,
             source,
             credit,
@@ -172,7 +172,7 @@ pub struct OrdreEnClair {
     pub objet: String,
     pub montant: String,
     pub periode: PeriodeEnClair,
-    pub date: Option<String>,
+    pub date: Option<Jour>,
     pub quand: String,
     pub source: &'static str,
     pub credit: Option<CreditEnClair>,
@@ -181,8 +181,8 @@ pub struct OrdreEnClair {
 /// La periode d'un ordre : du, au (`AAAA-MM-JJ`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PeriodeEnClair {
-    pub du: Option<String>,
-    pub au: Option<String>,
+    pub du: Option<Jour>,
+    pub au: Option<Jour>,
 }
 
 /// Le trop-verse d'un ordre (`bordereau::credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie en

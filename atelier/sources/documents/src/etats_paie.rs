@@ -20,6 +20,7 @@ use serde::{Serialize, Serializer};
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
+use socle::date::Jour;
 use socle::mois::Mois;
 use socle::num::{eur2, zero2, Decimal};
 use droit::pas::Versement;
@@ -324,10 +325,10 @@ pub struct LigneLivre {
     pub net_a_payer: Option<Decimal>,
     pub pas: Option<Decimal>,
     pub cout_employeur: Option<Decimal>,
-    /// Le jour du versement (`Engagement::date_du_versement`), JJ/MM/AAAA.
-    pub verse_le: String,
+    /// Le jour du versement (`Engagement::date_du_versement`).
+    pub verse_le: Jour,
     pub nir: Option<String>,
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<Jour>,
     pub adresse: Option<String>,
 }
 
@@ -461,11 +462,11 @@ fn regroupement_lisible(r: &str) -> &'static str {
 
 /// Le NIR, la date de naissance et l'adresse (la forme lisible quand la fiche la porte, la declaree sinon) d'une fiche,
 /// quand le livre porte les coordonnees ; chacune vide quand la fiche ne la dit pas.
-fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option<String>, Option<String>, Option<String>) {
+fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option<String>, Option<Jour>, Option<String>) {
     if !coordonnees {
         return (None, None, None);
     }
-    (s.nir.en_texte(), s.date_naissance.dite().map(|j| j.iso()), s.adresse_affichage.clone().or_else(|| s.adresse.en_texte()))
+    (s.nir.en_texte(), s.date_naissance.dite().copied(), s.adresse_affichage.clone().or_else(|| s.adresse.en_texte()))
 }
 
 /// Les lignes du livre pour un mois (`engagement::etats::paies_du_mois` : les paies ecrites des engagements valides, puis
@@ -500,7 +501,7 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             net_a_payer: dit("net_a_payer", p.net_a_payer),
             pas: r.as_ref().filter(|_| p.dit("pas")).map(|v| eur2(v.prelevement)),
             cout_employeur: dit("cout_employeur", p.cout_employeur),
-            verse_le: p.engagement.date_du_versement()?.jj_mm_aaaa(),
+            verse_le: p.engagement.date_du_versement()?,
             nir,
             date_naissance,
             adresse,
@@ -659,7 +660,7 @@ fn cellules(l: &LigneLivre, coordonnees: bool) -> Vec<CelL> {
     };
     let mut c = vec![t(&l.mois.to_string()), t(&l.salarie)];
     if coordonnees {
-        c.extend([o(&l.nir), o(&l.date_naissance), o(&l.adresse)]);
+        c.extend([o(&l.nir), o(&l.date_naissance.map(|j| j.iso())), o(&l.adresse)]);
     }
     c.extend([o(&l.contrat), t(&l.libelle_nature), t(&l.spectacle)]);
     c.extend(CUMULABLES.iter().map(|ch| CelL::M(l.montant(ch))));
@@ -1115,11 +1116,7 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let mut lignes = Vec::new();
-    let mut sans_date = BTreeSet::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        if l.verse_le.is_empty() {
-            sans_date.insert(l.mois.to_string());
-        }
         let mut x = Ligne::nouvelle();
         x.m("mois", l.mois).t("salarie", l.salarie.clone()).ot("contrat", l.contrat.clone()).ot("spectacle", Some(l.spectacle.clone()).filter(|s| !s.is_empty()));
         // Ce qui part au salarie : le net a payer du bulletin, son prelevement a la source deduit quand il en porte un.
@@ -1127,14 +1124,8 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(p) => socle::num::sub(n, p),
             None => n,
         });
-        x.od("net_a_payer", verse).t("verse_le", l.verse_le);
+        x.od("net_a_payer", verse).t("verse_le", l.verse_le.jj_mm_aaaa());
         lignes.push(x);
-    }
-    if !sans_date.is_empty() {
-        avert.push(format!(
-            "Mois sans date de paiement ({}) : la saisie du mois ne la dit pas, la colonne « Versé le » reste vide.",
-            sans_date.into_iter().collect::<Vec<_>>().join(", ")
-        ));
     }
     let mut t = Tableau::nouveau("etat-des-virements", "État des virements de salaires", p.libelle.clone());
     t.mois = p.mois.clone();

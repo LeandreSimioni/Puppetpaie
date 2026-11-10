@@ -1442,7 +1442,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             };
             let modifs = crate::gestes::signature::pour_la_piece(premier.modifications.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans les articles qu'il modifie", nom)))?);
             let effet = premier.effet.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
-            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, &jj(&date_contrat)?, &jj(effet)?, &jour.jj_mm_aaaa(), &modele, premier.ailleurs);
+            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, jour_d_un_instant(&date_contrat)?, jour_d_un_instant(effet)?, jour, &modele, premier.ailleurs);
         }
         let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();
         if nom.strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {

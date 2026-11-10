@@ -26,8 +26,8 @@ pub struct RegularisationNotee {
     pub mois: Vec<Mois>,
     pub montant: String,
     pub calcule: String,
-    pub vire_le: String,
-    pub note_le: String,
+    pub vire_le: socle::date::Jour,
+    pub note_le: socle::date::Jour,
     pub qui: String,
 }
 

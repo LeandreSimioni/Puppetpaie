@@ -64,10 +64,6 @@ fn blancs(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// `s[a:b]`, en caracteres.
-fn tranche(s: &str, a: usize, b: usize) -> String {
-    s.chars().skip(a).take(b.saturating_sub(a)).collect()
-}
 
 /// `s.ljust(n)` / `s.rjust(n)`.
 fn caler(s: String, n: usize, a_droite: bool) -> String {
@@ -229,7 +225,7 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t("journal", e.journal.clone()).t("date", jj(&e.date)).t("piece", e.piece.clone()).t("compte", compte_de(e));
+    l.t("journal", e.journal.clone()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e));
     l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
     l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
     l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
@@ -434,7 +430,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let mut lignes = vec![ZONES_FEC.join("\t")];
     let journal_lib = plan.journal_libelle.clone();
     for e in ecritures {
-        let date = e.date.replace('-', "");
+        let date = e.date.aaaammjj();
         let lib = match e.analytique.as_ref().filter(|a| !a.is_empty()) {
             Some(a) => format!("{} — {}", e.libelle, a),
             None => e.libelle.clone(),
@@ -443,7 +439,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let champs = [
             e.journal.clone(),
             journal_lib.clone(),
-            format!("{}{:05}", tranche(&e.date, 0, 4), e.numero),
+            format!("{:04}{:05}", e.date.an, e.numero),
             date.clone(),
             e.compte.clone(),
             ou_vide(libelle_compte(plan, &e.compte)),
@@ -471,7 +467,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 /// sinon la nature ; les deux si `nature`), et son mois (MM/AAAA). La zone prend les deux, ou ce qui la distingue se
 /// remplace par sa valeur courte validee (`Envoi::libelle`).
 fn libelle_court(e: &Ecriture, nature: bool) -> (String, String) {
-    let mm = format!("{}/{}", tranche(&e.date, 5, 7), tranche(&e.date, 0, 4));
+    let mm = format!("{:02}/{:04}", e.date.mois, e.date.an);
     let sans_mois = match e.libelle.rfind(" -- ") {
         Some(i) => &e.libelle[..i],
         None => e.libelle.as_str(),
@@ -505,9 +501,9 @@ fn sens(e: &Ecriture) -> (&'static str, Decimal) {
     }
 }
 
-/// La date JJMMAA d'un jour ISO.
-fn jjmmaa(date: &str) -> String {
-    format!("{}{}{}", tranche(date, 8, 10), tranche(date, 5, 7), tranche(date, 2, 4))
+/// La date JJMMAA d'un jour.
+fn jjmmaa(j: socle::date::Jour) -> String {
+    format!("{:02}{:02}{:02}", j.jour, j.mois, j.an % 100)
 }
 
 /// Ni point-virgule ni fin de ligne dans une zone.
@@ -553,7 +549,7 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let champs: BTreeMap<&str, String> = [
             ("mouvement", e.numero.to_string()),
             ("journal", e.journal.clone()),
-            ("date", e.date.replace('-', "")),
+            ("date", e.date.aaaammjj()),
             ("echeance", String::new()),
             ("piece", e.piece.clone()),
             ("compte", compte_de(e)),
@@ -606,7 +602,7 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         for (k, v) in [
             ("NUMJL", e.journal.clone()),
             ("NUMCP", compte_de(e)),
-            ("DTOPE", e.date.replace('-', "")),
+            ("DTOPE", e.date.aaaammjj()),
             ("NPIEC", piece_courte(e)),
             ("LIBEC", env.libelle(e, true, 40)),
             ("MTDEB", virgule(e.debit)),
@@ -654,7 +650,7 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let (s, montant) = sens(e);
         let mut champs: BTreeMap<&str, String> = [
             ("journal", e.journal.clone()),
-            ("date", jjmmaa(&e.date)),
+            ("date", jjmmaa(e.date)),
             ("type_piece", "OD".to_string()),
             ("compte", compte_de(e)),
             ("type_compte", String::new()),
@@ -742,7 +738,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         ch.insert("compte", compte_quadra(&compte_de(e))?);
         ch.insert("journal", e.journal.clone());
         ch.insert("folio", "000".to_string());
-        ch.insert("date", jjmmaa(&e.date));
+        ch.insert("date", jjmmaa(e.date));
         ch.insert("sens", s.to_string());
         ch.insert("montant", format!("+{:012}", centimes));
         ch.insert("affaire", ou_vide(env.section(e)));
@@ -777,7 +773,7 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         out.push(
             [
                 (i + 1).to_string(),
-                jjmmaa(&e.date),
+                jjmmaa(e.date),
                 e.journal.clone(),
                 compte_de(e),
                 String::new(),
@@ -837,7 +833,7 @@ fn pennylane(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
                 compte
             )));
         }
-        let mut champs = vec![jj(&e.date), e.journal.clone(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
+        let mut champs = vec![e.date.jj_mm_aaaa(), e.journal.clone(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
         if analytique {
             // Une ligne ventilee porte sa famille, sa categorie (le spectacle) et son code ; les autres laissent les trois
             // colonnes vides.

@@ -160,9 +160,9 @@ impl Echeance {
     /// Ce que les routes rendent a cote de leur date (`echeance_depot`).
     pub fn dite(&self) -> EcheanceDite {
         EcheanceDite {
-            jour: self.jour.iso(),
+            jour: self.jour,
             heure: HEURE_LIMITE,
-            nominale: self.nominale.iso(),
+            nominale: self.nominale,
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
@@ -177,9 +177,9 @@ impl Echeance {
 /// pourquoi, sa phrase, la veille de l'annule-et-remplace, ses textes et l'inference qu'elle porte.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EcheanceDite {
-    pub jour: String,
+    pub jour: Jour,
     pub heure: &'static str,
-    pub nominale: String,
+    pub nominale: Jour,
     pub reportee: bool,
     pub pourquoi: Option<String>,
     pub phrase: String,

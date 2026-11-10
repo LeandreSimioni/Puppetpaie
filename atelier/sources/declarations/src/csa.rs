@@ -159,11 +159,11 @@ impl Effectifs {
 struct EffectifDuCode {
     valeur: Nombre,
     #[serde(rename = "calcule_le")]
-    _calcule_le: Option<String>,
+    _calcule_le: Option<socle::paris::InstantEcrit>,
     #[serde(rename = "source")]
     _source: Option<String>,
     #[serde(rename = "dit_le")]
-    _dit_le: Option<String>,
+    _dit_le: Option<socle::date::Jour>,
 }
 
 /// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`), ou `None`.

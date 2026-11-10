@@ -275,7 +275,7 @@ fn nombre(t: &str) -> Option<u32> {
 
 /// Une date lue `AAAA-M-J` ou `J/M/AAAA` (separateurs `/`, `.`, `-`, espace), en ISO ; `None` si elle ne se
 /// lit pas ou n'existe pas.
-pub fn date_lue(texte: &str) -> Option<String> {
+pub fn date_lue(texte: &str) -> Option<Jour> {
     let t = strip(texte);
     let c: Vec<char> = t.chars().collect();
     // Les trois groupes de chiffres, separes par `sep`, de largeurs permises.
@@ -302,7 +302,7 @@ pub fn date_lue(texte: &str) -> Option<String> {
         let [j, mo, a] = groupes(&|x| matches!(x, '/' | '.' | '-' | ' '), [(1, 2), (1, 2), (4, 4)])?;
         (a, mo, j)
     };
-    Jour::nouveau(nombre(&a)? as i32, nombre(&mo)?, nombre(&j)?).map(|j| j.iso())
+    Jour::nouveau(nombre(&a)? as i32, nombre(&mo)?, nombre(&j)?)
 }
 
 // LES PAYS QUE LA RELEVE SAIT NOMMER : ceux de la liste livree (`pays.rs`, Code officiel geographique de l'INSEE),
@@ -341,9 +341,9 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_conges_spectacles: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub anniversaire_droits: Option<String>,
+    pub anniversaire_droits: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_postal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -392,7 +392,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
     d.num_conges_spectacles = reponse("conges").and_then(|r| dite(&r.replace(' ', "")));
     for (q, cle) in [("naissance", "date_naissance"), ("anniversaire", "anniversaire_droits")] {
         if let Some(r) = reponse(q) {
-            let v = date_lue(r).filter(|v| !v.is_empty());
+            let v = date_lue(r);
             if v.is_none() {
                 illisible.push(format!("{} : « {} »", cle.replace('_', " "), r));
             }

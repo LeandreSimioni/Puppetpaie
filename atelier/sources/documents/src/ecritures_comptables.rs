@@ -20,7 +20,7 @@ fn refus(m: String) -> Echec {
 /// Une ligne du journal de paie : date, journal, compte, libelle, debit, credit, analytique, auxiliaire.
 pub struct Ecriture {
     pub journal: String,
-    pub date: String,
+    pub date: socle::date::Jour,
     pub compte: String,
     pub libelle: String,
     pub debit: Decimal,
@@ -39,9 +39,9 @@ pub struct Ecriture {
     pub numero: i64,
 }
 
-/// La date de l'ecriture d'un mois (son dernier jour, AAAA-MM-JJ) et son libelle (« Decembre 2026 »).
-fn date_et_libelle(mois: Mois) -> (String, String) {
-    (mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre))
+/// La date de l'ecriture d'un mois (son dernier jour) et son libelle (« Decembre 2026 »).
+fn date_et_libelle(mois: Mois) -> (socle::date::Jour, String) {
+    (mois.dernier_jour(), mois.libelle(socle::mois::Graphie::Titre))
 }
 
 /// Une ecriture pour le mois, depuis les paies validees.
@@ -185,7 +185,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         }
         out.push(Ecriture {
             journal: jrn.clone(),
-            date: date.clone(),
+            date,
             compte: compte.to_string(),
             libelle: format!("{} -- {}", libelle, lib_mois),
             debit: eur2(debit),
@@ -261,7 +261,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
     };
     rang(&["Journal", "Date", "Compte", "Libelle", "Debit", "Credit", "Analytique"].map(|c| Some(c.to_string())));
     for e in ecritures {
-        let date: String = format!("{}/{}/{}", e.date.chars().skip(8).take(2).collect::<String>(), e.date.chars().skip(5).take(2).collect::<String>(), e.date.chars().take(4).collect::<String>());
+        let date = e.date.jj_mm_aaaa();
         let compte = match &e.auxiliaire {
             Some(a) => a.clone(),
             None => e.compte.clone(),

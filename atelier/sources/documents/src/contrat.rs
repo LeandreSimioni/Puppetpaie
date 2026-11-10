@@ -11,6 +11,7 @@ use std::path::Path;
 
 use fabrique_pdf::forme::{self, Description, Document, Style};
 use serde::Serialize;
+use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
 use crate::bulletin::{identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
@@ -191,8 +192,9 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
 
 /// Le contrat que l'avenant modifie, comme il le nomme (`{{avenant.reference}}`) : « n° FA1.26.13 du 12/10/2026 », ou,
 /// signe hors du logiciel (`ailleurs`), « commencé le 01/03/2022 » -- le numero que le logiciel lui a donne n'est pas sur
-/// le papier signe. `date_contrat` en JJ/MM/AAAA.
-fn reference_du_contrat(p: &Paie, date_contrat: &str, ailleurs: bool) -> String {
+/// le papier signe.
+fn reference_du_contrat(p: &Paie, date_contrat: Jour, ailleurs: bool) -> String {
+    let date_contrat = date_contrat.jj_mm_aaaa();
     match p.engagement.numero.as_deref() {
         Some(n) if !ailleurs => format!("n° {} du {}", n, date_contrat),
         _ if ailleurs => format!("commencé le {}", date_contrat),
@@ -213,9 +215,9 @@ pub fn ecrire_avenant(
     chemin: &Path,
     modifs: &[forme::Modification],
     numero: i64,
-    date_contrat: &str,
-    effet: &str,
-    date: &str,
+    date_contrat: Jour,
+    effet: Jour,
+    date: Jour,
     modele: &ModeleDuContrat,
     ailleurs: bool,
 ) -> R<()> {
@@ -229,10 +231,10 @@ pub fn ecrire_avenant(
     }
     let extra = Valeurs::from([
         (Marqueur::AvenantNumero, numero.to_string()),
-        (Marqueur::AvenantDateContrat, date_contrat.to_string()),
+        (Marqueur::AvenantDateContrat, date_contrat.jj_mm_aaaa()),
         (Marqueur::AvenantReference, reference_du_contrat(p, date_contrat, ailleurs)),
-        (Marqueur::AvenantEffet, effet.to_string()),
-        (Marqueur::AvenantDate, date.to_string()),
+        (Marqueur::AvenantEffet, effet.jj_mm_aaaa()),
+        (Marqueur::AvenantDate, date.jj_mm_aaaa()),
     ]);
     let d = description_avenant(ctx, p, ent, &modele.avenant, modifs, extra, (!ailleurs).then_some(modele))?;
     crate::fabrique::ecrire_pdf(&d, chemin)

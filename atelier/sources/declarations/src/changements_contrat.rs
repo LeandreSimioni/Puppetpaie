@@ -403,7 +403,7 @@ pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, m
 /// `nouveau` : la date de debut du bloc 40 ecrit.
 ///
 /// Rien a poser quand la date n'a pas change, ou pour un contrat jamais declare (un contrat ajoute). Refus quand la
-/// date declaree ne se lit pas, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
+/// date declaree n'est pas dite, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
 pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
     let e = &r.apres.engagement;
     let numero = match e.numero.as_deref() {
@@ -413,7 +413,7 @@ pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate:
     if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
         return Ok(());
     }
-    let Some(ancienne) = r.declare.debut_contrat.as_deref() else {
+    let Some(ancienne) = r.declare.debut_contrat else {
         if *nouveau == r.avant.engagement.debut {
             return Ok(());
         }
@@ -430,7 +430,7 @@ date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
             socle::echec::Lieu { fichier: Some(r.declare.fichier.clone()), ..socle::echec::Lieu::default() },
         ));
     };
-    if ancienne == nouveau.jjmmaaaa() {
+    if ancienne == *nouveau {
         return Ok(());
     }
     let Some(decidee) = r.decidee_le else {
@@ -440,10 +440,7 @@ jour de la correction (S21.G00.41.001, fiche net-entreprises 1952), et la correc
 n'est ecrit.",
             r.mois,
             numero,
-            match ddmmaaaa(ancienne) {
-                Some(j) => j.jj_mm_aaaa(),
-                None => ancienne.to_string(),
-            },
+            ancienne.jj_mm_aaaa(),
             nouveau.jj_mm_aaaa()
         ), "decidee_le"));
     };
@@ -452,7 +449,7 @@ n'est ecrit.",
     while lignes.get(fin).is_some_and(|l| l.starts_with("S21.G00.40.")) {
         fin += 1;
     }
-    let bloc = [format!("S21.G00.41.001,'{}'", date.jjmmaaaa()), format!("S21.G00.41.021,'{}'", ancienne)];
+    let bloc = [format!("S21.G00.41.001,'{}'", date.jjmmaaaa()), format!("S21.G00.41.021,'{}'", ancienne.jjmmaaaa())];
     lignes.splice(fin..fin, bloc);
     Ok(())
 }

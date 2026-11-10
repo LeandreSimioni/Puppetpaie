@@ -534,7 +534,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
 pub struct ChangementEnClair {
     pub article: String,
     pub phrase: String,
-    pub jour: String,
+    pub jour: socle::date::Jour,
     pub avant: Vec<String>,
     pub apres: Vec<String>,
 }
@@ -557,7 +557,7 @@ pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, change
                 (Some(a), None) => format!("{}, {} n'est plus {}.", quand, nom, a),
                 (None, None) => format!("{}, {} change.", quand, nom),
             };
-            Ok(ChangementEnClair { article: titre.to_string(), phrase, jour: c.jour.iso(), avant: avant.into_iter().collect(), apres: apres.into_iter().collect() })
+            Ok(ChangementEnClair { article: titre.to_string(), phrase, jour: c.jour, avant: avant.into_iter().collect(), apres: apres.into_iter().collect() })
         })
         .collect()
 }

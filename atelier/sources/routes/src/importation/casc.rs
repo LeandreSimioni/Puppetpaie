@@ -538,7 +538,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
                 Some(m) => euros(m),
                 None => x.montant.clone(),
             };
-            format!("{} ({}, viré le {})", x.annee, montant, jjmmaaaa(&x.vire_le))
+            format!("{} ({}, viré le {})", x.annee, montant, jjmmaaaa(&x.vire_le.iso()))
         })
         .collect::<Vec<_>>()
         .join(", "))
@@ -770,8 +770,8 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
         mois: r.mois.iter().map(|m| m.mois).collect(),
         montant: montant.to_string(),
         calcule: calcule.to_string(),
-        vire_le: vire_le.to_string(),
-        note_le: aujourd_hui.to_string(),
+        vire_le: socle::date::Jour::lire(vire_le).map_err(|m| m.reclasser(Classe::Illisible))?,
+        note_le: socle::date::Jour::lire(aujourd_hui).map_err(|m| m.reclasser(Classe::Illisible))?,
         qui: qui.to_string(),
     };
     d.regularisations.push(entree.clone());

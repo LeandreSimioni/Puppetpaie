@@ -909,7 +909,6 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         None => "base",
     };
     let chemin = d.join(format!("modele-{}-{}-{}.pdf", nat.cle, modele_du_fichier, sorte));
-    let (debut, jour) = (p.engagement.debut.jj_mm_aaaa(), ctx.aujourdhui.jj_mm_aaaa());
     match c.partie {
         Partie::Contrat => documents::contrat::ecrire_contrat(ctx, std::slice::from_ref(&p), &[modele], &ent, &chemin, &[])?,
         Partie::Avenant => {
@@ -918,10 +917,10 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             let contrat = modele.lu.decoupe(&nom).map_err(|m| m.reclasser(Classe::Illisible))?;
             let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| m.reclasser(Classe::Refuse))?;
             let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero as i64), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
-            documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, &debut, &jour, &jour, &modele, false)?
+            documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, p.engagement.debut, ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
         }
     }
-    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, debut), chemin: chemin.to_string_lossy().into_owned() })
+    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin: chemin.to_string_lossy().into_owned() })
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.
