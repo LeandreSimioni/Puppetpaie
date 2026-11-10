@@ -1731,7 +1731,6 @@ fiche! {
         conges_pris: bool,
         dsn_bloc52: String,
         dit: String,
-        paye_au_mois: bool,
     }
     pieces {}
 }

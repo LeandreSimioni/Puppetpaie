@@ -10,7 +10,7 @@ use serde::Deserialize;
 use socle::echec::APart;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::num::Resultat;
-use crate::fiche::{ChampsRubrique, Datee, FicheDatee, RubriqueDatee, VoirListe};
+use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -122,11 +122,11 @@ pub struct Rubrique {
     pub arret_de_travail: bool,
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
-    /// Le calcul ne la paie qu'a un contrat paye au mois (`paye_au_mois`), quand ses autres cases ne le disent pas :
-    /// l'indemnite de conges d'un permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav.
-    /// D. 7121-38), les indemnites journalieres que la compagnie subrogee reverse (la subrogation est une case des
-    /// permanents).
-    pub paye_au_mois: bool,
+    /// SA PIECE : `Piece::Permanent` pour une rubrique livree rangee dans `au_mois` de `rubriques-base.json`, que seul le
+    /// calcul d'un contrat paye au mois paie, quand ses autres cases ne le disent pas : l'indemnite de conges d'un
+    /// permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav. D. 7121-38), les indemnites
+    /// journalieres que la compagnie subrogee reverse (la subrogation est une case des permanents).
+    pub piece: Option<Piece>,
     pub origine: String,
     /// Ce que la ligne fait, que l'ecran dit sous elle quand son nom ne le dit pas (l'acompte).
     pub dit: Option<String>,
@@ -210,7 +210,7 @@ impl Rubrique {
             || self.arret_de_travail
             || self.conges_pris
             || self.dsn_bloc52.as_deref().is_some_and(|s| !s.is_empty())
-            || self.paye_au_mois
+            || self.piece == Some(Piece::Permanent)
         {
             return Some("mensuelle");
         }
@@ -292,6 +292,18 @@ struct Base {
     annexes: Annexes,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     rubriques: Vec<(String, ChampsRubrique)>,
+    /// LA PIECE D'UN SALARIE AU MOIS (`fiche::Piece::Permanent`) : les rubriques que seul le calcul d'un contrat paye au
+    /// mois paie, rangees a part. Leur place dit leur piece ; aucune case ne la dit.
+    #[serde(deserialize_with = "socle::forme::en_ordre")]
+    au_mois: Vec<(String, ChampsRubrique)>,
+}
+
+impl Base {
+    /// Chaque rubrique livree avec sa piece : la sienne pour celles qui sont rangees dans `au_mois`.
+    fn rangees(self) -> Vec<(String, ChampsRubrique, Option<Piece>)> {
+        let communes = self.rubriques.into_iter().map(|(c, v)| (c, v, None));
+        communes.chain(self.au_mois.into_iter().map(|(c, v)| (c, v, Some(Piece::Permanent)))).collect()
+    }
 }
 
 /// Le seuil et la fenetre des annexes VIII et X (`rubriques-base.json`, `annexes`).
@@ -317,7 +329,7 @@ fn base() -> Resultat<Base> {
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
 /// toute configuration (la table de lecture des bulletins s'y rapporte).
 pub fn livrees() -> Resultat<Vec<Rubrique>> {
-    base()?.rubriques.into_iter().map(|(c, v)| construire(&c, v, "base")).collect()
+    base()?.rangees().into_iter().map(|(c, v, piece)| construire(&c, v, "base", piece)).collect()
 }
 
 /// Le seuil et la fenetre des annexes VIII et X.
@@ -344,7 +356,7 @@ fn de_la_compagnie(racine: &Path) -> Resultat<RubriquesDeLaCompagnie> {
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
-fn construire(code: &str, f: ChampsRubrique, origine: &str) -> Resultat<Rubrique> {
+fn construire(code: &str, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> Resultat<Rubrique> {
     let faute = |cle: &str, quoi: &str| mal_decrite(code, format!("Rubrique {} : `{}` {}.", repr(code), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> String) -> Resultat<T> {
         c.ok_or_else(|| faute(cle, "manque"))
@@ -375,7 +387,7 @@ fn construire(code: &str, f: ChampsRubrique, origine: &str) -> Resultat<Rubrique
         arret_de_travail: dite(f.arret_de_travail, "arret_de_travail", &faute)?,
         conges_pris: dite(f.conges_pris, "conges_pris", &faute)?,
         dsn_bloc52: f.dsn_bloc52,
-        paye_au_mois: f.paye_au_mois == Some(true),
+        piece,
         origine: origine.to_string(),
         dit: f.dit,
     };
@@ -405,8 +417,9 @@ fn rubriques_datees(racine: &Path) -> Resultat<bool> {
 /// siennes (`config/rubriques-compagnie.json`, datees comme toute la configuration : une rubrique changee a une date ne
 /// change pas les paies d'avant ; une rubrique qui ne dit encore rien a `jour` n'existe pas).
 fn construire_catalogue(racine: &Path, jour: &Jour) -> Resultat<Vec<Rubrique>> {
-    // code -> (cases, propre a la compagnie)
-    let mut brut: Vec<(String, ChampsRubrique, bool)> = base()?.rubriques.into_iter().map(|(c, v)| (c, v, false)).collect();
+    // code -> (cases, piece, propre a la compagnie) ; une rubrique de la compagnie n'est dans aucune piece, et celle
+    // qu'elle ajuste garde la sienne.
+    let mut brut: Vec<(String, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
     if socle::fichiers::est_dossier(racine) {
         for (c, datee) in de_la_compagnie(racine)?.rubriques {
             let v = datee.au(jour);
@@ -415,13 +428,13 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> Resultat<Vec<Rubrique>> {
             }
             match brut.iter_mut().find(|e| e.0 == c) {
                 Some(e) => e.1.par_dessus(&v),
-                None => brut.push((c, v, true)),
+                None => brut.push((c, v, None, true)),
             }
         }
     }
     let mut out = Vec::new();
-    for (code, d, propre) in brut {
-        out.push(construire(&code, d, if propre { "compagnie" } else { "base" })?);
+    for (code, d, piece, propre) in brut {
+        out.push(construire(&code, d, if propre { "compagnie" } else { "base" }, piece)?);
     }
     out.sort_by_key(|r| r.libelle.to_lowercase());
     Ok(out)
