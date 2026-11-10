@@ -229,7 +229,7 @@ fn verifier_un_contrat_sur_deux_mois_colonne_par_colonne() {
     let paies = [paie("SI2.26.19", jour(2026, 9, 29), jour(2026, 9, 30), 0, 8), paie("SI2.26.19", jour(2026, 10, 1), jour(2026, 10, 16), 0, 10)];
     let q = aer::lire_quantites(&aer::champs(&deux_mois(10)).unwrap()).unwrap();
     assert_eq!(q.iter().map(|l| l.numero.as_str()).collect::<Vec<_>>(), ["SI2.26.19", "SI2.26.19"], "la suite du contrat garde son numero");
-    assert_eq!(aer::verifier(&deux_mois(10), &paies), Ok(vec![]));
+    assert_eq!(aer::verifier(&deux_mois(10), &paies).unwrap(), Vec::<String>::new());
     let e = aer::verifier(&deux_mois(12), &paies).unwrap();
     assert_eq!(e.len(), 1, "{:?}", e);
     assert!(["SI2.26.19", "2026-10-01", "12 heures", "10"].iter().all(|x| e[0].contains(x)), "{:?}", e);
@@ -282,6 +282,6 @@ fn authentifier_remplit_le_cadre_5_et_ne_touche_pas_aux_chiffres() {
     assert_eq!(valeur_de(&apres, "EMPLOYEUR_SIGNATURE"), &ValeurLue::Rien);
     assert_eq!(valeur_de(&apres, "EMPLOYEUR_CACHET"), &ValeurLue::Rien);
     // le contenu qu'on lit toujours : l'attestation ne se lit pas autrement
-    assert_eq!(aer::lire_quantites(&apres), aer::lire_quantites(&avant));
-    assert_eq!(aer::verifier(&signe, &paies_justes()), Ok(vec![]));
+    assert_eq!(aer::lire_quantites(&apres).ok(), aer::lire_quantites(&avant).ok());
+    assert_eq!(aer::verifier(&signe, &paies_justes()).unwrap(), Vec::<String>::new());
 }

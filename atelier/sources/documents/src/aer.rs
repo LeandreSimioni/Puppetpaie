@@ -51,7 +51,8 @@ use fabrique_pdf::formulaire::ChampLu;
 
 use engagement::cachet;
 use socle::date::Jour;
-use socle::num::{Decimal, Resultat};
+use socle::echec::refus;
+use socle::num::Decimal;
 
 /// Les champs du cadre 5, et rien d'autre.
 pub const CHAMPS_TEXTE: [&str; 10] = [
@@ -100,7 +101,7 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// v3-2-20230328.txt`, l. 500-510) : le contrat d'un intermittent (`droit::caisse_conges::intermittent`). Un permanent n'en a
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
-pub fn due(p: &engagement::calcul::Paie) -> Resultat<bool> {
+pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     let e = &p.engagement;
     if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
         return Ok(false);
@@ -118,7 +119,7 @@ pub fn due(p: &engagement::calcul::Paie) -> Resultat<bool> {
 /// `net-entreprises-base-connaissances/net-entreprises-fiche3037-attestation-employeur-aed-fctu-20250323.txt`). Le moteur
 /// ne la range pas pour l'envoi : la forme de ce PDF (ses champs, son cadre d'authentification) n'est relevee sur
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
-pub fn attestation_fctu(e: &engagement::Engagement) -> Resultat<bool> {
+pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
     if !nat.signalement_fctu(e.motif_rupture.as_deref().filter(|m| !m.is_empty())) {
         return Ok(false);
@@ -128,19 +129,19 @@ pub fn attestation_fctu(e: &engagement::Engagement) -> Resultat<bool> {
 }
 
 /// Pourquoi une attestation n'est pas rendue.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Echec {
     /// `AttestationInexacte` : un chiffre ne correspond pas a la paie du mois.
     Ecarts(Vec<String>),
     /// La fabrique de PDF refuse (`FabriqueRefus`) : sa phrase.
     Fabrique(String),
     /// Tout autre refus (une cle absente de la fiche, un jour illisible...).
-    Autre(String),
+    Autre(socle::echec::Echec),
 }
 
-impl From<String> for Echec {
-    fn from(m: String) -> Echec {
-        Echec::Autre(m)
+impl From<socle::echec::Echec> for Echec {
+    fn from(e: socle::echec::Echec) -> Echec {
+        Echec::Autre(e)
     }
 }
 
@@ -166,12 +167,12 @@ pub struct Cadre5 {
 }
 
 /// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
-fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
-    c.ecrite(cle).map(str::to_string).map_err(String::from)
+fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> socle::echec::R<String> {
+    c.ecrite(cle).map(str::to_string)
 }
 
 impl Cadre5 {
-    pub fn depuis(ent: &droit::fiche::ChampsEntreprise, aujourdhui: &Jour) -> Resultat<Cadre5> {
+    pub fn depuis(ent: &droit::fiche::ChampsEntreprise, aujourdhui: &Jour) -> socle::echec::R<Cadre5> {
         let sig = ent.signataire.exigee("signataire")?;
         let dec = ent.declarant_dsn.exigee("declarant_dsn")?;
         // Le lieu de signature est le siege, pas le lieu du spectacle.
@@ -216,16 +217,16 @@ impl Cadre5 {
 /// Une quantite du formulaire -> nombre ; une case vide (ou absente) ne dit aucune quantite (`None`). Un nombre a
 /// virgule se lit tel qu'il est ecrit (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des
 /// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
-pub fn quantite(v: Option<&str>) -> Resultat<Option<Decimal>> {
+pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
     let Some(v) = v else { return Ok(None) };
     let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
     if t.is_empty() {
         return Ok(None);
     }
     if !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
-        return Err(format!("quantite illisible : {}", socle::fichiers::repr(&t)));
+        return Err(socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
 }
 
 /// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
@@ -240,7 +241,7 @@ fn concordent(a: Option<Decimal>, b: Option<Decimal>) -> bool {
 
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
 /// n'existe pas (31/02) se refuse.
-pub fn jour(t: &str) -> Resultat<Option<Jour>> {
+pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
     let t = t.trim();
     let b = t.as_bytes();
     let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
@@ -250,12 +251,12 @@ pub fn jour(t: &str) -> Resultat<Option<Jour>> {
     let n = |a: usize, z: usize| t[a..z].parse::<u32>().unwrap();
     let (j, m, a) = (n(0, 2), n(3, 5), n(6, 10));
     if a < 1 {
-        return Err(socle::date::annee_impossible(a));
+        return Err(refus(socle::date::annee_impossible(a)));
     }
     if !(1..=12).contains(&m) {
-        return Err(socle::mois::mois_impossible(m));
+        return Err(refus(socle::mois::mois_impossible(m)));
     }
-    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| socle::date::jour_impossible(a, m, j))
+    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
@@ -276,7 +277,7 @@ fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
 /// Les colonnes imprimees, dans l'ordre. Une colonne sans dates de periode n'en est pas une ; une colonne sans numero
 /// prend celui de la colonne precedente (la suite du meme contrat). Deux colonnes de meme cle (numero, periode) : la
 /// derniere l'emporte, a la place de la premiere.
-pub fn lire_quantites(champs: &[ChampLu]) -> Resultat<Vec<Ligne>> {
+pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
     let mut out: Vec<Ligne> = Vec::new();
     let mut numero_courant = String::new();
     for rang in 1..=5 {
@@ -322,11 +323,11 @@ impl PaieAer {
     /// l'artiste qui n'est pas au cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la
     /// forme de cachets, chaque cachet est converti en heures » ; `plafond-intermittents/unedic-annexe10-convention-
     /// 20241115.txt`).
-    pub fn du_mois(p: &engagement::calcul::Paie) -> Resultat<PaieAer> {
+    pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
         let (d, f) = (e.debut_mois()?, e.fin_mois()?);
-        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", numero))?;
+        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
+        let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
         let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };
         Ok(PaieAer {
             numero: numero.to_string(),
@@ -526,7 +527,7 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
 /// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMut(&str) -> Vec<engagement::calcul::Paie>) -> Resultat<Vec<PaieAer>> {
+pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMut(&str) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
     let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).iter().filter(|p| de_lui(p)) {
@@ -534,7 +535,7 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
         if !due(p)? {
             continue;
         }
-        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
+        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
         let mut m = e.debut.iso()[..7].to_string();
         while m.as_str() < periode {
             for q in paies_du_mois(&m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {

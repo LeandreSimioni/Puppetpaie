@@ -317,7 +317,8 @@ pub fn lire(chemin: &Path) -> Result<Vec<PageAem>, String> {
 pub fn lire_aer(octets: &[u8]) -> Result<Option<Vec<PageAem>>, String> {
     let champs = match documents::aer::champs(octets) {
         Ok(c) => c,
-        Err(documents::aer::Echec::Fabrique(m) | documents::aer::Echec::Autre(m)) => return Err(m),
+        Err(documents::aer::Echec::Fabrique(m)) => return Err(m),
+        Err(documents::aer::Echec::Autre(e)) => return Err(String::from(e)),
         Err(documents::aer::Echec::Ecarts(l)) => return Err(l.join(" ; ")),
     };
     let champ = |nom: &str| champs.iter().find(|c| c.nom == nom);
