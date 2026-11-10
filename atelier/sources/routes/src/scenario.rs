@@ -54,6 +54,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
+use socle::echec::{refus, R};
+use socle::refus;
 
 use compagnie::installation::Venue;
 use crate::catalogue::Route;
@@ -194,11 +196,11 @@ fn lit_la_boite_aux_lettres(route: Route) -> bool {
 /// (`bridage::branchement`) et son horloge joue ce qui etait du (`horloge`). Le nom (« … sur le banc
 /// d'essai ») n'est celui d'aucune fictive livree : la livraison des fictives (`compagnie::maj`) ne la prend jamais pour une
 /// des siennes. Refuse hors d'une fictive ajoutee.
-pub fn rendre_simulee(racine: &Path) -> Result<(), String> {
+pub fn rendre_simulee(racine: &Path) -> R<()> {
     if !compagnie::installation::est_ajoutee(racine)? {
-        return Err(format!("{} n'est pas une compagnie ajoutee par le « + » : rien a changer.", racine.display()));
+        return Err(refus!("{} n'est pas une compagnie ajoutee par le « + » : rien a changer.", racine.display()));
     }
-    let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or(format!("{} : un dossier est attendu", racine.display()))?;
+    let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", racine.display()))?;
     let marqueur = compagnie::installation::Marqueur {
         copie_de: format!("{} {} sur le banc d'essai", compagnie::installation::MARQUE_FICTIVE, nom),
         depuis: None,
@@ -206,13 +208,13 @@ pub fn rendre_simulee(racine: &Path) -> Result<(), String> {
         quand: Some(socle::paris::maintenant()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2).map_err(String::from)
+    socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
 /// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas. L'un et
 /// l'autre existent : un dossier qui ne se resout pas refuse.
-pub fn relatif(inst: &Path, racine: &Path) -> Result<String, String> {
-    let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| format!("{} : {}", p.display(), e));
+pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
+    let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| refus!("{} : {}", p.display(), e));
     let (i, r) = (resolu(inst)?, resolu(racine)?);
     Ok(match r.strip_prefix(&i) {
         Ok(p) => p.to_string_lossy().replace('\\', "/"),
@@ -229,14 +231,14 @@ fn heure(t: f64) -> String {
 }
 
 /// Les fichiers d'un dossier, relatifs a lui (barres droites), dans l'ordre des noms.
-fn fichiers_de(dossier: &Path) -> Result<Vec<(String, PathBuf)>, String> {
-    fn parcourir(base: &Path, d: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<(), String> {
-        for e in std::fs::read_dir(d).map_err(|e| format!("{} : {}", d.display(), e))? {
-            let p = e.map_err(|e| format!("{} : {}", d.display(), e))?.path();
+fn fichiers_de(dossier: &Path) -> R<Vec<(String, PathBuf)>> {
+    fn parcourir(base: &Path, d: &Path, out: &mut Vec<(String, PathBuf)>) -> R<()> {
+        for e in std::fs::read_dir(d).map_err(|e| refus!("{} : {}", d.display(), e))? {
+            let p = e.map_err(|e| refus!("{} : {}", d.display(), e))?.path();
             if p.is_dir() {
                 parcourir(base, &p, out)?;
             } else {
-                let r = p.strip_prefix(base).map_err(|e| format!("{} : {}", p.display(), e))?;
+                let r = p.strip_prefix(base).map_err(|e| refus!("{} : {}", p.display(), e))?;
                 out.push((r.to_string_lossy().replace('\\', "/"), p.clone()));
             }
         }
@@ -279,29 +281,29 @@ pub struct Rejeu {
 }
 
 /// Les gestes d'un scenario, lus tels qu'ils sont ecrits.
-pub fn lire(scenario: &Path) -> Result<Vec<Geste>, String> {
+pub fn lire(scenario: &Path) -> R<Vec<Geste>> {
     let f = scenario.join(GESTES);
-    let texte = std::fs::read_to_string(&f).map_err(|e| format!("{} : {}", f.display(), e))?;
+    let texte = std::fs::read_to_string(&f).map_err(|e| refus!("{} : {}", f.display(), e))?;
     texte
         .lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty())
-        .map(|(i, l)| socle::forme::lire_texte(l, "Un geste du scenario ne se lit pas.").map_err(|e| format!("{} ligne {} : {}", f.display(), i + 1, e.phrase())))
+        .map(|(i, l)| socle::forme::lire_texte(l, "Un geste du scenario ne se lit pas.").map_err(|e| refus!("{} ligne {} : {}", f.display(), i + 1, e.phrase)))
         .collect()
 }
 
 /// L'instant qu'un geste ecrit : `quand`, sinon `heure` a Paris (`AAAA-MM-JJ` a 9 h, `AAAA-MM-JJTHH:MM[:SS]`), sinon le
 /// jour d'un geste `jour`, a 9 h. `None` : le geste n'en ecrit pas.
-fn instant_ecrit(g: &Geste) -> Result<Option<f64>, String> {
+fn instant_ecrit(g: &Geste) -> R<Option<f64>> {
     if let Some(t) = g.quand {
         return Ok(Some(t));
     }
     let texte = match (&g.heure, g.geste) {
         (Some(h), _) => h.as_str(),
-        (None, Some(Genre::Jour)) => g.jour.as_deref().ok_or("un geste `jour` sans jour")?,
+        (None, Some(Genre::Jour)) => g.jour.as_deref().ok_or_else(|| refus("un geste `jour` sans jour"))?,
         _ => return Ok(None),
     };
-    let illisible = || format!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM) est attendue", socle::fichiers::repr(texte));
+    let illisible = || refus!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM) est attendue", socle::fichiers::repr(texte));
     // Un jour seul a lieu a 9 h.
     let (jour, hms) = match texte.split_once('T') {
         Some((j, hms)) => (j, hms),
@@ -323,13 +325,13 @@ fn instant_ecrit(g: &Geste) -> Result<Option<f64>, String> {
 /// Les instants de chaque geste, dans l'ordre du fichier : celui qu'il ecrit, ou une seconde apres le precedent. Un
 /// instant ecrit qui recule refuse le scenario ; un instant egal au precedent passe une seconde apres lui (deux gestes ne
 /// partagent jamais un instant : chacun tire ses aleas depuis le sien).
-fn instants(gestes: &[Geste]) -> Result<Vec<f64>, String> {
+fn instants(gestes: &[Geste]) -> R<Vec<f64>> {
     let mut out: Vec<f64> = Vec::with_capacity(gestes.len());
     let mut ecrit_avant: Option<f64> = None;
     for (i, g) in gestes.iter().enumerate() {
-        let geste = |m: String| format!("geste {} : {}", i + 1, m);
+        let geste = |m: String| refus!("geste {} : {}", i + 1, m);
         let precedent = out.last().copied();
-        let t = match instant_ecrit(g).map_err(geste)? {
+        let t = match instant_ecrit(g).map_err(|e| e.reformuler(|p| format!("geste {} : {}", i + 1, p)))? {
             Some(t) => {
                 if ecrit_avant.is_some_and(|a| t < a) {
                     return Err(geste(format!("{} vient avant le geste qui le precede : les gestes vont dans l'ordre du temps", heure(t))));
@@ -354,8 +356,8 @@ fn source_de_piece(scenario: &Path, sha: &str) -> PathBuf {
 
 /// Pose, avant la route, ce qu'on avait depose : un dossier de la compagnie se remet tel qu'il etait ; un dossier
 /// hors d'elle se recree dans `travail/<rang>/<cle>` et la charge le nomme. Rend la charge a donner au moteur.
-fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize, geste: &Geste) -> Result<Charge, String> {
-    let mut charge = geste.charge.clone().ok_or(format!("geste {} : une route sans charge (`{{}}` pour une route qui ne prend rien)", rang))?;
+fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize, geste: &Geste) -> R<Charge> {
+    let mut charge = geste.charge.clone().ok_or_else(|| refus!("geste {} : une route sans charge (`{{}}` pour une route qui ne prend rien)", rang))?;
     let Some(pieces) = &geste.pieces else { return Ok(charge) };
     for (cle, p) in pieces {
         // Les fichiers de la piece : (relatif a la piece, source). Un fichier seul a la cle `.`.
@@ -367,11 +369,11 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
                 } else if source.is_file() {
                     vec![(".".to_string(), source)]
                 } else {
-                    return Err(format!("piece {} : {} n'existe pas dans le scenario", cle, c));
+                    return Err(refus!("piece {} : {} n'existe pas dans le scenario", cle, c));
                 }
             }
             (None, Some(f)) => f.iter().map(|(rel, sha)| (rel.clone(), source_de_piece(scenario, sha))).collect(),
-            (None, None) => return Err(format!("piece {} : ni `chemin` ni `fichiers`", cle)),
+            (None, None) => return Err(refus!("piece {} : ni `chemin` ni `fichiers`", cle)),
         };
         let nom = p.nom.clone().or_else(|| p.chemin.as_deref().and_then(|c| Path::new(c).file_name()).map(|n| n.to_string_lossy().into_owned()));
         let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
@@ -381,29 +383,29 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             None => travail.join(rang.to_string()).join(cle),
         };
         if est_fichier {
-            let (_, source) = fichiers.first().ok_or("piece sans contenu")?;
+            let (_, source) = fichiers.first().ok_or_else(|| refus("piece sans contenu"))?;
             let dest = match (dans, &nom) {
                 (Some(_), _) => cible.clone(),
                 (None, Some(n)) => cible.join(n),
-                (None, None) => return Err(format!("piece {} : un fichier sans nom", cle)),
+                (None, None) => return Err(refus!("piece {} : un fichier sans nom", cle)),
             };
             if let Some(d) = dest.parent() {
-                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                std::fs::create_dir_all(d).map_err(|e| refus(e.to_string()))?;
             }
-            std::fs::copy(source, &dest).map_err(|e| format!("piece {} : {}", source.display(), e))?;
+            std::fs::copy(source, &dest).map_err(|e| refus!("piece {} : {}", source.display(), e))?;
             if dans.is_none() {
                 charge.poser_texte(cle, dest.display().to_string());
             }
             continue;
         }
         let _ = std::fs::remove_dir_all(&cible);
-        std::fs::create_dir_all(&cible).map_err(|e| format!("{} : {}", cible.display(), e))?;
+        std::fs::create_dir_all(&cible).map_err(|e| refus!("{} : {}", cible.display(), e))?;
         for (rel, source) in &fichiers {
             let dest = cible.join(rel);
             if let Some(d) = dest.parent() {
-                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                std::fs::create_dir_all(d).map_err(|e| refus(e.to_string()))?;
             }
-            std::fs::copy(source, &dest).map_err(|e| format!("piece {} : {}", source.display(), e))?;
+            std::fs::copy(source, &dest).map_err(|e| refus!("piece {} : {}", source.display(), e))?;
         }
         if dans.is_none() {
             charge.poser_texte(cle, cible.display().to_string());
@@ -415,7 +417,7 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
 /// REJOUE le scenario `scenario` dans l'installation `inst` (un dossier vide, ou qui ne porte pas encore les compagnies
 /// du scenario) : le decor du « + », chaque geste a son instant, et rien d'autre. Le temps du moteur est simule le temps
 /// du rejeu, puis rendu a la montre. `travail` recoit les dossiers deposes hors de la compagnie.
-pub fn rejouer(scenario: &Path, inst: &Path, options: &OptionsRejeu) -> Result<Rejeu, String> {
+pub fn rejouer(scenario: &Path, inst: &Path, options: &OptionsRejeu) -> R<Rejeu> {
     rejouer_et_lire(scenario, inst, options, &[], &mut |_, _| {})
 }
 
@@ -423,14 +425,14 @@ pub fn rejouer(scenario: &Path, inst: &Path, options: &OptionsRejeu) -> Result<R
 /// avant le premier du lendemain -- pour que `lire` regarde la compagnie telle qu'elle est (le jour, et ce que le rejeu a
 /// fait jusque-la), puis reprend. Un jour d'arret apres le dernier geste se lit a la fin. Le temps du moteur reste
 /// celui du dernier geste joue : `lire` lit comme un poste, par une route ou les fichiers, a la date qu'il dit.
-pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arrets: &[Jour], lire_au: &mut dyn FnMut(Jour, &Rejeu)) -> Result<Rejeu, String> {
+pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arrets: &[Jour], lire_au: &mut dyn FnMut(Jour, &Rejeu)) -> R<Rejeu> {
     let gestes = lire(scenario)?;
     let instants = instants(&gestes)?;
-    std::fs::create_dir_all(inst).map_err(|e| format!("{} : {}", inst.display(), e))?;
+    std::fs::create_dir_all(inst).map_err(|e| refus!("{} : {}", inst.display(), e))?;
     // L'INSTALLATION DU REJEU, BRIDEE EN TOUTES LETTRES (le geste de l'accueil, `bridage.rs`) : comme celle du banc, et le
     // moteur ne lit qu'elle (`compagnies::base`) -- rien du depot ni du poste ou l'on rejoue.
     compagnie::bridage::brider(inst)?;
-    let inst = std::fs::canonicalize(inst).map_err(|e| format!("{} : {}", inst.display(), e))?;
+    let inst = std::fs::canonicalize(inst).map_err(|e| refus!("{} : {}", inst.display(), e))?;
     let travail = inst.join("pieces-deposees");
     socle::temps::liberer();
     socle::temps::aleas_fixes();
@@ -464,7 +466,7 @@ fn rejouer_les_gestes(
     options: &OptionsRejeu,
     arrets: &[Jour],
     lire_au: &mut dyn FnMut(Jour, &Rejeu),
-) -> Result<Rejeu, String> {
+) -> R<Rejeu> {
     let mut r = Rejeu::default();
     let mut arrets = arrets.iter().copied().peekable();
     // LA LECTURE D'UN SOIR, avant le premier geste du lendemain. Ce qu'elle tire d'aleas ne change rien : chaque geste
@@ -508,14 +510,14 @@ fn rejouer_les_gestes(
         let compagnie = g.compagnie.as_deref();
         match g.geste {
             Some(Genre::Ajouter) => {
-                let nom = g.nom.as_deref().ok_or(format!("geste {} : `ajouter` sans nom", n))?;
+                let nom = g.nom.as_deref().ok_or_else(|| refus!("geste {} : `ajouter` sans nom", n))?;
                 // Un geste `ajouter` sans `venue` est le « + » d'une compagnie neuve, le seul chemin d'avant le choix.
                 let venue = match g.venue {
                     Some(v) => v,
                     None => Venue::Neuve,
                 };
-                let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| format!("geste {} : « + » refuse : {}", n, String::from(m)))?;
-                let rel = relatif(inst, &c.racine).map_err(|m| format!("geste {} : {}", n, m))?;
+                let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| m.reformuler(|p| format!("geste {} : « + » refuse : {}", n, p)))?;
+                let rel = relatif(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
                 let nomme = match compagnie {
                     Some(c) if c != rel => {
                         r.ecarts.push(format!("geste {} : le « + » a cree {} (enregistre : {})", n, rel, c));
@@ -528,28 +530,28 @@ fn rejouer_les_gestes(
                 r.compagnies.push((nomme, c.racine));
             }
             Some(Genre::Simuler) => {
-                let racine = racine_nommee(&racines, &derniere, compagnie).ok_or(format!("geste {} : `simuler` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
-                rendre_simulee(&racine).map_err(|m| format!("geste {} : {}", n, m))?;
+                let racine = racine_nommee(&racines, &derniere, compagnie).ok_or_else(|| refus!("geste {} : `simuler` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
+                rendre_simulee(&racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
             }
             Some(Genre::Annoncer) => {
-                let racine = racine_nommee(&racines, &derniere, compagnie).ok_or(format!("geste {} : `annoncer` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
-                let annonce = g.annonce.as_ref().ok_or(format!("geste {} : `annoncer` sans annonce", n))?;
-                let b = compagnie::bridage::branchement(&racine).map_err(|m| format!("geste {} : {}", n, String::from(m)))?;
-                envois::organismes_simules::annoncer(&racine, b, annonce).map_err(|e| format!("geste {} : {}", n, String::from(e)))?;
+                let racine = racine_nommee(&racines, &derniere, compagnie).ok_or_else(|| refus!("geste {} : `annoncer` sur une compagnie que le scenario n'a pas ajoutee ({:?})", n, compagnie))?;
+                let annonce = g.annonce.as_ref().ok_or_else(|| refus!("geste {} : `annoncer` sans annonce", n))?;
+                let b = compagnie::bridage::branchement(&racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
+                envois::organismes_simules::annoncer(&racine, b, annonce).map_err(|e| e.reformuler(|p| format!("geste {} : {}", n, p)))?;
             }
             Some(Genre::Etat) => {
                 let Some(racine) = racine_nommee(&racines, &derniere, compagnie) else {
                     r.autres_compagnies += 1;
                     continue;
                 };
-                let cle = g.cle.as_deref().ok_or(format!("geste {} : `etat` sans cle", n))?;
+                let cle = g.cle.as_deref().ok_or_else(|| refus!("geste {} : `etat` sans cle", n))?;
                 let o = Options::de_la_compagnie(&racine);
                 let refait = crate::service::contexte(&o).map_err(|m| socle::echec::Echec { classe: None, phrase: m, a_part: None }).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
                 crate::remettre_le_fil();
                 // Comme une route : l'etat refait reussit, ou refuse, comme il l'a fait au banc (`ok`, vrai s'il est tu).
                 let attendu = g.a_reussi();
                 match refait {
-                    Err(e) if attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, String::from(e))),
+                    Err(e) if attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, e.phrase)),
                     Ok(()) if !attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} reussit au rejeu, refuse a l'enregistrement", n, heure(t), cle)),
                     // Le refus attendu, le meme qu'au banc.
                     Err(refus) => drop(refus),
@@ -563,13 +565,13 @@ fn rejouer_les_gestes(
                 for (_, racine) in &r.compagnies {
                     match crate::horloge::rattraper(racine, Some(jour), true) {
                         Ok(fait) => r.horloge.extend(fait.iter().map(|p| format!("{} {}", heure(t), p))),
-                        Err(e) => r.ecarts.push(format!("geste {} ({}) : l'horloge refuse : {}", n, heure(t), String::from(e))),
+                        Err(e) => r.ecarts.push(format!("geste {} ({}) : l'horloge refuse : {}", n, heure(t), e.phrase)),
                     }
                 }
             }
             Some(Genre::Debut) => {}
             None => {
-                let nom = g.route.as_deref().ok_or(format!("geste {} : ni `geste` ni `route`", n))?;
+                let nom = g.route.as_deref().ok_or_else(|| refus!("geste {} : ni `geste` ni `route`", n))?;
                 // Un nom qui n'est celui d'aucune route (une route d'avant, retiree) se rejoue comme le moteur le refuse.
                 let route = Route::lire(nom);
                 let Some(racine) = racine_nommee(&racines, &derniere, compagnie) else {
@@ -630,15 +632,15 @@ fn saisie_d_un_geste(g: &Geste) -> Option<Geste> {
 
 /// ELAGUER un scenario pour le figer (phase 4) : `vers` recoit les memes gestes sans les routes qui n'ont rien ecrit (le
 /// rejeu les ecarte deja), et les seules pieces que les gestes gardes nomment. Rend (gestes gardes, lectures otees).
-pub fn elaguer(scenario: &Path, vers: &Path) -> Result<(usize, usize), String> {
+pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
     let gestes = lire(scenario)?;
-    std::fs::create_dir_all(vers.join(PIECES)).map_err(|e| format!("{} : {}", vers.display(), e))?;
-    let copier = |rel: &Path| -> Result<(), String> {
+    std::fs::create_dir_all(vers.join(PIECES)).map_err(|e| refus!("{} : {}", vers.display(), e))?;
+    let copier = |rel: &Path| -> R<()> {
         let dest = vers.join(rel);
         if let Some(d) = dest.parent() {
-            std::fs::create_dir_all(d).map_err(|e| format!("{} : {}", d.display(), e))?;
+            std::fs::create_dir_all(d).map_err(|e| refus!("{} : {}", d.display(), e))?;
         }
-        std::fs::copy(scenario.join(rel), &dest).map(|_| ()).map_err(|e| format!("piece {} : {}", rel.display(), e))
+        std::fs::copy(scenario.join(rel), &dest).map(|_| ()).map_err(|e| refus!("piece {} : {}", rel.display(), e))
     };
     let (mut gardes, mut otees) = (Vec::new(), 0);
     for g in gestes {
@@ -664,7 +666,7 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> Result<(usize, usize), String> {
         gardes.push(socle::ecriture::json_en_ligne(&g));
     }
     let n = gardes.len();
-    std::fs::write(vers.join(GESTES), gardes.join("\n") + "\n").map_err(|e| format!("{} : {}", vers.display(), e))?;
+    std::fs::write(vers.join(GESTES), gardes.join("\n") + "\n").map_err(|e| refus!("{} : {}", vers.display(), e))?;
     Ok((n, otees))
 }
 
@@ -696,8 +698,8 @@ fn fichiers_compares(racine: &Path) -> BTreeMap<String, PathBuf> {
 }
 
 /// Le contenu d'un fichier, le chemin de sa compagnie remplace par `<racine>` (un journal note des chemins).
-fn contenu(p: &Path, racine: &Path) -> Result<Vec<u8>, String> {
-    let o = std::fs::read(p).map_err(|e| format!("{} : {}", p.display(), e))?;
+fn contenu(p: &Path, racine: &Path) -> R<Vec<u8>> {
+    let o = std::fs::read(p).map_err(|e| refus!("{} : {}", p.display(), e))?;
     Ok(match String::from_utf8(o) {
         Ok(t) => t.replace(&racine.to_string_lossy().into_owned(), "<racine>").into_bytes(),
         Err(e) => e.into_bytes(),
@@ -708,7 +710,7 @@ fn contenu(p: &Path, racine: &Path) -> Result<Vec<u8>, String> {
 /// compagnie que le scenario a ajoutee a celle du banc (`inst`). Le banc tire les memes aleas que le rejeu
 /// (`temps::aleas`) : toute difference est un geste qui a ecrit sans etre enregistre (un fichier touche hors de la page, une
 /// ecriture de fond), ou un ecart du rejeu. Rend les differences, en phrases (vide : le scenario suffit).
-pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> Result<Vec<String>, String> {
+pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> {
     let _ = std::fs::remove_dir_all(travail);
     let r = rejouer(scenario, travail, &OptionsRejeu::default())?;
     let mut ecarts: Vec<String> = r.ecarts.iter().map(|e| format!("au rejeu, {}", e)).collect();
@@ -766,15 +768,15 @@ fn hors_livraison(rel: &str) -> bool {
 /// d'apres portent deja leurs cartes, non validees : sur le poste, seul le temps passe, et l'horloge de la fictive
 /// valide, envoie et depose a leur date (`horloge`). Un ecart du rejeu (une route qui refuse) refuse la livraison, et
 /// `dest` reste tel qu'il etait.
-pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> Result<Rejeu, String> {
-    let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or(format!("{} : un dossier est attendu", dest.display()))?;
+pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> {
+    let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", dest.display()))?;
     let travail = std::env::temp_dir().join(format!("puppetpaie-livrer-{}-{}", nom, std::process::id()));
     let _ = std::fs::remove_dir_all(&travail);
     let rendu = rejouer(scenario, &travail, &OptionsRejeu { lectures: false, jusqu_au }).and_then(|r| {
         if !r.ecarts.is_empty() {
-            return Err(format!("le scenario {} s'ecarte au rejeu :\n{}", scenario.display(), r.ecarts.join("\n")));
+            return Err(refus!("le scenario {} s'ecarte au rejeu :\n{}", scenario.display(), r.ecarts.join("\n")));
         }
-        let (_, racine) = r.compagnies.first().ok_or(format!("le scenario {} n'ajoute aucune compagnie", scenario.display()))?;
+        let (_, racine) = r.compagnies.first().ok_or_else(|| refus!("le scenario {} n'ajoute aucune compagnie", scenario.display()))?;
         poser_livree(racine, dest, r.fin)?;
         Ok(r)
     });
@@ -785,15 +787,15 @@ pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> Result<Re
 /// POSE LA COMPAGNIE REJOUEE `racine` dans `dest` (remplace), marquee fictive livree (`compagnies::MARQUE_FICTIVE` suivie
 /// du nom du dossier, sans la marque `ajoutee`) : ses envois sont joues, son horloge joue ce qui vient apres `fin`, le
 /// dernier geste rejoue.
-fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> Result<(), String> {
-    let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or(format!("{} : un dossier est attendu", dest.display()))?;
+fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> R<()> {
+    let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", dest.display()))?;
     let _ = std::fs::remove_dir_all(dest);
     for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel)) {
         let cible = dest.join(&rel);
         if let Some(d) = cible.parent() {
-            std::fs::create_dir_all(d).map_err(|e| format!("{} : {}", d.display(), e))?;
+            std::fs::create_dir_all(d).map_err(|e| refus!("{} : {}", d.display(), e))?;
         }
-        std::fs::copy(&source, &cible).map_err(|e| format!("{} : {}", cible.display(), e))?;
+        std::fs::copy(&source, &cible).map_err(|e| refus!("{} : {}", cible.display(), e))?;
     }
     let marqueur = compagnie::installation::Marqueur {
         copie_de: format!("{} {}", compagnie::installation::MARQUE_FICTIVE, nom),
@@ -802,7 +804,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<f64>) -> Result<(), Stri
         quand: fin.map(heure),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
-    socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2).map_err(String::from)
+    socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
 const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lectures] [--jusqu-au AAAA-MM-JJ]\n\
@@ -870,7 +872,7 @@ pub fn commande(args: &[String]) -> i32 {
                     i32::from(!r.ecarts.is_empty())
                 }
                 Err(m) => {
-                    eprintln!("{}", m);
+                    eprintln!("{}", m.en_lignes());
                     1
                 }
             }
@@ -887,7 +889,7 @@ pub fn commande(args: &[String]) -> i32 {
                 1
             }
             Err(m) => {
-                eprintln!("{}", m);
+                eprintln!("{}", m.en_lignes());
                 1
             }
         },
@@ -897,7 +899,7 @@ pub fn commande(args: &[String]) -> i32 {
                 0
             }
             Err(m) => {
-                eprintln!("{}", m);
+                eprintln!("{}", m.en_lignes());
                 1
             }
         },
@@ -907,7 +909,7 @@ pub fn commande(args: &[String]) -> i32 {
                 0
             }
             Err(m) => {
-                eprintln!("{}", m);
+                eprintln!("{}", m.en_lignes());
                 1
             }
         },
@@ -963,7 +965,8 @@ mod enregistreur {
     type Empreinte = Result<BTreeMap<String, Result<(u64, f64), String>>, String>;
 
     fn empreinte(racine: &Path) -> Empreinte {
-        Ok(fichiers_de(racine)?
+        Ok(fichiers_de(racine)
+            .map_err(|e| e.phrase)?
             .into_iter()
             .filter(|(r, _)| !hors_empreinte(r))
             .map(|(r, p)| {
@@ -976,12 +979,12 @@ mod enregistreur {
     impl Enregistreur {
         /// Pose l'enregistreur de ce processus : `dossier` (cree s'il n'existe pas ; un scenario commence s'y poursuit),
         /// `inst` l'installation, `lectures` : les lectures aussi.
-        pub fn demarrer(dossier: &Path, inst: &Path, lectures: bool) -> Result<&'static Enregistreur, String> {
-            std::fs::create_dir_all(dossier.join(PIECES)).map_err(|e| format!("{} : {}", dossier.display(), e))?;
+        pub fn demarrer(dossier: &Path, inst: &Path, lectures: bool) -> R<&'static Enregistreur> {
+            std::fs::create_dir_all(dossier.join(PIECES)).map_err(|e| refus!("{} : {}", dossier.display(), e))?;
             // Un scenario commence se poursuit apres son dernier rang ; un neuf n'a pas encore de gestes.
             let deja = if dossier.join(GESTES).is_file() { lire(dossier)?.iter().filter_map(|g| g.n).fold(0, u64::max) } else { 0 };
             let e = Enregistreur { dossier: dossier.to_path_buf(), inst: inst.to_path_buf(), tour: Mutex::new(deja), lectures };
-            ENREGISTREUR.set(e).map_err(|_| "Un enregistreur est deja pose dans ce processus.".to_string())?;
+            ENREGISTREUR.set(e).map_err(|_| refus("Un enregistreur est deja pose dans ce processus."))?;
             Ok(ENREGISTREUR.get().expect("pose"))
         }
 
@@ -990,7 +993,7 @@ mod enregistreur {
         }
 
         /// Le dernier instant enregistre (le banc reprend apres lui).
-        pub fn dernier_instant(&self) -> Result<Option<f64>, String> {
+        pub fn dernier_instant(&self) -> R<Option<f64>> {
             if !self.dossier.join(GESTES).is_file() {
                 return Ok(None);
             }
@@ -998,17 +1001,17 @@ mod enregistreur {
         }
 
         /// Ecrit la ligne du geste `g`, au rang suivant et a son instant.
-        fn ecrire(&self, n: &mut u64, g: Geste, quand: f64) -> Result<(), String> {
+        fn ecrire(&self, n: &mut u64, g: Geste, quand: f64) -> R<()> {
             *n += 1;
             let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(heure(quand)), ..g };
             let f = self.dossier.join(GESTES);
-            let mut fichier = std::fs::OpenOptions::new().create(true).append(true).open(&f).map_err(|e| format!("{} : {}", f.display(), e))?;
-            writeln!(fichier, "{}", socle::ecriture::json_en_ligne(&ligne)).map_err(|e| format!("{} : {}", f.display(), e))
+            let mut fichier = std::fs::OpenOptions::new().create(true).append(true).open(&f).map_err(|e| refus!("{} : {}", f.display(), e))?;
+            writeln!(fichier, "{}", socle::ecriture::json_en_ligne(&ligne)).map_err(|e| refus!("{} : {}", f.display(), e))
         }
 
         /// Un geste qui n'est pas une route (`debut`, `ajouter`, `simuler`, `jour`), fait par `f` sous le meme tour et au
         /// meme instant fige ; `f` rend sa ligne (`Geste::du_banc`), ou son refus (rien n'est alors enregistre).
-        pub fn geste<T>(&self, f: impl FnOnce() -> Result<(T, Geste), String>) -> Result<T, String> {
+        pub fn geste<T>(&self, f: impl FnOnce() -> R<(T, Geste)>) -> R<T> {
             let mut n = socle::memoire::tenu(&self.tour);
             let quand = socle::temps::secondes();
             socle::temps::figer(quand);
@@ -1042,7 +1045,7 @@ mod enregistreur {
         }
 
         /// Le dossier d'une compagnie, tel que le scenario le nomme.
-        pub fn compagnie(&self, racine: &Path) -> Result<String, String> {
+        pub fn compagnie(&self, racine: &Path) -> R<String> {
             relatif(&self.inst, racine)
         }
 
@@ -1058,7 +1061,7 @@ mod enregistreur {
             // scenario ne saurait pas rejouer.
             let pieces = match self.recopier_les_pieces(racine, nom, charge) {
                 Ok(p) => p,
-                Err(m) => return Reponse::refusee_par(nom, Refus::nouveau(socle::echec::Classe::Disque, format!("Le banc d'essai ne recopie pas ce que la route lit : {}", m))),
+                Err(m) => return Reponse::refusee_par(nom, Refus::nouveau(socle::echec::Classe::Disque, format!("Le banc d'essai ne recopie pas ce que la route lit : {}", m.phrase))),
             };
             let quand = socle::temps::secondes();
             socle::temps::figer(quand);
@@ -1082,19 +1085,19 @@ mod enregistreur {
         }
 
         /// Recopie un fichier dans `pieces/` (une fois par contenu) ; rend son empreinte.
-        fn recopier(&self, p: &Path) -> Result<String, String> {
-            let octets = std::fs::read(p).map_err(|e| format!("{} : {}", p.display(), e))?;
+        fn recopier(&self, p: &Path) -> R<String> {
+            let octets = std::fs::read(p).map_err(|e| refus!("{} : {}", p.display(), e))?;
             let sha = socle::fichiers::sha256_hex(&octets);
             let dest = self.dossier.join(PIECES).join(&sha);
             if !dest.exists() {
-                std::fs::write(&dest, &octets).map_err(|e| format!("{} : {}", dest.display(), e))?;
+                std::fs::write(&dest, &octets).map_err(|e| refus!("{} : {}", dest.display(), e))?;
             }
             Ok(sha)
         }
 
         /// Ce que la route lit hors du moteur : un dossier ou un fichier nomme par la charge (`CLES_DE_DEPOT`), ou la
         /// boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
-        fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> Result<BTreeMap<String, Piece>, String> {
+        fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<String, Piece>> {
             let mut out = BTreeMap::new();
             for cle in CLES_DE_DEPOT {
                 let valeur = charge.texte(cle).map(str::trim);
@@ -1141,9 +1144,9 @@ mod enregistreur {
     }
 
     /// Une ligne du scenario qui ne s'ecrit pas : la route a ete servie, le banc le dit sur sa console.
-    fn non_enregistre(ecrite: Result<(), String>) {
+    fn non_enregistre(ecrite: R<()>) {
         if let Err(m) = ecrite {
-            eprintln!("Banc d'essai : un geste ne s'enregistre pas dans le scenario : {}", m);
+            eprintln!("Banc d'essai : un geste ne s'enregistre pas dans le scenario : {}", m.en_lignes());
         }
     }
 }
