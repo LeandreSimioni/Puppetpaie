@@ -185,7 +185,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     for c in comparaisons {
         match &c.ecarts {
             Err(raison) => {
-                let raison = montant().replace_all(&propre.texte(raison), "<MONTANT>").into_owned();
+                let raison = montant().replace_all(&propre.texte(&String::from(raison.clone())), "<MONTANT>").into_owned();
                 let x = Cas { logiciel: propre.option(&c.logiciel), taux_atmp: None, ..cas(c, &mut propre) };
                 refus.entry(raison).or_default().push(x);
             }
