@@ -119,7 +119,7 @@ pub struct Tri {
 pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     if !dossier.is_dir() {
         let a_part = socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
-        return Err(erreur(socle::echec::Classe::Refuse, socle::echec::avec("Le dossier à trier n'existe pas.", a_part)));
+        return Err(socle::echec::Echec { a_part: Some(a_part), ..erreur(socle::echec::Classe::Refuse, "Le dossier à trier n'existe pas.") });
     }
     std::fs::create_dir_all(travail)
         .map_err(|e| erreur(socle::echec::Classe::Refuse, socle::echec::du_disque(travail, &e)))?;
@@ -245,7 +245,7 @@ impl Trieur {
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
                 Err(e) => {
                     f.sorte = Sorte::Dsn;
-                    f.raison = Some(e.into());
+                    f.raison = Some(String::from(e));
                 }
                 Ok(_) => {
                     f.sorte = Sorte::Illisible;
