@@ -353,8 +353,10 @@ impl Periode {
 struct Page {
     categorie: &'static str,
     cle: String,
-    /// AAAA-MM-JJ : l'ordre de lecture.
-    tri: String,
+    /// L'ordre de lecture dans sa categorie : son mois, puis son jour ; une page sans jour (le bulletin du mois, un
+    /// contrat, une attestation) se lit avant les jours de son mois. Un recapitulatif n'a pas de mois : ses pages gardent
+    /// l'ordre ou elles viennent.
+    tri: Option<(Mois, Option<Jour>)>,
     /// Le PDF d'ou la page est tiree.
     source: PathBuf,
     /// La page dans ce PDF (0 = la premiere).
@@ -720,7 +722,7 @@ fn mois_puppetpaie(
                 )));
             }
             for n in 0..pages_pdf(&piece)? {
-                pages.push(Page { categorie: BULLETINS, cle: cle.clone(), tri: format!("{}-00", mois), source: piece.clone(), numero: n });
+                pages.push(Page { categorie: BULLETINS, cle: cle.clone(), tri: Some((le_mois, None)), source: piece.clone(), numero: n });
             }
         }
     }
@@ -762,7 +764,7 @@ fn mois_puppetpaie(
             documents::contrat::ecrire_contrat(ctx, &a_lui, &modeles, &ent, &chemin, &[])?;
             marquer(&chemin, aujourdhui)?;
             for i in 0..pages_pdf(&chemin)? {
-                pages.push(Page { categorie: CONTRATS, cle: cle.clone(), tri: format!("{}-01", mois), source: chemin.clone(), numero: i });
+                pages.push(Page { categorie: CONTRATS, cle: cle.clone(), tri: Some((le_mois, None)), source: chemin.clone(), numero: i });
             }
         }
     }
@@ -835,7 +837,7 @@ fn mois_puppetpaie(
                         continue;
                     }
                     for page in ses_pages {
-                        pages.push(Page { categorie: CERTIFICATS_CS, cle: cle.clone(), tri: format!("{}-02", mois), source: archive.clone(), numero: page });
+                        pages.push(Page { categorie: CERTIFICATS_CS, cle: cle.clone(), tri: Some((le_mois, None)), source: archive.clone(), numero: page });
                     }
                 }
             }
@@ -857,7 +859,7 @@ fn mois_puppetpaie(
                         continue;
                     }
                     for i in 0..pages_pdf(&f)? {
-                        pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: format!("{}-01", mois), source: f.clone(), numero: i });
+                        pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
                 }
             }
@@ -886,7 +888,7 @@ fn mois_puppetpaie(
                     ));
                 }
                 for i in 0..pages_pdf(&f)? {
-                    pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: format!("{}-01", mois), source: f.clone(), numero: i });
+                    pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                 }
             }
         }
@@ -894,7 +896,7 @@ fn mois_puppetpaie(
             let f = envoi_dir.join(format!("AER_{}_{}.pdf", cle, etiq));
             if f.exists() {
                 for i in 0..pages_pdf(&f)? {
-                    pages.push(Page { categorie: ATTESTATIONS, cle: cle.clone(), tri: format!("{}-03", mois), source: f.clone(), numero: i });
+                    pages.push(Page { categorie: ATTESTATIONS, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                 }
             }
         }
@@ -903,7 +905,7 @@ fn mois_puppetpaie(
                 for nom in noms_commencant_finissant(&sortie, &debut, ".pdf")? {
                     let f = sortie.join(&nom);
                     for i in 0..pages_pdf(&f)? {
-                        pages.push(Page { categorie: DOCUMENTS_FIN, cle: cle.clone(), tri: format!("{}-04", mois), source: f.clone(), numero: i });
+                        pages.push(Page { categorie: DOCUMENTS_FIN, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
                 }
             }
@@ -956,10 +958,11 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<String>, p: &Periode, d: &mut 
             continue;
         }
         // L'ordre de lecture : le debut de la paie ; une paie qui ne le dit pas se lit au debut de son mois.
-        let tri = match x.paie.debut {
-            Some(j) => j.iso(),
-            None => format!("{}-01", mois),
+        let jour = match x.paie.debut {
+            Some(j) => j,
+            None => mois.premier_jour(),
         };
+        let tri = Some((jour.mois_civil(), Some(jour)));
         pages.push(Page { categorie: BULLETINS, cle, tri, source, numero: page as usize - 1 });
     }
     if !manquent.is_empty() {
@@ -1266,7 +1269,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {
-                    pages.push(Page { categorie: RECAPITULATIF, cle: cle.clone(), tri: "9999".to_string(), source: r.clone(), numero: i });
+                    pages.push(Page { categorie: RECAPITULATIF, cle: cle.clone(), tri: None, source: r.clone(), numero: i });
                 }
             }
         }
