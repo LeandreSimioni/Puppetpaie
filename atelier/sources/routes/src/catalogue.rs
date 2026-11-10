@@ -545,7 +545,7 @@ impl Fiche {
     /// La fiche telle que le catalogue l'ecrit. Un exemple qui n'est pas une charge est un defaut du logiciel.
     pub fn ecrite(&self) -> R<FicheEcrite> {
         let exemple = socle::forme::lire_texte(self.exemple, "Défaut du logiciel : l'exemple d'une route n'est pas une charge.")
-            .map_err(|m| socle::echec::erreur(Classe::DefautDuLogiciel, m))?;
+            .map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;
         Ok(FicheEcrite {
             nom: self.nom(),
             geste: self.geste,
@@ -723,7 +723,7 @@ pub fn commande(args: &[String]) -> i32 {
             match f.ecrite() {
                 Ok(e) => dire!("{}", socle::ecriture::json_en_ligne(&e)),
                 Err(e) => {
-                    eprintln!("{}", e.phrase());
+                    eprintln!("{}", e.phrase);
                     return 1;
                 }
             }
@@ -739,7 +739,7 @@ pub fn commande(args: &[String]) -> i32 {
                 0
             }
             Err(e) => {
-                eprintln!("{}", e.phrase());
+                eprintln!("{}", e.phrase);
                 1
             }
         };

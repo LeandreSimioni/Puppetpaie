@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, Datee, Etablissement, FicheEntrepriseDatee, Lue as _};
 use socle::date::Jour;
-use socle::echec::R;
+use socle::echec::{Classe, R};
 
 use crate::fiches::{refus, ChangementDit};
 
@@ -179,7 +179,7 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
             }
         }
         if let Some(vm) = &o.versement_mobilite {
-            let paye = vm.taux.as_ref().map(droit::fiche::Montant::decimal).transpose().map_err(refus)?.is_some_and(|d| !d.is_zero());
+            let paye = vm.taux.as_ref().map(droit::fiche::Montant::decimal).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|d| !d.is_zero());
             if paye && vm.code_insee.remplie().map(|c| c.trim().chars().count()) != Some(5) {
                 griefs.push(format!("{} : le code INSEE de sa commune (cinq caractères), que la DSN déclare avec le versement mobilité", nom));
             }
@@ -195,7 +195,7 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
                 None => griefs.push(format!("{} : son code risque AT/MP, tel que la CARSAT le notifie", nom)),
             }
         }
-        if let Some(m) = o.taux_atmp.as_ref().map(droit::bareme::taux_atmp_refuse).transpose().map_err(refus)?.flatten() {
+        if let Some(m) = o.taux_atmp.as_ref().map(droit::bareme::taux_atmp_refuse).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.flatten() {
             griefs.push(format!("{} : {}", nom, m));
         }
         nouvelles.push((ouverture, o));
@@ -313,9 +313,9 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
     annees.dedup();
     for an in annees {
         let Some(premier) = Jour::nouveau(an, 1, 1) else { continue };
-        if droit::contexte::socle_livre_lu(an).map_err(refus)?.is_some() {
-            let bar = ctx.bareme_fondu(&premier).map_err(refus)?;
-            droit::contexte::controler_etablissements(&fiche, &bar).map_err(refus)?;
+        if droit::contexte::socle_livre_lu(an).map_err(|e| e.reclasser(Classe::Refuse))?.is_some() {
+            let bar = ctx.bareme_fondu(&premier).map_err(|e| e.reclasser(Classe::Refuse))?;
+            droit::contexte::controler_etablissements(&fiche, &bar).map_err(|e| e.reclasser(Classe::Refuse))?;
         }
     }
     contenu.etablissements = Some(datee);
