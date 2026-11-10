@@ -36,7 +36,7 @@ use compagnie::incidents;
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use engagement::ecarts::{Comparaison, Grandeur};
-use socle::echec::{Echec, R};
+use socle::echec::R;
 
 /// L'endroit, dans le journal des incidents.
 pub const OU: &str = "ecarts_import";
@@ -147,7 +147,7 @@ fn comparees(racine: &Path) -> R<BTreeSet<String>> {
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
 /// refusee se compare de nouveau la fois suivante).
 pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<String>)> {
-    let importes = engagement::importe::tous(&ctx.racine).map_err(Echec::from)?;
+    let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
     let faites: Vec<String> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
@@ -264,7 +264,7 @@ pub fn rapporter(ctx: &Contexte) -> R<usize> {
 /// compte pas.
 pub fn noter(ctx: &Contexte) -> R<usize> {
     let racine = &ctx.racine;
-    if engagement::importe::tous(racine).map_err(Echec::from)?.is_empty() {
+    if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
     let (rapports, faites) = rapports(ctx)?;
