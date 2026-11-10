@@ -42,6 +42,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use socle::echec::{refus_avec, Echec, R};
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
 pub const VARIABLE: &str = "PUPPETPAIE_COMPAGNIE";
@@ -65,7 +66,7 @@ pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::installation::FICHIER_HORLOGE];
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::copie_de`).
-pub fn est_essai(racine: &Path) -> Result<bool, String> {
+pub fn est_essai(racine: &Path) -> R<bool> {
     Ok(crate::installation::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
 }
 
@@ -142,8 +143,9 @@ fn chiffres(t: &str, n: usize) -> bool {
 }
 
 /// Le refus d'une valeur mal formee : la cle et ce qu'il faut, jamais la valeur.
-fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> String {
-    socle::echec::avec(
+#[track_caller]
+fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> Echec {
+    refus_avec(
         format!("L'identité de la compagnie d'essai ({}) porte une valeur mal formée. Rien n'est écrit.", VARIABLE),
         socle::echec::APart { cle: Some(cle.to_string()), detail: Some(ce_qu_il_faut.to_string()), ..Default::default() },
     )
@@ -151,7 +153,7 @@ fn mal_formee(cle: &str, ce_qu_il_faut: &str) -> String {
 
 /// La case typee de `t`, ou le refus de sa forme (`droit::fiche::texte_borne!` : les zones de la DPAE), qui ne cite pas la
 /// valeur : la phrase du type l'ouvre entre guillemets, elle en est retiree.
-fn case<T>(cle: &str, lire: fn(&str) -> socle::echec::R<T>, t: &str) -> Result<T, String> {
+fn case<T>(cle: &str, lire: fn(&str) -> socle::echec::R<T>, t: &str) -> R<T> {
     lire(t).map_err(|f| mal_formee(cle, &f.phrase.replace(&format!("« {} »", t), "La valeur")))
 }
 
@@ -207,10 +209,10 @@ impl Variable {
 
     /// Les formes que la norme et le moteur exigent, verifiees AVANT d'ecrire : un refus plus tard (a l'ecriture de la DSN,
     /// au depot) citerait la valeur fautive a l'ecran.
-    fn verifier(&self) -> Result<(), String> {
+    fn verifier(&self) -> R<()> {
         let vides: Vec<&str> = self.textes().into_iter().filter(|(cle, t)| t.is_empty() && !matches!(*cle, "api_dpae.siret" | "api_dpae.service")).map(|(cle, _)| cle).collect();
         if !vides.is_empty() {
-            return Err(socle::echec::avec(
+            return Err(refus_avec(
                 format!("L'identité de la compagnie d'essai ({}) a des valeurs vides. Rien n'est écrit.", VARIABLE),
                 socle::echec::APart { cle: Some(vides.join(", ")), ..Default::default() },
             ));
@@ -251,7 +253,7 @@ impl Variable {
 
     /// Les cases de la fiche que la variable pose, et ce qui en derive (le SIRET, le declarant net-entreprises, le compte
     /// DPAE), chacune en son type.
-    fn champs(&self) -> Result<droit::fiche::ChampsEntreprise, String> {
+    fn champs(&self) -> R<droit::fiche::ChampsEntreprise> {
         use droit::fiche::{ApiDpae, ChampsEntreprise, Civilite, CodeMedecine, CodeNaf, CodePostal, CommuneEmployeur, Declarant, DeclarantDsn, LigneAdresse, RaisonSociale, Telephone};
         let siret = format!("{}{}", self.siren.0, self.nic.0);
         let civilite = match self.declarant_dsn.civilite.0.as_str() {
@@ -296,7 +298,7 @@ impl Variable {
 impl Identite {
     /// Lit et valide le texte de la variable, par la lecture qui ne cite aucune valeur (`socle::forme::lire_texte_sans_valeur`) :
     /// le refus nomme la variable et la cle, JAMAIS une valeur.
-    pub fn lire(texte: &str) -> Result<Identite, String> {
+    pub fn lire(texte: &str) -> R<Identite> {
         let v: Variable = socle::forme::lire_texte_sans_valeur(texte, &format!("L'identité de la compagnie d'essai ({}) ne se lit pas : un objet sur une ligne, avec exactement ses clés, est attendu. Rien n'est écrit.", VARIABLE))?;
         v.verifier()?;
         Ok(Identite(v.champs()?))
@@ -305,7 +307,7 @@ impl Identite {
     /// La fiche de la fictive, sous cette identite : les cles de la variable posees, ce qui en derive recompose (le SIRET, le
     /// declarant net-entreprises, le compte DPAE), ce qui disait l'identite de la fictive retire. Chaque valeur posee vaut
     /// de tout temps, seule : une valeur datee de l'ancienne identite la redonnerait a une date passee.
-    pub fn appliquer(&self, fiche: &droit::fiche::FicheEntrepriseDatee) -> Result<droit::fiche::FicheEntrepriseDatee, String> {
+    pub fn appliquer(&self, fiche: &droit::fiche::FicheEntrepriseDatee) -> R<droit::fiche::FicheEntrepriseDatee> {
         let mut brute = fiche.clone();
         // Ce que la fiche de la fictive dit de SON identite, et qui ne survit pas sous celle de la variable : ce que la variable
         // remplace, et ce qui en derive (l'affichage, le complement d'adresse).
@@ -332,27 +334,27 @@ pub struct Montage {
 }
 
 /// Le dossier d'installation : celui qui porte `logiciel/` (`logiciel/donnees` -> `logiciel` -> l'installation).
-fn installation() -> Result<PathBuf, String> {
+fn installation() -> R<PathBuf> {
     let code = socle::fichiers::dossier_du_code();
-    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| socle::echec::avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
+    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
 }
 
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
-fn source(depuis: &str) -> Result<PathBuf, String> {
+fn source(depuis: &str) -> R<PathBuf> {
     let p = PathBuf::from(depuis);
     let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(depuis) };
     if !d.join(droit::contexte::ENTREPRISE).is_file() {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
+        return Err(refus_avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
     if !crate::installation::est_fictive_livree(&d)? {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
+        return Err(refus_avec("Ce dossier n'est pas une compagnie fictive : une compagnie d'essai ne se monte que depuis une fictive. Rien n'est écrit.", a_part(&d)));
     }
     Ok(d)
 }
 
 /// Le chemin absolu, sans `..`, meme s'il n'existe pas encore (on remonte au premier ancetre qui existe).
-fn absolu(p: &Path) -> Result<PathBuf, String> {
+fn absolu(p: &Path) -> R<PathBuf> {
     let p = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().map_err(|e| socle::echec::du_disque(p, &e))?.join(p) };
     let mut reste = Vec::new();
     let mut a = p.as_path();
@@ -376,16 +378,16 @@ fn absolu(p: &Path) -> Result<PathBuf, String> {
 
 /// Le depot Git ou l'installation qui contient `dossier`, s'il y en a un : la copie porterait l'identite d'une vraie compagnie,
 /// elle ne va jamais la ou un `git add` la prendrait, ni a cote de ce que les gens recoivent.
-fn depot_englobant(dossier: &Path) -> Result<Option<PathBuf>, String> {
+fn depot_englobant(dossier: &Path) -> R<Option<PathBuf>> {
     Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
 }
 
-fn copier(src: &Path, dst: &Path, racine: &Path) -> Result<(), String> {
+fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
     std::fs::create_dir_all(dst).map_err(|e| socle::echec::du_disque(&dst, &e))?;
     for e in std::fs::read_dir(src).map_err(|e| socle::echec::du_disque(&src, &e))? {
         let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
-        let rel = s.strip_prefix(racine).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
+        let rel = s.strip_prefix(racine).map_err(|e| socle::echec::refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
         if NON_COPIES.contains(&rel.as_str()) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
@@ -400,8 +402,8 @@ fn copier(src: &Path, dst: &Path, racine: &Path) -> Result<(), String> {
 }
 
 /// Le journal de la copie sans les depots de DSN de la fictive (mensuelles et signalements, essais et reels) : voir l'en-tete.
-fn retirer_les_depots_de_dsn(dossier: &Path) -> Result<(), String> {
-    envois::journal::ne_garder_que(dossier, |l| l.acte() != envois::journal::Acte::Dsn).map_err(String::from)
+fn retirer_les_depots_de_dsn(dossier: &Path) -> R<()> {
+    envois::journal::ne_garder_que(dossier, |l| l.acte() != envois::journal::Acte::Dsn)
 }
 
 /// Monte (ou remet a jour) la compagnie d'essai dans `dossier`, depuis la fictive `depuis`, sous l'identite `texte` (le
@@ -409,13 +411,13 @@ fn retirer_les_depots_de_dsn(dossier: &Path) -> Result<(), String> {
 ///
 /// Une copie qui existe deja et qui est une compagnie d'essai garde tout (journal, DSN, retours releves) : seule sa fiche
 /// reprend l'identite de la variable. Un dossier qui existe et qui n'en est pas une, s'il n'est pas vide, est refuse.
-pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Montage, String> {
+pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
     let texte = texte.filter(|t| !t.trim().is_empty()).ok_or_else(|| {
-        format!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
+        socle::refus!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
     })?;
     let id = Identite::lire(texte)?;
     if let Some(d) = depot_englobant(dossier)? {
-        return Err(socle::echec::avec(
+        return Err(refus_avec(
             "Ce dossier est dans un dépôt Git ou une installation de PuppetPaie : la compagnie d'essai porte l'identité d'une vraie compagnie, elle se monte hors de tout dépôt (par exemple dans le dossier temporaire, le défaut). Rien n'est écrit.",
             socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(format!("dans {}", d.to_string_lossy())), ..Default::default() },
         ));
@@ -425,18 +427,18 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> Result<Monta
     if existe && !deja {
         let plein = std::fs::read_dir(dossier).map_err(|e| socle::echec::du_disque(dossier, &e))?.next().is_some();
         if plein {
-            return Err(socle::echec::avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", a_part(dossier)));
+            return Err(refus_avec("Ce dossier existe et n'est pas une compagnie d'essai : choisir un dossier vide ou neuf. Rien n'est écrit.", a_part(dossier)));
         }
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
         let depuis = crate::installation::marqueur(dossier)?
             .and_then(|m| m.depuis)
-            .ok_or_else(|| socle::echec::avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
+            .ok_or_else(|| refus_avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
         (None, depuis)
     } else {
         let s = source(depuis)?;
-        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| socle::echec::avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
+        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus_avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
         (Some(s), nom)
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.
@@ -557,7 +559,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", String::from(m));
             1
         }
     }
