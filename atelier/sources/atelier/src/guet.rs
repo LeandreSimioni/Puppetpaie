@@ -84,14 +84,14 @@ pub fn commande(args: &[String]) -> i32 {
     let o = match options(args) {
         Ok(o) => o,
         Err(m) => {
-            eprintln!("{}\n{}", crate::en_lignes(&m), AIDE);
+            eprintln!("{}\n{}", m.en_lignes(), AIDE);
             return 2;
         }
     };
     match guetter(&o) {
         Ok(code) => code,
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             1
         }
     }

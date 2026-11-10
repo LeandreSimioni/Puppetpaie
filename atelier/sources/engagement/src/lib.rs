@@ -58,7 +58,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use droit::emplois;
 
-use socle::{echec::{refus, R}, num::{dec_f64, Decimal}};
+use socle::{echec::{refus, Echec, R}, num::{dec_f64, Decimal}};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -2047,10 +2047,10 @@ pub fn engagements_de_la_saisie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<V
 
 /// Le refus que donne la lecture de la saisie `data` quand elle est encore incomplete (`saisie_incomplete`), lignes
 /// d'un permanent mises a part ; `None` si elle se lit, ou si elle refuse pour une autre raison.
-pub fn refus_de_saisie_incomplete(ctx: &Contexte, data: &saisie::VueDuMois) -> Option<String> {
+pub fn refus_de_saisie_incomplete(ctx: &Contexte, data: &saisie::VueDuMois) -> Option<Echec> {
     let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None));
     match engagements(ctx, data, vide) {
-        Err(m) if saisie_incomplete(&m.phrase) => Some(String::from(m)),
+        Err(m) if saisie_incomplete(&m.phrase) => Some(m),
         _ => None,
     }
 }

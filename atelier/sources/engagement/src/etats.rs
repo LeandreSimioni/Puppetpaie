@@ -409,15 +409,15 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool)
         Err(m) => vec![(None, m)],
     };
     let mut etats = tels_qu_ecrits(ctx, mois, departs)?;
-    let mut temoins: Vec<String> = Vec::new();
+    let mut temoins: Vec<(&str, Option<String>)> = Vec::new();
     for (_, m) in &refus {
         // Une saisie a finir est l'affaire de l'utilisateur : ce qui lit la paie la lui dit, l'editeur n'en est pas averti.
-        let texte = String::from(m.clone());
-        if !temoins.contains(&texte) && !crate::saisie_incomplete(&m.phrase) {
+        let vu = (m.phrase.as_str(), m.a_part.as_ref().map(socle::ecriture::json_en_ligne));
+        if !temoins.contains(&vu) && !crate::saisie_incomplete(&m.phrase) {
             if let Some(temoin) = TEMOIN.get() {
-                temoin(&ctx.racine, mois, &texte);
+                temoin(&ctx.racine, mois, m);
             }
-            temoins.push(texte);
+            temoins.push(vu);
         }
     }
     // Une paie qui manque (un contrat sans terme qui entre dans le mois) ne s'est pas ecrite a cause de son refus : qui la
@@ -440,7 +440,7 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: &str, departs: &Departs, passage: bool)
 }
 
 /// Qui recoit un recalcul refuse : `(racine de la compagnie, mois, refus du moteur)`.
-pub type Temoin = fn(&Path, &str, &str);
+pub type Temoin = fn(&Path, &str, &Echec);
 
 static TEMOIN: std::sync::OnceLock<Temoin> = std::sync::OnceLock::new();
 
@@ -1124,7 +1124,7 @@ pub enum Revalidation {
     Changee(Valide),
     /// La paie partie ne se calcule pas encore (une indemnite a dire...) : qui, et le refus du calcul. Rien n'est ecrit
     /// pour lui ; la revalidation se refait au geste suivant sur l'imprevu.
-    Attend(String, String),
+    Attend(String, Echec),
 }
 
 /// UN IMPREVU CHANGE APRES LE DEPART DU MOIS (un arret saisi, ses indemnites corrigees, une absence) : chaque engagement
@@ -1154,7 +1154,7 @@ pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> R<V
                     out.push(Revalidation::Changee(v));
                 }
             }
-            Err(m) => out.push(Revalidation::Attend(qui_de(ctx, &o), String::from(m))),
+            Err(m) => out.push(Revalidation::Attend(qui_de(ctx, &o), m)),
         }
     }
     Ok(out)

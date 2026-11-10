@@ -822,7 +822,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             l.base81 = Some(b);
             l.taux = Some(taux);
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
-                Some(composants) => composants.iter().try_fold(zero(), |s, t| Ok::<_, String>(add(s, pct(b, dec_du_taux(*t)?))))?,
+                Some(composants) => composants.iter().try_fold(zero(), |s, t| Ok::<_, socle::echec::Echec>(add(s, pct(b, dec_du_taux(*t)?))))?,
                 None => pct(b, dec_du_taux(taux)?),
             });
         }

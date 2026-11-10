@@ -28,7 +28,6 @@ use sha2::{Digest, Sha256};
 
 use socle::texte::{lignes_du_texte, texte_latin1};
 use socle::echec::R;
-use socle::echec::erreur;
 
 /// Une archive dans une archive dans une archive... s'ouvre jusqu'a cette profondeur, pas au-dela.
 const PROFONDEUR_MAX: usize = 4;
@@ -119,11 +118,10 @@ pub struct Tri {
 pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     if !dossier.is_dir() {
         let a_part = socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
-        return Err(socle::echec::Echec { a_part: Some(a_part), ..erreur(socle::echec::Classe::Refuse, "Le dossier à trier n'existe pas.") });
+        return Err(socle::echec::refus_avec("Le dossier à trier n'existe pas.", a_part).reclasser(socle::echec::Classe::Refuse));
     }
-    std::fs::create_dir_all(travail)
-        .map_err(|e| erreur(socle::echec::Classe::Refuse, socle::echec::du_disque(travail, &e)))?;
-    let travail_canon = std::fs::canonicalize(travail).map_err(|e| erreur(socle::echec::Classe::Disque, socle::echec::du_disque(travail, &e)))?;
+    std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;
+    let travail_canon = std::fs::canonicalize(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
     let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new() };
     t.parcourir(dossier, "", None, 0);
     Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers })
@@ -245,7 +243,7 @@ impl Trieur {
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
                 Err(e) => {
                     f.sorte = Sorte::Dsn;
-                    f.raison = Some(String::from(e));
+                    f.raison = Some(e.phrase);
                 }
                 Ok(_) => {
                     f.sorte = Sorte::Illisible;

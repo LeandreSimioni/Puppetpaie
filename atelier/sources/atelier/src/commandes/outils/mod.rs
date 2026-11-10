@@ -21,7 +21,7 @@ pub(crate) fn code(r: Result<i32, socle::echec::Echec>) -> i32 {
     match r {
         Ok(c) => c,
         Err(e) => {
-            dire!("! {}", crate::en_lignes(&e));
+            dire!("! {}", e.en_lignes());
             2
         }
     }

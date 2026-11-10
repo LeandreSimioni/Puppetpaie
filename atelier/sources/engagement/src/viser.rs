@@ -9,6 +9,7 @@ use crate::{Chiffre, LignePaie};
 use crate::calcul::Paie;
 use crate::saisie::{Carte, VueDuMois};
 use droit::contexte::Contexte;
+use socle::echec::Echec;
 use socle::num::Decimal;
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
@@ -23,8 +24,8 @@ pub enum Cible {
 /// Pourquoi la recherche n'aboutit pas : un refus de la recherche elle-meme, ou le calcul de la saisie qui refuse.
 #[derive(Debug, Clone)]
 pub enum RefusVisee {
-    Refus(String),
-    Calcul(socle::echec::Echec),
+    Refus(Echec),
+    Calcul(Echec),
 }
 
 /// Le meilleur essai : la saisie aux taux trouves, ses paies, le montant atteint, celui du depart, le facteur applique
@@ -40,7 +41,8 @@ pub struct Visee {
 
 type R<T> = Result<T, RefusVisee>;
 
-fn refus(m: impl Into<String>) -> RefusVisee {
+#[track_caller]
+fn refus(m: impl Into<Echec>) -> RefusVisee {
     RefusVisee::Refus(m.into())
 }
 

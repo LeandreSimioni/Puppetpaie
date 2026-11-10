@@ -193,6 +193,14 @@ impl Echec {
         Echec { classe: Some(classe), ..self }
     }
 
+    /// Le refus tel qu'un terminal le dit : sa phrase, puis, sur la ligne suivante, ce qu'il porte a part, en objet.
+    pub fn en_lignes(&self) -> String {
+        match &self.a_part {
+            Some(a) => format!("{}\n{}", self.phrase, crate::ecriture::json_en_ligne(a)),
+            None => self.phrase.clone(),
+        }
+    }
+
     /// Le meme refus, survenu en lisant le fichier `chemin` : son chemin va a part, s'il n'en porte pas deja un.
     pub fn au_fichier(mut self, chemin: &std::path::Path) -> Echec {
         let a = self.a_part.get_or_insert_with(APart::default);

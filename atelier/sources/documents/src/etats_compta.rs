@@ -1566,7 +1566,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let paies = match engagement::etats::paies_du_mois(ctx, &m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
-                avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, String::from(e)));
+                avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
                 continue;
             }
             Err(e) => return Err(e),

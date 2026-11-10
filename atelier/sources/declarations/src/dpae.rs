@@ -1021,12 +1021,12 @@ mod tests {
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
         let e = embauche("cdi", None);
-        let m = String::from(enr(&e, None, Some("11")).unwrap_err());
-        assert!(m.contains("code_urssaf") && m.contains("'11'"), "{}", m);
+        let a = enr(&e, None, Some("11")).unwrap_err().a_part.unwrap_or_default();
+        assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'11'")), "{:?}", a);
         let m = enr(&e, None, Some("abc")).unwrap_err().phrase;
         assert!(m.contains("3 chiffres"), "{}", m);
-        let m = String::from(enr(&e, None, Some("999")).unwrap_err());
-        assert!(m.contains("code_urssaf") && m.contains("'999'"), "{}", m);
+        let a = enr(&e, None, Some("999")).unwrap_err().a_part.unwrap_or_default();
+        assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'999'")), "{:?}", a);
         enr(&e, None, Some(" 117 ")).unwrap();
         // Sans code, celui du gabarit reste.
         let t = enr(&e, None, None).unwrap();

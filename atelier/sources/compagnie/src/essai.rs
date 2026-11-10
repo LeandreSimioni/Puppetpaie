@@ -559,7 +559,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", String::from(m));
+            eprintln!("{}", m.en_lignes());
             1
         }
     }

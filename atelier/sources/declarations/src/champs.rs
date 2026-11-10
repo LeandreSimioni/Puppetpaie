@@ -1737,7 +1737,7 @@ fn faute_des_jours(v: &Valeur) -> Option<String> {
         _ => None,
     };
     let faute = match lus {
-        Some(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(String::from),
+        Some(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(|e| e.phrase),
         None => Some(illisible),
     };
     faute.map(|e| match e.split_once(" : ") {
@@ -1926,7 +1926,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     }
     // LE JOUR DU VERSEMENT DES SALAIRES se lit comme la paie le lira (`droit::versement`).
     if droit::versement::CLES.contains(&c.cle) {
-        return Ok(droit::versement::Versement::lire(v).err().map(String::from));
+        return Ok(droit::versement::Versement::lire(v).err().map(|e| e.phrase));
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.
@@ -2187,7 +2187,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
             out.push(constat("pays_nationalite_hors_liste", Gravite::Erreur, m));
         } else if !pays_inconnu && (hors_liste || d.dite("code_nationalite_dsn").is_some() || d.dite("pays_nationalite").is_some()) {
             if let Err(m) = socle::codification_ue::codification_ue(&fiche) {
-                out.push(constat("code_nationalite_dsn", Gravite::Erreur, String::from(m)));
+                out.push(constat("code_nationalite_dsn", Gravite::Erreur, m.phrase));
             }
         }
         // LES BORNES D'UNE DISPENSE DE SANTE (Q13) : elles bornent un motif, et la fin ne precede pas le debut. Ce que

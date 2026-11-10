@@ -240,7 +240,7 @@ pub fn commande(args: &[String]) -> i32 {
     let aujourdhui = match droit::contexte::aujourdhui_sans_note() {
         Ok(j) => j,
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };
@@ -256,7 +256,7 @@ pub fn commande(args: &[String]) -> i32 {
     match r {
         Ok(()) => 0,
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             1
         }
     }

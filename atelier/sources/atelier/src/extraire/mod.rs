@@ -112,7 +112,7 @@ pub fn commande(args: &[String]) -> i32 {
     let sources: Vec<PathBuf> = pos[1..attendus].iter().map(PathBuf::from).collect();
     let sortie = PathBuf::from(pos[attendus]);
     if let Err(m) = verifier_la_sortie(&sources, &sortie, remplacer) {
-        eprintln!("{}", crate::en_lignes(&m));
+        eprintln!("{}", m.en_lignes());
         return 1;
     }
     let jour = socle::temps::jour_de_paris();
@@ -125,12 +125,12 @@ pub fn commande(args: &[String]) -> i32 {
     let releve = match releve {
         Ok(r) => r,
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };
     if let Err(m) = ecrire(&releve, &sortie, remplacer) {
-        eprintln!("{}", crate::en_lignes(&m));
+        eprintln!("{}", m.en_lignes());
         return 1;
     }
     for l in &releve.bilan {
@@ -267,7 +267,7 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
     let (u, f) = match faites {
         Ok(x) => x,
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };

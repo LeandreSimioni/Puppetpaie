@@ -1230,7 +1230,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", Mois::en_clair(&texte)))
     })?;
     let v = engagement::viser::viser(ctx, &data, &[i], c.cible, vise).map_err(|r| match r {
-        engagement::viser::RefusVisee::Refus(m) => refus(m),
+        engagement::viser::RefusVisee::Refus(m) => m,
         engagement::viser::RefusVisee::Calcul(m) => refus_du_calcul(ctx, &data, String::from(m)),
     })?;
     let (avant, apres) = match (data.engagements.get(i), v.saisie.engagements.get(i)) {
@@ -1295,7 +1295,7 @@ pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, message: String)
         return erreur(Classe::SaisieIncomplete, message);
     }
     if let Some(m) = engagement::refus_de_saisie_incomplete(ctx, data) {
-        return erreur(Classe::SaisieIncomplete, m);
+        return m.reclasser(Classe::SaisieIncomplete);
     }
     Echec::from(message)
 }

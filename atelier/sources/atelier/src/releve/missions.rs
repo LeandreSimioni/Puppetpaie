@@ -43,7 +43,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", crate::en_lignes(&m));
+            eprintln!("{}", m.en_lignes());
             1
         }
     }

@@ -558,7 +558,7 @@ fn regulariser(ctx: &Contexte, nom: &str, phrase: &mut String) -> R<()> {
                     dit.push(format!("La paie partie change : {}.", lignes.join(", ")));
                 }
             }
-            Revalidation::Attend(_, refus) => dit.push(format!("La paie partie attend : {}", refus)),
+            Revalidation::Attend(_, refus) => dit.push(format!("La paie partie attend : {}", refus.phrase)),
         }
     }
     if !dit.is_empty() {

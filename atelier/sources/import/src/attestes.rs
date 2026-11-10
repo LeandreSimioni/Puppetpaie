@@ -307,7 +307,7 @@ impl Registre {
             for i in remplaces.into_iter().rev() {
                 let x = self.tous.remove(i);
                 let nouvelle = if x.de_certificat() {
-                    match reste_du_certificat(&x, &[&a]).unwrap_or_else(|e| Reste::NeSeComptePas(String::from(e))) {
+                    match reste_du_certificat(&x, &[&a]).unwrap_or_else(|e| Reste::NeSeComptePas(e.phrase)) {
                         Reste::Rien => {
                             phrases.push(format!("il remplace le contrat repris d'un certificat Congés Spectacles ({}) aux mêmes dates", x.d_ou()));
                             None

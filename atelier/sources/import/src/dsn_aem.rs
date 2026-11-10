@@ -151,7 +151,7 @@ impl LectureDsn {
 
 /// Les noms du dossier, tries. Un dossier ou une entree qui ne se lisent pas se refusent.
 fn noms_tries(dossier: &Path) -> Result<Vec<String>, Echec> {
-    let disque = |e: std::io::Error| socle::echec::erreur(socle::echec::Classe::Disque, socle::echec::du_disque(dossier, &e));
+    let disque = |e: std::io::Error| socle::echec::du_disque(dossier, &e).reclasser(socle::echec::Classe::Disque);
     let mut v: Vec<String> = Vec::new();
     for e in std::fs::read_dir(dossier).map_err(disque)? {
         v.push(e.map_err(disque)?.file_name().to_string_lossy().into_owned());
@@ -426,7 +426,7 @@ pub fn employeur_dsn(chemin: &Path) -> Result<Employeur, Echec> {
 /// se lit plus se refuse.
 pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
     let mut e = Employeur::default();
-    let octets = std::fs::read(chemin).map_err(|x| socle::echec::erreur(socle::echec::Classe::Disque, socle::echec::du_disque(chemin, &x)))?;
+    let octets = std::fs::read(chemin).map_err(|x| socle::echec::du_disque(chemin, &x).reclasser(socle::echec::Classe::Disque))?;
     for ligne in lignes_du_texte(&texte_latin1(&octets)) {
         let l: Vec<char> = ligne.chars().collect();
         // Les enregistrements que `lire_aem` lit.

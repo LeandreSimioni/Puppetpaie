@@ -537,7 +537,7 @@ pub fn commande(args: &[String]) -> i32 {
             i32::from(!t.is_empty())
         }
         Err(m) => {
-            eprintln!("verifier-avant-commit : {}", crate::en_lignes(&m));
+            eprintln!("verifier-avant-commit : {}", m.en_lignes());
             2
         }
     }

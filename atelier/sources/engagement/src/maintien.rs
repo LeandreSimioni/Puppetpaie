@@ -596,7 +596,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
             // Le SMIC du plafond, au bareme de son annee : sans lui, rien ne se propose.
             let smic = match ctx.smic(&veille) {
                 Ok(s) => Decimal::try_from(s).map_err(|_| socle::refus!("SMIC illisible : {}", s))?,
-                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
+                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi.phrase))),
             };
             let combien = p.mois;
             let (mut bruts, mut jour) = (Vec::new(), veille.clone());
@@ -627,7 +627,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
             }
             let mensuel = match ctx.plafond_securite_sociale(premier.an) {
                 Ok((mensuel, _)) => mensuel,
-                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", String::from(pourquoi)))),
+                Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi.phrase))),
             };
             let mois = veille.mois_civil().to_string();
             let Some(brut) = paie(&mois)? else { return Ok(sans_paie(&mois)) };

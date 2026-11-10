@@ -328,7 +328,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ("premiere_embauche")?;
         let m = match effectif.atteint(11, an) {
-            Err(m) => String::from(m),
+            Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
         };
         out.push(manque("premiere_embauche", libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", ENTREPRISE, Some("premiere_embauche"), m)?);
@@ -377,9 +377,9 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // L'effectif qui manque est demande plus haut.
     if let Err(e) = bareme {
         match e.classe {
-            Some(Classe::TauxAtmpAbsent) => out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), String::from(e))?),
+            Some(Classe::TauxAtmpAbsent) => out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), e.phrase)?),
             Some(Classe::EffectifAbsent) => {}
-            _ => out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, String::from(e))?),
+            _ => out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, e.phrase)?),
         }
     }
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
