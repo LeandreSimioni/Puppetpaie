@@ -28,7 +28,7 @@ use std::process::{Command, Stdio};
 
 use regex::Regex;
 
-type R<T> = Result<T, String>;
+use socle::echec::{refus, R};
 
 /// Ce qui ne part jamais : les données de la compagnie du poste.
 const PRIVE: &str = "prive/";
@@ -240,7 +240,7 @@ fn lire_config<T: serde::de::DeserializeOwned>(cfg: &Path, nom: &str) -> R<Optio
     if !p.exists() {
         return Ok(None);
     }
-    droit::fiche::lire_fichier(&p, &format!("prive/config/{}", nom)).map(Some).map_err(String::from)
+    droit::fiche::lire_fichier(&p, &format!("prive/config/{}", nom)).map(Some)
 }
 
 /// Les valeurs à ne jamais publier, lues hors du dépôt (`<racine>/prive/config/`), dans l'ordre où on les lit, une fois
@@ -324,9 +324,9 @@ fn git(racine: &Path, args: &[&str]) -> R<Vec<u8>> {
         .args(args)
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("git introuvable ({}) : ce garde lit ce que Git emporterait", e))?;
+        .map_err(|e| refus!("git introuvable ({}) : ce garde lit ce que Git emporterait", e))?;
     if !sortie.status.success() {
-        return Err(format!("git {} : {}", args.join(" "), String::from_utf8_lossy(&sortie.stderr).trim()));
+        return Err(refus!("git {} : {}", args.join(" "), String::from_utf8_lossy(&sortie.stderr).trim()));
     }
     Ok(sortie.stdout)
 }
@@ -334,7 +334,7 @@ fn git(racine: &Path, args: &[&str]) -> R<Vec<u8>> {
 /// La racine du dépôt Git où l'on est (`git rev-parse --show-toplevel`) : c'est là que se trouve `prive/`.
 pub fn racine_du_depot(depuis: &Path) -> R<PathBuf> {
     let o = git(depuis, &["rev-parse", "--show-toplevel"])?;
-    let t = String::from_utf8(o).map_err(|_| "git rev-parse : chemin illisible".to_string())?;
+    let t = String::from_utf8(o).map_err(|_| refus("git rev-parse : chemin illisible"))?;
     Ok(PathBuf::from(t.trim_end_matches(['\n', '\r'])))
 }
 
@@ -379,27 +379,27 @@ fn contenus_indexes(racine: &Path, noms: &[String]) -> R<Vec<Option<Vec<u8>>>> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("git introuvable ({})", e))?;
+        .map_err(|e| refus!("git introuvable ({})", e))?;
     let mut entree = p.stdin.take().unwrap();
     let demande: String = noms.iter().map(|n| format!(":0:{}\n", n)).collect();
     let ecrivain = std::thread::spawn(move || entree.write_all(demande.as_bytes()));
     let mut o = Vec::new();
-    p.stdout.take().unwrap().read_to_end(&mut o).map_err(|e| e.to_string())?;
-    let fin = p.wait_with_output().map_err(|e| e.to_string())?;
-    ecrivain.join().map_err(|_| "git cat-file : écriture interrompue".to_string())?.map_err(|e| e.to_string())?;
+    p.stdout.take().unwrap().read_to_end(&mut o).map_err(|e| refus(e.to_string()))?;
+    let fin = p.wait_with_output().map_err(|e| refus(e.to_string()))?;
+    ecrivain.join().map_err(|_| refus("git cat-file : écriture interrompue"))?.map_err(|e| refus(e.to_string()))?;
     if !fin.status.success() {
-        return Err(format!("git cat-file : {}", String::from_utf8_lossy(&fin.stderr).trim()));
+        return Err(refus!("git cat-file : {}", String::from_utf8_lossy(&fin.stderr).trim()));
     }
     let mut contenus = Vec::new();
     let mut i = 0;
     for _ in noms {
-        let nl = o[i..].iter().position(|&b| b == b'\n').ok_or("git cat-file : réponse tronquée")? + i;
+        let nl = o[i..].iter().position(|&b| b == b'\n').ok_or_else(|| refus("git cat-file : réponse tronquée"))? + i;
         let entete = String::from_utf8_lossy(&o[i..nl]).into_owned();
         i = nl + 1;
         let champs: Vec<&str> = entete.split(' ').collect();
         if champs.len() == 3 && champs[1] == "blob" {
-            let n: usize = champs[2].parse().map_err(|_| format!("git cat-file : en-tête illisible ({})", entete))?;
-            contenus.push(Some(o.get(i..i + n).ok_or("git cat-file : réponse tronquée")?.to_vec()));
+            let n: usize = champs[2].parse().map_err(|_| refus!("git cat-file : en-tête illisible ({})", entete))?;
+            contenus.push(Some(o.get(i..i + n).ok_or_else(|| refus("git cat-file : réponse tronquée"))?.to_vec()));
             i += n + 1;
         } else {
             // `missing` : un sous-module, ou un chemin que l'index ne porte plus.
@@ -460,7 +460,7 @@ fn contenu(p: &Path) -> R<Option<Vec<u8>>> {
     match std::fs::read(p) {
         Ok(o) => Ok(Some(o)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(socle::echec::du_disque(p, &e).into()),
+        Err(e) => Err(socle::echec::du_disque(p, &e)),
     }
 }
 
@@ -530,14 +530,14 @@ pub fn commande(args: &[String]) -> i32 {
             }
         }
     }
-    let r = std::env::current_dir().map_err(|e| e.to_string()).and_then(|d| racine_du_depot(&d)).and_then(|r| verifier(&r, indexes));
+    let r = std::env::current_dir().map_err(|e| refus(e.to_string())).and_then(|d| racine_du_depot(&d)).and_then(|r| verifier(&r, indexes));
     match r {
         Ok(t) => {
             dire_sans_ligne!("{}", rapport(&t));
             i32::from(!t.is_empty())
         }
         Err(m) => {
-            eprintln!("verifier-avant-commit : {}", m);
+            eprintln!("verifier-avant-commit : {}", crate::en_lignes(&m));
             2
         }
     }

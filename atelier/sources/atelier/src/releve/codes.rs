@@ -65,7 +65,7 @@ pub mod textes;
 
 pub use textes::{Domaine, Texte, TEXTES};
 
-type R<T> = Result<T, String>;
+use socle::echec::{Echec, R};
 
 pub const BASE: &str = "https://echanges.dila.gouv.fr/OPENDATA/LEGI/";
 pub const GLOBAL: &str = "Freemium_legi_global_20250713-140000.tar.gz";
@@ -240,7 +240,7 @@ pub fn commande(args: &[String]) -> i32 {
     let aujourdhui = match droit::contexte::aujourdhui_sans_note() {
         Ok(j) => j,
         Err(m) => {
-            eprintln!("{}", String::from(m));
+            eprintln!("{}", crate::en_lignes(&m));
             return 1;
         }
     };
@@ -256,7 +256,7 @@ pub fn commande(args: &[String]) -> i32 {
     match r {
         Ok(()) => 0,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", crate::en_lignes(&m));
             1
         }
     }
@@ -336,7 +336,7 @@ fn passer<L: Read>(
         if ancien.is_some_and(|a| a.en_vigueur) && !en_vigueur {
             continue;
         }
-        let id = groupe(re_id(), &m.nom).ok_or_else(|| format!("{} : un article dont le nom ne porte pas son identifiant LEGIARTI", m.nom))?.to_string();
+        let id = groupe(re_id(), &m.nom).ok_or_else(|| refus!("{} : un article dont le nom ne porte pas son identifiant LEGIARTI", m.nom))?.to_string();
         if let (Some(ch), Some(a)) = (changes.as_deref_mut(), ancien) {
             if a.id != id {
                 ch.push(ChangeLegi { texte: texte.to_string(), article: num.clone(), avant: a.id.clone(), apres: id.clone(), depuis: debut.clone(), livraison: livraison.to_string() });
@@ -353,7 +353,7 @@ fn livraisons(source: &dyn Source) -> R<Vec<String>> {
     let page = dila::page(source, BASE)?;
     let toutes = dila::livraisons(&page, "LEGI");
     if toutes.is_empty() {
-        return Err(format!("l'index LEGI ({}) ne liste aucune livraison : la page a change ?", BASE));
+        return Err(refus!("l'index LEGI ({}) ne liste aucune livraison : la page a change ?", BASE));
     }
     Ok(toutes.into_iter().filter(|n| n[..8] > *DEPUIS).collect())
 }
@@ -371,7 +371,7 @@ fn passer_le_global(
         match r {
             Ok(v) => return Ok(v),
             Err(e) => {
-                dire(&format!("  archive globale, essai {} : {}", essai, e));
+                dire(&format!("  archive globale, essai {} : {}", essai, e.phrase));
                 if essai == 3 {
                     return Err(e);
                 }
@@ -396,7 +396,7 @@ fn passer_le_global(
 /// a `TEXTES` ne coute plus rien : il est deja dans l'entrepot.
 pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujourdhui: &Jour) -> R<()> {
     let jour = aujourdhui.iso();
-    std::fs::create_dir_all(racine).map_err(|e| format!("{} : {}", racine.display(), e))?;
+    std::fs::create_dir_all(racine).map_err(|e| refus!("{} : {}", racine.display(), e))?;
     let dossier = racine.join(ENTREPOT);
     let mut journal: Vec<String> = Vec::new();
     let mut ent: EntrepotLegi = if dila::existe(&dossier) && !reconstruire {
@@ -427,7 +427,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
     dire(&format!("== {} livraison(s) nouvelle(s) sur {} ==", neuves.len(), toutes.len()));
     let urls: Vec<String> = neuves.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
     let mut changes: Vec<ChangeLegi> = Vec::new();
-    let mut panne: Option<String> = None;
+    let mut panne: Option<Echec> = None;
     dila::en_ordre(source, &urls, 8, |i, octets| {
         let nom = &neuves[i];
         let octets = match octets {
@@ -435,12 +435,12 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
             Err(e) => {
                 // UNE LIVRAISON MANQUEE ARRETE LA SUITE : appliquer celle du lendemain par-dessus un trou ferait un
                 // entrepot faux sans le dire. La prochaine moisson reprendra ici.
-                journal.push(format!("livraison {} : {} -- arret, reprise au prochain passage", nom, e));
+                journal.push(format!("livraison {} : {} -- arret, reprise au prochain passage", nom, e.phrase));
                 return false;
             }
         };
         if let Err(e) = passer(&mut dila::archive(&octets), &mut ent.articles, &mut journal, Some(&mut changes), nom, true, None) {
-            panne = Some(format!("livraison {} : {}", nom, e));
+            panne = Some(e.reformuler(|p| format!("livraison {} : {}", nom, p)));
             return false;
         }
         ent.noter_lue(nom);
@@ -503,13 +503,13 @@ fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>
     let mut lues: Vec<String> = ent.lues().into_iter().collect();
     lues.sort();
     let urls: Vec<String> = lues.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
-    let mut panne: Option<String> = None;
+    let mut panne: Option<Echec> = None;
     dila::en_ordre(source, &urls, 8, |i, octets| {
         let r = octets.and_then(|o| passer(&mut dila::archive(&o), &mut ent.articles, journal, None, &lues[i], true, Some(absents)));
         if let Err(e) = r {
             // Une livraison manquee laisserait ces textes dans une version ancienne sans le dire : on s'arrete, et on
             // n'ecrit rien.
-            panne = Some(format!("livraison {} : {} -- les textes {} ne sont pas completes", lues[i], e, absents.join(", ")));
+            panne = Some(e.reformuler(|p| format!("livraison {} : {} -- les textes {} ne sont pas completes", lues[i], p, absents.join(", "))));
             return false;
         }
         true
@@ -532,12 +532,12 @@ fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: us
         // Le XML de chaque article dans `xml/`, le releve a cote : c'est la piece justificative qui reste a cote du compte
         // rendu.
         let px = dossier.join(XML);
-        std::fs::create_dir_all(&px).map_err(|e| format!("{} : {}", px.display(), e))?;
+        std::fs::create_dir_all(&px).map_err(|e| refus!("{} : {}", px.display(), e))?;
         let mut siens = EnOrdre::new();
         for a in articles.iter().filter(|a| a.cle[0] == texte.cle) {
             let num = &a.cle[1];
             let f = px.join(format!("{}.xml", fichier(num)));
-            std::fs::write(&f, &a.xml).map_err(|e| format!("{} : {}", f.display(), e))?;
+            std::fs::write(&f, &a.xml).map_err(|e| refus!("{} : {}", f.display(), e))?;
             siens.poser(num.clone(), ArticleReleve { debut: a.debut.clone(), en_vigueur: a.en_vigueur, id: a.id.clone() });
         }
         let releve = ReleveDUnTexte {
@@ -554,7 +554,7 @@ fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: us
             articles: siens,
         };
         let p = dossier.join("releve.json");
-        std::fs::write(&p, socle::ecriture::json_indente(&releve, 1)).map_err(|e| format!("{} : {}", p.display(), e))?;
+        std::fs::write(&p, socle::ecriture::json_indente(&releve, 1)).map_err(|e| refus!("{} : {}", p.display(), e))?;
     }
     Ok(())
 }
@@ -623,13 +623,13 @@ pub fn rapport(racine: &Path, quel: Option<&str>, aujourdhui: &Jour) -> R<()> {
 
 /// Un fichier texte en UTF-8, fins de ligne universelles (`\r\n` et `\r` deviennent `\n`).
 fn lire_texte(p: &Path) -> R<String> {
-    let t = std::fs::read_to_string(p).map_err(|e| format!("{} : {}", p.display(), e))?;
+    let t = std::fs::read_to_string(p).map_err(|e| refus!("{} : {}", p.display(), e))?;
     Ok(if t.contains('\r') { t.replace("\r\n", "\n").replace('\r', "\n") } else { t })
 }
 
 /// Le releve d'un texte (`releve.json`), en sa forme.
 fn lire_releve(p: &Path) -> R<ReleveDUnTexte> {
-    socle::forme::lire_texte(&lire_texte(p)?, &format!("{} ne se lit pas.", p.display())).map_err(String::from)
+    socle::forme::lire_texte(&lire_texte(p)?, &format!("{} ne se lit pas.", p.display()))
 }
 
 fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
@@ -710,7 +710,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
     }
     let mut t = lignes.join("\n");
     t.push('\n');
-    std::fs::write(cible, t).map_err(|e| format!("{} : {}", cible.display(), e))?;
+    std::fs::write(cible, t).map_err(|e| refus!("{} : {}", cible.display(), e))?;
     dire(&format!("{} articles -> {}", n_articles, cible.display()));
     Ok(())
 }
@@ -755,10 +755,10 @@ fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<Ha
             continue;
         };
         let xml = String::from_utf8_lossy(&tar.lire()?).into_owned();
-        let dossier = racine.join(texte_de(&cle).map(|t| t.dossier).ok_or_else(|| format!("texte inconnu : {}", cle))?).join(ANTERIEUR);
-        std::fs::create_dir_all(&dossier).map_err(|e| format!("{} : {}", dossier.display(), e))?;
+        let dossier = racine.join(texte_de(&cle).map(|t| t.dossier).ok_or_else(|| refus!("texte inconnu : {}", cle))?).join(ANTERIEUR);
+        std::fs::create_dir_all(&dossier).map_err(|e| refus!("{} : {}", dossier.display(), e))?;
         let f = dossier.join(format!("{}.xml", fichier(&num)));
-        std::fs::write(&f, &xml).map_err(|e| format!("{} : {}", f.display(), e))?;
+        std::fs::write(&f, &xml).map_err(|e| refus!("{} : {}", f.display(), e))?;
         trouves.insert((cle, num.clone()), xml);
         dire(&format!("  {} {} ({}/{})", num, id, trouves.len(), vise.len()));
         if trouves.len() == vise.len() {
@@ -801,7 +801,7 @@ pub fn comparer(racine: &Path, source: &dyn Source, aujourdhui: &Jour) -> R<()> 
             GLOBAL,
             aujourdhui.jj_mm_aaaa()
         );
-        std::fs::write(&cible, t).map_err(|e| format!("{} : {}", cible.display(), e))?;
+        std::fs::write(&cible, t).map_err(|e| refus!("{} : {}", cible.display(), e))?;
         dire(&format!("aucun changement -> {}", cible.display()));
         return Ok(());
     }
@@ -811,7 +811,7 @@ pub fn comparer(racine: &Path, source: &dyn Source, aujourdhui: &Jour) -> R<()> 
         match avant(racine, &changements, source) {
             Ok(a) => break a,
             Err(e) => {
-                dire(&format!("  archive globale, essai {} : {}", essai, e));
+                dire(&format!("  archive globale, essai {} : {}", essai, e.phrase));
                 if essai == 3 {
                     return Err(e);
                 }
@@ -856,7 +856,7 @@ fn ecrire_comparaison(
     tries.sort_by(|a, b| (&a.texte, &a.article).cmp(&(&b.texte, &b.article)));
     for c in tries {
         let (cle, article) = (c.texte.clone(), c.article.clone());
-        let texte = texte_de(&cle).ok_or_else(|| format!("texte inconnu : {}", cle))?;
+        let texte = texte_de(&cle).ok_or_else(|| refus!("texte inconnu : {}", cle))?;
         let livraison = jour_lisible(dila::premiers_caracteres(&c.livraison, 8));
         let quand = match &c.depuis {
             Some(depuis) => format!("en vigueur depuis le {}, livraison du {}", jour_lisible(dila::premiers_caracteres(&depuis.replace('-', ""), 8)), livraison),
@@ -888,7 +888,7 @@ fn ecrire_comparaison(
     }
     let mut t = lignes.join("\n");
     t.push('\n');
-    std::fs::write(cible, t).map_err(|e| format!("{} : {}", cible.display(), e))?;
+    std::fs::write(cible, t).map_err(|e| refus!("{} : {}", cible.display(), e))?;
     dire(&format!("{} article(s) -> {}", changements.len(), cible.display()));
     Ok(())
 }

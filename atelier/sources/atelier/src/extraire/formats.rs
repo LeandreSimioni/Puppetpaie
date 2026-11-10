@@ -45,7 +45,7 @@ use super::usages::{en_classeur, version_du_cahier};
 use super::{date_du_releve, en_transcription, nom_de, sha256, EnOrdre, Releve, Transcription};
 use socle::date::Jour;
 use socle::lecture_xlsx::{self, Cellule};
-use socle::num::Resultat;
+use socle::echec::{refus, R};
 use socle::texte::{blanc as espace, strip};
 
 const QUOI: &str = "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max] et ses expressions de \
@@ -166,7 +166,7 @@ fn csl_trouvees(corps: &str) -> Vec<String> {
 }
 
 /// Les formats lus dans le texte du cahier.
-fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<Format>> {
+fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> R<EnOrdre<Format>> {
     let rubrique = Regex::new(r"(?m)^[\s\x1c-\x1f]*(S\d\d\.G00\.\d\d\.\d\d\d)[\s\x1c-\x1f]*$").expect("motif");
     let longueur = Regex::new(r"\[(\d+),(\d+)\]").expect("motif");
     // `RUBRIQUE.split(texte)` : [avant, id, corps, id, corps...].
@@ -205,7 +205,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<For
         }
         let longueur = match lon {
             Some(l) => {
-                let n = |i: usize| l[i].parse::<i64>().map_err(|e| format!("{} : longueur illisible {} ({})", rid, &l[0], e));
+                let n = |i: usize| l[i].parse::<i64>().map_err(|e| refus!("{} : longueur illisible {} ({})", rid, &l[0], e));
                 Some([n(1)?, n(2)?])
             }
             None => None,
@@ -258,20 +258,20 @@ fn champ_exige<'a>(
     ligne: &'a [Option<Cellule>],
     nom: &str,
     feuille: &str,
-) -> Resultat<Option<&'a Cellule>> {
-    champ(entete, ligne, nom).ok_or_else(|| format!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
+) -> R<Option<&'a Cellule>> {
+    champ(entete, ligne, nom).ok_or_else(|| refus!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
 }
 
 /// L'entier d'une case : un entier, un flottant tronque, un booleen (0 ou 1), un texte d'entier.
-fn entier_de(c: &Cellule) -> Resultat<i64> {
+fn entier_de(c: &Cellule) -> R<i64> {
     match c {
         Cellule::Entier(i) => Ok(*i),
         Cellule::Flottant(f) if f.is_finite() => Ok(f.trunc() as i64),
         Cellule::Booleen(b) => Ok(*b as i64),
         Cellule::Texte(s) => {
-            strip(s).parse::<i64>().map_err(|_| format!("longueur illisible : {}", socle::fichiers::repr(s)))
+            strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
         }
-        Cellule::Flottant(f) => Err(format!("longueur illisible : {}", f)),
+        Cellule::Flottant(f) => Err(refus!("longueur illisible : {}", f)),
     }
 }
 
@@ -280,7 +280,7 @@ fn relever_xlsx(
     chemin: &Path,
     ecartees: &mut Vec<Ecartee>,
     sans_type: &mut Vec<SansType>,
-) -> Resultat<EnOrdre<Format>> {
+) -> R<EnOrdre<Format>> {
     let mut types: std::collections::HashMap<String, Vec<Option<Cellule>>> = std::collections::HashMap::new();
     let mut entete_types: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Data Types")? {
@@ -296,7 +296,7 @@ fn relever_xlsx(
             }
         }
     }
-    let entete_types = entete_types.ok_or_else(|| format!("{} : la feuille « Data Types » est vide", chemin.display()))?;
+    let entete_types = entete_types.ok_or_else(|| refus!("{} : la feuille « Data Types » est vide", chemin.display()))?;
     let mut out = EnOrdre::new();
     let mut entete: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Fields")? {
@@ -312,7 +312,7 @@ fn relever_xlsx(
         let type_id = champ_exige(e, &r, "DataType Id", "Fields")?;
         let texte = |c: Option<&Cellule>, nom: &str| match c {
             Some(c) => Ok(strip(&c.en_texte()).to_string()),
-            None => Err(format!("la feuille « Fields » a une ligne sans « {} »", nom)),
+            None => Err(refus!("la feuille « Fields » a une ligne sans « {} »", nom)),
         };
         let rid = format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?);
         let genre = type_id.and_then(|t| types.get(&cle(t)));
@@ -328,7 +328,7 @@ fn relever_xlsx(
         let expression = match lg("Regexp") {
             Some(Cellule::Texte(s)) => Some(strip(s).to_string()).filter(|e| !e.is_empty()),
             Some(c) if c.vrai() => {
-                return Err(format!("{} : l'expression du type n'est pas un texte ({})", rid, c.en_texte()))
+                return Err(refus!("{} : l'expression du type n'est pas un texte ({})", rid, c.en_texte()))
             }
             _ => None,
         };
@@ -349,15 +349,15 @@ fn relever_xlsx(
 
 /// LA TRANSCRIPTION DES DEFINITIONS du cahier en PDF (`super::Transcription`) : son texte, tel que la fabrique de PDF le
 /// lit, les pages separees par un saut de ligne -- ce que `relever_pdf` lit.
-pub fn transcrire(pdf: &Path) -> Resultat<String> {
+pub fn transcrire(pdf: &Path) -> R<String> {
     version_du_cahier(pdf)?;
-    let (textes, _) = fabrique_pdf::lecture::texte(&pdf.to_string_lossy()).map_err(|r| r.0)?;
+    let (textes, _) = fabrique_pdf::lecture::texte(&pdf.to_string_lossy()).map_err(|r| refus(r.0))?;
     let t = Transcription::de(pdf, Vec::new(), textes.join("\n"))?;
     Ok(t.texte(&format!("Le texte de {}, tel que la fabrique de PDF le lit (`moteur extraire transcrire`)", nom_de(pdf))))
 }
 
 /// Le releve des formats, depuis le classeur, le cahier en PDF ou sa transcription.
-pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
+pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
     let date = date_du_releve(jour);
     let (mut ecartees, mut sans_type) = (Vec::new(), Vec::new());
     let classeur = en_classeur(source);
@@ -368,7 +368,7 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
             .captures(&chemin)
             .map(|c| c[1].to_string())
             .ok_or_else(|| {
-                format!(
+                refus!(
                     "version illisible dans le nom du classeur : {} (attendu \
                      dsn-tableaux-categories-controles-datatypes-usages-<version>-<AAAAMMJJ>.xlsx)",
                     chemin
@@ -389,7 +389,7 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
             let t = Transcription::lire(source)?;
             (t.pdf, t.corps, t.sha256)
         } else {
-            let (textes, _) = fabrique_pdf::lecture::texte(&source.to_string_lossy()).map_err(|r| r.0)?;
+            let (textes, _) = fabrique_pdf::lecture::texte(&source.to_string_lossy()).map_err(|r| refus(r.0))?;
             (nom_de(source), textes.join("\n"), sha256(source)?)
         };
         let v = version_du_cahier(Path::new(&pdf))?;

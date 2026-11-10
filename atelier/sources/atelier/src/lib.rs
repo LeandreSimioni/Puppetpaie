@@ -22,6 +22,15 @@ pub mod releve;
 pub mod sources;
 pub mod verifier_avant_commit;
 
+/// UN REFUS TEL QUE LE TERMINAL DE L'ATELIER LE DIT : sa phrase, puis, sur la ligne suivante, ce qu'il porte a part
+/// (`APart`), en objet.
+pub(crate) fn en_lignes(e: &socle::echec::Echec) -> String {
+    match &e.a_part {
+        Some(a) => format!("{}\n{}", e.phrase, socle::ecriture::json_en_ligne(a)),
+        None => e.phrase.clone(),
+    }
+}
+
 /// UN OBJET DONT L'ORDRE COMPTE (un referentiel ecrit dans l'ordre de son texte depose, un resume dans l'ordre ou il
 /// s'est lu) : ses paires `(cle, valeur)`, lues (`socle::forme::en_ordre`, une cle repetee refuse) et ecrites
 /// (`socle::ecriture::en_ordre`) dans leur ordre. Une cle posee de nouveau garde sa place et prend la valeur neuve.

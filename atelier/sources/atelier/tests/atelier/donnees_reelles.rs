@@ -43,7 +43,7 @@ fn depot() -> PathBuf {
 }
 
 fn part() -> Vec<String> {
-    ce_qui_part(&depot(), false).unwrap_or_else(|m| panic!("ce verrou lit ce que Git emporterait : {}", m))
+    ce_qui_part(&depot(), false).unwrap_or_else(|m| panic!("ce verrou lit ce que Git emporterait : {}", m.phrase))
 }
 
 fn ligne(o: &[u8], i: usize) -> usize {

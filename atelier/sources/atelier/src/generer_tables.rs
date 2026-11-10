@@ -26,6 +26,8 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use socle::echec::{refus, R};
+
 /// Les textes lus, relatifs a `atelier/reference/sources/`.
 pub const UNICODE_DONNEES: &str = "unicode/unicode-ucd-18.0.0-unicodedata-20261015.txt";
 pub const UNICODE_NORMALISATION: &str = "unicode/unicode-ucd-18.0.0-derivednormalizationprops-20261015.txt";
@@ -72,16 +74,16 @@ struct Ucd {
     version: String,
 }
 
-fn lire(sources: &Path, nom: &str) -> Result<String, String> {
-    std::fs::read_to_string(sources.join(nom)).map_err(|e| format!("{} illisible ({})", sources.join(nom).display(), e))
+fn lire(sources: &Path, nom: &str) -> R<String> {
+    std::fs::read_to_string(sources.join(nom)).map_err(|e| refus!("{} illisible ({})", sources.join(nom).display(), e))
 }
 
-fn hexa(s: &str, ou: &str) -> Result<u32, String> {
-    u32::from_str_radix(s.trim(), 16).map_err(|_| format!("{} : {:?} n'est pas un point de code", ou, s))
+fn hexa(s: &str, ou: &str) -> R<u32> {
+    u32::from_str_radix(s.trim(), 16).map_err(|_| refus!("{} : {:?} n'est pas un point de code", ou, s))
 }
 
 /// `XXXX` ou `XXXX..YYYY`.
-fn plage(s: &str, ou: &str) -> Result<(u32, u32), String> {
+fn plage(s: &str, ou: &str) -> R<(u32, u32)> {
     match s.trim().split_once("..") {
         Some((a, b)) => Ok((hexa(a, ou)?, hexa(b, ou)?)),
         None => {
@@ -92,13 +94,13 @@ fn plage(s: &str, ou: &str) -> Result<(u32, u32), String> {
 }
 
 /// La version lue dans la premiere ligne d'un fichier derive (`# DerivedNormalizationProps-18.0.0.txt`).
-fn version_de(texte: &str, prefixe: &str, ou: &str) -> Result<String, String> {
+fn version_de(texte: &str, prefixe: &str, ou: &str) -> R<String> {
     texte
         .lines()
         .next()
         .and_then(|l| l.strip_prefix("# ")?.strip_prefix(prefixe)?.strip_prefix('-')?.strip_suffix(".txt"))
         .map(str::to_string)
-        .ok_or_else(|| format!("{} : la premiere ligne ne dit pas la version", ou))
+        .ok_or_else(|| refus!("{} : la premiere ligne ne dit pas la version", ou))
 }
 
 /// Les lignes `plage ; valeur [; ...] # commentaire` d'un fichier de la base, commentaires retires.
@@ -114,7 +116,7 @@ fn proprietes(texte: &str) -> impl Iterator<Item = Vec<&str>> {
 }
 
 impl Ucd {
-    fn lire(sources: &Path) -> Result<Ucd, String> {
+    fn lire(sources: &Path) -> R<Ucd> {
         let n = FIN as usize;
         let mut u = Ucd { categorie: vec![*b"Cn"; n], classe: vec![0; n], decomposition: HashMap::new(), numerique: HashMap::new(), exclusion: vec![false; n], version: String::new() };
         let donnees = lire(sources, UNICODE_DONNEES)?;
@@ -122,12 +124,12 @@ impl Ucd {
         for l in donnees.lines().filter(|l| !l.is_empty()) {
             let f: Vec<&str> = l.split(';').collect();
             if f.len() != 15 {
-                return Err(format!("{} : ligne de {} champs ({:?})", UNICODE_DONNEES, f.len(), l));
+                return Err(refus!("{} : ligne de {} champs ({:?})", UNICODE_DONNEES, f.len(), l));
             }
             let cp = hexa(f[0], UNICODE_DONNEES)?;
-            let categorie: [u8; 2] = f[2].as_bytes().try_into().map_err(|_| format!("{} : categorie {:?}", UNICODE_DONNEES, f[2]))?;
-            let classe: u8 = f[3].parse().map_err(|_| format!("{} : classe {:?}", UNICODE_DONNEES, f[3]))?;
-            let debut = if f[1].ends_with(", Last>") { premier.take().ok_or_else(|| format!("{} : {:?} sans First", UNICODE_DONNEES, l))? } else { cp };
+            let categorie: [u8; 2] = f[2].as_bytes().try_into().map_err(|_| refus!("{} : categorie {:?}", UNICODE_DONNEES, f[2]))?;
+            let classe: u8 = f[3].parse().map_err(|_| refus!("{} : classe {:?}", UNICODE_DONNEES, f[3]))?;
+            let debut = if f[1].ends_with(", Last>") { premier.take().ok_or_else(|| refus!("{} : {:?} sans First", UNICODE_DONNEES, l))? } else { cp };
             if f[1].ends_with(", First>") {
                 premier = Some(cp);
                 continue;
@@ -138,7 +140,7 @@ impl Ucd {
             }
             if !f[5].is_empty() {
                 let (compat, reste) = match f[5].strip_prefix('<') {
-                    Some(r) => (true, r.split_once('>').map(|(_, r)| r).ok_or_else(|| format!("{} : decomposition {:?} sans `>`", UNICODE_DONNEES, f[5]))?),
+                    Some(r) => (true, r.split_once('>').map(|(_, r)| r).ok_or_else(|| refus!("{} : decomposition {:?} sans `>`", UNICODE_DONNEES, f[5]))?),
                     None => (false, f[5]),
                 };
                 let points = reste.split_whitespace().map(|p| hexa(p, UNICODE_DONNEES)).collect::<Result<Vec<_>, _>>()?;
@@ -156,7 +158,7 @@ impl Ucd {
         let numerique = lire(sources, UNICODE_NUMERIQUE)?;
         let v = version_de(&numerique, "DerivedNumericType", UNICODE_NUMERIQUE)?;
         if v != u.version {
-            return Err(format!("{} est d'Unicode {}, {} d'Unicode {}", UNICODE_NUMERIQUE, v, UNICODE_NORMALISATION, u.version));
+            return Err(refus!("{} est d'Unicode {}, {} d'Unicode {}", UNICODE_NUMERIQUE, v, UNICODE_NORMALISATION, u.version));
         }
         for f in proprietes(&numerique) {
             let (a, b) = plage(f[0], UNICODE_NUMERIQUE)?;
@@ -164,7 +166,7 @@ impl Ucd {
                 Some(&t @ ("Decimal" | "Digit" | "Numeric")) => (a..=b).for_each(|c| {
                     u.numerique.insert(c, t.to_string());
                 }),
-                autre => return Err(format!("{} : Numeric_Type {:?}", UNICODE_NUMERIQUE, autre)),
+                autre => return Err(refus!("{} : Numeric_Type {:?}", UNICODE_NUMERIQUE, autre)),
             }
         }
         Ok(u)
@@ -341,21 +343,21 @@ const NON_DEFINI: u32 = 0xFFFD;
 
 /// Une page de code de `Public/MAPPINGS` (`0xXX<tab>0xXXXX<tab>#NOM`) : les octets 0x80 a 0xFF, U+FFFD pour un octet
 /// que la page ne definit pas (`#UNDEFINED`) : un tel octet se remplace, il ne fait pas echouer la lecture.
-fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
+fn page_de_code(sources: &Path, nom: &str) -> R<[u32; 128]> {
     let texte = lire(sources, nom)?;
     let mut t = [0u32; 128];
     let mut vus = 0;
     // CP437.TXT finit par 0x1A (la fin de fichier de DOS) : ce n'est pas une ligne.
     for l in texte.lines().map(|l| l.trim_end_matches(['\r', '\u{1a}'])).filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
         let mut f = l.split('\t');
-        let octet = f.next().and_then(|o| o.strip_prefix("0x")).map(|o| hexa(o, nom)).transpose()?.ok_or_else(|| format!("{} : {:?}", nom, l))?;
+        let octet = f.next().and_then(|o| o.strip_prefix("0x")).map(|o| hexa(o, nom)).transpose()?.ok_or_else(|| refus!("{} : {:?}", nom, l))?;
         if octet < 0x80 {
             continue;
         }
         t[octet as usize - 0x80] = match f.next().map(str::trim).filter(|p| !p.is_empty()) {
             Some(point) => match point.strip_prefix("0x") {
                 Some(p) => hexa(p, nom)?,
-                None => return Err(format!("{} : {:?}", nom, l)),
+                None => return Err(refus!("{} : {:?}", nom, l)),
             },
             // L'octet sans point de code : la page ne le definit pas.
             None => NON_DEFINI,
@@ -363,20 +365,20 @@ fn page_de_code(sources: &Path, nom: &str) -> Result<[u32; 128], String> {
         vus += 1;
     }
     if vus != 128 {
-        return Err(format!("{} : {} octets de 0x80 a 0xFF, 128 attendus", nom, vus));
+        return Err(refus!("{} : {} octets de 0x80 a 0xFF, 128 attendus", nom, vus));
     }
     Ok(t)
 }
 
 /// Le releve des noms d'encodage par classe (`[latin1]`, puis un nom par ligne ; `#` : commentaire).
-fn codecs(sources: &Path) -> Result<Vec<(&'static str, Vec<String>)>, String> {
+fn codecs(sources: &Path) -> R<Vec<(&'static str, Vec<String>)>> {
     let mut classes: Vec<(&'static str, Vec<String>)> = ["latin1", "ascii", "cp1252", "autres", "refuses"].iter().map(|c| (*c, Vec::new())).collect();
     let mut courante: Option<usize> = None;
     for l in lire(sources, CODECS)?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
         if let Some(c) = l.strip_prefix('[').and_then(|c| c.strip_suffix(']')) {
-            courante = Some(classes.iter().position(|(n, _)| *n == c).ok_or_else(|| format!("{} : classe inconnue {:?}", CODECS, c))?);
+            courante = Some(classes.iter().position(|(n, _)| *n == c).ok_or_else(|| refus!("{} : classe inconnue {:?}", CODECS, c))?);
         } else {
-            let i = courante.ok_or_else(|| format!("{} : {:?} avant toute classe", CODECS, l))?;
+            let i = courante.ok_or_else(|| refus!("{} : {:?} avant toute classe", CODECS, l))?;
             classes[i].1.push(l.to_string());
         }
     }
@@ -385,7 +387,7 @@ fn codecs(sources: &Path) -> Result<Vec<(&'static str, Vec<String>)>, String> {
     tous.sort();
     tous.dedup();
     if tous.len() != n {
-        return Err(format!("{} : un nom figure deux fois", CODECS));
+        return Err(refus!("{} : un nom figure deux fois", CODECS));
     }
     classes.iter_mut().for_each(|(_, v)| v.sort());
     Ok(classes)
@@ -393,24 +395,24 @@ fn codecs(sources: &Path) -> Result<Vec<(&'static str, Vec<String>)>, String> {
 
 /// Une production de l'annexe B de XML 1.0, quatrieme edition (`[#xXXXX-#xYYYY] | #xZZZZ | ...`), lue dans la page :
 /// le code qui suit `::=` apres l'ancre `NT-<nom>`.
-fn production(page: &str, nom: &str) -> Result<Vec<(u32, u32)>, String> {
+fn production(page: &str, nom: &str) -> R<Vec<(u32, u32)>> {
     let ou = format!("{} : production {}", XML_4E, nom);
-    let apres = page.split_once(&format!("id=\"NT-{}\"", nom)).map(|(_, r)| r).ok_or_else(|| format!("{} absente", ou))?;
-    let apres = apres.split_once("::=").map(|(_, r)| r).ok_or_else(|| ou.clone())?;
-    let code = apres.split_once("<code>").and_then(|(_, r)| r.split_once("</code>")).map(|(c, _)| c).ok_or_else(|| ou.clone())?;
+    let apres = page.split_once(&format!("id=\"NT-{}\"", nom)).map(|(_, r)| r).ok_or_else(|| refus!("{} absente", ou))?;
+    let apres = apres.split_once("::=").map(|(_, r)| r).ok_or_else(|| refus(ou.clone()))?;
+    let code = apres.split_once("<code>").and_then(|(_, r)| r.split_once("</code>")).map(|(c, _)| c).ok_or_else(|| refus(ou.clone()))?;
     let mut out = Vec::new();
     for alt in code.split('|').map(str::trim) {
         let p = match alt.strip_prefix('[').and_then(|a| a.strip_suffix(']')) {
-            Some(a) => a.split_once('-').ok_or_else(|| format!("{} : {:?}", ou, alt))?,
+            Some(a) => a.split_once('-').ok_or_else(|| refus!("{} : {:?}", ou, alt))?,
             None => (alt, alt),
         };
-        let point = |x: &str| x.strip_prefix("#x").ok_or_else(|| format!("{} : {:?}", ou, alt)).and_then(|x| hexa(x, &ou));
+        let point = |x: &str| x.strip_prefix("#x").ok_or_else(|| refus!("{} : {:?}", ou, alt)).and_then(|x| hexa(x, &ou));
         out.push((point(p.0)?, point(p.1)?));
     }
     Ok(out)
 }
 
-fn tables_retours(sources: &Path, u: &Ucd) -> Result<String, String> {
+fn tables_retours(sources: &Path, u: &Ucd) -> R<String> {
     let mut s = String::new();
     en_tete(&mut s, &[UNICODE_DONNEES, CP437, CP1252, CODECS, XML_4E], Some(&u.version));
     // `\d` de `re` sur du texte : la categorie Nd (`python/LISEZ-MOI.md`).
@@ -457,7 +459,7 @@ fn tables_journal(u: &Ucd) -> String {
 }
 
 /// Les quatre fichiers (`FICHIERS`, dans l'ordre) et leur contenu, depuis les textes de `sources`.
-pub fn generer(sources: &Path) -> Result<Vec<(&'static str, String)>, String> {
+pub fn generer(sources: &Path) -> R<Vec<(&'static str, String)>> {
     let u = Ucd::lire(sources)?;
     Ok(vec![(FICHIERS[0], tables_nfkc(&u)), (FICHIERS[1], nfkd_ascii(&u)), (FICHIERS[2], tables_retours(sources, &u)?), (FICHIERS[3], tables_journal(&u))])
 }
@@ -481,7 +483,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", crate::en_lignes(&m));
             1
         }
     }

@@ -23,7 +23,7 @@ fn usage() -> ! {
 fn main() -> std::process::ExitCode {
     // Une redirection vers autre chose qu'un serveur local arrete tout.
     if let Err(m) = atelier::redirection::verifier_environnement() {
-        eprintln!("{}", m);
+        eprintln!("{}", m.phrase);
         return std::process::ExitCode::from(2);
     }
     compagnie::incidents::brancher_l_engagement();

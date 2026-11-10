@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Un referentiel releve tel qu'il s'ecrit : `quoi` (ce qu'il est), `note` (d'ou il vient : la commande, les fichiers
 /// deposes lus, la date du releve), puis ce que le releve en a tire (`corps`, la forme de chaque referentiel).
@@ -112,7 +112,7 @@ pub fn commande(args: &[String]) -> i32 {
     let sources: Vec<PathBuf> = pos[1..attendus].iter().map(PathBuf::from).collect();
     let sortie = PathBuf::from(pos[attendus]);
     if let Err(m) = verifier_la_sortie(&sources, &sortie, remplacer) {
-        eprintln!("{}", m);
+        eprintln!("{}", crate::en_lignes(&m));
         return 1;
     }
     let jour = socle::temps::jour_de_paris();
@@ -125,12 +125,12 @@ pub fn commande(args: &[String]) -> i32 {
     let releve = match releve {
         Ok(r) => r,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", crate::en_lignes(&m));
             return 1;
         }
     };
     if let Err(m) = ecrire(&releve, &sortie, remplacer) {
-        eprintln!("{}", m);
+        eprintln!("{}", crate::en_lignes(&m));
         return 1;
     }
     for l in &releve.bilan {
@@ -141,24 +141,24 @@ pub fn commande(args: &[String]) -> i32 {
 }
 
 /// La sortie avant tout releve : un `.json`, qui n'est aucune des sources, et qui n'existe pas encore (sauf `--remplacer`).
-fn verifier_la_sortie(sources: &[PathBuf], sortie: &Path, remplacer: bool) -> Resultat<()> {
+fn verifier_la_sortie(sources: &[PathBuf], sortie: &Path, remplacer: bool) -> R<()> {
     if sortie.extension().and_then(|e| e.to_str()) != Some("json") {
-        return Err(format!("La sortie doit etre un fichier .json (recu : {}) : rien n'est ecrit.", sortie.display()));
+        return Err(refus!("La sortie doit etre un fichier .json (recu : {}) : rien n'est ecrit.", sortie.display()));
     }
     for s in sources {
         if !s.is_file() {
-            return Err(format!(
+            return Err(refus!(
                 "{} absent : `moteur-atelier sources` dit d'ou chaque texte se releve. Rien n'est ecrit.",
                 s.display()
             ));
         }
         let absolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(p, &e));
         if s == sortie || (sortie.exists() && absolu(s)? == absolu(sortie)?) {
-            return Err(format!("La sortie {} est une des sources : rien n'est ecrit.", sortie.display()));
+            return Err(refus!("La sortie {} est une des sources : rien n'est ecrit.", sortie.display()));
         }
     }
     if sortie.exists() && !remplacer {
-        return Err(format!(
+        return Err(refus!(
             "{} existe deja : un referentiel ne se remplace pas par accident (`--remplacer` pour l'ecraser). Rien n'est ecrit.",
             sortie.display()
         ));
@@ -167,15 +167,15 @@ fn verifier_la_sortie(sources: &[PathBuf], sortie: &Path, remplacer: bool) -> Re
 }
 
 /// Ecrit le releve : un fichier temporaire a cote, puis le renommage (la sortie est entiere ou intacte).
-fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> Resultat<()> {
+fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> R<()> {
     if sortie.exists() && !remplacer {
-        return Err(format!("{} existe deja (`--remplacer` pour l'ecraser) : rien n'est ecrit.", sortie.display()));
+        return Err(refus!("{} existe deja (`--remplacer` pour l'ecraser) : rien n'est ecrit.", sortie.display()));
     }
     let tmp = socle::ecriture::provisoire(sortie);
-    std::fs::write(&tmp, releve.octets()).map_err(|e| format!("{} : {}", tmp.display(), e))?;
+    std::fs::write(&tmp, releve.octets()).map_err(|e| refus!("{} : {}", tmp.display(), e))?;
     std::fs::rename(&tmp, sortie).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        format!("{} : {}", sortie.display(), e)
+        refus!("{} : {}", sortie.display(), e)
     })
 }
 
@@ -201,7 +201,7 @@ const FIN_DE_L_ENTETE: &str = "# ---";
 
 impl Transcription {
     /// La transcription de `corps`, tire du PDF `pdf`.
-    pub(crate) fn de(pdf: &Path, champs: Vec<(String, String)>, corps: String) -> Resultat<Transcription> {
+    pub(crate) fn de(pdf: &Path, champs: Vec<(String, String)>, corps: String) -> R<Transcription> {
         Ok(Transcription { pdf: nom_de(pdf), sha256: sha256(pdf)?, champs, corps })
     }
 
@@ -218,11 +218,11 @@ impl Transcription {
     }
 
     /// Lit une transcription deposee.
-    pub fn lire(chemin: &Path) -> Resultat<Transcription> {
-        let t = std::fs::read_to_string(chemin).map_err(|e| format!("{} illisible ({})", chemin.display(), e))?;
+    pub fn lire(chemin: &Path) -> R<Transcription> {
+        let t = std::fs::read_to_string(chemin).map_err(|e| refus!("{} illisible ({})", chemin.display(), e))?;
         let (entete, corps) = t
             .split_once(&format!("\n{}\n", FIN_DE_L_ENTETE))
-            .ok_or_else(|| format!("{} : ce n'est pas une transcription (pas de ligne « {} »)", chemin.display(), FIN_DE_L_ENTETE))?;
+            .ok_or_else(|| refus!("{} : ce n'est pas une transcription (pas de ligne « {} »)", chemin.display(), FIN_DE_L_ENTETE))?;
         let (mut pdf, mut sha, mut champs) = (None, None, Vec::new());
         for l in entete.lines().skip(1) {
             let Some((k, v)) = l.strip_prefix("# ").and_then(|l| l.split_once(" : ")) else { continue };
@@ -232,7 +232,7 @@ impl Transcription {
                 _ => champs.push((k.to_string(), v.to_string())),
             }
         }
-        let manque = |k: &str| format!("{} : l'en-tete ne dit pas « {} »", chemin.display(), k);
+        let manque = |k: &str| refus!("{} : l'en-tete ne dit pas « {} »", chemin.display(), k);
         Ok(Transcription { pdf: pdf.ok_or_else(|| manque("pdf"))?, sha256: sha.ok_or_else(|| manque("sha256"))?, champs, corps: corps.to_string() })
     }
 
@@ -267,7 +267,7 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
     let (u, f) = match faites {
         Ok(x) => x,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", crate::en_lignes(&m));
             return 1;
         }
     };
@@ -304,13 +304,13 @@ pub(crate) fn case(r: &[Option<String>], j: usize) -> Option<&str> {
 }
 
 /// La case `j` du rang, qui doit etre remplie (`ou` : la ligne, pour le refus).
-pub(crate) fn remplie<'a>(r: &'a [Option<String>], j: usize, ou: &str) -> Resultat<&'a str> {
-    case(r, j).ok_or_else(|| format!("{} : la case {} est vide", ou, j + 1))
+pub(crate) fn remplie<'a>(r: &'a [Option<String>], j: usize, ou: &str) -> R<&'a str> {
+    case(r, j).ok_or_else(|| refus!("{} : la case {} est vide", ou, j + 1))
 }
 
 /// L'empreinte SHA-256 du fichier, en hexadecimal.
-pub(crate) fn sha256(chemin: &Path) -> Resultat<String> {
-    let octets = std::fs::read(chemin).map_err(|e| format!("{} illisible ({})", chemin.display(), e))?;
+pub(crate) fn sha256(chemin: &Path) -> R<String> {
+    let octets = std::fs::read(chemin).map_err(|e| refus!("{} illisible ({})", chemin.display(), e))?;
     Ok(socle::fichiers::sha256_hex(&octets))
 }
 

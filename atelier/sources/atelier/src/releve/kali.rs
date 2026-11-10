@@ -39,7 +39,7 @@ pub const CACHE: &str = "veille-kali.json";
 /// Un texte connu par le manifeste, pas par une fiche.
 pub const CITE: &str = "(cite par sources.json)";
 
-type R<T> = Result<T, String>;
+use socle::echec::{refus, R};
 
 /// Ce qu'on telecharge : une adresse, ses octets (ou la panne, en une phrase).
 pub type Telecharger<'a> = dyn FnMut(&str) -> R<Vec<u8>> + 'a;
@@ -118,17 +118,17 @@ fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)
         if !nom.ends_with(".xml") || !(nom.contains("/conteneur/") || nom.contains("/texte/version/")) {
             continue;
         }
-        let t = String::from_utf8(xml).map_err(|e| format!("{} : pas de l'UTF-8 ({})", nom, e))?;
-        let doc = roxmltree::Document::parse(&t).map_err(|e| format!("{} illisible : {}", nom, e))?;
+        let t = String::from_utf8(xml).map_err(|e| refus!("{} : pas de l'UTF-8 ({})", nom, e))?;
+        let doc = roxmltree::Document::parse(&t).map_err(|e| refus!("{} illisible : {}", nom, e))?;
         let racine = doc.root_element();
-        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]).ok_or_else(|| format!("{} : sans identifiant (META_COMMUN/ID)", nom))?;
+        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]).ok_or_else(|| refus!("{} : sans identifiant (META_COMMUN/ID)", nom))?;
         match racine.tag_name().name() {
             "IDCC" => {
                 let champ = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_CONTENEUR", c]);
                 let mut liens = EnOrdre::new();
                 for l in racine.descendants().filter(|n| n.has_tag_name("LIEN_TXT")) {
                     if let Some(id) = l.attribute("idtxt").filter(|s| !s.is_empty()) {
-                        let titre = l.attribute("titretxt").ok_or_else(|| format!("{} : le lien {} n'a pas de titre", nom, id))?;
+                        let titre = l.attribute("titretxt").ok_or_else(|| refus!("{} : le lien {} n'a pas de titre", nom, id))?;
                         liens.poser(id.to_string(), titre.trim().to_string());
                     }
                 }
@@ -313,7 +313,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
     let index = String::from_utf8_lossy(&telecharger(INDEX)?).into_owned();
     let toutes = livraisons(&index);
     let (Some(premiere), Some(derniere)) = (toutes.first().cloned(), toutes.last().cloned()) else {
-        return Err("l'index KALI ne liste aucune livraison : la page a change ?".into());
+        return Err(refus("l'index KALI ne liste aucune livraison : la page a change ?"));
     };
     let a_lire: Vec<&String> = toutes.iter().filter(|l| **l > seuil).collect();
 
@@ -403,7 +403,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         nouvelles.push(l.clone());
     }
 
-    std::fs::create_dir_all(dossier).map_err(|e| format!("{} : {}", dossier.display(), e))?;
+    std::fs::create_dir_all(dossier).map_err(|e| refus!("{} : {}", dossier.display(), e))?;
     let cache = Cache { quoi: QUOI_DU_CACHE.to_string(), livraisons: livraisons_lues, textes_connus: connus, trous, couverture, amorces };
     socle::ecriture::ecrire_json(&cache_p, &cache, 1)?;
 
@@ -422,7 +422,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
             }
             let n = match cache.textes_connus.valeur(cont) {
                 Some(t) => t.len(),
-                None => return Err(format!("veille-kali.json : la convention {} n'a pas de textes connus", cont)),
+                None => return Err(refus!("veille-kali.json : la convention {} n'a pas de textes connus", cont)),
             };
             let titre = if c.premiere {
                 format!("premiere fiche de la convention vue : {} texte(s) attache(s), liste de reference posee", n)
@@ -455,10 +455,10 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 /// l'index.
 fn poser(dossier: &Path, livraison: &str, ident: &str, membre: &str, octets: &[u8]) -> R<()> {
     let Some((_, xml)) = fichiers_tar_gz(octets)?.into_iter().find(|(n, _)| n == membre) else {
-        return Err(format!("{} absent de la livraison {}", membre, livraison));
+        return Err(refus!("{} absent de la livraison {}", membre, livraison));
     };
     let kali = dossier.join("kali");
     let cible = kali.join(format!("{}-{}.xml", ident, jour(livraison)));
-    std::fs::create_dir_all(&kali).map_err(|e| format!("{} : {}", kali.display(), e))?;
-    std::fs::write(&cible, xml).map_err(|e| format!("{} : {}", cible.display(), e))
+    std::fs::create_dir_all(&kali).map_err(|e| refus!("{} : {}", kali.display(), e))?;
+    std::fs::write(&cible, xml).map_err(|e| refus!("{} : {}", cible.display(), e))
 }

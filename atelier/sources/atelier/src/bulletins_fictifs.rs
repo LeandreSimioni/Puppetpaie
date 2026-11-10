@@ -48,7 +48,7 @@ pub fn grand(b: &mut Vec<Bloc>, x: f64, y: f64, texte: &str, taille: f64) {
 }
 
 /// Les octets d'un PDF d'une page par liste de blocs, A4.
-pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> Result<Vec<u8>, String> {
+pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
     let nulle = Some(0.0);
     let d = Description {
         format: 3,
@@ -65,14 +65,14 @@ pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> Result<Vec<u8>, String> {
         entete_page: None,
         pied_page: None,
     };
-    fabrique_pdf::fabriquer(&d).map_err(|r| format!("la fabrique refuse : {}", r.0))
+    fabrique_pdf::fabriquer(&d).map_err(|r| socle::refus!("la fabrique refuse : {}", r.0))
 }
 
 /// Un PDF d'une page par liste de blocs, A4 (les tests : un refus arrete le test).
 pub fn pdf(pages: Vec<Vec<Bloc>>, chemin: &Path) {
     let octets = match pdf_octets(pages) {
         Ok(o) => o,
-        Err(m) => panic!("{}", m),
+        Err(m) => panic!("{}", m.phrase),
     };
     std::fs::write(chemin, octets).unwrap();
 }

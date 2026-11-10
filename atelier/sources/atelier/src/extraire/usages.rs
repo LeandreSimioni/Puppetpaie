@@ -37,7 +37,7 @@ use super::{case, date_du_releve, en_transcription, nom_de, propre, remplie, sha
 use import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
-use socle::num::Resultat;
+use socle::echec::{refus, R};
 
 const QUOI: &str = "Le tableau des usages du cahier technique NEODeS : pour chaque rubrique et chaque nature de declaration, si \
                     elle est obligatoire (O), conditionnelle (C), interdite (I) ou sans objet (N). Ecrire une rubrique que la \
@@ -196,7 +196,7 @@ fn debut(texte: &str) -> &str {
 }
 
 /// (entete, lignes de rubriques, pages ou une rubrique a ete lue) du tableau des usages du cahier en PDF.
-fn releve_pdf(textes: &[String], pages: &[PageRelevee]) -> Resultat<(Rang, Vec<Rang>, Vec<usize>)> {
+fn releve_pdf(textes: &[String], pages: &[PageRelevee]) -> R<(Rang, Vec<Rang>, Vec<usize>)> {
     let motif = rubrique();
     let (mut entete, mut lignes, mut lues) = (None, Vec::new(), Vec::new());
     for (numero, (texte, page)) in (1..).zip(textes.iter().zip(pages)) {
@@ -215,12 +215,12 @@ fn releve_pdf(textes: &[String], pages: &[PageRelevee]) -> Resultat<(Rang, Vec<R
             }
         }
     }
-    Ok((entete.ok_or("entete du tableau introuvable")?, lignes, lues))
+    Ok((entete.ok_or_else(|| refus("entete du tableau introuvable"))?, lignes, lues))
 }
 
 /// (entete, lignes de rubriques) lues dans le classeur des usages : l'entete est la ligne dont la colonne E est
 /// « 01 - DSN... », une ligne de rubrique celle dont la colonne C est un identifiant de rubrique.
-fn releve_xlsx(source: &Path) -> Resultat<(Rang, Vec<Rang>)> {
+fn releve_xlsx(source: &Path) -> R<(Rang, Vec<Rang>)> {
     let motif = rubrique();
     let (mut entete, mut lignes) = (None, Vec::new());
     for r in lecture_xlsx::lignes(source, FEUILLE_USAGES)? {
@@ -231,26 +231,26 @@ fn releve_xlsx(source: &Path) -> Resultat<(Rang, Vec<Rang>)> {
             lignes.push(r);
         }
     }
-    let entete = entete.ok_or_else(|| format!("entete du tableau introuvable dans la feuille {}", FEUILLE_USAGES))?;
+    let entete = entete.ok_or_else(|| refus!("entete du tableau introuvable dans la feuille {}", FEUILLE_USAGES))?;
     Ok((entete, lignes))
 }
 
 /// Le tableau des usages du cahier en PDF, lu : (entete, lignes de rubriques, pages ou une rubrique a ete lue).
-fn lire_le_cahier(source: &Path) -> Resultat<(Rang, Vec<Rang>, (usize, usize))> {
+fn lire_le_cahier(source: &Path) -> R<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
-    let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(|r| r.0)?;
-    let releve = import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, String::from(r.en_echec())))?;
+    let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(|r| refus(r.0))?;
+    let releve = import::releve::du_pdf(source).map_err(|r| r.en_echec().reformuler(|p| format!("{} : {}", chemin, p)))?;
     let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
     match (pages.iter().min(), pages.iter().max()) {
         (Some(premiere), Some(derniere)) => Ok((entete, lignes, (*premiere, *derniere))),
-        _ => Err(format!("{} : aucune ligne de rubrique dans le tableau des usages", chemin)),
+        _ => Err(refus!("{} : aucune ligne de rubrique dans le tableau des usages", chemin)),
     }
 }
 
 /// LA TRANSCRIPTION DU TABLEAU DES USAGES du cahier en PDF (`super::Transcription`) : une ligne par ligne du tableau, ses
 /// cellules separees par une tabulation (une case vide n'y ecrit rien), l'entete d'abord ; l'en-tete dit les pages ou
 /// une rubrique a ete lue.
-pub fn transcrire(pdf: &Path) -> Resultat<String> {
+pub fn transcrire(pdf: &Path) -> R<String> {
     version_du_cahier(pdf)?;
     let (entete, lignes, (premiere, derniere)) = lire_le_cahier(pdf)?;
     let mut corps = String::new();
@@ -270,24 +270,24 @@ pub fn transcrire(pdf: &Path) -> Resultat<String> {
 }
 
 /// (entete, lignes de rubriques, pages) relus dans une transcription : une case sans texte est vide.
-fn lire_la_transcription(t: &Transcription) -> Resultat<(Rang, Vec<Rang>, (String, String))> {
+fn lire_la_transcription(t: &Transcription) -> R<(Rang, Vec<Rang>, (String, String))> {
     let mut rangs = t.corps.lines().map(|l| l.split('\t').map(|c| Some(c.to_string()).filter(|c| !c.is_empty())).collect::<Rang>());
-    let entete = rangs.next().ok_or("transcription vide")?;
-    let pages = t.champ("pages").and_then(|p| p.split_once('-')).ok_or("la transcription ne dit pas ses pages")?;
+    let entete = rangs.next().ok_or_else(|| refus("transcription vide"))?;
+    let pages = t.champ("pages").and_then(|p| p.split_once('-')).ok_or_else(|| refus("la transcription ne dit pas ses pages"))?;
     Ok((entete, rangs.collect(), (pages.0.to_string(), pages.1.to_string())))
 }
 
 /// La version, lue dans le nom du fichier depose (le releve ne la devine pas).
-fn version(source: &Path, motif: &str, attendu: &str) -> Resultat<String> {
+fn version(source: &Path, motif: &str, attendu: &str) -> R<String> {
     let chemin = source.to_string_lossy();
     Regex::new(motif)
         .expect("motif")
         .captures(&chemin)
         .map(|c| c[1].to_string())
-        .ok_or_else(|| format!("version illisible dans le nom du fichier : {} (attendu {})", chemin, attendu))
+        .ok_or_else(|| refus!("version illisible dans le nom du fichier : {} (attendu {})", chemin, attendu))
 }
 
-pub(crate) fn version_du_cahier(source: &Path) -> Resultat<String> {
+pub(crate) fn version_du_cahier(source: &Path) -> R<String> {
     version(source, r"cahier-technique-(\d[\d.]*\d)\.pdf$", "dsn-cahier-technique-<version>.pdf")
 }
 
@@ -297,10 +297,10 @@ pub(crate) fn en_classeur(source: &Path) -> bool {
 
 /// Le releve du tableau des usages, depuis le classeur, le cahier en PDF, ou la transcription du cahier
 /// (`dsn-cahier-technique-<version>-usages.txt`), qui en redonne le meme releve.
-pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
+pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
     let date = date_du_releve(jour);
     let classeur = en_classeur(source);
-    let provenance_du_cahier = |pdf: &str, premiere: &str, derniere: &str| -> Resultat<String> {
+    let provenance_du_cahier = |pdf: &str, premiere: &str, derniere: &str| -> R<String> {
         Ok(format!(
             "Cahier technique NEODeS {} ({}), tableau des usages (p. {}-{}). Releve automatiquement par \
              `moteur extraire usages` le {}.",

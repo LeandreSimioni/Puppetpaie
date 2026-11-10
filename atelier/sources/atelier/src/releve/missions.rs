@@ -12,6 +12,8 @@
 
 use std::path::Path;
 
+use socle::echec::R;
+
 /// L'adresse d'un export CSV de data.economie.gouv.fr.
 const EXPORT: &str = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/{}/exports/csv?delimiter=%3B";
 
@@ -41,7 +43,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", crate::en_lignes(&m));
             1
         }
     }
@@ -49,12 +51,12 @@ pub fn commande(args: &[String]) -> i32 {
 
 /// Releve, relit et depose les deux tables ; `telecharger` rend les octets d'une adresse. Rien ne s'ecrit si l'une des
 /// deux ne se telecharge ou ne se lit pas.
-pub fn relever(sources: &Path, donnees: &Path, telecharger: &dyn Fn(&str) -> Result<Vec<u8>, String>) -> Result<String, String> {
+pub fn relever(sources: &Path, donnees: &Path, telecharger: &dyn Fn(&str) -> R<Vec<u8>>) -> R<String> {
     let mut textes = Vec::new();
     for (jeu, _, _, _) in JEUX {
         let url = EXPORT.replace("{}", jeu);
-        let o = telecharger(&url).map_err(|e| format!("{} : {}", url, e))?;
-        textes.push(String::from_utf8(o).map_err(|_| format!("{} : le CSV n'est pas en UTF-8.", url))?);
+        let o = telecharger(&url).map_err(|e| e.reformuler(|p| format!("{} : {}", url, p)))?;
+        textes.push(String::from_utf8(o).map_err(|_| refus!("{} : le CSV n'est pas en UTF-8.", url))?);
     }
     // Ce qui se livre : ce qu'une paie peut lire, depuis le premier jour de la plus ancienne annee dont un bareme est
     // livre (un mois sans bareme ne se calcule pas).
@@ -78,19 +80,19 @@ pub fn relever(sources: &Path, donnees: &Path, telecharger: &dyn Fn(&str) -> Res
 
 /// Le 1er janvier de la plus ancienne annee dont `<donnees>/baremes/` livre le bareme (`AAAA.json`) : avant, aucune paie
 /// ne se calcule (`droit::contexte`, le socle du bareme de l'annee).
-fn premier_jour_calculable(donnees: &Path) -> Result<socle::date::Jour, String> {
+fn premier_jour_calculable(donnees: &Path) -> R<socle::date::Jour> {
     let dossier = donnees.join("baremes");
     let lus = std::fs::read_dir(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     let mut ans = Vec::new();
     for e in lus {
         let nom = e.map_err(|e| socle::echec::du_disque(&dossier, &e))?.file_name();
         if let Some(an) = nom.to_str().and_then(|n| n.strip_suffix(".json")) {
-            ans.push(an.parse::<i32>().map_err(|e| format!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?);
+            ans.push(an.parse::<i32>().map_err(|e| refus!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?);
         }
     }
     let an = ans
         .into_iter()
         .min()
-        .ok_or_else(|| format!("{} : aucun barème livré, la première année calculable ne se lit pas.", dossier.display()))?;
-    socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| format!("année de barème illisible : {}", an))
+        .ok_or_else(|| refus!("{} : aucun barème livré, la première année calculable ne se lit pas.", dossier.display()))?;
+    socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| refus!("année de barème illisible : {}", an))
 }

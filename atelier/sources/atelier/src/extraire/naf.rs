@@ -26,7 +26,7 @@ use super::{case, date_du_releve, nom_de, propre, remplie, sha256, EnOrdre, Rang
 use socle::date::Jour;
 use socle::fichiers::repr;
 use socle::lecture_xlsx;
-use socle::num::Resultat;
+use socle::echec::R;
 
 const QUOI: &str = "La NAF 2025 (sous-classes) et la correspondance de chaque sous-classe NAF rev. 2 vers la NAF 2025. \
                     La fiche entreprise porte le code APE sans point (`9020Y`). Le moteur s'en sert pour reconnaitre un \
@@ -74,7 +74,7 @@ fn sans_point(code: &str) -> String {
 }
 
 /// Le releve : `naf_2025` (sous-classes) et `naf_rev2` (chaque sous-classe rev. 2 et ses destinations).
-pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> Resultat<Releve> {
+pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> R<Releve> {
     let code = Regex::new(r"\A\d\d\.\d\d[A-Z]\z").expect("motif");
     let est_un_code = |t: Option<&str>| t.is_some_and(|t| code.is_match(t));
     let mut naf_2025: EnOrdre<SousClasse> = EnOrdre::new();
@@ -94,13 +94,13 @@ pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> Resulta
                 Some(v) => repr(v),
                 None => "une case vide".to_string(),
             };
-            return Err(format!("correspondance de {} vers un code absent de la structure : {}", c, dit));
+            return Err(refus!("correspondance de {} vers un code absent de la structure : {}", c, dit));
         };
         let ou = format!("correspondance de {} vers {}", c, vers);
         let (intitule, contenu, intitule_vers, type_) = (remplie(&r, 1, &ou)?, remplie(&r, 2, &ou)?, remplie(&r, 4, &ou)?, remplie(&r, 5, &ou)?);
         let entree = naf_rev2.entree(sans_point(c), || Rev2 { code: c.to_string(), intitule: intitule.to_string(), type_: type_.to_string(), vers: Vec::new() });
         if entree.type_ != type_ {
-            return Err(format!("type de correspondance incoherent pour {} : {} et {}", c, repr(&entree.type_), repr(type_)));
+            return Err(refus!("type de correspondance incoherent pour {} : {} et {}", c, repr(&entree.type_), repr(type_)));
         }
         entree.vers.push(Vers { code: sans_point(vers), code_insee: vers.to_string(), intitule: intitule_vers.to_string(), contenu: contenu.to_string() });
     }
@@ -108,7 +108,7 @@ pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> Resulta
     communs.sort();
     if !communs.is_empty() {
         let liste: Vec<String> = communs.iter().map(|c| repr(c)).collect();
-        return Err(format!(
+        return Err(refus!(
             "codes communs aux deux nomenclatures, le moteur ne saurait pas les dater : [{}]",
             liste.join(", ")
         ));

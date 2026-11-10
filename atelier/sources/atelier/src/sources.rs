@@ -25,11 +25,10 @@ use sha2::{Digest, Sha256};
 use crate::releve::kali::{self, Evenement, Rapport, Suivi};
 use crate::EnOrdre;
 use socle::date::Jour;
+use socle::echec::{refus, R};
 
 pub const MANIFESTE: &str = "sources.json";
 pub const AGENT: &str = "PuppetPaie (veille des sources ; +https://github.com/puppetpaie)";
-
-type R<T> = Result<T, String>;
 
 /// Ce qu'on telecharge : les octets et l'en-tete `Last-Modified`, ou la panne en une phrase.
 pub type Telecharger<'a> = dyn FnMut(&str) -> R<(Vec<u8>, Option<String>)> + 'a;
@@ -113,7 +112,7 @@ pub struct ARelever {
 /// Le manifeste livre (`donnees/sources.json`, a cote des autres referentiels).
 pub fn manifeste(code: &Path) -> R<Manifeste> {
     let p = code.join(MANIFESTE);
-    socle::forme::lire_fichier(&p, &format!("{} ne se lit pas.", p.display())).map_err(String::from)
+    socle::forme::lire_fichier(&p, &format!("{} ne se lit pas.", p.display()))
 }
 
 /// Ou vivent les copies : `atelier/reference/sources/` de l'installation (`maj::installation`), c'est-a-dire du depot,
@@ -192,7 +191,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
         // La transcription ne se confronte a aucun condensat : c'est l'original qui fait foi.
         let transcription_presente = s.transcription.as_ref().map(|t| d.join(t).is_file());
         let conforme = if presente { Some(sha256(&std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e))?) == s.sha256) } else { None };
-        let releve = Jour::lire(&s.releve_le).map_err(|e| format!("sources.json : « {} », releve_le : {}", ident, String::from(e)))?;
+        let releve = Jour::lire(&s.releve_le).map_err(|e| e.reformuler(|p| format!("sources.json : « {} », releve_le : {}", ident, p)))?;
         out.push(EtatSource {
             ident: ident.clone(),
             titre: s.titre.clone(),
@@ -230,12 +229,12 @@ pub fn telecharger(url: &str, secondes: u64) -> R<(Vec<u8>, Option<String>)> {
     }
     // En essai, le garde-fou reseau : rien ne sort de la machine.
     let agent: ureq::Agent = socle::garde_reseau::regler(c, url)?.build().into();
-    let mut r = agent.get(url).call().map_err(|e| e.to_string())?;
+    let mut r = agent.get(url).call().map_err(|e| refus(e.to_string()))?;
     let modifie = match r.headers().get(ureq::http::header::LAST_MODIFIED) {
-        Some(v) => Some(v.to_str().map_err(|e| format!("{} : Last-Modified n'est pas du texte ({})", url, e))?.to_string()),
+        Some(v) => Some(v.to_str().map_err(|e| refus!("{} : Last-Modified n'est pas du texte ({})", url, e))?.to_string()),
         None => None,
     };
-    let o = r.body_mut().with_config().limit(512 * 1024 * 1024).read_to_vec().map_err(|e| e.to_string())?;
+    let o = r.body_mut().with_config().limit(512 * 1024 * 1024).read_to_vec().map_err(|e| refus(e.to_string()))?;
     Ok((o, modifie))
 }
 
@@ -276,7 +275,7 @@ pub fn verifier(
             Ok(x) => x,
             Err(m) => {
                 e.en_ligne = Some(EnLigne::Injoignable);
-                e.detail = Some(m);
+                e.detail = Some(m.phrase);
                 continue;
             }
         };
@@ -284,7 +283,7 @@ pub fn verifier(
         let modifie = modifie.map(|m| format!("Last-Modified : {}", m));
         let attendu = match manifeste.sources.valeur(&e.ident) {
             Some(s) => &s.sha256,
-            None => return Err(format!("sources.json : la source « {} » n'y est plus", e.ident)),
+            None => return Err(refus!("sources.json : la source « {} » n'y est plus", e.ident)),
         };
         if sha256(&octets) == *attendu {
             e.en_ligne = Some(EnLigne::Inchangee);
@@ -296,16 +295,16 @@ pub fn verifier(
         let mut detail = format!("le fichier en ligne n'est plus celui qui a ete lu{}. Relire, puis mettre a jour : {}", entre_parentheses, nourrit(e));
         if relever {
             let p = d.join(&e.fichier);
-            let souche = p.file_stem().ok_or_else(|| format!("sources.json : « {} » n'a pas de nom de fichier ({})", e.ident, e.fichier))?.to_string_lossy();
+            let souche = p.file_stem().ok_or_else(|| refus!("sources.json : « {} » n'a pas de nom de fichier ({})", e.ident, e.fichier))?.to_string_lossy();
             let nom = match p.extension() {
                 Some(x) => format!("{}.{}.{}", souche, aujourdhui.iso(), x.to_string_lossy()),
                 None => format!("{}.{}", souche, aujourdhui.iso()),
             };
             let neuf = p.with_file_name(&nom);
             if let Some(parent) = neuf.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("{} : {}", parent.display(), e))?;
+                std::fs::create_dir_all(parent).map_err(|e| refus!("{} : {}", parent.display(), e))?;
             }
-            std::fs::write(&neuf, &octets).map_err(|e| format!("{} : {}", neuf.display(), e))?;
+            std::fs::write(&neuf, &octets).map_err(|e| refus!("{} : {}", neuf.display(), e))?;
             detail.push_str(&format!(". Copie posee : {}", nom));
         }
         e.detail = Some(detail);
@@ -363,7 +362,7 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
         Ok(r) => r,
         Err(m) => {
             e.en_ligne = Some(EnLigne::Injoignable);
-            e.detail = Some(format!("livraisons KALI (DILA) : {}", m));
+            e.detail = Some(format!("livraisons KALI (DILA) : {}", m.phrase));
             return;
         }
     };
