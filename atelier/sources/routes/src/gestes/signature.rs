@@ -20,7 +20,7 @@
 use droit::fiche::{ChampsSalarie, Lue as _};
 use socle::echec::Classe;
 use crate::dossier_salarie::cle_de;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use engagement::calcul::Paie;
@@ -269,9 +269,18 @@ fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message> {
 
 // ------------------------------------------------------------------ les contrats choisis
 
+/// LES CONTRATS DEJA REVENUS SIGNES, par (salarie, numero), que le journal dit : le dernier mot est « recu », et le
+/// contrat n'est pas reparti depuis sur une autre version (`etats::renvoyes_depuis_la_signature`).
+pub(crate) fn contrats_revenus_signes(ctx: &Contexte) -> R<HashSet<envois::etats::Paire>> {
+    let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes).map_err(Echec::from)?;
+    let renvoyes = envois::etats::renvoyes_depuis_la_signature(&lignes);
+    Ok(envois::etats::contrats_recus(&lignes).into_keys().filter(|k| !renvoyes.contains(k)).collect())
+}
+
 /// Les contrats choisis parmi `paies`, par salarie, dans l'ordre du mois : `(cle, ses paies, leur rang)`. Seuls partent
-/// ceux qui se font signer ici (`engagement::contrat_a_signer`).
-fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: &str, paies: &[Paie]) -> R<Vec<(String, Vec<Paie>, Vec<usize>)>> {
+/// ceux qui se font signer ici (`engagement::contrat_a_signer`). UN CONTRAT DEJA REVENU SIGNE (`signes`) n'a plus rien a
+/// signer : choisi par son salarie ou par le mois, il est ecarte ; vise lui-meme (`contrats`), il refuse la demande.
+fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: &str, paies: &[Paie], signes: &HashSet<envois::etats::Paire>) -> R<Vec<(String, Vec<Paie>, Vec<usize>)>> {
     let voulus = &choisis.salaries;
     let cibles = &choisis.contrats;
     // Une cible sans numero vise le contrat de ce salarie qui commence ce jour-la, quel que soit son numero.
@@ -286,6 +295,16 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: &str, paies: &[Paie
             continue;
         }
         if cibles.as_ref().is_some_and(|c| !c.iter().any(|x| vise(x, &cle, p))) {
+            continue;
+        }
+        if signes.contains(&(cle.clone(), p.engagement.numero.as_deref().map(str::to_string))) {
+            if cibles.is_some() {
+                return Err(refus(format!(
+                    "Le contrat n° {} de {} est déjà revenu signé : il n'a plus rien à signer. Rien n'est parti.",
+                    numero_dit(p.engagement.numero.as_deref()),
+                    nom_ou_cle(&p.salarie, &cle)
+                )));
+            }
             continue;
         }
         match par_salarie.iter_mut().find(|(k, _, _)| *k == cle) {
@@ -422,7 +441,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: &str, choisis: Option<&Cho
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois, None, &departs)?;
     let s_mois = data.mois.to_string();
     // Sans contrats choisis, seuls les avenants s'impriment.
-    let par_salarie: Vec<(String, Vec<Paie>, Vec<usize>)> = choisis.map(|c| contrats_choisis(ctx, c, &mois, &paies)).transpose()?.into_iter().flatten().collect();
+    let signes = contrats_revenus_signes(ctx)?;
+    let par_salarie: Vec<(String, Vec<Paie>, Vec<usize>)> = choisis.map(|c| contrats_choisis(ctx, c, &mois, &paies, &signes)).transpose()?.into_iter().flatten().collect();
     if par_salarie.is_empty() && avenants.is_empty() {
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
@@ -720,27 +740,16 @@ impl DemandeDeSignature<'_> {
         !self.remplace && self.etat(salarie, numero).is_some_and(|c| c.demande_par_courriel)
     }
 
-    /// LES CONTRATS QUE LA DEMANDE FAIT PARTIR : ceux qu'elle choisit (`contrats_choisis`). Sans selection (ni contrat
-    /// ni salarie nomme), un contrat deja revenu signe n'a rien a faire dans la demande : il n'est pas choisi. Nomme, il
-    /// reste, et `verifier_demande` dit pourquoi il ne part pas.
+    /// LES CONTRATS QUE LA DEMANDE FAIT PARTIR : ceux qu'elle choisit (`contrats_choisis`), sans les contrats deja
+    /// revenus signes, qui n'ont plus rien a signer ; un contrat refait qui annule et remplace peut remplacer un contrat
+    /// signe. S'il ne reste rien, la demande le dit.
     fn contrats(&self, ctx: &Contexte, paies: &[Paie]) -> R<ParSalarie> {
-        let choisis = contrats_choisis(ctx, &self.choisis, self.mois, paies)?;
-        let nomme = self.choisis.contrats.is_some() || self.choisis.salaries.as_ref().is_some_and(|l| !l.is_empty());
-        if nomme {
-            return Ok(choisis);
-        }
-        let mut gardes: ParSalarie = Vec::new();
-        for (cle, ps, rangs) in choisis {
-            let (ps, rangs): (Vec<Paie>, Vec<usize>) =
-                ps.into_iter().zip(rangs).filter(|(p, _)| self.etat(&cle, p.engagement.numero.as_deref()).is_none_or(|c| c.recu_le.is_none())).unzip();
-            if !ps.is_empty() {
-                gardes.push((cle, ps, rangs));
-            }
-        }
-        if gardes.is_empty() {
+        let signes = if self.remplace { HashSet::new() } else { contrats_revenus_signes(ctx)? };
+        let choisis = contrats_choisis(ctx, &self.choisis, self.mois, paies, &signes)?;
+        if choisis.is_empty() {
             return Err(refus(aucun_contrat_a_envoyer(self.mois)));
         }
-        Ok(gardes)
+        Ok(choisis)
     }
 }
 
@@ -799,14 +808,17 @@ fn avec_et_sans_courriel(choisis: ParSalarie) -> R<(ParSalarie, Vec<String>)> {
     Ok((avec, noms))
 }
 
-/// Un rappel ne vaut que pour un contrat pas revenu, a jour : son courriel dirait que la signature n'est pas arrivee.
+/// Un rappel ne vaut que pour un contrat a jour : il renvoie le meme contrat. Un contrat revenu signe n'arrive pas ici
+/// (`DemandeDeSignature::contrats`).
 fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&str>) -> R<()> {
-    let (c, pb) = match c {
-        Some(c) if c.caduc => (c, "a changé depuis son envoi : il se modifie par un avenant"),
-        Some(c) if c.recu_le.is_some() => (c, "est déjà revenu signé"),
-        _ => return Ok(()),
-    };
-    Err(refus(format!("Le contrat n° {} de {} {}, il ne se redemande pas. Rien n'est parti.", numero_dit(numero), c.nom, pb)))
+    match c {
+        Some(c) if c.caduc => Err(refus(format!(
+            "Le contrat n° {} de {} a changé depuis son envoi : il se modifie par un avenant, il ne se redemande pas. Rien n'est parti.",
+            numero_dit(numero),
+            c.nom
+        ))),
+        _ => Ok(()),
+    }
 }
 
 // ------------------------------------------------------------------ les avenants
