@@ -15,9 +15,7 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::{repr_flottant, Jour};
 use engagement::Engagement;
 use socle::num::{dec_f64, Decimal};
-use socle::echec::{Classe, Echec};
-
-type R<T> = Result<T, Echec>;
+use socle::echec::{erreur, refus, Classe, Echec, R};
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
 
@@ -50,18 +48,19 @@ pub fn faute_adherent(v: &str) -> Option<String> {
 
 /// Le numero d'adherent de la fiche, de la forme que dit la fiche d'Audiens (`faute_adherent`) ; sinon, refus qui dit
 /// quoi saisir.
-pub fn adherent(ent: &ChampsEntreprise) -> Result<String, String> {
+pub fn adherent(ent: &ChampsEntreprise) -> R<String> {
     let v = match ent.congesspectacles_adherent.remplie() {
         Some(v) => forme_adherent(v),
         _ => {
-            return Err("le numéro d'adhérent Congés Spectacles manque dans la fiche de l'entreprise (Entreprise, « Vos \
-                        numéros chez les organismes ») : dix chiffres suivis d'une lettre, tel qu'il figure sur les \
-                        courriers d'Audiens"
-                .to_string())
+            return Err(refus(
+                "le numéro d'adhérent Congés Spectacles manque dans la fiche de l'entreprise (Entreprise, « Vos \
+                 numéros chez les organismes ») : dix chiffres suivis d'une lettre, tel qu'il figure sur les \
+                 courriers d'Audiens",
+            ))
         }
     };
     match faute_adherent(&v) {
-        Some(faute) => Err(format!("fiche de l'entreprise : {}", faute)),
+        Some(faute) => Err(socle::refus!("fiche de l'entreprise : {}", faute)),
         None => Ok(v),
     }
 }
@@ -73,7 +72,7 @@ pub fn adherent(ent: &ChampsEntreprise) -> Result<String, String> {
 /// norme dit la meme forme (« Indiquer "97", le numero d'affiliation et la cle », CRE-11 : les deux premiers caracteres
 /// dans la table CPCP, ou 97 est la « Caisse de conges spectacles » ; `atelier/reference/norme-dsn/texte/
 /// bloc-S21.G00.40.txt`, l. 921-933). Une cle `congesspectacles_affiliation` qu'une fiche porterait encore n'est pas lue.
-pub fn code_dsn(ent: &ChampsEntreprise) -> Result<String, String> {
+pub fn code_dsn(ent: &ChampsEntreprise) -> R<String> {
     Ok(format!("97{}", adherent(ent)?))
 }
 
@@ -211,11 +210,10 @@ const NOIR: &str = "#000000";
 // ---------------------------------------------------------------- chiffres
 
 /// `arrondi_euro` : a l'euro le plus proche, moitie superieure.
-pub fn arrondi_euro(x: Decimal) -> Result<i64, String> {
+pub fn arrondi_euro(x: Decimal) -> R<i64> {
     use rust_decimal::prelude::ToPrimitive;
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| format!("montant hors de portée : {}", x))
+    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| socle::refus!("montant hors de portée : {}", x))
 }
-
 
 // ----------------------------------------------------- decoupage au 31 mars
 
@@ -296,29 +294,27 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
     if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            a_part: None,
-            phrase: format!(
+        return Err(erreur(
+            Classe::Illisible,
+            format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
                 repr_flottant(h)
             ),
-        });
+        ));
     }
     let n = eng.dates_travail.len() as i64;
     if eng.cachets != n || eng.jours != n {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            a_part: None,
-            phrase: format!(
+        return Err(erreur(
+            Classe::Illisible,
+            format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
                 eng.cachets,
                 eng.jours,
                 n
             ),
-        });
+        ));
     }
     let mut periodes = Vec::new();
     let mut debut = eng.debut;
@@ -376,17 +372,16 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Decimal::ZERO,
                 None => {
-                    return Err(Echec {
-                        classe: Some(Classe::Illisible),
-                        a_part: None,
-            phrase: format!(
+                    return Err(erreur(
+                        Classe::Illisible,
+                        format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
                             e.nomme(),
                             nb,
                             debut.jj_mm_aaaa(),
                             fin.jj_mm_aaaa()
                         ),
-                    })
+                    ))
                 }
             }
         };
@@ -408,14 +403,13 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 Some(n) => n.to_string(),
                 None => texte_requis(&paie.salarie.nom, "nom")?,
             };
-            return Err(Echec {
-                classe: Some(Classe::Illisible),
-                a_part: None,
-            phrase: format!(
+            return Err(erreur(
+                Classe::Illisible,
+                format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
                     qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
                 ),
-            });
+            ));
         }
     }
     Ok(out)
