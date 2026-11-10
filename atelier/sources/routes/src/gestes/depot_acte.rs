@@ -289,7 +289,7 @@ pub fn deposer_dsn_dans(
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
     depot::verifier(&apercu, reel, None, true)?;
     // LE MOIS QUE LE FICHIER DECLARE ; un signalement se date par son evenement, sa ligne par le mois de ce jour.
-    let le_mois = apercu.mois_declare().map_err(|m| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}). Rien n'est parti.", m)))?;
+    let le_mois = apercu.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}). Rien n'est parti.", declarations::dsn_lue::SANS_MOIS)))?;
     let evenement = if apercu.est_signalement() { apercu.evenement().map(|j| j.iso()) } else { None };
     let mois = le_mois.to_string();
     if let Some(n) = ordre_d_essai {
@@ -343,7 +343,7 @@ pub fn deposer_dsn_dans(
         ));
     }
     if reel {
-        forme = verifier_preuve(ctx, preuve, &apercu.confirmation_attendue().map_err(|m| erreur(Classe::Refuse, m))?, "depot REEL d'une DSN", "net-entreprises (la declaration part a l'Urssaf et aux organismes)")?;
+        forme = verifier_preuve(ctx, preuve, &apercu.confirmation_attendue()?, "depot REEL d'une DSN", "net-entreprises (la declaration part a l'Urssaf et aux organismes)")?;
         // PAS DEUX FOIS SANS LE VOULOIR. Une DSN reelle deja partie pour ce mois, et pas refusee, ne repart pas.
         // UN SIGNALEMENT N'EST PAS CONCERNE : plusieurs peuvent partir le meme mois.
         if !apercu.est_signalement() {
