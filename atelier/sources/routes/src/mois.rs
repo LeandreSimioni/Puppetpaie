@@ -609,12 +609,10 @@ fn jours_joues(e: &SaisieCarte) -> Vec<Jour> {
     jours
 }
 
-/// (debut, fin) d'une carte, AAAA-MM-JJ, comme `Engagement` les deduirait : son debut (`Carte::debut_lu`), sa fin
-/// ecrite, sinon le dernier de ses jours travailles et de son planning ; aucune fin sans aucun jour. Le debut d'une carte
-/// qui n'en dit aucun s'ecrit vide : c'est ainsi que la page le lit (`PaieACompleter`).
-pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (String, Option<String>) {
-    let fin = e.fin.or_else(|| e.dates().iter().chain(e.planning().iter()).map(|j| j.jour()).max());
-    (e.debut_lu().map(|j| j.iso()).into_iter().collect(), fin.map(|j| j.iso()))
+/// (debut, fin) d'une carte, comme `Engagement` les deduirait : son debut (`Carte::debut_lu`), sa fin ecrite, sinon le
+/// dernier de ses jours travailles et de son planning ; aucune fin sans aucun jour.
+pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (Option<Jour>, Option<Jour>) {
+    (e.debut_lu(), e.fin.or_else(|| e.dates().iter().chain(e.planning().iter()).map(|j| j.jour()).max()))
 }
 
 // ------------------------------------------------------------ les fichiers de mois
@@ -695,12 +693,12 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             engagement,
         });
     }
-    let mut deja: HashSet<(IdSalarie, String, Option<String>)> = HashSet::new();
+    let mut deja: HashSet<(IdSalarie, Option<String>, Option<String>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
+        deja.insert((c, bornes_brutes(&e).0.map(|j| j.iso()), e.numero.clone()));
     }
     for c in out.iter_mut() {
-        c.deja_repris = deja.contains(&(c.salarie.clone(), c.debut.clone(), Some(c.numero.clone())));
+        c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut.clone()), Some(c.numero.clone())));
     }
     Ok(out)
 }
@@ -850,20 +848,20 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
     let mut couverts: HashSet<Mois> = HashSet::new();
     // Un contrat sur plusieurs mois est dans chacun de ses fichiers de mois, avec les memes bornes : on le garde une
     // fois, de preference tel que le fichier du mois regarde l'ecrit (c'est lui qui a les jours joues).
-    let mut vus: HashMap<(String, String, String), usize> = HashMap::new();
+    let mut vus: HashMap<(String, Jour, Jour), usize> = HashMap::new();
     let mut out: Vec<Passe> = Vec::new();
     let mut connus = engagement::stock::mois_saisis(&ctx.racine)?;
     connus.reverse();
     for &mc in &connus {
         couverts.insert(mc);
         for (cle, e) in engagements_du_mois(ctx, mc)? {
-            let (debut, fin) = bornes_brutes(&e);
+            let (Some(debut), fin) = bornes_brutes(&e) else { continue };
             // Un contrat sans jour finit le jour ou il commence.
             let fin = match fin {
                 Some(f) => f,
-                None => debut.clone(),
+                None => debut,
             };
-            if debut.is_empty() || debut > dernier || fin.as_str() < premier.as_str() {
+            if debut > mois.dernier_jour() || fin < mois.premier_jour() {
                 continue;
             }
             if !voulu(&cle) {
@@ -877,7 +875,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             };
             let cachets = cachets_de(ctx, &e)?;
             let dates = jours_joues(&e);
-            let ident = (cle.to_string(), debut.clone(), fin.clone());
+            let ident = (cle.to_string(), debut, fin);
             let deja = vus.get(&ident).copied();
             if deja.is_some() && mc != mois {
                 continue;
@@ -887,11 +885,11 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 None => dates.len() as i64,
             };
             let contrat = Passe {
-                dit: dit_du_contrat(&debut, &fin, Some(cachets), None)?,
+                dit: dit_du_contrat(&debut.iso(), &fin.iso(), Some(cachets), None)?,
                 nom: nom_de(ctx, &cle),
                 salarie: cle.to_string(),
-                debut,
-                fin,
+                debut: debut.iso(),
+                fin: fin.iso(),
                 cachets: Some(cachets),
                 heures: None,
                 jours: Some(jours),
@@ -1904,8 +1902,8 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    debut: String,
-    fin: Option<String>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,

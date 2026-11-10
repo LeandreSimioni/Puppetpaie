@@ -2611,13 +2611,14 @@ fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
             if c.as_str() != cle {
                 continue;
             }
-            let (debut, fin) = crate::mois::bornes_brutes(&e);
+            let (Some(debut), fin) = crate::mois::bornes_brutes(&e) else { continue };
+            let (debut, fin) = (debut.iso(), fin.map(|j| j.iso()));
             // Un contrat paye au mois sans fin ecrite (un CDI qui court) couvre tout jour depuis son debut : c'est sur lui
             // qu'un arret ou une suspension se pose. Un contrat dont la nature n'est pas encore dite n'est pas tenu pour
             // paye au mois : il ne couvre que ses bornes. Le mois le plus recent qui le saisit fait foi (une fin ecrite
             // plus tard l'emporte) : il est retenu, couvrant ou non, avant les mois plus anciens.
             let mensuel = e.nature.map(droit::natures::NatureDeContrat::proprietes).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|n| n.mensuelle());
-            if debut.is_empty() || (fin.is_none() && !mensuel) {
+            if fin.is_none() && !mensuel {
                 continue;
             }
             if !vus.insert((debut.clone(), e.numero.clone())) {
