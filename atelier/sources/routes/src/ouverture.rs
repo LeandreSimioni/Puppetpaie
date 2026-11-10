@@ -251,6 +251,9 @@ pub(crate) struct VueFiche<P> {
     pastille: PastilleDeFiche,
     sans_titre: bool,
     montres: Vec<String>,
+    /// Les pieces que les engagements de la fiche ouvrent (`fiches::Montres::pieces_ouvertes`) : la page n'ouvre le tiroir
+    /// d'une piece que sur elles.
+    pieces_ouvertes: Vec<droit::fiche::Piece>,
     /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
     /// elles.
     ecarts: Vec<String>,
@@ -451,7 +454,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
-    let montres = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
+    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
         Some(cp) => declarations::urssaf::base().map_err(plain)?.du_code_postal(cp),
@@ -473,6 +476,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
         pastille,
         sans_titre,
         montres,
+        pieces_ouvertes,
         ecarts,
     })
 }
@@ -814,9 +818,6 @@ pub(crate) struct ConfigurationDeLaPage {
     versement_mobilite_des_etablissements: bool,
     /// Pourquoi le bareme du jour ne se compose pas, s'il ne se compose pas.
     bareme: Option<String>,
-    /// Parmi les salaries, ceux qu'un engagement paye au mois emploie au jour de l'ecran (`engagement::permanents`) :
-    /// l'ecran n'ouvre le bloc « Salarie au mois » qu'a eux.
-    salaries_au_mois: Vec<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
     invitation: Invitation,
@@ -942,7 +943,6 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
         bareme,
-        salaries_au_mois: p.dus.iter().map(|d| d.salarie.to_string()).collect::<BTreeSet<_>>().into_iter().collect(),
         identite: identite(ctx, &ctx.gabarits())?,
         invitation: Invitation {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",

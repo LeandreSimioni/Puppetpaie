@@ -421,11 +421,12 @@ struct EffectifDit {
 
 // ------------------------------------------------------------------ permanents
 
-/// Ce que rend `permanents` : la phrase, et les cases que la fiche montre.
+/// Ce que rend `permanents` : la phrase, les cases que la fiche montre et les pieces que ses engagements ouvrent.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
     phrase: &'static str,
     montres: Vec<String>,
+    pieces_ouvertes: Vec<Piece>,
 }
 
 /// `permanents` : les cases que la fiche en cours de saisie montre au jour de l'ecran (la configuration se montre au
@@ -436,10 +437,20 @@ fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let entreprise = if nom == "entreprise" { donnees.clone() } else { Saisie::de_la_fiche("entreprise", &ctx.entreprise)? };
     let jour = ctx.aujourdhui;
     let p = engagement::permanents::Permanents::de(ctx, &jour, &jour).map_err(plain)?;
+    let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?;
     Ok(Permanents {
         phrase: if permanents_de(&entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
-        montres: montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?,
+        montres: cases,
+        pieces_ouvertes,
     })
+}
+
+/// CE QUE LA FICHE MONTRE (`montres`) : ses cases, et les pieces que ses engagements ouvrent, entieres (celle d'un
+/// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
+/// d'une piece que sur elles.
+pub(crate) struct Montres {
+    pub(crate) cases: Vec<String>,
+    pub(crate) pieces_ouvertes: Vec<Piece>,
 }
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
@@ -456,7 +467,7 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
 /// telle qu'elle est saisie. Et le fait que le calcul lit doit tenir (`si_fait` : `FaitsDeLaFiche`). La page ne montre
 /// que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Vec<String>> {
+pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
     let au_mois = match (nom, cle) {
         ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
         ("salarie", Some(c)) => engagement::permanents::cle_du_salarie(ctx, c).map_err(plain)?.is_some(),
@@ -472,7 +483,12 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
     let faits = FaitsDeLaFiche::lus(ctx)?;
-    Ok(champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect())
+    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements) && faits.tient(c, donnees)).map(|c| c.cle.clone()).collect();
+    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (Piece::Metier, !du_metier.is_empty())]
+        .into_iter()
+        .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
+        .collect();
+    Ok(Montres { cases, pieces_ouvertes })
 }
 
 /// LES FAITS QUE LE CALCUL LIT, et qui seuls donnent un sens a une case (`champs::Fait`) : si l'effectif connu de la

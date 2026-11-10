@@ -356,27 +356,13 @@ function dessinerFormulaire(fiche) {
       const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML()
         : opt.atmp ? ATMP_HTML() : "";
       const permanents = toute || opt.sante;
-      // LE BLOC DU SALARIÉ AU MOIS NE S'OUVRE QU'À LUI. Dans une
-      // compagnie qui emploie aussi des permanents, la fiche d'une comédienne
-      // au cachet déroulait sa complémentaire santé et sa prévoyance. Replié
-      // pour qui n'a jamais eu de contrat au mois — sauf s'il y a déjà une
-      // valeur : rien de saisi ne devient invisible.
+      // LE TIROIR DU SALARIÉ AU MOIS : ouvert quand le moteur dit sa pièce ouverte
+      // (`pieces_ouvertes` de la fiche, puis de la route `permanents`) ; la page
+      // n'en décide rien.
       if (opt.sante && FICHE_ACTIVE === "salarie") {
-        // Au mois : le moteur le dit (`salaries_au_mois`) — ou la saisie en cours
-        // l'engage déjà au mois, pas encore enregistrée parce que sa santé manque
-        // (le refus ne doit pas envoyer sur un tiroir replié).
-        let enCours = false;
-        try {
-          enCours = engagementsALEcran().some((x) => x.salarie === fiche.cle
-            && natureDe(x.nature).mensuelle);
-        } catch (e) { enCours = false; }
-        const auMois = ((ETAT.configuration || {}).salaries_au_mois || []).includes(fiche.cle) || enCours;
-        const rempli = dedans.some((c) => {
-          const v = fiche.donnees[c.cle];
-          return v !== null && v !== undefined && v !== "";
-        }) || !!fiche.donnees.sante_svp;
-        return `<details class="bloc avance" data-bloc-permanents="1"${auMois || rempli ? " open" : ""}>
-          <summary>${echapper(titre)}${auMois ? "" : ` <span class="discret">— payé au mois</span>`}</summary>
+        const ouverte = (fiche.pieces_ouvertes || []).includes("permanent");
+        return `<details class="bloc avance" data-bloc-permanents="1" data-piece="permanent"${ouverte ? " open" : ""}>
+          <summary>${echapper(titre)}</summary>
           ${entete}
           <div class="champs">${dedansHtml}</div>
         </details>`;
@@ -805,6 +791,8 @@ function brancherConditions() {
     if (n !== demande || !form.isConnected) return;
     const montres = new Set(r.montres || []);
     form.querySelectorAll("[data-montre]").forEach((el) => { el.hidden = !montres.has(el.dataset.montre); });
+    const ouvertes = new Set(r.pieces_ouvertes || []);
+    form.querySelectorAll("details[data-piece]").forEach((el) => { el.open = ouvertes.has(el.dataset.piece); });
     montrerBlocsPermanents();
   };
   form.addEventListener("change", appliquer);
