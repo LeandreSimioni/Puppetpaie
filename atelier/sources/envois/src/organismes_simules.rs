@@ -124,7 +124,7 @@ fn charger(racine: &Path) -> R<Memoire> {
 }
 
 fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| erreur(Classe::Disque, m))
+    socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| Echec { classe: Some(Classe::Disque), ..m })
 }
 
 /// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
@@ -230,7 +230,7 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
             let qui = match (ind.nir.is_empty(), &ind.ntt) {
                 (false, _) => ind.nir.clone(),
                 (true, Some(ntt)) => format!("NTT {}", ntt),
-                (true, None) => return Err(Echec::from(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"))),
+                (true, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
             };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![0.0; n as usize]);
             if k.motif_recours.as_deref() == Some("01") {
@@ -246,7 +246,7 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
             }
             let poids = if k.modalite.as_deref() == Some("20") {
                 let (Some(reference), Some(quotite)) = (k.quotite_reference.and_then(|q| q.to_f64()), k.quotite.and_then(|q| q.to_f64())) else {
-                    return Err(Echec::from(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013")));
+                    return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
                 if reference > 0.0 {
                     (quotite / reference).min(1.0)
@@ -320,7 +320,7 @@ fn element(v: Option<&str>) -> String {
 
 /// Le mois de la ligne : une DSN du journal le dit toujours.
 fn mois_de(l: &Ligne) -> R<Mois> {
-    l.mois().ok_or_else(|| Echec::from(socle::echec::cle("Une DSN du journal ne dit pas son mois.", "mois")))
+    l.mois().ok_or_else(|| socle::echec::cle("Une DSN du journal ne dit pas son mois.", "mois"))
 }
 
 /// La DSN de la ligne du journal, relue la ou le depot l'a prise (`sorties/<mois>/<fichier>`) ; un signalement est range
@@ -332,7 +332,7 @@ fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(Echec::from(socle::echec::du_disque(&chemin, &e))),
+        Err(e) => return Err(socle::echec::du_disque(&chemin, &e)),
     };
     declarations::dsn_lue::lire(&octets, fichier).map(Some)
 }
@@ -566,7 +566,7 @@ fn crm_effectif(an: i32, valeur: f64, flux: &str, publication: &str) -> Piece {
 /// `Ok(pieces)` a ajouter (le taux du PAS, a une DSN mensuelle comme a un signalement d'amorcage ; l'effectif de l'annee
 /// precedente a la premiere DSN mensuelle d'une annee). Une DSN du journal dit sa nature.
 pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: &Ligne, flux: &str, publication: &str) -> R<Result<Vec<Piece>, Vec<Piece>>> {
-    let nature = nature_dsn(l).ok_or_else(|| Echec::from(socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature")))?;
+    let nature = nature_dsn(l).ok_or_else(|| socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature"))?;
     if let Some(r) = refus_pour(memoire, l, flux)? {
         return Ok(Err(bilans_refuses(flux, publication, l, nature, &r)?));
     }
