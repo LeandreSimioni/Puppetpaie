@@ -150,7 +150,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
         match releve_retours::relever_retours(ctx, branchement, fin - JOURS_DE_RELEVE * 86_400, fin, false, client, releve_retours::CANAL_DSN, suites) {
             Ok(r) if r.incidents.is_empty() => None,
             Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
-            Err(e) => Some(String::from(e)),
+            Err(e) => Some(e.phrase),
         }
     };
 

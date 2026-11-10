@@ -197,7 +197,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             }
             let mois = dit(r.mois);
             if let Some(m) = &mois {
-                Mois::lire(m).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, String::from(e))) })?;
+                Mois::lire(m).map_err(|e| Echec { classe: Some(Classe::Illisible), ..socle::echec::a_la_cle("Le mois du refus annoncé ne se lit pas : AAAA-MM est attendu.", "refus.mois", format!("{} : {}", m, e.phrase)) })?;
             }
             gardee.refus = Some(RefusAnnonce { code: r.code, message: r.message, rubrique: dit(r.rubrique), mois });
         }
@@ -446,7 +446,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
         return Ok(None);
     }
     let mut o = [0u8; 4];
-    socle::temps::aleas(&mut o).map_err(|e| erreur(Classe::Disque, format!("pas d'alea du systeme : {}", String::from(e))))?;
+    socle::temps::aleas(&mut o).map_err(|e| Echec { classe: Some(Classe::Disque), ..e.reformuler(|m| format!("pas d'alea du systeme : {}", m)) })?;
     let identifiant = 100_000_000 + u32::from_le_bytes(o) % 900_000_000;
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"{}\" type=\"CRM nominatif\" \
