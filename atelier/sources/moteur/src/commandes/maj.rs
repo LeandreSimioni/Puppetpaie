@@ -13,13 +13,13 @@ pub fn commande(args: &[String]) -> i32 {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis appliquer".into()),
             Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
-            Err(e) => Err(e),
+            Err(e) => Err(String::from(e)),
         }
     } else if drapeau("--revenir") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err("PuppetPaie tourne : fermer la fenetre, puis revenir".into()),
             Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v))),
-            Err(e) => Err(e),
+            Err(e) => Err(String::from(e)),
         }
     } else {
         Ok(verifier(!drapeau("--sans-telecharger")))

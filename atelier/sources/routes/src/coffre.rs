@@ -943,7 +943,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
-            eprintln!("Le navigateur ne s'ouvre pas : {}", e);
+            eprintln!("Le navigateur ne s'ouvre pas : {}", e.phrase);
         }
     };
     let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;

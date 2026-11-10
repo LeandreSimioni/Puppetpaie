@@ -1172,7 +1172,7 @@ pub fn preparer_l_installation() {
 /// LE VERROU DE CETTE INSTALLATION (`compagnie::instance`) : un creneau par installation -- son verrou et le port de sa page.
 /// La meme installation relancee : `Devant` (sa fenetre est revenue devant) ; une autre installation ouverte sur le poste
 /// ne change rien, chacune a son creneau.
-pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
+pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> socle::echec::R<Instance> {
     instance::prendre(devant)
 }
 
@@ -1336,7 +1336,7 @@ pub fn commande(args: &[String]) -> i32 {
             return 0;
         }
         Err(e) => {
-            eprintln!("La fenetre ne demarre pas : {}", socle::echec::phrase_de(&e));
+            eprintln!("La fenetre ne demarre pas : {}", e.phrase);
             return 1;
         }
     };

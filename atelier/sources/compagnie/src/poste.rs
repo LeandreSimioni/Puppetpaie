@@ -7,10 +7,12 @@
 use std::path::{Component, Path};
 use std::process::{Command, Stdio};
 
+use socle::echec::R;
+
 /// Ouvre un fichier ou un dossier dans le programme du poste (l'explorateur, le lecteur PDF), et rend ce que l'ecran en
 /// dit : « Dossier ouvert : … » (l'explorateur peut s'ouvrir derriere la fenetre), rien pour un fichier ouvert, ou, quand
 /// aucun programme ne l'a ouvert, ou il est (une information : il est ecrit). `Err` : il n'existe pas.
-pub fn ouvrir(chemin: &Path) -> Result<String, String> {
+pub fn ouvrir(chemin: &Path) -> R<String> {
     // Une piece de l'Historique arrive en `retours/...` (barres droites) jointe a la racine : Windows lit le fichier,
     // mais l'explorateur ne reconnait pas le chemin et ouvre « Documents » a la place.
     #[cfg(windows)]
@@ -28,9 +30,9 @@ pub fn ouvrir(chemin: &Path) -> Result<String, String> {
 }
 
 /// Ce que dit un fichier qu'aucun programme du poste n'a ouvert : s'il est ecrit, ou il est ; sinon, qu'il manque.
-fn pas_ouvert(chemin: &Path, e: &std::io::Error) -> Result<String, String> {
+fn pas_ouvert(chemin: &Path, e: &std::io::Error) -> R<String> {
     if !chemin.exists() {
-        return Err(socle::echec::avec(
+        return Err(socle::echec::refus_avec(
             "Ce fichier n'existe pas : rien à ouvrir.",
             socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
         ));
@@ -51,7 +53,7 @@ pub fn separateurs_windows(chemin: &str) -> String {
 }
 
 /// Ouvre une adresse dans le navigateur du poste.
-pub fn ouvrir_adresse(url: &str) -> Result<(), String> {
+pub fn ouvrir_adresse(url: &str) -> R<()> {
     // En essai, le garde-fou reseau : aucun navigateur vers une adresse reelle.
     socle::garde_reseau::directe(&socle::garde_reseau::hote_de(url))?;
     #[cfg(windows)]
@@ -60,18 +62,18 @@ pub fn ouvrir_adresse(url: &str) -> Result<(), String> {
     let r = Command::new("open").arg(url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let r = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
-    r.map(|_| ()).map_err(|e| format!("Le navigateur ne s'ouvre pas : {}.", e))
+    r.map(|_| ()).map_err(|e| socle::refus!("Le navigateur ne s'ouvre pas : {}.", e))
 }
 
 /// Ouvre dans le navigateur du poste une adresse de l'editeur : en https, sur `auteur::SITES` ou l'un de leurs
 /// sous-domaines, sans identifiant ni port. Toute autre adresse est refusee : la page ne fait pas ouvrir n'importe quoi
 /// au poste.
-pub fn ouvrir_site(url: &str) -> Result<(), String> {
+pub fn ouvrir_site(url: &str) -> R<()> {
     // L'hote : ce qui suit `https://`, jusqu'au chemin, a la requete ou au fragment.
     let hote = url.strip_prefix("https://").and_then(|r| r.split(['/', '?', '#']).next());
     let permis = hote.is_some_and(|h| !h.contains(['@', ':', '\\']) && super::auteur::SITES.iter().any(|s| h == *s || h.ends_with(&format!(".{}", s))));
     if !permis {
-        return Err(format!("La fenêtre n'ouvre que les sites de l'éditeur ({}).", super::auteur::SITES.join(", ")));
+        return Err(socle::refus!("La fenêtre n'ouvre que les sites de l'éditeur ({}).", super::auteur::SITES.join(", ")));
     }
     ouvrir_adresse(url)
 }
@@ -91,7 +93,7 @@ pub fn entre_apostrophes_powershell(t: &str) -> String {
 
 /// CHOISIR UN DOSSIER. La boite du systeme, lancee par la fenetre : Windows par PowerShell (`FolderBrowserDialog`, au
 /// premier plan), macOS par `osascript`, Linux par `zenity` ou `kdialog`. Rend le chemin choisi, ou `None` si on a annule.
-pub fn choisir_dossier(titre: &str) -> Result<Option<String>, String> {
+pub fn choisir_dossier(titre: &str) -> R<Option<String>> {
     // Le titre garde son apostrophe : chaque boite l'echappe a sa facon -- PowerShell double l'apostrophe
     // dans sa chaine entre apostrophes (ou `$` et l'accent grave sont litteraux), AppleScript echappe `\` et `"`
     // dans sa chaine entre guillemets ; zenity le recoit en argument, tel quel.
@@ -120,7 +122,7 @@ pub fn choisir_dossier(titre: &str) -> Result<Option<String>, String> {
         .stdin(Stdio::null())
         .output()
         .or_else(|_| Command::new("kdialog").args(["--getexistingdirectory", "."]).stdin(Stdio::null()).output());
-    let sortie = sortie.map_err(|e| format!("La boite de choix du dossier ne s'ouvre pas : {}. Tapez le chemin a la main.", e))?;
+    let sortie = sortie.map_err(|e| socle::refus!("La boite de choix du dossier ne s'ouvre pas : {}. Tapez le chemin a la main.", e))?;
     let chemin = String::from_utf8_lossy(&sortie.stdout).trim().trim_end_matches(['/', '\\']).to_string();
     Ok((!chemin.is_empty()).then_some(chemin))
 }
@@ -128,10 +130,10 @@ pub fn choisir_dossier(titre: &str) -> Result<Option<String>, String> {
 /// Ce que la fenetre ouvre pour la page d'une compagnie : `chemin`, tel qu'une route l'a rendu, relatif a la compagnie
 /// ou absolu ; jamais par `..`. Un chemin absolu hors de la compagnie n'est ouvert que s'il est un dossier (celui que
 /// l'on a choisi pour l'import). `creer` : un dossier de la compagnie qui manque se cree (la boite `import/`).
-pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> Result<String, String> {
+pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String> {
     let p = Path::new(chemin.trim());
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {
-        return Err(socle::echec::avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::APart { chemin: Some(chemin.to_string()), ..Default::default() }));
+        return Err(socle::echec::refus_avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::APart { chemin: Some(chemin.to_string()), ..Default::default() }));
     }
     let f = if p.is_absolute() { p.to_path_buf() } else { racine.join(p) };
     let dans = f.starts_with(racine);
@@ -139,7 +141,7 @@ pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> Result<S
         std::fs::create_dir_all(&f).map_err(|e| socle::echec::du_disque(&f, &e))?;
     }
     if !dans && !f.is_dir() {
-        return Err(socle::echec::avec("Ce n'est pas un dossier : rien à ouvrir.", socle::echec::APart { chemin: Some(f.to_string_lossy().into_owned()), ..Default::default() }));
+        return Err(socle::echec::refus_avec("Ce n'est pas un dossier : rien à ouvrir.", socle::echec::APart { chemin: Some(f.to_string_lossy().into_owned()), ..Default::default() }));
     }
     ouvrir(&f)
 }
