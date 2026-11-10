@@ -351,7 +351,7 @@ pub(crate) fn compte_sans_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &
     if reprise_conges(ctx, au, cle_salarie)?.is_some() {
         return Ok(None);
     }
-    let Some(premier) = premier_mois(ctx, cle_salarie, None)? else { return Ok(None) };
+    let Some(premier) = premier_mois(ctx, cle_salarie, Lus::Tous)? else { return Ok(None) };
     if *depuis >= premier.premier_jour() {
         return Ok(None);
     }
@@ -375,17 +375,28 @@ pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let mensuels = mensuels_d_avant(ctx, mois, &cle)?;
     socle::fichiers::noter_valeur(&format!("{}{} {}", MENSUELS, mois, cle), empreinte_des(&mensuels));
-    if mensuels.is_empty() {
-        // Aucun mois d'avant ne se lit : `rien_avant` les tient tous pour d'apres.
-        return compteur(ctx, au, cle_salarie, a_la_date, Some(rien_avant()));
-    }
-    compteur(ctx, au, cle_salarie, a_la_date, Some(mois))
+    let lus = if mensuels.is_empty() { Lus::Aucun } else { Lus::Avant(mois) };
+    compteur(ctx, au, cle_salarie, a_la_date, lus)
 }
 
-/// Le premier mois du calendrier (`avant_le_mois`, `mois_de_la_periode`, `premier_mois`) : aucun ne le precede, aucun
-/// ne se lit avant lui.
-fn rien_avant() -> Mois {
-    Mois::du_jour(&Jour { an: 1, mois: 1, jour: 1 })
+/// Les mois saisis qu'un compteur lit.
+#[derive(Clone, Copy)]
+enum Lus {
+    Tous,
+    /// Ceux strictement avant ce mois.
+    Avant(Mois),
+    /// Aucun : sans contrat paye au mois commence avant le mois, l'etat avant lui est celui de l'entree.
+    Aucun,
+}
+
+impl Lus {
+    fn lit(self, m: Mois) -> bool {
+        match self {
+            Lus::Tous => true,
+            Lus::Avant(j) => m < j,
+            Lus::Aucun => false,
+        }
+    }
 }
 
 /// La cle sous laquelle un calcul note les contrats payes au mois d'un salarie avant un mois (`mensuels <mois> <salarie>`).
@@ -499,13 +510,13 @@ fn periode(
     cle_salarie: &str,
     debut: &Jour,
     fin: &Jour,
-    jusqu_au_mois: Option<Mois>,
+    lus: Lus,
     remuneration: bool,
 ) -> R<(Decimal, Decimal, Decimal, Vec<Avis>)> {
     let rep = reprise_conges(ctx, au, cle_salarie)?;
     let mut t = Tenue::ouvrir(rep.as_ref(), debut, fin)?;
     let cle = cle_de_fiche(ctx, cle_salarie)?;
-    for (mois, paies) in mois_de_la_periode(ctx, &cle, debut, fin, jusqu_au_mois)? {
+    for (mois, paies) in mois_de_la_periode(ctx, &cle, debut, fin, lus)? {
         t.ajouter(ctx, cle_salarie, &cle, rep.as_ref(), debut, fin, mois, &paies, remuneration)?;
     }
     Ok((plafonner(t.acquis)?, t.pris, t.brut, t.avis))
@@ -516,14 +527,14 @@ fn compteur(
     au: &AuMois,
     cle_salarie: &str,
     a_la_date: &Jour,
-    jusqu_au_mois: Option<Mois>,
+    lus: Lus,
 ) -> R<Avant> {
     let (debut, fin) = periode_de_reference(a_la_date)?;
-    let (acquis, pris, remuneration, avert) = periode(ctx, au, cle_salarie, &debut, &fin, jusqu_au_mois, true)?;
-    let report = report(ctx, au, cle_salarie, &debut, jusqu_au_mois)?;
+    let (acquis, pris, remuneration, avert) = periode(ctx, au, cle_salarie, &debut, &fin, lus, true)?;
+    let report = report(ctx, au, cle_salarie, &debut, lus)?;
     // Un jour du report se paie au dixieme de la periode ou il a ete acquis (`indemnite_des_jours`).
     let remuneration_report = match (report.debut, report.fin) {
-        (Some(rd), Some(rf)) if report.reports > Decimal::ZERO => periode(ctx, au, cle_salarie, &rd, &rf, jusqu_au_mois, true)?.2,
+        (Some(rd), Some(rf)) if report.reports > Decimal::ZERO => periode(ctx, au, cle_salarie, &rd, &rf, lus, true)?.2,
         _ => zero2(),
     };
     let avis_du_report = report.avertissements.len();
@@ -697,10 +708,10 @@ struct Report {
     premier: Option<Mois>,
 }
 
-fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &str, debut_courant: &Jour, jusqu_au_mois: Option<Mois>) -> R<Report> {
+fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &str, debut_courant: &Jour, lus: Lus) -> R<Report> {
     let vide = Report { reports: Decimal::ZERO, acquis: Decimal::ZERO, debut: None, fin: None, avertissements: vec![], premier: None };
     let rep = reprise_conges(ctx, au, cle_salarie)?;
-    let premier = premier_mois(ctx, cle_salarie, jusqu_au_mois)?;
+    let premier = premier_mois(ctx, cle_salarie, lus)?;
     let mut out = Report { avertissements: vec![], ..vide };
     let mut avert = Vec::new();
     let (mut p_debut, mut p_fin, mut reste);
@@ -734,7 +745,7 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &str, debut_courant: &Jour, 
         return Ok(Report { avertissements: vec![], premier, ..out });
     }
     while p_debut < *debut_courant {
-        let (acquis, pris, _, _) = periode(ctx, au, cle_salarie, &p_debut, &p_fin, jusqu_au_mois, false)?;
+        let (acquis, pris, _, _) = periode(ctx, au, cle_salarie, &p_debut, &p_fin, lus, false)?;
         // Les jours deja pris par l'ancien logiciel sur SA periode N sont
         // imputes sur N, pas sur le report.
         let deja = pris_de_la_reprise(ctx, au, cle_salarie, &p_debut, &p_fin)?;
@@ -808,10 +819,10 @@ fn commence_avant(paies: &[PaieLue], mois: Mois) -> Option<Jour> {
 }
 
 /// Le premier mois ou le salarie a la paie validee d'un contrat paye au mois.
-fn premier_mois(ctx: &Contexte, cle_salarie: &str, jusqu_au_mois: Option<Mois>) -> R<Option<Mois>> {
+fn premier_mois(ctx: &Contexte, cle_salarie: &str, lus: Lus) -> R<Option<Mois>> {
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     for mois in crate::stock::mois_saisis(&ctx.racine)? {
-        if jusqu_au_mois.is_some_and(|j| mois >= j) {
+        if !lus.lit(mois) {
             return Ok(None);
         }
         if paies_du_mois(ctx, mois, &cle)?.iter().any(|p| p.mensuel.is_some()) {
@@ -828,7 +839,7 @@ fn mois_de_la_periode(
     cle: &str,
     debut: &Jour,
     fin: &Jour,
-    jusqu_au_mois: Option<Mois>,
+    lus: Lus,
 ) -> R<Vec<(Mois, Vec<PaieLue>)>> {
     let mut out = Vec::new();
     if fin < debut {
@@ -836,7 +847,7 @@ fn mois_de_la_periode(
     }
     let saisis = crate::stock::mois_saisis(&ctx.racine)?;
     for m in Mois::entre(debut, fin) {
-        if jusqu_au_mois.is_some_and(|j| m >= j) || !saisis.contains(&m) {
+        if !lus.lit(m) || !saisis.contains(&m) {
             continue;
         }
         let paies = paies_du_mois(ctx, m, cle)?;

@@ -612,7 +612,9 @@ fn rejouer_les_gestes(
             }
         }
     }
-    lire_les_soirs(Jour::nouveau(9999, 12, 31).expect("un jour"), &r);
+    for j in arrets {
+        lire_au(j, &r);
+    }
     Ok(r)
 }
 
