@@ -869,7 +869,7 @@ fn avenant_repris(ctx: &Contexte, c: &ContratASigner) -> R<UnAvenant> {
         return Err(refus(format!("Le contrat de {} du {} n'a aucun avenant en attente de signature. Rien n'est parti.", qui, c.debut.jj_mm_aaaa())));
     };
     let parti = |quoi: &str| refus(format!("L'avenant parti du contrat de {} du {} ne dit pas {} : il ne repart pas tel quel, il se refait. Rien n'est parti.", qui, c.debut.jj_mm_aaaa(), quoi));
-    let deja = if a.par_courriel { DejaParti::ParCourriel } else { DejaParti::Imprime { le: a.quand.clone() } };
+    let deja = if a.par_courriel { DejaParti::ParCourriel } else { DejaParti::Imprime { le: a.quand.iso() } };
     Ok(UnAvenant {
         salarie: c.salarie.clone(),
         debut: c.debut,
@@ -964,7 +964,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         let par = etat.par;
         let numero_avenant = etat.avenant.as_ref().and_then(|a| a.numero).filter(|_| avenant_en_attente);
         let (ce, depuis) = if avenant_en_attente {
-            (format!("{} ", avenant_dit(numero_avenant)), etat.avenant.as_ref().map(|a| a.quand.clone()))
+            (format!("{} ", avenant_dit(numero_avenant)), etat.avenant.as_ref().map(|a| a.quand.iso()))
         } else {
             (String::new(), parti.clone())
         };
@@ -1157,7 +1157,7 @@ impl AvenantLu {
                     Some(s) => format!("signé le {}", socle::ecran::quand(s)),
                     None => "pas encore revenu signé".to_string(),
                 };
-                let phrase = format!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), socle::ecran::quand(&a.quand), signe);
+                let phrase = format!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), socle::ecran::quand(&a.quand.iso()), signe);
                 AvenantDit { parti: a, phrase }
             })
             .collect();
@@ -1479,7 +1479,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         }
         if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
             qui.get_or_insert_with(|| x.salarie.to_string());
-            dpae.push(piece(racine, "DPAE déposée".into(), &e.quand, e.mois, fichier));
+            dpae.push(piece(racine, "DPAE déposée".into(), &e.quand.iso(), e.mois, fichier));
         }
     }
 
@@ -1494,7 +1494,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
                 Some("remplace") => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_deref()), parti),
                 _ => format!("Contrat {}", parti),
             };
-            contrat.push(piece(racine, quoi, &e.quand, Some(x.mois), &x.fichier));
+            contrat.push(piece(racine, quoi, &e.quand.iso(), Some(x.mois), &x.fichier));
         }
         // CE QUI EN EST REVENU, sur la ligne de chaque envoi.
         for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero_dit())) {

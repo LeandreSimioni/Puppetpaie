@@ -343,6 +343,79 @@ impl<'de> serde::Deserialize<'de> for MinuteEcrite {
     }
 }
 
+/// L'HEURE D'UNE LIGNE DU JOURNAL DES ENVOIS : l'instant du geste a la seconde (`AAAA-MM-JJTHH:MM:SS` : un envoi, un pas
+/// de l'horloge, la reprise d'un certificat DPAE ou d'un bilan qui dit son heure), ou le jour seul (`AAAA-MM-JJ` : la
+/// reprise d'un bilan qui ne dit que sa date de reception). Il se lit et s'ecrit dans l'une de ces deux formes, octet pour
+/// octet, et deux heures se comparent comme leurs textes (un jour seul precede les instants de ce jour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HeureDuJournal {
+    Instant(InstantEcrit),
+    Jour(Jour),
+}
+
+impl HeureDuJournal {
+    /// `AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<HeureDuJournal> {
+        match InstantEcrit::lire(texte) {
+            Some(i) => Some(HeureDuJournal::Instant(i)),
+            None => crate::date::jour_iso(texte).filter(|j| j.iso() == texte).map(HeureDuJournal::Jour),
+        }
+    }
+
+    /// Son jour.
+    pub fn jour(self) -> Jour {
+        match self {
+            HeureDuJournal::Instant(i) => i.jour(),
+            HeureDuJournal::Jour(j) => j,
+        }
+    }
+
+    /// Sa forme ecrite.
+    pub fn iso(self) -> String {
+        match self {
+            HeureDuJournal::Instant(i) => i.iso(),
+            HeureDuJournal::Jour(j) => j.iso(),
+        }
+    }
+}
+
+impl From<InstantEcrit> for HeureDuJournal {
+    fn from(i: InstantEcrit) -> HeureDuJournal {
+        HeureDuJournal::Instant(i)
+    }
+}
+
+impl PartialOrd for HeureDuJournal {
+    fn partial_cmp(&self, autre: &HeureDuJournal) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl Ord for HeureDuJournal {
+    fn cmp(&self, autre: &HeureDuJournal) -> std::cmp::Ordering {
+        self.iso().cmp(&autre.iso())
+    }
+}
+
+impl std::fmt::Display for HeureDuJournal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.iso())
+    }
+}
+
+impl serde::Serialize for HeureDuJournal {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for HeureDuJournal {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDuJournal, D::Error> {
+        let s = String::deserialize(d)?;
+        HeureDuJournal::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est ni un instant AAAA-MM-JJTHH:MM:SS ni un jour AAAA-MM-JJ", crate::date::repr_texte(&s))))
+    }
+}
+
 /// Le jour d'un jour unix qu'un `Moment` ou un `Naif` porte : il est dans le calendrier, par leur construction.
 fn dans_le_calendrier(jours: i64) -> Jour {
     Jour::depuis_jours_unix(jours).expect("un instant est dans le calendrier")

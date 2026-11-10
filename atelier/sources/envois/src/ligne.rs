@@ -88,8 +88,8 @@ pub struct Version {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envoi<D, R> {
-    /// L'heure de l'envoi (ISO, a la seconde), ou celle qu'une reprise lit dans sa piece.
-    pub quand: String,
+    /// L'heure de l'envoi (a la seconde), ou celle qu'une reprise lit dans sa piece (`journal::noter`).
+    pub quand: socle::paris::HeureDuJournal,
     /// D'ou vient une heure qui n'est pas celle de l'acte (une reprise, l'horloge d'une fictive) ; vide sinon.
     pub origine: String,
     pub mois: Option<Mois>,
@@ -154,8 +154,8 @@ impl Ligne {
         }
     }
 
-    pub fn quand(&self) -> &str {
-        commun!(self, e => &e.quand)
+    pub fn quand(&self) -> socle::paris::HeureDuJournal {
+        commun!(self, e => e.quand)
     }
 
     pub fn origine(&self) -> &str {
@@ -679,7 +679,7 @@ impl RetourContrat {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AvenantParti {
     pub numero: Option<i64>,
-    pub quand: String,
+    pub quand: socle::paris::HeureDuJournal,
     pub mois: Mois,
     pub fichier: String,
     pub code: Option<String>,

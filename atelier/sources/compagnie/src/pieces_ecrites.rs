@@ -38,7 +38,7 @@ pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<Emp
 /// fichier `cible` dont le contenu est celui d'un depot reel accepte, qu'aucun retour n'a refuse (`journal/depots.jsonl`,
 /// par son empreinte), ne s'ecrit pas par-dessus ; `Some(le jour de son depot)`. Chaque ecriture d'une declaration sous
 /// un nom qui ne depend pas de son contenu (un signalement, la DPAE du mois, la DSN mensuelle) le lit avant d'ecrire.
-pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<String>> {
+pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<socle::date::Jour>> {
     if !cible.is_file() {
         return Ok(None);
     }
@@ -48,7 +48,7 @@ pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<String>> {
         .iter()
         .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(empreinte.as_str()))
         .find(|l| !envois::etats::refuse_par_un_retour(l))
-        .map(|l| l.quand().chars().take(10).collect()))
+        .map(|l| l.quand().jour()))
 }
 
 /// `partie_le`, en refus : `cible` est parti, rien n'est ecrit.
@@ -60,10 +60,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
             format!(
                 "{} est parti le {} : ce qui est parti ne se réécrit pas. Rien n'est écrit.",
                 socle::fichiers::nom_du(cible),
-                match socle::date::Jour::lire(&le) {
-                    Ok(j) => j.jj_mm_aaaa(),
-                    Err(e) => return Err(e.reclasser(Classe::Illisible)),
-                }
+                le.jj_mm_aaaa()
             ),
         )),
     }

@@ -888,7 +888,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     };
     let mut partis = Vec::new();
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
-        let (mois, quand) = (e.mois, e.quand.clone());
+        let (mois, quand) = (e.mois, e.quand.iso());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration.clone() else { continue };
         let type_declaration = d.type_declaration.clone();
@@ -1125,9 +1125,9 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<O
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))
         .filter(|l| evenement_de(l) == Some(fin_iso.as_str()) && l.fichier().is_some_and(|f| f.to_uppercase() == nom))
-        .min_by(|a, b| a.quand().cmp(b.quand()));
+        .min_by_key(|l| l.quand());
     let Some(l) = premier else { return Ok(None) };
-    let le = jour_de_l_instant(l.quand())?;
+    let le = l.quand().jour();
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),

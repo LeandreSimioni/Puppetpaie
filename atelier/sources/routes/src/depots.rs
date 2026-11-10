@@ -360,7 +360,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
         e.push(Encart::de(
             "a_faire",
             "Ce fichier a déjà été déposé",
-            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", socle::ecran::quand(deja.quand()), if deja.reel() { "réel" } else { "test" }),
+            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", socle::ecran::quand(&deja.quand().iso()), if deja.reel() { "réel" } else { "test" }),
         ));
     }
     if !reel {

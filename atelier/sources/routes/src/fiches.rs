@@ -1089,7 +1089,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
             code: e.detail.code.clone(),
             adresse: e.detail.adresse.clone(),
             prenom: e.detail.prenom.clone(),
-            quand: e.quand.clone(),
+            quand: e.quand.iso(),
             envoyes: e.detail.message.clone().filter(|m| !m.is_empty()).into_iter().collect(),
         });
     }

@@ -63,7 +63,7 @@ use crate::{empreinte, relire};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
-use socle::paris::InstantEcrit;
+use socle::paris::{HeureDuJournal, InstantEcrit};
 use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
 
 /// La raison d'un recalcul : le taux de prelevement a la source a change.
@@ -137,8 +137,8 @@ pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<Mois>
 }
 
 /// Quand les documents de `mois` de cet engagement sont partis (le premier envoi) ; `None` s'ils ne le sont pas.
-fn documents_partis(siens: &[Depart], mois: Mois) -> Option<&str> {
-    siens.iter().find(|d| d.envoi == Envoi::Documents && d.mois == Some(mois)).map(|d| d.le.as_str())
+fn documents_partis(siens: &[Depart], mois: Mois) -> Option<HeureDuJournal> {
+    siens.iter().find(|d| d.envoi == Envoi::Documents && d.mois == Some(mois)).map(|d| d.le)
 }
 
 // ------------------------------------------------------------------ les trois etats
@@ -166,7 +166,7 @@ pub struct Valide {
 pub struct Partis {
     valide: Valide,
     pub mois: Mois,
-    pub le: String,
+    pub le: HeureDuJournal,
 }
 
 /// Ce qu'est un engagement pour un mois.
@@ -344,7 +344,7 @@ pub fn qui_de(ctx: &Contexte, o: &Objet) -> String {
 
 /// Ce qu'est l'engagement `o` pour le mois `mois`, tel qu'il est ecrit.
 fn etat(o: Objet, mois: Mois, departs: &Departs) -> Etat {
-    let parti = documents_partis(ses_departs(&o, departs), mois).map(String::from);
+    let parti = documents_partis(ses_departs(&o, departs), mois);
     match Valide::de(o.clone()) {
         None => Etat::EnSaisie(EnSaisie { objet: o }),
         Some(v) => match parti {
@@ -1216,14 +1216,9 @@ pub fn modifier(ctx: &Contexte, mois: Mois, rang: usize) -> R<EnSaisie> {
 /// CE QUI EST PARTI de l'engagement `o`, dit en mots (« la DPAE, le 02/03/2026 ») : ce que la couche des envois dit
 /// (`departs`), et une version gardee parce qu'un envoi l'avait emportee. Vide : rien n'est parti, il se supprime.
 pub fn ce_qui_est_parti(o: &Objet, departs: &Departs) -> Vec<String> {
-    // Un instant (AAAA-MM-JJTHH:MM) se dit par son jour.
-    let jour = |le: &str| match le.get(..10).map(Jour::lire) {
-        Some(Ok(j)) => j.jj_mm_aaaa(),
-        _ => le.to_string(),
-    };
     let mut out: Vec<String> = ses_departs(o, departs)
         .iter()
-        .map(|d| format!("{}, le {}", crate::versions::quoi_du_depart(d), jour(&d.le)))
+        .map(|d| format!("{}, le {}", crate::versions::quoi_du_depart(d), d.le.jour().jj_mm_aaaa()))
         .collect();
     out.dedup();
     if out.is_empty() && !o.brut.versions.is_empty() {

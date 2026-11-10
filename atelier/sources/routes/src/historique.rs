@@ -190,7 +190,7 @@ struct EcranDeLaReprise {
 fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
     let r = compagnie::incidents::noter_ceux_des_retours(
         &ctx.racine,
-        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), compagnie::INTERFACE, &socle::paris::iso_secondes(socle::temps::secondes())),
+        envois::reprise_journal::reprise(ctx, c.ecrire == Some(true), compagnie::INTERFACE),
     )?;
     let n = r.ajoutes.len();
     let reels = r.ajoutes.iter().filter(|d| d.mode == Mode::Reel && d.accepte).count();

@@ -18,8 +18,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
-    let maintenant = socle::paris::maintenant_naif().iso();
-    let d = envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier", &maintenant)?;
+    let d = envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier")?;
     for x in &d.inconnus {
         dire!("Non rattache : {}", x);
     }
@@ -32,7 +31,7 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
         let a = &v.attestee;
         dire!(
             "  {}  {:<4}  {:<8}  {}{}",
-            super::dit(a.quand.as_deref()),
+            super::dit(a.quand.map(|q| q.iso()).as_deref()),
             v.mode.nom(),
             super::dit(a.mois.map(|m| m.to_string()).as_deref()),
             a.flux,

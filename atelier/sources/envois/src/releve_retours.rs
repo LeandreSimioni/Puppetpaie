@@ -653,8 +653,7 @@ pub fn relever_retours(
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
     // entre au journal de lui-meme, et le mois qu'il declare n'est plus « en retard ».
     if canal.is_empty() {
-        let maintenant = socle::paris::maintenant()[..16].replacen('T', " ", 1);
-        suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve", &maintenant))?;
+        suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve"))?;
     }
 
     // L'AER SE RANGE DES QU'ELLE ARRIVE : la boite d'envoi la voit (les suites).

@@ -18,17 +18,6 @@ use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 use socle::texte::{euros, virgule};
 
-/// « 14/11 » d'un jour ISO ; tel quel s'il ne se lit pas.
-fn jour_court(iso: &str) -> String {
-    let jour = match iso.get(..10) {
-        Some(j) => j,
-        None => iso,
-    };
-    match Jour::du_texte(jour) {
-        Some(j) => j.jj_mm(),
-        None => iso.to_string(),
-    }
-}
 
 /// Ce qui change dans les jours d'une ligne, et seulement cela : « Jours : + 16/11 », « Jours : − 14/11 »,
 /// « Jours : + 16/11 · − 14/11 ». `None` si la ligne a les memes jours.
@@ -399,7 +388,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
         let mut partis: Vec<String> = siens
             .iter()
             .filter(|d| Some(d.version) == n)
-            .map(|d| format!("{}, le {}", quoi_du_depart(d), jour_court(&d.le)))
+            .map(|d| format!("{}, le {}", quoi_du_depart(d), d.le.jour().jj_mm()))
             .collect();
         partis.dedup();
         // La premiere version n'a rien d'avant quoi changer.

@@ -121,11 +121,6 @@ fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
     socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
-/// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
-fn jour_iso(t: &str) -> R<Jour> {
-    Ok(Jour::lire(&t.chars().take(10).collect::<String>())?)
-}
-
 /// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
 fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<f64> {
     let t = taux.replace(',', ".");
@@ -342,7 +337,7 @@ fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnn
     if !reelle(l) {
         return Ok(None);
     }
-    let depot = jour_iso(l.quand())?;
+    let depot = l.quand().jour();
     let mois = mois_de(l)?;
     for a in memoire.annonces.iter_mut() {
         let Some(r) = a.refus.clone() else { continue };
@@ -404,7 +399,7 @@ fn taux_de_simulation(nir: &str) -> String {
 /// (`envois/tests/envois/retours.rs`, `CRM_REEL` : `rapport/@identifiant`, `salarie`, `NIR`, `matricule`,
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
 fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> R<Option<Piece>> {
-    let depot = jour_iso(l.quand())?;
+    let depot = l.quand().jour();
     let mut taux: BTreeMap<String, String> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
@@ -460,7 +455,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
 /// `atelier/reference/sources/gip-mds-api-dsn/`, LISEZ-MOI, « La notification du taux AT/MP »). Le `type` du rapport
 /// n'est ecrit par aucun texte depose : la piece n'en porte pas. `None` quand la CARSAT n'a rien a notifier.
 fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: &str) -> R<Option<Piece>> {
-    let depot = jour_iso(l.quand())?;
+    let depot = l.quand().jour();
     let mois = element(d.mois.map(|m| format!("01{:02}{}", m.numero(), m.annee())).as_deref());
     let calcul = socle::paris::maintenant().chars().take(10).collect::<String>().replace('-', "");
     // Un element facultatif ne s'ecrit que s'il est dit.

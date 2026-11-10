@@ -1119,10 +1119,10 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
             saisi_dit: "saisi",
             pastille: Some(socle::ecran::Pastille { couleur, mots: mots.to_string() }),
             depose_dit: match (depose, &quand) {
-                (true, Some(q)) => Some(format!("le {}", socle::date::Jour::lire(&q.chars().take(10).collect::<String>())?.jj_mm_aaaa())),
+                (true, Some(q)) => Some(format!("le {}", q.jour().jj_mm_aaaa())),
                 _ => None,
             },
-            depose_le: quand,
+            depose_le: quand.map(|q| q.iso()),
             documents_dit: Some(if sortes.is_empty() { "aucun document".to_string() } else { sortes.join(" · ") }),
             echeance: Some(limite.iso()),
             echeance_depot: Some(echeance.dite()),

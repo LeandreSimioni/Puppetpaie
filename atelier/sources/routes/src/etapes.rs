@@ -713,7 +713,7 @@ pub(crate) fn classer_saisie(e: Echec) -> Echec {
 /// n'est pas parti.
 pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &str, numero: Option<&str>) -> Option<String> {
     let n = numero?;
-    departs.de(cle, n).iter().rev().find(|d| d.envoi == engagement::departs::Envoi::Contrat).map(|d| d.le.clone())
+    departs.de(cle, n).iter().rev().find(|d| d.envoi == engagement::departs::Envoi::Contrat).map(|d| d.le.iso())
 }
 
 /// Ce qui est a refaire pour l'engagement `e` : le present compare a la version sur laquelle chaque envoi est parti
@@ -1551,8 +1551,8 @@ impl<'a> Moteur<'a> {
             }
             let refusee = dpae_v.is_some_and(|d| d.refusee);
             let fait = match partie_le {
-                Some(le) => Some(le),
-                None if refusee => dpae_v.map(|d| d.quand.clone()),
+                Some(le) => Some(le.iso()),
+                None if refusee => dpae_v.map(|d| d.quand.iso()),
                 None => None,
             };
             let dpae = EtatDpae {
@@ -1586,7 +1586,7 @@ impl<'a> Moteur<'a> {
             }
             // LES DOCUMENTS DE CET ENGAGEMENT, pour ce mois : son dernier envoi (`departs`), et son bulletin a refaire.
             let documents_le = p.engagement.numero.as_deref().and_then(|n| {
-                departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le.clone()).max()
+                departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le).max().map(|q| q.iso())
             });
             let bulletin = refaire.iter().any(|a| matches!(a, ARefaire::Bulletin { mois: m, .. } if *m == mois));
             let documents = etat_documents(documents_le, bulletin);
@@ -1862,7 +1862,7 @@ impl<'a> Moteur<'a> {
             modifiee = true;
             out.saisie_modifiee = Some(true);
         }
-        let quand = quand_lisible(derniere.quand());
+        let quand = quand_lisible(&derniere.quand().iso());
         let jour = lim.jj_mm_aaaa();
         if corriges > 0 {
             let pluriel = if corriges > 1 { "s" } else { "" };
@@ -2512,8 +2512,8 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         "en_attente" if s.avenant_attendu => (
             EtatCase::EnAttente,
             match s.avenant.as_ref().and_then(|a| a.numero) {
-                Some(n) => format!("Avenant n° {} {} {}", n, par_dit, le_jour_de(&s.avenant.as_ref().map(|a| a.quand.clone()))?),
-                None => format!("Avenant {} {}", par_dit, le_jour_de(&s.avenant.as_ref().map(|a| a.quand.clone()))?),
+                Some(n) => format!("Avenant n° {} {} {}", n, par_dit, le_jour_de(&s.avenant.as_ref().map(|a| a.quand.iso()))?),
+                None => format!("Avenant {} {}", par_dit, le_jour_de(&s.avenant.as_ref().map(|a| a.quand.iso()))?),
             },
             noter_recu(p, mois, "Noter l'avenant signé", s.avenant.as_ref().and_then(|a| a.numero), true).and_then(&route),
         ),
@@ -2697,9 +2697,9 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
             .de(&cle, &numero)
             .iter()
             .filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois.is_some_and(|m| m == mois) && d.par.is_none())
-            .map(|d| d.le.clone())
+            .map(|d| d.le)
             .max();
-        let Some(quand) = dernier else { continue };
+        let Some(quand) = dernier.map(|q| q.iso()) else { continue };
         if a_envoyer.contains(&cle) {
             continue;
         }

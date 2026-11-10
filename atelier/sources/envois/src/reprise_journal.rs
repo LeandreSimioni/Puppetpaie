@@ -22,6 +22,7 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::Classe;
 use socle::mois::Mois;
+use socle::paris::{HeureDuJournal, InstantEcrit};
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
 use crate::retours::Bilan;
@@ -143,13 +144,19 @@ pub struct Reprise {
 
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les
 /// incidents que le rattachement des retours a releves (`moteur` les note).
-pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> AvecIncidents<Reprise> {
+pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str) -> AvecIncidents<Reprise> {
     let mut incidents = Vec::new();
-    let resultat = reprise_et_incidents(ctx, ecrire, qui, maintenant, &mut incidents);
+    let resultat = reprise_et_incidents(ctx, ecrire, qui, &mut incidents);
     AvecIncidents { resultat, incidents }
 }
 
-fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
+/// L'heure qu'une ligne reprise d'un bilan porte : la date et l'heure de reception que le bilan dit (`Bilan::recu_le`),
+/// si elles s'ecrivent comme une heure du journal ; `None` : la ligne ne saurait pas dire QUAND.
+fn heure_du_bilan(b: &Bilan) -> Option<HeureDuJournal> {
+    b.recu_le.as_deref().and_then(HeureDuJournal::lire)
+}
+
+fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
     let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
     let mut a_ecrire: Vec<&Atteste> = Vec::new();
@@ -179,7 +186,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
             rapport.deja.push(vue);
             continue;
         }
-        if b.recu_le.is_none() {
+        if heure_du_bilan(b).is_none() {
             // Sans date, la ligne ne saurait pas dire QUAND : on refuse plutot que de dater d'aujourd'hui.
             rapport.sans_mois.push(vue);
             continue;
@@ -192,7 +199,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
     }
     for d in a_ecrire {
         let b = &d.bilan;
-        let (Some(quand), Some(piece)) = (b.recu_le.clone(), d.pieces.last()) else { continue };
+        let (Some(quand), Some(piece)) = (heure_du_bilan(b), d.pieces.last()) else { continue };
         let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries").reclasser(Classe::Illisible))).transpose()?;
         let detail = DetailDsn {
             reconstruit: true,
@@ -217,7 +224,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
         e.flux = d.flux.clone();
         e.quand = quand;
         e.origine = format!("retours/{}", piece);
-        journal::noter(&ctx.racine, Ligne::Dsn(e), None, maintenant)?;
+        journal::noter(&ctx.racine, Ligne::Dsn(e), None, InstantEcrit::maintenant())?;
     }
     // Les retours deja archives se rangent en face des lignes qui viennent d'apparaitre -- par le flux.
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
@@ -234,8 +241,8 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &st
 /// Remet au journal, sans qu'on le demande, les depots DSN que les retours archives attestent et que le journal ignore :
 /// la reprise ecrite (`reprise` avec `ecrire`), par le releve des retours et par l'import. Rend le nombre de lignes
 /// ajoutees. Idempotente (par le flux).
-pub fn reprendre_les_depots(ctx: &Contexte, qui: &str, maintenant: &str) -> AvecIncidents<usize> {
-    let r = reprise(ctx, true, qui, maintenant);
+pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
+    let r = reprise(ctx, true, qui);
     AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents }
 }
 
@@ -276,7 +283,7 @@ pub struct EmbaucheAttestee {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DpaeAttestee {
     pub flux: String,
-    pub quand: Option<String>,
+    pub quand: Option<InstantEcrit>,
     pub mois: Option<Mois>,
     pub piece: String,
     pub embauches: Vec<EmbaucheAttestee>,
@@ -315,7 +322,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
             let h: Vec<char> = champ("horodatage").into_iter().flat_map(|h| h.chars().collect::<Vec<_>>()).collect();
             if quand.is_none() && h.len() == 12 {
                 let t = |a: usize, b: usize| -> String { h[a..b].iter().collect() };
-                quand = Some(format!("{}-{}-{}T{}:{}:00", t(4, 8), t(2, 4), t(0, 2), t(8, 10), t(10, 12)));
+                quand = InstantEcrit::lire(&format!("{}-{}-{}T{}:{}:00", t(4, 8), t(2, 4), t(0, 2), t(8, 10), t(10, 12)));
             }
         }
         let Some(flux) = flux_du_nom(&nom) else { continue };
@@ -355,7 +362,7 @@ pub struct RepriseDpae {
 /// Aucun reseau, aucun depot, pas de mot de passe.
 /// Elle sert l'outil de l'atelier `moteur-atelier journal --dpae` (`atelier::commandes::outils::journal`) : pas un geste de l'ecran.
 #[cfg(feature = "atelier")]
-pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -> R<RepriseDpae> {
+pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
     let (attestees, inconnus) = embauches_attestees(ctx)?;
     let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)?
         .iter()
@@ -412,10 +419,9 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
             e.mois = a.mois;
             e.flux = a.flux.clone();
-            // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise (`journal::noter`).
-            if let Some(q) = &a.quand {
-                e.quand = q.clone();
-            }
+            // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise.
+            let maintenant = InstantEcrit::maintenant();
+            e.quand = a.quand.unwrap_or(maintenant).into();
             e.origine = format!("retours/dpae/{}", a.piece);
             journal::noter(&ctx.racine, Ligne::Dpae(e), None, maintenant)?;
         }

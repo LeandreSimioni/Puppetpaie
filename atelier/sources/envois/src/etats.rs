@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use socle::mois::Mois;
+use socle::paris::HeureDuJournal;
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
 use crate::retours::{self, Annonce};
@@ -57,7 +58,7 @@ pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
 
 /// Les embauches qu'une DPAE reelle declare, par (salarie, numero du contrat) : partie, et pas refusee (`refuse_par_un_retour`),
 /// et quand ; une DPAE refusee se redeclare. Une embauche sans numero ne se relie a rien.
-pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, String> {
+pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, HeureDuJournal> {
     let mut d = HashMap::new();
     for l in lignes {
         let Some(e) = l.dpae().filter(|e| e.mode == Mode::Reel && e.accepte && !refuse_par_un_retour(l)) else { continue };
@@ -88,7 +89,7 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 /// verdict qu'une ligne reprise garde), refusee, ses anomalies, l'attestation employeur recue.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatDsnDuMois {
-    pub quand: String,
+    pub quand: HeureDuJournal,
     pub fichier: Option<String>,
     pub flux: String,
     pub passee: bool,
@@ -156,7 +157,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 /// passee, refusee, les anomalies, les retours, et ce que le certificat de l'Urssaf en dit (le dossier, deja existante).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatEmbauche {
-    pub quand: String,
+    pub quand: HeureDuJournal,
     pub fichier: Option<String>,
     pub fin: Option<socle::date::Jour>,
     pub passee: bool,
@@ -287,7 +288,7 @@ pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, String> {
 pub struct Attendue {
     pub code: String,
     pub mois: Option<Mois>,
-    pub quand: String,
+    pub quand: HeureDuJournal,
     pub salarie: droit::contexte::IdSalarie,
     /// L'adresse ou le contrat est parti (aucune : remis en main propre).
     pub adresse: Option<String>,
@@ -496,7 +497,7 @@ fn pluriel(n: usize) -> &'static str {
 /// memes lectures que l'etat de l'engagement.
 pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, String>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
     let Some(ligne) = ligne else { return "pas encore envoyé".into() };
-    let mut quand = quand_lisible(ligne.quand());
+    let mut quand = quand_lisible(&ligne.quand().iso());
     if ligne.mode() == Mode::Test {
         quand = format!("en TEST le {}", quand);
     }
@@ -734,26 +735,26 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
         (Some(c), _, _) if compte_rendu == Some("ok") => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
-            format!("Déposée en test le {}, avec ce même contenu.", quand_lisible(c.quand())),
+            format!("Déposée en test le {}, avec ce même contenu.", quand_lisible(&c.quand().iso())),
         ),
         (Some(c), _, _) => (
             EtatDuTest::EnTest,
             format!("{} est en test — son compte rendu est attendu", cette),
-            format!("Envoyée en test le {}. {}", quand_lisible(c.quand()), ENSUITE),
+            format!("Envoyée en test le {}. {}", quand_lisible(&c.quand().iso()), ENSUITE),
         ),
         (None, Some(r), _) => (
             EtatDuTest::TestRefuse,
             "Le test est refusé".into(),
             format!(
                 "Essayé le {} : {}. Le même refus attendrait le dépôt réel : c'est cela qu'il faut corriger.",
-                quand_lisible(r.quand()),
+                quand_lisible(&r.quand().iso()),
                 pourquoi_rate(r).trim_end_matches('.')
             ),
         ),
         (None, None, Some(p)) => (
             EtatDuTest::Ecrite,
             "Pas de test valable pour ce contenu".into(),
-            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", quand_lisible(p.quand()), ENSUITE),
+            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", quand_lisible(&p.quand().iso()), ENSUITE),
         ),
         (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
@@ -1271,7 +1272,7 @@ pub struct Parti {
     pub mois: Mois,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     pub fichier: String,
-    pub quand: String,
+    pub quand: HeureDuJournal,
     pub signe: Option<String>,
     /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
     pub modele: Option<String>,
@@ -1282,7 +1283,7 @@ impl Parti {
     pub fn date(&self) -> String {
         match &self.signe {
             Some(s) => s.chars().take(10).collect(),
-            None => self.quand.chars().take(10).collect(),
+            None => self.quand.jour().iso(),
         }
     }
 }
@@ -1391,11 +1392,11 @@ mod tests {
             avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, "[]"),
         ];
         let rep = repetition(&l, Acte::Dsn, "eA", "DSN.dsn");
-        assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand()), (Some("ok"), "2026-06-01T10:00:00"));
+        assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand().iso()), (Some("ok"), "2026-06-01T10:00:00".to_string()));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
         let vide = repetition(&l, Acte::Dpae, "eA", "x");
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
-        assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand(), "2026-06-02T09:00:00");
+        assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, "eB").is_none());
         let r = |verdict: &str| RetourOrganisme { nature_retour: "11".into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         assert_eq!(compte_rendu_du_depot(&[r("OK"), r("KO")]), "ko");

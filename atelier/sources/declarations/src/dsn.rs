@@ -414,7 +414,7 @@ impl Arret {
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
             let Some(declarante) = d.par.or(d.mois) else { continue };
-            let le = minute(&d.le);
+            let le = minute(&d.le.iso());
             if declarante == mois && le < saisi {
                 return Ok(false);
             }

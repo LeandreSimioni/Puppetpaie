@@ -29,6 +29,7 @@ use sha2::{Digest, Sha256};
 
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
+use socle::paris::{HeureDuJournal, InstantEcrit};
 
 pub use crate::ligne::*;
 
@@ -343,13 +344,13 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
 
 thread_local! {
     /// L'heure et l'origine que portent les lignes notees pendant `dater_pendant`.
-    static DATE: std::cell::RefCell<Option<(String, String)>> = const { std::cell::RefCell::new(None) };
+    static DATE: std::cell::RefCell<Option<(InstantEcrit, String)>> = const { std::cell::RefCell::new(None) };
 }
 
 /// `f`, chaque ligne qu'il note portant `quand` et `origine` : un pas que l'horloge d'une compagnie fictive joue a sa
 /// date (`routes::horloge`).
-pub fn dater_pendant<T>(quand: &str, origine: &str, f: impl FnOnce() -> T) -> T {
-    let avant = DATE.with(|d| d.replace(Some((quand.to_string(), origine.to_string()))));
+pub fn dater_pendant<T>(quand: InstantEcrit, origine: &str, f: impl FnOnce() -> T) -> T {
+    let avant = DATE.with(|d| d.replace(Some((quand, origine.to_string()))));
     let r = f();
     DATE.with(|d| *d.borrow_mut() = avant);
     r
@@ -368,10 +369,11 @@ pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulemen
 }
 
 impl<D, R> Envoi<D, R> {
-    /// L'envoi que `qui` fait maintenant, dans `mode` : `noter` le date, et y lit le nom et l'empreinte du fichier.
+    /// L'envoi que `qui` fait maintenant, dans `mode` : `noter` le date (une reprise pose l'heure de sa piece et son
+    /// `origine`), et y lit le nom et l'empreinte du fichier.
     pub fn nouveau(mode: Mode, qui: &str, accepte: bool, destinataire: &str, reponse: &str, detail: D) -> Envoi<D, R> {
         Envoi {
-            quand: String::new(),
+            quand: InstantEcrit::maintenant().into(),
             origine: String::new(),
             mois: None,
             fichier: None,
@@ -390,21 +392,18 @@ impl<D, R> Envoi<D, R> {
     }
 }
 
-/// AJOUTE LA LIGNE `ligne` A LA FIN DU FICHIER ET LA REND, telle qu'elle se relira. Son heure est celle qu'elle porte
-/// (une reprise : `origine` doit alors la justifier), celle de `dater_pendant`, sinon `maintenant` (l'heure locale que
-/// l'appelant donne : le moteur ne connait pas le fuseau). `fichier` : le fichier parti, dont la ligne garde le nom et
-/// l'empreinte (s'il existe).
-pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: &str) -> R<Ligne> {
+/// AJOUTE LA LIGNE `ligne` A LA FIN DU FICHIER ET LA REND, telle qu'elle se relira. Son heure est celle de
+/// `dater_pendant`, sinon celle qu'elle porte si son `origine` la justifie (une reprise), sinon `maintenant` : une
+/// ligne sans origine ne garde jamais l'heure qu'on lui a posee. `fichier` : le fichier parti, dont la ligne garde le
+/// nom et l'empreinte (s'il existe).
+pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: InstantEcrit) -> R<Ligne> {
     let (quand, origine) = commun_mut(&mut ligne);
-    if !quand.is_empty() && origine.is_empty() {
-        return Err(socle::echec::cle("Une ligne datée du journal doit dire d'où vient sa date : sans cela, rien ne distingue une reprise d'une ligne fabriquée.", "origine"));
-    }
     match DATE.with(|d| d.borrow().clone()) {
         Some((q, o)) => {
-            *quand = q;
+            *quand = q.into();
             *origine = o;
         }
-        None if quand.is_empty() => *quand = maintenant.to_string(),
+        None if origine.is_empty() => *quand = maintenant.into(),
         None => {}
     }
     if let Some(f) = fichier.filter(|f| !f.as_os_str().is_empty()) {
@@ -431,7 +430,7 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant
 }
 
 /// L'heure et l'origine de la ligne, a poser.
-fn commun_mut(l: &mut Ligne) -> (&mut String, &mut String) {
+fn commun_mut(l: &mut Ligne) -> (&mut HeureDuJournal, &mut String) {
     match l {
         Ligne::Dsn(e) => (&mut e.quand, &mut e.origine),
         Ligne::Dpae(e) => (&mut e.quand, &mut e.origine),
@@ -549,7 +548,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
         return;
     }
     let mois = matches!(envoi, Envoi::Documents | Envoi::Dsn).then(|| l.mois()).flatten();
-    let le = l.quand().to_string();
+    let le = l.quand();
     for v in l.versions().into_iter().flatten() {
         // La correction d'un mois passe que la DSN porte : sa version est celle de l'engagement du mois corrige.
         let corrige = (envoi == Envoi::Dsn).then_some(v.mois).flatten().filter(|m| Some(*m) != mois);
@@ -564,7 +563,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
             .and_then(|s| s.detail.contrats.iter().find(|c| c.salarie == v.salarie && c.numero.as_ref() == Some(&v.numero)))
             .and_then(|c| c.avenant)
             .map(|a| a.to_string());
-        d.noter(&v.salarie, &v.numero, Depart { envoi, mois: m, par, avenant, version: v.version, le: le.clone() });
+        d.noter(&v.salarie, &v.numero, Depart { envoi, mois: m, par, avenant, version: v.version, le });
     }
 }
 
@@ -656,7 +655,7 @@ mod tests {
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::lire("2026-06").unwrap());
-            e.quand = "2026-07-05T10:00:00".into();
+            e.quand = socle::paris::HeureDuJournal::lire("2026-07-05T10:00:00").unwrap();
             e.retours = retours;
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e

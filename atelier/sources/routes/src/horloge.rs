@@ -222,7 +222,10 @@ fn pas(d: &HorlogeFictive, quoi: &str, quand: &str, mut geste: impl FnMut(&Conte
     // Le geste a lieu a son heure : ce qu'il ecrit (un nom de fichier, une ligne de journal) en porte la date, et une
     // ligne du journal dit qu'il a ete joue (`origine`).
     // La re-verification precede TOUT geste : ce qui suit ne s'execute que dans une compagnie fictive.
-    let jouer = || envois::journal::dater_pendant(quand, ORIGINE, || d.reverifier().and_then(|_| geste(&ctx)));
+    let Some(heure) = socle::paris::InstantEcrit::lire(quand) else {
+        return echec(&erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge ne se lit pas : {}.", quand)));
+    };
+    let jouer = || envois::journal::dater_pendant(heure, ORIGINE,|| d.reverifier().and_then(|_| geste(&ctx)));
     let fait = socle::temps::pendant_le_pas_fictif(instant, &format!("{} {}", quand, quoi), jouer);
     let dit = match fait {
         Ok(b) => b,
