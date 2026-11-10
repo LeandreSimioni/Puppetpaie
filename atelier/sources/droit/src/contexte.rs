@@ -295,7 +295,7 @@ impl Effectif {
             return Ok(true);
         }
         let manquent: Vec<String> = fenetre.filter(|a| !connues.contains_key(a)).map(|a| a.to_string()).collect();
-        Err(socle::refus!(
+        Err(socle::echec::erreur(socle::echec::Classe::EffectifAbsent, format!(
             "Effectif de l'entreprise pour payer en {} : {}. Le seuil de {} salariés ne se franchit qu'après cinq années civiles \
 consécutives au-dessus (CSS, art. L. 130-1, II) : il manque l'effectif de {}. Une compagnie de moins de cinq ans dit la date \
 de sa première embauche (Configuration › Entreprise) ; une plus ancienne dit l'effectif de chacune de ces années, tel que \
@@ -317,7 +317,7 @@ rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
             } else {
                 ""
             }
-        ))
+        )))
     }
 }
 
@@ -1477,9 +1477,10 @@ depuis le plus recent.",
             Some(Ok(t)) => Some(t),
             Some(Err(pourquoi)) => return Err(pourquoi),
             None => {
-                return Err(socle::refus!(
-                    "Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                    an
+                return Err(socle::echec::erreur(
+                    socle::echec::Classe::TauxAtmpAbsent,
+                    format!("Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
+                    an),
                 ))
             }
         };

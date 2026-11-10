@@ -88,7 +88,7 @@ pub struct Options {
 
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
 pub fn verifier(paie: &Paie, motif: &str, type_declaration: &str, remplace: Option<&str>) -> Result<(), Echec> {
-    let impossible = |m: String| Err(Echec::Impossible(m));
+    let impossible = |m: String| Err(Echec::impossible(m));
     let base = motifs_de_la_norme()?;
     let tous = &base.motifs.codes;
     let m = match tous.iter().find(|c| c.code == motif) {

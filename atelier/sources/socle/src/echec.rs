@@ -35,6 +35,10 @@ classes! {
     Refuse,
     /// Une donnee manque : le champ de la demande, la fiche ou la ligne que la phrase nomme.
     Manque,
+    /// Le taux AT/MP de l'annee manque : la notification de la CARSAT le dit, la fiche Entreprise le porte.
+    TauxAtmpAbsent,
+    /// L'effectif d'une annee manque : celui que l'Urssaf a calcule, ou la date de la premiere embauche.
+    EffectifAbsent,
     /// Une valeur ne se lit pas : la date, le nombre ou la donnee que la phrase dit illisible.
     Illisible,
     /// La demande est mal formee : un champ qu'elle ne connait pas, ou d'une autre forme.

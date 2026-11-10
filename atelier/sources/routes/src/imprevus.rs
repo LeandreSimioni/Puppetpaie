@@ -1776,7 +1776,7 @@ reprendre (une fin plus tot), ou corriger les DSN deposees.",
 fn verifier(arret: &ArretSaisi) -> R<()> {
     match signalement::verifier(&declarations::dsn::Arret { saisi: arret.clone() }, signalement::ARRET, None) {
         Ok(_) => Ok(()),
-        Err(signalement::Echec::Impossible(m)) => Err(erreur(Classe::Illisible, m)),
+        Err(signalement::Echec::Impossible(m)) => Err(Echec { classe: Some(Classe::Illisible), ..m }),
         Err(signalement::Echec::Autre(e)) => Err(e),
     }
 }

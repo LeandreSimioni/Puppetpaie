@@ -161,7 +161,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
             _ => {
                 if let Err(e) = am::verifier(p, motif, am::NORMALE, None) {
                     match e {
-                        declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m,
+                        declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m.phrase,
                         autre => return Err(autre.en_classe(Classe::Refuse)),
                     }
                 }

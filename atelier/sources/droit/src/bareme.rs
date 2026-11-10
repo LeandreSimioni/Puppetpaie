@@ -783,15 +783,17 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> R<Pile> {
             return Err(pourquoi);
         }
         return Err(if t.and_then(|t| t.code_risque.as_deref()) == Some(SANS_NOTIFICATION) {
-            socle::refus!(
-                "Le taux AT/MP {} manque : le code risque est 999ZZ (pas encore de notification de la CARSAT), que la DSN déclare sans taux, et aucun texte ne dit quel taux le bulletin cotise en attendant. Le code et le taux notifiés se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) », dès que la notification arrive (compte AT/MP sur net-entreprises).",
+            socle::echec::erreur(
+                socle::echec::Classe::TauxAtmpAbsent,
+                format!("Le taux AT/MP {} manque : le code risque est 999ZZ (pas encore de notification de la CARSAT), que la DSN déclare sans taux, et aucun texte ne dit quel taux le bulletin cotise en attendant. Le code et le taux notifiés se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) », dès que la notification arrive (compte AT/MP sur net-entreprises).",
                 a
-            )
+            ))
         } else {
-            socle::refus!(
-                "Le taux AT/MP {} manque. Il se lit sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisit avec le code risque dans Configuration › Entreprise, « Accidents du travail (AT/MP) ». Il est propre à l’établissement : le moteur ne le devine pas.",
+            socle::echec::erreur(
+                socle::echec::Classe::TauxAtmpAbsent,
+                format!("Le taux AT/MP {} manque. Il se lit sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisit avec le code risque dans Configuration › Entreprise, « Accidents du travail (AT/MP) ». Il est propre à l’établissement : le moteur ne le devine pas.",
                 a
-            )
+            ))
         });
     };
     for r in &mut bar.rubriques_bulletin {
@@ -1928,9 +1930,10 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Opt
         None => code.clone(),
     };
     let manque = |pourquoi: String| {
-        Some(Err(socle::refus!(
-            "Le taux AT/MP de {} manque (code risque {}). {} Il est sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et s'inscrit dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-            an, nom, pourquoi
+        Some(Err(socle::echec::erreur(
+            socle::echec::Classe::TauxAtmpAbsent,
+            format!("Le taux AT/MP de {} manque (code risque {}). {} Il est sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et s'inscrit dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
+            an, nom, pourquoi),
         )))
     };
     let valeur = match dit.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose() {

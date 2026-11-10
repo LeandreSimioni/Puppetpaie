@@ -239,7 +239,7 @@ fn releve_xlsx(source: &Path) -> Resultat<(Rang, Vec<Rang>)> {
 fn lire_le_cahier(source: &Path) -> Resultat<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
     let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(|r| r.0)?;
-    let releve = import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, r.phrase()))?;
+    let releve = import::releve::du_pdf(source).map_err(|r| format!("{} : {}", chemin, String::from(r.en_echec())))?;
     let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
     match (pages.iter().min(), pages.iter().max()) {
         (Some(premiere), Some(derniere)) => Ok((entete, lignes, (*premiere, *derniere))),

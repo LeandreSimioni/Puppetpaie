@@ -26,8 +26,9 @@ pub use crate::fctu::Echec;
 
 type R<T> = Result<T, Echec>;
 
+#[track_caller]
 fn impossible<T>(m: String) -> R<T> {
-    Err(Echec::Impossible(m))
+    Err(Echec::impossible(m))
 }
 
 /// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).

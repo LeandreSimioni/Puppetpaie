@@ -26,10 +26,11 @@ pub const ANNULE_ET_REMPLACE: &str = "03";
 pub const ANNULE: &str = "04";
 const TYPES: [(&str, &str); 3] = [(NORMALE, "normale"), (ANNULE_ET_REMPLACE, "annule et remplace integral"), (ANNULE, "annule")];
 
-/// Un refus d'un signalement : `Impossible` est la regle de la norme qui s'oppose, sa phrase ; `Autre` tout le reste.
+/// Un refus d'un signalement : `Impossible` est la regle de la norme qui s'oppose (un refus ne la ou elle s'oppose, de
+/// classe `Refuse`) ; `Autre` tout le reste.
 #[derive(Debug, Clone)]
 pub enum Echec {
-    Impossible(String),
+    Impossible(socle::echec::Echec),
     Autre(socle::echec::Echec),
 }
 
@@ -40,13 +41,16 @@ impl From<socle::echec::Echec> for Echec {
 }
 
 impl Echec {
-    /// Le refus, de la classe `classe` que son lecteur lui donne : la regle qui s'oppose y nait, l'autre refus garde ce
-    /// qu'il porte a part.
+    /// La regle de la norme qui s'oppose, en une phrase, son endroit note.
     #[track_caller]
+    pub fn impossible(phrase: impl Into<String>) -> Echec {
+        Echec::Impossible(socle::echec::erreur(Classe::Refuse, phrase))
+    }
+
+    /// Le refus, de la classe `classe` que son lecteur lui donne ; il garde ce qu'il porte a part.
     pub fn en_classe(self, classe: Classe) -> socle::echec::Echec {
         match self {
-            Echec::Impossible(m) => socle::echec::erreur(classe, m),
-            Echec::Autre(e) => socle::echec::Echec { classe: Some(classe), ..e },
+            Echec::Impossible(e) | Echec::Autre(e) => socle::echec::Echec { classe: Some(classe), ..e },
         }
     }
 }
@@ -221,7 +225,7 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
 pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: &str) -> Result<Vec<String>, Echec> {
     let mut avertissements = Vec::new();
     if type_de_declaration(type_declaration).is_none() {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Type de declaration {}. Un FCTU est {}.",
             repr(type_declaration),
             TYPES.iter().map(|(c, l)| format!("{} - {}", c, l)).collect::<Vec<_>>().join(", ")
@@ -231,7 +235,7 @@ pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: &str) -> R
     let preavis = match types.du_code(&fin.type_preavis) {
         Some(p) => p,
         None => {
-            return Err(Echec::Impossible(format!(
+            return Err(Echec::impossible(format!(
                 "Type de preavis {} inconnu de la norme (S21.G00.63.001). Les types sont dans fctu-base.json.",
                 repr(&fin.type_preavis)
             )))
@@ -243,7 +247,7 @@ pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: &str) -> R
 
     // Le bloc 63 est (1,*) : un FCTU en porte toujours un.
     if dates && !(debut_p.is_some() && fin_p.is_some()) {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Preavis « {} » : ses deux dates sont OBLIGATOIRES (CCH-11 de S21.G00.63.002 et CCH-14 de .003 -- elles \
 sont presentes si et seulement si le type n'est pas 90). Si le contrat n'a pas de preavis, le type est « 90 - pas de \
 clause de preavis applicable », et les dates sont alors interdites.",
@@ -251,21 +255,21 @@ clause de preavis applicable », et les dates sont alors interdites.",
         )));
     }
     if !dates && (debut_p.is_some() || fin_p.is_some()) {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Preavis « {} » : les dates de preavis y sont INTERDITES (CCH-11 de S21.G00.63.002).",
             libelle
         )));
     }
     if let (true, Some(pd), Some(pf)) = (dates, debut_p, fin_p) {
         if d(pf)? < d(pd)? {
-            return Err(Echec::Impossible(format!(
+            return Err(Echec::impossible(format!(
                 "Preavis : la date de fin ({}) est anterieure a la date de debut ({}) -- CCH-13 de S21.G00.63.003.",
                 pf, pd
             )));
         }
         // CCH-16 : le preavis commence apres le debut du contrat.
         if d(pd)? < e.debut {
-            return Err(Echec::Impossible(format!(
+            return Err(Echec::impossible(format!(
                 "Preavis : il commence le {}, avant le debut du contrat ({}) -- CCH-16 de S21.G00.63.002.",
                 pd,
                 e.debut.iso()
@@ -274,7 +278,7 @@ clause de preavis applicable », et les dates sont alors interdites.",
         // CCH-13 : le preavis commence apres la notification de la rupture.
         if let Some(n) = fin.notification.as_deref() {
             if d(pd)? < d(n)? {
-                return Err(Echec::Impossible(format!(
+                return Err(Echec::impossible(format!(
                     "Preavis : il commence le {}, avant la notification de la rupture ({}) -- CCH-13 de \
 S21.G00.63.002.",
                     pd, n
@@ -292,7 +296,7 @@ S21.G00.63.002.",
                 let lib = types.du_code(c).map(|x| x.libelle.clone());
                 noms.push(format!("« {} - {} »", c, lib.ok_or_else(|| socle::fichiers::absent(c))?));
             }
-            return Err(Echec::Impossible(format!(
+            return Err(Echec::impossible(format!(
                 "Preavis « {} » avec le motif de rupture {} : {} n'y permet que {}. {}",
                 libelle,
                 fin.motif,
@@ -312,7 +316,7 @@ preavis de L1234-1."
     if let Some(nt) = fin.notification.as_deref() {
         let nt_j = d(nt)?;
         if !(e.debut <= nt_j && nt_j <= d(&fin.fin)?) {
-            return Err(Echec::Impossible(format!(
+            return Err(Echec::impossible(format!(
                 "Notifiée le {} : la rupture se notifie pendant le contrat, entre son premier jour, le {}, et sa fin, le \
 {} -- CCH-11 de S21.G00.62.003.",
                 nt_j.jj_mm_aaaa(),
@@ -324,7 +328,7 @@ preavis de L1234-1."
 
     // CCH-12 de S21.G00.62.003 : pour ces motifs, la date de notification est obligatoire.
     if fin.notification.is_none() && notification_exigee(&fin.motif)? {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Motif de rupture {} : la date de notification de la rupture (S21.G00.62.003, `notification_rupture` dans la \
 saisie) est OBLIGATOIRE -- CCH-12 de S21.G00.62.003, cahier technique DSN p. 275. Le point de depot refuserait le \
 signalement sans elle. Rien n'est ecrit.",
@@ -334,18 +338,18 @@ signalement sans elle. Rien n'est ecrit.",
 
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
-    let jour_paye = dernier_jour_paye(e).map_err(|m| Echec::Impossible(String::from(m)))?;
+    let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
     let debut_preavis = match debut_p {
         Some(p) => Some(d(p)?),
         None => None,
     };
     controler_62_006(&jour_paye, &e.debut, &d(&fin.fin)?, Some(&fin.type_preavis), debut_preavis.as_ref())
-        .map_err(|m| Echec::Impossible(String::from(m)))?;
+        .map_err(Echec::Impossible)?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
     let nat = e.nat()?;
     if let Some(refus) = nat.motif_rupture_refuse(&fin.motif, numero_dit(e)) {
-        return Err(Echec::Impossible(refus));
+        return Err(Echec::impossible(refus));
     }
 
     // La derogation du CDDU (circuit derogatoire, motif 031 seul : fiche 2062) : le moteur le DIT plutot que de refuser,
@@ -427,27 +431,26 @@ pub fn generer(
     let type_declaration = o.type_declaration.as_str();
     let libelle_type = match type_de_declaration(type_declaration) {
         Some(l) => l,
-        None => return Err(Echec::Impossible(format!("Type de declaration {}.", repr(type_declaration)))),
+        None => return Err(Echec::impossible(format!("Type de declaration {}.", repr(type_declaration)))),
     };
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
     if (type_declaration == ANNULE_ET_REMPLACE || type_declaration == ANNULE) && remplace.is_none() {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Un signalement « {} » doit viser la declaration qu'il reprend (S20.G00.05.006) : sans elle, la \
 plate-forme rend B1-208-08.",
             libelle_type
         )));
     }
     if type_declaration == NORMALE && remplace.is_some() {
-        return Err(Echec::Impossible(
+        return Err(Echec::impossible(
             "S20.G00.05.006 est interdite sur un signalement normal : elle ne s'ecrit que sur un annule-et-remplace \
-ou un annule."
-                .into(),
+ou un annule.",
         ));
     }
     verifier(fin, &paie.engagement, type_declaration)?;
     // Le type de preavis (63.001) et l'indemnite que la paie du solde verse (52.001) disent la meme chose.
     if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(&fin.type_preavis, &indemnites_de_preavis_versees(paie)?)? {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "Contrat {} : {}",
             numero_dit(&paie.engagement),
             pourquoi
@@ -599,17 +602,16 @@ pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
     let valeur = |l: &str| -> String { crate::usages::rubrique_valeur(l).1.to_string() };
     let bases: Vec<String> = lignes.iter().filter(|l| l.starts_with("S21.G00.78.001,")).map(|l| valeur(l)).collect();
     if bases.iter().any(|b| b == "31") {
-        return Err(Echec::Impossible(
+        return Err(Echec::impossible(
             "CCH-14 : la valeur « 31 » est interdite en S21.G00.78.001 dans un signalement de fin de contrat. Le \
 bareme declare une base assujettie de prevoyance, qui n'a pas sa place ici -- l'identifiant d'affiliation qui \
-l'accompagne (78.005) y est interdit lui aussi."
-                .into(),
+l'accompagne (78.005) y est interdit lui aussi.",
         ));
     }
     let types: Vec<String> = lignes.iter().filter(|l| l.starts_with("S21.G00.51.011,")).map(|l| valeur(l)).collect();
     let manquants: Vec<&str> = ["001", "002", "010"].into_iter().filter(|t| !types.iter().any(|x| x == t)).collect();
     if !manquants.is_empty() {
-        return Err(Echec::Impossible(format!(
+        return Err(Echec::impossible(format!(
             "CCH-15 : un signalement de fin de contrat porte au moins trois blocs 51 par versement -- « 001 » \
 (remuneration brute non plafonnee), « 002 » (salaire brut soumis a contributions chomage) et « 010 » (salaire de \
 base). Manque{} : {}.",

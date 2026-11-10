@@ -14,7 +14,7 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
-use socle::echec::R;
+use socle::echec::{Classe, R};
 
 /// Dans la fiche d'un spectacle : le titre que l'import a lu dans les bulletins de l'ancien logiciel, propose, et ou il
 /// l'a lu (la ligne « Spectacle », ou la case « Analytique »). « Pour démarrer » le propose dans la case du titre.
@@ -374,11 +374,12 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             }
         }
     }
-    if let Err(m) = bareme.map_err(String::from) {
-        if m.contains("AT/MP") {
-            out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), m)?);
-        } else if !m.contains("Effectif") {
-            out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, m)?);
+    // L'effectif qui manque est demande plus haut.
+    if let Err(e) = bareme {
+        match e.classe {
+            Some(Classe::TauxAtmpAbsent) => out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), String::from(e))?),
+            Some(Classe::EffectifAbsent) => {}
+            _ => out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, String::from(e))?),
         }
     }
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
