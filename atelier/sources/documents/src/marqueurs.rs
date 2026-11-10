@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 
-use socle::echec::{Classe, Echec};
+use socle::echec::{erreur, Classe, R};
 
 macro_rules! marqueurs {
     ($($v:ident = $nom:literal),* $(,)?) => {
@@ -127,14 +127,14 @@ pub fn pour_la_fabrique(v: &Valeurs) -> fabrique_pdf::modele::Valeurs {
 }
 
 /// Les champs que ce texte cite, dans l'ordre : chacun connu (`Ok`) ou non (`Err`, son nom).
-pub fn cites(texte: &str) -> Vec<Result<Marqueur, String>> {
+pub fn cites(texte: &str) -> Vec<Result<Marqueur, &str>> {
     let mut sortie = Vec::new();
     let mut i = 0;
     while let Some(k) = texte[i..].find("{{") {
         let a = i + k;
         match fabrique_pdf::modele::marqueur_en(texte, a) {
             Some((cle, fin)) => {
-                sortie.push(Marqueur::lire(cle).ok_or_else(|| cle.to_string()));
+                sortie.push(Marqueur::lire(cle).ok_or(cle));
                 i = fin;
             }
             None => i = a + 2,
@@ -161,7 +161,7 @@ pub struct ModeleLu {
 impl ModeleLu {
     /// Le modele `texte` (`nom` : ce que le refus nomme), en morceaux ; un marqueur inconnu se refuse, et le refus les
     /// nomme tous.
-    pub fn lire(texte: &str, nom: &str) -> Result<ModeleLu, String> {
+    pub fn lire(texte: &str, nom: &str) -> R<ModeleLu> {
         let mut morceaux = Vec::new();
         let mut inconnus: Vec<&str> = Vec::new();
         for l in texte.lines().filter(|l| !l.trim_start().starts_with('#')) {
@@ -186,28 +186,28 @@ impl ModeleLu {
             morceaux.push(Morceau::Texte(format!("{}\n", &l[depuis..])));
         }
         if !inconnus.is_empty() {
-            return Err(format!(
+            return Err(erreur(Classe::ModeleIncomplet, format!(
                 "Le modèle « {} » cite des champs que le logiciel ne connaît pas : {}. Les corriger d'après la liste des champs (Configuration › Modèles de contrat), ou les écrire en texte.",
                 nom,
                 inconnus.iter().map(|c| format!("{{{{{}}}}}", c)).collect::<Vec<_>>().join(", ")
-            ));
+            )));
         }
         Ok(ModeleLu { texte: texte.to_string(), morceaux })
     }
 
     /// Le fichier `chemin`, lu (UTF-8) puis `lire`.
-    pub fn du_fichier(chemin: &Path) -> Result<ModeleLu, Echec> {
+    pub fn du_fichier(chemin: &Path) -> R<ModeleLu> {
         let octets = std::fs::read(chemin).map_err(|e| {
             let classe = if e.kind() == std::io::ErrorKind::NotFound { Classe::FichierAbsent } else { Classe::Disque };
-            Echec { classe: Some(classe), phrase: socle::fichiers::panne_fichier(&e, chemin), a_part: None }
+            erreur(classe, socle::fichiers::panne_fichier(&e, chemin))
         })?;
-        let texte = String::from_utf8(octets).map_err(|e| Echec { classe: Some(Classe::Illisible), phrase: format!("'utf-8' codec can't decode bytes: {}", e.utf8_error()), a_part: None })?;
+        let texte = String::from_utf8(octets).map_err(|e| erreur(Classe::Illisible, format!("'utf-8' codec can't decode bytes: {}", e.utf8_error())))?;
         // Le refus nomme le fichier ; un chemin sans nom de fichier se nomme entier.
         let nom = match chemin.file_name() {
             Some(n) => n.to_string_lossy().into_owned(),
             None => chemin.to_string_lossy().into_owned(),
         };
-        ModeleLu::lire(&texte, &nom).map_err(|m| Echec { classe: Some(Classe::ModeleIncomplet), phrase: m, a_part: None })
+        ModeleLu::lire(&texte, &nom)
     }
 
     /// Le modele cite-t-il `m` ?
@@ -216,7 +216,7 @@ impl ModeleLu {
     }
 
     /// Son decoupage en titre, preambule, articles et signatures (`fabrique_pdf::modele::lire_modele`).
-    pub fn decoupe(&self, nom: &str) -> Result<fabrique_pdf::modele::Modele, String> {
-        fabrique_pdf::modele::lire_modele(&self.texte, nom).map_err(|r| r.0)
+    pub fn decoupe(&self, nom: &str) -> R<fabrique_pdf::modele::Modele> {
+        fabrique_pdf::modele::lire_modele(&self.texte, nom).map_err(|r| erreur(Classe::Illisible, r.0))
     }
 }
