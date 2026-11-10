@@ -282,7 +282,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
                 match declarations::demarrage::a_la_suite(&ctx, &message) {
                     Ok(Some(suite)) => message + &suite,
                     Ok(None) => message,
-                    Err(e) => format!("{} {}", message, e),
+                    Err(e) => format!("{} {}", message, String::from(e)),
                 }
             };
             Err(Echec { classe, phrase: message, a_part: None })
