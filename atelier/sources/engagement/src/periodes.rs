@@ -15,13 +15,14 @@ use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use crate::{Avis, Chiffre, Engagement, LignePaie};
-use socle::num::{dec_f64, eur2, Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::{dec_f64, eur2, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
-fn jour_de_l_avenant(eng: &Engagement) -> Resultat<Option<Jour>> {
+fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui()).map_err(String::from)
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul
@@ -29,7 +30,7 @@ fn jour_de_l_avenant(eng: &Engagement) -> Resultat<Option<Jour>> {
 /// jours ou sa fiche change une valeur qui choisit la pile ou que le bloc 40 porte avec une rubrique en bloc 41
 /// (`emplois::jours_de_changement`), et au jour de l'avenant que la saisie date en cours de mois avec ses termes
 /// d'avant (`jour_de_l_avenant`).
-pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jour)>> {
+pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
     let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
     if eng.periode.is_some() || !eng.nat()?.mensuelle() {
         return Ok(vec![(debut, fin)]);
@@ -37,7 +38,7 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jo
     crate::fiche_du_salarie(ctx, &eng.salarie)?;
     let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &debut, &fin)?;
     jours.extend(jour_de_l_avenant(eng)?);
-    droit::periodes::decouper(debut, fin, jours).map_err(String::from)
+    droit::periodes::decouper(debut, fin, jours)
 }
 
 /// Les engagements des periodes elementaires `bornes` de `eng` : chacun borne a sa periode, sur les termes du contrat
@@ -49,12 +50,12 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jo
 /// Refus : une paie qui porte autre chose que son salaire mensuel. Une prime, un conge, une absence, une prime
 /// d'anciennete ou un solde de tout compte se rattachent a une periode, ou a l'autre, ou aux deux, et rien ne le dit
 /// encore ; le logiciel ne choisit pas.
-pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> Resultat<Vec<Engagement>> {
+pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> R<Vec<Engagement>> {
     let ligne = match eng.lignes.as_slice() {
         [l] if l.rubrique() == "mois" => l,
         _ => {
             let autres: Vec<String> = eng.lignes.iter().filter(|l| l.rubrique() != "mois").map(|l| l.rubrique().to_string()).collect();
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : la paie de ce mois se decoupe en periodes elementaires (un changement de statut, de categorie ou de \
 duree du travail le {}), et elle porte {} en plus du salaire mensuel. A quelle periode une telle ligne se rattache (avant \
 le changement, apres, ou les deux) ne se lit nulle part dans la saisie, et le logiciel ne decoupe encore que le salaire \
@@ -68,7 +69,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
     let quotite_apres = eng.quotite()?;
     let avenant = jour_de_l_avenant(eng)?;
-    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle).into()).and_then(|c| c.dec());
+    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| Ok(c.dec()?));
     let (salaire_avant, quotite_avant) = match &eng.avant {
         Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
         None => (salaire_apres, quotite_apres),
@@ -78,7 +79,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     // Le contrat borne au mois : la regle d'un premier ou d'un dernier mois incomplet le regarde, pas la coupure.
     let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
     let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &debut, &fin, &debut_mois, &fin_mois)?;
-    let au = eng.nat()?.au_mois().ok_or_else(|| format!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
+    let au = eng.nat()?.au_mois().ok_or_else(|| socle::refus!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
     let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
     let mut out = Vec::new();
     for (d, f) in bornes {
@@ -152,11 +153,11 @@ fn statut_dit(s: Option<droit::fiche::Statut>) -> &'static str {
 ///
 /// Refus : un statut artiste / technicien qui change en cours de mois (deux regimes d'assiette, L. 242-10 ; pas un cas
 /// que le lot porte).
-pub(crate) fn assembler(ctx: &Contexte, eng: &Engagement, mut parts: Vec<Paie>) -> Resultat<Paie> {
-    let derniere = parts.last().ok_or("assembler : aucune periode")?;
+pub(crate) fn assembler(ctx: &Contexte, eng: &Engagement, mut parts: Vec<Paie>) -> R<Paie> {
+    let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let statut_du_mois = statut(derniere);
     if let Some(p) = parts.iter().find(|p| statut(p) != statut_du_mois) {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : le statut du salarie passe de << {} >> a << {} >> en cours de mois. Artiste et technicien n'ont pas les \
 memes assiettes (taux reduits, plafond, CSS L. 242-10) : la paie d'un tel mois n'est pas decoupee par le logiciel. \
 Dater le changement au premier jour d'un mois sur la fiche.",
@@ -170,7 +171,7 @@ Dater le changement au premier jour d'un mois sur la fiche.",
     // periodes n'est porte par aucun texte depose. `calcul::dfs_applicable` refuse deja la DFS d'un contrat paye au
     // mois ; ce refus-ci la garde si cela changeait.
     if let Some(p) = parts.iter().find(|p| p.deduction_forfaitaire.is_some()) {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : la paie de ce mois se decoupe en periodes elementaires, et la periode du {} porte une deduction \
 forfaitaire specifique. Ni la reduction generale sous deduction (bornee a 130 %), ni le plafond annuel de 7 600 EUR ne se \
 partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
@@ -195,7 +196,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         poser_reduction(p, rg);
     }
 
-    let derniere = parts.last().ok_or("assembler : aucune periode")?;
+    let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
     let heures: f64 = parts.iter().filter_map(|p| p.engagement.heures).sum();
@@ -294,7 +295,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 p.brut
             ))
         })
-        .collect::<Resultat<_>>()?;
+        .collect::<R<_>>()?;
     m.avertissements.push(Avis {
         info: true,
         texte: format!(

@@ -1080,7 +1080,7 @@ fn calculer_du_mois(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R
         let avant: Vec<Paie> = precedentes.iter().chain(parts.iter()).cloned().collect();
         parts.push(calculer_periode(ctx, &e, &avant)?);
     }
-    Ok(crate::periodes::assembler(ctx, eng, parts)?)
+    crate::periodes::assembler(ctx, eng, parts)
 }
 
 /// L'assiette d'une rubrique : le calcul ne cotise pas sur une assiette que la rubrique ne dit pas.
