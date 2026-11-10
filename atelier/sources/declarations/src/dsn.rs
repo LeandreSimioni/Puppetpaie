@@ -23,8 +23,7 @@ use droit::natures::{contrat_court, Mesure, Nature, TypeDeRemuneration};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, APart, R};
-use socle::num::{add, div, mul, pct, sub, Decimal};
-use socle::refus;
+use socle::{num::{add, div, mul, pct, sub, Decimal}, refus};
 use droit::organismes::{Ctp, Organismes, Versement};
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
 

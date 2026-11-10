@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use socle::date::Jour;
-use socle::echec::{refus, Echec, R};
+use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
@@ -428,9 +428,7 @@ impl DsnLue {
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
     /// qui ne la dit pas refuse, en le disant.
     pub fn nature(&self) -> R<&str> {
-        self.nature.as_deref().ok_or_else(|| {
-            socle::echec::erreur(socle::echec::Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas.")
-        })
+        self.nature.as_deref().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
     }
 
     pub fn est_signalement(&self) -> bool {
@@ -475,7 +473,7 @@ impl DsnLue {
     /// Ce qu'on fait recopier pour prouver qu'on a regarde : le jour de l'evenement d'un signalement (`AAAA-MM-JJ`), le
     /// mois sinon. Un fichier qui ne dit ni l'un ni l'autre refuse : il n'y a rien a recopier.
     pub fn confirmation_attendue(&self) -> R<String> {
-        let refuse = |phrase: &str| socle::echec::erreur(socle::echec::Classe::Refuse, phrase);
+        let refuse = |phrase: &str| erreur(Classe::Refuse, phrase);
         if self.est_signalement() {
             self.evenement().map(|j| j.iso()).ok_or_else(|| refuse("Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer."))
         } else {
@@ -738,10 +736,7 @@ impl Fautes {
             Faute::Rubrique { ligne, version: Some(v) } => format!("porte la rubrique {}, que la norme DSN {} ne connaît pas", ligne, v),
             Faute::Rubrique { ligne, version: None } => format!("porte la ligne « {} », qui n'est pas une rubrique de la norme DSN", ligne),
         };
-        Some(socle::echec::erreur(
-            socle::echec::Classe::Refuse,
-            format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce),
-        ))
+        Some(erreur(Classe::Refuse, format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce)))
     }
 }
 
