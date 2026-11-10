@@ -71,16 +71,14 @@ pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, String> {
 }
 
 /// Les lignes d'une DSN de l'etablissement `nic` (son NIC ; `None` : `principal`, le NIC de la fiche entreprise).
-pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: Option<&str>, principal: &str) -> Vec<&'a Ligne> {
-    // Une ligne qui ne dit pas son etablissement est celle de l'etablissement principal.
-    let voulu = match nic.filter(|n| !n.is_empty()) {
-        Some(n) => n,
-        None => principal,
-    };
+pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: Option<&str>, principal: Option<&str>) -> Vec<&'a Ligne> {
+    // Une ligne qui ne dit pas son etablissement est celle de l'etablissement principal. Une fiche qui ne dit pas encore
+    // son NIC n'a que lui : aucune DSN n'est partie d'un autre.
+    let voulu = nic.filter(|n| !n.is_empty()).or(principal);
     lignes
         .into_iter()
         .filter(|l| match l.etablissement() {
-            Some(e) => e == voulu,
+            Some(e) => Some(e) == voulu,
             None => principal == voulu,
         })
         .collect()
@@ -99,7 +97,7 @@ pub struct EtatDsnDuMois {
     pub aer_recue: bool,
 }
 
-pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, principal: &str) -> Option<EtatDsnDuMois> {
+pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, principal: Option<&str>) -> Option<EtatDsnDuMois> {
     // Un signalement porte le mois de son evenement : ce n'est pas la DSN du mois.
     let du_mois = crate::journal::filtrer(lignes, Some(Acte::Dsn), Some(mois), true).filter(|l| !l.signalement());
     let l = de_l_etablissement(du_mois, nic, principal).into_iter().filter(|l| l.accepte()).last()?;
