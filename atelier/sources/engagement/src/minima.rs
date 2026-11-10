@@ -1,8 +1,9 @@
-//! Les minima conventionnels confrontes a une paie (la table et ses grilles : `droit::minima`) : des avertissements,
-//! jamais un refus. `avertissements` lit la grille de la convention ; `sous_le_smic` lit la loi.
+//! Les minima conventionnels confrontes a une paie (la table et ses grilles : `droit::minima`) : des avertissements.
+//! `avertissements` lit la grille de la convention ; `sous_le_smic` lit la loi.
 //!
 //! Chaque minimum prend, quand la paie ne dit pas tout, l'hypothese la plus basse : un avertissement qui crie a tort ne
-//! se lit plus.
+//! se lit plus. Sauf l'echelon, que seule la compagnie connait (celui de la CCNEAC, l'anciennete de la grille
+//! administrative de la 3090) : sans la case de la fiche, le calcul refuse en la nommant.
 
 use std::collections::BTreeSet;
 
@@ -16,7 +17,7 @@ use droit::contexte::Contexte;
 use socle::date::{repr_texte, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
-use droit::minima::{ans_revolus, grille_au, iso, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
+use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
 use socle::num::{add, dec_f64, div, mul, sub, Decimal, Resultat};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -74,9 +75,9 @@ fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
     Some(eng.fin?.moins(&eng.debut) + 1)
 }
 
-/// Le dernier jour de la periode payee, en AAAA-MM-JJ.
-fn jour_de_paie(paie: &Paie) -> Option<String> {
-    paie.engagement.fin.map(|j| j.iso())
+/// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
+fn jour_de_paie(paie: &Paie) -> Resultat<Jour> {
+    paie.engagement.fin_periode()
 }
 
 fn premier_jour(paie: &Paie) -> Option<String> {
@@ -254,13 +255,32 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// L'echelon de la CCNEAC : celui de la fiche (1 a 12), ou le premier.
-    fn echelon_ccneac(&self) -> (usize, String) {
-        let v = self.fiche.echelon_ccneac.portee().map(str::trim);
-        if let Some((v, n)) = v.and_then(|v| socle::num::entier_de_chiffres(v).filter(|n| (1..=12).contains(n)).map(|n| (v, n))) {
-            return (n as usize, format!("échelon {} de la fiche", v));
+    /// L'echelon de la CCNEAC, celui de la fiche (1 a 12) : « Lors de son embauche (ou lorsqu'il est promu dans un nouvel
+    /// emploi au sein de l'entreprise) chaque salarié bénéficie d'un échelon qui lui est attribué par l'employeur »
+    /// (art. X.4.1, `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Seule la compagnie le
+    /// connait : sans lui, ou hors 1 a 12, le calcul refuse en nommant la case.
+    fn echelon_ccneac(&self) -> Resultat<(usize, String)> {
+        let qui = crate::qui_de(self.fiche)?;
+        let Some(v) = self.fiche.echelon_ccneac.portee().map(str::trim) else {
+            return Err(socle::echec::cle(
+                format!(
+                    "La fiche de {} ne dit pas son échelon de la CCNEAC, et le minimum de son emploi en dépend : l'employeur l'attribue, de 1 à 12 (art. X.4.1). Le dire sur sa fiche (« Échelon (CCNEAC) »).",
+                    qui
+                ),
+                "echelon_ccneac",
+            ));
+        };
+        match socle::num::entier_de_chiffres(v).filter(|n| (1..=12).contains(n)) {
+            Some(n) => Ok((n as usize, format!("échelon {} de la fiche", n))),
+            None => Err(socle::echec::cle(
+                format!(
+                    "La fiche de {} dit l'échelon de la CCNEAC {} : il n'existe pas, la convention en compte douze, de 1 à 12 (art. X.4.1). Le corriger sur sa fiche (« Échelon (CCNEAC) »).",
+                    qui,
+                    repr_texte(v)
+                ),
+                "echelon_ccneac",
+            )),
         }
-        (1, "échelon 1, la fiche ne disant pas le sien (`echelon_ccneac`)".into())
     }
 
     /// Le taux horaire minimum d'un emploi autre qu'artistique de la CCNEAC.
@@ -269,7 +289,7 @@ impl<'a> Cx<'a> {
         let Some(groupe) = c1285.groupe.map(|g| g.to_string()).filter(|g| !g.is_empty()) else { return Ok(None) };
         let Some(grille) = self.grille.emplois_autres_qu_artistiques.as_ref() else { return Ok(None) };
         let Some(echelons) = grille.groupes.get(&groupe) else { return Ok(None) };
-        let (echelon, d_ou) = self.echelon_ccneac();
+        let (echelon, d_ou) = self.echelon_ccneac()?;
         let mensuel = *echelons
             .get(echelon - 1)
             .ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du groupe {}", echelon, groupe)))?;
@@ -471,7 +491,7 @@ impl<'a> Cx<'a> {
         }
         if let Some(a) = c.anciennete {
             let Some(depuis) = case_lue(&self.fiche.champs, &a.champ)? else { return Ok(false) };
-            match ans_revolus(&depuis.texte, jour_de_paie(self.paie).as_deref()) {
+            match ans_revolus(&depuis.texte, Some(&jour_de_paie(self.paie)?.iso())) {
                 Some(n) if n >= a.ans => {}
                 _ => return Ok(false),
             }
@@ -657,18 +677,26 @@ impl<'a> Cx<'a> {
         Ok(plus_bas(trouves, |p| p.montant))
     }
 
-    /// L'echelon de la grille administrative de la 3090 : 1 sous 5 ans dans la
-    /// fonction, puis un de plus par tranche de 5 ans passee, jusqu'au 5e.
+    /// L'echelon de la grille administrative de la 3090 : « Échelon 1 = Salariés présents dans l'entreprise et dans la
+    /// fonction depuis moins de 5 ans. Échelon 2 = [...] depuis plus de 5 ans », puis plus de 10, 15 et 20 ans (avenant
+    /// du 21/07/2025, clauses communes, KALIARTI000053721751,
+    /// `atelier/reference/sources/kali-3090-avenant-2025-administratifs-anciennete-20260929.md`). « Plus de » : les ans
+    /// revolus a la veille du dernier jour paye. Seule la compagnie sait depuis quand (`poste_depuis`) : sans elle, le
+    /// calcul refuse en nommant la case.
     fn echelon_3090(&self) -> Resultat<(usize, String)> {
-        let (Some(depuis), Some(jour)) = (self.fiche.poste_depuis.dite().map(|j| j.iso()), jour_de_paie(self.paie)) else {
-            return Ok((1, "échelon 1, la fiche ne disant pas depuis quand (`poste_depuis`)".into()));
+        let Some(depuis) = self.fiche.poste_depuis.dite() else {
+            return Err(socle::echec::cle(
+                format!(
+                    "La fiche de {} ne dit pas depuis quand ce poste est le sien, et le minimum de la grille administrative de la 3090 en dépend : un échelon de plus après 5, 10, 15 et 20 ans dans l'entreprise et la fonction. Le dire sur sa fiche (« Dans ce poste depuis »).",
+                    crate::qui_de(self.fiche)?
+                ),
+                "poste_depuis",
+            ));
         };
-        let veille = iso(&jour).ok_or("date illisible")?.plus_jours(-1)?.iso();
-        let Some(ans) = ans_revolus(&depuis, Some(&veille)) else {
-            return Ok((1, "échelon 1, `poste_depuis` illisible".into()));
-        };
+        let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
+        let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));
         let e = (ans.div_euclid(5) + 1).clamp(1, 5) as usize;
-        Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, Jour::lire(&depuis)?.jj_mm_aaaa())))
+        Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, depuis.jj_mm_aaaa())))
     }
 
     /// Le taux horaire minimum d'un technicien, par son niveau 3090 ou son
@@ -689,14 +717,17 @@ impl<'a> Cx<'a> {
         if classement.grille == "administratif" {
             // Grille mensuelle pour un temps plein, ramenee a l'heure sur 151,67 h.
             let Some(valeurs) = communes_cl.administratifs_mensuel_echelons.du_niveau(&niveau) else { return Ok(None) };
-            let (echelon, mut d_ou) = self.echelon_3090()?;
             if valeurs.is_empty() {
                 return Err(socle::fichiers::trop_courte(&format!("les échelons du niveau {}", niveau)));
             }
-            let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau)))?;
-            if valeurs.len() == 1 {
-                d_ou = "sans échelon".into();
-            }
+            // Le cadre du groupe 1 n'a qu'une valeur : aucune anciennete a lire.
+            let (montant, d_ou) = if valeurs.len() == 1 {
+                (valeurs[0], "sans échelon".to_string())
+            } else {
+                let (echelon, d_ou) = self.echelon_3090()?;
+                let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau)))?;
+                (montant, d_ou)
+            };
             let horaire = arrondi2(montant / 151.67);
             return Ok(plancher(
                 dec_f64(horaire)?,
