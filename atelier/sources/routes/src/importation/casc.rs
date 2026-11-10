@@ -56,7 +56,7 @@ struct Versee {
 /// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
 fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let mut out = Vec::new();
-    let du_mois = |d: &Option<String>| d.as_deref().and_then(|d| d.get(..7)).and_then(Mois::du_texte) == Some(mois);
+    let du_mois = |d: &Option<socle::date::Jour>| d.is_some_and(|d| d.mois_civil() == mois);
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut else { continue };

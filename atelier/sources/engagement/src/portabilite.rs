@@ -22,6 +22,7 @@ use socle::echec::R;
 
 use crate::calcul::Paie;
 use crate::stock::Objet;
+use crate::DateDeLigne;
 
 /// Le plafond du maintien, en mois (L. 911-8, 1°).
 const DOUZE_MOIS: u32 = 12;
@@ -75,18 +76,9 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
     let mut bornes = Vec::new();
     for o in siens {
         let c = o.carte();
-        let d = c.debut_lu();
-        if d.is_empty() {
-            continue;
-        }
-        let f = match c.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => f.to_string(),
-            None => match c.dates().iter().map(|j| j.jour().to_string()).max() {
-                Some(j) => j,
-                None => continue,
-            },
-        };
-        bornes.push((Jour::lire(&d)?, Jour::lire(&f)?));
+        let Some(d) = c.debut_lu() else { continue };
+        let Some(f) = c.fin.or_else(|| c.dates().iter().map(DateDeLigne::jour).max()) else { continue };
+        bornes.push((d, f));
     }
     let mut depuis = debut;
     loop {

@@ -252,7 +252,7 @@ pub fn dernier_declare(
     }
     etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
     if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
-        etat.debut_contrat = Some(socle::date::Jour::lire(&d)?.jjmmaaaa());
+        etat.debut_contrat = Some(d.jjmmaaaa());
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());
     let net_deja_verse = derniere.paie.net_a_payer;

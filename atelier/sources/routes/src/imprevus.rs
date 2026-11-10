@@ -1911,13 +1911,10 @@ fn validees(ctx: &Contexte, mois: Mois) -> R<(VueDuMois, Vec<Paie>)> {
 fn avec_ses_bornes(e: &Carte) -> Carte {
     let mut e = e.clone();
     if e.debut.is_none() {
-        let debut = e.debut_lu();
-        if !debut.is_empty() {
-            e.debut = Some(debut);
-        }
+        e.debut = e.debut_lu();
     }
     if e.fin.is_none() {
-        e.fin = e.dates().iter().map(|j| j.jour().to_string()).max();
+        e.fin = e.dates().iter().map(|j| j.jour()).max();
     }
     e
 }
@@ -1931,7 +1928,7 @@ fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mo
     if siens.is_empty() {
         return Err(refus(format!("{} n'a aucun engagement en {} : aucun contrat ne s'y termine.", nom, mois.libelle(Graphie::Accentuee))));
     }
-    let finit = |x: &Carte| x.fin.as_deref().and_then(|f| f.get(..7)).and_then(Mois::du_texte) == Some(mois);
+    let finit = |x: &Carte| x.fin.is_some_and(|f| f.mois_civil() == mois);
     let rompu = siens.iter().position(|(_, x)| finit(x) && x.motif_rupture.is_some());
     let i = rompu.or_else(|| siens.iter().position(|(_, x)| finit(x))).ok_or_else(|| {
         refus(format!("{} n'a aucun contrat qui se termine en {}.", nom, mois.libelle(Graphie::Accentuee)))
@@ -1968,9 +1965,9 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     })
 }
 
-/// Un champ que le signalement exige, lu dans la carte ; absent, il se refuse.
-fn exige<'a>(x: &'a Option<String>, cle: &str) -> R<&'a str> {
-    x.as_deref().ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))
+/// Un jour que le signalement exige, lu dans la carte ; absent, il se refuse.
+fn exige(x: Option<Jour>, cle: &str) -> R<Jour> {
+    x.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))
 }
 
 /// `fctu.FinDeContrat` que le signalement declarera, batie sur la saisie (`fin-contrat-signaler`).
@@ -1987,15 +1984,15 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
     }
     let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
     Ok(declarations::fctu::FinDeContrat {
-        fin: exige(&e.fin, "fin")?.to_string(),
+        fin: exige(e.fin, "fin")?.iso(),
         motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
         mois_rattachement: mois,
         type_preavis: preavis.genre.clone(),
-        preavis_debut: preavis.debut.clone(),
-        preavis_fin: preavis.fin.clone(),
-        notification: e.notification_rupture.clone(),
-        signature_convention: e.signature_convention.clone(),
-        engagement_licenciement: e.engagement_licenciement.clone(),
+        preavis_debut: preavis.debut.map(|j| j.iso()),
+        preavis_fin: preavis.fin.map(|j| j.iso()),
+        notification: e.notification_rupture.map(|j| j.iso()),
+        signature_convention: e.signature_convention.map(|j| j.iso()),
+        engagement_licenciement: e.engagement_licenciement.map(|j| j.iso()),
         transaction: e.transaction.clone(),
     })
 }
@@ -2367,7 +2364,7 @@ pub(crate) fn phrase_du_manque(m: &Manque) -> String {
 
 /// Ce que dit la loi du preavis d'une rupture, et la convention a cote (`moteur preavis`), pour la case « Préavis ».
 fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
-    let (debut, fin) = (jour(exige(&e.debut, "debut")?)?, jour(exige(&e.fin, "fin")?)?);
+    let (debut, fin) = (exige(e.debut, "debut")?, exige(e.fin, "fin")?);
     let anciennete = droit::permanents::anciennete_mois(&debut, &fin);
     let motif = e.motif_rupture;
     let cdd = !nature_de(e)?.duree_indeterminee;
@@ -2440,13 +2437,10 @@ déclarent tous deux.",
         )),
         Some(_) => {
             // Hors preavis non effectue, aucun jour de la paie ne vient apres le dernier jour paye.
-            if let Some(dernier) = &e.dernier_jour_paye {
-                let apres: Vec<String> = e.dates().iter().map(|j| j.jour().to_string()).filter(|j| j > dernier).collect();
+            if let Some(dernier) = e.dernier_jour_paye {
+                let apres: Vec<Jour> = e.dates().iter().map(|j| j.jour()).filter(|j| *j > dernier).collect();
                 if !apres.is_empty() {
-                    let mut dits = Vec::new();
-                    for j in &apres {
-                        dits.push(format!("le {}", jour(j)?.jj_mm()));
-                    }
+                    let dits: Vec<String> = apres.iter().map(|j| format!("le {}", j.jj_mm())).collect();
                     manques.push(manque(
                         "dernier_jour_paye",
                         "Dernier jour payé",
@@ -2454,7 +2448,7 @@ déclarent tous deux.",
                             "{} {} après le dernier jour payé, le {} : retirez-le de la paie, ou dites un autre dernier jour payé.",
                             dits.join(", "),
                             if apres.len() > 1 { "sont" } else { "est" },
-                            jour(dernier)?.jj_mm()
+                            dernier.jj_mm()
                         ),
                         "Le dernier jour travaillé et payé (S21.G00.62.006) clôt la paie du contrat rompu : un jour payé après lui \
 contredit le signalement.",
@@ -2474,7 +2468,7 @@ contredit le signalement.",
 pub(crate) struct FinASignaler {
     pub salarie: IdSalarie,
     pub mois: Mois,
-    debut: Option<String>,
+    debut: Option<Jour>,
     pub en_retard: bool,
     pub numero: Option<String>,
     pub fin: Jour,
@@ -2515,8 +2509,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         if !nat.signalement_fctu(e.motif_rupture) {
             continue;
         }
-        let Some(fin) = e.fin.as_deref() else { continue };
-        let fin = jour(fin)?;
+        let Some(fin) = e.fin else { continue };
         if !(mois.premier_jour() <= fin && fin <= mois.dernier_jour()) {
             continue;
         }
@@ -2534,7 +2527,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         out.push(FinASignaler {
             salarie,
             mois,
-            debut: e.debut.clone(),
+            debut: e.debut,
             en_retard,
             numero: e.numero.clone(),
             fin,

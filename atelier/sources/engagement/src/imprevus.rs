@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::conges::{avertir, flot, info, jour_dit};
+use crate::conges::{avertir, flot, info};
 use crate::Chiffre;
 use droit::permanents::MotifDeSuspension;
 use droit::contexte::Contexte;
@@ -417,7 +417,7 @@ pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
 pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
-    match jour_dit(&arret.reprise)? {
+    match arret.reprise.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()? {
         Some(r) => r.plus_jours(-1),
         None => Jour::lire(&arret.fin_previsionnelle),
     }
@@ -754,8 +754,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
     let debut = Jour::lire(imp.contrat_debut())?;
     let Some(data) = crate::stock::vue_du_mois(&ctx.racine, debut.mois_civil())? else { return Ok(fiche) };
     for e in &data.engagements {
-        let Some(debut_dit) = e.debut.as_deref().filter(|x| !x.is_empty()) else { continue };
-        if Jour::lire(debut_dit)? != debut || e.salarie.as_deref() != Some(cle.as_str()) {
+        if e.debut != Some(debut) ||e.salarie.as_deref() != Some(cle.as_str()) {
             continue;
         }
         if !numeros_compatibles(imp.contrat_numero(), e.numero.as_deref()) {
@@ -815,7 +814,8 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
     let heures_du_mois = eur2(mul(m.heures_par_jour, Decimal::from(m.jours_payes)));
     let taux_horaire = if heures_du_mois > Decimal::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois)) } else { None };
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
-    let imprevus: Vec<_> = crate::conges::jour_dit(&e.debut)?
+    let imprevus: Vec<_> = e
+        .debut
         .map(|debut| du_contrat_dans_le_mois(ctx, crate::conges::salarie_de(e)?, &debut, e.numero.as_deref(), mois))
         .transpose()?
         .into_iter()
@@ -961,7 +961,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &s
             continue;
         }
         for (j, l) in e.lignes().iter().enumerate() {
-            let dedans: Vec<String> = l.jours()?.into_iter().filter(|x| premier <= x && x <= dernier).map(|x| x.iso()).collect();
+            let dedans: Vec<String> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).map(|x| x.iso()).collect();
             if dedans.is_empty() {
                 continue;
             }

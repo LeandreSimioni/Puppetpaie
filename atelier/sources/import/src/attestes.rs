@@ -102,11 +102,10 @@ fn jj(iso: &str) -> String {
 /// Ce qu'un contrat atteste dit, pour le registre.
 fn lu(nir: &str, ligne: &ContratLu, source: &'static str) -> Atteste {
     let c = &ligne.contrat;
-    let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
     Atteste {
         nir: nir.to_string(),
-        debut: plein(&ligne.debut),
-        fin: plein(&ligne.fin),
+        debut: ligne.debut.map(|j| j.iso()),
+        fin: ligne.fin.map(|j| j.iso()),
         source,
         par: c.atteste_par,
         heures: c.heures,
@@ -186,8 +185,8 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
             en_mots(heures, cachets, jours, brut)
         )));
     };
-    let debut = siens[premier].premier_jour().iso().max(debut_c.to_string());
-    let fin = siens[dernier].dernier_jour().iso().min(fin_c.to_string());
+    let debut = siens[premier].premier_jour().max(socle::date::Jour::lire(debut_c)?);
+    let fin = siens[dernier].dernier_jour().min(socle::date::Jour::lire(fin_c)?);
     let mut ligne = c.ligne.clone();
     let mut b = reste_brut.round_dp(2);
     b.rescale(2);
@@ -230,8 +229,7 @@ impl Registre {
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine)? {
             let Some(c) = i.contrat_lu()? else { continue };
-            let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
-            let (cle, debut, fin) = (c.salarie.clone(), plein(&c.debut), plein(&c.fin));
+            let (cle, debut, fin) = (c.salarie.clone(), c.debut.map(|j| j.iso()), c.fin.map(|j| j.iso()));
             let permanent = i.permanent();
             let manque: Vec<&str> =
                 [(cle.is_empty(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();

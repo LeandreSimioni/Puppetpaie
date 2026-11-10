@@ -526,15 +526,14 @@ calculé.",
 pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Mois) -> R<Option<String>> {
     let nat = carte.nature_lue()?;
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
-    let (Some(debut), Some(salarie)) = (carte.debut.as_deref().filter(|j| !j.is_empty()), carte.salarie.as_ref()) else { return Ok(None) };
+    let (Some(debut_contrat), Some(salarie)) = (carte.debut, carte.salarie.as_ref()) else { return Ok(None) };
     if !nat.mensuelle() {
         return Ok(None);
     }
     let (pm, fm) = (mois.premier_jour(), mois.dernier_jour());
-    let debut_contrat = Jour::lire(debut)?;
-    let debut = debut_contrat.clone().max(pm);
-    let fin = match carte.fin.as_deref().filter(|f| !f.is_empty()) {
-        Some(f) => Jour::lire(f)?.min(fm),
+    let debut = debut_contrat.max(pm);
+    let fin = match carte.fin {
+        Some(f) => f.min(fm),
         None => fm,
     };
     for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero_dit(), mois)? {

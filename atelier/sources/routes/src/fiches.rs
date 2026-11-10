@@ -902,11 +902,11 @@ pub(crate) fn poser_entreprise(ctx: &Contexte, case: ChangementEntreprise, depui
 /// de ce contrat (`debut`), quand la fiche ne la dit pas, par l'ecrivain de la fiche (`poser`) ; elle se change ensuite
 /// dans « Avancé » de la fiche. Une fiche qui la dit la garde. INFERENCE : l'anciennete commence a l'entree dans
 /// l'entreprise.
-pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut: &str) -> R<()> {
+pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut: Option<Jour>) -> R<()> {
     if ctx.salaries.get(salarie).is_none_or(|f| f.date_anciennete.est_dite()) {
         return Ok(());
     }
-    let debut = Jour::lire(debut)?;
+    let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
     poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(debut))], None, None)
 }
 

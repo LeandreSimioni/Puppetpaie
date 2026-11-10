@@ -229,10 +229,6 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, String, String), PaieLu
     ambigues
 }
 
-/// Un jour en ISO, s'il est dit.
-fn iso(j: Option<Jour>) -> Option<String> {
-    j.map(|j| j.iso())
-}
 
 /// LES ENGAGEMENTS IMPORTES, tires des contrats attestes (`contrats`, une AEM ou un bulletin chacun) et des paies
 /// versees (`paies`, une par mois et par contrat). Un engagement, c'est un salarie, un debut et une fin : le contrat
@@ -247,8 +243,8 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // ecriture ISO ; une date absente vient avant toute date.
     struct Groupe {
         salarie: String,
-        debut: Option<String>,
-        fin: Option<String>,
+        debut: Option<Jour>,
+        fin: Option<Jour>,
         contrat: Option<ContratLu>,
         paies: Vec<PaieLue>,
     }
@@ -265,10 +261,10 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.is_some_and(|n| permanents.contains(&n));
     let mut groupes: Vec<Groupe> = Vec::new();
     for c in contrats {
-        groupes.push(Groupe { salarie: c.salarie.clone(), debut: plein(&c.debut), fin: plein(&c.fin), contrat: Some(c), paies: Vec::new() });
+        groupes.push(Groupe { salarie: c.salarie.clone(), debut: c.debut, fin: c.fin, contrat: Some(c), paies: Vec::new() });
     }
     for p in paies {
-        let (s, d, f, o) = (p.salarie.clone(), iso(p.paie.debut), iso(p.paie.fin), plein(&p.paie.numero_objet));
+        let (s, d, f, o) = (p.salarie.clone(), p.paie.debut, p.paie.fin, plein(&p.paie.numero_objet));
         let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].debut == d && groupes[i].fin == f).collect();
         // Le contrat qu'un bulletin atteste porte la periode du mois ; la paie declaree, le contrat entier : la periode
         // du bulletin dans le contrat declare, et l'engagement prend les dates du contrat.
@@ -333,7 +329,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // numeros, deux contrats, comme la DSN les a declares. Un mois sans numero lu va au contrat declare a partir de lui,
     // sinon au dernier (inference : le numero du contrat en cours ce mois-la).
     let mois_de = |g: &Groupe| -> Vec<Mois> { g.paies.iter().map(|p| p.mois).collect() };
-    let mois_du_debut = |g: &Groupe| g.debut.as_deref().and_then(|d| d.get(..7)).and_then(Mois::du_texte);
+    let mois_du_debut = |g: &Groupe| g.debut.map(|d| d.mois_civil());
     let du_permanent: HashSet<(String, Mois)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
@@ -373,9 +369,9 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         let paies: Vec<PaieLue> = gs.iter().flat_map(|g| g.paies.iter().cloned()).collect();
         let declarees: Vec<&PaieLue> = paies.iter().filter(|p| !declaree_par_bulletin(p)).collect();
         // Son debut est celui que la DSN declare, sinon le plus tot de ses groupes.
-        let debut = declarees.iter().find_map(|p| iso(p.paie.debut)).or_else(|| gs.iter().filter_map(|g| g.debut.clone()).min());
+        let debut = declarees.iter().find_map(|p| p.paie.debut).or_else(|| gs.iter().filter_map(|g| g.debut).min());
         // Sa fin est celle que la DSN declare ; un bulletin ne paie que son mois, il ne dit pas quand le contrat finit.
-        let fin = declarees.last().and_then(|p| iso(p.paie.fin));
+        let fin = declarees.last().and_then(|p| p.paie.fin);
         // Le contrat entier : ce qu'un bulletin atteste de son seul mois reste a la paie de ce mois.
         let mut contrat = gs.iter().rev().find_map(|g| g.contrat.clone());
         if let Some(c) = contrat.as_mut().filter(|_| gs.len() > 1) {

@@ -34,13 +34,13 @@ fn jour_court(iso: &str) -> String {
 /// « Jours : + 16/11 · − 14/11 ». `None` si la ligne a les memes jours.
 fn jours_changes(x: &LignePaie, y: &LignePaie) -> Option<String> {
     let js = |l: &LignePaie| {
-        let mut j: Vec<String> = l.dates().iter().map(|d| d.jour().to_string()).filter(|d| !d.is_empty()).collect();
+        let mut j: Vec<Jour> = l.dates().iter().map(|d| d.jour()).collect();
         j.sort();
         j.dedup();
         j
     };
     let (a, b) = (js(x), js(y));
-    let dire = |signe: &str, xs: Vec<&String>| (!xs.is_empty()).then(|| format!("{} {}", signe, xs.iter().map(|d| jour_court(d)).collect::<Vec<_>>().join(", ")));
+    let dire = |signe: &str, xs: Vec<&Jour>| (!xs.is_empty()).then(|| format!("{} {}", signe, xs.iter().map(|d| d.jj_mm()).collect::<Vec<_>>().join(", ")));
     let parts: Vec<String> = [dire("+", b.iter().filter(|d| !a.contains(d)).collect()), dire("−", a.iter().filter(|d| !b.contains(d)).collect())]
         .into_iter()
         .flatten()
@@ -50,14 +50,14 @@ fn jours_changes(x: &LignePaie, y: &LignePaie) -> Option<String> {
 
 /// Le premier et le dernier jour d'une carte : ses bornes dites, sinon ses jours travailles (`Carte::debut_lu`,
 /// `Carte::dates`).
-fn bornes(s: &Carte) -> (String, String) {
-    let fin = s.fin.clone().filter(|f| !f.is_empty());
+fn bornes(s: &Carte) -> (Option<Jour>, Option<Jour>) {
     // Sans fin dite, le dernier jour de ses dates ; aucun sans date.
-    let fin = match fin {
-        Some(f) => f,
-        None => s.dates().iter().map(|j| j.jour().to_string()).max().into_iter().collect(),
-    };
-    (s.debut_lu(), fin)
+    (s.debut_lu(), s.fin.or_else(|| s.dates().iter().map(|j| j.jour()).max()))
+}
+
+/// « 14/11 » d'une borne ; rien si elle n'est pas dite.
+fn borne_courte(j: Option<Jour>) -> String {
+    j.map(|j| j.jj_mm()).into_iter().collect()
 }
 
 /// Le libelle d'une rubrique au catalogue, et son unite.
@@ -258,10 +258,10 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
     let mut out = Vec::new();
     let ((da, fa), (db, fb)) = (bornes(a), bornes(b));
     if da != db {
-        out.push(format!("Début : {} → {}", jour_court(&da), jour_court(&db)));
+        out.push(format!("Début : {} → {}", borne_courte(da), borne_courte(db)));
     }
     if fa != fb {
-        out.push(format!("Fin : {} → {}", jour_court(&fa), jour_court(&fb)));
+        out.push(format!("Fin : {} → {}", borne_courte(fa), borne_courte(fb)));
     }
     let (la, lb) = (a.lignes(), b.lignes());
     let code = |l: &LignePaie| l.rubrique().to_string();

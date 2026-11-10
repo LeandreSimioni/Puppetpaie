@@ -5,7 +5,6 @@
 use crate::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::Declare;
-use socle::date::Jour;
 use socle::echec::R;
 use socle::mois::Mois;
 
@@ -35,15 +34,14 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
     let mut out = Vec::new();
     for i in crate::importe::tous(&ctx.racine)?.into_iter().filter(|i| !i.permanent()) {
         let Some(c) = i.contrat_lu()? else { continue };
-        let Some(debut) = c.debut.as_deref() else { continue };
+        let Some(debut) = c.debut else { continue };
         // Un contrat qui continue ici : ce que les pieces attestent s'arrete a son dernier mois verse, la suite est
         // dans les paies de ce logiciel.
-        let fin = match (i.continue_apres(), c.fin.as_deref()) {
+        let fin = match (i.continue_apres(), c.fin) {
             (Some(dernier), _) => dernier.dernier_jour(),
-            (None, Some(fin)) => Jour::lire(fin)?,
+            (None, Some(fin)) => fin,
             (None, None) => continue,
         };
-        let debut = Jour::lire(debut)?;
         // Une piece d'intermittent atteste ses compteurs et son brut (l'AEM, le bulletin, le certificat : `import`) ; les
         // heures d'enseignement, seulement celles qu'elle distingue.
         let a = &c.contrat;

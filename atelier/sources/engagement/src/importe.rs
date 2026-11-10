@@ -239,9 +239,9 @@ pub struct BulletinSource {
 pub struct ContratLu {
     pub salarie: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<String>,
+    pub fin: Option<Jour>,
     #[serde(rename = "contrat", skip_serializing_if = "Option::is_none")]
     pub numero: Option<String>,
     #[serde(flatten)]
@@ -440,7 +440,7 @@ impl Importe {
     /// sa nature dite (`import::nature`) ; sans numero, rien ne se reprend.
     pub fn continue_apres(&self) -> Option<Mois> {
         let dernier = *self.paies().keys().max()?;
-        let apres = self.carte().fin.as_deref().and_then(|f| f.get(..7)).and_then(Mois::du_texte).is_some_and(|f| f > dernier);
+        let apres = self.carte().fin.is_some_and(|f| f.mois_civil() > dernier);
         let par_aem = self.contrat().is_some_and(|c| c.atteste_par == Attestation::Aem);
         let continue_ = apres && !par_aem && !self.permanent() && self.carte().numero.as_deref().is_some_and(|n| !n.is_empty());
         continue_.then_some(dernier)
@@ -451,9 +451,8 @@ impl Importe {
     /// premier bulletin repris, les pieces ne disent rien, et ceux d'apres le dernier sont ceux d'ici.
     pub fn mois(&self) -> Vec<Mois> {
         let mut v: Vec<Mois> = self.paies().keys().copied().collect();
-        let mois_de = |t: Option<&str>| t.and_then(|t| t.get(..7)).and_then(Mois::du_texte);
-        if let (Some(debut), false) = (mois_de(self.carte().debut.as_deref()), self.permanent()) {
-            let fin = match (self.continue_apres(), mois_de(self.carte().fin.as_deref())) {
+        if let (Some(debut), false) = (self.carte().debut.map(|j| j.mois_civil()), self.permanent()) {
+            let fin = match (self.continue_apres(), self.carte().fin.map(|j| j.mois_civil())) {
                 (Some(dernier), _) => dernier,
                 (None, Some(fin)) => fin,
                 (None, None) if !v.is_empty() => {
@@ -479,7 +478,7 @@ impl Importe {
         }
         contrat.importe_le = contrat.importe_le.or_else(|| Some(self.le().to_string()).filter(|l| !l.is_empty()));
         let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
-        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut.clone(), fin: self.carte().fin.clone(), numero, contrat }))
+        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
@@ -551,13 +550,13 @@ impl Importe {
         };
         // L'emploi que le bulletin imprime ; un bulletin qui ne l'imprime pas n'en dit rien.
         let imprime = |champ: fn(&EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| champ(i).clone());
-        let debut = match (self.carte().debut.as_deref(), p.debut) {
-            (Some(d), _) => Jour::lire(d)?,
+        let debut = match (self.carte().debut, p.debut) {
+            (Some(d), _) => d,
             (None, Some(j)) => j,
             (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
         };
         // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
-        let fin = match (self.carte().fin.as_deref().and_then(Jour::du_texte), self.permanent()) {
+        let fin = match (self.carte().fin, self.permanent()) {
             (Some(f), _) => Some(f),
             (None, true) => None,
             (None, false) => p.fin,
@@ -747,8 +746,8 @@ pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieLue>> {
 }
 
 /// L'engagement importe du salarie `cle` (la cle de sa fiche) qui commence le `debut` et touche `mois`, s'il y en a un.
-pub fn celui_de(racine: &Path, mois: Mois, cle: &str, debut: &str) -> R<Option<Importe>> {
-    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_deref() == Some(cle) && i.carte().debut.as_deref() == Some(debut)))
+pub fn celui_de(racine: &Path, mois: Mois, cle: &str, debut: Jour) -> R<Option<Importe>> {
+    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_deref() == Some(cle) && i.carte().debut == Some(debut)))
 }
 
 /// Les contrats d'usage importes qui continuent en `mois` (`Importe::continue_apres`) : verses avant lui par l'ancien
@@ -756,26 +755,26 @@ pub fn celui_de(racine: &Path, mois: Mois, cle: &str, debut: &str) -> R<Option<I
 pub fn qui_continuent(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
     Ok(tous(racine)?
         .into_iter()
-        .filter(|i| i.continue_apres().is_some_and(|d| d < mois) && i.carte().fin.as_deref().and_then(|f| f.get(..7)).and_then(Mois::du_texte).is_some_and(|f| f >= mois))
+        .filter(|i| i.continue_apres().is_some_and(|d| d < mois) && i.carte().fin.is_some_and(|f| f.mois_civil() >= mois))
         .collect())
 }
 
 /// Le contrat importe que l'engagement `e` de la saisie continue : meme salarie, meme debut, meme numero, et il continue
 /// apres son dernier mois verse (`continue_apres`).
 pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
-    let (Some(debut), Some(numero), Some(salarie)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.numero.as_deref().filter(|n| !n.is_empty()), &e.salarie) else { return Ok(None) };
+    let (Some(debut), Some(numero), Some(salarie)) = (e.debut, e.numero.as_deref().filter(|n| !n.is_empty()), &e.salarie) else { return Ok(None) };
     Ok(tous(racine)?.into_iter().find(|i| {
-        i.continue_apres().is_some() && i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut.as_deref() == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+        i.continue_apres().is_some() && i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
     }))
 }
 
 /// LE CONTRAT `numero` DE `salarie` COMMENCE LE `debut` VIENT-IL DE L'ANCIEN LOGICIEL ? Un engagement importe porte ces
 /// salarie, debut et numero : c'est lui, ou le contrat d'usage qu'il continue ici (`continue_par`). L'ecran le dit sur
 /// la carte. Faux sans numero.
-pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: &str, numero: Option<&str>) -> R<bool> {
+pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: Jour, numero: Option<&str>) -> R<bool> {
     let Some(numero) = numero.filter(|n| !n.is_empty()) else { return Ok(false) };
     Ok(tous(racine)?.iter().any(|i| {
-        i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut.as_deref() == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+        i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
     }))
 }
 
@@ -791,8 +790,8 @@ pub fn numero_declare(o: &Objet) -> R<Option<NumeroContrat>> {
 
 /// Une DSN de l'ancien logiciel a-t-elle declare le numero du contrat de `salarie` commence le `debut`
 /// (`numero_declare`, lu sur l'engagement repris qui le porte) ?
-pub fn numero_declare_du_contrat(racine: &Path, salarie: &str, debut: &str) -> R<bool> {
-    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut.as_deref() == Some(debut)) {
+pub fn numero_declare_du_contrat(racine: &Path, salarie: &str, debut: Jour) -> R<bool> {
+    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut)) {
         if numero_declare(&i.objet)?.is_some() {
             return Ok(true);
         }
@@ -823,11 +822,8 @@ impl Importe {
 }
 
 /// Le refus d'un geste sur un engagement importe : il se lit, il ne se modifie pas.
-pub fn refus(qui: &str, debut: &str) -> String {
-    let jour = match socle::date::Jour::du_texte(debut) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => debut.to_string(),
-    };
+pub fn refus(qui: &str, debut: Jour) -> String {
+    let jour = debut.jj_mm_aaaa();
     format!(
         "L'engagement de {} du {} est importé : il se lit tel que l'ancien logiciel l'a déclaré, il ne se modifie pas, ne se \
          recalcule pas et ne se supprime pas. Rien n'est écrit.",
@@ -849,8 +845,8 @@ pub struct Neuf {
 /// (`dernier`), et il ne finit pas avant le mois qui suit.
 fn continue_ici(e: &Neuf, dernier: Mois) -> R<bool> {
     let mensuel = e.carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
-    let premier_jour_suivant = dernier.suivant().premier_jour().iso();
-    Ok(mensuel && e.pieces.paies.contains_key(&dernier) && e.carte.fin.as_deref().is_none_or(|f| f.is_empty() || f >= premier_jour_suivant.as_str()))
+    let premier_jour_suivant = dernier.suivant().premier_jour();
+    Ok(mensuel && e.pieces.paies.contains_key(&dernier) && e.carte.fin.is_none_or(|f| f >= premier_jour_suivant))
 }
 
 /// ECRIT LES ENGAGEMENTS IMPORTES, tous : chacun dans le fichier de son mois d'entree -- le mois ou il commence (son
@@ -878,9 +874,9 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
                 e.carte = ecrit.saisie.carte.clone();
             }
         }
-        let mois = match (dernier, e.carte.debut.as_deref().and_then(|d| d.get(..7))) {
+        let mois = match (dernier, e.carte.debut) {
             (Some(d), _) if continue_ici(&e, d)? => d.suivant(),
-            (_, Some(premier)) => Mois::lire(premier)?,
+            (_, Some(premier)) => premier.mois_civil(),
             _ => e.pieces.paies.keys().next().copied().ok_or_else(|| socle::echec::refus("un engagement importe sans debut ni paie"))?,
         };
         ecrit.importe = Some(e.pieces);

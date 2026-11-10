@@ -456,7 +456,7 @@ pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: 
 /// Spectacles) ; un contrat ne d'ici n'a rien d'avant.
 fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
     // (cle des cases d'un salarie au mois, salarie, debut du contrat, premier jour paye ici)
-    let mut contrats: Vec<(droit::natures::AuMois, String, String, Jour)> = Vec::new();
+    let mut contrats: Vec<(droit::natures::AuMois, String, Jour, Jour)> = Vec::new();
     let mut vus: Vec<String> = Vec::new();
     // Les engagements valides et actifs, chacun dans le mois de son fichier (`engagement::stock::objets`) : un brouillon
     // n'engage rien, un contrat repris qui continue ici si.
@@ -466,18 +466,18 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
         }
         let e = o.carte();
         let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
-        let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature) else { continue };
+        let (Some(debut), Some(nature)) = (e.debut, e.nature) else { continue };
         let Some(au) = nature.proprietes()?.au_mois().filter(|_| !vus.contains(&salarie)) else {
             continue;
         };
         vus.push(salarie.clone());
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, debut, o.premier_mois())? {
-            contrats.push((au, salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
+            contrats.push((au, salarie, debut, o.premier_mois().premier_jour()));
         }
     }
     let mut out = Vec::new();
     for (au, salarie, debut, premier) in contrats {
-        if debut >= premier.iso() || conges_repris(ctx, &au, &salarie) {
+        if debut >= premier || conges_repris(ctx, &au, &salarie) {
             continue;
         }
         let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {

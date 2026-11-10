@@ -234,7 +234,7 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
     brouillon.ecrire()?;
     if let Some(e) = data.engagements.get(i) {
         if let Some(cle) = &e.salarie {
-            crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
+            crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, e.debut_lu())?;
         }
     }
     Ok(Validation { engagement: id, phrase: "Engagement validé." })
@@ -290,7 +290,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
     let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
     if let Some(e) = vue.as_ref().and_then(|d| d.engagements.get(i)) {
         if let Some(cle) = &e.salarie {
-            crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
+            crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, e.debut_lu())?;
         }
     }
     crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| m.reclasser(Classe::Disque))?;
@@ -400,7 +400,7 @@ pub(crate) fn ce_que_le_changement_entraine(ctx: &Contexte, v: &engagement::etat
         .valide
         .as_ref()
         .and_then(|x| x.saisie.as_ref())
-        .map(|s| s.carte.debut_lu())
+        .and_then(|s| s.carte.debut_lu())
         .ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : l'engagement revalidé n'a pas sa saisie."))?;
 
     let mut m = crate::etapes::Moteur::nouveau(ctx);
@@ -409,7 +409,8 @@ pub(crate) fn ce_que_le_changement_entraine(ctx: &Contexte, v: &engagement::etat
         match a {
             ARefaire::Avenant { .. } => out.push(UN_AVENANT.to_string()),
             ARefaire::Dpae { debut_declare, .. } => {
-                let (rien_a_refaire, phrase) = crate::regularisation::dpae_d_une_date_changee(&debut_declare, &presente)?;
+                let avant = debut_declare.ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la DPAE partie n'a pas sa date d'embauche."))?;
+                let (rien_a_refaire, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, presente)?;
                 if !rien_a_refaire {
                     out.push(phrase);
                 }

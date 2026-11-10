@@ -40,7 +40,7 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (f6
         if !travail {
             continue;
         }
-        let dates: Vec<Jour> = l.jours()?;
+        let dates: Vec<Jour> = l.jours();
         if dates.is_empty() {
             continue;
         }

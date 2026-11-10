@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, compteur_conges, debut_de, dec_de, dec_ou, indemnite_des_jours, info, jour_dit, jours_ouvrables_de,
+    avertir, compteur_conges, debut_de, dec_de, dec_ou, indemnite_des_jours, info, jours_ouvrables_de,
     qui, flot, remuneration_du_mois, salarie_de, sub, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -92,19 +92,11 @@ fn de_p(x: clauses::P) -> R<Decimal> {
 }
 
 /// CE QUE L'ENGAGEMENT `e` DIT DU SALARIE la ou la fiche le dit aussi (`clauses::DitParLEngagement`) : son statut, son
-/// code emploi (`metier`), la case cadre, son debut (`AAAA-MM-JJ`, lu sur ses dix premiers caracteres). Une case vide ne
+/// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
 pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
-    let dite = |x: &Option<String>| x.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
-    let debut = match dite(&e.debut) {
-        Some(s) => {
-            let illisible = || socle::refus!("date illisible : {}", socle::fichiers::repr(&s));
-            let jour = s.get(..10).filter(|j| j.as_bytes().get(4) == Some(&b'-') && j.as_bytes().get(7) == Some(&b'-')).ok_or_else(illisible)?;
-            Some(socle::date::Jour::lire(jour).map_err(|_| illisible())?)
-        }
-        None => None,
-    };
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut.map(|s| s.as_str().to_string()), metier: dite(&e.metier), cadre: e.cadre, debut })
+    let metier = e.metier.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut.map(|s| s.as_str().to_string()), metier, cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
@@ -113,7 +105,7 @@ fn age(ctx: &Contexte, e: &Carte) -> R<Option<Decimal>> {
     let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
         return Ok(None);
     };
-    let jour = match jour_dit(&e.fin)? {
+    let jour = match e.fin {
         Some(f) => f,
         None => aujourdhui()?,
     };
@@ -261,7 +253,7 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
             if !sien || !x.nature_lue()?.duree_indeterminee {
                 continue;
             }
-            let Some(j) = x.debut.as_deref().filter(|v| !v.is_empty()).map(socle::date::Jour::lire).transpose()? else { continue };
+            let Some(j) = x.debut else { continue };
             if j > debut && j <= reprise {
                 trouve = Some(j);
             }
@@ -275,7 +267,7 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
 pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie]) -> R<(Vec<LignePaie>, Vec<Avis>)> {
     let nat = e.nature_lue()?;
     let mut stc = Solde::default();
-    let Some(fin) = jour_dit(&e.fin)? else {
+    let Some(fin) = e.fin else {
         return Ok((stc.lignes, stc.avertissements));
     };
     let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
@@ -586,7 +578,7 @@ fn delai_de_prevenance(
         )));
         return Ok(());
     }
-    let Some(notification) = jour_dit(&e.notification_rupture)? else {
+    let Some(notification) = e.notification_rupture else {
         return Err(socle::echec::cle(format!(
             "{} : fin de periode d'essai a l'initiative de l'employeur (034) : la date de notification de la rupture n'est \
              pas dite (« Notifiée le »). Le delai de prevenance de L1221-25 se compte depuis elle, selon la presence \

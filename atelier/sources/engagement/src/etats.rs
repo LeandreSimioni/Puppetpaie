@@ -330,17 +330,14 @@ impl Etat {
 pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let c = o.carte();
     let nat = c.nature_lue()?;
-    crate::signe_ailleurs_de(&ctx.racine, &nat, c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?, &crate::debut_brut(&o.brut), c.numero.as_deref(), o.fichier)
+    let salarie = c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+    let Some(debut) = crate::debut_brut(&o.brut) else { return Ok(false) };
+    crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_deref(), o.fichier)
 }
 
 /// Qui est l'engagement `o`, pour une phrase de l'ecran : « MARTIN Lou (contrat du 20/11/2026) » (`crate::salarie_nomme`).
 pub fn qui_de(ctx: &Contexte, o: &Objet) -> String {
-    let debut = crate::debut_brut(&o.brut);
-    // Le debut tel qu'une phrase le dit ; un debut qui n'est pas une date se dit tel qu'il est ecrit.
-    let debut = match Jour::du_texte(&debut) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => debut,
-    };
+    let debut: String = crate::debut_brut(&o.brut).map(|j| j.jj_mm_aaaa()).into_iter().collect();
     format!("{} (contrat du {})", crate::salarie_nomme(ctx, o.carte().salarie.as_deref()), debut)
 }
 
@@ -1585,7 +1582,7 @@ pub enum ARefaire {
     /// parti, et un de ses termes a change depuis le premier mois (`stock::DATES`).
     Avenant { depuis: Option<u64> },
     /// La DPAE est partie sur la version `depuis` avec la date d'embauche `debut_declare`, qui a change.
-    Dpae { depuis: u64, debut_declare: String },
+    Dpae { depuis: u64, debut_declare: Option<Jour> },
     /// Les documents de `mois` sont partis sur la version `depuis`, et sa paie a change : un bulletin rectificatif.
     Bulletin { mois: Mois, depuis: u64 },
     /// La DSN de `mois` est partie sur la version `depuis`, et sa paie a change : un annule-et-remplace, ou la correction
@@ -1635,7 +1632,7 @@ pub fn a_refaire_parmi(ctx: &Contexte, v: &Valide, departs: &Departs, sorte: &dy
         let Some(passee) = v.version_numero(d.version) else { continue };
         let paie = |x: stock::Version, m: Mois| paie_ecrite_de_la_version(&v.objet, x, m);
         // Le debut que la version a valide ; une version sans saisie n'en dit pas.
-        let debut = |s: Option<&stock::Saisie>| s.map(|s| s.carte.debut_lu()).into_iter().collect::<String>();
+        let debut = |s: Option<&stock::Saisie>| s.and_then(|s| s.carte.debut_lu());
         match d.envoi {
             Envoi::Contrat => {
                 let partie = passee.saisie();
@@ -1689,7 +1686,7 @@ const DE_LA_RUPTURE: [Champ; 10] = [
 fn seule_la_rupture(partie: Option<&stock::Saisie>, presente: Option<&stock::Saisie>) -> bool {
     let (Some(partie), Some(presente)) = (partie, presente) else { return false };
     let motif_dit = |s: &stock::Saisie| s.carte.motif_rupture.is_some();
-    let Some(fin) = presente.carte.fin.as_deref().filter(|f| f.len() == 10) else { return false };
+    let Some(fin) = presente.carte.fin else { return false };
     if !motif_dit(presente) || motif_dit(partie) {
         return false;
     }
@@ -1727,8 +1724,8 @@ mod tests_rupture {
         let partie = saisie(carte(ligne(5, 150)));
         let rompu = |taux: i64| {
             saisie(crate::saisie::Carte {
-                debut: Some("2026-05-04".into()),
-                fin: Some("2026-05-06".into()),
+                debut: Jour::nouveau(2026, 5, 4),
+                fin: Jour::nouveau(2026, 5, 6),
                 motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
                 preavis: Some(crate::saisie::Preavis { genre: "90".into(), debut: None, fin: None }),
                 ..carte(ligne(3, taux))
@@ -1916,11 +1913,11 @@ pub fn correction_due(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois,
 /// LA DERNIERE DATE DE DEBUT DECLAREE de l'engagement `o` (AAAA-MM-JJ) par une DSN d'un mois anterieur a `avant` : celle
 /// de la saisie de la version sur laquelle la derniere est partie, quel que soit le mois qu'elle declarait (la correction
 /// d'un autre mois d'un contrat sur plusieurs mois a pu la changer). `None` : aucune.
-pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: Mois) -> R<Option<String>> {
+pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: Mois) -> R<Option<Jour>> {
     let Some(d) = ses_departs(o, departs).iter().rev().find(|d| d.envoi == Envoi::Dsn && d.par.or(d.mois).is_some_and(|m| m < avant)) else {
         return Ok(None);
     };
-    Ok(version_ecrite(ctx, o, d.version)?.and_then(|v| v.saisie()).map(|s| s.carte.debut_lu()).filter(|d| !d.is_empty()))
+    Ok(version_ecrite(ctx, o, d.version)?.and_then(|v| v.saisie()).and_then(|s| s.carte.debut_lu()))
 }
 
 /// La phrase d'un recalcul, pour l'ecran : « Recalculé le JJ/MM/AAAA : taux de PAS reçu. »

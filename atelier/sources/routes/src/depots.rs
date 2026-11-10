@@ -1088,9 +1088,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
     // qui relie la DPAE, partie ou refusee, a son engagement.
     let departs = m.departs()?;
-    let mut numeros: HashMap<(String, String), String> = HashMap::new();
+    let mut numeros: HashMap<(String, Option<Jour>), String> = HashMap::new();
     // La nature de chaque embauche, par son nom court (« CDDU ») : le fichier ne dit que CDD, CDI ou CTT (Format 120).
-    let mut natures: HashMap<(String, String), String> = HashMap::new();
+    let mut natures: HashMap<(String, Option<Jour>), String> = HashMap::new();
     let mut mois_vus: Vec<socle::mois::Mois> = Vec::new();
     let mut lignes = Vec::new();
     let mut jours: Vec<Jour> = Vec::new();
@@ -1125,7 +1125,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             .and_then(jour_jjmmaaaa)
             .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
         jours.push(debut);
-        let id = trouve.map(|f| (f.cle.clone(), debut.iso()));
+        let id = trouve.map(|f| (f.cle.clone(), Some(debut)));
         let nom = match trouve.and_then(|f| ctx.salaries.get(f.cle.as_str())).and_then(|f| f.champs.nomme()) {
             Some(n) => n,
             None => "salarié inconnu de la configuration".to_string(),

@@ -401,14 +401,12 @@ impl Objet {
     pub fn dernier_mois(&self) -> R<Option<Mois>> {
         let c = self.carte();
         let mensuel = self.mensuel()?;
-        match c.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => Ok(Some(Jour::lire(f)?.mois_civil().max(self.fichier))),
+        match c.fin {
+            Some(f) => Ok(Some(f.mois_civil().max(self.fichier))),
             None if !mensuel => {
                 // Un contrat d'usage sans fin dite finit a son dernier jour joue ou planifie ; sans jour encore, a son
                 // premier mois : seul un contrat paye au mois court sans terme.
-                let mut jours: Vec<String> = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().to_string()).collect();
-                jours.sort();
-                let dernier = jours.last().and_then(|j| j.get(..7)).and_then(Mois::du_texte);
+                let dernier = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().mois_civil()).max();
                 Ok(Some(dernier.into_iter().fold(self.fichier, Mois::max)))
             }
             None => Ok(None),
@@ -516,9 +514,8 @@ impl Objet {
         if mois > self.fichier && !mensuel {
             // Un contrat d'usage qui ne dit pas son debut commence a son premier jour joue, celui de son premier mois :
             // les mois suivants le declarent (S21.G00.40.001) et ne le prennent pas pour une embauche.
-            let debut = crate::debut_brut(&self.brut);
-            if v.debut.is_none() && !debut.is_empty() {
-                v.debut = Some(debut);
+            if v.debut.is_none() {
+                v.debut = crate::debut_brut(&self.brut);
             }
             v.jours_contrat = Some(NombreLu::from(premiere.jours_du_contrat() as u64));
         }
@@ -557,7 +554,7 @@ impl Objet {
     /// il se date, rien ne se coupe).
     fn avenant_du_mois(&self, v: &mut Carte, mois: Mois) -> R<()> {
         let Some(j) = self.avenants().iter().map(|a| a.depuis).filter(|j| mois.contient(j)).max() else { return Ok(()) };
-        v.date_modification = Some(j.iso());
+        v.date_modification = Some(j);
         if j.jour == 1 {
             return Ok(());
         }
@@ -710,17 +707,18 @@ pub fn objets_du_mois(racine: &Path, mois: Mois) -> R<Vec<Objet>> {
 pub struct Identite {
     /// `None` : une carte neuve, qui ne nomme pas encore son salarie.
     pub salarie: Option<String>,
-    pub debut: String,
+    /// `None` : une carte qui ne dit pas encore son debut ni aucun jour.
+    pub debut: Option<Jour>,
     pub rang: usize,
 }
 
 /// L'IDENTITE DE CHAQUE ENGAGEMENT D'UNE LISTE (le plan), dans son ordre.
 pub fn identites(objets: &[Objet]) -> Vec<Identite> {
-    let paires: Vec<(Option<String>, String)> = objets.iter().map(|o| (o.carte().salarie.as_ref().map(ToString::to_string), crate::debut_brut(&o.brut))).collect();
+    let paires: Vec<(Option<String>, Option<Jour>)> =objets.iter().map(|o| (o.carte().salarie.as_ref().map(ToString::to_string), crate::debut_brut(&o.brut))).collect();
     paires
         .iter()
         .enumerate()
-        .map(|(i, (s, d))| Identite { salarie: s.clone(), debut: d.clone(), rang: paires[..i].iter().filter(|(s2, d2)| s2 == s && d2 == d).count() })
+        .map(|(i, (s, d))| Identite { salarie: s.clone(), debut: *d, rang: paires[..i].iter().filter(|(s2, d2)| s2 == s && d2 == d).count() })
         .collect()
 }
 
@@ -896,9 +894,10 @@ pub fn mois_saisis(racine: &Path) -> R<Vec<Mois>> {
 pub fn ecrire_la_carte(ctx: &Contexte, mois: Mois, id: Option<&Identite>, saisie: &Carte, defauts: &VueDuMois) -> R<Identite> {
     let racine = &ctx.racine;
     if let Some(cle) = &saisie.salarie {
-        let debut = saisie.debut_lu();
-        if crate::importe::celui_de(racine, mois, cle, &debut)?.is_some() {
-            return Err(refus(crate::importe::refus(cle, &debut)));
+        if let Some(debut) = saisie.debut_lu() {
+            if crate::importe::celui_de(racine, mois, cle, debut)?.is_some() {
+                return Err(refus(crate::importe::refus(cle, debut)));
+            }
         }
     }
     // Un engagement neuf, ou qui n'est encore qu'un brouillon de son premier mois, s'ecrit dans le fichier de son premier
@@ -972,10 +971,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
     if !e.mensuelle()? {
         return Ok(());
     }
-    let (Some(cle), debut) = (&e.salarie, e.debut_lu()) else { return Ok(()) };
-    if debut.is_empty() {
-        return Ok(());
-    }
+    let (Some(cle), Some(debut)) = (&e.salarie, e.debut_lu()) else { return Ok(()) };
     let tires = tous(&ctx.racine)?.1;
     let mut second = None;
     for o in &tires.objets {
@@ -983,7 +979,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
             && !o.est_non_actif()
             && !o.importe_seul()
             && o.mensuel()?
-            && crate::debut_brut(&o.brut) == debut
+            && crate::debut_brut(&o.brut) == Some(debut)
             && o.carte().salarie.as_ref() == Some(cle)
         {
             second = Some(o);
@@ -995,10 +991,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
     };
     let nature = o.carte().nature_lue()?;
     let numero: String = o.carte().numero_dit().map(|n| format!(" (n° {})", n)).into_iter().collect();
-    let debut_dit = match Jour::du_texte(&debut) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => debut.clone(),
-    };
+    let debut_dit = debut.jj_mm_aaaa();
     Err(socle::refus!(
         "{} : son {} commencé le {}{} a déjà son engagement ; une carte neuve ne le refait pas, il se modifie depuis sa \
          carte. Un nouveau contrat commence un autre jour. Rien n'est écrit.",
@@ -1033,8 +1026,8 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, 
                 ));
             }
             let j = mois.jour(n).ok_or_else(|| socle::refus!("{} : « le {} {} » n'est pas un jour de ce mois. Rien n'est écrit.", qui, n, mois.libelle(Graphie::Accentuee)))?;
-            let debut = Jour::lire(o.carte().debut.as_deref().ok_or_else(|| socle::fichiers::absent("debut"))?)?;
-            let fin = o.carte().fin.as_deref().filter(|f| !f.is_empty()).map(Jour::lire).transpose()?;
+            let debut = o.carte().debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
+            let fin = o.carte().fin;
             if j < debut || fin.is_some_and(|f| j > f) {
                 return Err(socle::refus!(
                     "{} : le contrat court du {}{} ; un changement au {} n'en est pas un jour. Rien n'est écrit.",
@@ -1104,8 +1097,7 @@ pub fn en_forme(saisie: &Carte) -> R<Carte> {
     if catalogue.is_some() && saisie.cadre == catalogue {
         saisie.cadre = None;
     }
-    let dite = |x: &Option<String>| x.as_deref().is_some_and(|x| !x.is_empty());
-    if !saisie.nature_lue()?.mensuelle() && saisie.lignes.is_none() && dite(&saisie.debut) && dite(&saisie.fin) {
+    if !saisie.nature_lue()?.mensuelle() && saisie.lignes.is_none() && saisie.debut.is_some() && saisie.fin.is_some() {
         // UN MOIS DU CONTRAT SANS CACHET : un contrat aux bornes dites, sans ligne, s'ecrit `lignes: []` -- la DSN porte
         // le contrat avec un versement a zero, sans bulletin.
         saisie.lignes = Some(Vec::new());
@@ -1170,7 +1162,7 @@ fn poser_le_mois(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) ->
             continue;
         }
         if o.brut.saisie.faits.get(&m).is_some_and(|f| !f.lignes().is_empty()) {
-            let bornes = match (&o.carte().debut, &o.carte().fin) {
+            let bornes = match (o.carte().debut.map(|j| j.iso()), o.carte().fin.map(|j| j.iso())) {
                 (Some(d), Some(f)) => format!("du {} au {}", d, f),
                 (Some(d), None) => format!("du {}, sans fin", d),
                 (None, Some(f)) => format!("jusqu'au {}, sans début", f),
@@ -1283,9 +1275,8 @@ pub fn mois_d_entree(racine: &Path, mois: Mois) -> R<Mois> {
 /// a faire (sa paie, sa DPAE). Sinon, `mois`.
 pub fn mois_d_ecriture(racine: &Path, mois: Mois, e: &Carte) -> R<Mois> {
     let mensuel = e.mensuelle()?;
-    let debut = e.debut_lu();
-    Ok(match debut.get(..7).and_then(Mois::du_texte) {
-        Some(p) if mensuel && p < mois && !commence_avant_le_logiciel(racine, &debut, mois)? => p,
+    Ok(match e.debut_lu() {
+        Some(d) if mensuel && d.mois_civil() < mois && !commence_avant_le_logiciel(racine, d, mois)? => d.mois_civil(),
         _ => mois,
     })
 }
@@ -1298,9 +1289,8 @@ pub fn mois_d_ecriture(racine: &Path, mois: Mois, e: &Carte) -> R<Mois> {
 /// identifiante, sans autre borne que le dernier jour du mois declare (cahier technique DSN 2026.1, § 4.4.12,
 /// `atelier/reference/norme-dsn/texte/chapitre-4-controles.txt` ; bloc S21.G00.40, `texte-2027/bloc-S21.G00.40.txt`) ;
 /// son numero, identifiant aussi, se reporte a l'identique d'une DSN a la suivante (§ 2.1.2, `chapitre-2-principes-de-constitution.txt`).
-pub fn commence_avant_le_logiciel(racine: &Path, debut: &str, mois: Mois) -> R<bool> {
-    let Some(m) = debut.get(..7).and_then(Mois::du_texte) else { return Ok(false) };
-    Ok(m < mois_d_entree(racine, mois)?)
+pub fn commence_avant_le_logiciel(racine: &Path, debut: Jour, mois: Mois) -> R<bool> {
+    Ok(debut.mois_civil() < mois_d_entree(racine, mois)?)
 }
 
 /// Le mois a-t-il une saisie : un fichier, ou un engagement qui le touche ?

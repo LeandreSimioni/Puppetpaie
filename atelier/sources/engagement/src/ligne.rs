@@ -119,7 +119,7 @@ pub fn dite(c: &Option<Chiffre>) -> Option<&Chiffre> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DateDeLigne {
-    Nue(String),
+    Nue(Jour),
     Detaillee(JourEtLieu),
 }
 
@@ -127,22 +127,17 @@ pub enum DateDeLigne {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JourEtLieu {
-    pub jour: String,
+    pub jour: Jour,
     pub lieu: String,
 }
 
 impl DateDeLigne {
-    /// Le jour, en texte.
-    pub fn jour(&self) -> &str {
+    /// Le jour.
+    pub fn jour(&self) -> Jour {
         match self {
-            DateDeLigne::Nue(j) => j,
-            DateDeLigne::Detaillee(d) => &d.jour,
+            DateDeLigne::Nue(j) => *j,
+            DateDeLigne::Detaillee(d) => d.jour,
         }
-    }
-
-    /// Le jour lu.
-    pub fn lu(&self) -> R<Jour> {
-        Jour::lire(self.jour())
     }
 
     /// Le lieu que la date dit d'elle-meme, tel qu'il est ecrit ; `None` s'il est vide.
@@ -154,7 +149,7 @@ impl DateDeLigne {
     }
 
     /// Le jour `jour`, au lieu `lieu` s'il est dit.
-    pub fn au(jour: String, lieu: String) -> DateDeLigne {
+    pub fn au(jour: Jour, lieu: String) -> DateDeLigne {
         if lieu.is_empty() {
             DateDeLigne::Nue(jour)
         } else {
@@ -627,14 +622,14 @@ impl LignePaie {
         }
     }
 
-    /// Ses jours du mois, lus.
-    pub fn jours(&self) -> R<Vec<Jour>> {
-        self.dates().iter().map(DateDeLigne::lu).collect()
+    /// Ses jours du mois.
+    pub fn jours(&self) -> Vec<Jour> {
+        self.dates().iter().map(DateDeLigne::jour).collect()
     }
 
     /// Le premier jour de la ligne (ses dates, puis son planning) ; `None` : elle n'en a pas.
-    pub fn premier_jour(&self) -> R<Option<Jour>> {
-        self.dates().first().or(self.planning().first()).map(DateDeLigne::lu).transpose()
+    pub fn premier_jour(&self) -> Option<Jour> {
+        self.dates().first().or(self.planning().first()).map(DateDeLigne::jour)
     }
 
     /// Une ligne en pourcentage, sa base et son pourcentage positifs ; une autre passe.
@@ -885,11 +880,11 @@ impl LigneDonnee {
 
     /// LE JOUR OU SA RUBRIQUE SE LIT : son premier jour (ses dates, puis son planning), sinon le dernier jour de `mois`,
     /// celui de la carte.
-    pub fn jour(&self, mois: Mois) -> R<Jour> {
+    pub fn jour(&self, mois: Mois) -> Jour {
         let premier = self.dates.iter().chain(self.planning.iter()).flatten().next();
         match premier {
-            Some(d) => d.lu(),
-            None => Ok(mois.dernier_jour()),
+            Some(d) => d.jour(),
+            None => mois.dernier_jour(),
         }
     }
 
@@ -992,7 +987,7 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
         let Some(code) = l.rubrique.clone() else {
             return Err(dans_la_ligne(refus("elle dit sa rubrique (« rubrique »).")));
         };
-        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois).map_err(dans_la_ligne)?).map_err(dans_la_ligne)?;
+        let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois)).map_err(dans_la_ligne)?;
         out.push(l.ranger(&r).map_err(dans_la_ligne)?);
     }
     Ok(out)

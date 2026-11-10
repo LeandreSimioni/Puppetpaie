@@ -324,7 +324,8 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         })?;
         match champ {
             Demande::Debut | Demande::Fin => {
-                let j = Jour::lire(&v).map_err(|m| m.reformuler(|p| format!("{} : rien n'a été écrit.", p)).reclasser(Classe::Refuse))?.iso();
+                let jour = Jour::lire(&v).map_err(|m| m.reformuler(|p| format!("{} : rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
+                let j = jour.iso();
                 if champ == Demande::Debut && j > du {
                     return Err(refus(format!(
                         "Le contrat de {} ne peut pas commencer le {} : un bulletin le paie dès le {}. Rien n'a été écrit.",
@@ -337,7 +338,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 if champ == Demande::Debut {
                     debut_dit = Some(j.clone());
                 }
-                *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(j);
+                *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
             Demande::Salaire | Demande::Quotite => {
                 let s = v.replace([' ', '\u{a0}'], "").replace(',', ".");

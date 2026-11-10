@@ -7,6 +7,7 @@
 //! groupes et par leurs champs (`Champ`), jamais par le nom d'une cle.
 
 use serde::{Deserialize, Serialize};
+use socle::date::Jour;
 use socle::echec::R;
 use socle::forme::NombreLu;
 
@@ -111,9 +112,9 @@ carte! {
         #[champ(Terme, Nature)]
         pub nature: Option<droit::natures::NatureDeContrat>,
         #[champ(Partage, Debut)]
-        pub debut: Option<String>,
+        pub debut: Option<Jour>,
         #[champ(Partage, Fin)]
-        pub fin: Option<String>,
+        pub fin: Option<Jour>,
         #[champ(Partage, Numero)]
         pub numero: Option<String>,
         #[champ(Terme, Etablissement)]
@@ -164,7 +165,7 @@ carte! {
         #[champ(Fait, Primes)]
         pub primes: Option<Vec<Prime>>,
         #[champ(Fait, DatePaiement)]
-        pub date_paiement: Option<String>,
+        pub date_paiement: Option<Jour>,
         #[champ(Fait, Jours)]
         pub jours: Option<NombreLu>,
         #[champ(Fait, TauxCachet)]
@@ -182,17 +183,17 @@ carte! {
         #[champ(Fin, MotifRupture)]
         pub motif_rupture: Option<droit::natures::MotifDeRupture>,
         #[champ(Fin, NotificationRupture)]
-        pub notification_rupture: Option<String>,
+        pub notification_rupture: Option<Jour>,
         #[champ(Fin, EngagementLicenciement)]
-        pub engagement_licenciement: Option<String>,
+        pub engagement_licenciement: Option<Jour>,
         #[champ(Fin, SignatureConvention)]
-        pub signature_convention: Option<String>,
+        pub signature_convention: Option<Jour>,
         #[champ(Fin, Preavis)]
         pub preavis: Option<Preavis>,
         #[champ(Fin, Transaction)]
         pub transaction: Option<String>,
         #[champ(Fin, DernierJourPaye)]
-        pub dernier_jour_paye: Option<String>,
+        pub dernier_jour_paye: Option<Jour>,
         #[champ(Fin, EnDroitALaRetraite)]
         pub en_droit_a_la_retraite: Option<bool>,
         #[champ(Fin, PreavisNonEffectue)]
@@ -206,7 +207,7 @@ carte! {
         #[champ(Deduit, JoursContrat)]
         pub jours_contrat: Option<NombreLu>,
         #[champ(Deduit, DateModification)]
-        pub date_modification: Option<String>,
+        pub date_modification: Option<Jour>,
         #[champ(Deduit, Avant)]
         pub avant: Option<Avant>,
         #[champ(Vue, Valide)]
@@ -244,6 +245,12 @@ trait Simple {
 impl Simple for String {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.clone()))
+    }
+}
+
+impl Simple for Jour {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.iso()))
     }
 }
 
@@ -349,9 +356,9 @@ impl Carte {
         }
     }
 
-    /// Le debut, comme `Engagement` le deduirait : celui qu'elle dit, sinon son premier jour joue ; vide sans aucun.
-    pub fn debut_lu(&self) -> String {
-        crate::debut_de(self.debut.clone(), self.lignes())
+    /// Le debut, comme `Engagement` le deduirait : celui qu'elle dit, sinon son premier jour joue ; `None` sans aucun.
+    pub fn debut_lu(&self) -> Option<Jour> {
+        crate::debut_de(self.debut, self.lignes())
     }
 
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).
@@ -396,18 +403,15 @@ impl Carte {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CongePris {
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
 }
 
 impl CongePris {
     /// Son premier et son dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
-    pub fn jours(&self) -> R<(socle::date::Jour, socle::date::Jour)> {
-        let lu = |x: &Option<String>, cle: &str| match x {
-            Some(j) => socle::date::Jour::lire(j),
-            None => Err(socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle)),
-        };
-        Ok((lu(&self.debut, "debut")?, lu(&self.fin, "fin")?))
+    pub fn jours(&self) -> R<(Jour, Jour)> {
+        let lu = |x: Option<Jour>, cle: &str| x.ok_or_else(|| socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle));
+        Ok((lu(self.debut, "debut")?, lu(self.fin, "fin")?))
     }
 }
 
@@ -427,8 +431,8 @@ pub struct Prime {
 pub struct Preavis {
     #[serde(rename = "type")]
     pub genre: String,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
 }
 
 /// Les termes d'avant l'avenant qui change en cours de mois (`droit::periodes::TERMES_D_AVANT`), chacun `null` quand il

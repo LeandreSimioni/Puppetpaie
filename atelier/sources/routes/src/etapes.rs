@@ -340,8 +340,8 @@ struct NonActif {
     salarie: Option<String>,
     nom: Option<String>,
     numero: Option<String>,
-    debut: String,
-    fin: Option<String>,
+    debut: Jour,
+    fin: Option<Jour>,
     non_actif: String,
     non_actif_dit: String,
     dit: String,
@@ -746,9 +746,9 @@ pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(String,
 }
 
 /// La date d'embauche que la DPAE partie a declaree, quand elle n'est plus celle de l'engagement (`ARefaire::Dpae`).
-pub(crate) fn debut_declare(refaire: &[ARefaire]) -> Option<String> {
+pub(crate) fn debut_declare(refaire: &[ARefaire]) -> Option<Jour> {
     refaire.iter().find_map(|a| match a {
-        ARefaire::Dpae { debut_declare, .. } => Some(debut_declare.clone()),
+        ARefaire::Dpae { debut_declare, .. } => *debut_declare,
         _ => None,
     })
 }
@@ -990,7 +990,7 @@ impl ContratDit {
 /// phrase qui le dit (`regularisation::dpae_d_une_date_changee`).
 #[derive(Debug, Clone, Serialize)]
 struct DateChangee {
-    avant: String,
+    avant: Jour,
     vaut: bool,
     phrase: String,
 }
@@ -1462,7 +1462,6 @@ impl<'a> Moteur<'a> {
             let Some(k) = s.identites.iter().position(|x| x == id) else { continue };
             let p = &s.paies[k];
             let cle = p.salarie.id.to_string();
-            let debut = p.engagement.debut.iso();
             // CE QUI EST A REFAIRE : le present compare a la version sur laquelle chaque envoi est parti.
             let refaire = self.a_refaire_du_mois(mois, e, &departs)?;
             let sal = &p.salarie;
@@ -1500,7 +1499,7 @@ impl<'a> Moteur<'a> {
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
             // REPRIS D'UN ANCIEN LOGICIEL : la carte le dit (`engagement::importe::vient_d_un_ancien_logiciel`).
-            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, &p.engagement.debut.iso(), p.engagement.numero.as_deref())?;
+            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_deref())?;
             // SIGNE AILLEURS : son contrat ecrit ne se fait pas signer ici, ses avenants si (`engagement::signe_ailleurs`).
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).
@@ -1514,7 +1513,7 @@ impl<'a> Moteur<'a> {
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement)?,
                 ailleurs,
                 dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, &p.engagement.debut.iso())),
-                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &p.engagement.debut.iso(), le_mois)?,
+                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.debut, le_mois)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles
             // du contrat declare a la caisse qui finit (`crate::dossier_salarie::certificats_dus`), l'AER Cinema
@@ -1543,7 +1542,7 @@ impl<'a> Moteur<'a> {
             // l'ancienne date vaut-elle (`crate::regularisation::dpae_d_une_date_changee`) ?
             let mut date_changee = None;
             if let Some(avant) = debut_declare(&refaire) {
-                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&avant, &debut)?;
+                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, p.engagement.debut)?;
                 if !vaut {
                     dpae_v = None;
                     partie_le = None;
@@ -1644,19 +1643,13 @@ impl<'a> Moteur<'a> {
             None => None,
         };
         let premier_mois = o.premier_mois() == lu;
-        let debut = match e.debut_lu() {
-            d if d.is_empty() => None,
-            d => Some(Jour::lire(&d)?),
-        };
-        let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, &d.iso(), lu)? } else { false };
+        let debut = e.debut_lu();
+        let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, d, lu)? } else { false };
         let numero = match e.numero_dit() {
             Some(n) => Some(NumeroContrat::lire(n)?),
             None => None,
         };
-        let fin = match e.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => Some(Jour::lire(f)?),
-            None => None,
-        };
+        let fin = e.fin;
         Ok(Vue {
             salarie: cle,
             nom,
@@ -2410,7 +2403,7 @@ impl<'a> Moteur<'a> {
                 // quand une date d'embauche a change : le reste du temps, rien a dire.
                 let pourquoi = match ancienne {
                     Some(a) => {
-                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(&a, &debut)?;
+                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(a, p.engagement.debut)?;
                         if vaut {
                             continue;
                         }
@@ -2802,15 +2795,9 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             Some(f) => super::nom_a_l_ecran(f, c).trim().to_string(),
             None => c.to_string(),
         });
-        let debut = Jour::lire(&engagement::debut_brut(b))?;
-        let fin_ecrite = match b.saisie.carte.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => Some(Jour::lire(f)?),
-            None => None,
-        };
-        let fin = match fin_ecrite {
-            None => b.saisie.carte.dates().iter().map(|j| j.jour().to_string()).max(),
-            Some(f) => Some(f.iso()),
-        };
+        let debut = engagement::debut_brut(b).ok_or_else(|| socle::fichiers::absent("debut"))?;
+        let fin_ecrite = b.saisie.carte.fin;
+        let fin = fin_ecrite.or_else(|| b.saisie.carte.dates().iter().map(|j| j.jour()).max());
         let dit = match b.saisie.carte.numero_dit() {
             Some(n) => format!("contrat {}, {}", n, periode_dite(debut, fin_ecrite)),
             None => format!("contrat sans numéro, {}", periode_dite(debut, fin_ecrite)),
@@ -2820,7 +2807,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             nom,
             numero: b.saisie.carte.numero.clone(),
             dit,
-            debut: debut.iso(),
+            debut,
             fin,
             non_actif: n.le().to_string(),
             non_actif_dit: format!("non actif depuis le {}", socle::ecran::quand(n.le())),

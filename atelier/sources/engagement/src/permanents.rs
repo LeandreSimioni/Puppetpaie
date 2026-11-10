@@ -46,7 +46,7 @@ impl Permanents {
                 continue;
             }
             let Some((depuis, nature)) = o.au_mois_depuis()? else { continue };
-            let fin_dite = o.carte().fin.as_deref().filter(|f| !f.is_empty()).map(Jour::lire).transpose()?;
+            let fin_dite = o.carte().fin;
             if depuis > *fin || fin_dite.is_some_and(|f| f < *debut) {
                 continue;
             }
@@ -115,11 +115,7 @@ impl Objet {
         }
         let premiere = self.carte().nature_lue()?;
         if premiere.mensuelle() {
-            let debut = crate::debut_brut(&self.brut);
-            if debut.is_empty() {
-                return Ok(None);
-            }
-            return Ok(Some((Jour::lire(&debut)?, premiere)));
+            return Ok(crate::debut_brut(&self.brut).map(|debut| (debut, premiere)));
         }
         for a in self.avenants() {
             if let Some(n) = a.termes.nature {

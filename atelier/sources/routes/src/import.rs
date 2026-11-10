@@ -718,10 +718,9 @@ pub(crate) fn apercu_lu(
 fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
-    let plein = |t: &str| Some(t.to_string()).filter(|t| !t.is_empty());
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le.clone()).chain(paies.iter().filter_map(|p| p.paie.importe_le.clone())).filter(|t| !t.is_empty()).max();
-    let debut = contrats.iter().filter_map(|c| c.debut.as_deref().and_then(plein)).min();
-    let fin = contrats.iter().filter_map(|c| c.fin.as_deref().and_then(plein)).max();
+    let debut = contrats.iter().filter_map(|c| c.debut).min().map(|j| j.iso());
+    let fin = contrats.iter().filter_map(|c| c.fin).max().map(|j| j.iso());
     let salaries: HashSet<&str> = contrats.iter().map(|c| c.salarie.as_str()).filter(|s| !s.is_empty()).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
     let editeur = attend_l_editeur(racine)?;
@@ -865,7 +864,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
             Attestation::Certificat => &mut certificats,
             Attestation::Aem => &mut aem,
         };
-        cible.voir(c.debut.as_deref(), c.fin.as_deref(), c.contrat.importe_le.as_deref());
+        cible.voir(c.debut.map(|j| j.iso()).as_deref(), c.fin.map(|j| j.iso()).as_deref(), c.contrat.importe_le.as_deref());
     }
     let (mut dsn, mut bulletins) = (Reprise::default(), Reprise::default());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).

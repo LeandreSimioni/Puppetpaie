@@ -603,20 +603,18 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
 
 /// Les jours travailles d'un engagement brut, AAAA-MM-JJ, tries : ceux de ses lignes de travail
 /// (`engagement::dates_engagement`).
-fn jours_joues(e: &SaisieCarte) -> Vec<String> {
-    let mut jours: Vec<String> = e.dates().iter().map(|j| j.jour().to_string()).collect();
+fn jours_joues(e: &SaisieCarte) -> Vec<Jour> {
+    let mut jours: Vec<Jour> = e.dates().iter().map(|j| j.jour()).collect();
     jours.sort();
     jours
 }
 
 /// (debut, fin) d'une carte, AAAA-MM-JJ, comme `Engagement` les deduirait : son debut (`Carte::debut_lu`), sa fin
-/// ecrite, sinon le dernier de ses jours travailles et de son planning ; aucune fin sans aucun jour.
+/// ecrite, sinon le dernier de ses jours travailles et de son planning ; aucune fin sans aucun jour. Le debut d'une carte
+/// qui n'en dit aucun s'ecrit vide : c'est ainsi que la page le lit (`PaieACompleter`).
 pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (String, Option<String>) {
-    let fin = match e.fin.as_deref().filter(|x| !x.is_empty()) {
-        Some(f) => Some(f.to_string()),
-        None => e.dates().iter().chain(e.planning().iter()).map(|j| j.jour().to_string()).max(),
-    };
-    (e.debut_lu(), fin)
+    let fin = e.fin.or_else(|| e.dates().iter().chain(e.planning().iter()).map(|j| j.jour()).max());
+    (e.debut_lu().map(|j| j.iso()).into_iter().collect(), fin.map(|j| j.iso()))
 }
 
 // ------------------------------------------------------------ les fichiers de mois
@@ -651,7 +649,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), plein(b.debut.as_ref()), plein(b.fin.as_ref()), plein(b.numero.as_ref())) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut.map(|j| j.iso()), b.fin.map(|j| j.iso()), plein(b.numero.as_ref())) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
         if !vus.insert((salarie.clone(), debut.clone(), numero.clone())) {
@@ -819,7 +817,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             jours,
         };
         if !i.permanent() {
-            if let (Some(debut), Some(fin)) = (c.debut.clone().filter(|d| !d.is_empty()), c.fin.clone().filter(|f| !f.is_empty())) {
+            if let (Some(debut), Some(fin)) = (c.debut.map(|j| j.iso()), c.fin.map(|j| j.iso())) {
                 out.push(atteste(debut, fin, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
             }
             continue;
@@ -899,7 +897,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 jours: Some(jours),
                 titre: titre_de(spec, numero.as_deref()),
                 numero_objet: numero,
-                dates: dates.into_iter().filter(|j| j.get(..7).and_then(Mois::du_texte) == Some(mois)).collect(),
+                dates: dates.into_iter().filter(|j| j.mois_civil() == mois).map(|j| j.iso()).collect(),
                 source: "paie",
             };
             match deja {
@@ -1441,7 +1439,7 @@ const NUMERO_DIT: &str = "numero";
 
 /// La case du numero, sauf pour un contrat dont une DSN de l'ancien logiciel a declare le numero : il est lu
 /// (`engagement::importe::numero_declare_du_contrat`), il ne se dit pas.
-fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: &str) -> R<Vec<&'static str>> {
+fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: Jour) -> R<Vec<&'static str>> {
     Ok(if engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)? { Vec::new() } else { vec![NUMERO_DIT] })
 }
 
@@ -1454,8 +1452,8 @@ fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: &str) -> R<Vec<&'static s
 /// Un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`) a ete signe ailleurs : il
 /// n'appelle que la case de son numero deja declare en DSN (`NUMERO_DIT`).
 fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Vec<&'static str>> {
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &e.debut.iso(), e.mois)? {
-        return numero_a_dire(ctx, &e.salarie, &e.debut.iso());
+    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, e.debut, e.mois)? {
+        return numero_a_dire(ctx, &e.salarie, e.debut);
     }
     if !engagement::contrat_a_signer(&ctx.racine, e)? {
         return Ok(Vec::new());
@@ -1479,16 +1477,22 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
 /// duree du travail calculee.
 /// Une carte qui ne nomme pas encore son salarie ou sa nature n'appelle encore aucune case.
 fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<Vec<&'static str>> {
-    let debut = e.debut_lu();
     let Some(cle) = &e.salarie else { return Ok(Vec::new()) };
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
-        return numero_a_dire(ctx, cle, &debut);
+    let debut = e.debut_lu();
+    if let Some(d) = debut {
+        if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {
+            return numero_a_dire(ctx, cle, d);
+        }
     }
     if e.nature.is_none() {
         return Ok(Vec::new());
     }
     let nat = e.nature_lue()?;
-    if nat.modele_contrat().is_none() || engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, &debut, e.numero.as_deref())? {
+    let repris = match debut {
+        Some(d) => engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_deref())?,
+        None => false,
+    };
+    if nat.modele_contrat().is_none() || repris {
         return Ok(Vec::new());
     }
     let mut v = vec!["periode_essai_jours"];
@@ -2089,8 +2093,7 @@ fn nom_prenom(nom: Option<&str>, prenom: Option<&str>) -> Option<String> {
 /// `declarations::demarrage::conges_a_dire`) : le compteur de conges part du solde de l'ancien bulletin (L3141-3,
 /// `engagement::conges::reprise_conges`). `brut` : l'engagement tel que la saisie l'ecrit ; `v` : sa vue (`vue_paie`).
 fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie) -> R<()> {
-    let debut = v.debut.iso();
-    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
+    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, v.debut, mois)? {
         return Ok(());
     }
     let qui = match nom_prenom(v.salarie.nom.as_deref(), v.salarie.prenom.as_deref()) {

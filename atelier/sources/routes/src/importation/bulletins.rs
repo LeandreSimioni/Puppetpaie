@@ -1221,7 +1221,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         // Le reste d'un certificat : ses dates et ses compteurs sont ceux du reste.
         // Le reste d'un certificat porte toujours ses dates (`attestes::reste_du_certificat`).
-        let (d, f, du_au) = match reste.as_ref().map(|l| (l.debut.clone(), l.fin.clone())) {
+        let (d, f, du_au) = match reste.as_ref().map(|l| (l.debut.map(|j| j.iso()), l.fin.map(|j| j.iso()))) {
             Some((Some(rd), Some(rf))) => {
                 let jj = |x: &str| match Jour::du_texte(x) {
                     Some(j) => j.jj_mm_aaaa(),
@@ -2004,7 +2004,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &str, chemin: &str) -> R<(Compte, 
         .transpose()?;
     let mut brut = l.b.brut;
     brut.rescale(2);
-    let (debut, fin) = (l.b.debut.iso(), l.b.fin.iso());
+    let (debut, fin) = (l.b.debut, l.b.fin);
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
     let mut a = ContratAtteste::vide(Attestation::Bulletin);
@@ -2170,7 +2170,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> R<(C
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
     (c.fichier, c.page) = (Some(copie.to_string()), Some(a.page as u64));
-    let ligne = ContratLu { salarie: salarie.to_string(), debut: Some(debut.iso()), fin: Some(fin.iso()), numero: None, contrat: c };
+    let ligne = ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
     Ok((ligne, if quoi.is_empty() { "aucune heure, aucun cachet, aucun jour".into() } else { quoi.join(", ") }))
 }
 
@@ -2208,7 +2208,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le.map(|s| s.iso());
     (a.fichier, a.page) = (Some(copie.to_string()), Some(c.page as u64));
-    Ok((ContratLu { salarie: salarie.to_string(), debut: Some(debut.iso()), fin: Some(fin.iso()), numero: None, contrat: a }, quoi))
+    Ok((ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
 }
 
 /// Les compteurs de chaque bulletin lu (`bulletin_lu::compteurs`), confrontes a ses cumuls avec ses freres : les autres

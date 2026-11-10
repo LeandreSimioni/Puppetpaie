@@ -228,7 +228,7 @@ pub(crate) fn refus_non_declarable(
             continue;
         }
         let nom = cle.to_string();
-        let debut = Jour::lire(&engagement::debut_brut(&b_avant)).map_err(|m| m.reclasser(Classe::Illisible))?.jj_mm_aaaa();
+        let debut = engagement::debut_brut(&b_avant).ok_or_else(|| socle::fichiers::absent("debut").reclasser(Classe::Illisible))?.jj_mm_aaaa();
         let dsn = match departs.de(&cle, &numero).iter().find(|x| x.envoi == engagement::departs::Envoi::Dsn && x.mois == Some(lu)).and_then(|x| x.par) {
             Some(par) => format!("dans la DSN {}, qui a porté la correction {}", de_mois_en_clair(par), de_mois_en_clair(lu)),
             None => format!("dans la DSN {}, qui ne se remplace plus", de_mois_en_clair(lu)),
@@ -252,9 +252,7 @@ pub(crate) fn refus_non_declarable(
 /// `atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 3) et ne s'annule pas : une correction est une
 /// nouvelle declaration (fiche net-entreprises 3300, `atelier/reference/sources/net-entreprises-base-connaissances/
 /// net-entreprises-fiche3300-dpae-en-dsn-20261015.txt`, l. 451).
-pub(crate) fn dpae_d_une_date_changee(avant: &str, apres: &str) -> R<(bool, String)> {
-    let jour = |t: &str| Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible));
-    let (avant, apres) = (jour(avant)?, jour(apres)?);
+pub(crate) fn dpae_d_une_date_changee(avant: Jour, apres: Jour) -> R<(bool, String)> {
     let (a, b) = (avant.jj_mm_aaaa(), apres.jj_mm_aaaa());
     Ok(if avant < apres {
         (

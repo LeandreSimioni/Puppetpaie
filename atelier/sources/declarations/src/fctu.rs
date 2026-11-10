@@ -193,10 +193,7 @@ pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
     let fin = e.fin.ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre.clone()).filter(|t| !t.is_empty());
-    let debut_preavis = match preavis.and_then(|p| p.debut.as_deref()).filter(|v| !v.is_empty()) {
-        Some(v) => Some(Jour::lire(v)?),
-        None => None,
-    };
+    let debut_preavis = preavis.and_then(|p| p.debut);
     let jour_paye = match e.dernier_jour_paye {
         Some(j) => j,
         None => {

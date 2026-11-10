@@ -811,7 +811,7 @@ fn engagements_de(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<EngagementAu
         if !o.est_valide() || o.est_importe() || o.est_non_actif() || o.carte().nature != Some(nature) {
             continue;
         }
-        let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), Jour::du_texte(&engagement::debut_brut(&o.brut))) else { continue };
+        let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), engagement::debut_brut(&o.brut)) else { continue };
         let mois = o.premier_mois();
         v.push(EngagementAuChoix { engagement: EngagementVise { mois, salarie: salarie.to_string(), debut }, nom: engagement::etats::qui_de(ctx, &o) });
     }

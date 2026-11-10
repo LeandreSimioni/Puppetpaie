@@ -496,11 +496,11 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
     let Some(brut) = p.brut.map(eur2) else { return Ok(None) };
-    let mut dates: Vec<String> = Vec::new();
+    let mut dates: Vec<Jour> = Vec::new();
     for d in &p.dates {
         let mut j = d.debut;
         while j <= d.fin {
-            dates.push(j.iso());
+            dates.push(j);
             j = j.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?;
         }
     }
@@ -529,11 +529,10 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
     let eng = &p.engagement;
     let cle = cle_de(p);
     let mois_du = eng.mois_du_contrat();
-    let debut = eng.debut.iso();
     let mut manquants: Vec<String> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
-    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(debut.clone()), numero: eng.numero.as_ref().map(|n| n.to_string()), ..Default::default() };
+    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.as_ref().map(|n| n.to_string()), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut bruts = Decimal::new(0, 2);
     let mut jours = 0i64;
@@ -581,8 +580,8 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
         spectacle: eng.spectacle.clone(),
         dates_travail: dates,
         lignes: Some(lignes),
-        debut: Some(eng.debut.iso()),
-        fin: eng.fin.map(|f| f.iso()),
+        debut: Some(eng.debut),
+        fin: eng.fin,
         numero: eng.numero.as_ref().map(|n| n.to_string()),
         jours: Some(engagement::Chiffre::entier(jours + eng.jours)),
         taux_cachet: eng.taux_cachet.map(engagement::Chiffre::de_f64),

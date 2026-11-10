@@ -49,12 +49,7 @@ pub(crate) fn salarie_de(e: &Carte) -> R<&droit::contexte::IdSalarie> {
 
 /// Le debut que la carte `e` ecrit, lu ; refus s'il n'est pas dit.
 pub(crate) fn debut_de(e: &Carte) -> R<Jour> {
-    Jour::lire(e.debut.as_deref().ok_or_else(|| socle::fichiers::absent("debut"))?)
-}
-
-/// Un jour dit et non vide de la carte, lu.
-pub(crate) fn jour_dit(x: &Option<String>) -> R<Option<Jour>> {
-    x.as_deref().filter(|j| !j.is_empty()).map(Jour::lire).transpose()
+    e.debut.ok_or_else(|| socle::fichiers::absent("debut"))
 }
 
 /// La regle qui paie le mois incomplet [`debut`, `fin`] (borne au mois [`debut_mois`, `fin_mois`]) du contrat de
@@ -411,7 +406,7 @@ fn mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &str) -> R<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for o in crate::stock::objets(&ctx.racine)? {
         if o.fichier < mois && !o.est_non_actif() && !o.importe_seul() && o.mensuel()? && o.carte().salarie.as_deref() == Some(cle) {
-            out.push(format!("{}#{}", o.fichier, crate::debut_brut(&o.brut)));
+            out.push(format!("{}#{}", o.fichier, crate::debut_brut(&o.brut).map(|d| d.iso()).into_iter().collect::<String>()));
         }
     }
     out.sort();
@@ -1014,7 +1009,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let fin_mois = mois.dernier_jour();
     // La date de debut d'un contrat paye au mois : la meme phrase que `engagement::Engagement` (une saisie neuve sans
     // debut ne refuse pas sur « champ 'debut' absent »).
-    let Some(debut) = e.debut.as_deref().filter(|x| !x.is_empty()) else {
+    let Some(debut_saisi) = e.debut else {
         return Err(socle::refus!(
             "{} : saisissez la date de début de son {}, celle du contrat signé, sous « Contrat ».\n\
              Elle identifie le contrat dans la déclaration (S21.G00.40.001) : elle ne se déduit de rien.",
@@ -1022,9 +1017,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             nat.libelle
         ));
     };
-    let debut_saisi = Jour::lire(debut)?;
     let debut = debut_saisi.max(debut_mois);
-    let fin = match jour_dit(&e.fin)? {
+    let fin = match e.fin {
         Some(f) => f.min(fin_mois),
         None => fin_mois,
     };
@@ -1186,7 +1180,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     }
 
     // --- le solde de tout compte, le mois ou le contrat se termine
-    if let Some(f) = jour_dit(&e.fin)? {
+    if let Some(f) = e.fin {
         if debut_mois <= f && f <= fin_mois {
             let (l, a) = crate::solde::solde_de_tout_compte(ctx, au, e, mois, &lignes)?;
             lignes.extend(l);

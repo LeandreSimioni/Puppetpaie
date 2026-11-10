@@ -250,7 +250,7 @@ fn comparer_une(
     for d in &p.dates {
         let (mut j, b) = (d.debut, d.fin);
         while j <= b {
-            jours.push(crate::DateDeLigne::Nue(j.iso()));
+            jours.push(crate::DateDeLigne::Nue(j));
             j = j.plus_jours(1)?;
         }
     }
@@ -276,7 +276,7 @@ fn comparer_une(
                 }));
             };
             for i in 0..n {
-                jours.push(crate::DateDeLigne::Nue(d.plus_jours(i)?.iso()));
+                jours.push(crate::DateDeLigne::Nue(d.plus_jours(i)?));
             }
         }
     }
@@ -331,8 +331,8 @@ fn comparer_une(
         salarie: Some(salarie.clone()),
         spectacle,
         nature: Some(nature),
-        debut: p.debut.map(|j| j.iso()),
-        fin: p.fin.map(|j| j.iso()),
+        debut: p.debut,
+        fin: p.fin,
         emploi: imprime(|i| &i.emploi),
         pcs_ese: imprime(|i| &i.pcs_ese),
         code_emploi_ft: imprime(|i| &i.code_emploi_ft),
@@ -341,7 +341,7 @@ fn comparer_une(
         statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
         lignes: Some(saisies),
         // Le jour ou l'ancien logiciel a verse : un fait (`Carte::importe`).
-        date_paiement: p.verse_le.map(|j| j.iso()),
+        date_paiement: p.verse_le,
         importe: Some(true),
         ..Default::default()
     };

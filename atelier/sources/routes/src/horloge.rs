@@ -492,15 +492,15 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     let jour = d.jour;
     let mois = le_mois;
     let jour_iso = jour.iso();
-    let debuts: BTreeSet<String> = engagement::stock::objets_du_mois(d.racine, le_mois)
+    let debuts: BTreeSet<Jour> = engagement::stock::objets_du_mois(d.racine, le_mois)
         ?
         .iter()
         .filter(|o| !o.importe_seul())
-        .map(|o| engagement::debut_brut(&o.brut))
-        .filter(|debut| debut.get(..7).and_then(Mois::du_texte) == Some(mois) && **debut <= *jour_iso)
+        .filter_map(|o| engagement::debut_brut(&o.brut))
+        .filter(|debut| debut.mois_civil() == mois && *debut <= jour)
         .collect();
-    for debut in debuts {
-        let le_jour = Jour::lire(&debut).map_err(|m| m.reclasser(Classe::Illisible))?;
+    for le_jour in debuts {
+        let debut = le_jour.iso();
         let j = le(&debut);
         calendrier.push(Pas {
             quand: format!("{}T05:00:00", debut),
@@ -525,7 +525,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     }
     if let Ok(apercu) = crate::contrats::signature_apercu(ctx, le_mois) {
         for c in apercu.contrats {
-            let Some(quand) = revalide_le(ctx, mois, &c.salarie, &c.debut.iso())? else { continue };
+            let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
             if quand.get(..10).is_some_and(|q| q > jour_iso.as_str()) {
                 continue;
             }
@@ -834,7 +834,7 @@ fn valider_les_engagements(d: &HorlogeFictive, le_mois: Mois, jusqu_au: Jour, qu
         let manques = crate::mois::manques_de_la_saisie(ctx, &vue);
         let mut fait = false;
         for ((o, id), manque) in objets.iter().zip(ids).zip(manques) {
-            if o.est_valide() || o.importe_seul() || manque.is_some() || engagement::debut_brut(&o.brut) > jusqu_au.iso() {
+            if o.est_valide() || o.importe_seul() || manque.is_some() || engagement::debut_brut(&o.brut) > Some(jusqu_au) {
                 continue;
             }
             let charge = crate::engagement::ChargeValider { mois: le_mois, engagement: id };
@@ -875,10 +875,10 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
 // ------------------------------------------------------------------ les avenants
 
 /// Le jour et l'heure ou l'engagement de ce contrat a ete valide en dernier (`valide.le`) : `AAAA-MM-JJTHH:MM:SS`.
-fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: &str) -> R<Option<String>> {
+fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Option<String>> {
     Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
         let b = &*o.brut;
-        let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == debut;
+        let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == Some(debut);
         sien.then(|| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect()))?
     }))
 }

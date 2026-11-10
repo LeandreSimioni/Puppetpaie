@@ -1284,9 +1284,9 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let effet = match (mois_effet, siens.as_ref()) {
         (Some(me), Some(v)) => {
-            let dite = v.objet().vue(me)?.and_then(|x| x.date_modification.filter(|d| !d.is_empty()));
+            let dite = v.objet().vue(me)?.and_then(|x| x.date_modification);
             match dite {
-                Some(d) => d,
+                Some(d) => d.iso(),
                 None => me.premier_jour().iso(),
             }
         }

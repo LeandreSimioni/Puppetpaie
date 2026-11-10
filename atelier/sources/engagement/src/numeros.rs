@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 
 use droit::contexte::{Contexte, IdSalarie};
+use socle::date::Jour;
 use socle::echec::R;
 
 use crate::departs::Departs;
@@ -25,7 +26,7 @@ use crate::stock::{self, Objet};
 #[serde(deny_unknown_fields)]
 pub struct NumeroPour {
     pub salarie: String,
-    pub debut: String,
+    pub debut: Jour,
     pub le: String,
 }
 
@@ -234,7 +235,7 @@ fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &str) -> R<bool> {
 pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: &str, departs: &Departs) -> R<()> {
     let cle = o.carte().salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let fiche = crate::fiche_du_salarie(ctx, &cle)?;
-    let debut = crate::debut_brut(&o.brut);
+    let debut = crate::debut_brut(&o.brut).ok_or_else(|| socle::fichiers::absent("debut"))?;
     let porte = NumeroContrat::du_texte(o.carte().numero.as_deref())?;
     // UN NUMERO PARTI NE CHANGE PLUS : celui de la validation que la modification remplace, des qu'un envoi l'a porte ;
     // celui qu'une DSN de l'ancien logiciel a declare pour un contrat repris (`importe::numero_declare`).
@@ -267,7 +268,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: &str, departs: 
             return Ok(());
         }
     }
-    let annee = socle::date::Jour::lire(&debut)?.an;
+    let annee = debut.an;
     // Aucun numero pris cette annee : le premier sera le 1.
     let pris = derniers_pris_sauf(ctx, annee, Some((o.fichier, o.rang)), departs)?;
     let dernier: i64 = pris.get(&cle).into_iter().copied().sum();

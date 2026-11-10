@@ -314,9 +314,8 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
     let salarie = paie.and_then(|x| plein(x.salarie.clone())).or_else(|| contrat.and_then(|x| plein(x.salarie.clone())));
-    let jour = |j: Option<socle::date::Jour>| j.map(|j| j.iso());
-    let debut = p.and_then(|p| jour(p.debut)).or_else(|| contrat.and_then(|x| x.debut.clone().and_then(plein)));
-    let fin = p.and_then(|p| jour(p.fin)).or_else(|| contrat.and_then(|x| x.fin.clone().and_then(plein)));
+    let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut)).map(|j| j.iso());
+    let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin)).map(|j| j.iso());
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);
     let spectacle = numero.as_deref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
@@ -587,7 +586,7 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let salarie = brut.salarie.as_ref().map(ToString::to_string);
-        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut.as_deref());
+        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut.map(|j| j.iso()).as_deref());
         cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));

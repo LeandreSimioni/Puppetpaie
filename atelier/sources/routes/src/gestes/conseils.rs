@@ -755,7 +755,7 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
         }
         // Une ligne sans saisie n'a pas de dates connues.
         let Some(s) = s else { continue };
-        let dates: BTreeSet<String> = s.dates().iter().map(|j| j.jour().to_string()).filter(|j| !j.is_empty()).collect();
+        let dates: BTreeSet<Jour> = s.dates().iter().map(|j| j.jour()).collect();
         if dates.is_empty() {
             continue;
         }
