@@ -5,6 +5,7 @@
 
 use super::{alsace_moselle, arrondi4, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, Resultat, SalarieDuContrat};
 use crate::fiche::{ExtensionT2, Lue};
+use crate::natures::AuMois;
 use socle::echec::APart;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::Nombre;
@@ -192,11 +193,11 @@ pub fn a_un_regime_de_sante(ent: &ChampsEntreprise) -> Resultat<bool> {
 
 /// La complementaire sante que la CONVENTION fixe, quand elle en fixe une ; `None` si la convention n'a pas de section
 /// `sante`.
-pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContrat, fin: Option<&Jour>) -> Resultat<Option<Mutuelle>> {
+pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: Option<&Jour>) -> Resultat<Option<Mutuelle>> {
     let c = catalogue()?;
     let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
     let Some(sante) = c.regime(idcc).and_then(|r| r.sante.as_ref()) else { return Ok(None) };
-    if super::sans_sante(sal) {
+    if super::sans_sante(sal, au_mois) {
         return Ok(Some(Mutuelle::Sans));
     }
     let Some((_, mut total)) = derniere(&sante.taux, fin) else {
@@ -380,12 +381,12 @@ fn seuil(reg: &Regime, cadre: bool) -> i64 {
 /// an d'anciennete dans la branche du secteur prive du spectacle vivant ; pour les cadres, des l'embauche » (fiche
 /// produit Audiens, `atelier/reference/sources/audiens-3090-prevoyance-sante-fiche-produit-2021.txt`, l. 102-106).
 /// Ce temps dans la branche est un fait que seule la fiche dit (`prevoyance_branche_depuis`) : il se demande.
-fn ouverture(reg: &Regime, sal: &SalarieDuContrat, cadre: bool, fin: Option<&Jour>) -> Resultat<(bool, String)> {
+fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>) -> Resultat<(bool, String)> {
     let seuil = seuil(reg, cadre);
     if seuil <= 0 {
         return Ok((true, "due des l'embauche".to_string()));
     }
-    let branche = sal.prevoyance_branche_depuis.dite();
+    let branche = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite();
     if let (Some(depuis), Some(mois)) = (branche, mois_entre(branche, fin)) {
         return Ok((mois >= seuil, format!("{} mois dans la branche depuis le {} (seuil {})", mois, depuis.iso(), seuil)));
     }
@@ -472,7 +473,7 @@ fn part_t2(b: &Bloc) -> f64 {
 }
 
 /// Ce qu'un permanent cotise en prevoyance ce mois-la.
-pub fn cotisation(sal: &SalarieDuContrat, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> Resultat<Cotisation> {
+pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> Resultat<Cotisation> {
     let idcc = entreprise.idcc.ecrite("idcc")?;
     let reg = a_la_date(regime(idcc)?, fin);
     let ent = entreprise.prevoyance_permanents.dite();
@@ -499,7 +500,7 @@ lus sur le contrat ou l'appel de cotisations. Rien n'est calcule.",
             },
         ));
     }
-    let (due, _) = ouverture(&reg, sal, cadre, fin)?;
+    let (due, _) = ouverture(&reg, sal, au_mois, cadre, fin)?;
     if !due {
         return Ok(Cotisation::default());
     }
@@ -618,9 +619,9 @@ fn anniversaire(depuis: &Jour, seuil: i64) -> Option<Jour> {
 
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` (bloc S21.G00.70), selon la meme regle que
 /// sa cotisation (`cotisation`, `ouverture`).
-pub fn affiliation(sal: &SalarieDuContrat, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> Resultat<super::AffiliationPrevoyance> {
+pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> Resultat<super::AffiliationPrevoyance> {
     use super::AffiliationPrevoyance as A;
-    let cot = cotisation(sal, cadre, Some(fin), entreprise)?;
+    let cot = cotisation(sal, au_mois, cadre, Some(fin), entreprise)?;
     if !cot.due {
         return Ok(A::NonAffilie);
     }
@@ -629,7 +630,7 @@ pub fn affiliation(sal: &SalarieDuContrat, cadre: bool, fin: &Jour, entreprise: 
     if seuil <= 0 {
         return Ok(A::DesLEmbauche);
     }
-    if let Some(j) = sal.prevoyance_branche_depuis.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
+    if let Some(j) = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
         return Ok(A::Le(j));
     }
     match sal.date_anciennete.dite().copied().and_then(|d| anniversaire(&d, seuil)) {

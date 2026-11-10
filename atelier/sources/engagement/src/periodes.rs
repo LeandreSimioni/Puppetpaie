@@ -78,7 +78,8 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     // Le contrat borne au mois : la regle d'un premier ou d'un dernier mois incomplet le regarde, pas la coupure.
     let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
     let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &debut, &fin, &debut_mois, &fin_mois)?;
-    let horaire = crate::conges::horaire_du_mois(ctx, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
+    let au = eng.nat()?.au_mois().ok_or_else(|| format!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
+    let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
     let mut out = Vec::new();
     for (d, f) in bornes {
         let (salaire, quotite) = if avenant.is_some_and(|a| *d < a) { (salaire_avant, quotite_avant) } else { (salaire_apres, quotite_apres) };

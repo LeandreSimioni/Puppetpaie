@@ -732,11 +732,194 @@ macro_rules! cases {
     };
 }
 
-/// UNE FICHE DATEE : ses champs a un jour (`$plate`, des `cases!`), et la fiche telle qu'ecrite (`$datee`), chaque champ
-/// une liste datee ; `au` lit l'une dans l'autre, la valeur en vigueur de chaque champ (`valeur_au`).
+/// LES PIECES D'UNE FICHE : les cases qu'un seul genre de calcul lit, et que seul un calcul qui tient la cle de la piece
+/// ouvre (`PieceFermee`). Ce que la fiche montre se deduit d'elles (`routes::fiches::montres`) : une piece que la
+/// compagnie, ou le salarie, n'ouvre jamais ne pose aucune question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Piece {
+    /// Les cases d'un salarie au mois : seul le calcul d'un engagement paye au mois les lit (`natures::AuMois`).
+    Permanent,
+}
+
+/// UNE PIECE FERMEE : ses cases (`C`) ne se lisent qu'avec sa cle (`K`), qu'un calcul ne tient que s'il est celui qui
+/// les lit (`natures::AuMois` : la nature d'un engagement paye au mois). Une case rangee ici et lue par un calcul qui
+/// n'a pas la cle ne compile pas.
+pub struct PieceFermee<C, K> {
+    cases: C,
+    cle: std::marker::PhantomData<fn() -> K>,
+}
+
+impl<C, K> PieceFermee<C, K> {
+    fn de(cases: C) -> Self {
+        PieceFermee { cases, cle: std::marker::PhantomData }
+    }
+
+    /// Ses cases, a qui tient sa cle.
+    pub fn ouvrir(&self, _cle: &K) -> &C {
+        &self.cases
+    }
+
+    /// Ses cases a changer (la fiche que la paie lit perd une dispense hors de ses bornes), a qui tient sa cle.
+    pub fn ouvrir_mut(&mut self, _cle: &K) -> &mut C {
+        &mut self.cases
+    }
+}
+
+impl<C: Default, K> Default for PieceFermee<C, K> {
+    fn default() -> Self {
+        PieceFermee::de(C::default())
+    }
+}
+
+impl<C: Clone, K> Clone for PieceFermee<C, K> {
+    fn clone(&self) -> Self {
+        PieceFermee::de(self.cases.clone())
+    }
+}
+
+impl<C: PartialEq, K> PartialEq for PieceFermee<C, K> {
+    fn eq(&self, autre: &Self) -> bool {
+        self.cases == autre.cases
+    }
+}
+
+impl<C: std::fmt::Debug, K> std::fmt::Debug for PieceFermee<C, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.cases.fmt(f)
+    }
+}
+
+/// Une case vide ne s'ecrit pas.
+fn vide<T>(case: &&Option<T>) -> bool {
+    case.is_none()
+}
+
+/// UNE FICHE DATEE : ses champs a un jour (`$plate`), et la fiche telle qu'ecrite (`$datee`), chaque champ une liste
+/// datee ; `au` lit l'une dans l'autre, la valeur en vigueur de chaque champ (`valeur_au`).
+///
+/// SES PIECES (`pieces`) : les cases que seul un calcul qui tient leur cle lit, rangees chacune dans sa piece
+/// (`PieceFermee`), qui ne s'ouvre que par elle. Le fichier, lui, reste a plat : une case d'une piece s'y ecrit comme
+/// toute autre, et la forme qui la nomme (`Changement`, `Cases`, la liste datee) aussi. Ce que la fiche montre se deduit
+/// de la piece de chaque case (`piece_de`).
 macro_rules! fiche {
-    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? } $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
-        cases! { $(#[$m])* pub struct $plate { $( $(#[$fm])* $champ : $t ),* } $( notes { $( $(#[$nm])* $note ),* } )? }
+    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? }
+     pieces { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $cle:ty { $( $(#[$pfm:meta])* $pchamp:ident : $pt:ty ),* $(,)? } )* }
+     $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
+        $( cases! { $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt ),* } } )*
+
+        $(#[$m])*
+        #[derive(Debug, Clone, Default, PartialEq)]
+        pub struct $plate {
+            $( $(#[$fm])* pub $champ: Option<$t>, )*
+            $( $(#[$pm])* pub $piece: PieceFermee<$cases, $cle>, )*
+            $( $( $(#[$nm])* pub $note: Option<String>, )* )?
+        }
+
+        /// A plat, comme le fichier : les cases de ses pieces a cote des autres.
+        impl Serialize for $plate {
+            fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                #[derive(Serialize)]
+                struct APlat<'a> {
+                    $( #[serde(skip_serializing_if = "vide")] $champ: &'a Option<$t>, )*
+                    $( $( #[serde(skip_serializing_if = "vide")] $pchamp: &'a Option<$pt>, )* )*
+                    $( $( #[serde(skip_serializing_if = "vide")] $note: &'a Option<String>, )* )?
+                }
+                APlat { $( $champ: &self.$champ, )* $( $( $pchamp: &self.$piece.cases.$pchamp, )* )* $( $( $note: &self.$note, )* )? }.serialize(s)
+            }
+        }
+
+        /// A plat, une cle inconnue refusee.
+        impl<'de> Deserialize<'de> for $plate {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct APlat {
+                    $( $champ: Option<$t>, )*
+                    $( $( $pchamp: Option<$pt>, )* )*
+                    $( $( $note: Option<String>, )* )?
+                }
+                let p = APlat::deserialize(d)?;
+                Ok($plate {
+                    $( $champ: p.$champ, )*
+                    $( $piece: PieceFermee::de($cases { $( $pchamp: p.$pchamp, )* }), )*
+                    $( $( $note: p.$note, )* )?
+                })
+            }
+        }
+
+        impl FormeDeCase for $plate {
+            fn cases() -> Vec<Declaree> {
+                let v = vec![$(declaree::<$t>(stringify!($champ))),*];
+                $( let v: Vec<Declaree> = v.into_iter().chain(<$cases as FormeDeCase>::cases()).collect(); )*
+                v
+            }
+        }
+
+        impl $plate {
+            /// Les cles de ses notes : des textes qui ne sont pas des cases.
+            pub const NOTES: &'static [&'static str] = &[$($( stringify!($note) ),*)?];
+
+            /// La piece de la case `cle` ; `None` : elle n'est dans aucune, tout calcul la lit.
+            pub fn piece_de(cle: &str) -> Option<Piece> {
+                $( $( if stringify!($pchamp) == cle {
+                    return Some(Piece::$genre);
+                } )* )*
+                let _ = cle;
+                None
+            }
+
+            /// Aucune case n'y est ecrite.
+            pub fn est_vide(&self) -> bool {
+                true $(&& self.$champ.is_none())* $( $(&& self.$piece.cases.$pchamp.is_none())* )*
+            }
+
+            /// Les cases `cles` (leurs noms) sont-elles les memes dans `autre` ?
+            pub fn memes_cases(&self, autre: &$plate, cles: &[&str]) -> bool {
+                $( if cles.contains(&stringify!($champ)) && self.$champ != autre.$champ {
+                    return false;
+                } )*
+                $( $( if cles.contains(&stringify!($pchamp)) && self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
+                    return false;
+                } )* )*
+                true
+            }
+
+            /// Les cases que `autre` dit remplacent les siennes ; ses notes restent.
+            pub fn par_dessus(&mut self, autre: &$plate) {
+                $( if autre.$champ.is_some() {
+                    self.$champ = autre.$champ.clone();
+                } )*
+                $( $( if autre.$piece.cases.$pchamp.is_some() {
+                    self.$piece.cases.$pchamp = autre.$piece.cases.$pchamp.clone();
+                } )* )*
+            }
+
+            /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
+            /// sont pas.
+            pub fn cases_differentes(&self, autre: &$plate) -> Vec<&'static str> {
+                let mut out = Vec::new();
+                $( if self.$champ != autre.$champ {
+                    out.push(stringify!($champ));
+                } )*
+                $( $( if self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
+                    out.push(stringify!($pchamp));
+                } )* )*
+                out
+            }
+
+            /// Les memes cases, sans ses notes.
+            pub fn sans_notes(self) -> $plate {
+                $plate { $( $( $note: None, )* )? ..self }
+            }
+        }
+
+        impl Cases for $plate {
+            fn voir<V: VoirCase>(&self, v: &mut V) {
+                $( v.case(stringify!($champ), &self.$champ); )*
+                $( $( v.case(stringify!($pchamp), &self.$piece.cases.$pchamp); )* )*
+            }
+        }
 
         /// UN CHANGEMENT D'UNE CASE DE LA FICHE, comme ceux de la carte (`engagement::carte::Changement`) :
         /// `{"case": "email", "valeur": "…"}` pose la case ; `null` la vide. Une case que la liste ne nomme pas ne change
@@ -746,13 +929,15 @@ macro_rules! fiche {
         #[serde(tag = "case", content = "valeur", deny_unknown_fields)]
         pub enum $ch {
             $( #[serde(deserialize_with = "nulle_ou_dite")] $champ(Option<$t>), )*
+            $( $( #[serde(deserialize_with = "nulle_ou_dite")] $pchamp(Option<$pt>), )* )*
         }
 
         impl $ch {
             /// La case qu'il change, nommee comme `champs-base.json` la nomme.
             pub fn case(&self) -> &'static str {
                 match self {
-                    $( $ch::$champ(_) => stringify!($champ).trim_start_matches("r#"), )*
+                    $( $ch::$champ(_) => stringify!($champ), )*
+                    $( $( $ch::$pchamp(_) => stringify!($pchamp), )* )*
                 }
             }
         }
@@ -762,23 +947,33 @@ macro_rules! fiche {
         #[serde(deny_unknown_fields)]
         pub struct $datee {
             $( #[serde(skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
+            $( $( #[serde(skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
         }
 
         impl $datee {
             /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.
             pub fn au(&self, jour: &Jour) -> $plate {
-                $plate { $( $champ: self.$champ.as_deref().and_then(|l| valeur_au(l, jour)), )* $( $( $note: self.$note.clone(), )* )? }
+                $plate {
+                    $( $champ: self.$champ.as_deref().and_then(|l| valeur_au(l, jour)), )*
+                    $( $piece: PieceFermee::de($cases { $( $pchamp: self.$pchamp.as_deref().and_then(|l| valeur_au(l, jour)), )* }), )*
+                    $( $( $note: self.$note.clone(), )* )?
+                }
             }
 
             /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` : la valeur de tout
             /// temps, d'abord) ; aucun pour un champ que la fiche ne dit pas, ou que la forme ne declare pas.
             pub fn depuis(&self, cle: &str) -> Vec<Option<Jour>> {
-                $( if stringify!($champ).trim_start_matches("r#") == cle {
+                $( if stringify!($champ) == cle {
                     let mut j: Vec<Option<Jour>> = self.$champ.iter().flatten().map(|e| e.depuis).collect();
                     j.sort();
                     return j;
                 } )*
+                $( $( if stringify!($pchamp) == cle {
+                    let mut j: Vec<Option<Jour>> = self.$pchamp.iter().flatten().map(|e| e.depuis).collect();
+                    j.sort();
+                    return j;
+                } )* )*
                 Vec::new()
             }
 
@@ -787,6 +982,7 @@ macro_rules! fiche {
             pub fn dates_en_vigueur(&self, jour: &Jour) -> Vec<Jour> {
                 let mut out = Vec::new();
                 $( out.extend(self.$champ.iter().flatten().filter_map(|e| e.depuis).filter(|j| j <= jour).max()); )*
+                $( $( out.extend(self.$pchamp.iter().flatten().filter_map(|e| e.depuis).filter(|j| j <= jour).max()); )* )*
                 out
             }
 
@@ -795,6 +991,9 @@ macro_rules! fiche {
                 $( if autre.$champ.is_some() {
                     self.$champ = autre.$champ.clone();
                 } )*
+                $( $( if autre.$pchamp.is_some() {
+                    self.$pchamp = autre.$pchamp.clone();
+                } )* )*
                 $( $( if autre.$note.is_some() {
                     self.$note = autre.$note.clone();
                 } )* )?
@@ -816,19 +1015,24 @@ macro_rules! fiche {
             fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, note: Option<&str>) {
                 match ch {
                     $( $ch::$champ(x) => dater(&mut self.$champ, x, depuis, note), )*
+                    $( $( $ch::$pchamp(x) => dater(&mut self.$pchamp, x, depuis, note), )* )*
                 }
             }
 
             fn appliquer(plate: &mut $plate, ch: $ch) {
                 match ch {
                     $( $ch::$champ(x) => plate.$champ = x, )*
+                    $( $( $ch::$pchamp(x) => plate.$piece.cases.$pchamp = x, )* )*
                 }
             }
 
             fn changement(plate: &$plate, cle: &str) -> Option<$ch> {
-                $( if stringify!($champ).trim_start_matches("r#") == cle {
+                $( if stringify!($champ) == cle {
                     return Some($ch::$champ(plate.$champ.clone()));
                 } )*
+                $( $( if stringify!($pchamp) == cle {
+                    return Some($ch::$pchamp(plate.$piece.cases.$pchamp.clone()));
+                } )* )*
                 None
             }
 
@@ -848,14 +1052,20 @@ macro_rules! fiche {
                 $( if plate.$champ.is_some() {
                     dater(&mut f.$champ, plate.$champ.clone(), None, None);
                 } )*
+                $( $( if plate.$piece.cases.$pchamp.is_some() {
+                    dater(&mut f.$pchamp, plate.$piece.cases.$pchamp.clone(), None, None);
+                } )* )*
                 f.noter(plate);
                 f
             }
 
             fn voir_listes<V: VoirListe>(&self, v: &mut V) {
                 $( if let Some(l) = &self.$champ {
-                    v.liste(stringify!($champ).trim_start_matches("r#"), l);
+                    v.liste(stringify!($champ), l);
                 } )*
+                $( $( if let Some(l) = &self.$pchamp {
+                    v.liste(stringify!($pchamp), l);
+                } )* )*
             }
         }
     };
@@ -1330,25 +1540,31 @@ fiche! {
         deduction_forfaitaire: ProfessionDfs,
         deduction_forfaitaire_accord: AccordDfs,
         statut_boeth: StatutBoeth,
-        sante_svp: SanteSvp,
         echelon_ccneac: EchelonCcneac,
         classement_conventionnel: String,
         poste_depuis: Jour,
         stagiaire_ccneac: StagiaireCcneac,
         experimente_3241: bool,
-        jours_travailles: Vec<JourDeLaSemaine>,
-        forfait_jours: bool,
-        sante_dispense: String,
-        sante_dispense_depuis: Jour,
-        sante_dispense_jusqu_au: Jour,
-        prevoyance_branche_depuis: Jour,
-        categorie_conventionnelle: CategorieConventionnelle,
-        conges_reprise: CongesReprise,
         date_anciennete: Jour,
         actif: bool,
         anniversaire_droits: Jour,
         modele_bulletin: ModeleBulletin,
         taux_pas: TauxPas,
+    }
+    pieces {
+        /// LES CASES D'UN SALARIE AU MOIS : sa complementaire sante, sa prevoyance, ses jours, sa categorie, ses conges
+        /// repris. Seul le calcul d'un engagement paye au mois les ouvre (`natures::AuMois`).
+        permanent: Permanent, CasesDuPermanent, crate::natures::AuMois {
+            sante_svp: SanteSvp,
+            jours_travailles: Vec<JourDeLaSemaine>,
+            forfait_jours: bool,
+            sante_dispense: String,
+            sante_dispense_depuis: Jour,
+            sante_dispense_jusqu_au: Jour,
+            prevoyance_branche_depuis: Jour,
+            categorie_conventionnelle: CategorieConventionnelle,
+            conges_reprise: CongesReprise,
+        }
     }
 }
 
@@ -1413,6 +1629,7 @@ fiche! {
         modele_bulletin: ModeleBulletin,
         conseils: bool,
     }
+    pieces {}
     notes {
         /// D'ou vient le fichier (une compagnie d'essai le dit).
         note,
@@ -1443,6 +1660,7 @@ fiche! {
         alias: Vec<String>,
         actif: bool,
     }
+    pieces {}
     notes {
         /// D'ou vient la fiche (ce que l'import a lu).
         note,
@@ -1485,6 +1703,7 @@ fiche! {
         dit: String,
         paye_au_mois: bool,
     }
+    pieces {}
 }
 
 impl ChampsSpectacle {

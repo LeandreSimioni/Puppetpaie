@@ -13,7 +13,7 @@ use crate::conges::{
 use crate::saisie::Carte;
 use crate::{Chiffre, LignePaie};
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::Nature;
+use droit::natures::{AuMois, Nature};
 use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
@@ -82,7 +82,7 @@ fn idcc(ctx: &Contexte) -> Option<&str> {
 
 fn profil(ctx: &Contexte, e: &Carte) -> Resultat<clauses::Profil> {
     let fiche = crate::fiche_du_salarie(ctx, e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?.champs;
-    clauses::profil(idcc(ctx), &fiche, &dit_par_l_engagement(e)?)
+    clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?)
 }
 
 /// Le decimal d'un nombre des clauses, tel qu'il s'ecrit.
@@ -271,7 +271,7 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> Resultat
 
 /// Les lignes du dernier bulletin : conges non pris, precarite, preavis,
 /// indemnite de rupture. `deja` : les lignes de CE mois deja construites.
-pub(crate) fn solde_de_tout_compte(ctx: &Contexte, e: &Carte, mois: &str, deja: &[LignePaie]) -> Resultat<(Vec<LignePaie>, Vec<Avis>)> {
+pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois: &str, deja: &[LignePaie]) -> Resultat<(Vec<LignePaie>, Vec<Avis>)> {
     let nat = e.nature_lue()?;
     let mut stc = Solde::default();
     let Some(fin) = jour_dit(&e.fin)? else {
@@ -294,14 +294,14 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, e: &Carte, mois: &str, deja: 
         )));
     } else {
         let salarie = salarie_de(e)?;
-        let cpt = compteur_conges(ctx, salarie, &fin, mois)?;
+        let cpt = compteur_conges(ctx, au, salarie, &fin, mois)?;
         // L'indemnite paie le solde du compteur : un compteur qui ignore les mois d'avant PuppetPaie la sous-paierait.
         // Sa periode la plus ancienne : celle du report, s'il y en a un, sinon la periode en cours.
         let depuis = match cpt.report_debut {
             Some(report) => report,
             None => cpt.periode_debut,
         };
-        if let Some((debut, premier)) = crate::conges::compte_sans_la_reprise(ctx, &salarie, &depuis)? {
+        if let Some((debut, premier)) = crate::conges::compte_sans_la_reprise(ctx, au, &salarie, &depuis)? {
             stc.avertissements.push(avertir(format!(
                 "{} : son contrat a commencé le {}, avant {}, premier mois payé ici ; ses congés acquis avant ne sont pas \
                  comptés dans l'indemnité de ses congés non pris (L3141-28). Saisissez dans sa fiche « Congés payés à la \
@@ -507,7 +507,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, e: &Carte, mois: &str, deja: 
     }
 
     // --- le delai de prevenance d'une fin d'essai a l'initiative de l'employeur (L1221-25)
-    delai_de_prevenance(ctx, e, mois, deja, &fin, salaire, motif, &nat, &qui, &mut stc)?;
+    delai_de_prevenance(ctx, au, e, mois, deja, &fin, salaire, motif, &nat, &qui, &mut stc)?;
 
     // --- l'indemnite de rupture, et laquelle depend du motif
     indemnite_de_rupture(ctx, e, mois, anciennete_de_l_indemnite, motif, &nat, &mut stc)?;
@@ -550,7 +550,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, e: &Carte, mois: &str, deja: 
 /// a l'indemnite compensatrice de conges payes du solde.
 #[allow(clippy::too_many_arguments)]
 fn delai_de_prevenance(
-    ctx: &Contexte, e: &Carte, mois: &str, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<&str>, nat: &Nature,
+    ctx: &Contexte, au: &AuMois, e: &Carte, mois: &str, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<&str>, nat: &Nature,
     qui: &str, stc: &mut Solde,
 ) -> Resultat<()> {
     let Some(regle) = permanents::regle_du_delai_de_prevenance(motif)? else {
@@ -627,7 +627,7 @@ fn delai_de_prevenance(
         let fin_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: j.jours_du_mois() };
         let f = fin_mois.min(delai.expiration);
         let debut_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: 1 };
-        let horaire = crate::conges::horaire_du_mois(ctx, salarie_de(e)?, &debut, &debut_mois, &fin_mois)?;
+        let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, &debut_mois, &fin_mois)?;
         let part = droit::periodes::part_du_mois(&j, &f, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
         fraction = add(fraction, part.fraction);
         jours += part.jours;

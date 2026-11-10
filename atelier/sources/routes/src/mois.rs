@@ -2117,7 +2117,8 @@ fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie
         )
     };
     v.informations.insert(0, phrase);
-    if v.nature.mensuelle && !declarations::demarrage::conges_repris(ctx, &v.salarie.cle) {
+    let au_mois = droit::natures::nature(&v.nature.cle).map_err(Echec::from)?.au_mois();
+    if au_mois.is_some_and(|au| !declarations::demarrage::conges_repris(ctx, &au, &v.salarie.cle)) {
         let depuis = socle::date::Jour::lire(&format!("{}-01", mois)).map_err(Echec::from)?;
         v.a_dire = Some([declarations::demarrage::conges_a_dire(&v.salarie.cle, &qui, depuis)]);
     }

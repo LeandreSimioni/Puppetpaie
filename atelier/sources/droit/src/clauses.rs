@@ -8,6 +8,7 @@
 
 use crate::emplois;
 use crate::fiche::{ChampsSalarie, Lue};
+use crate::natures::AuMois;
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
 use serde::Deserialize;
@@ -568,7 +569,9 @@ pub struct Profil {
     pub source: String,
 }
 
-pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement) -> Resultat<Profil> {
+/// `au_mois` : la cle de la piece d'un permanent, quand l'engagement lu est paye au mois ; sans elle, la categorie que
+/// la fiche dit ne se lit pas (elle n'est demandee qu'a un salarie au mois).
+pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> Resultat<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -577,7 +580,8 @@ pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, e: &DitParLEngagement) 
     let grille = c3090.map(|c| c.grille.clone());
     let profil = |categorie: Option<&str>, source: String| Profil { categorie: categorie.map(str::to_string), grille: grille.clone(), source };
 
-    let dit = e.categorie_conventionnelle.clone().or_else(|| fiche.categorie_conventionnelle.code().map(str::to_string));
+    let de_la_fiche = au_mois.and_then(|a| fiche.permanent.ouvrir(a).categorie_conventionnelle.code());
+    let dit = e.categorie_conventionnelle.clone().or_else(|| de_la_fiche.map(str::to_string));
     if let Some(dit) = dit {
         if let Some(valeurs) = sec.map(|s| &s.valeurs).filter(|v| !v.is_empty() && !v.iter().any(|(k, _)| *k == dit)) {
             return Ok(profil(None, format!(

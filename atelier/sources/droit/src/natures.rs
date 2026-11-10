@@ -333,10 +333,22 @@ pub struct UniteDAbsence {
     pub quoi: String,
 }
 
+/// LA CLE DE LA PIECE D'UN PERMANENT (`fiche::PieceFermee`) : seule une nature payee au mois la donne
+/// (`Nature::au_mois`). Les cases d'un salarie au mois ne se lisent qu'avec elle ; un calcul qui n'a pas en main la nature
+/// d'un engagement au mois ne les lit pas, et la fiche ne les montre qu'a qui peut en avoir un
+/// (`routes::fiches::montres`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuMois(());
+
 impl Nature {
     /// Paye au mois : un permanent.
     pub fn mensuelle(&self) -> bool {
         self.paie == Paie::Mensuelle
+    }
+
+    /// La cle de la piece d'un permanent, si la nature est payee au mois.
+    pub fn au_mois(&self) -> Option<AuMois> {
+        self.mensuelle().then_some(AuMois(()))
     }
 
     pub fn permanent(&self) -> bool {

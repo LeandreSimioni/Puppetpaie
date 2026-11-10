@@ -11,7 +11,7 @@ use crate::forme_bareme::{
     CotisationDsn, CotisationModifiee, CotisationSupplementaire, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp, TauxDate,
     VersementMobiliteEcrit,
 };
-use crate::natures::Nature;
+use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
 use socle::echec::APart;
@@ -578,8 +578,8 @@ pub const SANTE_SUSPENSION_MAINTENUE: &str = "maintenue";
 /// (`sante_dispense`), ou un mois entierement suspendu sans indemnisation (`SalarieDuContrat::sante_suspendue`) : le bareme pose alors la
 /// paie sans mutuelle (`bareme_sante`), et la DSN ne rattache pas le salarie a l'adhesion sante ce mois-la
 /// (`dsn::affiliations_du_permanent`), comme pour une dispense.
-pub fn sans_sante(sal: &SalarieDuContrat) -> bool {
-    sal.sante_dispense.remplie().is_some() || sal.sante_suspendue.as_deref().is_some_and(|s| !s.is_empty())
+pub fn sans_sante(sal: &SalarieDuContrat, au_mois: &AuMois) -> bool {
+    sal.permanent.ouvrir(au_mois).sante_dispense.remplie().is_some() || sal.sante_suspendue.as_deref().is_some_and(|s| !s.is_empty())
 }
 
 /// La cotisation globale minimale des frais de sante d'un permanent (% du
@@ -651,10 +651,11 @@ fn entier_de(m: &crate::fiche::Montant) -> Resultat<i64> {
 
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
 pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> Resultat<Pile> {
-    if !mensuelle(nat) {
+    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
         return Ok(bar);
-    }
-    match prevoyance::sante_conventionnelle(ent, sal, fin)? {
+    };
+    let au_mois = &au_mois;
+    match prevoyance::sante_conventionnelle(ent, sal, au_mois, fin)? {
         Some(Mutuelle::Sans) => return Ok(sans_mutuelle(bar)),
         Some(Mutuelle::Pose { base, total, pat }) => {
             return Ok(poser_mutuelle(bar, Some(&base), total, pat, Some("Complémentaire santé conventionnelle")))
@@ -674,7 +675,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
                 idcc
             ));
         };
-        if sans_sante(sal) {
+        if sans_sante(sal, au_mois) {
             return Ok(sans_mutuelle(bar));
         }
         let total = taux_contrat.decimal()?;
@@ -706,7 +707,7 @@ la Securite sociale), et pas plus de 100.",
     // rattache pas a la sante (`dsn::affiliations_du_permanent`). Ses bornes sont deja lues
     // (`calcul::dispense_de_la_periode`). Un mois entierement suspendu sans indemnisation suspend les garanties (art. 4.2 :
     // `calcul::sante_de_la_suspension`) : pas de mutuelle non plus (`calcul::sans_sante`).
-    if sans_sante(sal) {
+    if sans_sante(sal, au_mois) {
         return Ok(sans_mutuelle(bar));
     }
     let releve = nat
@@ -717,7 +718,7 @@ la Securite sociale), et pas plus de 100.",
     let Some(releve) = releve.filter(|r| !r.niveaux.is_empty()) else {
         return Ok(bar);
     };
-    let choix = sal.sante_svp.dite();
+    let choix = sal.permanent.ouvrir(au_mois).sante_svp.dite();
     let Some((choix, niveau, taux)) = choix.and_then(|c| {
         let niveau = c.niveau.portee()?.to_string();
         releve.niveaux.get(&niveau).map(|t| (c, niveau, t))
@@ -802,10 +803,10 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> Resultat<Pile> {
 
 /// La prevoyance d'un permanent : la CONVENTION la fixe, pas le bareme.
 pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> Resultat<Pile> {
-    if !mensuelle(nat) {
+    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
         return Ok(bar);
-    }
-    let cot = prevoyance::cotisation(sal, est_cadre(sal), fin, ent)?;
+    };
+    let cot = prevoyance::cotisation(sal, &au_mois, est_cadre(sal), fin, ent)?;
     let mut rubriques: Vec<Rubrique> = Vec::new();
     let mut posee = false;
     for r in std::mem::take(&mut bar.rubriques_bulletin) {
@@ -1756,8 +1757,8 @@ pub enum AffiliationPrevoyance {
 
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` de la periode, selon la regle de sa
 /// cotisation : le meme regime, la meme anciennete (`bareme_prevoyance`).
-pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, fin: &Jour) -> Resultat<AffiliationPrevoyance> {
-    prevoyance::affiliation(sal, est_cadre(sal), fin, ent)
+pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: &Jour) -> Resultat<AffiliationPrevoyance> {
+    prevoyance::affiliation(sal, au_mois, est_cadre(sal), fin, ent)
 }
 
 /// La somme des parts d'une base `a` a chacun des taux `taux` (en pourcent), chacune arrondie au centime : une ligne

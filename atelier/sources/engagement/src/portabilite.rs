@@ -59,7 +59,9 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> Resul
         }
     }
     let prevoyance = ids.iter().any(|i| i == "prevoyance" || i.starts_with("prevoyance_"));
-    let sante = ids.iter().any(|i| i == "mutuelle") && p.salarie.sante_dispense.remplie().is_none();
+    // La dispense de sante est une case d'un salarie au mois : seul un contrat paye au mois la lit.
+    let dispense = p.engagement.nat()?.au_mois().is_some_and(|au| p.salarie.permanent.ouvrir(&au).sante_dispense.remplie().is_some());
+    let sante = ids.iter().any(|i| i == "mutuelle") && !dispense;
     if !prevoyance && !sante {
         return Ok(None);
     }

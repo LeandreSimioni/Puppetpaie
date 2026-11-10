@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 
 use droit::bareme::{bareme_applique, SANTE_SUSPENSION, SANTE_SUSPENSION_MAINTENUE, SANTE_SUSPENSION_SUSPENDUE};
-use droit::natures::Nature;
+use droit::natures::{AuMois, Nature};
 use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs as DfsEmployeur, SalarieDuContrat, Statut};
 use droit::catalogue::{code_54, rubrique, HorsAssiette};
 use droit::contexte::Contexte;
@@ -975,14 +975,14 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> Resulta
         statut_conventionnel: eng.statut_conventionnel.clone(),
         statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
     };
-    let fiche = if nat.mensuelle() {
+    let fiche = if let Some(au_mois) = nat.au_mois() {
         // La fiche de la derniere periode elementaire : un mois decoupe declare la derniere valeur connue
         // (norme DSN 2026.1, § 2.1.2.4, p. 22) ; un mois d'un seul tenant, la periode de paie entiere. La dispense de
         // sante se lit sur ces memes bornes (`dispense_de_la_periode`).
         let (debut, fin) = *crate::periodes::bornes(ctx, eng)?.last().ok_or("aucune periode de paie")?;
         let du_mois = droit::emplois::emploi_du_mois(ctx, cle, &debut, &fin)?;
-        let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &debut, &fin)?;
-        sante_de_la_suspension(ctx, eng, convention_de_l_employeur(ctx, fiche))?
+        let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &au_mois, &debut, &fin)?;
+        sante_de_la_suspension(ctx, eng, &au_mois, convention_de_l_employeur(ctx, fiche))?
     } else {
         convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.debut)?, &emploi)?)
     };
@@ -1112,14 +1112,15 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> Resultat<Arc<Pile>> {
 /// La periode payee entiere dans la dispense : dispense ; entiere dehors : affilie. Une borne en cours de periode
 /// (une dispense qui commence avec le contrat n'en est pas une) refuse : le partage de la cotisation du mois entre
 /// dispense et affiliation n'est dit par aucun texte depose (regle 1).
-pub(crate) fn dispense_de_la_periode(mut fiche: FicheSalarie, debut: &Jour, fin: &Jour) -> Resultat<FicheSalarie> {
-    if fiche.sante_dispense.remplie().is_none() {
+pub(crate) fn dispense_de_la_periode(mut fiche: FicheSalarie, au_mois: &AuMois, debut: &Jour, fin: &Jour) -> Resultat<FicheSalarie> {
+    let sienne = fiche.permanent.ouvrir(au_mois);
+    if sienne.sante_dispense.remplie().is_none() {
         return Ok(fiche);
     }
-    let depuis = fiche.sante_dispense_depuis.dite().copied();
-    let jusqu_au = fiche.sante_dispense_jusqu_au.dite().copied();
+    let depuis = sienne.sante_dispense_depuis.dite().copied();
+    let jusqu_au = sienne.sante_dispense_jusqu_au.dite().copied();
     if depuis.is_some_and(|d| d > *fin) || jusqu_au.is_some_and(|j| j < *debut) {
-        fiche.champs.sante_dispense = None;
+        fiche.champs.permanent.ouvrir_mut(au_mois).sante_dispense = None;
         return Ok(fiche);
     }
     let borne = match (depuis.filter(|d| d > debut), jusqu_au.filter(|j| j < fin)) {
@@ -1163,8 +1164,8 @@ jusqu'au »), si l'organisme et la convention le permettent ; sinon c'est a tran
 /// La prevoyance n'a rien a suspendre ici : 3090 et 1285 l'assoient sur la remuneration (tranche A, tranche 1 ;
 /// `legifrance-3090-prevoyance-titre12-20260919.md`, `legifrance-1285-prevoyance-titre12-20260919.md`), nulle ce
 /// mois-la -- inference : aucun texte depose ne traite de la suspension non indemnisee pour la prevoyance.
-fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, mut fiche: SalarieDuContrat) -> Resultat<SalarieDuContrat> {
-    if fiche.sante_dispense.remplie().is_some() {
+fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mut fiche: SalarieDuContrat) -> Resultat<SalarieDuContrat> {
+    if fiche.permanent.ouvrir(au_mois).sante_dispense.remplie().is_some() {
         return Ok(fiche);
     }
     let cle = fiche.id.to_string();

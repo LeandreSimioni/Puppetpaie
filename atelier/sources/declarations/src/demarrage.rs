@@ -445,8 +445,8 @@ pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
 }
 
 /// La reprise des conges de ce salarie est-elle deja dite sur sa fiche (`conges_reprise.date`) ?
-pub fn conges_repris(ctx: &Contexte, salarie: &str) -> bool {
-    ctx.salaries.get(salarie).and_then(|f| f.conges_reprise.dite()).is_some_and(|c| c.date.est_dite())
+pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: &str) -> bool {
+    ctx.salaries.get(salarie).and_then(|f| f.permanent.ouvrir(au_mois).conges_reprise.dite()).is_some_and(|c| c.date.est_dite())
 }
 
 /// Les permanents dont un contrat commence avant le premier mois ou PuppetPaie le paie, et dont la fiche ne dit pas les
@@ -455,8 +455,8 @@ pub fn conges_repris(ctx: &Contexte, salarie: &str) -> bool {
 /// neuf (`engagement::importe`), valide ou non. Un intermittent n'en est pas (ses conges sont ceux des Conges
 /// Spectacles) ; un contrat ne d'ici n'a rien d'avant.
 fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
-    // (salarie, debut du contrat, premier jour paye ici)
-    let mut contrats: Vec<(String, String, Jour)> = Vec::new();
+    // (cle des cases d'un salarie au mois, salarie, debut du contrat, premier jour paye ici)
+    let mut contrats: Vec<(droit::natures::AuMois, String, String, Jour)> = Vec::new();
     let mut vus: Vec<String> = Vec::new();
     // Les engagements valides et actifs, chacun dans le mois de son fichier (`engagement::stock::objets`) : un brouillon
     // n'engage rien, un contrat repris qui continue ici si.
@@ -467,17 +467,17 @@ fn conges_a_reprendre(ctx: &Contexte) -> Resultat<Vec<(String, String, Jour)>> {
         let e = o.carte();
         let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
         let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature.as_deref()) else { continue };
-        if vus.contains(&salarie) || !droit::natures::nature(nature)?.mensuelle() {
+        let Some(au) = droit::natures::nature(nature)?.au_mois().filter(|_| !vus.contains(&salarie)) else {
             continue;
-        }
+        };
         vus.push(salarie.clone());
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, debut, o.premier_mois())? {
-            contrats.push((salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
+            contrats.push((au, salarie, debut.to_string(), Jour::lire(&format!("{}-01", o.premier_mois()))?));
         }
     }
     let mut out = Vec::new();
-    for (salarie, debut, premier) in contrats {
-        if debut >= premier.iso() || conges_repris(ctx, &salarie) {
+    for (au, salarie, debut, premier) in contrats {
+        if debut >= premier.iso() || conges_repris(ctx, &au, &salarie) {
             continue;
         }
         let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {

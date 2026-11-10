@@ -109,7 +109,9 @@ pub(crate) fn dit_ou_vide(t: &str) -> Option<&str> {
 }
 
 pub(crate) fn profil_lu(idcc: &str, fiche: &str, eng: Option<&Eng>) -> Resultat<Profil> {
-    c::profil(dit_ou_vide(idcc), &champs(fiche)?, &dit(eng)?)
+    // Le profil d'un salarie au mois, comme le solde de tout compte le lit : sa fiche dit sa categorie.
+    let au_mois = droit::natures::nature("cdi")?.au_mois();
+    c::profil(dit_ou_vide(idcc), &champs(fiche)?, au_mois.as_ref(), &dit(eng)?)
 }
 
 pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<Resultat<Profil>> {

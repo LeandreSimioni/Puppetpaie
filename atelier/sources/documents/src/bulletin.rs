@@ -281,8 +281,8 @@ pub fn smic_de_la_reduction(p: &Paie) -> Resultat<String> {
 /// (`droit::clauses::profil` : la fiche, sinon le metier, jamais devinee) dite par le libelle de la convention, puis le
 /// classement que la fiche porte dans la grille (`classement_conventionnel`) ; `None` quand ni l'une ni l'autre ne se
 /// lisent.
-fn classification(idcc: Option<&str>, sal: &ChampsSalarie) -> Resultat<Option<String>> {
-    let profil = droit::clauses::profil(idcc, sal, &Default::default())?;
+fn classification(idcc: Option<&str>, sal: &ChampsSalarie, au_mois: Option<&droit::natures::AuMois>) -> Resultat<Option<String>> {
+    let profil = droit::clauses::profil(idcc, sal, au_mois, &Default::default())?;
     // La categorie dite par la convention ; celle que la convention ne nomme pas s'imprime telle que la fiche la dit.
     let categorie = match profil.categorie {
         Some(c) => Some(match droit::clauses::categorie_imprimee(idcc, &c)? {
@@ -1092,7 +1092,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> Resultat<Vec<Bloc>> {
         k("Emploi :"),
         mt(format!(" {}\n", emploi_imprime(e, sal)?)),
     ];
-    if let Some(c) = classification(Some(&conv.0), sal)? {
+    if let Some(c) = classification(Some(&conv.0), sal, e.nat()?.au_mois().as_ref())? {
         salarie.push(k("Classification :"));
         salarie.push(mt(format!(" {}\n", c)));
     }

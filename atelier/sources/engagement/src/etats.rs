@@ -1537,7 +1537,9 @@ fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: &
     }
     let cle = o.carte().salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let fin = socle::mois::Mois::lire(mois)?.dernier_jour();
-    let (avant, mut lues) = empreinte::suivre(ctx, || crate::conges::avant_le_mois(ctx, &cle, &fin, mois))?;
+    // Un compteur avant le mois n'est tenu que pour un engagement paye au mois (`conges::compteur_ecrit`).
+    let Some(au) = o.au_mois_depuis()?.and_then(|(_, nature)| nature.au_mois()) else { return Ok(None) };
+    let (avant, mut lues) = empreinte::suivre(ctx, || crate::conges::avant_le_mois(ctx, &au, &cle, &fin, mois))?;
     let spectacle = o.carte().spectacle.as_deref();
     lues.extend([empreinte::fiches(ctx, mois, &cle, spectacle)?]);
     let mut nouvelle = ancienne.clone();
