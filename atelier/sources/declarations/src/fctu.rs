@@ -77,19 +77,19 @@ fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> R<String> {
     n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
 }
 
-/// La fin d'un contrat, telle qu'elle se declare (dates AAAA-MM-JJ). Le dernier jour travaille et paye
+/// La fin d'un contrat, telle qu'elle se declare. Le dernier jour travaille et paye
 /// (S21.G00.62.006) n'y est pas : il se lit sur le contrat, par `dernier_jour_paye`, comme dans la mensuelle.
 #[derive(Debug, Clone)]
 pub struct FinDeContrat {
-    pub fin: String,
+    pub fin: Jour,
     pub motif: droit::natures::MotifDeRupture,
     pub mois_rattachement: socle::mois::Mois,
     pub type_preavis: String,
-    pub preavis_debut: Option<String>,
-    pub preavis_fin: Option<String>,
-    pub notification: Option<String>,
-    pub signature_convention: Option<String>,
-    pub engagement_licenciement: Option<String>,
+    pub preavis_debut: Option<Jour>,
+    pub preavis_fin: Option<Jour>,
+    pub notification: Option<Jour>,
+    pub signature_convention: Option<Jour>,
+    pub engagement_licenciement: Option<Jour>,
     pub transaction: Option<String>,
 }
 
@@ -99,11 +99,6 @@ fn numero_dit(e: &Engagement) -> &str {
         Some(n) => n,
         None => "None",
     }
-}
-
-#[track_caller]
-fn d(s: &str) -> R<Jour> {
-    Jour::lire(s)
 }
 
 // ------------------------------------------------ le dernier jour travaille et paye
@@ -241,7 +236,7 @@ pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: &str) -> R
     };
     let libelle = preavis.libelle.clone();
     let dates = preavis.dates;
-    let (debut_p, fin_p) = (fin.preavis_debut.as_deref(), fin.preavis_fin.as_deref());
+    let (debut_p, fin_p) = (fin.preavis_debut, fin.preavis_fin);
 
     // Le bloc 63 est (1,*) : un FCTU en porte toujours un.
     if dates && !(debut_p.is_some() && fin_p.is_some()) {
@@ -259,27 +254,29 @@ clause de preavis applicable », et les dates sont alors interdites.",
         )));
     }
     if let (true, Some(pd), Some(pf)) = (dates, debut_p, fin_p) {
-        if d(pf)? < d(pd)? {
+        if pf < pd {
             return Err(Echec::impossible(format!(
                 "Preavis : la date de fin ({}) est anterieure a la date de debut ({}) -- CCH-13 de S21.G00.63.003.",
-                pf, pd
+                pf.iso(),
+                pd.iso()
             )));
         }
         // CCH-16 : le preavis commence apres le debut du contrat.
-        if d(pd)? < e.debut {
+        if pd < e.debut {
             return Err(Echec::impossible(format!(
                 "Preavis : il commence le {}, avant le debut du contrat ({}) -- CCH-16 de S21.G00.63.002.",
-                pd,
+                pd.iso(),
                 e.debut.iso()
             )));
         }
         // CCH-13 : le preavis commence apres la notification de la rupture.
-        if let Some(n) = fin.notification.as_deref() {
-            if d(pd)? < d(n)? {
+        if let Some(n) = fin.notification {
+            if pd < n {
                 return Err(Echec::impossible(format!(
                     "Preavis : il commence le {}, avant la notification de la rupture ({}) -- CCH-13 de \
 S21.G00.63.002.",
-                    pd, n
+                    pd.iso(),
+                    n.iso()
                 )));
             }
         }
@@ -311,15 +308,14 @@ preavis de L1234-1."
     }
 
     // CCH-11 de S21.G00.62.003 : la notification tombe dans le contrat.
-    if let Some(nt) = fin.notification.as_deref() {
-        let nt_j = d(nt)?;
-        if !(e.debut <= nt_j && nt_j <= d(&fin.fin)?) {
+    if let Some(nt_j) = fin.notification {
+        if !(e.debut <= nt_j && nt_j <= fin.fin) {
             return Err(Echec::impossible(format!(
                 "Notifiée le {} : la rupture se notifie pendant le contrat, entre son premier jour, le {}, et sa fin, le \
 {} -- CCH-11 de S21.G00.62.003.",
                 nt_j.jj_mm_aaaa(),
                 e.debut.jj_mm_aaaa(),
-                d(&fin.fin)?.jj_mm_aaaa()
+                fin.fin.jj_mm_aaaa()
             )));
         }
     }
@@ -337,11 +333,7 @@ signalement sans elle. Rien n'est ecrit.",
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
     let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
-    let debut_preavis = match debut_p {
-        Some(p) => Some(d(p)?),
-        None => None,
-    };
-    controler_62_006(&jour_paye, &e.debut, &d(&fin.fin)?, Some(&fin.type_preavis), debut_preavis.as_ref())
+    controler_62_006(&jour_paye, &e.debut, &fin.fin, Some(&fin.type_preavis), debut_p.as_ref())
         .map_err(Echec::Impossible)?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
@@ -362,7 +354,7 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
     }
     avertissements.push(format!(
         "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent (cahier technique p. 107).",
-        socle::date::jj_mm_aaaa(&fin.fin)
+        fin.fin.jj_mm_aaaa()
     ));
     Ok(avertissements)
 }
@@ -372,17 +364,16 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
 /// La fin du contrat et son preavis, dans l'ordre de l'arborescence. `e` : le contrat, d'ou se lit S21.G00.62.006
 /// (`dernier_jour_paye`).
 pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> {
-    let j = |s: &str| -> R<String> { Ok(d(s)?.jjmmaaaa()) };
-    f.add("S21.G00.62.001", j(&fin.fin)?);
+    f.add("S21.G00.62.001", fin.fin.jjmmaaaa());
     f.add("S21.G00.62.002", fin.motif.code());
-    if let Some(n) = &fin.notification {
-        f.add("S21.G00.62.003", j(n)?);
+    if let Some(n) = fin.notification {
+        f.add("S21.G00.62.003", n.jjmmaaaa());
     }
-    if let Some(s) = &fin.signature_convention {
-        f.add("S21.G00.62.004", j(s)?);
+    if let Some(s) = fin.signature_convention {
+        f.add("S21.G00.62.004", s.jjmmaaaa());
     }
-    if let Some(s) = &fin.engagement_licenciement {
-        f.add("S21.G00.62.005", j(s)?);
+    if let Some(s) = fin.engagement_licenciement {
+        f.add("S21.G00.62.005", s.jjmmaaaa());
     }
     f.add("S21.G00.62.006", dernier_jour_paye(e)?.jjmmaaaa());
     // << Transaction en cours >> est OBLIGATOIRE : elle se declare meme pour
@@ -395,11 +386,11 @@ pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> 
     // mois (sous la forme 01mmaaaa) » -- cahier technique p. 278.
     f.add("S21.G00.62.020", fin.mois_rattachement.premier_jour().jjmmaaaa());
     f.add("S21.G00.63.001", &fin.type_preavis);
-    if let Some(p) = &fin.preavis_debut {
-        f.add("S21.G00.63.002", j(p)?);
+    if let Some(p) = fin.preavis_debut {
+        f.add("S21.G00.63.002", p.jjmmaaaa());
     }
-    if let Some(p) = &fin.preavis_fin {
-        f.add("S21.G00.63.003", j(p)?);
+    if let Some(p) = fin.preavis_fin {
+        f.add("S21.G00.63.003", p.jjmmaaaa());
     }
     Ok(())
 }
@@ -457,7 +448,7 @@ ou un annule.",
 
     let e = &paie.engagement;
 
-    let fin_jour = d(&fin.fin)?;
+    let fin_jour = fin.fin;
     let ctx = &ctx.au(&fin_jour)?;
     let ent0 = &ctx.entreprise;
     let s = &paie.salarie;

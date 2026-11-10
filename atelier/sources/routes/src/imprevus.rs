@@ -1982,15 +1982,15 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
     }
     let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
     Ok(declarations::fctu::FinDeContrat {
-        fin: exige(e.fin, "fin")?.iso(),
+        fin: exige(e.fin, "fin")?,
         motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
         mois_rattachement: mois,
         type_preavis: preavis.genre.clone(),
-        preavis_debut: preavis.debut.map(|j| j.iso()),
-        preavis_fin: preavis.fin.map(|j| j.iso()),
-        notification: e.notification_rupture.map(|j| j.iso()),
-        signature_convention: e.signature_convention.map(|j| j.iso()),
-        engagement_licenciement: e.engagement_licenciement.map(|j| j.iso()),
+        preavis_debut: preavis.debut,
+        preavis_fin: preavis.fin,
+        notification: e.notification_rupture,
+        signature_convention: e.signature_convention,
+        engagement_licenciement: e.engagement_licenciement,
         transaction: e.transaction.clone(),
     })
 }
@@ -2019,7 +2019,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let fin = fin_de_contrat_declaree(ctx, &e, mois)?;
     if remplace.is_none() && !refaire {
         let journal = envois::journal::lu(&ctx.racine)?;
-        if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &jour(&fin.fin)?)? {
+        if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &fin.fin)? {
             return Err(refus(format!(
                 "Le signalement de fin de contrat de {} est parti le {} : il ne se refait pas. Le corriger : un annule et remplace (champ « remplace »). Rien n'est écrit.",
                 cle,
@@ -2034,7 +2034,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     // saisie verifiee : la plate-forme ne se consulte pas pour un refus.
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
-    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.replace('-', "")), remplace.is_some(), ordre);
+    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.aaaammjj()), remplace.is_some(), ordre);
     let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
