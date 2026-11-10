@@ -299,7 +299,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
                 verifies.insert(relatif.clone());
             }
             Ok(false) => resultat.incidents.push(format!("{} : il est apparu ici pendant la restauration, il est garde tel quel.", relatif)),
-            Err(e) => resultat.incidents.push(format!("{} : {}", relatif, e)),
+            Err(e) => resultat.incidents.push(format!("{} : {}", relatif, e.phrase)),
         }
     }
 
@@ -336,19 +336,20 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
 }
 
 /// Ecrit `contenu` a `chemin` par un `.part` renomme, SANS JAMAIS REMPLACER : `Ok(false)` si `chemin` existe deja.
-fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> Result<bool, String> {
+fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool> {
+    let panne = |e: std::io::Error, p: &Path| socle::echec::erreur(socle::echec::Classe::du_disque(&e), socle::fichiers::panne_fichier(&e, p));
     if let Some(parent) = chemin.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| socle::fichiers::panne_fichier(&e, parent))?;
+        std::fs::create_dir_all(parent).map_err(|e| panne(e, parent))?;
     }
     let mut part = chemin.as_os_str().to_owned();
     part.push(".part");
     let part = PathBuf::from(part);
-    std::fs::write(&part, contenu).map_err(|e| socle::fichiers::panne_fichier(&e, &part))?;
+    std::fs::write(&part, contenu).map_err(|e| panne(e, &part))?;
     if std::fs::symlink_metadata(chemin).is_ok() {
         let _ = std::fs::remove_file(&part);
         return Ok(false);
     }
-    std::fs::rename(&part, chemin).map_err(|e| socle::fichiers::panne_fichier(&e, chemin))?;
+    std::fs::rename(&part, chemin).map_err(|e| panne(e, chemin))?;
     Ok(true)
 }
 

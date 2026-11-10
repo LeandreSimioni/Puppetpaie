@@ -237,10 +237,11 @@ fn motif_de(nom: &str) -> Option<String> {
     Some(s)
 }
 
-/// La date et la taille d'un fichier, pour savoir s'il a change ; ou ce que le systeme en dit (absent : il se relira).
-fn signature(p: &Path) -> Result<(SystemTime, u64), String> {
-    let m = std::fs::metadata(p).map_err(|e| e.to_string())?;
-    Ok((m.modified().map_err(|e| e.to_string())?, m.len()))
+/// La date et la taille d'un fichier, pour savoir s'il a change ; `None` quand le systeme ne les donne pas (absent : il
+/// se relira).
+fn signature(p: &Path) -> Option<(SystemTime, u64)> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.modified().ok()?, m.len()))
 }
 
 /// Les textes qu'une fiche datee a portes, champ par champ (`droit::fiche::VoirListe`) : tout ce qui peut nommer une
@@ -369,7 +370,7 @@ fn construire(racine: &Path) -> Personnes {
     Personnes { une, toutes, inconnues }
 }
 
-type Signatures = (Result<(SystemTime, u64), String>, Result<(SystemTime, u64), String>);
+type Signatures = (Option<(SystemTime, u64)>, Option<(SystemTime, u64)>);
 
 /// Les personnes de la compagnie `racine`, relues quand ses fiches changent. Sans compagnie, personne n'est connu.
 fn personnes(racine: Option<&Path>) -> Arc<Personnes> {
@@ -447,16 +448,16 @@ fn texte_avec(p: &Personnes, s: &str, limite: usize) -> String {
 }
 
 /// La cle de controle d'un NIR (13 chiffres, Corse 2A/2B comprise) : 97 - (NIR mod 97).
-fn cle_nir(n13: &str) -> Result<u64, String> {
+fn cle_nir(n13: &str) -> socle::echec::R<u64> {
     let corse = match &n13[5..7] {
         "2A" | "2a" => Some(1_000_000u64),
         "2B" | "2b" => Some(2_000_000u64),
         _ => None,
     };
     let chiffres: String = n13.chars().map(|c| if c.is_ascii_alphabetic() { '0' } else { c }).collect();
-    let v: u64 = chiffres.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+    let v: u64 = chiffres.parse().map_err(|e: std::num::ParseIntError| socle::echec::refus(e.to_string()))?;
     let v = match corse {
-        Some(m) => v.checked_sub(m).ok_or_else(|| "département corse hors des nombres".to_string())?,
+        Some(m) => v.checked_sub(m).ok_or_else(|| socle::echec::refus("département corse hors des nombres"))?,
         None => v,
     };
     Ok(97 - v % 97)
@@ -474,13 +475,13 @@ fn forme_nir(s: &str) -> String {
             (Ok(attendue), Ok(k)) if attendue == k => "NIR présent, clé valide".to_string(),
             (Ok(_), Ok(_)) => "NIR présent, clé invalide".to_string(),
             (Ok(_), Err(e)) => format!("NIR présent, clé illisible ({})", e),
-            (Err(e), _) => format!("NIR présent, illisible ({})", e),
+            (Err(e), _) => format!("NIR présent, illisible ({})", e.phrase),
         };
     }
     if lisible(&c) {
         return match cle_nir(&c) {
             Ok(_) => "NIR présent (13 car.), sans clé".to_string(),
-            Err(e) => format!("NIR présent, illisible ({})", e),
+            Err(e) => format!("NIR présent, illisible ({})", e.phrase),
         };
     }
     if c.len() <= 2 && c.chars().all(|x| x.is_ascii_digit()) {
