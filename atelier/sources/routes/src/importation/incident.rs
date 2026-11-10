@@ -166,7 +166,7 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
         match incidents::noter(&ctx.racine, &note) {
             Ok(Some(_)) => notes += 1,
             Ok(None) => {}
-            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", e.phrase()),
+            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", e.en_lignes()),
         }
     }
     if notes > 0 && incidents::envoi_actif(&ctx.racine) {

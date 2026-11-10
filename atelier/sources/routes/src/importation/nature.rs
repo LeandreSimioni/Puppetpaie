@@ -466,7 +466,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let nom = nom_du_salarie(racine, &salarie)?;
         match dire(&ctx, &charge) {
             Ok(r) => faits.push(format!("{} : {}, lu dans sa DSN reprise. {}", nom, nat.libelle, r.phrase)),
-            Err(e) => faits.push(format!("{} : {}, lu dans sa DSN reprise, ne s'écrit pas. {}", nom, nat.libelle, e.phrase())),
+            Err(e) => faits.push(format!("{} : {}, lu dans sa DSN reprise, ne s'écrit pas. {}", nom, nat.libelle, e.phrase)),
         }
     }
     Ok(faits)

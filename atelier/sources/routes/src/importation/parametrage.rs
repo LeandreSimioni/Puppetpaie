@@ -130,7 +130,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
         false => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
             Ok(_) => true,
             Err(e) => {
-                faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase()));
+                faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase));
                 false
             }
         },
@@ -163,7 +163,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
 pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
     let lecture = match import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
         Ok(l) => l,
-        Err(e) => return vec![e.phrase()],
+        Err(e) => return vec![e.phrase],
     };
     if lecture.fichiers == 0 {
         return Vec::new();
@@ -182,11 +182,11 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
     let dossier = ctx.racine.join("historique").join("bulletins");
     let releves = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
         Ok(r) => r,
-        Err(e) => return faits.push(e.phrase()),
+        Err(e) => return faits.push(e.phrase),
     };
     let changes = match crate::gestes::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
         Ok(c) => c,
-        Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase())),
+        Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase)),
     };
     for r in &releves {
         let cle = r.salarie.clone();
