@@ -526,15 +526,15 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if l.nature_dsn().is_some_and(|n| !n.is_empty() && n != "01") {
         return Ok(None);
     }
-    let (Some(mois), Some(fichier)) = (l.mois().map(|m| m.to_string()), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
-    let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(&mois).join(&fichier) };
+    let (Some(mois), Some(fichier)) = (l.mois(), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
+    let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(mois.to_string()).join(&fichier) };
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)),
     };
-    crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui)
+    crate::aer_fictive::archive(ctx, &octets, mois, ctx.aujourdhui)
 }
 
 /// Telecharge et archive ce que les organismes ont publie. `debut` et `fin` : heures locales naives

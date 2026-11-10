@@ -9,7 +9,12 @@
 //! - les fetes legales : L. 3133-1 (`logiciel/donnees/feries-base.json`).
 
 use socle::date::Jour;
-use declarations::echeance_dsn::{du_mois, reporter, HEURE_LIMITE};
+use declarations::echeance_dsn::{reporter, Echeance, HEURE_LIMITE};
+
+/// L'echeance de la DSN du mois ecrit `mois`.
+fn du_mois(mois: &str, jour: u32) -> socle::echec::R<Echeance> {
+    declarations::echeance_dsn::du_mois(socle::mois::Mois::lire(mois).unwrap(), jour)
+}
 
 fn j(s: &str) -> Jour {
     Jour::lire(s).unwrap()

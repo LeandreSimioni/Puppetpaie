@@ -534,10 +534,9 @@ fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom:
 /// L'archive de nature 46 que France Travail publierait pour la DSN `dsn` du mois `mois` : un PDF par salarie dont la
 /// DSN declare la fin d'un contrat d'usage (cinq periodes par PDF, les mois anterieurs du contrat lus dans les DSN
 /// reelles deposees). `None` : aucune AER Cinema Spectacle n'est due ce mois-ci, France Travail ne publie rien.
-pub fn archive(ctx: &Contexte, dsn: &[u8], mois: &str, edite_le: Jour) -> R<Option<Vec<u8>>> {
+pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jour) -> R<Option<Vec<u8>>> {
     let d = declarations::dsn_lue::lire(dsn, "")?;
     let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
-    let mois = socle::mois::Mois::lire(mois)?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
     let remplace = match d.type_declaration.as_deref() {
         Some("03" | "05") => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", "S20.G00.05.004")?),

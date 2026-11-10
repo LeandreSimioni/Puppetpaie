@@ -123,7 +123,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let (lu, enregistre) = match porte.route {
         Route::OrganismesContrats => {
             let c: ChargeOrganismes = charge.lire()?;
-            (lire(ctx, c.mois.map(|m| m.to_string()).as_deref())?, false)
+            (lire(ctx, c.mois)?, false)
         }
         Route::OrganismesEnregistrer => {
             let c: ChargeEnregistrer = charge.lire()?;
@@ -144,7 +144,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         format!("Contrats de la DSN : {} ; rien à saisir.", n)
     };
     let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
-    let mois = Mois::lire(&lu.mois)?;
+    let mois = lu.mois;
     let mut encarts = vec![crate::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
     encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));
     if lu.a_saisir {

@@ -27,6 +27,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
+use socle::mois::Mois;
 pub use socle::echec::R;
 
 /// Un refus `Refuse`.
@@ -39,11 +40,13 @@ pub const FORMATS_TABLEAU: [&str; 6] = ["csv", "tsv", "xlsx", "pdf", "html", "js
 
 // ------------------------------------------------------------------ valeurs
 
-/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un texte.
+/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un mois (`AAAA-MM`), un
+/// texte.
 #[derive(Clone, Debug)]
 pub enum Val {
     Dec(Decimal),
     Ent(i64),
+    Mois(Mois),
     Txt(String),
 }
 
@@ -61,6 +64,7 @@ impl Val {
         match self {
             Val::Dec(d) => d.to_string(),
             Val::Ent(n) => n.to_string(),
+            Val::Mois(m) => m.to_string(),
             Val::Txt(s) => s.clone(),
         }
     }
@@ -70,6 +74,7 @@ impl Val {
         match self {
             Val::Dec(d) => Ok(*d),
             Val::Ent(n) => Ok(Decimal::from(*n)),
+            Val::Mois(m) => Err(erreur(Classe::CalculImpossible, socle::num::illisible(&m.to_string()))),
             Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t))),
         }
     }
@@ -80,6 +85,7 @@ impl Serialize for Val {
         match self {
             Val::Dec(d) => s.serialize_str(&d.to_string()),
             Val::Ent(n) => s.serialize_i64(*n),
+            Val::Mois(m) => m.serialize(s),
             Val::Txt(t) => s.serialize_str(t),
         }
     }
@@ -125,6 +131,10 @@ impl Ligne {
         self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
+    pub fn m(&mut self, k: &str, m: Mois) -> &mut Ligne {
+        self.poser(k, Some(Val::Mois(m)))
+    }
+
     pub fn d(&mut self, k: &str, v: Decimal) -> &mut Ligne {
         self.poser(k, Some(Val::Dec(v)))
     }
@@ -160,6 +170,14 @@ impl Ligne {
     pub fn decimal(&self, k: &str) -> Option<Decimal> {
         match self.val(k) {
             Some(Val::Dec(d)) => Some(*d),
+            _ => None,
+        }
+    }
+
+    /// Le mois de la case `k`, quand elle en porte un (`m`).
+    pub fn mois(&self, k: &str) -> Option<Mois> {
+        match self.val(k) {
+            Some(Val::Mois(m)) => Some(*m),
             _ => None,
         }
     }
@@ -254,7 +272,7 @@ pub struct Tableau {
     pub total: Option<Ligne>,
     pub avertissements: Vec<String>,
     pub sources: Vec<String>,
-    pub mois: Vec<String>,
+    pub mois: Vec<Mois>,
     pub format: String,
     #[serde(serialize_with = "nom_du_fichier")]
     pub fichier: Option<PathBuf>,
@@ -313,9 +331,14 @@ pub fn sections_de<K: Ord + Clone>(
         .collect()
 }
 
-/// Le libelle d'une section par mois (`AAAA-MM`, la case `mois` de ses lignes) : « Septembre 2026 ».
-pub fn section_du_mois(m: &String) -> R<String> {
-    libelle_mois(m)
+/// Le libelle d'une section par mois (la case `mois` de ses lignes, `Ligne::mois`) : « Septembre 2026 ».
+pub fn section_du_mois(m: &Option<Mois>) -> R<String> {
+    m.map(libelle_mois).ok_or_else(sans_mois)
+}
+
+/// Le refus d'une ligne rangee par son mois qui n'en porte pas.
+pub fn sans_mois() -> Echec {
+    erreur(Classe::Illisible, "Une ligne de l'état n'a pas de mois.")
 }
 
 // ------------------------------------------------------------------ totaux
@@ -497,7 +520,7 @@ struct FichierTableau<'a> {
     etat: &'a str,
     titre: &'a str,
     periode: &'a str,
-    mois: &'a [String],
+    mois: &'a [Mois],
     colonnes: &'a [Colonne],
     sections: &'a [Section],
     total: Option<&'a Ligne>,
@@ -549,6 +572,7 @@ fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
         Val::Txt(s) if s.is_empty() => Cel::Vide,
         Val::Dec(d) => Cel::Nombre(en_f64(d)?),
         Val::Ent(n) => Cel::Nombre(*n as f64),
+        Val::Mois(m) => Cel::Texte(m.to_string()),
         Val::Txt(s) if c.a_droite() => match socle::num::decimal_lu(s) {
             Some(d) => Cel::Nombre(en_f64(&d)?),
             None => Cel::Texte(s.clone()),
@@ -934,9 +958,9 @@ pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<P
 
 // ------------------------------------------------------------------ petits outils
 
-/// « Septembre 2026 » d'un mois `AAAA-MM` (le nom en titre) ; un mois illisible se refuse.
-pub fn libelle_mois(m: &str) -> R<String> {
-    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| e.reclasser(Classe::Illisible))
+/// « Septembre 2026 » (le nom en titre).
+pub fn libelle_mois(m: Mois) -> String {
+    m.libelle(socle::mois::Graphie::Titre)
 }
 
 /// AAAA-MM-JJ -> JJ/MM/AAAA ; le reste tel quel.

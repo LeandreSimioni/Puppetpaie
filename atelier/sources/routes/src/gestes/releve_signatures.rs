@@ -241,7 +241,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             continue;
         }
         r.recues.push(SignatureRecue {
-            mois: a_mois.to_string(),
+            mois: a_mois,
             salarie: a_salarie.clone(),
             nom: a_nom.clone(),
             code: code.clone(),
@@ -257,7 +257,6 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         }
 
         // Le contrat contresigne, renvoye au salarie.
-        let (an, nom_mois) = (a_mois.annee(), a_mois.nom(socle::mois::Graphie::Accentuee));
         let pdfs: Vec<PathBuf> = signes.iter().map(|(_, p)| p.clone()).collect();
         let contresigne = Contresigne {
             a,
@@ -269,8 +268,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             signataire: &signataire,
             raison: &raison,
             expediteur: &expediteur,
-            an,
-            nom_mois,
+            mois: a_mois,
         };
         match renvoyer_contresigne(&ctx.racine, client, &contresigne, qui) {
             Ok(()) => {

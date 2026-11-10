@@ -825,7 +825,7 @@ fn signalement_dsn(
         // alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou un ferie
         // (R. 133-14, I), a midi (cahier technique § 1.4.2). INFERENCE : le report de la mensuelle vaut pour le signalement
         // qui part avec elle (le texte du report parle de « la declaration sociale nominative » sans distinguer).
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &evenement.mois_civil().to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, evenement.mois_civil()).map_err(|m| m.reclasser(Classe::Illisible))?;
         m.subrogation = Some(true);
         m.echeance_dsn = Some(echeance.dite());
         // La connaissance ne compte pas : le delai court du mois de l'evenement.
@@ -886,7 +886,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             return Ok(quand.replace('T', " ") >= *saisi);
         }
         match &arret {
-            Some(arret) => arret.a_reporter(&mois.to_string(), &departs).map_err(|m| m.reclasser(Classe::Illisible)),
+            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| m.reclasser(Classe::Illisible)),
             None => Ok(false),
         }
     };

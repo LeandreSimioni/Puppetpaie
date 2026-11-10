@@ -154,8 +154,8 @@ pub(crate) fn de_mois_en_clair(mois: Mois) -> String {
 /// revalide (`produire_regularisations::regularisations_pour`). Celle que l'ancien logiciel a deposee ne se remplace
 /// jamais ici (regle 4, `import::mois::dsn_de_l_ancien_logiciel`).
 pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<DsnDeposee>> {
-    if let Some(porteur) = import::mois::dsn_de_l_ancien_logiciel(ctx, &mois.to_string())?.map(|d| d.porteur) {
-        return Ok(Some(DsnDeposee::Corrigee { porteur: Mois::lire(&porteur)? }));
+    if let Some(porteur) = import::mois::dsn_de_l_ancien_logiciel(ctx, mois)?.map(|d| d.porteur) {
+        return Ok(Some(DsnDeposee::Corrigee { porteur }));
     }
     let dsn = compagnie::etat_dsn::du_mois(ctx, mois, None)?;
     if !dsn.deposee() || dsn.refusee() {
@@ -166,7 +166,7 @@ pub(crate) fn modification_de_l_engagement(m: &mut Moteur, ctx: &Contexte, mois:
     if ctx.aujourdhui <= veille {
         return Ok(Some(DsnDeposee::Remplacee { limite: veille }));
     }
-    Ok(Some(DsnDeposee::Corrigee { porteur: Mois::lire(&compagnie::etat_dsn::dsn_qui_porte(ctx, &mois.to_string())?)? }))
+    Ok(Some(DsnDeposee::Corrigee { porteur: compagnie::etat_dsn::dsn_qui_porte(ctx, mois)? }))
 }
 
 /// Ce qui arrive a la DSN deposee d'un mois quand une modification la touche (`modification_de_l_engagement`).
@@ -350,13 +350,12 @@ pub(crate) struct Correction {
 /// corrigeait). Vide quand le mois ne se corrige pas ailleurs que dans sa DSN (`se_corrige_ailleurs`).
 pub(crate) fn corrections_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<Correction>, Vec<Correction>)> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let texte = mois.to_string();
-    if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, &texte)? {
+    if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok((Vec::new(), Vec::new()));
     }
     let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok((Vec::new(), Vec::new())) };
     let mut a_porter = Vec::new();
-    for d in declarations::produire_regularisations::corrections_dues(ctx, &texte, "9999-12", &departs)? {
+    for d in declarations::produire_regularisations::corrections_dues(ctx, mois, Mois::lire("9999-12")?, &departs)? {
         let apres = d.valide.paie(ctx, &data, d.rang)?;
         a_porter.push(avant_apres(mois, d.declarees.last().map(|x| &x.paie), &apres)?);
     }
@@ -388,5 +387,5 @@ pub(crate) fn dsn_qui_porte_la_correction(ctx: &Contexte, v: &engagement::etats:
             return Ok(par);
         }
     }
-    Mois::lire(&compagnie::etat_dsn::dsn_qui_porte(ctx, &mois.to_string())?)
+    compagnie::etat_dsn::dsn_qui_porte(ctx, mois)
 }

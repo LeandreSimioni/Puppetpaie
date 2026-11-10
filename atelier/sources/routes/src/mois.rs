@@ -561,7 +561,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
-    let importes = import::mois::cartes(ctx, &mois.to_string())?;
+    let importes = import::mois::cartes(ctx, mois)?;
     let ferme = ferme_aux_neufs(ctx, mois)?;
     // CE QUE L'ECRAN DIT DE LA SAISIE : pour un mois importe, `ferme_aux_neufs`.
     let phrase = match (&ferme, existe) {
@@ -1020,7 +1020,7 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: Mois) 
     // Sans premiere embauche dite, aucun mois ne la precede.
     let Some(embauche) = ctx.entreprise.premiere_embauche.dite() else { return Ok(()) };
     if mois < Mois::du_jour(&embauche)
-        && declarations::echeance_dsn::de_la_compagnie(ctx, &mois.to_string())?.passee_au(&ctx.aujourdhui)
+        && declarations::echeance_dsn::de_la_compagnie(ctx, mois)?.passee_au(&ctx.aujourdhui)
         && !engagement::stock::a_une_saisie(&ctx.racine, mois)?
     {
         return Err(refus(format!(

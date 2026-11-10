@@ -514,7 +514,7 @@ pub struct FichierVu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     /// D'ou il vient : une copie, une archive.
     pub de_dit: Option<String>,
     /// « 3 pages ».

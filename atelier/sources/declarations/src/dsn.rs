@@ -321,8 +321,8 @@ fn emploi_declare(p: &Paie) -> (Option<String>, Option<String>, Option<String>) 
 /// (`engagement::etats::validees_du_mois`), dans l'ordre de l'ecran ; rien si le mois n'a pas de saisie. Un engagement
 /// en saisie n'y est pas : une declaration ne lit que l'engagement valide. Ils completent ceux qu'une declaration
 /// porte : la DSN d'un etablissement ne porte pas les contrats d'un autre, un signalement n'en porte qu'un.
-pub fn contrats_du_mois(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
-    Ok(engagement::etats::validees_du_mois(ctx, Mois::lire(mois)?, departs)?.into_iter().flat_map(|(_, paies)| paies).collect())
+pub fn contrats_du_mois(ctx: &Contexte, mois: Mois, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
+    Ok(engagement::etats::validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, paies)| paies).collect())
 }
 
 /// `S21.G00.40.036` (code emplois multiples) du contrat `p` : « 02 - emplois multiples » si le salarie tient plus
@@ -404,9 +404,9 @@ impl Arret {
     /// signalé soit pris en compte dans le traitement d'un évènement futur » ; § 2.5 : l'arret est reporte dans la DSN
     /// mensuelle même si les impacts de l'absence sont portés dans une paie ultérieure. Un arret sans date de saisie, ou
     /// dont le contrat n'a rien declare de reel, ne se reporte que dans les mois qu'il croise.
-    pub fn a_reporter(&self, mois: &str, departs: &engagement::departs::Departs) -> R<bool> {
-        let debut_mois = socle::mois::Mois::lire(mois)?.premier_jour();
-        if self.couvre(&debut_mois, &socle::mois::Mois::lire(mois)?.dernier_jour())? {
+    pub fn a_reporter(&self, mois: Mois, departs: &engagement::departs::Departs) -> R<bool> {
+        let debut_mois = mois.premier_jour();
+        if self.couvre(&debut_mois, &mois.dernier_jour())? {
             return Ok(true);
         }
         let origine = Jour::nouveau(1900, 1, 1).ok_or_else(|| refus("jour inexistant"))?;
@@ -420,12 +420,12 @@ impl Arret {
         let mut avant: Option<String> = None;
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
-            let Some(declarante) = d.par.or(d.mois).map(|m| m.to_string()) else { continue };
+            let Some(declarante) = d.par.or(d.mois) else { continue };
             let le = minute(&d.le);
             if declarante == mois && le < saisi {
                 return Ok(false);
             }
-            if declarante.as_str() < mois && avant.as_ref().is_none_or(|a| le > *a) {
+            if declarante < mois && avant.as_ref().is_none_or(|a| le > *a) {
                 avant = Some(le);
             }
         }
@@ -504,7 +504,7 @@ fn jj_exige(case: &Option<String>, cle: &str) -> R<String> {
 /// la paie d'avant refaite par le moteur du jour : elle ne donne plus que le contrat (ses bornes, sa nature, son statut,
 /// sa pile de bareme), aucun montant.
 pub struct Regularisation {
-    pub mois: String,
+    pub mois: Mois,
     pub avant: Paie,
     pub declare: crate::versement_declare::VersementDeclare,
     pub apres: Paie,
@@ -1119,10 +1119,9 @@ fn regrouper_par_base(lignes: Vec<Cotisation>) -> Vec<Cotisation> {
 
 // ------------------------------------------------ adhesions et affiliations
 
-/// Le premier et le dernier jour du mois `AAAA-MM`.
-fn bornes_du_mois(mois: &str) -> R<(Jour, Jour)> {
-    let mois = Mois::lire(mois)?;
-    Ok((mois.premier_jour(), mois.dernier_jour()))
+/// Le premier et le dernier jour du mois.
+fn bornes_du_mois(mois: Mois) -> (Jour, Jour) {
+    (mois.premier_jour(), mois.dernier_jour())
 }
 
 /// Les references d'adhesion auxquelles cette nature rattache, parmi celles qui valent pour la
@@ -1373,22 +1372,22 @@ pub fn places_par_contrat(bar: &Pile) -> i64 {
 }
 
 /// Les references de chaque nature (hors `ref`), en vigueur pendant le mois.
-fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: &str) -> R<Vec<String>> {
-    let (debut, fin) = bornes_du_mois(mois)?;
-    Ok(sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect())
+fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: Mois) -> Vec<String> {
+    let (debut, fin) = bornes_du_mois(mois);
+    sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect()
 }
 
 /// `casc_svp` : la CASC-SVP de ce mois, ou `None`.
-fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: &str) -> R<Option<ContributionDuMois>> {
+fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois) -> R<Option<ContributionDuMois>> {
     let base = droit::adhesions::casc_svp_base()?;
-    if ent.idcc.portee() != Some(base.idcc.as_str()) || mois < base.depuis.trim() {
+    if ent.idcc.portee() != Some(base.idcc.as_str()) || mois < base.depuis {
         return Ok(None);
     }
-    let (an, eff) = (Mois::lire(mois)?.annee(), ctx.effectif()?);
+    let (an, eff) = (mois.annee(), ctx.effectif()?);
     if bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
-    if crate::casc::mois_regularises(ctx)?.iter().any(|m| m == mois) {
+    if crate::casc::mois_regularises(ctx)?.contains(&mois) {
         return Ok(None);
     }
     let contrat = &base.dsn.contrat;
@@ -1409,7 +1408,7 @@ l'adhesion {} que le logiciel compose pour toute compagnie de la 3090. Rien n'es
         if s.references.is_empty() || s.references.contains(&reference) {
             continue;
         }
-        let refs = refs_du_mois(orgs, s, mois)?;
+        let refs = refs_du_mois(orgs, s, mois);
         if refs.len() >= 3 {
             return Err(refus!(
                 "Contrat '{}' : {} adhesions deja, plus de place pour la CASC-SVP (trois identifiants \
@@ -1425,7 +1424,7 @@ d'affiliation par contrat). Rien n'est ecrit.",
 
 
 /// `contributions_dsn` : les contributions declarees sous une adhesion Audiens.
-fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: &str, bar: &Pile) -> R<Vec<ContributionDuMois>> {
+fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois, bar: &Pile) -> R<Vec<ContributionDuMois>> {
     let mut out = Vec::new();
     if let Some(c) = casc_svp(ctx, ent, orgs, mois)? {
         out.push(c);
@@ -1433,7 +1432,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
     let specs: Vec<&droit::forme_bareme::ContributionDsn> = bar.contributions_dsn
         .iter()
         .flatten()
-        .filter(|c| mois >= c.en_dsn_depuis.as_str())
+        .filter(|c| mois >= c.en_dsn_depuis)
         .collect();
     if specs.is_empty() {
         return Ok(out);
@@ -1463,7 +1462,7 @@ du mois n'ont pas l'adhesion de cette contribution, que le logiciel compose depu
             if sec.references.is_empty() || sec.references.contains(&reference) {
                 continue;
             }
-            let refs = refs_du_mois(orgs, sec, mois)?;
+            let refs = refs_du_mois(orgs, sec, mois);
             let place = refs.len() as i64 + *deja.entry(n.to_string()).or_insert(0);
             if place >= places {
                 return Err(refus!(
@@ -2483,7 +2482,7 @@ pub struct VersementEcrit {
 /// CE QU'UNE DSN A DECLARE POUR UN CONTRAT, ecrit depuis la paie qu'elle a declaree (`engagement::etats::paies_declarees`)
 /// par les fonctions qui ecrivent la mensuelle de `mois` : ses affiliations (`rattachements`) et son versement
 /// (`bloc_versement`), qu'une regularisation annule (`versement_declare::de_la_paie`).
-pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: &str) -> R<VersementEcrit> {
+pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit> {
     let ctx = &ctx.du_mois(mois)?;
     let ent = &ctx.entreprise;
     let nic = bareme::etablissement_de(ent, &p.salarie)?;
@@ -2738,7 +2737,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
                 ))
             }
         };
-        f.add("S21.G00.56.001", format!("{}{}", &r.mois[5..7], &r.mois[..4]));
+        f.add("S21.G00.56.001", format!("{:02}{:04}", r.mois.numero(), r.mois.annee()));
         f.add("S21.G00.56.002", "03");
         f.add("S21.G00.56.003", mt(d_ni));
         f.add("S21.G00.56.006", taux_o);
@@ -3416,9 +3415,8 @@ pub struct Seuils {
 }
 
 impl Seuils {
-    fn du_mois(ctx: &Contexte, mois: &str) -> R<Seuils> {
-        let an: i32 = Mois::lire(mois)?.annee();
-        Ok(Seuils { effectif: ctx.effectif()?, an })
+    fn du_mois(ctx: &Contexte, mois: Mois) -> R<Seuils> {
+        Ok(Seuils { effectif: ctx.effectif()?, an: mois.annee() })
     }
 
     fn atteint(&self, seuil: i64) -> bool {
@@ -3431,15 +3429,14 @@ impl Seuils {
     }
 }
 
-/// `assujettissement::taxe_apprentissage_non_due_au_mois` pour un mois `AAAA-MM`.
-fn taxe_apprentissage_non_due_du_mois(ent: &ChampsEntreprise, mois: &str) -> R<bool> {
-    let m = Mois::lire(mois)?;
+/// `assujettissement::taxe_apprentissage_non_due_au_mois` pour le mois `m`.
+fn taxe_apprentissage_non_due_du_mois(ent: &ChampsEntreprise, m: Mois) -> R<bool> {
     droit::apprentissage::taxe_apprentissage_non_due_au_mois(ent, m.annee(), m.numero())
 }
 
 fn lignes_bordereau(
     paies: &[&Paie], orgs: &Organismes, ent: &ChampsEntreprise, bar: &BaremeDuMois, solde_ta: Option<&SoldeTa>, doeth: Option<&crate::oeth::Declaration>,
-    csa: Option<&crate::csa::Csa>, mois: &str, effectif: &Seuils,
+    csa: Option<&crate::csa::Csa>, mois: Mois, effectif: &Seuils,
 ) -> R<Vec<LigneBordereau>> {
     let mut lignes = Vec::new();
     let somme = assiettes_ctp(paies, bar)?;
@@ -3533,7 +3530,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
 /// secondaire valorisait son bordereau regularise au taux AT/MP du principal (23.003, `taux_at_du_ctp`) ; regle 8,
 /// chaque etablissement a le sien.
 fn lignes_regularisees(
-    orgs: &Organismes, ent: &ChampsEntreprise, regs: &[Regularisation], mois_o: &str, bar_o: &BaremeDuMois, effectif: &Seuils,
+    orgs: &Organismes, ent: &ChampsEntreprise, regs: &[Regularisation], mois_o: Mois, bar_o: &BaremeDuMois, effectif: &Seuils,
 ) -> R<Vec<LigneBordereau>> {
     let siens: Vec<&Regularisation> = regs.iter().filter(|r| r.mois == mois_o).collect();
     let apres = assiettes_ctp(&siens.iter().map(|r| &r.apres).collect::<Vec<_>>(), bar_o)?;
@@ -3873,7 +3870,7 @@ pub fn pas_retenu(lignes: &[String]) -> R<Decimal> {
 /// remplace (type 03 ou 05), et `remplacee_versait_pas` dit si la declaration remplacee portait un versement DGFiP.
 #[allow(clippy::too_many_arguments)]
 fn versement_dgfip(
-    du: Decimal, mois: &str, debut: Jour, fin: Jour, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
+    du: Decimal, mois: Mois, debut: Jour, fin: Jour, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
 ) -> R<Vec<String>> {
     // « arrondi a l'entier le plus proche (les deux decimales etant valorisees a zero) » (p. 157, ligne 194) ; le demi
     // va a l'euro superieur (`bordereau::euro`) : CGI art. 1724, « La liquidation de toutes sommes a recevoir [...] est
@@ -3924,8 +3921,6 @@ pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien
     Ok(f.lignes)
 }
 
-/// L'annee d'un mois `AAAA-MM`.
-
 /// Le solde de la taxe d'apprentissage d'avril.
 pub struct SoldeTa {
     pub annee: i32,
@@ -3938,13 +3933,13 @@ pub struct SoldeTa {
 /// derniere DSN qui a declare ce mois a portee (`engagement::etats::paie_declaree`, regle 4 : ce qui est declare se lit
 /// dans la version sur laquelle la DSN est partie), ou sa paie ecrite si aucune DSN ne l'a encore declaree. Un
 /// engagement en saisie n'y est pas : rien ne part de lui. `nic` : les seuls salaries de cet etablissement.
-pub fn paies_declarees_du_mois(ctx: &Contexte, mois: &str, nic: Option<&str>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, Mois::lire(mois)?)? else { return Ok(Vec::new()) };
+pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
+    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(Vec::new()) };
     let ctx_m = ctx.du_mois(mois)?;
     let mut out = Vec::new();
-    for (i, e) in engagement::etats::du_mois(ctx, Mois::lire(mois)?, departs)?.iter().enumerate() {
+    for (i, e) in engagement::etats::du_mois(ctx, mois, departs)?.iter().enumerate() {
         let Some(v) = e.valide() else { continue };
-        let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, Mois::lire(mois)?)? {
+        let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, mois)? {
             Some(p) => p,
             None => v.paie(ctx, &data, i)?,
         };
@@ -3961,7 +3956,7 @@ pub fn paies_declarees_du_mois(ctx: &Contexte, mois: &str, nic: Option<&str>, de
 /// LES ASSIETTES DES CTP `codes` que le bordereau Urssaf de `mois` porte pour l'etablissement `nic` sur les paies
 /// `paies`, une par code, tirees par la fonction qui ecrit le bordereau de la DSN (`lignes_bordereau`) : la taxe
 /// d'apprentissage (992, 993) que lisent le solde d'avril et la contribution supplementaire de mars (`csa`).
-pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: &str, nic: &str, codes: &[&str]) -> R<Vec<Decimal>> {
+pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, codes: &[&str]) -> R<Vec<Decimal>> {
     if paies.is_empty() {
         return Ok(vec![zero(); codes.len()]);
     }
@@ -3978,24 +3973,24 @@ pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: &str, nic: &str, 
 pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[&str], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
     let mut total = vec![zero(); codes.len()];
     for m in 1..=12 {
-        let mois = format!("{}-{:02}", annee, m);
-        let paies = paies_declarees_du_mois(ctx, &mois, Some(nic), departs)?;
-        for (t, a) in total.iter_mut().zip(assiettes_des_ctp(ctx, &paies, &mois, nic, codes)?) {
+        let mois = Mois::nouveau(annee, m)?;
+        let paies = paies_declarees_du_mois(ctx, mois, Some(nic), departs)?;
+        for (t, a) in total.iter_mut().zip(assiettes_des_ctp(ctx, &paies, mois, nic, codes)?) {
             *t = add(*t, a);
         }
     }
     Ok(total)
 }
 
-fn solde_taxe_apprentissage(ctx: &Contexte, mois: &str, orgs: &Organismes, bar: &Pile, nic: &str, departs: &engagement::departs::Departs) -> R<Option<SoldeTa>> {
-    if &mois[5..7] != "04" {
+fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: &Pile, nic: &str, departs: &engagement::departs::Departs) -> R<Option<SoldeTa>> {
+    if mois.numero() != 4 {
         return Ok(None);
     }
     let Some(taux) = bar.solde_taxe_apprentissage.as_ref().map(|s| s.taux) else { return Ok(None) };
     if !orgs.ctp_urssaf().iter().any(|c| c.code.trim() == "992") {
         return Ok(None);
     }
-    let annee: i32 = mois[..4].parse::<i32>().map_err(|e| refus(e.to_string()))? - 1;
+    let annee = mois.annee() - 1;
     // Pas de solde d'une taxe que la fiche dit non due pour l'annee (R12, `assujettissement::taxe_apprentissage_non_due`).
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, annee)? {
         return Ok(None);
@@ -4130,7 +4125,7 @@ pub struct Fabriquee {
 }
 
 /// Le texte de la DSN (`fabriquer`).
-pub fn generer(ctx: &Contexte, paies: &[Paie], mois: &str, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<String> {
+pub fn generer(ctx: &Contexte, paies: &[Paie], mois: Mois, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<String> {
     Ok(fabriquer(ctx, paies, mois, regs, arrets, o, departs)?.texte)
 }
 
@@ -4148,8 +4143,8 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// seule facon de l'obtenir (regle 8 : chaque etablissement a son taux AT/MP) : le bordereau courant, le bordereau
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
-fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: &str) -> R<Pile> {
-    bareme::surcharger((*ctx.bareme(&Mois::lire(mois)?.premier_jour())?).clone(), ent, nic)
+fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: Mois) -> R<Pile> {
+    bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)
 }
 
 /// LE BLOC 40 DECLARE du contrat de `p` (regle 4 : il se lit, il ne se recalcule pas), pour le bloc Changements contrat
@@ -4157,7 +4152,7 @@ fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: &str) 
 /// de ce mois telle que la version sur laquelle elle est partie l'a ecrite (`engagement::etats::paie_declaree`) ; son
 /// bloc 40 s'ecrit comme il s'est ecrit ce mois-la, de la fiche du salarie telle que ce calcul l'a lue. `etats` : les
 /// engagements de `mois` ; `None` : rien de declare.
-fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: &str, etats: &[engagement::etats::Etat], departs: &engagement::departs::Departs, orgs: &Organismes) -> R<Option<crate::changements_contrat::Declare>> {
+fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::etats::Etat], departs: &engagement::departs::Departs, orgs: &Organismes) -> R<Option<crate::changements_contrat::Declare>> {
     // Un contrat sans numero n'a rien declare : le numero est la cle de ce qui est parti.
     let Some(numero) = p.engagement.numero.clone() else { return Ok(None) };
     let cle = cle_salarie(p);
@@ -4165,29 +4160,29 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: &str, etats: &[engagement::et
         e.objet().carte().salarie.as_deref() == Some(cle.as_str()) && e.objet().carte().numero.as_deref() == Some(numero.as_str())
     };
     let Some(v) = etats.iter().filter(|e| sienne(e)).find_map(engagement::etats::Etat::valide) else { return Ok(None) };
-    let premier_mois = p.engagement.debut.mois_civil().to_string();
-    let mut m = Mois::lire(mois)?.precedent().to_string();
+    let premier_mois = p.engagement.debut.mois_civil();
+    let mut m = mois.precedent();
     while m >= premier_mois {
         // La compagnie telle qu'a la fin du mois declare (l'entreprise, ses etablissements) ; la fiche, celle que la paie declaree a lue.
-        let ctx_m = Contexte::nouveau(&ctx.racine, Some(socle::mois::Mois::lire(&m)?.dernier_jour()))?;
-        if let Some(declaree) = engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, Mois::lire(&m)?)? {
+        let ctx_m = Contexte::nouveau(&ctx.racine, Some(m.dernier_jour()))?;
+        if let Some(declaree) = engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, m)? {
             // Les autres contrats du salarie declares ce mois-la : le code emplois multiples (40.036) s'ecrit avec eux.
             let mut autres = Vec::new();
-            for e in engagement::etats::tels_qu_ecrits(ctx, Mois::lire(&m)?, departs)? {
+            for e in engagement::etats::tels_qu_ecrits(ctx, m, departs)? {
                 let Some(w) = e.valide() else { continue };
                 if w.objet().fichier == v.objet().fichier && w.objet().rang == v.objet().rang {
                     continue;
                 }
-                if let Some(q) = engagement::etats::paie_declaree(&ctx_m, w.objet(), departs, Mois::lire(&m)?)? {
+                if let Some(q) = engagement::etats::paie_declaree(&ctx_m, w.objet(), departs, m)? {
                     autres.push(q);
                 }
             }
             let nic = bareme::etablissement_de(&ctx_m.entreprise, &declaree.salarie)?;
-            let bar = bar_du(&ctx_m, &ctx_m.entreprise, orgs, &nic, &m)?;
+            let bar = bar_du(&ctx_m, &ctx_m.entreprise, orgs, &nic, m)?;
             let mut ent = ctx_m.entreprise.clone();
-            ent.licence_spectacle = ctx.licence(&Mois::lire(&m)?.premier_jour());
+            ent.licence_spectacle = ctx.licence(&m.premier_jour());
             let ent_e = bareme::fiche_de_l_etablissement(&ent, &nic)?;
-            let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(&m)?);
+            let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
             bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], "01", emplois_multiples(&declaree, &refs))?;
             let bloc: Vec<(String, String)> = f
@@ -4199,14 +4194,14 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: &str, etats: &[engagement::et
                 .collect();
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: ctx_m.entreprise.siren.ecrite("siren")?.trim().to_string() + &nic, nic, bloc }));
         }
-        m = Mois::lire(&m)?.precedent().to_string();
+        m = m.precedent();
     }
     Ok(None)
 }
 
 /// Le bareme d'un mois pour l'etablissement, avec ses contributions.
-pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &str, m: &str) -> R<BaremeDuMois> {
-    let lue = ctx.entreprise_lue(&Mois::lire(m)?.premier_jour())?;
+pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &str, m: Mois) -> R<BaremeDuMois> {
+    let lue = ctx.entreprise_lue(&m.premier_jour())?;
     let b = bareme_du_nic(ctx, ent, nic, m)?;
     let c = contributions_dsn(ctx, ent, orgs, m, &b)?;
     let mut bar = BaremeDuMois::nouveau(b, lue);
@@ -4250,12 +4245,12 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
     }
 }
 
-/// La DSN mensuelle de `mois` (AAAA-MM) : toutes les paies du mois de cet etablissement.
+/// La DSN mensuelle de `mois` : toutes les paies du mois de cet etablissement.
 ///
 /// Ce que la norme et les depots de test nous ont appris. Les parametres sont `o.etablissement`, `arrets`,
 /// `regs`, `o.envoi_test`, `o.remplace`, `o.ordre`.
 ///
-/// `mois` au format AAAA-MM ; `paies` : toutes les paies du mois.
+/// `paies` : toutes les paies du mois.
 ///
 /// `etablissement` : le NIC de l'etablissement que CETTE declaration porte. Une compagnie qui en a
 /// plusieurs depose une DSN par etablissement : le bloc 11, le lieu de
@@ -4383,7 +4378,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
 /// remplace en test (la repetition). Il passe alors les memes controles
 /// qu'en reel, rattachement compris : le test vaut le reel. Ce que le test ne controle pas, c'est
 /// le montant.
-pub fn fabriquer(ctx: &Contexte, paies: &[Paie], mois: &str, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<Fabriquee> {
+pub fn fabriquer(ctx: &Contexte, paies: &[Paie], mois: Mois, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<Fabriquee> {
     let ctx = &ctx.du_mois(mois)?;
     let ent0 = &ctx.entreprise;
     let principal_nic = ent0.nic.ecrite("nic")?;
@@ -4427,23 +4422,22 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
     // Les etablissements, celui de cette DSN d'abord : un contrat declare ailleurs a change d'etablissement (bloc 41).
     let nics_courant_d_abord: Vec<String> = std::iter::once(nic.clone()).chain(ent0.nics()?.into_iter().filter(|n| *n != nic)).collect();
     // Ce qui est parti, et les engagements du mois : le bloc 40 declare de chaque contrat se lit dans sa version (`bloc_40_declare`).
-    let etats_du_mois = engagement::etats::tels_qu_ecrits(ctx, Mois::lire(mois)?, departs)?;
+    let etats_du_mois = engagement::etats::tels_qu_ecrits(ctx, mois, departs)?;
     let orgs = ctx.organismes()?;
-    let lu = Mois::lire(mois)?;
-    let debut_mois = lu.premier_jour();
+    let debut_mois = mois.premier_jour();
     // La version de la norme suit le mois principal declare (`norme-dsn-base.json`, une inference : sa `note`) ; un
     // mois que la donnee ne couvre pas refuse ici, avant tout calcul. Un annule-et-remplace prend celle de son mois.
-    let norme = crate::norme::de_la_mensuelle(&lu.to_string())?;
+    let norme = crate::norme::de_la_mensuelle(mois)?;
     // En P27V01, la fiche entreprise est en NAF 2025 (`naf::verifier_pour`), avant tout calcul.
     crate::naf::verifier_pour(&norme, ent0)?;
-    let fin_m = lu.dernier_jour();
-    let mut bars: HashMap<String, std::sync::Arc<BaremeDuMois>> = HashMap::new();
-    let mut bar_de = |m: &str| -> R<std::sync::Arc<BaremeDuMois>> {
-        if let Some(b) = bars.get(m) {
+    let fin_m = mois.dernier_jour();
+    let mut bars: HashMap<Mois, std::sync::Arc<BaremeDuMois>> = HashMap::new();
+    let mut bar_de = |m: Mois| -> R<std::sync::Arc<BaremeDuMois>> {
+        if let Some(b) = bars.get(&m) {
             return Ok(b.clone());
         }
         let b = std::sync::Arc::new(bar_du(ctx, ent0, &orgs, &nic, m)?);
-        bars.insert(m.to_string(), b.clone());
+        bars.insert(m, b.clone());
         Ok(b)
     };
     let bar = bar_de(mois)?;
@@ -4516,7 +4510,7 @@ retirer la ligne. Rien n'est ecrit.",
     // chaque paie (`imprevus::suspensions_du_mois`). Une suspension de cet etablissement dont le contrat manque ne serait
     // declaree nulle part : refus, comme pour l'arret.
     let mut suspendus_absents = Vec::new();
-    for imp in engagement::imprevus::du_mois(&ctx.racine, Mois::lire(mois)?, Some(engagement::imprevus::SUSPENSION))? {
+    for imp in engagement::imprevus::du_mois(&ctx.racine, mois, Some(engagement::imprevus::SUSPENSION))? {
         let fiche = engagement::imprevus::fiche_du_salarie(ctx, &imp)?;
         if bareme::etablissement_de(ent0, &fiche)? != nic {
             continue;
@@ -4662,7 +4656,7 @@ certificat de conformite du depot precedent.",
     if let Some(spst) = spst_ecrit(&f, &ent_e)? {
         f.add("S21.G00.11.025", spst);
     }
-    let (premier_du_mois, dernier_du_mois) = bornes_du_mois(mois)?;
+    let (premier_du_mois, dernier_du_mois) = bornes_du_mois(mois);
     let mut couvertes: HashSet<String> = HashSet::new();
     // Les adhesions qu'au moins une affiliation du fichier reference : celles des salaries affilies ce mois-la
     // (`rattachements`), pas toutes celles de leur nature (CCH-13 et CCH-14 de 15.004, p. 151).
@@ -4671,7 +4665,7 @@ certificat de conformite du depot precedent.",
         couvertes.extend(rattachements(p, &orgs, &bar.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
     for r in regs {
-        let b = bar_de(&r.mois)?;
+        let b = bar_de(r.mois)?;
         let refs = affiliations(&orgs, &*r.apres.engagement.nat()?, &b.contributions_du_mois, (r.apres.engagement.debut_periode()?, r.apres.engagement.fin_periode()?))?;
         couvertes.extend(rattachements(&r.apres, &orgs, &b.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
@@ -4727,14 +4721,14 @@ certificat de conformite du depot precedent.",
     // Les totaux et le bordereau cumulent ce que le nominatif declare : les periodes elementaires d'un mois decoupe.
     let refs: Vec<&Paie> = paies.iter().flat_map(|p| p.elementaires()).collect();
     cumuler_totaux(&mut totaux, &refs, &bar, 1)?;
-    let mut origines: Vec<String> = Vec::new();
-    let mut par_origine: HashMap<String, Vec<(String, Decimal)>> = HashMap::new();
+    let mut origines: Vec<Mois> = Vec::new();
+    let mut par_origine: HashMap<Mois, Vec<(String, Decimal)>> = HashMap::new();
     for r in regs {
-        let bar_o = bar_de(&r.mois)?;
+        let bar_o = bar_de(r.mois)?;
         if !origines.contains(&r.mois) {
-            origines.push(r.mois.clone());
+            origines.push(r.mois);
         }
-        let t_o = par_origine.entry(r.mois.clone()).or_default();
+        let t_o = par_origine.entry(r.mois).or_default();
         cumuler_totaux(t_o, &[&r.apres], &bar_o, 1)?;
         cumuler_le_declare(t_o, r, &bar_o, &orgs, -1)?;
     }
@@ -4747,7 +4741,7 @@ certificat de conformite du depot precedent.",
 
     let echeance_dsn = ctx.echeance_dsn()?;
     let echeances: HashMap<&str, Jour> = [
-        ("13000548100010", echeance_mois_suivant(lu, echeance_dsn)),
+        ("13000548100010", echeance_mois_suivant(mois, echeance_dsn)),
         // AUDIENS SANTE PREVOYANCE : le 25 du mois qui suit le mois declare, date qui « doit etre
         // renseignee dans le bloc paiement a destination d'Audiens Sante Prevoyance (P0983) » (Audiens, dossier DSN,
         // `atelier/reference/sources/audiens-dsn/` ; `jour_de_paiement` de `donnees/organismes-base.json`). Elle etait
@@ -4755,7 +4749,7 @@ certificat de conformite du depot precedent.",
         (
             "P0983",
             echeance_mois_suivant(
-                lu,
+                mois,
                 crate::ordres_paiement::jour_de_paiement("P0983")?.ok_or_else(|| socle::echec::livree("organismes-base.json", "P0983.jour_de_paiement"))?,
             ),
         ),
@@ -4766,12 +4760,12 @@ certificat de conformite du depot precedent.",
     let lignes_23 = lignes_bordereau(&refs, &orgs, ent0, &bar, solde_ta.as_ref(), doeth.as_ref(), csa.as_ref(), mois, &Seuils::du_mois(ctx, mois)?)?;
     let mut lignes_o = Vec::new();
     let mut montants_o = Vec::new();
-    for m in &origines {
+    for &m in &origines {
         // Le bareme du mois d'origine pour CET etablissement, comme celui du bordereau courant (`bar`) : point 25.
         let bar_o = bar_de(m)?;
         let l = lignes_regularisees(&orgs, ent0, regs, m, &bar_o, &Seuils::du_mois(ctx, m)?)?;
-        montants_o.push((m.clone(), bordereau::montant(&l, &Mois::lire(m)?.premier_jour())?));
-        lignes_o.push((m.clone(), l));
+        montants_o.push((m, bordereau::montant(&l, &m.premier_jour())?));
+        lignes_o.push((m, l));
     }
     // LE TROP-VERSE A L'URSSAF (les bordereaux negatifs des mois corriges) se reprend sur le versement du mois, dans la
     // limite de son bordereau ; le reste demeure a l'Urssaf (`bordereau::reprise_urssaf`, guide Urssaf § 6.4).
@@ -4843,7 +4837,7 @@ certificat de conformite du depot precedent.",
         if *mt_o < Decimal::ZERO {
             continue;
         }
-        let d_o = Mois::lire(mois_o)?.premier_jour();
+        let d_o = mois_o.premier_jour();
         ordres.push(Some(Ordre {
             organisme: siret_urssaf.clone(),
             reference: None,
@@ -4874,7 +4868,7 @@ certificat de conformite du depot precedent.",
     ecrire_lignes_23(&mut f, &lignes_23)?;
     let mut bordereaux = vec![BordereauEcrit { debut: debut_mois, fin: fin_m, total: mt_urssaf, lignes: lignes_23.clone() }];
     for ((mois_o, lignes), (_, montant)) in lignes_o.iter().zip(&montants_o) {
-        let d_o = Mois::lire(mois_o)?.premier_jour();
+        let d_o = mois_o.premier_jour();
         f.add("S21.G00.22.001", &siret_urssaf);
         f.add("S21.G00.22.003", d_o.jjmmaaaa());
         f.add("S21.G00.22.004", d_o.mois_civil().dernier_jour().jjmmaaaa());
@@ -4890,7 +4884,7 @@ certificat de conformite du depot precedent.",
         if let Some(m) = b.montant {
             f.add("S21.G00.44.002", mt(m));
         }
-        f.add("S21.G00.44.003", lu.annee());
+        f.add("S21.G00.44.003", mois.annee());
         if let Some(m) = &b.motif {
             f.add("S21.G00.44.004", m);
         }
@@ -4907,10 +4901,10 @@ certificat de conformite du depot precedent.",
     // ses engagements valides (`contrats_du_mois`) ; pour un contrat regularise, ceux de son mois d'origine.
     let du_mois = contrats_du_mois(ctx, mois, departs)?;
     let periode: Vec<&Paie> = paies.iter().chain(du_mois.iter()).collect();
-    let mut des_mois_regularises: HashMap<String, Vec<Paie>> = HashMap::new();
+    let mut des_mois_regularises: HashMap<Mois, Vec<Paie>> = HashMap::new();
     for r in regs {
         if !des_mois_regularises.contains_key(&r.mois) {
-            des_mois_regularises.insert(r.mois.clone(), contrats_du_mois(ctx, &r.mois, departs)?);
+            des_mois_regularises.insert(r.mois, contrats_du_mois(ctx, r.mois, departs)?);
         }
     }
     let mut declarations = crate::changements_individu::Declarations::avant(ctx, mois, departs)?;
@@ -4962,7 +4956,7 @@ certificat de conformite du depot precedent.",
                     let groupe: Vec<&Regularisation> =
                         corrections.iter().copied().filter(|x| x.apres.engagement.numero == r.apres.engagement.numero).collect();
                     let dernier = groupe.iter().copied().fold(*r, |a, x| if x.mois > a.mois { x } else { a });
-                    let b = bar_de(&dernier.mois)?;
+                    let b = bar_de(dernier.mois)?;
                     let autres: Vec<&Paie> =
                         regs.iter().filter(|x| x.mois == dernier.mois).map(|x| &x.apres).chain(des_mois_regularises[&dernier.mois].iter()).collect();
                     // UNE FIN CORRIGEE : « une correction de fin de contrat s'opere par l'emission d'un bloc
@@ -5001,9 +4995,9 @@ certificat de conformite du depot precedent.",
         // affiliations), mais pas son numero de versement -- deux blocs 50 au meme numero sous un individu, la CCH-11 du
         // bloc 50 l'interdit (p. 243). Les versements du mois portent 01 a n, ses regularisations n+1 et suivants.
         for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
-            let b = bar_de(&r.mois)?;
+            let b = bar_de(r.mois)?;
             let numero = (lot.len() + k + 1) as i64;
-            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.taux_pas_origine.as_deref(), Mois::lire(mois)?)?;
+            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.taux_pas_origine.as_deref(), mois)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
         f.contrat_unique = false;
@@ -5122,7 +5116,7 @@ mod tests {
             quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
             regularisations: vec![crate::casc::RegularisationNotee {
                 annee: "2024".into(),
-                mois: regularises.iter().map(|m| m.to_string()).collect(),
+                mois: regularises.iter().map(|m| Mois::lire(m).unwrap()).collect(),
                 montant: "0.00".into(),
                 calcule: "0.00".into(),
                 vire_le: "2025-01-15".into(),
@@ -5157,7 +5151,7 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &orgs_casc(), "2026-09").unwrap().unwrap();
+        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &orgs_casc(), Mois::lire("2026-09").unwrap()).unwrap().unwrap();
         assert_eq!(c.reference, "100");
         assert_eq!(c.lignes, ["ccn"]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
@@ -5168,9 +5162,10 @@ mod tests {
     #[test]
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, "2026-09").unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, "2024-12").unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &["2026-08"]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, "2026-08").unwrap().is_none());
+        let m = |t: &str| Mois::lire(t).unwrap();
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, m("2026-09")).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2024-12")).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &["2026-08"]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2026-08")).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).
@@ -5207,7 +5202,7 @@ mod tests {
         let banque: droit::fiche::Banque = socle::forme::lire_texte(r#"{"bic": "BANQFRPPXXX", "iban": "FR7630001007941234567890185"}"#, "banque").unwrap();
         let (debut, fin) = (Jour::nouveau(2026, 7, 1).unwrap(), Jour::nouveau(2026, 7, 31).unwrap());
         let montant = |du: &str| -> Option<String> {
-            let l = versement_dgfip(Decimal::from_str_exact(du).unwrap(), "2026-07", debut, fin, &banque, false, None).unwrap();
+            let l = versement_dgfip(Decimal::from_str_exact(du).unwrap(), debut.mois_civil(), debut, fin, &banque, false, None).unwrap();
             l.iter().find_map(|x| x.strip_prefix("S21.G00.20.005,").map(str::to_string))
         };
         assert_eq!(montant("187.18"), Some("'187.00'".into()));

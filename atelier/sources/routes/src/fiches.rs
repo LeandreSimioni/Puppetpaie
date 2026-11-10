@@ -1425,11 +1425,11 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     let phrase = format!(
         "Coût de {}, jusqu'à {} : {} pour {}.",
         couts.annee,
-        socle::mois::Mois::en_clair(&couts.jusqu_a),
+        couts.jusqu_a.libelle(socle::mois::Graphie::Accentuee),
         socle::texte::euros(total),
         socle::ecran::compte(couts.spectacles.len(), "spectacle", "spectacles")
     );
-    Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a, spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })
+    Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a.to_string(), spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })
 }
 
 /// `poser-courriel` : le courriel `email` du salarie `cle`, saisi la ou il manque (la boite des contrats a

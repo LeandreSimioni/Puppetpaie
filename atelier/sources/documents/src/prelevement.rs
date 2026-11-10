@@ -21,19 +21,19 @@ fn deja_declare(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::
     let Some(numero) = e.numero.clone() else { return Ok(None) };
     let cle = pa.salarie.id.to_string();
     let fin = e.fin_periode()?;
-    let mois = fin.mois_civil().to_string();
+    let mois = fin.mois_civil();
     if !lus.objets.contains_key(&mois) {
-        lus.objets.insert(mois.clone(), engagement::stock::objets_du_mois(&ctx.racine, fin.mois_civil())?);
+        lus.objets.insert(mois, engagement::stock::objets_du_mois(&ctx.racine, mois)?);
     }
     let objet = lus.objets[&mois].iter().find(|o| o.carte().salarie.as_deref() == Some(cle.as_str()) && o.carte().numero.as_deref() == Some(numero.as_str()));
     let Some(o) = objet else { return Ok(None) };
-    Ok(engagement::etats::paie_declaree(ctx, o, departs, fin.mois_civil())?.and_then(|p| p.pas.clone()))
+    Ok(engagement::etats::paie_declaree(ctx, o, departs, mois)?.and_then(|p| p.pas.clone()))
 }
 
 /// Ce que `deja_declare` a lu une fois pour toutes les paies : les engagements de chaque mois.
 #[derive(Default)]
 struct Lus {
-    objets: std::collections::HashMap<String, Vec<engagement::stock::Objet>>,
+    objets: std::collections::HashMap<socle::mois::Mois, Vec<engagement::stock::Objet>>,
 }
 
 /// Le prelevement de chaque paie, par POSITION dans `paies` (`None` : un mois sans paie, sans bulletin). Une paie deja

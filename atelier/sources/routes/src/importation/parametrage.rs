@@ -37,7 +37,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         if ctx.entreprise_au(&janvier).taux_atmp.and_then(|t| t.depuis).is_some_and(|d| d >= janvier) {
             continue;
         }
-        let en_clair = socle::mois::Mois::en_clair(mois);
+        let en_clair = mois.libelle(socle::mois::Graphie::Accentuee);
         let t = droit::fiche::TauxAtmp {
             code_risque: Some(code.clone()),
             valeur: taux.map(|v| droit::fiche::Montant::Flottant(socle::num::flottant(v))),

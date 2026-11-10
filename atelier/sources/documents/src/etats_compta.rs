@@ -16,6 +16,7 @@ use serde::Serialize;
 
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
+use socle::mois::Mois;
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
@@ -232,7 +233,7 @@ fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
     l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
     l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
-    l.ot("analytique", e.analytique.clone()).t("mois", e.mois.clone());
+    l.ot("analytique", e.analytique.clone()).m("mois", e.mois);
     l
 }
 
@@ -241,8 +242,7 @@ fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
 fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, &'static str)> {
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
-    let mois = p.mois.clone();
-    for (n, m) in mois.iter().enumerate() {
+    for (n, &m) in p.mois.iter().enumerate() {
         for mut e in ecritures_du_mois(ctx, m, &plan, departs)? {
             e.piece = format!("PAIE-{}", m);
             e.numero = n as i64 + 1;
@@ -493,7 +493,7 @@ fn libelle_entier(e: &Ecriture) -> String {
 
 /// PAIE-2026-08 fait 12 caracteres ; Oxygene et Quadra en prennent 10 : PAIE202608.
 fn piece_courte(e: &Ecriture) -> String {
-    format!("PAIE{}", e.mois.replace('-', ""))
+    format!("PAIE{:04}{:02}", e.mois.annee(), e.mois.numero())
 }
 
 /// Le sens (D ou C) et le montant d'une ecriture.
@@ -1020,13 +1020,13 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut t = Tableau::nouveau("ecritures-comptables", "Journal de paie — écritures comptables", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    let mois: BTreeSet<&String> = ecr.iter().map(|e| &e.mois).collect();
+    let mois: BTreeSet<Mois> = ecr.iter().map(|e| e.mois).collect();
     for m in mois {
         let mut lignes = Vec::new();
-        for e in ecr.iter().filter(|e| &e.mois == m) {
+        for e in ecr.iter().filter(|e| e.mois == m) {
             lignes.push(ligne_de(e, &plan));
         }
-        t.sections.push(Section::nouvelle(libelle_mois(m)?, lignes));
+        t.sections.push(Section::nouvelle(libelle_mois(m), lignes));
     }
     t.colonnes = vec![
         col_t("journal", "Journal"),
@@ -1130,7 +1130,7 @@ pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::D
     // raccourcir ; son refus est celui de son export.
     let mut ecr = Vec::new();
     for m in Periode::nouvelle(ctx, None, None, true, false)?.mois {
-        if let Ok(mut du_mois) = ecritures_du_mois(ctx, &m, &plan, departs) {
+        if let Ok(mut du_mois) = ecritures_du_mois(ctx, m, &plan, departs) {
             for e in du_mois.iter_mut() {
                 e.piece = format!("PAIE-{}", m);
             }
@@ -1258,13 +1258,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
-fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: &str) -> R<(Option<Decimal>, i64)> {
-    let annee: i64 = tranche(jusqu_a, 0, 4).parse().map_err(|_| erreur(Classe::Illisible, "mois illisible"))?;
-    let depart = format!("{:04}-{}", annee - 1, tranche(jusqu_a, 5, 7));
+fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
+    let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
     let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
-        if l.cle_salarie != cle || !(depart.as_str() < l.mois.as_str() && l.mois.as_str() <= jusqu_a) {
+        if l.cle_salarie != cle || !(depart < l.mois && l.mois <= jusqu_a) {
             continue;
         }
         brut = add(brut, b);
@@ -1291,15 +1290,15 @@ fn provision_d_une_annee_importee(
     ctx: &Contexte,
     d: &Demande,
     p: &Periode,
-    m: &str,
+    m: Mois,
     a_provisionner: &mut Vec<(String, Option<String>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
-    let fin = socle::mois::Mois::lire(m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
+    let fin = m.dernier_jour();
     let lendemain = fin.plus_jours(1).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let importes: Vec<String> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| k.clone()).collect();
+    let importes: Vec<Mois> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| *k).collect();
     // `m` est un mois repris : il y en a au moins un.
-    let premier_importe = importes.first().cloned().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
+    let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
@@ -1315,12 +1314,12 @@ fn provision_d_une_annee_importee(
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois.
     let mut bruts = |cle: &str, du: &socle::date::Jour, au: &socle::date::Jour| -> R<(Decimal, bool)> {
         let mut total = zero2();
-        for mois in importes.iter().filter(|x| x.as_str() >= du.mois_civil().to_string().as_str() && x.as_str() <= au.mois_civil().to_string().as_str()) {
+        for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle) {
                 total = add(total, q.brut);
             }
         }
-        Ok((total, premier_importe.as_str() <= du.mois_civil().to_string().as_str()))
+        Ok((total, premier_importe <= du.mois_civil()))
     };
     for pa in paies.iter().filter(|q| q.importee.is_some()) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
@@ -1360,7 +1359,7 @@ fn provision_d_une_annee_importee(
             }
         }
         let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
-        let provision = engagement::conges::provision_du_compteur(cpt, socle::mois::Mois::lire(m)?, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
+        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.as_deref().map(str::to_string), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1381,11 +1380,11 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut a_provisionner: Vec<(String, Option<String>, String, engagement::conges::Provision)> = Vec::new();
     let saisis = p.saisis();
     let mut sans_compteur = 0;
-    let m = match saisis.last().cloned() {
+    let m = match saisis.last().copied() {
         Some(m) => {
-            let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
+            let fin = m.dernier_jour();
             // Ce qui a ete paye ce mois-la : les paies ecrites de ses engagements valides, la saisie au meme rang.
-            let (saisie, paies) = charger_mois(ctx, &m, &d.departs)?;
+            let (saisie, paies) = charger_mois(ctx, m, &d.departs)?;
             for (e, pa) in saisie.engagements.iter().zip(paies.iter()) {
                 let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
                 // Un contrat fini ce mois-ci a eu son solde de tout compte : les conges non pris y sont payes, il n'y a plus de dette.
@@ -1397,21 +1396,20 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     continue;
                 }
                 let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut));
-                let Some(cpt) = engagement::conges::provision_conges_de(pa, socle::mois::Mois::lire(&m)?, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
+                let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
                 a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }
             m
         }
         None => {
-            let importes: Vec<String> = p.mois.iter().filter(|m| p.dispo.get(*m) == Some(&crate::etats_paie::IMPORTE)).cloned().collect();
-            let Some(m) = importes.last().cloned() else {
+            let Some(m) = p.importes().last().copied() else {
                 return Err(refus(format!("Aucun mois saisi ni repris d'un ancien logiciel sur la période ({}) : il n'y a pas de congés à provisionner.", p.libelle)));
             };
-            sans_compteur = provision_d_une_annee_importee(ctx, d, &p, &m, &mut a_provisionner, &mut avert)?;
+            sans_compteur = provision_d_une_annee_importee(ctx, d, &p, m, &mut a_provisionner, &mut avert)?;
             m
         }
     };
-    let fin = socle::mois::Mois::lire(&m).map(socle::mois::Mois::dernier_jour).map_err(|x| x.reclasser(Classe::Illisible))?;
+    let fin = m.dernier_jour();
     let toutes = Periode::nouvelle(ctx, None, None, true, true)?;
     let livre = lignes_livre(ctx, &toutes, &mut Vec::new(), &d.departs)?;
     let mut lignes: Vec<Ligne> = Vec::new();
@@ -1431,7 +1429,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 (zero, zero, zero, String::new())
             }
         };
-        let (taux, n) = taux_patronal(&livre, &cle, &m)?;
+        let (taux, n) = taux_patronal(&livre, &cle, m)?;
         if taux.is_none() {
             avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle));
         }
@@ -1478,7 +1476,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         euros(charges_dites)
     ));
     let mut t = Tableau::nouveau("provision-conges", format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
-    t.mois = vec![m.clone()];
+    t.mois = vec![m];
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
@@ -1561,9 +1559,9 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let zero = zero2();
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
-    let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<String>)> = BTreeMap::new();
+    let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<Mois>)> = BTreeMap::new();
     for m in p.mois.clone() {
-        let paies = match engagement::etats::paies_du_mois(ctx, socle::mois::Mois::lire(&m)?, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
+        let paies = match engagement::etats::paies_du_mois(ctx, m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
@@ -1585,7 +1583,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // (`assujettissement`, bloc S21.G00.44).
             x.1 = add(x.1, pa.brut);
             x.2 = add(x.2, crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(pa, abatt));
-            x.3.insert(m.clone());
+            x.3.insert(m);
         }
     }
     let s1 = ts.seuil_1;

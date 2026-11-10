@@ -277,7 +277,7 @@ pub struct EmbaucheAttestee {
 pub struct DpaeAttestee {
     pub flux: String,
     pub quand: Option<String>,
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     pub piece: String,
     pub embauches: Vec<EmbaucheAttestee>,
 }
@@ -308,7 +308,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                 continue;
             };
             if mois.is_none() {
-                mois = Some(debut.chars().take(7).collect());
+                mois = Mois::du_texte(&debut[..7]);
             }
             embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
             let h: Vec<char> = champ("horodatage").into_iter().flat_map(|h| h.chars().collect::<Vec<_>>()).collect();
@@ -409,7 +409,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
                 .collect::<R<Vec<_>>>()?;
             let detail = crate::journal::DetailDpae { reconstruit: true, embauches, certificat: true, ..Default::default() };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
-            e.mois = a.mois.as_deref().map(Mois::lire).transpose()?;
+            e.mois = a.mois;
             e.flux = a.flux.clone();
             // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise (`journal::noter`).
             if let Some(q) = &a.quand {

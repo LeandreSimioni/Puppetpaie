@@ -83,7 +83,7 @@ fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> R<String> {
 pub struct FinDeContrat {
     pub fin: String,
     pub motif: String,
-    pub mois_rattachement: String,
+    pub mois_rattachement: socle::mois::Mois,
     pub type_preavis: String,
     pub preavis_debut: Option<String>,
     pub preavis_fin: Option<String>,
@@ -395,7 +395,7 @@ pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> 
     }
     // S21.G00.62.020 : « cette date doit etre renseignee au premier jour du
     // mois (sous la forme 01mmaaaa) » -- cahier technique p. 278.
-    f.add("S21.G00.62.020", j(&format!("{}-01", fin.mois_rattachement))?);
+    f.add("S21.G00.62.020", fin.mois_rattachement.premier_jour().jjmmaaaa());
     f.add("S21.G00.63.001", &fin.type_preavis);
     if let Some(p) = &fin.preavis_debut {
         f.add("S21.G00.63.002", j(p)?);
@@ -555,7 +555,7 @@ ou un annule.",
     // ------------------------------------------------------------ S21 contrat
     let siens: Vec<&Arret> = arrets.iter().collect();
     // Les emplois multiples (`40.036`) : les autres contrats du salarie dans la periode de paie du signalement.
-    let du_mois = crate::dsn::contrats_du_mois(ctx, &debut_p.mois_civil().to_string(), departs)?;
+    let du_mois = crate::dsn::contrats_du_mois(ctx, debut_p.mois_civil(), departs)?;
     let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
     bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, 1, &bar, true, &siens, NATURE, Some(fin), emplois)?;
 

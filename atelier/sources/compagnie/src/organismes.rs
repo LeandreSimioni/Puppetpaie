@@ -20,6 +20,7 @@ use socle::date::Jour;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
+use socle::mois::Mois;
 
 /// La charge de `organismes-enregistrer` : ce que la compagnie saisit de chaque contrat (`{cle: {libelle, organisme}}`,
 /// rien sans lui), et le mois a partir duquel ils valent (le mois en cours sans lui).
@@ -27,7 +28,7 @@ use socle::echec::R;
 #[serde(deny_unknown_fields)]
 pub struct ChargeEnregistrer {
     contrats: Option<BTreeMap<String, Saisie>>,
-    mois: Option<String>,
+    mois: Option<Mois>,
 }
 
 impl ChargeEnregistrer {
@@ -62,33 +63,33 @@ fn permanents_ouverts(ctx: &Contexte, (debut, fin): &(Jour, Jour)) -> R<bool> {
 }
 
 /// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.
-fn periode(ctx: &Contexte, mois: Option<&str>) -> R<(Jour, Jour)> {
-    let mois = match mois.map(str::trim).filter(|m| !m.is_empty()) {
-        Some(m) => socle::mois::Mois::lire(m)?,
+fn periode(ctx: &Contexte, mois: Option<Mois>) -> (Jour, Jour) {
+    let mois = match mois {
+        Some(m) => m,
         None => ctx.aujourdhui.mois_civil(),
     };
-    Ok((mois.premier_jour(), mois.dernier_jour()))
+    (mois.premier_jour(), mois.dernier_jour())
 }
 
 /// Ce que l'ecran des contrats lit (`lire`).
 pub struct Lus {
     pub idcc: Option<String>,
     pub a_saisir: bool,
-    pub mois: String,
+    pub mois: Mois,
     pub lignes: Vec<droit::organismes::Ligne>,
 }
 
 /// `organismes-contrats` : une ligne par contrat attendu qui vaut pour la compagnie (`se_montre`) et pour la periode
 /// regardee (`Attendu::couvre`) ; `a_saisir` : une de ces lignes attend encore ce que la compagnie seule peut dire.
-pub fn lire(ctx: &Contexte, mois: Option<&str>) -> R<Lus> {
-    let periode = periode(ctx, mois)?;
+pub fn lire(ctx: &Contexte, mois: Option<Mois>) -> R<Lus> {
+    let periode = periode(ctx, mois);
     let ctx = &ctx.au(&periode.1)?;
     let (saisi, _) = saisis(ctx)?;
     let permanents = permanents_ouverts(ctx, &periode)?;
     let lignes: Vec<droit::organismes::Ligne> =
         attendus(ctx)?.iter().filter(|s| se_montre(s, permanents) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
     let a_saisir = lignes.iter().any(|l| l.libelle.is_none() || l.organisme.is_none());
-    Ok(Lus { idcc: ctx.entreprise.idcc.portee().map(|i| i.trim().to_string()), a_saisir, mois: periode.0.mois_civil().to_string(), lignes })
+    Ok(Lus { idcc: ctx.entreprise.idcc.portee().map(|i| i.trim().to_string()), a_saisir, mois: periode.0.mois_civil(), lignes })
 }
 
 /// `organismes-enregistrer` : compose les adhesions du mois (sous la configuration du mois) avec ce qui est saisi, refuse
@@ -97,7 +98,7 @@ pub fn lire(ctx: &Contexte, mois: Option<&str>) -> R<Lus> {
 /// change pas.
 pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
     let saisies: BTreeMap<String, Saisie> = charge.contrats.into_iter().flatten().collect();
-    let periode = periode(ctx, charge.mois.as_deref())?;
+    let periode = periode(ctx, charge.mois);
     let du_mois = ctx.au(&periode.1)?;
     let (saisi, prises) = saisis(&du_mois)?;
     let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(|e| e.reclasser(socle::echec::Classe::Refuse))?;
@@ -124,5 +125,5 @@ mois. Ne pas modifier a la main."
     }
     crate::avant::sauver_avant(&p)?;
     ecrire_json(&p, &date, 2)?;
-    lire(ctx, charge.mois.as_deref())
+    lire(ctx, charge.mois)
 }

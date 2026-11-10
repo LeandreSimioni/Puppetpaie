@@ -8,7 +8,7 @@ use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie};
 use droit::cumul::{tableau_cumul, Colonne};
 use engagement::cumul::Passe;
 use socle::date::Jour;
-use socle::mois::Mois;
+use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::num::{dec_f64, div, sub, Decimal};
@@ -344,7 +344,7 @@ pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::S
 #[derive(Debug, Clone)]
 pub struct Rectificatif {
     pub rectifie: String,
-    pub mois_origine: String,
+    pub mois_origine: Mois,
     /// `None` : il remplace en entier le bulletin parti.
     pub ecart: Option<Ecart>,
 }
@@ -357,7 +357,7 @@ pub struct Ecart {
     pub net_apres: Decimal,
     pub difference_net: Decimal,
     pub difference_net_imposable: Decimal,
-    pub mois_versement: String,
+    pub mois_versement: Mois,
     /// `None` : un trop-verse sans taux d'origine, dont le prelevement ne se calcule pas.
     pub prelevement: Option<PrelevementDeLEcart>,
     pub a_verser: Decimal,
@@ -380,7 +380,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         ("Différence de net imposable", r.difference_net_imposable),
     ];
     let mut out = vec![ligne(
-        vec![cel(format!("RÉGULARISATION VERSÉE AVEC LA PAIE {}", socle::texte::de(&r.mois_versement).to_uppercase()), colonnes)],
+        vec![cel(format!("RÉGULARISATION VERSÉE AVEC LA PAIE {}", socle::texte::de(&r.mois_versement.libelle(Graphie::Accentuee)).to_uppercase()), colonnes)],
         vec![gras(), filet_haut(ROUGE, 0.6)],
     )];
     for (libelle, montant) in lignes {
@@ -1043,10 +1043,10 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     if let Some(r) = j.rectificatif {
         let suite = match &r.ecart {
             None => ", qu'il remplace.".to_string(),
-            Some(ecart) => format!(" : il en porte l'écart, versé avec la paie {}.", socle::texte::de(&ecart.mois_versement)),
+            Some(ecart) => format!(" : il en porte l'écart, versé avec la paie {}.", socle::texte::de(&ecart.mois_versement.libelle(Graphie::Accentuee))),
         };
         blocs.push(para(
-            vec![m(format!("Rectifie le bulletin n° {} de {}", r.rectifie, r.mois_origine), true, None), mt(suite)],
+            vec![m(format!("Rectifie le bulletin n° {} de {}", r.rectifie, r.mois_origine.libelle(Graphie::Accentuee)), true, None), mt(suite)],
             7.0,
             Some(GRIS),
             0.0,
@@ -1353,7 +1353,7 @@ pub fn jeux_et_description(
     paies: &[Paie],
     numeros: &[Option<String>],
     ent: &droit::contexte::EntrepriseDuDocument,
-    mois: &str,
+    mois: Mois,
     paies_du_mois: Option<&[Paie]>,
     borne_au_mois: bool,
     rectificatifs: &HashMap<usize, Rectificatif>,
@@ -1365,25 +1365,23 @@ pub fn jeux_et_description(
     }
     let pas_par_paie = crate::prelevement::des_paies(ctx, paies, departs)?;
     let mut colonnes_par_salarie: HashMap<String, Vec<Colonne>> = HashMap::new();
-    if !mois.is_empty() {
-        // Tout ce que la compagnie a declare jusqu'a ce mois, ce mois-ci compris : les paies
-        // qu'on imprime remplacent le fichier de leur mois.
-        let courantes = match paies_du_mois {
-            Some(toutes) if !toutes.is_empty() => toutes,
-            _ => paies,
-        };
-        let mut engagements = passe.engagements(Some(courantes))?;
-        if borne_au_mois {
-            let fin = Mois::lire(mois)?.dernier_jour();
-            engagements.retain(|e| e.debut <= fin);
-        }
-        for pa in paies {
-            let cle = pa.salarie.id.to_string();
-            // Le compteur de conges est par contrat, ecrit dans la paie a la validation (`Paie::conges`) ; le cumul des
-            // 507 h par salarie.
-            if !pa.engagement.nat()?.mensuelle() && !colonnes_par_salarie.contains_key(&cle) {
-                colonnes_par_salarie.insert(cle.clone(), tableau_cumul(ctx, &cle, mois, &engagements)?);
-            }
+    // Tout ce que la compagnie a declare jusqu'a ce mois, ce mois-ci compris : les paies
+    // qu'on imprime remplacent le fichier de leur mois.
+    let courantes = match paies_du_mois {
+        Some(toutes) if !toutes.is_empty() => toutes,
+        _ => paies,
+    };
+    let mut engagements = passe.engagements(Some(courantes))?;
+    if borne_au_mois {
+        let fin = mois.dernier_jour();
+        engagements.retain(|e| e.debut <= fin);
+    }
+    for pa in paies {
+        let cle = pa.salarie.id.to_string();
+        // Le compteur de conges est par contrat, ecrit dans la paie a la validation (`Paie::conges`) ; le cumul des
+        // 507 h par salarie.
+        if !pa.engagement.nat()?.mensuelle() && !colonnes_par_salarie.contains_key(&cle) {
+            colonnes_par_salarie.insert(cle.clone(), tableau_cumul(ctx, &cle, mois, &engagements)?);
         }
     }
     let mut jeux = Vec::new();
@@ -1413,14 +1411,14 @@ pub fn jeux_et_description(
 
 /// CE QUE LES BULLETINS DE `paies` CUMULENT (`jeux_et_description`) : ce que la compagnie a declare jusqu'a `mois`, pour
 /// les seuls salaries au cachet de ces paies -- le cumul ne se tire que pour eux, seuls leurs engagements se relisent.
-pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: &str, departs: &'a engagement::departs::Departs) -> R<Passe<'a>> {
+pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: Mois, departs: &'a engagement::departs::Departs) -> R<Passe<'a>> {
     let mut au_cachet = std::collections::BTreeSet::new();
     for pa in paies {
         if !pa.engagement.nat()?.mensuelle() {
             au_cachet.insert(pa.salarie.id.to_string());
         }
     }
-    Ok(Passe::lire(ctx, Some(socle::mois::Mois::lire(mois)?), Some(au_cachet), departs))
+    Ok(Passe::lire(ctx, Some(mois), Some(au_cachet), departs))
 }
 
 

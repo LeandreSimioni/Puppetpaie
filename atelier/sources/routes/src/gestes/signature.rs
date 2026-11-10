@@ -438,7 +438,7 @@ pub(crate) struct Impression {
 /// la ligne du journal.
 pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Choisis>, avenants: &[(String, Vec<UnAvenant>)], qui: &str) -> R<Impression> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois.to_string(), None, &departs)?;
+    let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
     // Sans contrats choisis, seuls les avenants s'impriment.
     let signes = contrats_revenus_signes(ctx)?;
@@ -449,7 +449,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     controler_avenants(ctx, avenants)?;
     let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
     let etiq = s_mois.etiquette();
-    let ent = documents::avenant::ent_du_mois(ctx, &s_mois.to_string())?;
+    let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
     for (cle, ps, _) in &par_salarie {
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, ""));
@@ -517,13 +517,13 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let (mois, remplace) = (d.mois, d.remplace);
     // Chaque contrat sous le numero qu'il porte, ou celui qui lui serait donne : c'est celui-la qui part.
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois.to_string(), None, &departs)?;
+    let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
     let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
-    let ent = documents::avenant::ent_du_mois(ctx, &s_mois.to_string())?;
+    let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     // UN SALARIE SANS COURRIEL n'empeche pas les autres : son contrat ne part pas par courriel, il s'imprime ; les
     // autres partent. Les adresses se lisent avant d'ecrire le moindre PDF : un refus ne laisse rien sur le disque.
     let (par_salarie, noms_sans) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
@@ -772,7 +772,7 @@ pub(crate) struct DemandeVerifiee {
 /// rendues.
 pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<DemandeVerifiee> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &d.mois.to_string(), None, &departs)?;
+    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, d.mois, None, &departs)?;
     let (par_salarie, _) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
     let cles: Vec<(String, Option<String>)> = par_salarie.iter().flat_map(|(k, ps, _)| ps.iter().map(|p| (k.clone(), p.engagement.numero.as_deref().map(String::from)))).collect();
     let mut verifiee = DemandeVerifiee { avertissements: Vec::new(), contrats: cles.len(), rappels: 0 };
@@ -974,7 +974,7 @@ fn avenant_ecrit(
 ) -> R<(PathBuf, ContratParti, Paie)> {
     let mois_a = a.mois;
     if !saisies.contains_key(&mois_a) {
-        let (d, p) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_a.to_string(), None, departs)?;
+        let (d, p) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois_a, None, departs)?;
         saisies.insert(mois_a, (d, p));
     }
     let (_, paies) = &saisies[&mois_a];
@@ -989,7 +989,7 @@ fn avenant_ecrit(
     };
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
-    let ent = documents::avenant::ent_du_mois(ctx, &mois_a.to_string())?;
+    let ent = documents::avenant::ent_du_mois(ctx, mois_a);
     let dossier = ctx.racine.join("sorties").join(mois_a.to_string()).join("envoi");
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {

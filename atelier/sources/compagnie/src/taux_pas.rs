@@ -20,7 +20,7 @@ pub struct TauxRecu {
     pub identifiant: String,
     pub mis_a_disposition: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub en_retour_de: Option<String>,
+    pub en_retour_de: Option<socle::mois::Mois>,
 }
 
 /// `AAAAMMJJ000000` du jour `j`.

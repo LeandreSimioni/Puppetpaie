@@ -251,14 +251,8 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
     let eff = ctx.effectif().map_err(|e| e.reclasser(Classe::Refuse))?;
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| m.reclasser(Classe::Disque))?;
-    let depuis = Mois::lire(&base.depuis)?;
-    let mut candidats: Vec<Mois> = Vec::new();
-    for m in import::mois::mois_importes(&ctx.racine)? {
-        let lu = Mois::lire(&m)?;
-        if lu >= depuis && !faits.contains(&m) {
-            candidats.push(lu);
-        }
-    }
+    let depuis = base.depuis;
+    let mut candidats: Vec<Mois> = import::mois::mois_importes(&ctx.racine)?.into_iter().filter(|m| *m >= depuis && !faits.contains(m)).collect();
     let annee_de = |m: &Mois| format!("{:04}", m.annee());
     if let Some(m) = d.mois {
         candidats.retain(|x| m == *x);
@@ -322,7 +316,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     if !faits.is_empty() {
         let mut tries = faits.clone();
         tries.sort();
-        avert.push(format!("Deja regularises, donc hors du dossier : {}.", tries.join(", ")));
+        avert.push(format!("Deja regularises, donc hors du dossier : {}.", tries.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(", ")));
     }
     if !portees.is_empty() {
         avert.push(format!("La DSN porte deja la CASC-SVP, donc hors du dossier : {}.", liste(&portees)));
@@ -773,7 +767,7 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
     let calcule = r.mois.iter().fold(Decimal::ZERO, |t, m| t + m.cotisation);
     let entree = RegularisationNotee {
         annee: annee.to_string(),
-        mois: r.mois.iter().map(|m| m.mois.to_string()).collect(),
+        mois: r.mois.iter().map(|m| m.mois).collect(),
         montant: montant.to_string(),
         calcule: calcule.to_string(),
         vire_le: vire_le.to_string(),

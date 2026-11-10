@@ -736,7 +736,7 @@ pub struct AnneeCasc {
 #[serde(deny_unknown_fields)]
 pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
-    pub mois: Vec<String>,
+    pub mois: Vec<Mois>,
     pub total: String,
     pub expediteur: String,
     pub eml: Vec<String>,

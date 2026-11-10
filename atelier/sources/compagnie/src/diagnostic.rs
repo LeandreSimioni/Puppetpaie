@@ -1553,19 +1553,14 @@ pub struct EtatDuMois {
     depots: Vec<DepotDit>,
 }
 
-/// L'etat de `mois` (`AAAA-MM`) ; `None` si `mois` n'est pas un mois. Un engagement ou un journal qui ne se lit pas se
-/// refuse.
-pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
-    let b = mois.as_bytes();
-    if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
-        return Ok(None);
-    }
-    let objets = engagement::stock::objets_du_mois(racine, socle::mois::Mois::lire(mois)?)?;
+/// L'etat de `mois`. Un engagement ou un journal qui ne se lit pas se refuse.
+pub fn etat_du_mois(racine: &Path, mois: socle::mois::Mois) -> R<EtatDuMois> {
+    let objets = engagement::stock::objets_du_mois(racine, mois)?;
     let journal = envois::journal::lu(racine)?;
     let du_mois: Vec<DepotDit> = journal
         .lignes
         .iter()
-        .filter(|d| d.mois().is_some_and(|m| m.to_string() == mois))
+        .filter(|d| d.mois() == Some(mois))
         .map(|d| DepotDit {
             quoi: d.acte().nom().to_string(),
             quand: d.quand().to_string(),
@@ -1582,10 +1577,10 @@ pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
         })
         .collect();
     let n = du_mois.len();
-    Ok(Some(EtatDuMois {
+    Ok(EtatDuMois {
         saisie: !objets.is_empty(),
         engagements: objets.len(),
         valides: objets.iter().filter(|o| o.est_valide()).count(),
         depots: du_mois.into_iter().skip(n.saturating_sub(8)).collect(),
-    }))
+    })
 }

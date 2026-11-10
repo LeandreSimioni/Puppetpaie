@@ -16,7 +16,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result
         let Some(mad) = droit::pas::mise_a_disposition(&lu) else {
             return Err(socle::refus!("{} : un taux de PAS recu sans sa date de mise a disposition ne s'ecrit pas ({}).", cle, r.mis_a_disposition));
         };
-        let depuis = droit::pas::date_d_effet(mad, r.en_retour_de.as_deref())?;
+        let depuis = droit::pas::date_d_effet(mad, r.en_retour_de);
         let deja = droit::pas::recus(ctx, &cle)?.into_iter().chain(ecrits.iter().filter(|(c, _)| *c == cle).map(|(_, v)| v.clone())).any(|v| v == lu);
         if deja {
             continue;

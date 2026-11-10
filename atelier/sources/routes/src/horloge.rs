@@ -549,7 +549,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         geste: Geste::Valider { mois: le_mois, jusqu_au: fin },
     });
     // Le jour ou la DSN est due (`echeance_dsn`, reporte au jour ouvre) : elle part ce matin-la, avant midi.
-    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &mois.to_string())?.jour;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois)?.jour;
     if jour < echeance {
         return Ok(false);
     }

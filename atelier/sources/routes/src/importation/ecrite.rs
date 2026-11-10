@@ -78,15 +78,15 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         return Ok(None);
     }
     let eff = ctx.effectif()?;
-    let faits: HashSet<String> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
+    let faits: HashSet<Mois> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
     let mut dispo: BTreeSet<Mois> = BTreeSet::new();
     dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois));
     dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?);
-    let depuis = Mois::lire(&base.depuis)?;
+    let depuis = base.depuis;
     let contrat = base.dsn.contrat.clone();
     let mut par_mois: Vec<(Mois, Decimal)> = Vec::new();
-    for &m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(&m.to_string())) {
+    for &m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
         // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien.
         if crate::importation::casc::exemptee_au_mois(ctx, &eff, m)? {
             continue;

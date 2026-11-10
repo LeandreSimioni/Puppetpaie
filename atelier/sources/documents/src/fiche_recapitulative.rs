@@ -16,6 +16,7 @@ use crate::etats_paie::{self, Demande, Periode};
 use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, TOTAL_GENERAL};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec};
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
@@ -32,7 +33,7 @@ fn copie(e: &Echec) -> Echec {
 #[derive(Debug, Serialize)]
 pub struct CoutsDeLAnnee {
     pub annee: String,
-    pub jusqu_a: String,
+    pub jusqu_a: Mois,
     #[serde(serialize_with = "en_objet")]
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "en_objet")]
@@ -64,7 +65,7 @@ pub struct Recapitulatifs<'a> {
 }
 
 impl<'a> Recapitulatifs<'a> {
-    pub fn nouveau(ctx: &'a Contexte, mois: Option<String>, annee: Option<String>, toutes: bool, departs: engagement::departs::Departs) -> Self {
+    pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<String>, toutes: bool, departs: engagement::departs::Departs) -> Self {
         let demande = Demande { mois, annee, toutes, format: "pdf".to_string(), departs, ..Demande::default() };
         Recapitulatifs { ctx, demande, etats: [None, None] }
     }
@@ -76,8 +77,8 @@ impl<'a> Recapitulatifs<'a> {
         let Some(annee) = self.demande.annee.clone() else {
             return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
         };
-        let courant: String = self.ctx.aujourdhui.iso().chars().take(7).collect();
-        let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant.clone(), spectacles: Vec::new(), salaries: Vec::new() };
+        let courant = self.ctx.aujourdhui.mois_civil();
+        let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new() };
         if annee.is_empty() {
             return Ok(out);
         }

@@ -15,6 +15,7 @@ use declarations::champs::Saisie;
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
 use socle::date::Jour;
 use socle::echec::Echec;
+use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
@@ -26,7 +27,7 @@ pub struct SalarieDeclare {
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
-    pub mois: String,
+    pub mois: Mois,
     pub initiales: String,
     pub premier_contrat: Option<Jour>,
 }
@@ -53,8 +54,8 @@ pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
 pub struct ObjetDeclare {
     pub numero: String,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub premier_mois: Mois,
+    pub dernier_mois: Mois,
     pub contrats: i64,
     pub source: &'static str,
 }
@@ -77,18 +78,19 @@ pub struct LectureDsn {
     pub salaries: Vec<SalarieDeclare>,
     pub objets: Vec<ObjetDeclare>,
     pub entreprise: EntrepriseDeclaree,
-    pub licences: Vec<(String, String)>,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub licences: Vec<(Mois, String)>,
+    /// Le premier et le dernier mois declares ; aucun sans DSN.
+    pub premier_mois: Option<Mois>,
+    pub dernier_mois: Option<Mois>,
     pub illisibles: Vec<String>,
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
     pub etablissements: BTreeSet<String>,
     pub nics_siege: BTreeSet<String>,
     /// Par (mois, NIR, numero du contrat).
-    pub paies: BTreeMap<(String, String, String), PaieDeclaree>,
+    pub paies: BTreeMap<(Mois, String, String), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<i32, (String, String, Option<Decimal>)>,
+    pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -100,7 +102,7 @@ pub struct LectureDsn {
 /// rubriques sont obligatoires en mensuelle (`norme-dsn/texte/tableaux-des-usages.txt`).
 #[derive(Clone, Debug)]
 pub(crate) struct ConventionsDuMois {
-    pub(crate) mois: String,
+    pub(crate) mois: Mois,
     pub(crate) etablissement: Option<String>,
     pub(crate) contrats: BTreeSet<String>,
 }
@@ -126,24 +128,24 @@ impl LectureDsn {
             let etablissement: String = c.etablissement.iter().map(|e| format!("l'établissement relève de la convention {} (S21.G00.11.022), ", e)).collect();
             out.push(format!(
                 "la DSN de {} déclare plusieurs conventions collectives : {}des contrats de la convention {} (S21.G00.40.017) ; la fiche Entreprise n'en porte qu'une, à vérifier",
-                socle::mois::Mois::en_clair(&c.mois),
+                c.mois.libelle(Graphie::Accentuee),
                 etablissement,
                 autres.join(", ")
             ));
         }
-        let mut avant: Option<(&str, &str)> = None;
+        let mut avant: Option<(&str, Mois)> = None;
         for c in &self.conventions {
             let Some(i) = c.etablissement.as_deref() else { continue };
             if let Some((a, m)) = avant.filter(|(a, _)| *a != i) {
                 out.push(format!(
                     "la convention collective déclarée change d'une DSN à l'autre : {} dans la DSN de {}, {} dans celle de {} ; la fiche Entreprise prend la plus récente, à vérifier",
                     a,
-                    socle::mois::Mois::en_clair(m),
+                    m.libelle(Graphie::Accentuee),
                     i,
-                    socle::mois::Mois::en_clair(&c.mois)
+                    c.mois.libelle(Graphie::Accentuee)
                 ));
             }
-            avant = Some((i, &c.mois));
+            avant = Some((i, c.mois));
         }
         out
     }
@@ -172,7 +174,7 @@ fn nom_de(f: &Path) -> String {
 /// (`declarations::dsn_lue::lire`).
 pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     let mut out = LectureDsn::default();
-    let mut lues: Vec<(socle::mois::Mois, DsnLue)> = Vec::new();
+    let mut lues: Vec<(Mois, DsnLue)> = Vec::new();
     for f in declarations::dsn_lue::fichiers(dossier)? {
         // Une DSN sans mois principal (S20.G00.05.005) ne dit pas quel mois elle declare : elle est ignoree, en le disant.
         match declarations::dsn_lue::lire_une_dsn(&f)?.and_then(|i| Some((i.mois?, i))) {
@@ -183,25 +185,21 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     // Par mois declare, puis par date de depot : un annule-et-remplace depose apres l'original fait foi.
     lues.sort_by(|(ma, a), (mb, b)| (ma, a.depot, &a.fichier).cmp(&(mb, b.depot, &b.fichier)));
     out.fichiers = lues.len();
-    if let (Some(p), Some(d)) = (lues.first(), lues.last()) {
-        out.premier_mois = p.0.to_string();
-        out.dernier_mois = d.0.to_string();
-    }
+    (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
     let mut index_salaries: HashMap<String, usize> = HashMap::new();
     let mut index_objets: HashMap<String, usize> = HashMap::new();
-    for (le_mois, info) in &lues {
-        let mois = le_mois.to_string();
+    for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());
         out.entreprise.suivre(&info.entreprise);
         out.conventions.push(ConventionsDuMois {
-            mois: mois.clone(),
+            mois,
             etablissement: info.entreprise.idcc.clone(),
             contrats: info.contrats.iter().filter_map(|c| c.idcc.clone()).collect(),
         });
         if let Some(l) = &info.entreprise.licence {
             if out.licences.last().is_none_or(|x| x.1 != *l) {
-                out.licences.push((mois.clone(), l.clone()));
+                out.licences.push((mois, l.clone()));
             }
         }
         // Le code risque de la DSN : un seul pour tous ses contrats, sinon rien (on ne choisit pas).
@@ -209,7 +207,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             info.contrats.iter().filter_map(|c| c.code_risque.clone().map(|r| (r, c.taux_at))).collect();
         if risques.len() == 1 {
             if let Some((code, taux)) = risques.into_iter().next() {
-                out.atmp.insert(le_mois.annee(), (mois.clone(), code, taux));
+                out.atmp.insert(mois.annee(), (mois, code, taux));
             }
         }
         if !info.adhesions.is_empty() {
@@ -222,20 +220,20 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
                         numero: objet.clone(),
-                        premier_mois: mois.clone(),
-                        dernier_mois: mois.clone(),
+                        premier_mois: mois,
+                        dernier_mois: mois,
                         contrats: 0,
                         source: "DSN",
                     });
                     out.objets.len() - 1
                 });
-                out.objets[i].dernier_mois = mois.clone();
+                out.objets[i].dernier_mois = mois;
                 out.objets[i].contrats += 1;
             }
         }
         for paie in info.paies() {
             let contrat = info.contrats_de(&paie.nir).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
-            let cle = (mois.clone(), paie.nir.clone(), paie.numero.clone());
+            let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
@@ -250,7 +248,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 nir: nir.clone(),
                 individu: ind.clone(),
                 emploi: c.map(|c| c.emploi.du_salarie()).transpose()?,
-                mois: mois.clone(),
+                mois,
                 initiales,
                 premier_contrat: premier,
             };
@@ -517,7 +515,7 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap_or_default();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&("2025-12".to_string(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
+        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::lire("2025-12").unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme.as_deref(), Some("P0983"));
     }

@@ -101,8 +101,8 @@ pub struct Fichier {
     pub doublon_de: Option<String>,
     /// L'archive d'ou il sort.
     pub archive: Option<String>,
-    /// Le mois qu'une DSN declare (`AAAA-MM`).
-    pub mois: Option<String>,
+    /// Le mois qu'une DSN declare.
+    pub mois: Option<socle::mois::Mois>,
 }
 
 /// Le tri d'un dossier : chaque fichier, dans l'ordre du parcours (noms tries, une archive suivie de
@@ -238,7 +238,7 @@ impl Trieur {
             match declarations::dsn_lue::lire_une_dsn(&f.disque) {
                 Ok(Some(declarations::dsn_lue::DsnLue { mois: Some(m), .. })) => {
                     f.sorte = Sorte::Dsn;
-                    f.mois = Some(m.to_string());
+                    f.mois = Some(m);
                 }
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
                 Err(e) => {

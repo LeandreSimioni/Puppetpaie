@@ -115,12 +115,14 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
     let mois = match args.texte("mois") {
-        Some(m) if socle::mois::Mois::du_texte(m).is_some() => m.to_string(),
-        Some(m) => {
-            dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m));
-            return Ok(1);
-        }
-        None => match engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from).last() {
+        Some(m) => match socle::mois::Mois::du_texte(m) {
+            Some(m) => m,
+            None => {
+                dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m));
+                return Ok(1);
+            }
+        },
+        None => match engagement::stock::mois_saisis(&ctx.racine)?.into_iter().last() {
             Some(m) => m,
             None => {
                 dire!("Aucun mois saisi : un signalement d'amorcage declare un contrat (bloc 40), et il n'y en a aucun.");
@@ -129,7 +131,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         },
     };
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let paies = declarations::dsn::contrats_du_mois(ctx, &mois, &departs)?;
+    let paies = declarations::dsn::contrats_du_mois(ctx, mois, &departs)?;
     if paies.is_empty() {
         dire!("Aucun engagement valide ne touche {} : rien n'est ecrit.", mois);
         return Ok(1);
@@ -137,7 +139,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let salaries: Vec<String> = args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     let demande = Demande {
         motif: super::avec_defaut(args, "motif")?,
-        mois: &mois,
+        mois,
         salaries: if salaries.is_empty() { None } else { Some(&salaries) },
         envoi_test: args.drapeau("test"),
         forcer: args.drapeau("forcer"),

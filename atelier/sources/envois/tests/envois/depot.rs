@@ -61,19 +61,12 @@ fn la_renumerotation_fait_un_annule_et_remplace() {
 
 #[test]
 fn un_reel_demande_sur_un_fichier_de_test_est_refuse() {
-    assert!(verifier(&lire(&dsn("01")), true, Some("2026-08"), true).is_err());
+    assert!(verifier(&lire(&dsn("01")), true, true).is_err());
 }
 
 #[test]
 fn un_reel_exige_une_preuve_et_jamais_rien() {
     let a = lire(&dsn("02"));
-    assert!(verifier(&a, true, None, false).is_err());
-    assert!(verifier(&a, true, Some(""), false).is_err());
-    assert!(verifier(&a, true, None, true).is_ok());
-    assert!(verifier(&a, true, Some("2026-08"), false).is_ok());
-    assert!(verifier(&a, true, Some("  2026-08 \n"), false).is_ok());
-    // Un mois recopie faux refuse, meme avec la presence prouvee : on ne confirme pas a moitie.
-    for mauvais in ["2026-8", "oui", "2026-07", "  "] {
-        assert!(verifier(&a, true, Some(mauvais), true).is_err(), "{}", mauvais);
-    }
+    assert!(verifier(&a, true, false).is_err());
+    assert!(verifier(&a, true, true).is_ok());
 }

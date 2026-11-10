@@ -31,8 +31,8 @@ forme_notee! {
     /// `casc-svp-base.json`, entier : la CASC-SVP de la 3090, ce que la DSN en declare et sa regularisation hors DSN.
     pub struct CascSvp {
         pub idcc: String,
-        /// Le premier mois declare en DSN, `AAAA-MM`.
-        pub depuis: String,
+        /// Le premier mois declare en DSN.
+        pub depuis: socle::mois::Mois,
         pub taux: TauxCasc,
         pub reglement: Reglement,
         pub courriel_audiens: CourrielCasc,

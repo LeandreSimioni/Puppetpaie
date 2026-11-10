@@ -51,6 +51,7 @@ use droit::organismes::Versement;
 use documents::bordereau::{self, Destinataire};
 use socle::date::Jour;
 use socle::echec::R;
+use socle::mois::Mois;
 
 const SOURCE_011: &str = "Date de paiement écrite dans la DSN (S21.G00.20.011) : « date à prendre en compte par l'organisme dans le cas d'un prélèvement SEPA » (cahier technique DSN 2026.1, bloc S21.G00.20).";
 const SOURCE_URSSAF: &str = "Code de la sécurité sociale, art. R. 243-6, II : le versement est effectué le mois suivant la période de travail, au plus tard le 5 ou le 15 (sans report : seul le dépôt de la DSN se reporte un jour non ouvré, R. 133-14, I).";
@@ -79,9 +80,9 @@ fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
     Ok(j)
 }
 
-/// Le `jour` du mois qui suit le mois declare `mois` (`AAAA-MM`).
-fn jour_du_mois_suivant(mois: &str, jour: u32) -> R<Jour> {
-    let m = socle::mois::Mois::lire(mois)?.suivant();
+/// Le `jour` du mois qui suit le mois declare `mois`.
+fn jour_du_mois_suivant(mois: Mois, jour: u32) -> R<Jour> {
+    let m = mois.suivant();
     m.jour(jour).ok_or_else(|| socle::echec::refus(socle::date::jour_impossible(m.annee(), m.numero(), jour)))
 }
 
@@ -90,12 +91,12 @@ fn est_agirc_arrco(v: Option<&Versement>) -> bool {
     v.is_some_and(|v| v.codes81.iter().any(|x| x == "131" || x == "105"))
 }
 
-/// Les ordres d'une DSN fabriquee (`dsn::fabriquer`), mois principal declare `mois` (`AAAA-MM`), en clair : `organisme`
+/// Les ordres d'une DSN fabriquee (`dsn::fabriquer`), mois principal declare `mois`, en clair : `organisme`
 /// (le nom propre, ou l'identifiant quand rien ne le connait), `identifiant`, `objet`, `montant`, `periode` (du, au),
 /// `date` (ISO, ou `null` quand aucun texte ne la dit), `quand` (la phrase de la page), `source` (d'ou vient la date) et
 /// `credit` (le trop-verse que l'ordre ne reprend pas ou reprend, et ce que la compagnie en fait ; `null` sans
 /// trop-verse). `jour_echeance` : 5 ou 15 (`Contexte::echeance_dsn`).
-pub fn decrire(ordres: &[crate::dsn::Ordre], mois: &str, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
+pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
     let base = droit::organismes::base()?;
     let mut out = Vec::new();
     for o in ordres {
@@ -113,7 +114,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: &str, jour_echeance: u32) -> 
         };
         let (debut, fin) = (Some(o.debut), Some(o.fin));
         let periode = periode_lisible(debut, fin);
-        let regularisation = debut.is_some_and(|d| d.mois_civil().to_string() != mois);
+        let regularisation = debut.is_some_and(|d| d.mois_civil() != mois);
         let quoi = if dgfip {
             "l'impôt sur le revenu prélevé à la source sur les salaires"
         } else if let Some(n) = norme {

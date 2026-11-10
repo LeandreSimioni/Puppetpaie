@@ -37,9 +37,10 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     // Le contexte d'aujourd'hui (decembre) et celui d'octobre : la meme compagnie, chacun sous ses valeurs.
     let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15"))).unwrap();
     assert_eq!(ctx.entreprise.idcc.portee(), Some("1285"));
-    let octobre = ctx.du_mois("2026-10").unwrap();
+    let mois = |t: &str| socle::mois::Mois::lire(t).unwrap();
+    let octobre = ctx.du_mois(mois("2026-10")).unwrap();
     assert_eq!((octobre.entreprise.idcc.portee(), octobre.entreprise.adresse.portee()), (Some("3090"), Some("21 RUE DU PORT")));
-    assert_eq!(ctx.entreprise_du_mois("2026-11").unwrap().adresse.portee(), Some("8 PLACE DU MARCHE"));
+    assert_eq!(ctx.entreprise_du_mois(mois("2026-11")).adresse.portee(), Some("8 PLACE DU MARCHE"));
     // La convention que le bareme applique est celle du jour lu, quel que soit le contexte qui le lit.
     let convention = |jour: &str| ctx.entreprise_lue(&j(jour)).unwrap().fiche.idcc.en_texte();
     assert_eq!((convention("2026-10-31"), convention("2026-11-01")), (Some("3090".to_string()), Some("1285".to_string())));

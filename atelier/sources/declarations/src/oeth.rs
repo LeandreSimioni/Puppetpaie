@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 const SEUIL: i64 = 20;
 /// Le fichier des chiffres OETH de la compagnie, un par millesime.
 const OETH: &str = "config/oeth.json";
-const MOIS_DE_DECLARATION: &str = "04";
+const MOIS_DE_DECLARATION: u32 = 4;
 const CTP_CONTRIBUTION: &str = "730";
 const CTP_ACCORD: &str = "740";
 
@@ -366,17 +366,11 @@ fn div_cent(x: Decimal) -> Decimal {
 /// La declaration OETH que la DSN de `mois` doit porter, ou `None` : seulement
 /// en avril, pour l'annee precedente, et si l'employeur est assujetti. Refuse si
 /// l'effectif dit qu'il l'est et que les chiffres de l'Urssaf ne sont pas ecrits.
-pub fn declaration(ctx: &Contexte, mois: &str) -> R<Option<Declaration>> {
-    let car: Vec<char> = mois.chars().collect();
-    let tranche = |a: usize, b: usize| -> String { car.iter().skip(a).take(b - a).collect() };
-    if tranche(5, 7) != MOIS_DE_DECLARATION {
+pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declaration>> {
+    if mois.numero() != MOIS_DE_DECLARATION {
         return Ok(None);
     }
-    let millesime = tranche(0, 4)
-        .trim()
-        .parse::<i32>()
-        .map_err(|_| socle::refus!("nombre entier illisible : {}", repr(&tranche(0, 4))))?
-        - 1;
+    let millesime = mois.annee() - 1;
     let chemin = ctx.racine.join(OETH);
     let mut fichier: FichierOeth = if socle::fichiers::existe(&chemin) {
         socle::forme::lire_fichier(&chemin, "Les chiffres OETH de la compagnie (config/oeth.json) ne se lisent pas : les corriger.")?

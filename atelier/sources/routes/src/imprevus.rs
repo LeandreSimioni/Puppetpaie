@@ -1989,7 +1989,7 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
     Ok(declarations::fctu::FinDeContrat {
         fin: exige(&e.fin, "fin")?.to_string(),
         motif: exige(&e.motif_rupture, "motif_rupture")?.to_string(),
-        mois_rattachement: mois.to_string(),
+        mois_rattachement: mois,
         type_preavis: preavis.genre.clone(),
         preavis_debut: preavis.debut.clone(),
         preavis_fin: preavis.fin.clone(),

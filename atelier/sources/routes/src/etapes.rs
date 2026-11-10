@@ -1725,7 +1725,7 @@ impl<'a> Moteur<'a> {
     /// perime comme une paie du mois qui change. `None` si rien ne se lit ni ne se corrige.
     pub(crate) fn empreinte_saisie(&self, mois: Mois) -> R<Option<String>> {
         let departs = self.departs()?;
-        self.empreinte_saisie_avec(mois, || Self::portees(&declarations::produire_regularisations::regularisations_pour(self.ctx, &mois.to_string(), &departs)?))
+        self.empreinte_saisie_avec(mois, || declarations::produire_regularisations::regularisations_pour(self.ctx, mois, &departs).map(|r| Self::portees(&r)))
     }
 
     /// `empreinte_saisie`, sur les corrections portees que `portees` lit (`Moteur::portees`) : la fabrication de la DSN,
@@ -1741,14 +1741,14 @@ impl<'a> Moteur<'a> {
     }
 
     /// Ce que l'empreinte de la saisie retient de chaque correction portee (`Portee`).
-    pub(crate) fn portees(regs: &[declarations::produire_regularisations::Reg]) -> R<Vec<Portee>> {
-        regs.iter().map(|r| Ok(Portee(Mois::lire(&r.mois)?, r.apres.salarie.id.to_string(), r.apres.engagement.numero.clone(), r.version))).collect()
+    pub(crate) fn portees(regs: &[declarations::produire_regularisations::Reg]) -> Vec<Portee> {
+        regs.iter().map(|r| Portee(r.mois, r.apres.salarie.id.to_string(), r.apres.engagement.numero.clone(), r.version)).collect()
     }
 
     /// `limite` : le dernier jour ou un annule-et-remplace est admis, jusqu'a minuit : la veille de l'echeance de depot
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
-        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, &mois.to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(e.veille())
     }
 
@@ -1851,7 +1851,7 @@ impl<'a> Moteur<'a> {
             0
         } else {
             let departs = self.departs()?;
-            let plusieurs = !self.ctx.entreprise_du_mois(&mois.to_string())?.secondaires().is_empty();
+            let plusieurs = !self.ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
             let voulu = nic.map(str::to_string).or_else(|| self.nic());
             let mut n = 0;
             for e in self.etats_du_mois(le_mois)? {
@@ -2000,7 +2000,7 @@ impl<'a> Moteur<'a> {
     pub(crate) fn bilan_du_mois(&mut self, le_mois: Mois) -> R<Bilan> {
         // UN MOIS TENU AVANT CE LOGICIEL : ses etapes se sont faites ailleurs ; chaque case le dit (« mois importé »),
         // sans geste. Ce que l'import en dit (`import::mois::etapes`) se lit tel qu'il est.
-        if let Some(vue) = import::mois::vue(self.ctx, &le_mois.to_string())? {
+        if let Some(vue) = import::mois::vue(self.ctx, le_mois)? {
             use import::mois::Teinte;
             let b = import::mois::etapes(&vue);
             let colonnes = vec!["G".to_string()];
@@ -2188,7 +2188,7 @@ impl<'a> Moteur<'a> {
     /// nomme ses etablissements (« Lyon refusée · l'éditeur est prévenu »). Rend les classes (leurs NIC, leur case), le
     /// principal dans la premiere.
     fn groupes_dsn(&mut self, mois: Mois) -> R<Vec<(Vec<String>, Groupe)>> {
-        let ent = self.ctx.entreprise_du_mois(&mois.to_string())?;
+        let ent = self.ctx.entreprise_du_mois(mois);
         if ent.secondaires().is_empty() {
             let g = self.groupes_dsn_de(mois, None)?;
             // Une fiche qui ne dit pas encore son NIC n'a que son siege : sa classe ne le nomme pas.
@@ -2222,7 +2222,7 @@ impl<'a> Moteur<'a> {
     /// l'echeance a midi, l'annule-et-remplace jusqu'a la veille a minuit). INFERENCE : un depot refuse n'ouvre pas
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Groupe> {
-        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, &le_mois.to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
         let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
@@ -2258,8 +2258,8 @@ impl<'a> Moteur<'a> {
         if modifiee {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
-            let suivant = Mois::lire(&compagnie::etat_dsn::dsn_qui_porte(self.ctx, &le_mois.to_string())?)?;
-            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, &suivant.to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
+            let suivant = compagnie::etat_dsn::dsn_qui_porte(self.ctx, le_mois)?;
+            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, suivant).map_err(|m| m.reclasser(Classe::Illisible))?;
             let a = deposer_dsn(suivant, nic, format!("Déposer la DSN de {}…", suivant.libelle(Graphie::Accentuee)));
             return Ok(Groupe::de(
                 EtatCase::AFaire,
@@ -2282,7 +2282,7 @@ impl<'a> Moteur<'a> {
     /// correction dans la DSN suivante » ; `produire_regularisations::regularisations_pour`). Sinon, rien n'est a faire.
     /// Ne lit que ce qui est ecrit.
     fn dsn_a_declarer(&mut self, le_mois: Mois, nic: Option<&str>) -> R<bool> {
-        let plusieurs = !self.ctx.entreprise_du_mois(&le_mois.to_string())?.secondaires().is_empty();
+        let plusieurs = !self.ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
         let voulu = nic.map(str::to_string).or_else(|| self.nic());
         let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)?.as_deref() == voulu.as_deref()) };
         for e in self.etats_du_mois(le_mois)? {
@@ -2295,7 +2295,7 @@ impl<'a> Moteur<'a> {
             if mm >= le_mois {
                 break;
             }
-            if !declarations::produire_regularisations::se_corrige_ailleurs(self.ctx, &departs, &mm.to_string())? {
+            if !declarations::produire_regularisations::se_corrige_ailleurs(self.ctx, &departs, mm)? {
                 continue;
             }
             for e in self.etats_du_mois(mm)? {

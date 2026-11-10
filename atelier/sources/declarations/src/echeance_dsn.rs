@@ -37,6 +37,7 @@
 
 use socle::date::Jour;
 use socle::echec::{refus, R};
+use socle::mois::Mois;
 
 /// L'heure limite du depot le jour de l'echeance (cahier technique DSN 2026.1, § 1.4.2).
 pub const HEURE_LIMITE: &str = "12:00";
@@ -90,28 +91,16 @@ pub fn reporter(nominale: Jour) -> R<Echeance> {
     Ok(Echeance { nominale, jour, sautes, veille })
 }
 
-/// Le nombre d'un morceau de nom de mois ; refus s'il ne se lit pas.
-fn entier(t: &str) -> R<i64> {
-    t.trim().parse::<i64>().map_err(|_| socle::refus!("nombre entier illisible : {}", socle::fichiers::repr(t)))
-}
-
-/// L'echeance de la DSN du mois `mois` (`AAAA-MM`) : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois
-/// suivant, reporte au premier jour ouvre.
-pub fn du_mois(mois: &str, jour_du_mois: u32) -> R<Echeance> {
-    let (an, mo) = (entier(&mois.chars().take(4).collect::<String>())?, entier(&mois.chars().skip(5).take(2).collect::<String>())?);
-    let (an, mo) = if mo == 12 { (an + 1, 1) } else { (an, mo + 1) };
-    if !(1..=12).contains(&mo) {
-        return Err(refus(socle::mois::mois_impossible(mo)));
-    }
-    if !(1..=9999).contains(&an) {
-        return Err(refus(socle::date::annee_impossible(an)));
-    }
-    let nominale = Jour::nouveau(an as i32, mo as u32, jour_du_mois).ok_or_else(|| refus(socle::date::jour_impossible(an, mo, jour_du_mois)))?;
+/// L'echeance de la DSN du mois `mois` : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois suivant, reporte
+/// au premier jour ouvre.
+pub fn du_mois(mois: Mois, jour_du_mois: u32) -> R<Echeance> {
+    let suivant = mois.suivant();
+    let nominale = suivant.jour(jour_du_mois).ok_or_else(|| refus(socle::date::jour_impossible(suivant.annee(), suivant.numero(), jour_du_mois)))?;
     reporter(nominale)
 }
 
 /// L'echeance de la DSN du mois `mois` pour cette compagnie (son effectif choisit le 5 ou le 15).
-pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: &str) -> R<Echeance> {
+pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: Mois) -> R<Echeance> {
     du_mois(mois, ctx.echeance_dsn()?)
 }
 

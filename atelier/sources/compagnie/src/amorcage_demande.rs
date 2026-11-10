@@ -17,12 +17,13 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
+use socle::mois::Mois;
 
 /// Ce qu'on demande de produire (l'outil de l'atelier).
 pub struct Demande<'a> {
     pub motif: &'a str,
-    /// Le mois de paie ou lire le contrat a declarer (`AAAA-MM`) ; vide : le mois de la constitution.
-    pub mois: &'a str,
+    /// Le mois de paie ou lire le contrat a declarer.
+    pub mois: Mois,
     /// `--salarie` : seulement ceux-la (`None` : tous ceux qui ont un taux a demander).
     pub salaries: Option<&'a [String]>,
     pub envoi_test: bool,
@@ -133,7 +134,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
     for cle in &cles {
         let mut besoin: Option<(usize, droit::pas::Situation)> = None;
         for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
-            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(&p.engagement.mois.to_string())).map_err(|e| e.reclasser(Classe::Illisible))?;
+            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(p.engagement.mois)).map_err(|e| e.reclasser(Classe::Illisible))?;
             if s.situation == droit::pas::SANS_NIR || s.a_demander {
                 besoin = Some((i, s));
                 break;
@@ -175,9 +176,9 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
-pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: &str, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
+pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = ctx.racine.join("sorties").join(mois);
+    let dossier = ctx.racine.join("sorties").join(mois.to_string());
     let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))? + 1;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
@@ -229,9 +230,9 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         let raisons: Vec<String> = ecartes.iter().map(|l| format!("{} ({})", l.salarie, l.pourquoi_pas)).collect();
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
-    let mois = if d.mois.is_empty() { d.constitution.mois_civil().to_string() } else { d.mois.to_string() };
-    let dossier = ctx.racine.join("sorties").join(&mois);
-    let fichiers = ecrire(ctx, paies, &retenus, d.motif, &mois, d.constitution, d.envoi_test)?;
+    let mois = d.mois;
+    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.envoi_test)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.
     let jour = d.constitution.aaaammjj();
