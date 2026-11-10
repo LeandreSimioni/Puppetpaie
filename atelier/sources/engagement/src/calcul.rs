@@ -1713,9 +1713,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil().to_string();
     let cle_sal = sal.id.to_string();
-    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || {
-        crate::conges::exonere_des_mois_anterieurs(ctx, &mois_paye, &cle_sal).map_err(String::from)
-    })?;
+    let heures_en_plus =
+        crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || crate::conges::exonere_des_mois_anterieurs(ctx, &mois_paye, &cle_sal))?;
     let mut exonere = zero;
     if let Some(h) = &heures_en_plus {
         lignes.extend(h.lignes.iter().cloned());
