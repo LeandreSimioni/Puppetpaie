@@ -40,7 +40,7 @@ fn paire(salarie: &str, numero: Option<&str>) -> Paire {
 /// L'indice, dans `paies`, de la paie du contrat n° `numero` de ce salarie.
 pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero: &str) -> R<Option<usize>> {
     for (i, x) in paies.iter().enumerate() {
-        if x.salarie.id == salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat().map_err(Echec::from)?.modele_contrat().is_some() {
+        if x.salarie.id == salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
             return Ok(Some(i));
         }
     }
