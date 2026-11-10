@@ -158,12 +158,12 @@ const JOURS: [&str; 7] =["lundi", "mardi", "mercredi", "jeudi", "vendredi", "sam
 
 /// `obligations-base.json`, lu par sa forme (`declarations::obligations::base`, son seul lecteur).
 fn base() -> R<BaseDesObligations> {
-    declarations::obligations::base().map_err(|m| erreur(Classe::Illisible, m))
+    declarations::obligations::base().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Un nombre que le delai doit porter.
 fn nombre(n: Option<i64>, quoi: &str) -> R<i64> {
-    n.ok_or_else(|| erreur(Classe::Manque, declarations::obligations::livree(quoi)))
+    n.ok_or_else(|| declarations::obligations::livree(quoi).reclasser(Classe::Manque))
 }
 
 /// Le motif d'arret appelle-t-il l'obligation `cle` (ses `motifs`) ?
@@ -186,7 +186,7 @@ pub fn signalement_du(motif: &str) -> R<bool> {
 
 /// Un jour que le magasin ou le suivi ecrit : lu, ou refuse (le fichier est abime).
 fn jour_ecrit(t: &str) -> R<Jour> {
-    Jour::lire(t).map_err(|m| erreur(Classe::Illisible, m))
+    Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Un jour facultatif que le magasin ou le suivi ecrit : vide s'il n'est pas dit, lu sinon.
@@ -195,7 +195,7 @@ fn jour_facultatif(t: &Option<String>) -> R<Option<Jour>> {
 }
 
 fn plus(j: Jour, n: i64) -> R<Jour> {
-    j.plus_jours(n).map_err(|m| erreur(Classe::CalculImpossible, m))
+    j.plus_jours(n).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 
 /// Les feries chomes de la compagnie, annee par annee (`feries::chomes`, la fiche Entreprise).
@@ -212,7 +212,7 @@ impl<'a> Calendrier<'a> {
 
     fn chome(&mut self, j: Jour) -> R<bool> {
         if !self.chomes.contains_key(&j.an) {
-            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| erreur(Classe::Illisible, m))?;
+            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| m.reclasser(Classe::Illisible))?;
             self.chomes.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
         }
         Ok(self.chomes[&j.an].contains(&j))
@@ -220,7 +220,7 @@ impl<'a> Calendrier<'a> {
 
     fn ferie(&mut self, j: Jour) -> R<bool> {
         if !self.legaux.contains_key(&j.an) {
-            let f = socle::feries::feries(j.an).map_err(|m| erreur(Classe::Illisible, m))?;
+            let f = socle::feries::feries(j.an).map_err(|m| m.reclasser(Classe::Illisible))?;
             self.legaux.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
         }
         Ok(self.legaux[&j.an].contains(&j))
@@ -376,7 +376,7 @@ impl Suivi {
         if !p.exists() {
             return Ok(Suivi { fiches: Vec::new() });
         }
-        let f: FichierDuSuivi = socle::forme::lire_fichier(&p, "Le fichier des obligations des imprévus (imprevus/obligations.json) ne se lit pas.").map_err(|m| erreur(Classe::Illisible, m))?;
+        let f: FichierDuSuivi = socle::forme::lire_fichier(&p, "Le fichier des obligations des imprévus (imprevus/obligations.json) ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(Suivi { fiches: f.arrets })
     }
 
@@ -397,7 +397,7 @@ impl Suivi {
         changer(&mut self.fiches[i]);
         self.fiches.retain(FicheDeSuivi::dit_quelque_chose);
         let doc = FichierDuSuivi { _quoi: QUOI_DU_SUIVI.to_string(), arrets: std::mem::take(&mut self.fiches) };
-        let ecrit = socle::ecriture::ecrire_json(&chemin(ctx), &doc, 2).map_err(|m| erreur(Classe::Disque, m));
+        let ecrit = socle::ecriture::ecrire_json(&chemin(ctx), &doc, 2).map_err(|m| m.reclasser(Classe::Disque));
         self.fiches = doc.arrets;
         ecrit
     }
@@ -818,13 +818,13 @@ fn signalement_dsn(
             "La subrogation de cet arrêt n'est pas dite : c'est elle qui fixe le délai (cinq jours ouvrés sans subrogation, avec la DSN du mois avec ; CSS R. 133-14, II).",
         ));
     };
-    if subrogation == droit::arrets::bloc_60().map_err(|m| erreur(Classe::Illisible, m))?.subrogation_oui().map_err(|m| erreur(Classe::Manque, m))? {
+    if subrogation == droit::arrets::bloc_60().map_err(|m| m.reclasser(Classe::Illisible))?.subrogation_oui().map_err(|m| m.reclasser(Classe::Manque))? {
         let d = o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?;
         // SUBROGE, la date butoir est l'echeance de la DSN mensuelle du mois de l'evenement (R. 133-14, II, premier
         // alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou un ferie
         // (R. 133-14, I), a midi (cahier technique § 1.4.2). INFERENCE : le report de la mensuelle vaut pour le signalement
         // qui part avec elle (le texte du report parle de « la declaration sociale nominative » sans distinguer).
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &evenement.mois_civil().to_string()).map_err(|m| erreur(Classe::Illisible, m))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, &evenement.mois_civil().to_string()).map_err(|m| m.reclasser(Classe::Illisible))?;
         m.subrogation = Some(true);
         m.echeance_dsn = Some(echeance.dite());
         // La connaissance ne compte pas : le delai court du mois de l'evenement.
@@ -858,18 +858,18 @@ fn connaissance(fiche: Option<&FicheDeSuivi>, de: DeQuoi, quoi: &str) -> R<Optio
 /// `norme-dsn/texte/chapitre-4-controles.txt` §4.2) et reste du.
 pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLArret>> {
     use engagement::imprevus::Suspend;
-    let journal = envois::journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?;
+    let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Disque))?;
     let (lignes, departs) = (journal.lignes, journal.departs);
     let salarie = lu.salarie();
     // Seul un arret a un dernier jour travaille, un jour declare et des mois traverses.
     let dj = lu.arret().map(|a| a.dernier_jour_travaille.as_str()).filter(|d| d.len() == 10);
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
-    let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| erreur(Classe::Illisible, m))?;
+    let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
     let declare = declare_lu.map(|j| j.iso());
     // Les mois qu'un arret traverse ; une suspension, ou un arret repris avant son jour declare, n'en traverse aucun.
     let mut traverses: Vec<String> = Vec::new();
     if let Some(p) = declare_lu {
-        let d = engagement::imprevus::dernier_jour(lu).map_err(|m| erreur(Classe::Illisible, m))?;
+        let d = engagement::imprevus::dernier_jour(lu).map_err(|m| m.reclasser(Classe::Illisible))?;
         if p <= d {
             traverses = socle::mois::Mois::entre(&p, &d).iter().map(socle::mois::Mois::to_string).collect();
         }
@@ -885,7 +885,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             return Ok(quand.replace('T', " ") >= *saisi);
         }
         match &arret {
-            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| erreur(Classe::Illisible, m)),
+            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| m.reclasser(Classe::Illisible)),
             None => Ok(false),
         }
     };
@@ -939,7 +939,7 @@ struct ArretLu<'a> {
 impl<'a> ArretLu<'a> {
     /// L'arret du magasin `a`, lu ; une date qui ne se lit pas refuse (le magasin est abime).
     fn de(a: &'a ArretSaisi) -> R<ArretLu<'a>> {
-        let premier = engagement::imprevus::premier_jour(&Imprevu::Arret(a.clone())).map_err(|m| erreur(Classe::Illisible, m))?;
+        let premier = engagement::imprevus::premier_jour(&Imprevu::Arret(a.clone())).map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(ArretLu {
             motif: Some(&a.motif),
             dernier: Some(jour_ecrit(&a.dernier_jour_travaille)?),
@@ -1200,8 +1200,8 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 
 /// L'arret du salarie `nom` (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
 fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(String, ArretSaisi)> {
-    let cle = ctx.cle_du_salarie(nom).map_err(|m| erreur(Classe::Manque, m))?.to_string();
-    for imp in engagement::imprevus::tous(&ctx.racine).map_err(crate::metier::imprevus::refus_magasin)? {
+    let cle = ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))?.to_string();
+    for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         if let Imprevu::Arret(a) = imp {
             if a.salarie == cle && a.dernier_jour_travaille == dernier.iso() {
                 return Ok((cle, a));
@@ -1216,7 +1216,7 @@ fn jour_saisi(ctx: &Contexte, t: &str, quoi: &str) -> R<Option<Jour>> {
     if t.trim().is_empty() {
         return Ok(None);
     }
-    let j = Jour::lire(t.trim()).map_err(|m| refus(format!("{} : {}. Rien n'est ecrit.", quoi, String::from(m))))?;
+    let j = Jour::lire(t.trim()).map_err(|m| m.reformuler(|p| format!("{} : {}. Rien n'est ecrit.", quoi, p)).reclasser(Classe::Refuse))?;
     if j > ctx.aujourdhui {
         return Err(refus(format!(
             "{} au {} : c'est apres aujourd'hui ({}). Un fait deja survenu ne se date pas dans le futur. Rien n'est ecrit.",
@@ -1389,7 +1389,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     let faite = match le {
         None => None,
         Some(le) => {
-            let depot = charge.depot.clone().ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("depot")))?;
+            let depot = charge.depot.clone().ok_or_else(|| socle::fichiers::absent("depot").reclasser(Classe::Manque))?;
             let codes: Vec<String> = base()?.obligations.de(f.obligation).lieux().iter().map(|x| x.code.clone()).collect();
             if !codes.contains(&depot) {
                 return Err(refus(format!("Ou {} a-t-elle ete faite ? {} n'est pas connu ; les lieux sont : {}. Rien n'est ecrit.", f.quoi.to_lowercase(), repr(&depot), codes.join(", "))));
@@ -1481,11 +1481,11 @@ fn jour_tape(t: &Option<String>) -> Option<Jour> {
 fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &str, dernier: Jour, debut: Jour, fin: Jour) -> R<Result<ArretSaisi, String>> {
     let cle = match ctx.cle_du_salarie(salarie) {
         Ok(cle) => cle,
-        Err(m) => return Ok(Err(m.into())),
+        Err(m) => return Ok(Err(m.phrase)),
     };
     let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, tape(&c.contrat)) {
         Ok(contrat) => contrat,
-        Err(e) => return Ok(Err(e.into())),
+        Err(e) => return Ok(Err(e.phrase)),
     };
     let Some(motif) = tape(&c.motif) else { return Ok(Err("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {

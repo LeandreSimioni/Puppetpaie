@@ -35,7 +35,7 @@ pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: &str, donnees: &Saisie, note: &s
 }
 
 fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {
-    let lue: F::Plate = droit::fiche::lire_saisie(donnees, F::FICHIER).map_err(|m| erreur(Classe::Refuse, m))?;
+    let lue: F::Plate = droit::fiche::lire_saisie(donnees, F::FICHIER).map_err(|m| m.reclasser(Classe::Refuse))?;
     let p = fiches::preparer::<F>(ctx, None, |plate| poser_les_cases::<F>(plate, lue))?;
     let e = fiches::ecrire_fiche::<F>(ctx, p, Forcer::Tout, None, Some(note))?;
     let mut anomalies = e.anomalies;
@@ -88,7 +88,7 @@ fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, champs: &Saisie
     if !ecrits.est_dite() {
         return Ok(ecrits);
     }
-    let lue: F::Plate = droit::fiche::lire_saisie(&ecrits, F::FICHIER).map_err(|m| erreur(Classe::Refuse, m))?;
+    let lue: F::Plate = droit::fiche::lire_saisie(&ecrits, F::FICHIER).map_err(|m| m.reclasser(Classe::Refuse))?;
     let changements = F::differentes(&F::Plate::default(), &lue).into_iter().filter_map(|k| F::changement(&lue, k)).collect();
     fiches::poser::<F>(ctx, cle, changements, None, None)?;
     Ok(ecrits)

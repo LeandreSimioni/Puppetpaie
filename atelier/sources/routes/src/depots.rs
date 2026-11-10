@@ -388,11 +388,6 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-#[track_caller]
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
-}
-
 /// Les secondes unix de l'horloge.
 fn maintenant() -> f64 {
     socle::temps::secondes()
@@ -405,9 +400,9 @@ fn maintenant_iso() -> String {
 
 fn ecrire_texte(chemin: &Path, texte: &str) -> R<()> {
     if let Some(d) = chemin.parent() {
-        std::fs::create_dir_all(d).map_err(|e| plain(socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e))?;
     }
-    std::fs::write(chemin, texte).map_err(|e| plain(socle::echec::du_disque(&chemin, &e)))
+    std::fs::write(chemin, texte).map_err(|e| socle::echec::du_disque(&chemin, &e))
 }
 
 // ------------------------------------------------------------------ dpae
@@ -466,13 +461,11 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<String> {
     if let Some(ecrit) = ent.code_urssaf.portee() {
         return Ok(ecrit.trim().to_string());
     }
-    let base = declarations::urssaf::base().map_err(plain)?;
+    let base = declarations::urssaf::base()?;
     let territoire = ent.code_postal.portee().and_then(|cp| base.du_code_postal(cp));
     territoire.ok_or_else(|| {
-        erreur(
-            Classe::SaisieIncomplete,
-            socle::echec::cle("L'Urssaf de la compagnie ne se lit pas dans son code postal : poser son code Urssaf dans la fiche Entreprise.", "code_urssaf"),
-        )
+        socle::echec::cle("L'Urssaf de la compagnie ne se lit pas dans son code postal : poser son code Urssaf dans la fiche Entreprise.", "code_urssaf")
+            .reclasser(Classe::SaisieIncomplete)
     })
 }
 
@@ -498,12 +491,12 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
 
     // Les engagements valides du mois (rien ne part d'un engagement en saisie), vus comme des embauches, sans relire leur
     // paie.
-    let journal = envois::journal::lu(&ctx.racine).map_err(plain)?;
-    let data = engagement::etats::validees_du_mois(ctx, &mois, &journal.departs).map_err(plain)?.map(|(d, _)| d)
+    let journal = envois::journal::lu(&ctx.racine)?;
+    let data = engagement::etats::validees_du_mois(ctx, &mois, &journal.departs)?.map(|(d, _)| d)
         .ok_or_else(|| erreur(Classe::FichierAbsent, format!("Aucune saisie pour {}.", mois)))?;
     let paies: Vec<Paie> = {
-        let engs = engagement::engagements_de_la_saisie(ctx, &data).map_err(plain)?;
-        engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>().map_err(plain)?
+        let engs = engagement::engagements_de_la_saisie(ctx, &data)?;
+        engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(&mois);
@@ -581,7 +574,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let mut f: Option<PathBuf> = None;
     {
         let h = horodatage(&maintenant_iso());
-        let voulu = declarations::dpae::contenu(&embauches, &parametres_de(&h, &heure_texte, &code, &ent, &chemins)).map_err(plain)?;
+        let voulu = declarations::dpae::contenu(&embauches, &parametres_de(&h, &heure_texte, &code, &ent, &chemins))?;
         let voulu = latin1(&voulu);
         let mut pareils = Vec::new();
         let complet = sortie.join(format!("DPAE_{}.txt", etiq));
@@ -590,14 +583,14 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let partiel = !marque.is_empty() || compagnie::pieces_ecrites::partie_le(&ctx.racine, &complet)?.is_some();
         let candidats = if !partiel { vec![complet].into_iter().filter(|c| c.is_file()).collect() } else { fichiers_partiels(&sortie, &etiq)? };
         for x in candidats {
-            let contenu = std::fs::read(&x).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&x, &e)))?;
+            let contenu = std::fs::read(&x).map_err(|e| socle::echec::du_disque(&x, &e).reclasser(Classe::Disque))?;
             if declarations::dpae::meme_declaration(&latin1(&contenu), &voulu) {
                 pareils.push(x);
             }
         }
         let mut repetes = Vec::new();
         for x in &pareils {
-            let empreinte = envois::journal::empreinte_fichier(x).map_err(plain)?;
+            let empreinte = envois::journal::empreinte_fichier(x)?;
             let nom = socle::fichiers::nom_du(x);
             if etats::repetition(&journal.lignes, Quoi::Dpae.acte(), &empreinte, &nom).conforme.is_some() {
                 repetes.push(x.clone());
@@ -613,7 +606,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
             marque = nom
                 .strip_prefix(&format!("DPAE_{}", etiq))
                 .and_then(|r| r.strip_suffix(".txt"))
-                .ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::a_la_cle("Défaut du logiciel : une DPAE du mois ne porte pas son nom.", "fichier", &nom)))?
+                .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une DPAE du mois ne porte pas son nom.", "fichier", &nom).reclasser(Classe::DefautDuLogiciel))?
                 .to_string();
             f = Some(choisi);
         } else if partiel && marque.is_empty() {
@@ -667,9 +660,9 @@ pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, r
     let chemins = Chemins { defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"), poste: ctx.gabarits() };
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let h = horodatage(quand);
-    declarations::dpae::ecrire(&embauches, cible, &parametres_de(&h, heure, &code, &ent, &chemins), true).map_err(plain)?;
+    declarations::dpae::ecrire(&embauches, cible, &parametres_de(&h, heure, &code, &ent, &chemins), true)?;
     let pour_recap: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, true)).collect();
-    ecrire_texte(recap, &declarations::dpae::recapitulatif(&pour_recap, heure).map_err(plain)?)
+    ecrire_texte(recap, &declarations::dpae::recapitulatif(&pour_recap, heure)?)
 }
 
 /// Les parametres d'une ecriture de DPAE.
@@ -733,7 +726,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
     let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("fichier")));
+        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
     };
     if fichier.is_some() {
         return Err(refus(
@@ -772,7 +765,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
 /// le fichier de la derniere ligne du mois, du meme etablissement (DSN mensuelle) ou des memes embauches (DPAE, quand la
 /// designation les nomme). Rien ne se fabrique.
 fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
-    let lignes = envois::journal::lu(&ctx.racine).map_err(plain)?.lignes;
+    let lignes = envois::journal::lu(&ctx.racine)?.lignes;
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
     let nic = d.etablissement.as_deref().filter(|n| !n.is_empty()).or(principal);
@@ -848,7 +841,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let incident = match releve {
         Ok(r) => releve_retours::incidents_en_phrase(&r),
-        Err(e) => e.phrase(),
+        Err(e) => e.phrase,
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
@@ -903,7 +896,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         };
         incident = match releve {
             Ok(rel) => releve_retours::incidents_en_phrase(&rel),
-            Err(e) => e.phrase(),
+            Err(e) => e.phrase,
         };
         repetition = bilan_de_la_repetition(ctx, &d)?;
     }
@@ -1025,7 +1018,7 @@ fn zone<'a>(e: &'a [(&'static str, String)], k: &str) -> R<Option<&'a str>> {
         .iter()
         .find(|(n, _)| *n == k)
         .map(|(_, v)| v.trim_matches(socle::texte::blanc))
-        .ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::a_la_cle("Défaut du logiciel : une zone de la DPAE relue manque.", k, "")))?;
+        .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une zone de la DPAE relue manque.", k, "").reclasser(Classe::DefautDuLogiciel))?;
     Ok(Some(v).filter(|v| !v.is_empty()))
 }
 
@@ -1105,12 +1098,12 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         let Some(j) = zone(e, "date_embauche")?.and_then(jour_jjmmaaaa) else { continue };
         let m_e = j.mois_civil().to_string();
         if !mois_vus.contains(&m_e) {
-            for etat in engagement::etats::tels_qu_ecrits(ctx, &m_e, &departs).map_err(Echec::from)? {
+            for etat in engagement::etats::tels_qu_ecrits(ctx, &m_e, &departs)? {
                 let Some(v) = etat.valide() else { continue };
                 let brut = &*v.objet().brut;
                 let Some(cle) = &brut.saisie.carte.salarie else { continue };
                 let id = (cle.to_string(), engagement::debut_brut(brut));
-                natures.insert(id.clone(), brut.saisie.carte.nature_lue().map_err(Echec::from)?.libelle.clone());
+                natures.insert(id.clone(), brut.saisie.carte.nature_lue()?.libelle.clone());
                 if let Some(n) = brut.saisie.carte.numero.as_deref() {
                     numeros.insert(id, n.to_string());
                 }
@@ -1249,7 +1242,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent("fichier")))?,
+        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;

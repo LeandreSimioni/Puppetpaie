@@ -126,11 +126,11 @@ pub(crate) fn installation_de(racine: &Path) -> PathBuf {
 /// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
 /// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
 /// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
-fn absolu(p: &Path) -> Result<PathBuf, String> {
+fn absolu(p: &Path) -> R<PathBuf> {
     let c = match std::fs::canonicalize(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
-        Err(e) => return Err(socle::echec::du_disque(p, &e).into()),
+        Err(e) => return Err(socle::echec::du_disque(p, &e)),
     };
     Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
         Some(s) => PathBuf::from(s),
@@ -140,7 +140,7 @@ fn absolu(p: &Path) -> Result<PathBuf, String> {
 
 /// Le dossier d'une compagnie, relatif a l'installation, en barres droites (`compagnies/les-pupazzi`, `prive`) ; `None`
 /// pour un dossier hors de l'installation.
-fn relatif(inst: &Path, racine: &Path) -> Result<Option<String>, String> {
+fn relatif(inst: &Path, racine: &Path) -> R<Option<String>> {
     let r = absolu(racine)?;
     let i = absolu(inst)?;
     if !r.starts_with(&i) {
@@ -152,7 +152,7 @@ fn relatif(inst: &Path, racine: &Path) -> Result<Option<String>, String> {
 }
 
 /// Les compagnies du registre : aucune sans registre ; un registre qui ne se lit pas se refuse.
-fn lire_registre(inst: &Path) -> Result<Vec<EntreeRegistre>, String> {
+fn lire_registre(inst: &Path) -> R<Vec<EntreeRegistre>> {
     let p = inst.join(FICHIER);
     if !p.is_file() {
         return Ok(Vec::new());
@@ -161,23 +161,23 @@ fn lire_registre(inst: &Path) -> Result<Vec<EntreeRegistre>, String> {
     Ok(r.compagnies)
 }
 
-fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> Result<(), String> {
+fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> R<()> {
     let p = inst.join(FICHIER);
     if entrees.is_empty() {
-        return socle::ecriture::effacer(&p).map_err(String::from);
+        return socle::ecriture::effacer(&p);
     }
-    socle::ecriture::ecrire_json(&p, &Registre { quoi: QUOI_DU_REGISTRE.into(), compagnies: entrees.to_vec() }, 2).map_err(String::from)
+    socle::ecriture::ecrire_json(&p, &Registre { quoi: QUOI_DU_REGISTRE.into(), compagnies: entrees.to_vec() }, 2)
 }
 
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
 /// compagnie fictive n'y entre pas : `rattacher` la refuse.
-pub fn rattachees(inst: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn rattachees(inst: &Path) -> R<Vec<PathBuf>> {
     Ok(lire_registre(inst)?.into_iter().map(|e| inst.join(e.dossier)).filter(|racine| racine.join(droit::contexte::ENTREPRISE).is_file()).collect())
 }
 
 /// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous
 /// le meme dossier n'en herite pas. Rien a faire si elle n'y est pas.
-pub fn oublier(inst: &Path, racine: &Path) -> Result<(), String> {
+pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
     let Some(rel) = relatif(inst, racine)? else { return Ok(()) };
     let avant = lire_registre(inst)?;
     let apres: Vec<EntreeRegistre> = avant.iter().filter(|e| e.dossier != rel).cloned().collect();
@@ -188,7 +188,7 @@ pub fn oublier(inst: &Path, racine: &Path) -> Result<(), String> {
 }
 
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?
-pub fn est_rattachee(inst: &Path, racine: &Path) -> Result<bool, String> {
+pub fn est_rattachee(inst: &Path, racine: &Path) -> R<bool> {
     let Some(rel) = relatif(inst, racine)? else { return Ok(false) };
     for r in rattachees(inst)? {
         if relatif(inst, &r)?.as_deref() == Some(rel.as_str()) {
@@ -199,7 +199,7 @@ pub fn est_rattachee(inst: &Path, racine: &Path) -> Result<bool, String> {
 }
 
 /// `liste` sans la compagnie `racine`.
-fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> Result<Vec<PathBuf>, String> {
+fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> R<Vec<PathBuf>> {
     let rel = relatif(inst, racine)?;
     let mut out = Vec::new();
     for r in liste {
@@ -211,7 +211,7 @@ fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> Result<Vec<PathBuf>,
 }
 
 /// Les compagnies reelles de l'installation (ni fictive, ni copie), avec leur fiche d'accueil.
-fn reelles(inst: &Path) -> Result<Vec<Compagnie>, String> {
+fn reelles(inst: &Path) -> R<Vec<Compagnie>> {
     let mut v = Vec::new();
     for c in compagnies::liste_de(inst)? {
         if c.reelle && !compagnies::est_fictive(&c.racine)? {
@@ -222,7 +222,7 @@ fn reelles(inst: &Path) -> Result<Vec<Compagnie>, String> {
 }
 
 /// La fiche d'accueil de la compagnie `racine`, si l'installation la liste.
-fn fiche_de(inst: &Path, racine: &Path) -> Result<Option<Compagnie>, String> {
+fn fiche_de(inst: &Path, racine: &Path) -> R<Option<Compagnie>> {
     let rel = relatif(inst, racine)?;
     for c in compagnies::liste_de(inst)? {
         if relatif(inst, &c.racine)? == rel {
@@ -233,7 +233,7 @@ fn fiche_de(inst: &Path, racine: &Path) -> Result<Option<Compagnie>, String> {
 }
 
 /// Le nom de la compagnie `racine` : celui de sa fiche d'accueil, sinon celui de son dossier.
-fn nom_de(inst: &Path, racine: &Path) -> Result<String, String> {
+fn nom_de(inst: &Path, racine: &Path) -> R<String> {
     Ok(match (fiche_de(inst, racine)?, racine.file_name()) {
         (Some(c), _) => c.nom,
         (None, Some(n)) => n.to_string_lossy().into_owned(),
@@ -242,7 +242,7 @@ fn nom_de(inst: &Path, racine: &Path) -> Result<String, String> {
 }
 
 /// Les noms des compagnies `racines`.
-fn noms_de(inst: &Path, racines: &[PathBuf]) -> Result<Vec<String>, String> {
+fn noms_de(inst: &Path, racines: &[PathBuf]) -> R<Vec<String>> {
     racines.iter().map(|r| nom_de(inst, r)).collect()
 }
 
@@ -255,25 +255,25 @@ fn en_liste(noms: &[String]) -> String {
 }
 
 /// Le coffre de la compagnie `racine` exige-t-il un mot de passe ?
-fn exigee(poste: &Poste, racine: &Path) -> Result<bool, String> {
-    poste.coffre(racine).ouverture_exigee().map_err(String::from)
+fn exigee(poste: &Poste, racine: &Path) -> R<bool> {
+    poste.coffre(racine).ouverture_exigee()
 }
 
 /// Le mot de passe ouvre-t-il le coffre de la compagnie `racine` ?
-fn ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> Result<bool, String> {
+fn ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
     if motdepasse.is_empty() {
         return Ok(false);
     }
-    poste.coffre(racine).verifier_ouverture(motdepasse).map_err(String::from)
+    poste.coffre(racine).verifier_ouverture(motdepasse)
 }
 
 /// Le mot de passe ouvre-t-il le coffre de cette compagnie ?
-pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> Result<bool, String> {
+pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
     ouvre(poste, racine, motdepasse)
 }
 
 /// Une des compagnies `racines` s'ouvre-t-elle par `motdepasse` ?
-fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> Result<bool, String> {
+fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> R<bool> {
     for r in racines {
         if ouvre(poste, r, motdepasse)? {
             return Ok(true);
@@ -285,7 +285,7 @@ fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> Result<boo
 /// L'administrateur de l'installation, tel que l'ecran le dit : les compagnies qu'il gere, et ce que la compagnie
 /// `racine` est pour lui. `question` : les compagnies dont le mot de passe ouvrirait aussi `racine`, quand il y a lieu de
 /// demander « meme administrateur ? » (une compagnie reelle sans mot de passe, et au moins une autre qui en a un).
-pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> Result<EtatAdministrateur, String> {
+pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> R<EtatAdministrateur> {
     let groupe = rattachees(inst)?;
     let compagnies = noms_de(inst, &groupe)?;
     let fictive = compagnies::est_fictive(racine)?;
@@ -345,7 +345,7 @@ pub struct EtatAdministrateur {
 }
 
 /// Remplace `chemin` par `octets`, d'un coup (a cote puis a la place) ; 0600 sous Unix.
-fn remplacer(chemin: &Path, octets: &[u8]) -> Result<(), String> {
+fn remplacer(chemin: &Path, octets: &[u8]) -> R<()> {
     if let Some(d) = chemin.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e))?;
     }
@@ -358,32 +358,33 @@ fn remplacer(chemin: &Path, octets: &[u8]) -> Result<(), String> {
     }
     std::fs::rename(&tmp, chemin).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        socle::echec::du_disque(&chemin, &e).into()
+        socle::echec::du_disque(&chemin, &e)
     })
 }
 
 /// Le fichier `chemin` tel qu'il est, pour le remettre (`None` : il n'existe pas).
-fn tel_qu_il_est(chemin: &Path) -> Result<Option<Vec<u8>>, String> {
+fn tel_qu_il_est(chemin: &Path) -> R<Option<Vec<u8>>> {
     match std::fs::read(chemin) {
         Ok(o) => Ok(Some(o)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(socle::echec::du_disque(chemin, &e).into()),
+        Err(e) => Err(socle::echec::du_disque(chemin, &e)),
     }
 }
 
 /// Remet un fichier dans l'etat d'avant (`None` : il n'existait pas). Ce qui ne se remet pas se dit.
-fn remettre(chemin: &Path, avant: &Option<Vec<u8>>) -> Result<(), String> {
+fn remettre(chemin: &Path, avant: &Option<Vec<u8>>) -> R<()> {
     match avant {
         Some(o) => remplacer(chemin, o),
-        None => socle::ecriture::effacer(chemin).map_err(String::from),
+        None => socle::ecriture::effacer(chemin),
     }
 }
 
-/// Un refus de remise en etat, ajoute a la phrase du refus qui l'a demandee.
-fn et_la_remise(phrase: String, remise: Result<(), String>) -> String {
+/// Le refus `phrase`, et le refus de remise en etat qu'il a demandee, ajoute a sa phrase.
+#[track_caller]
+fn et_la_remise(phrase: String, remise: R<()>) -> Echec {
     match remise {
-        Ok(()) => phrase,
-        Err(m) => format!("{} Et un fichier n'est pas revenu en arrière : {}", phrase, socle::echec::phrase_de(&m)),
+        Ok(()) => socle::echec::refus(phrase),
+        Err(m) => socle::refus!("{} Et un fichier n'est pas revenu en arrière : {}", phrase, m.phrase),
     }
 }
 
@@ -392,7 +393,7 @@ fn et_la_remise(phrase: String, remise: Result<(), String>) -> String {
 /// compagnies qui ont deja un mot de passe, et toutes celles qu'il ouvre deviennent les siennes. Une compagnie qui a deja
 /// son mot de passe donne aussi `actuel` (c'est lui que le rattachement remplace). Un refus n'ecrit rien. Rend les noms des
 /// compagnies de l'administrateur.
-pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> Result<Vec<String>, String> {
+pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> R<Vec<String>> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err("Le logiciel est bridé : il ne gère que des compagnies fictives.".into());
     }
@@ -400,7 +401,8 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
         return Err("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur.".into());
     }
     let Some(rel) = relatif(inst, racine)? else {
-        return Err(socle::echec::avec("Ce dossier n'est pas une compagnie de cette installation.", HorsDeLInstallation { chemin: racine.to_string_lossy().into_owned(), installation: inst.to_string_lossy().into_owned() }));
+        let a_part = HorsDeLInstallation { chemin: racine.to_string_lossy().into_owned(), installation: inst.to_string_lossy().into_owned() };
+        return Err(socle::echec::refus_avec("Ce dossier n'est pas une compagnie de cette installation.", socle::echec::APart::forme(a_part)));
     };
     if est_rattachee(inst, racine)? {
         return Err("Cette compagnie est déjà gérée par l'administrateur.".into());
@@ -427,13 +429,13 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
         }
         if nouvelles.is_empty() {
             let noms: Vec<String> = candidates.iter().map(|c| c.nom.clone()).collect();
-            return Err(format!("Ce mot de passe n'ouvre pas {} : ce n'est pas celui de l'administrateur. Rien n'a changé.", en_liste(&noms)));
+            return Err(socle::refus!("Ce mot de passe n'ouvre pas {} : ce n'est pas celui de l'administrateur. Rien n'a changé.", en_liste(&noms)));
         }
     } else if !ouvre_une(poste, &groupe, admin)? {
         return Err("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé.".into());
     }
     let coffre = poste.coffre(racine);
-    let deja = coffre.ouverture_exigee().map_err(String::from)?;
+    let deja = coffre.ouverture_exigee()?;
     let actuel = actuel.filter(|a| !a.is_empty());
     if deja {
         match actuel {
@@ -442,10 +444,10 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
             Some(_) => {}
         }
     }
-    let octets = coffre.preparer_ouverture(admin, actuel).map_err(|e| String::from(e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose.")))))?;
+    let octets = coffre.preparer_ouverture(admin, actuel).map_err(|e| e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose."))))?;
     let chemin = coffre.chemin();
     let avant = tel_qu_il_est(&chemin)?;
-    remplacer(&chemin, &octets).map_err(|m| format!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", socle::echec::phrase_de(&m)))?;
+    remplacer(&chemin, &octets).map_err(|m| socle::refus!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
     let mut entrees = lire_registre(inst)?;
     for r in nouvelles.iter().chain(std::iter::once(&racine.to_path_buf())) {
         if let Some(dossier) = relatif(inst, r)? {
@@ -455,7 +457,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
         }
     }
     if let Err(m) = ecrire_registre(inst, &entrees) {
-        let phrase = format!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", socle::echec::phrase_de(&m));
+        let phrase = format!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", m.phrase);
         return Err(et_la_remise(phrase, remettre(&chemin, &avant)));
     }
     noms_de(inst, &rattachees(inst)?)
@@ -470,7 +472,7 @@ struct HorsDeLInstallation {
 
 /// DETACHER `racine` : elle recoit son propre mot de passe (`nouveau`, tape deux fois), et celui de l'administrateur
 /// (`admin`, verifie) ne l'ouvre plus. Un refus n'ecrit rien.
-pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> Result<(), String> {
+pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<()> {
     if !est_rattachee(inst, racine)? {
         return Err("Cette compagnie n'est pas gérée par l'administrateur : elle a déjà son propre mot de passe.".into());
     }
@@ -484,13 +486,13 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
         return Err("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé.".into());
     }
     let coffre = poste.coffre(racine);
-    let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| String::from(e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose.")))))?;
+    let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose."))))?;
     let rel = relatif(inst, racine)?;
     let avant_registre = lire_registre(inst)?;
     let reste: Vec<EntreeRegistre> = avant_registre.iter().filter(|e| Some(&e.dossier) != rel.as_ref()).cloned().collect();
-    ecrire_registre(inst, &reste).map_err(|m| format!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", socle::echec::phrase_de(&m)))?;
+    ecrire_registre(inst, &reste).map_err(|m| socle::refus!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
     if let Err(m) = remplacer(&coffre.chemin(), &octets) {
-        let phrase = format!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", socle::echec::phrase_de(&m));
+        let phrase = format!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", m.phrase);
         return Err(et_la_remise(phrase, ecrire_registre(inst, &avant_registre)));
     }
     Ok(())
@@ -499,7 +501,7 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
 /// CHANGER le mot de passe de l'administrateur : toutes ses compagnies se rescellent d'un coup. `actuel` doit ouvrir
 /// chacune ; tout se prepare d'abord (si une seule refuse, rien ne s'ecrit) ; puis chaque coffre est remplace, et si un
 /// remplacement echoue, ceux deja faits reviennent a leur etat d'avant. Rend les noms des compagnies rescellees.
-pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> Result<Vec<String>, String> {
+pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<Vec<String>> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err("Ce logiciel n'a pas d'administrateur : chaque compagnie a son propre mot de passe.".into());
@@ -511,20 +513,20 @@ pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, pos
     for r in &groupe {
         let nom = nom_de(inst, r)?;
         if !ouvre(poste, r, actuel)? {
-            return Err(format!("Le mot de passe actuel n'ouvre pas {} : rien n'a changé, dans aucune compagnie.", nom));
+            return Err(socle::refus!("Le mot de passe actuel n'ouvre pas {} : rien n'a changé, dans aucune compagnie.", nom));
         }
         let coffre = poste.coffre(r);
         let octets = coffre
             .preparer_ouverture(nouveau, Some(actuel))
-            .map_err(|e| String::from(e.reformuler(|m| format!("{} : {} Rien n'a changé, dans aucune compagnie.", nom, m.trim_end_matches(" Rien n'a ete pose.")))))?;
+            .map_err(|e| e.reformuler(|m| format!("{} : {} Rien n'a changé, dans aucune compagnie.", nom, m.trim_end_matches(" Rien n'a ete pose."))))?;
         let chemin = coffre.chemin();
         let avant = tel_qu_il_est(&chemin)?;
         prets.push((chemin, octets, avant));
     }
     for (i, (chemin, octets, _)) in prets.iter().enumerate() {
         if let Err(m) = remplacer(chemin, octets) {
-            let phrase = format!("Un coffre ne s'écrit pas ({}) : tous sont revenus à l'ancien mot de passe.", socle::echec::phrase_de(&m));
-            let remise = prets[..i].iter().map(|(c, _, avant)| remettre(c, avant)).collect::<Result<Vec<()>, String>>().map(|_| ());
+            let phrase = format!("Un coffre ne s'écrit pas ({}) : tous sont revenus à l'ancien mot de passe.", m.phrase);
+            let remise = prets[..i].iter().map(|(c, _, avant)| remettre(c, avant)).collect::<R<Vec<()>>>().map(|_| ());
             return Err(et_la_remise(phrase, remise));
         }
     }
@@ -615,7 +617,7 @@ pub struct TableauCompagnie {
 /// Ou en est un fichier DSN ecrit (mensuelle ou signalement), lu du journal : `None` quand un depot reel accepte de ce
 /// contenu est note. Les memes lectures que l'etape de depot du mois (`crate::etapes`, la route `etat-du-mois`).
 fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &Path, mensuelle: Option<Mois>) -> R<Option<Etape>> {
-    let octets = std::fs::read(chemin).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     let empreinte = envois::journal::empreinte(&octets);
     if etats::deja_depose(lignes, envois::journal::Acte::Dsn, &empreinte).is_some() {
         return Ok(None);
@@ -646,11 +648,11 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
     let entrees = match std::fs::read_dir(dossier) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur(Classe::du_disque(&e), socle::echec::du_disque(dossier, &e))),
+        Err(e) => return Err(socle::echec::du_disque(dossier, &e).reclasser(Classe::du_disque(&e))),
     };
     let mut out = Vec::new();
     for e in entrees {
-        let p = e.map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(dossier, &e)))?.path();
+        let p = e.map_err(|e| socle::echec::du_disque(dossier, &e).reclasser(Classe::du_disque(&e)))?.path();
         if p.is_file() {
             out.push(p);
         }
@@ -680,7 +682,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &str) -> R<Option<PathBuf>> {
         }
         "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
         "fin-contrat" => {
-            let cle = ctx.cle_du_salarie(salarie).map_err(Echec::from)?;
+            let cle = ctx.cle_du_salarie(salarie)?;
             format!("SignalementFinContrat_{}_{}.dsn", cle, compact)
         }
         _ => return Ok(None),
@@ -777,7 +779,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
     if let Some(f) = fichier.filter(|f| f.is_file()) {
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.
         let Some(etape) = etape_du_fichier(ctx, lignes, &f, mensuelle)? else { return Ok(None) };
-        let octets = std::fs::read(&f).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&f, &e)))?;
+        let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?;
         let reel_code = declarations::dsn_lue::lire(&octets, "")?.reel();
         d.pret = Pret { test: etape == Etape::ATester, reel: etape == Etape::Testee && reel_code };
         d.fichier = Some(f.to_string_lossy().into_owned());
@@ -817,10 +819,10 @@ fn o_de(o: &Options, racine: &Path) -> Options {
 }
 
 /// Le tableau d'une compagnie, refait (sa propre compagnie de routes, sa racine en argument) ; son refus en phrase.
-fn refaire_compagnie(o: &Options, racine: &Path) -> Result<TableauCompagnie, String> {
+fn refaire_compagnie(o: &Options, racine: &Path) -> R<TableauCompagnie> {
     let oc = o_de(o, racine);
     let ctx = crate::service::contexte(&oc)?;
-    tableau_compagnie(&ctx).map_err(String::from)
+    tableau_compagnie(&ctx)
 }
 
 /// UNE COMPAGNIE DU TABLEAU DE L'ADMINISTRATEUR : son identifiant et sa couleur a l'accueil, son nom, le jour de son
@@ -889,7 +891,7 @@ impl Dite for TableauAdministrateur {
 /// LE TABLEAU DE L'ADMINISTRATEUR, a partir du tableau de chaque compagnie (`garde` : celui qui est garde, sans calcul ;
 /// sinon refait). Les declarations de toutes, du plus presse au moins presse, ce que le depot groupe propose, et ses
 /// phrases : combien de declarations, puis chacune (sa compagnie, ce qu'elle est, quand).
-fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, Result<TableauCompagnie, String>)>, garde: bool) -> Result<TableauAdministrateur, String> {
+fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, garde: bool) -> R<TableauAdministrateur> {
     let mut cies = Vec::new();
     let mut toutes: Vec<DeclarationDuTableau> = Vec::new();
     let (mut test_n, mut test_k, mut reel_n, mut reel_k) = (0, 0, 0, 0);
@@ -903,7 +905,7 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, Result<TableauCompagnie, 
         let couleur = fiche.as_ref().map(|c| c.couleur.clone());
         let (decl, le, erreur) = match t {
             Ok(t) => (t.declarations, Some(t.le), None),
-            Err(m) => (Vec::new(), None, Some(socle::echec::phrase_de(&m))),
+            Err(m) => (Vec::new(), None, Some(m.phrase)),
         };
         let pt = decl.iter().filter(|d| d.pret.test).count();
         let pr = decl.iter().filter(|d| d.pret.reel).count();
@@ -943,8 +945,8 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, Result<TableauCompagnie, 
 }
 
 /// Le tableau de l'administrateur a partir du tableau de chaque compagnie, deja fait ailleurs (le fil de la fenetre) : celui de chacune, ou son refus en phrase.
-pub fn tableau_de(inst: &Path, par_compagnie: Vec<(PathBuf, Result<TableauCompagnie, String>)>) -> R<TableauAdministrateur> {
-    assembler(inst, par_compagnie, false).map_err(Echec::from)
+pub fn tableau_de(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>) -> R<TableauAdministrateur> {
+    assembler(inst, par_compagnie, false)
 }
 
 /// Le tableau tel qu'il est garde : AUCUN CALCUL, la lecture de `config/.tableau.json` de chaque compagnie rattachee.
@@ -954,11 +956,11 @@ pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
         .into_iter()
         .map(|r| {
             let f = r.join(TABLEAU);
-            let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.").map_err(String::from) } else { Err("Pas encore lu : le tableau se fait.".to_string()) };
+            let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.") } else { Err(socle::echec::refus("Pas encore lu : le tableau se fait.")) };
             (r, t)
         })
         .collect();
-    assembler(inst, par, true).map_err(Echec::from)
+    assembler(inst, par, true)
 }
 
 /// Le tableau refait, compagnie par compagnie. `relever` : avant, pour ce qui est parti en test et attend son compte rendu,
@@ -978,7 +980,7 @@ pub fn tableau(o: &Options, inst: &Path, relever: bool) -> R<TableauAdministrate
         let t = refaire_compagnie(o, &r);
         par.push((r, t));
     }
-    assembler(inst, par, false).map_err(Echec::from)
+    assembler(inst, par, false)
 }
 
 // ------------------------------------------------------------------ le depot groupe
@@ -1050,7 +1052,7 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
         if !groupe.contains(&racine) {
             return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier)));
         }
-        let ctx = crate::service::contexte(&o_de(o, &racine)).map_err(Echec::from)?;
+        let ctx = crate::service::contexte(&o_de(o, &racine))?;
         let suivi = crate::depots::suivre_depot(&ctx, s.depot)?;
         suivies.push(Suivie { compagnie: nom_de(inst, &racine)?, suivi });
     }
@@ -1105,7 +1107,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
                     }
                 }
             }
-            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(socle::echec::phrase_de(&m)), classe: None, flux: None, suivre: None }),
+            Err(m) => resultats.push(Resultat { compagnie: nom, titre: None, fichier: None, genre: None, parti: false, phrase: None, refus: Some(m.phrase), classe: None, flux: None, suivre: None }),
         }
     }
     // RIEN DE PRET : rien ne part, et la phrase dit pourquoi (ce n'est pas un refus : il n'y a rien a corriger).

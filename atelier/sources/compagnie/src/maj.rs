@@ -1216,7 +1216,7 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
     };
     let d = match derniere_dite(&depot) {
         Ok(d) => d,
-        Err((_, e)) if calme => return format!("version {} (depot injoignable : {} ; nouvel essai au tour suivant)", cour, e.phrase),
+        Err((_, e)) if calme => return format!("version {} (depot injoignable : {} ; nouvel essai au tour suivant)", cour, e.en_lignes()),
         Err((mot, e)) => return echec(mot, None, format!("version {} (depot injoignable : {})", cour, e.en_lignes())),
     };
     // Les fictives, a part du logiciel : seulement si leur livraison a change, a jour ou non (`preparer_les_fictives`).
