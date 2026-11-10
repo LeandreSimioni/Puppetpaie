@@ -39,7 +39,7 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
             if v.deja { "   [deja au journal]" } else { "" }
         );
         for e in &a.embauches {
-            dire!("        {} a partir du {}", e.salarie, e.debut);
+            dire!("        {} a partir du {}", e.salarie, e.debut.iso());
         }
     }
     if d.ajoutes.is_empty() {

@@ -531,8 +531,8 @@ pub(crate) fn deposer_dpae_avec(
             Ok(EmbaucheDeclaree {
                 salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
                 numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
-                debut: l.debut.clone(),
-                fin: l.fin.clone(),
+                debut: socle::date::Jour::lire(&l.debut)?,
+                fin: l.fin.as_deref().map(socle::date::Jour::lire).transpose()?,
             })
         })
         .collect::<R<_>>()?;

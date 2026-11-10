@@ -365,8 +365,8 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(String, Vec<UnAven
 fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: String) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: IdSalarie::lire(cle)?,
-        debut: p.engagement.debut.iso(),
-        fin: p.engagement.fin.map(|f| f.iso()),
+        debut: p.engagement.debut,
+        fin: p.engagement.fin,
         numero: p.engagement.numero.clone(),
         fichier: nom_du(pdf),
         spectacle: Some(titre.to_string()),
@@ -981,7 +981,6 @@ fn avenant_ecrit(
         saisies.insert(mois_a, (d, p));
     }
     let (_, paies) = &saisies[&mois_a];
-    let debut = a.debut.iso();
     // Un avenant designe son contrat par son numero : sans numero, il n'en designe aucun.
     let rang = match a.contrat.as_deref() {
         Some(numero) => envois::etats::paie_du_contrat(paies, salarie, numero)?,
@@ -1019,8 +1018,8 @@ fn avenant_ecrit(
     };
     let c = ContratParti {
         salarie: IdSalarie::lire(salarie)?,
-        debut,
-        fin: p.engagement.fin.map(|f| f.iso()),
+        debut: a.debut,
+        fin: p.engagement.fin,
         numero: a.contrat.clone(),
         fichier: nom_du(&pdf),
         spectacle: Some(p.titre()?),

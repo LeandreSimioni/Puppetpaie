@@ -359,8 +359,8 @@ pub struct DetailDsn {
 pub struct EmbaucheDeclaree {
     pub salarie: IdSalarie,
     pub numero: Option<NumeroContrat>,
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: socle::date::Jour,
+    pub fin: Option<socle::date::Jour>,
 }
 
 /// LE DETAIL D'UNE DPAE : ce qui l'a ouverte, ses embauches, ce qui l'a fait echouer ; pour une DPAE reprise des
@@ -536,8 +536,8 @@ pub struct DetailDocuments {
 #[serde(deny_unknown_fields)]
 pub struct ContratParti {
     pub salarie: IdSalarie,
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: socle::date::Jour,
+    pub fin: Option<socle::date::Jour>,
     pub numero: Option<NumeroContrat>,
     pub fichier: String,
     pub spectacle: Option<String>,
@@ -599,7 +599,7 @@ pub struct ArticleModifie {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub jour: Option<String>,
+    pub jour: Option<socle::date::Jour>,
 }
 
 impl ArticleModifie {
@@ -635,7 +635,7 @@ pub struct DetailSignature {
 #[serde(deny_unknown_fields)]
 pub struct RetourContrat {
     pub salarie: IdSalarie,
-    pub debut: String,
+    pub debut: socle::date::Jour,
     pub recu: bool,
     pub numero: Option<NumeroContrat>,
     pub nom: String,
@@ -695,8 +695,8 @@ pub struct AvenantParti {
 #[serde(deny_unknown_fields)]
 pub struct ContratAttendu {
     pub salarie: IdSalarie,
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: socle::date::Jour,
+    pub fin: Option<socle::date::Jour>,
     pub numero: Option<NumeroContrat>,
     pub spectacle: Option<String>,
     pub fichier: String,
@@ -726,7 +726,7 @@ pub struct DetailContresigne {
 #[serde(deny_unknown_fields)]
 pub struct AnneeCasc {
     pub annee: String,
-    pub vire_le: String,
+    pub vire_le: socle::date::Jour,
     pub montant: String,
 }
 

@@ -264,11 +264,11 @@ fn flux_du_nom(nom: &str) -> Option<&str> {
     })
 }
 
-/// Une embauche qu'un certificat de DPAE atteste : la cle du salarie, et son premier jour (AAAA-MM-JJ).
+/// Une embauche qu'un certificat de DPAE atteste : la cle du salarie, et son premier jour.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EmbaucheAttestee {
     pub salarie: String,
-    pub debut: String,
+    pub debut: socle::date::Jour,
 }
 
 /// UNE DPAE QU'UN CERTIFICAT DE L'URSSAF ATTESTE (nature 41) : son flux (tel que le nom de la piece le porte), quand elle
@@ -300,15 +300,16 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                 continue;
             }
             let tr = |a: usize, b: usize| -> String { e[a..b].iter().collect() };
-            let debut = format!("{}-{}-{}", tr(4, 8), tr(2, 4), tr(0, 2));
+            let iso = format!("{}-{}-{}", tr(4, 8), tr(2, 4), tr(0, 2));
+            let Some(debut) = socle::date::Jour::du_texte(&iso).filter(|j| j.iso() == iso) else { continue };
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
                 // une declaration faite pour quelqu'un d'autre.
-                inconnus.push(format!("NIR {} ({}), embauche du {}", nir, nom, debut));
+                inconnus.push(format!("NIR {} ({}), embauche du {}", nir, nom, iso));
                 continue;
             };
             if mois.is_none() {
-                mois = Mois::du_texte(&debut[..7]);
+                mois = Some(Mois::du_jour(&debut));
             }
             embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
             let h: Vec<char> = champ("horodatage").into_iter().flat_map(|h| h.chars().collect::<Vec<_>>()).collect();
@@ -405,7 +406,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str, maintenant: &str) -
             let embauches = a
                 .embauches
                 .iter()
-                .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut.clone(), fin: None }))
+                .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut, fin: None }))
                 .collect::<R<Vec<_>>>()?;
             let detail = crate::journal::DetailDpae { reconstruit: true, embauches, certificat: true, ..Default::default() };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);

@@ -158,7 +158,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 pub struct EtatEmbauche {
     pub quand: String,
     pub fichier: Option<String>,
-    pub fin: Option<String>,
+    pub fin: Option<socle::date::Jour>,
     pub passee: bool,
     pub refusee: bool,
     pub anomalies: Vec<String>,
@@ -178,7 +178,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut && meme_nom(&x.salarie, &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(&x.salarie, &c.nom));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {

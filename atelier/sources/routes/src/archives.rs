@@ -948,7 +948,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             .map(|(_, d)| d.clone())
             .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une année régularisée n'a pas la date de son virement.", "annee", a).reclasser(Classe::DefautDuLogiciel))
     };
-    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
+    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: socle::date::Jour::lire(&date_de(&a.annee)?).map_err(|m| m.reclasser(Classe::Illisible))?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
     let mut detail = journal::DetailCasc {
         annees,
         mois: r.mois.iter().map(|m| m.mois).collect(),

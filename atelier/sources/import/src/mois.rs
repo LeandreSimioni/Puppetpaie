@@ -214,11 +214,11 @@ pub(crate) struct EtatsDeCarte {
 
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
-fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<&str>) -> EtatDeCarte {
+fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<socle::date::Jour>) -> EtatDeCarte {
     if let Some(q) = salarie.and_then(|s| journal.get(&(s.to_string(), numero.map(str::to_string)))) {
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", etats::quand_lisible(q)) };
     }
-    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut.as_str()) == debut));
+    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut) == debut));
     if let Some(c) = certifiee {
         let quand: String = c.quand.iter().map(|q| format!(" ({})", etats::quand_lisible(q))).collect();
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
@@ -586,7 +586,7 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let salarie = brut.salarie.as_ref().map(ToString::to_string);
-        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut.map(|j| j.iso()).as_deref());
+        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut);
         cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));

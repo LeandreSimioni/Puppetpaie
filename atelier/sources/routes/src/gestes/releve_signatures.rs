@@ -218,7 +218,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 acte: acte.clone(),
                 avenant: if est_avenant { c.avenant.filter(|n| *n != 0).or(a.avenant) } else { None },
             };
-            let debut = c.debut.clone();
+            let debut = c.debut.iso();
             // Le contrat que cette reponse signe, par son numero : le jumeau du meme jour garde sa propre attente.
             let note = match (a.mois, socle::date::Jour::lire(&debut)) {
                 (Some(mois), Ok(jour)) => {

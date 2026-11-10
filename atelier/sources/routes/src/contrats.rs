@@ -599,7 +599,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let av = courriel.and_then(|m| m.avenant).or(avenant).filter(|a| *a != 0);
     let retour = journal::RetourContrat {
         salarie: droit::contexte::IdSalarie::lire(salarie)?,
-        debut: p.engagement.debut.iso(),
+        debut: p.engagement.debut,
         recu,
         numero: numero_note.clone(),
         nom: nom.clone(),
@@ -1404,7 +1404,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     let modifications = documents::avenant::changements_en_clair(ctx, &nat, &changes)
         ?
         .into_iter()
-        .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour.iso()) })
+        .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour) })
         .collect::<Vec<_>>();
     // L'avenant prend effet au premier terme change ; rien de change, au debut du contrat.
     let effet = match changes.first() {
