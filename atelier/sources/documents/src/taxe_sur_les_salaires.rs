@@ -3,10 +3,10 @@
 //! les salaires » (`etats_compta`) et le bloc S21.G00.44 de la DSN de decembre (`declarations::assujettissement`) lisent
 //! les memes fonctions.
 
-
 use droit::fiche::Lue as _;
 use engagement::calcul::Paie;
-use socle::num::{add, eur, mul, sub, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{add, eur, mul, sub, Decimal};
 use socle::texte::euros;
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
@@ -61,15 +61,22 @@ pub fn fractions_majorees(base: Decimal, seuil_1: Decimal, seuil_2: Decimal) -> 
 /// decembre, avec ce qu'il faut dire (regle 1 : rien ne se devine).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegimeTaxeSalaires {
-    /// `Ok(None)` : la taxe n'est pas due ; `Ok(Some(p))` : elle est due sur `p` % des remunerations (le rapport de
-    /// l'article 231, 1) ; `Err` : ce que la fiche doit encore dire.
-    pub decision: Result<Option<Decimal>, String>,
+    pub decision: Decision,
     /// L'abattement des associations (art. 1679 A), quand la taxe est due.
     pub association: bool,
     /// Les cases de la fiche que l'ecran montre, dans l'ordre : chacune parce que la precedente l'appelle.
     pub champs: Vec<&'static str>,
     /// La consequence, en clair, telle que l'ecran l'affiche sous les cases.
     pub consequence: String,
+}
+
+/// Ce que le moteur conclut de la fiche : la taxe n'est pas due ; elle est due sur `p` % des remunerations (le rapport
+/// de l'article 231, 1) ; ou la phrase de ce que la fiche doit encore dire.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decision {
+    NonDue,
+    DueSur(Decimal),
+    ADire(String),
 }
 
 /// `taxe_sur_les_salaires` de la fiche entreprise `ent`, et ce que le moteur en conclut (CGI art. 231, 1). `plafonds` :
@@ -88,7 +95,7 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     let fiche = ent.taxe_sur_les_salaires.dite();
     let mut champs = vec!["tva"];
     let manque = |champs: Vec<&'static str>, quoi: String, consequence: &str| RegimeTaxeSalaires {
-        decision: Err(format!(
+        decision: Decision::ADire(format!(
             "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN de \
 decembre ne se fait pas.",
             quoi
@@ -98,7 +105,7 @@ decembre ne se fait pas.",
         consequence: consequence.to_string(),
     };
     let non_due = |champs: Vec<&'static str>, pourquoi: &str| RegimeTaxeSalaires {
-        decision: Ok(None),
+        decision: Decision::NonDue,
         association: false,
         champs,
         consequence: format!(
@@ -194,7 +201,7 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
     champs.push("association_1679A");
     let association = fiche.is_some_and(|f| f.association_1679A.oui());
     RegimeTaxeSalaires {
-        decision: Ok(Some(part_taxee)),
+        decision: Decision::DueSur(part_taxee),
         association,
         champs,
         consequence: format!(
@@ -246,7 +253,7 @@ pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(De
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme
 /// de `annee` (`bar`, `None` s'il n'y en a pas). Un bareme sans plafonds ne fait pas refuser : la question se pose sans
 /// montants, et le dit ; une date d'entree en vigueur qui ne se lit pas refuse.
-pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> Resultat<QuestionFranchise> {
+pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> R<QuestionFranchise> {
     let avant = annee - 1;
     let pf = bar.and_then(|b| b.taxe_sur_les_salaires.as_ref()).map(|t| &t.plafonds_franchise);
     let lus = plafonds_franchise(bar);
@@ -306,8 +313,12 @@ art. 231 et 293 B{depuis}.",
 
 /// Ce que la DSN de decembre lit : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en
 /// pourcentage. Une fiche qui ne dit pas tout : refus, avec ce qu'il faut dire (`regime_taxe_sur_les_salaires`).
-pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Resultat<Option<Decimal>> {
-    regime_taxe_sur_les_salaires(ent, None).decision
+pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Decimal>> {
+    match regime_taxe_sur_les_salaires(ent, None).decision {
+        Decision::NonDue => Ok(None),
+        Decision::DueSur(p) => Ok(Some(p)),
+        Decision::ADire(phrase) => Err(socle::echec::refus(phrase)),
+    }
 }
 
 

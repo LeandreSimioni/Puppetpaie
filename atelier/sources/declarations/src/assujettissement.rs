@@ -293,7 +293,7 @@ pub fn blocs(
     out.push(Bloc44 { code: csa, montant: None, motif: None });
 
     // Ce qui demande les montants de l'annee : la taxe sur les salaires et la PEEC.
-    let ts = taxe_sur_les_salaires_de_la_fiche(ent).map_err(|m| format!("DSN de decembre {}, bloc S21.G00.44 : {} Rien n'est ecrit.", an, m))?;
+    let ts = taxe_sur_les_salaires_de_la_fiche(ent).map_err(|m| format!("DSN de decembre {}, bloc S21.G00.44 : {} Rien n'est ecrit.", an, String::from(m)))?;
     if ts.is_some() {
         if let Some(cp) = ent_e.code_postal.portee().filter(|cp| cp.starts_with("97") || cp.starts_with("98")) {
             return Err(format!(

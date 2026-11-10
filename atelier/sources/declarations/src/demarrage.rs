@@ -403,7 +403,7 @@ pub fn manques(ctx: &Contexte) -> Resultat<Vec<Manque>> {
     // LA TVA ET LA TAXE SUR LES SALAIRES : la DSN de decembre declare chaque annee si la compagnie la doit (bloc
     // S21.G00.44) et ne se fait pas sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`). Une compagnie qui
     // demarre en novembre la rencontrait au premier mois de decembre, sans que rien ne l'ait dit d'avance.
-    if let Err(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
+    if let documents::taxe_sur_les_salaires::Decision::ADire(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
         let cle = documents::taxe_sur_les_salaires::CHAMP_TAXE_SUR_LES_SALAIRES;
         let (libelle, _) = champ(cle)?;
         out.push(manque(cle, libelle, "la DSN de décembre", ENTREPRISE, Some(cle), m)?);

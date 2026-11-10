@@ -1537,14 +1537,16 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let regime = crate::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), plafonds);
     let p = Periode::nouvelle(ctx, None, Some(annee), false, true)?;
     let mut avert: Vec<String> = Vec::new();
+    use crate::taxe_sur_les_salaires::Decision;
     let part = match &regime.decision {
-        Ok(part) => *part,
-        Err(m) => {
+        Decision::DueSur(part) => Some(*part),
+        Decision::NonDue => None,
+        Decision::ADire(m) => {
             avert.push(m.clone());
             None
         }
     };
-    if regime.decision == Ok(None) {
+    if regime.decision == Decision::NonDue {
         avert.push(format!("{} Rien à calculer.", regime.consequence));
     }
     let ts = match bar.taxe_sur_les_salaires.clone() {

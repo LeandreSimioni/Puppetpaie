@@ -647,6 +647,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     };
     let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| erreur(Classe::Illisible, m))?;
     // La conclusion nomme les deux plafonds.
+    use documents::taxe_sur_les_salaires::Decision;
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
         phrase: r.consequence.clone(),
@@ -658,10 +659,10 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         },
         champs: r.champs,
         consequence: r.consequence,
-        complet: r.decision.is_ok(),
-        due: matches!(r.decision, Ok(Some(_))),
+        complet: !matches!(r.decision, Decision::ADire(_)),
+        due: matches!(r.decision, Decision::DueSur(_)),
         part_taxee: match r.decision {
-            Ok(Some(p)) => Some(p.normalize().to_string()),
+            Decision::DueSur(p) => Some(p.normalize().to_string()),
             _ => None,
         },
     })

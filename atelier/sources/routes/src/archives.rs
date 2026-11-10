@@ -361,7 +361,7 @@ fn taxe_due_une_annee(ctx: &Contexte, annees: &[String]) -> R<bool> {
         let an: i32 = a.parse().map_err(|_| erreur(Classe::Illisible, format!("L'année {} ne se lit pas.", repr(a))))?;
         let Some(fin) = socle::date::Jour::nouveau(an, 12, 31) else { continue };
         let regime = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), None);
-        if !matches!(regime.decision, Ok(None)) {
+        if regime.decision != documents::taxe_sur_les_salaires::Decision::NonDue {
             return Ok(true);
         }
     }
