@@ -18,6 +18,7 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieLue, PaieVersee};
 use envois::etats;
+use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
@@ -145,11 +146,10 @@ fn spectacle_de(ctx: &Contexte, numero: &str) -> Option<(String, Option<String>)
 /// contrat qui commence et finit dans le mois (le 1er quand il a commence avant), « 20/11 – 03/12 » pour un contrat a
 /// cheval sur un autre mois (« 01/09/2022 – 31/12 » quand il a commence une autre annee), « … » pour une borne que
 /// l'import n'a pas lue.
-fn periode_en_clair(debut: Option<&str>, fin: Option<&str>, mois: Mois) -> String {
-    let (d, f) = (debut.and_then(socle::date::Jour::du_texte), fin.and_then(socle::date::Jour::du_texte));
-    let dans = |j: &socle::date::Jour| mois.contient(j);
+fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
+    let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
-    let borne = |j: Option<&socle::date::Jour>, inconnue: &str| match j {
+    let borne = |j: Option<&Jour>, inconnue: &str| match j {
         Some(j) if dehors && j.an != mois.annee() => j.jj_mm_aaaa(),
         Some(j) if dehors => j.jj_mm(),
         Some(j) => j.jour.to_string(),
@@ -164,14 +164,13 @@ fn periode_en_clair(debut: Option<&str>, fin: Option<&str>, mois: Mois) -> Strin
 }
 
 /// Les jours des dates travaillees d'un bulletin, dans `mois`.
-fn jours_du_mois(dates: &[DatesTravaillees], mois: Mois) -> R<Vec<String>> {
+fn jours_du_mois(dates: &[DatesTravaillees], mois: Mois) -> R<Vec<Jour>> {
     let mut out = Vec::new();
     for d in dates {
         let (mut j, b) = (d.debut, d.fin);
         while j <= b {
-            let iso = j.iso();
-            if mois.contient(&j) && !out.contains(&iso) {
-                out.push(iso);
+            if mois.contient(&j) && !out.contains(&j) {
+                out.push(j);
             }
             if j == b {
                 break;
@@ -291,10 +290,10 @@ pub struct CarteImportee {
     nom: Option<String>,
     spectacle: SpectacleDeCarte,
     contrat: Option<String>,
-    debut: Option<String>,
-    fin: Option<String>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
     periode: String,
-    dates: Vec<String>,
+    dates: Vec<Jour>,
     cachets: Option<i64>,
     heures: Option<i64>,
     jours: Option<i64>,
@@ -314,8 +313,8 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
     let salarie = paie.and_then(|x| plein(x.salarie.clone())).or_else(|| contrat.and_then(|x| plein(x.salarie.clone())));
-    let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut)).map(|j| j.iso());
-    let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin)).map(|j| j.iso());
+    let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
+    let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);
     let spectacle = numero.as_deref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
@@ -324,7 +323,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
         _ => titre_bulletin,
     };
     let nom = salarie.as_deref().and_then(|s| nom_du_salarie(ctx, s));
-    let dates: Vec<String> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
+    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
     let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
     let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
@@ -467,7 +466,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
         (None, None) => None,
     };
     let net_titre = montants.net_a_payer.is_some().then_some("net à payer");
-    let periode = periode_en_clair(debut.as_deref(), fin.as_deref(), mois);
+    let periode = periode_en_clair(debut, fin, mois);
     Ok(CarteImportee {
         quoi_dit,
         origine_dit,

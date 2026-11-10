@@ -12,6 +12,7 @@ use declarations::champs::{Anomalie, Saisie, Valeur};
 
 use socle::ecran::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
+use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 
 // ------------------------------------------------------------------ les sorts
@@ -454,9 +455,9 @@ pub struct InfosPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salarie: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<String>,
+    pub fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -578,8 +579,8 @@ pub struct BlocBulletins {
     pub lus: usize,
     pub repris: usize,
     pub par_logiciel: std::collections::BTreeMap<String, usize>,
-    pub du: Option<String>,
-    pub au: Option<String>,
+    pub du: Option<Jour>,
+    pub au: Option<Jour>,
     pub fiches_a_creer: usize,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
@@ -595,8 +596,8 @@ pub struct BlocBulletins {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct BlocPieces {
     pub lus: usize,
-    pub du: Option<String>,
-    pub au: Option<String>,
+    pub du: Option<Jour>,
+    pub au: Option<Jour>,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
     pub confirmes: usize,
@@ -633,8 +634,8 @@ pub struct Importation {
     /// Les contrats attestes par les AEM deposees.
     pub contrats: usize,
     pub contrats_nouveaux: usize,
-    pub contrats_du: Option<String>,
-    pub contrats_au: Option<String>,
+    pub contrats_du: Option<Jour>,
+    pub contrats_au: Option<Jour>,
     pub contrats_sans_fiche: usize,
     pub avertissements: Vec<String>,
     pub rien_a_faire: bool,
@@ -676,14 +677,6 @@ pub fn n_mots(n: usize, mot: &str) -> String {
     }
 }
 
-/// Un jour (`2026-11-02`) tel qu'une phrase le dit : « 02/11/2026 » ; ce qui n'en est pas un, tel quel.
-fn jour(t: &str) -> String {
-    match socle::date::Jour::du_texte(t) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => t.to_string(),
-    }
-}
-
 impl Importation {
     /// Les fiches de la reponse : l'entreprise, les salaries, les spectacles.
     pub fn fiches_mut(&mut self) -> impl Iterator<Item = &mut FicheImportee> {
@@ -702,8 +695,8 @@ impl Importation {
             (Some(p), Some(d)) => format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee)),
             _ => String::new(),
         };
-        let contrats_du_au = match (&self.contrats_du, &self.contrats_au) {
-            (Some(du), Some(au)) => format!(" du {} au {}", jour(du), jour(au)),
+        let contrats_du_au = match (self.contrats_du, self.contrats_au) {
+            (Some(du), Some(au)) => format!(" du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
             _ => String::new(),
         };
         let contrats = if self.contrats > 0 {
@@ -741,8 +734,8 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (&b.du, &b.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", jour(d), jour(a)),
+            let du = match (b.du, b.au) {
+                (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
                 _ => String::new(),
             };
             format!(
@@ -772,8 +765,8 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (&c.du, &c.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", jour(d), jour(a)),
+            let du = match (c.du, c.au) {
+                (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
                 _ => String::new(),
             };
             c.dit = format!(
@@ -813,8 +806,8 @@ impl Importation {
     pub fn dire_l_apercu(&mut self) {
         self.dire();
         let b = &self.bulletins;
-        let periode = match (&b.du, &b.au) {
-            (Some(du), Some(au)) => format!(" (du {} au {})", socle::ecran::quand(du), socle::ecran::quand(au)),
+        let periode = match (b.du, b.au) {
+            (Some(du), Some(au)) => format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
             _ => String::new(),
         };
         self.phrase = format!(

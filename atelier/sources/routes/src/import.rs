@@ -618,8 +618,8 @@ pub(crate) fn apercu_lu(
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
     let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&c.nir)).count();
-    let contrats_du = contrats.iter().map(|c| c.debut).min().map(|d| d.iso());
-    let contrats_au = contrats.iter().map(|c| c.fin).max().map(|d| d.iso());
+    let contrats_du = contrats.iter().map(|c| c.debut).min();
+    let contrats_au = contrats.iter().map(|c| c.fin).max();
     if sans_fiche > 0 {
         avertissements.push(format!(
             "{} contrat(s) atteste(s) portent un NIR qu'aucune DSN ne declare : ils ne seront pas rattaches a une fiche, donc pas comptes dans les droits. Creer la fiche a la main, puis reimporter.",

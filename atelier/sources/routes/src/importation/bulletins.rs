@@ -334,8 +334,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let infos = InfosPage {
                 logiciel: b.logiciel.clone(),
                 numero: b.numero.clone(),
-                debut: Some(b.debut.iso()),
-                fin: Some(b.fin.iso()),
+                debut: Some(b.debut),
+                fin: Some(b.fin),
                 mois: Some(mois),
                 ..InfosPage::default()
             };
@@ -551,7 +551,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     sans += 1;
                     continue;
                 }
-                if registre.pareils(&c.nir, &c.debut.iso(), &c.fin.iso(), "AEM").is_empty() {
+                if registre.pareils(&c.nir, c.debut, c.fin, "AEM").is_empty() {
                     registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, &cle_de(&c.nir)), "AEM", "declarations");
                     nouveaux += 1;
                 }
@@ -1060,7 +1060,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((compte, ligne_contrat)) => {
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
-                let pareils = registre.pareils(&l.nir, &debut, &fin, "bulletin");
+                let pareils = registre.pareils(&l.nir, l.b.debut, l.b.fin, "bulletin");
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(compte.brut));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
                 if pareils.iter().any(|a| a.compte() == le_sien) {
@@ -1119,15 +1119,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // (`import::attestes`) : la piece le confirme alors, n'ajoute rien, et l'ecart de brut, de jours ou de cachets se
     // note. Une paie declaree aux memes dates, sans contrat atteste (une DSN seule), recoit le sien ; une paie declaree
     // a d'autres dates qui les chevauchent ne se rattacherait a aucun contrat : celui de la piece n'est pas ajoute.
-    let declarees_dates: Vec<(String, Option<String>, Option<String>)> = ap
-        .paies
-        .iter()
-        .chain(historique_paies.iter())
-        .filter_map(|x| {
-            let (_, nir, _, debut, fin) = reperes(x);
-            Some((nir?, debut, fin))
-        })
-        .collect();
+    let declarees_dates: Vec<(String, Option<Jour>, Option<Jour>)> =
+        ap.paies.iter().chain(historique_paies.iter()).filter_map(|x| Some((x.paie.nir.clone()?, x.paie.debut, x.paie.fin))).collect();
     let chevauche = import::attestes::chevauche;
     // Un compte ou une date d'une paie, dans une phrase : « ? » quand elle ne le dit pas.
     let dit = |x: Option<String>| match x {
@@ -1141,15 +1134,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let est_aem = cl.aem.is_some();
         let (Some(nir), Some(debut), Some(fin), Some(brut)) = (&c.nir, c.debut, c.fin, c.brut) else { continue };
         let nom = cl.nom();
-        let (d, f) = (debut.iso(), fin.iso());
         let du_au = format!("du {} au {}", debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
-        let mut infos = InfosPage { debut: Some(d.clone()), fin: Some(f.clone()), mois: cl.mois(), ..InfosPage::default() };
+        let mut infos = InfosPage { debut: Some(debut), fin: Some(fin), mois: cl.mois(), ..InfosPage::default() };
         if est_aem {
             infos.aem = c.numero.clone();
         } else {
             infos.certificat = c.numero.clone();
         }
-        let pareils = registre.pareils(nir, &d, &f, cl.source());
+        let pareils = registre.pareils(nir, debut, fin, cl.source());
         // UN CERTIFICAT DONT D'AUTRES PIECES N'ATTESTENT QUE DES MOIS (un bulletin, une AEM, chacun le sien) atteste seul
         // ses autres mois (`attestes::reste_du_certificat`) ; un certificat deja repris ne se reprend pas deux fois.
         let mut reste: Option<ContratLu> = None;
@@ -1162,7 +1154,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_deref())?;
             match contrat_du_certificat(c, statut.as_deref(), &cle_de(nir), &copie) {
-                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils).unwrap_or_else(|e| Reste::NeSeComptePas(e.phrase)) {
+                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils) {
                     Reste::Rien => {}
                     Reste::Seul(l) => reste = Some(l),
                     Reste::NeSeComptePas(m) => sans_reste = Some(m),
@@ -1182,7 +1174,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             phrases.extend(sans_reste);
             // L'ecart, quand les contrats confirmes tiennent dans les dates de la piece (un certificat coupe au 31 mars
             // n'en porte qu'une part).
-            if pareils.iter().all(|a| a.tient_dans(&d, &f)) {
+            if pareils.iter().all(|a| a.tient_dans(debut, fin)) {
                 let somme: Option<Decimal> = pareils.iter().map(|a| a.brut).sum();
                 let (cachets, jours): (Option<i64>, Option<i64>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
                 let n = |x: Option<i64>| dit(x.map(|v| v.to_string()));
@@ -1221,23 +1213,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         // Le reste d'un certificat : ses dates et ses compteurs sont ceux du reste.
         // Le reste d'un certificat porte toujours ses dates (`attestes::reste_du_certificat`).
-        let (d, f, du_au) = match reste.as_ref().map(|l| (l.debut.map(|j| j.iso()), l.fin.map(|j| j.iso()))) {
+        let (d, f, du_au) = match reste.as_ref().map(|l| (l.debut, l.fin)) {
             Some((Some(rd), Some(rf))) => {
-                let jj = |x: &str| match Jour::du_texte(x) {
-                    Some(j) => j.jj_mm_aaaa(),
-                    None => x.to_string(),
-                };
                 let mut sources: Vec<String> = pareils.iter().map(Atteste::d_ou).collect();
                 sources.dedup();
-                let du_au = format!("{} (attesté ailleurs pour ses autres mois : {}) : le reste, du {} au {},", du_au, sources.join(", "), jj(&rd), jj(&rf));
+                let du_au = format!("{} (attesté ailleurs pour ses autres mois : {}) : le reste, du {} au {},", du_au, sources.join(", "), rd.jj_mm_aaaa(), rf.jj_mm_aaaa());
                 (rd, rf, du_au)
             }
-            _ => (d, f, du_au),
+            _ => (debut, fin, du_au),
         };
         let autres: Vec<String> = declarees_dates
             .iter()
-            .filter(|p| &p.0 == nir && chevauche(p.1.as_deref(), p.2.as_deref(), &d, &f) && !(p.1.as_deref() == Some(d.as_str()) && p.2.as_deref() == Some(f.as_str())))
-            .map(|p| format!("du {} au {}", dit(p.1.clone()), dit(p.2.clone())))
+            .filter(|p| &p.0 == nir && chevauche(p.1, p.2, d, f) && !(p.1 == Some(d) && p.2 == Some(f)))
+            .map(|p| format!("du {} au {}", dit(p.1.map(|j| j.iso())), dit(p.2.map(|j| j.iso()))))
             .collect();
         if !autres.is_empty() {
             let raison = format!(
@@ -1377,8 +1365,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         lus: par_logiciel.values().sum(),
         repris: pages_reprises,
         par_logiciel,
-        du: du.map(|d| d.iso()),
-        au: au.map(|d| d.iso()),
+        du,
+        au,
         fiches_a_creer: nouvelles_fiches,
         contrats_nouveaux: contrats_liste.len(),
         contrats: contrats_liste,
@@ -1408,8 +1396,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         };
         let lu = BlocPieces {
             lus: siennes.len(),
-            du: siennes.iter().filter_map(|c| c.c.debut).min().map(|d| d.iso()),
-            au: siennes.iter().filter_map(|c| c.c.fin).max().map(|d| d.iso()),
+            du: siennes.iter().filter_map(|c| c.c.debut).min(),
+            au: siennes.iter().filter_map(|c| c.c.fin).max(),
             contrats_nouveaux: ajoutes.len(),
             contrats: ajoutes,
             confirmes,
@@ -1472,8 +1460,8 @@ fn infos_de(l: &Lu, salarie: Option<&str>) -> InfosPage {
         logiciel: l.b.logiciel.clone(),
         numero: l.b.numero.clone(),
         salarie: salarie.map(String::from),
-        debut: Some(l.b.debut.iso()),
-        fin: Some(l.b.fin.iso()),
+        debut: Some(l.b.debut),
+        fin: Some(l.b.fin),
         mois: Some(l.mois),
         ..InfosPage::default()
     }
