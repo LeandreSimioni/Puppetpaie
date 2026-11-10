@@ -20,7 +20,7 @@
 //! permet ; un controle faux refuserait du licite) ; « six mois », « un mois », « n mois » se comptent du premier jour du
 //! contrat au meme quantieme (le dernier jour du mois s'il ne l'a pas), ce jour exclu.
 
-use socle::date::{jours_du_mois, Jour};
+use socle::date::Jour;
 use socle::num::Resultat;
 
 use crate::natures::Nature;
@@ -32,16 +32,9 @@ pub struct Plafond {
     pub pourquoi: String,
 }
 
-/// Le meme quantieme `n` mois plus tard, ou le dernier jour du mois s'il ne l'a pas.
-fn plus_mois(j: &Jour, n: u32) -> Resultat<Jour> {
-    let rang = j.mois - 1 + n;
-    let (an, mois) = (j.an + (rang / 12) as i32, rang % 12 + 1);
-    Jour::nouveau(an, mois, j.jour.min(jours_du_mois(an, mois))).ok_or_else(|| socle::date::date_impossible(an, mois, j.jour))
-}
-
-/// Les jours calendaires de `n` mois a partir de `debut` (`plus_mois`, ce jour exclu).
+/// Les jours calendaires de `n` mois a partir de `debut` (`Jour::plus_mois`, ce jour exclu).
 fn jours_de_mois(debut: &Jour, n: u32) -> Resultat<i64> {
-    Ok(plus_mois(debut, n)?.moins(debut))
+    Ok(debut.plus_mois(i64::from(n))?.moins(debut))
 }
 
 /// LE PLAFOND DE L'ESSAI d'un contrat de nature `nat`, du `debut` a la `fin` (aucune pour un CDI) : `classement` est le
@@ -53,7 +46,7 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
         let Some(fin) = fin else { return Ok(None) };
         let duree = fin.moins(debut) + 1;
         let semaines = (duree + 6) / 7;
-        let six_mois = *fin < plus_mois(debut, 6)?;
+        let six_mois = *fin < debut.plus_mois(6)?;
         let (limite, borne) = if six_mois { (14, "deux semaines au plus, le contrat durant six mois au plus".to_string()) } else {
             (jours_de_mois(debut, 1)?, "un mois au plus, le contrat durant plus de six mois".to_string())
         };

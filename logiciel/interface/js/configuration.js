@@ -520,7 +520,7 @@ document.addEventListener("click", async (ev) => {
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
-    // Les natures au mois s'ouvrent alors dans la saisie (`etat.natures`).
+    // Les natures au mois s'ouvrent alors dans la saisie (`nouvelle_carte` de la route saisie).
     await relireEtat();
     rafraichirReferentiels();
     rafraichirEtatImportation();
@@ -778,7 +778,7 @@ const SECTIONS_FICHE = {
     // LE CURSEUR DES PERMANENTS SORT DE L'« AVANCÉ ».
     // C'est la question qui commande tout ce qui ne vaut que pour les
     // salariés au mois (natures CDI/CDD, santé et prévoyance, organismes) :
-    // elle se pose en clair. Le moteur le lit (`contexte::emploie_des_permanents`).
+    // elle se pose en clair, datée. Le moteur la lit (`Contexte::emploie_des_permanents_pendant`).
     // Les conseils « Le saviez-vous ? » :
     // une option qui parle de vos salariés, elle se pose avec eux.
     ["Vos salariés", ["emploie_des_permanents", "date_de_versement_permanents", "date_de_versement_intermittents", "conseils"]],

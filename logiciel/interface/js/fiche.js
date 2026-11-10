@@ -287,7 +287,6 @@ function dessinerFormulaire(fiche) {
   if (!fiche) return;
   FICHE_COURANTE = fiche;
   const desc = ETAT.configuration.description[FICHE_ACTIVE];
-  const avecPermanents = !!(ETAT.configuration || {}).permanents;
 
   // CE QU'ON N'AFFICHE PAS, ON LE GARDE. Le signataire porte un `nom_aem` et
   // une note ; la banque porte un avertissement de diffusion. Ces clefs ne
@@ -337,8 +336,8 @@ function dessinerFormulaire(fiche) {
       // rend rien avant).
       const dedansHtml = dedans.map(champHtml).join("");
       if (!dedansHtml.trim()) return "";
-      // La section des permanents suit la case : rien a remplir tant que la
-      // compagnie n'a pas dit en employer.
+      // La section des permanents se replie quand le moteur n'en montre
+      // aucune case (`montres`, `montrerBlocsPermanents`).
       const toute = dedans.every((c) => c.si_permanents);
       if ((options || {}).avance) {
         // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
@@ -362,7 +361,7 @@ function dessinerFormulaire(fiche) {
       // au cachet déroulait sa complémentaire santé et sa prévoyance. Replié
       // pour qui n'a jamais eu de contrat au mois — sauf s'il y a déjà une
       // valeur : rien de saisi ne devient invisible.
-      if (opt.sante && avecPermanents && FICHE_ACTIVE === "salarie") {
+      if (opt.sante && FICHE_ACTIVE === "salarie") {
         // Au mois : le moteur le dit (`salaries_au_mois`) — ou la saisie en cours
         // l'engage déjà au mois, pas encore enregistrée parce que sa santé manque
         // (le refus ne doit pas envoyer sur un tiroir replié).
@@ -382,8 +381,7 @@ function dessinerFormulaire(fiche) {
           <div class="champs">${dedansHtml}</div>
         </details>`;
       }
-      return `<section class="bloc"${permanents && !avecPermanents ? ' hidden' : ''}${
-          permanents ? ' data-bloc-permanents="1"' : ''}>
+      return `<section class="bloc"${permanents ? ' data-bloc-permanents="1"' : ''}>
         ${titre ? `<h3>${echapper(titre)}</h3>` : ""}
         ${entete}
         <div class="champs">${dedansHtml}</div>
@@ -778,31 +776,22 @@ function brancherFichesAttendues() {
   });
 }
 
-/** LE CURSEUR DES PERMANENTS, TEL QUE L'ÉCRAN LE MONTRE EN CE MOMENT.
- * C'est la réponse du moteur : celle de la
- *  configuration enregistrée (`ETAT.configuration.permanents`), puis, la case
- *  à peine cochée ou décochée, celle de la route `permanents` sur la fiche en
- *  cours. La page ne le déduit jamais elle-même. */
-let PERMANENTS_A_L_ECRAN = false;
-
-/** LES BLOCS DES PERMANENTS (une section dont toutes les cases ne valent que pour eux, la santé d'un salarié) suivent
- *  la réponse du moteur (`PERMANENTS_A_L_ECRAN`), sinon leur titre resterait seul au-dessus du vide. */
+/** LES BLOCS DES PERMANENTS (une section dont toutes les cases ne valent que pour eux, la santé d'un salarié) se
+ *  replient quand le moteur n'en montre aucune case (`montres`) : un titre ne reste pas seul au-dessus du vide. */
 function montrerBlocsPermanents() {
-  const oui = PERMANENTS_A_L_ECRAN;
-  document.querySelectorAll("#config-formulaire [data-bloc-permanents]").forEach((s) => { s.hidden = !oui; });
-  const sante = document.getElementById("config-sante");
-  if (sante) sante.hidden = !oui;
+  document.querySelectorAll("#config-formulaire [data-bloc-permanents]").forEach((s) => {
+    s.hidden = ![...s.querySelectorAll("[data-montre]")].some((c) => !c.hidden);
+  });
 }
 
 function brancherPermanents() {
-  PERMANENTS_A_L_ECRAN = !!(ETAT.configuration || {}).permanents;
   montrerBlocsPermanents();
 }
 
 /** CE QUE LA FICHE MONTRE SUIT LA SAISIE, tout de suite, sans attendre l'enregistrement : à chaque changement, le
- *  moteur dit les cases à l'écran et si la compagnie emploie des permanents (route `permanents`, `montres`) ; chaque
- *  case (`data-montre`) se montre ou se replie selon ce qu'il nomme. La page n'en décide rien. Le déroulant « Nature »
- *  d'un engagement, lui, suit à l'enregistrement : il vient du serveur. */
+ *  moteur dit les cases à l'écran (route `permanents`, `montres` ; pour un salarié enregistré, avec sa clé : les cases
+ *  d'un permanent qui lui est dû) ; chaque case (`data-montre`) se montre ou se replie selon ce qu'il nomme. La page
+ *  n'en décide rien. Le déroulant « Nature » d'un engagement vient de la route du mois. */
 function brancherConditions() {
   const form = document.getElementById("config-formulaire");
   if (!form) return;
@@ -814,7 +803,6 @@ function brancherConditions() {
     if (FICHE_ACTIVE === "salarie" && FICHE_COURANTE && FICHE_COURANTE.cle) charge.cle = FICHE_COURANTE.cle;
     try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== demande || !form.isConnected) return;
-    PERMANENTS_A_L_ECRAN = !!r.permanents;
     const montres = new Set(r.montres || []);
     form.querySelectorAll("[data-montre]").forEach((el) => { el.hidden = !montres.has(el.dataset.montre); });
     montrerBlocsPermanents();

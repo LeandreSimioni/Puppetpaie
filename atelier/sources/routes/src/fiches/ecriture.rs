@@ -438,8 +438,8 @@ impl SaisieDeFiche {
 }
 
 /// LA FICHE QUE L'ECRAN MONTRE EN CE MOMENT (`permanents`) : `{"nom": …, "donnees": {…}}`, et pour un salarie deja
-/// enregistre sa cle (`cle`) : les cases que le metier d'un de ses engagements demande se montrent
-/// (`fiches::montres`).
+/// enregistre sa cle (`cle`) : les cases d'un permanent qui lui est du (`engagement::permanents`), et celles que le
+/// metier d'un de ses engagements demande, se montrent (`fiches::montres`).
 #[derive(Deserialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum FicheEnCours {

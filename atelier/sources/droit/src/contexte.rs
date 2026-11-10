@@ -166,7 +166,7 @@ pub const GRAND_SEUIL: i64 = 50;
 /// La case est-elle cochee ? Elle ne vaut qu'avec des permanents, la seule voie vers cinquante salaries : une compagnie
 /// d'intermittents ne la voit pas, et un seuil de cinquante et plus ne l'atteint pas.
 pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
-    emploie_des_permanents(fiche) && fiche.cinquante_salaries_et_plus.oui()
+    fiche.emploie_des_permanents.oui() && fiche.cinquante_salaries_et_plus.oui()
 }
 
 /// `config/effectifs.json` : les effectifs par annee civile et par code, ceux que l'Urssaf renvoie en 118 (`calcule_le`,
@@ -928,15 +928,6 @@ fn aujourdhui_brut() -> Resultat<Jour> {
     })
 }
 
-/// LE CURSEUR DES PERMANENTS : une fiche Entreprise dit-elle que la compagnie emploie des
-/// salaries payes au mois (`emploie_des_permanents`) ? Absent vaut NON. C'est la seule question qui ouvre ce qui ne vaut
-/// que pour eux : les natures payees au mois, les champs `si_permanents` des fiches, les contrats de prevoyance et de
-/// sante des permanents (`organismes`), les etats qui ne concernent qu'eux. La page ne le deduit jamais : elle le lit
-/// (`configuration.permanents`) ou, la case a peine cochee, le redemande (route `permanents`).
-pub fn emploie_des_permanents(entreprise: &ChampsEntreprise) -> bool {
-    entreprise.emploie_des_permanents.oui()
-}
-
 /// LA CLE D'UN SALARIE : celle de sa fiche dans `config/salaries.json`, interne au logiciel (aucun texte n'en fixe la
 /// forme). Elle se retrouve d'un nom par `Contexte::cle_du_salarie`, ou se lit d'un fichier, d'une charge (`lire`, ou
 /// `serde` : la meme chaine) ; un type a part, pour qu'elle ne se confonde pas avec un autre texte (un nom, un numero).
@@ -1319,12 +1310,16 @@ impl Contexte {
         self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k.as_str()).collect()
     }
 
-    /// La compagnie emploie-t-elle des permanents (des salaries payes au mois, contrats `cdi` ou `cdd`) ? Une decision de
-    /// la fiche Entreprise (`emploie_des_permanents`), pas une deduction : absent vaut NON. C'est le fait qui ouvre tout ce
-    /// qui ne vaut que pour eux, a l'ecran comme dans le calcul ; un engagement paye au mois est refuse sans lui
-    /// (`engagement::charger`) : il n'y a donc pas de permanent sans cette case.
-    pub fn emploie_des_permanents(&self) -> bool {
-        emploie_des_permanents(&self.entreprise)
+    /// LA CASE DES PERMANENTS, SUR UNE PERIODE : la fiche Entreprise dit-elle, a un jour au moins de `debut..=fin`, que la
+    /// compagnie emploie des salaries payes au mois (`emploie_des_permanents`, datee par son historique) ? Absent vaut NON.
+    /// La seule lecture de la case : elle ne regle que ce que le moteur PROPOSE (un CDI ou un CDD neuf), jamais ce qui est
+    /// du a un permanent deja engage (`engagement::permanents::Permanents`). Lue au premier jour, puis a chaque jour ou
+    /// la case change dans la periode.
+    pub fn emploie_des_permanents_pendant(&self, debut: &Jour, fin: &Jour) -> bool {
+        let Some(liste) = self.fiches.entreprise.emploie_des_permanents.as_deref() else { return false };
+        std::iter::once(*debut)
+            .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| j > debut && j <= fin))
+            .any(|j| crate::fiche::valeur_au(liste, &j).oui())
     }
 
     /// Idem pour les spectacles.

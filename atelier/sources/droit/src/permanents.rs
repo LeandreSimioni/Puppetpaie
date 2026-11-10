@@ -849,13 +849,6 @@ pub struct DelaiDePrevenance {
     pub expiration: Jour,
 }
 
-/// Le meme quantieme `n` mois plus tard, ou le dernier jour du mois s'il ne l'a pas.
-fn plus_mois(j: &Jour, n: u32) -> Resultat<Jour> {
-    let rang = j.mois - 1 + n;
-    let (an, mois) = (j.an + (rang / 12) as i32, rang % 12 + 1);
-    Jour::nouveau(an, mois, j.jour.min(jours_du_mois(an, mois))).ok_or_else(|| socle::date::date_impossible(an, mois, j.jour))
-}
-
 /// L1221-25 : le delai de prevenance d'une fin d'essai notifiee le `notification` dans un contrat commence le `debut`
 /// (`preavis.delai_de_prevenance.tranches`). Le decompte est une lecture, ecrite dans la `note` de la section : la
 /// presence va du debut a la notification compris ; le delai court du lendemain de la notification, en jours entiers, ou
@@ -877,7 +870,7 @@ pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> Resultat<DelaiD
         .ok_or_else(|| socle::echec::livree("permanents-base.json", "preavis.delai_de_prevenance"))?;
     let expiration = match (tranche.delai_jours, tranche.delai_mois) {
         (Some(j), _) => notification.plus_jours(j)?,
-        (None, Some(m)) => plus_mois(notification, m)?,
+        (None, Some(m)) => notification.plus_mois(i64::from(m))?,
         (None, None) => return Err(socle::fichiers::absent("delai_jours")),
     };
     Ok(DelaiDePrevenance { texte: tranche.texte.clone(), presence_jours, expiration })

@@ -384,14 +384,19 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         crate::fiches::reprendre_anciennete(ctx, &salarie, &du, debut)?;
     }
     // LA COMPAGNIE EMPLOIE UN PERMANENT : c'est ce qu'on vient de dire (une nature payee au mois). La case « La
-    // compagnie emploie aussi des salaries au mois » de la fiche Entreprise (`contexte::emploie_des_permanents`) se
-    // coche donc ici, sans la redemander : sans elle, la paie du mois suivant refuserait ce contrat
-    // (`engagement::nature_de`), et ce qu'elle ouvre (les contrats de prevoyance et de sante des permanents) se
-    // demande alors dans « Pour demarrer », comme pour toute compagnie qui la coche.
-    let permanents_declares = !droit::contexte::emploie_des_permanents(&ctx.entreprise);
+    // compagnie emploie aussi des salaries au mois » de la fiche Entreprise (`Contexte::emploie_des_permanents_pendant`)
+    // se coche donc ici, sans la redemander, a partir du debut du contrat (sinon du premier jour que les bulletins repris
+    // paient) : un contrat paye au mois qui commence sans elle se refuse (`engagement::engagements`), et ce qu'elle
+    // ouvre (les contrats de prevoyance et de sante des permanents) se demande alors dans « Pour demarrer », comme pour
+    // toute compagnie qui la coche.
+    let commence = match debut_dit.as_deref() {
+        Some(d) => d,
+        None => du.as_str(),
+    };
+    let depuis = Jour::lire(commence)
+        .map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", m)))?;
+    let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
-        // A partir du premier jour que les bulletins repris paient.
-        let depuis = Jour::lire(&du).map_err(|m| refus(format!("{} : la case des permanents n'a pas ete cochee.", m)))?;
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;
     }
     // Les contrats de prevoyance et de sante des permanents que l'ecran attend maintenant : ceux que les DSN reprises

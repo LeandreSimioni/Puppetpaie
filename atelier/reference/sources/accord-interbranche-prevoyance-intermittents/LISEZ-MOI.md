@@ -6,7 +6,15 @@ relevées le 25/09/2026 (journal §137). Scans (sauf l'avenant 6) ; les avenants
 sont transcrits en entier, d'après les images des pages, le 04/11/2026
 (`accord-interbranche-prevoyance-avenant5-20121218.md`,
 `accord-interbranche-prevoyance-avenant7-20210906.md`, sans les noms des signataires) ;
-c'est là que le vérificateur des sources lit leurs citations.
+les avenants 6 et 8 le 10/11/2026 (`accord-interbranche-prevoyance-avenant6-20200414.md`, par `pdftotext` ;
+`accord-interbranche-prevoyance-avenant8-20250521.md`, d'après les images) ; aucun ne parle du maintien des garanties
+après la fin du contrat (CSS L. 911-8). Le texte de base du 20/12/2006 et les avenants 1 à 4, relevés par Léandre
+(scans du SMA), sont déposés et transcrits le 10/11/2026 (`accord-interbranche-prevoyance-20061220.md`,
+`accord-interbranche-prevoyance-avenant1-20080616.md` à `…-avenant4-20111222.md`). L'avenant 1 du 16/06/2008 est un
+texte consolidé qui se substitue « à l'intégralité des dispositions » de l'accord de 2006 (art. IV.1er). Aucun de ces
+textes ne parle du maintien des garanties après la fin du contrat ; les prestations décès se versent dès lors qu'il a
+été cotisé au moins une fois au cours des 24 derniers mois civils (avenant 1, art. II.4.1). C'est là que le
+vérificateur des sources lit leurs citations.
 
 Ils tranchent l'**article 45 du titre II de la CCN 3097** (production
 cinématographique), qui portait la prévoyance des techniciens intermittents
@@ -49,6 +57,12 @@ donne qu'une exception aux taux de l'interbranche, la CCNEAC ; aucune pour
 le cinéma.
 
 ## Où le moteur s'en sert
+
+- Le certificat de travail d'un intermittent : sa prévoyance de l'accord est une garantie collective et obligatoire
+  (CSS L. 911-1), donc maintenue après la fin du contrat dans les conditions de L. 911-8, que le certificat signale
+  (`engagement::portabilite`, `documents::fin_de_contrat::mention`). Les avenants déposés (5, 7, 9) ne disent rien de la portabilité ; le
+  texte de base de l'accord (20/12/2006) et ses avenants 1 à 4 ne sont pas déposés : s'ils prévoient autre chose,
+  c'est là.
 
 - `logiciel/donnees/baremes/2026.json` : la prévoyance des intermittents (non cadres : 0,34 + 0,12 et le fonds collectif
   0,77, avenants 7 et 8 ; cadres : `par_categorie.cadre`, 0,88 + 0,12 et 0,81). Le barème 2027 prendra les taux de

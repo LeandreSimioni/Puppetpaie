@@ -332,9 +332,10 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
 }
 
 /// La page ne propose pas la CASC-SVP de la 3090 a une compagnie de la 1285, ni un etat de convention a qui n'en a pas
-/// dit, ni la dette de conges a qui n'emploie pas de permanents, ni la taxe sur les salaires a qui ne la doit aucune des
-/// annees a exporter (`taxe_due`).
-fn etat_concerne(ctx: &Contexte, etat: &str, taxe_due: bool) -> bool {
+/// dit, ni la dette de conges a qui n'a pas de permanent sur les mois a exporter (`permanents` :
+/// `engagement::permanents::Permanents::ouverts`), ni la taxe sur les salaires a qui ne la doit aucune des annees a
+/// exporter (`taxe_due`).
+fn etat_concerne(ctx: &Contexte, etat: &str, permanents: bool, taxe_due: bool) -> bool {
     let idcc = ctx.entreprise.idcc.portee();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
@@ -343,7 +344,7 @@ fn etat_concerne(ctx: &Contexte, etat: &str, taxe_due: bool) -> bool {
         }
     }
     if t.si_permanents.iter().any(|e| e == etat) {
-        return ctx.emploie_des_permanents();
+        return permanents;
     }
     if t.si_taxe_sur_les_salaires.iter().any(|e| e == etat) {
         return taxe_due;
@@ -401,9 +402,17 @@ struct EcranDesExports {
 fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let mois: Vec<String> = documents::etats_paie::mois_disponibles(ctx)?.into_keys().collect();
     let t = tables();
+    // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
+    let permanents = match (mois.first(), mois.last()) {
+        (Some(premier), Some(dernier)) => {
+            let (premier, dernier) = (Mois::lire(premier).map_err(Echec::from)?, Mois::lire(dernier).map_err(Echec::from)?);
+            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()).map_err(Echec::from)?.ouverts()
+        }
+        _ => false,
+    };
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
-    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat, taxe_due)).cloned().collect();
+    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats.iter().filter(|e| etat_concerne(ctx, &e.etat, permanents, taxe_due)).cloned().collect();
     let dossier = ctx.racine.join("exports").display().to_string();
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
