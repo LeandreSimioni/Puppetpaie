@@ -466,13 +466,13 @@ impl Paie {
     /// Le minimum conventionnel de la ligne `i` de la remuneration (`minima::minimum_de_la_ligne`).
     #[cfg(feature = "ecran")]
     pub fn minimum_de_la_ligne(&self, ctx: &Contexte, i: usize) -> R<Option<droit::minima::Minimum>> {
-        Ok(crate::minima::minimum_de_la_ligne(ctx, self, i)?)
+        crate::minima::minimum_de_la_ligne(ctx, self, i)
     }
 
     /// Le cachet de repetition de la convention pour ce metier, s'il en a un (`minima::cachet_de_repetition`).
     #[cfg(feature = "ecran")]
     pub fn cachet_de_repetition(&self, ctx: &Contexte) -> R<Option<droit::minima::Minimum>> {
-        Ok(crate::minima::cachet_de_repetition(ctx, self)?)
+        crate::minima::cachet_de_repetition(ctx, self)
     }
 
     /// Le titre du spectacle, ou pour un permanent le libelle de sa nature de contrat.
