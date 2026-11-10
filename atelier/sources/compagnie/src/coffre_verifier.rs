@@ -20,10 +20,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use crate::consultation::mot_de_passe_de_consultation;
 use envois::releve_retours::{Client, Panne};
-use socle::echec::Echec;
-
-
-type R<T> = Result<T, Echec>;
+use socle::echec::R;
 
 pub const NET_ENTREPRISES: &str = "net-entreprises";
 pub const URSSAF: &str = "urssaf";
