@@ -916,8 +916,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     }
 
     let mut client = ouvrir()?;
-    let dernier_mois = r.mois.last().map(|m| m.mois.clone()).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de la régularisation")))?;
-    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), &dernier_mois, "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
+    let dernier_mois = r.mois.last().map(|m| m.mois).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de la régularisation")))?;
+    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), &dernier_mois.to_string(), "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
 
     // La liste nominative est la premiere chose qu'ecrit le dossier (`casc::ecrire`) : si elle ne peut s'ecrire, le refus
     // tombe avant tout autre fichier, et rien ne part.
@@ -956,7 +956,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
     let mut detail = journal::DetailCasc {
         annees,
-        mois: r.mois.iter().map(|m| m.mois.clone()).collect(),
+        mois: r.mois.iter().map(|m| m.mois.to_string()).collect(),
         total: r.total.to_string(),
         expediteur: compte.clone(),
         eml: Vec::new(),

@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, ContratLu, Declaration, PaieLue, PaieVersee};
 use socle::date::Jour;
+use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
 use import::reponse::{Copie, EtatFiche, Importation};
@@ -38,7 +39,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 /// versee qu'une DSN declare, d'un engagement importe ; celle d'un bulletin seul nomme son PDF), sa copie sous
 /// `historique/bulletins/`, ou qu'est la compagnie. `None` : un mois que l'import n'a pas retenu ; un fichier retenu
 /// introuvable refuse.
-pub(crate) fn dsn_importee(ctx: &Contexte, mois: &str) -> R<Option<PathBuf>> {
+pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     let fichiers: Vec<String> = engagement::importe::paies_lues(&ctx.racine)?
         .into_iter()
         .filter(|x| x.mois == mois && x.paie.declare_par == Declaration::Dsn)
@@ -79,13 +80,13 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let eff = ctx.effectif()?;
     let faits: HashSet<String> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
     // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
-    let mut dispo: BTreeSet<String> = BTreeSet::new();
-    dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois.to_string()));
-    dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from));
-    let depuis = base.depuis.clone();
+    let mut dispo: BTreeSet<Mois> = BTreeSet::new();
+    dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois));
+    dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?);
+    let depuis = Mois::lire(&base.depuis)?;
     let contrat = base.dsn.contrat.clone();
-    let mut par_mois: Vec<(String, Decimal)> = Vec::new();
-    for m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
+    let mut par_mois: Vec<(Mois, Decimal)> = Vec::new();
+    for &m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(&m.to_string())) {
         // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien.
         if crate::importation::casc::exemptee_au_mois(ctx, &eff, m)? {
             continue;
@@ -104,16 +105,16 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
             masse += b;
         }
-        let an: String = m.chars().take(4).collect();
+        let an = format!("{:04}", m.annee());
         let Some(taux) = base.taux.de(&an) else { return Ok(None) };
         let cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
-        par_mois.push((m.clone(), cot));
+        par_mois.push((m, cot));
     }
     if par_mois.is_empty() {
         return Ok(None);
     }
-    let libelle = |m: &str| socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Illisible));
-    let periode = format!("{} à {}", libelle(&par_mois[0].0)?, libelle(&par_mois[par_mois.len() - 1].0)?);
+    let libelle = |m: Mois| m.libelle(socle::mois::Graphie::Accentuee);
+    let periode = format!("{} à {}", libelle(par_mois[0].0), libelle(par_mois[par_mois.len() - 1].0));
     let total = par_mois.iter().fold(Decimal::ZERO, |a, (_, c)| a + *c);
     Ok(Some(format!(
         "CASC-SVP : {} DSN déposée(s) depuis janvier 2025 ({}) ne portent peut-être pas la cotisation CASC-SVP -- un logiciel qui n'était pas paramétré l'a omise. Si Audiens ne l'a pas encaissée, {} sont à régulariser : Exports > « regularisation-casc-svp » fait le dossier (virements, courriels, liste nominative).",
@@ -331,18 +332,19 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // permanent (et les paies declarees de ces mois qu'aucun contrat ne porte) font un engagement par numero ; deux
     // numeros, deux contrats, comme la DSN les a declares. Un mois sans numero lu va au contrat declare a partir de lui,
     // sinon au dernier (inference : le numero du contrat en cours ce mois-la).
-    let mois_de = |g: &Groupe| -> Vec<String> { g.paies.iter().map(|p| p.mois.to_string()).collect() };
-    let du_permanent: HashSet<(String, String)> = groupes
+    let mois_de = |g: &Groupe| -> Vec<Mois> { g.paies.iter().map(|p| p.mois).collect() };
+    let mois_du_debut = |g: &Groupe| g.debut.as_deref().and_then(|d| d.get(..7)).and_then(Mois::du_texte);
+    let du_permanent: HashSet<(String, Mois)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
-        .flat_map(|g| mois_de(g).into_iter().chain(g.debut.iter().map(|d| d.chars().take(7).collect())).map(|m| (g.salarie.clone(), m)).collect::<Vec<_>>())
+        .flat_map(|g| mois_de(g).into_iter().chain(mois_du_debut(g)).map(|m| (g.salarie.clone(), m)).collect::<Vec<_>>())
         .collect();
     let (mut a_fondre, mut autres): (Vec<Groupe>, Vec<Groupe>) = groupes.into_iter().partition(|g| match &g.contrat {
         Some(c) => permanent(c),
         None => !g.paies.is_empty() && mois_de(g).into_iter().all(|m| du_permanent.contains(&(g.salarie.clone(), m))),
     });
     // Le premier mois d'un groupe : celui de sa premiere paie, sinon celui de son debut.
-    let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().or_else(|| g.debut.as_ref().map(|d| d.chars().take(7).collect()));
+    let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().or_else(|| mois_du_debut(g));
     a_fondre.sort_by_key(|g| (g.salarie.clone(), premier_mois(g)));
     let declare = |g: &Groupe| g.paies.iter().filter(|p| !declaree_par_bulletin(p)).map(|p| p.paie.contrat.clone()).find(|n| !n.is_empty());
     let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone()).filter(|n| !n.is_empty());

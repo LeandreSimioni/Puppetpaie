@@ -35,9 +35,9 @@ use socle::ecran::Pastille;
 const TYPES: [(&str, &str); 5] = depot::TYPES;
 
 /// Les paies validees du mois, a leurs numeros declares.
-fn saisie_aux_numeros_declares(ctx: &Contexte, mois: &str) -> R<Vec<Paie>> {
+fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1)
+    paies_aux_numeros_declares(ctx, &mois.to_string(), None, &departs).map(|t| t.1)
 }
 
 // ------------------------------------------------------------------ recapitulatif_dsn
@@ -149,7 +149,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
 /// `recapitulatif_dsn` : ce que la DSN declare, contrat par contrat, comparé aux contrats saisis de l'etablissement `nic`
 /// (tous sans etablissement). La paie du mois qui ne se lit pas (ou l'etablissement d'un salarie) ne se compare pas, et
 /// la phrase le dit.
-fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) -> R<RecapDsn> {
+fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) -> R<RecapDsn> {
     let mut sans_comparaison: Option<Echec> = None;
     let liste = match saisie_aux_numeros_declares(ctx, mois) {
         Ok(l) => l,
@@ -476,12 +476,11 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let nom = nom_du_chemin(&chemin);
     let signalement = a.est_signalement();
     let mois = a.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", declarations::dsn_lue::SANS_MOIS)))?;
-    let mois_t = mois.to_string();
     let remplacement = if signalement { None } else { Some(remplacement_du_fichier(&mut m, &a, mois)?) };
     let recapitulatif = if signalement {
         None
     } else {
-        Some(match recapitulatif_dsn(ctx, &a, &mois_t, a.etablissement()) {
+        Some(match recapitulatif_dsn(ctx, &a, mois, a.etablissement()) {
             Ok(v) => Recapitulatif::Lu(v),
             Err(e) => Recapitulatif::Illisible { erreur: e.phrase },
         })
@@ -494,7 +493,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         (Vec::new(), None)
     } else {
         match crate::gestes::depart::refabriquer(ctx, std::path::Path::new(&chemin), mois, a.etablissement())? {
-            Some(f) => (declarations::ordres_paiement::decrire(&f.ordres, &mois_t, ctx.echeance_dsn()?)?, None),
+            Some(f) => (declarations::ordres_paiement::decrire(&f.ordres, &mois.to_string(), ctx.echeance_dsn()?)?, None),
             None => (Vec::new(), Some("Ce fichier ne dit plus ce que disent les paies du mois : le refaire (Produire la DSN) avant de le déposer.")),
         }
     };

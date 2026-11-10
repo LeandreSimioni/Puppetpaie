@@ -638,8 +638,8 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
 }
 
 /// Le fichier d'un signalement ecrit, s'il y en a un : `sorties/<mois>/<nom>` (le nom compare sans casse).
-fn fichier_ecrit(racine: &Path, mois: &str, nom: &str) -> R<Option<PathBuf>> {
-    let dossier = racine.join("sorties").join(mois);
+fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, nom: &str) -> R<Option<PathBuf>> {
+    let dossier = racine.join("sorties").join(mois.to_string());
     Ok(fichiers_de(&dossier)?.into_iter().find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(nom))))
 }
 
@@ -665,7 +665,7 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
 fn fichier_du_signalement(ctx: &Contexte, cle: &str) -> R<Option<PathBuf>> {
     let mut morceaux = cle.splitn(3, ':');
     let (Some(genre), Some(salarie), Some(jour)) = (morceaux.next(), morceaux.next(), morceaux.next()) else { return Ok(None) };
-    let Some(mois) = jour.get(..7) else { return Ok(None) };
+    let Some(mois) = jour.get(..7).and_then(socle::mois::Mois::du_texte) else { return Ok(None) };
     let compact = jour.replace('-', "");
     let nom = match genre {
         "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
@@ -677,7 +677,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &str) -> R<Option<PathBuf>> {
                 // Un nom qui ne finit pas par un rang n'est pas un annule-et-remplace.
                 n.strip_prefix(&tete)?.strip_suffix(".dsn")?.parse::<i64>().into_iter().next()
             };
-            let dossier = ctx.racine.join("sorties").join(mois);
+            let dossier = ctx.racine.join("sorties").join(mois.to_string());
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
         "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),

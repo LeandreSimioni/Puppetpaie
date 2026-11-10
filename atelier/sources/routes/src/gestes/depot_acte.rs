@@ -358,7 +358,7 @@ pub fn deposer_dsn_dans(
                     Classe::DsnDejaDeposee,
                     format!(
                         "{}{}. Rien n'est parti : la plate-forme n'accepte pas une seconde DSN normale pour le même mois (cahier technique DSN §1.4.3.2). Pour corriger, refaites la DSN du mois : elle sortira en annule-et-remplace.",
-                        { let l = socle::mois::Mois::en_clair(&mois); l[..1].to_uppercase() + &l[1..] },
+                        socle::texte::capitaliser(&le_mois.libelle(socle::mois::Graphie::Accentuee)),
                         etat_mois.phrase.iter().map(|p| format!(" : {}", p)).collect::<String>()
                     ),
                     &etat_mois,
@@ -553,7 +553,7 @@ pub(crate) fn deposer_dpae_avec(
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
     // UN ACTE, UNE PREUVE : la demande de taux part sous celle de la DPAE.
     let meme = reel.then(|| Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()), mois_recopie: preuve.and_then(|p| p.mois_recopie.clone()) });
-    fait.suites.extend(deposer_les_amorcages(ctx, &mois, &embauches, reel, meme.as_ref().or(preuve), qui, contournement));
+    fait.suites.extend(deposer_les_amorcages(ctx, le_mois, &embauches, reel, meme.as_ref().or(preuve), qui, contournement));
     Ok(fait)
 }
 
@@ -565,7 +565,7 @@ pub(crate) fn deposer_dpae_avec(
 /// regle 10), et s'il n'est pas encore releve, les retours de la journee se relevent une fois. La DGFiP repond sous cinq
 /// jours ouvres (compte rendu de nature 94). Il ne fait jamais echouer la DPAE, deja partie : une demande qui ne part pas
 /// reste a faire, et se dit. Rend ce qu'est devenue chaque demande, en une phrase.
-fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree], reel: bool, preuve: Option<&Preuve>, qui: &str, contournement: &str) -> Vec<String> {
+fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree], reel: bool, preuve: Option<&Preuve>, qui: &str, contournement: &str) -> Vec<String> {
     use compagnie::amorcage_demande as ad;
     let mode = if reel { "" } else { " en test" };
     let paies = match paies_des_embauches(ctx, mois, embauches) {
@@ -590,7 +590,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
     if retenues.is_empty() {
         return dit;
     }
-    let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, mois, ctx.aujourdhui, false) {
+    let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, &mois.to_string(), ctx.aujourdhui, false) {
         Ok(f) => f,
         Err(e) => {
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", mode, e.phrase));
@@ -629,10 +629,10 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclar
 }
 
 /// Les engagements valides de `mois` que nomment les embauches d'une DPAE (`salarie`, `numero`), vus comme des embauches.
-fn paies_des_embauches(ctx: &Contexte, mois: &str, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
+fn paies_des_embauches(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
     let o = |m: Echec| m.reclasser(Classe::Refuse);
     let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
-    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(mois).map_err(o)?, &departs).map_err(o)? else { return Ok(Vec::new()) };
+    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)? else { return Ok(Vec::new()) };
     let declaree = |p: &engagement::calcul::Paie| {
         let cle = p.salarie.id.to_string();
         embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())

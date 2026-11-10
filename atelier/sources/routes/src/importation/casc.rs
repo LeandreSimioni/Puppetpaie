@@ -23,6 +23,7 @@ use droit::contexte::Contexte;
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::erreur;
+use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::texte::{euros, virgule};
 
@@ -53,9 +54,10 @@ struct Versee {
 
 /// Les paies versees de `mois`, d'apres les engagements importes : une par engagement qui a un brut ce mois-la. Un
 /// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
-fn versees_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<Versee>> {
+fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let mut out = Vec::new();
-    for i in engagement::importe::du_mois(&ctx.racine, socle::mois::Mois::lire(mois)?)? {
+    let du_mois = |d: &Option<String>| d.as_deref().and_then(|d| d.get(..7)).and_then(Mois::du_texte) == Some(mois);
+    for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut else { continue };
         let cle = p.salarie.clone();
@@ -63,7 +65,7 @@ fn versees_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<Versee>> {
         let (debut, fin) = (p.paie.debut.map(|j| j.iso()), p.paie.fin.map(|j| j.iso()));
         let mut activite = BTreeMap::new();
         if let Some(c) = i.contrat_lu()? {
-            if c.debut.as_deref().is_some_and(|d| d.starts_with(mois)) && c.fin.as_deref().is_some_and(|f| f.starts_with(mois)) {
+            if du_mois(&c.debut) && du_mois(&c.fin) {
                 for (quoi, n) in [("jours", c.contrat.jours), ("cachets", c.contrat.cachets), ("heures", c.contrat.heures)] {
                     if let Some(v) = n.filter(|n| *n != 0) {
                         activite.insert(quoi, Decimal::from(v));
@@ -80,7 +82,7 @@ fn versees_du_mois(ctx: &Contexte, mois: &str) -> R<Vec<Versee>> {
 /// Un mois du dossier.
 #[derive(Serialize)]
 pub struct MoisReg {
-    pub mois: String,
+    pub mois: Mois,
     pub libelle: String,
     pub masse: Decimal,
     pub taux: Decimal,
@@ -151,7 +153,7 @@ pub struct ContratReg {
 #[derive(Serialize)]
 pub struct EmploiReg {
     pub annee: String,
-    pub mois: String,
+    pub mois: Mois,
     pub individu: IndividuReg,
     pub contrat: ContratReg,
     pub activite: BTreeMap<&'static str, Decimal>,
@@ -205,10 +207,10 @@ pub struct Regularisation {
 /// Ce que demande une regularisation (`regularisation`).
 #[derive(Default)]
 pub struct Demande {
-    pub mois: Option<socle::mois::Mois>,
+    pub mois: Option<Mois>,
     pub annee: Option<String>,
     pub toutes_les_annees: bool,
-    pub jusqu_a: Option<String>,
+    pub jusqu_a: Option<Mois>,
     pub annees: Vec<String>,
     /// {annee: AAAA-MM-JJ}
     pub vire_le: Vec<(String, String)>,
@@ -219,8 +221,8 @@ pub struct Demande {
 /// Le plafond mensuel de la Securite sociale du mois `mois` (`AAAA-MM`), tel que le socle livre de son annee le dit
 /// (un plafond national : ni la convention ni la compagnie n'y changent rien) ; aucun quand le logiciel ne livre pas le
 /// bareme de cette annee.
-fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
-    let an = socle::mois::Mois::lire(mois).map_err(|e| e.reclasser(Classe::Refuse))?.annee();
+fn plafond_mensuel(mois: Mois) -> R<Option<Decimal>> {
+    let an = mois.annee();
     let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))? else { return Ok(None) };
     match socle.plafond_securite_sociale {
         Some(p) => Ok(Some(p.mensuel)),
@@ -230,8 +232,7 @@ fn plafond_mensuel(mois: &str) -> R<Option<Decimal>> {
 
 /// L'EXEMPTION DE LA CASC-SVP AU MOIS `m` (« AAAA-MM ») : la fiche entreprise de ce mois, lue avec les cles de l'effectif
 /// `eff` de son annee (`droit::bareme::casc_exemptee`), comme la DSN du mois la lit.
-pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, m: &str) -> R<bool> {
-    let mois = socle::mois::Mois::lire(m).map_err(|e| e.reclasser(Classe::Illisible))?;
+pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, mois: Mois) -> R<bool> {
     let du_mois = ctx.au(&mois.dernier_jour()).map_err(|e| e.reclasser(Classe::Illisible))?;
     let an = mois.annee();
     Ok(droit::bareme::casc_exemptee(&du_mois.entreprise, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()))
@@ -250,44 +251,49 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
     let eff = ctx.effectif().map_err(|e| e.reclasser(Classe::Refuse))?;
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| m.reclasser(Classe::Disque))?;
-    let depuis = base.depuis.clone();
-    let mut candidats: Vec<String> = import::mois::mois_importes(&ctx.racine)?
-        .into_iter()
-        .filter(|m| m.as_str() >= depuis.as_str() && !faits.contains(m))
-        .collect();
+    let depuis = Mois::lire(&base.depuis)?;
+    let mut candidats: Vec<Mois> = Vec::new();
+    for m in import::mois::mois_importes(&ctx.racine)? {
+        let lu = Mois::lire(&m)?;
+        if lu >= depuis && !faits.contains(&m) {
+            candidats.push(lu);
+        }
+    }
+    let annee_de = |m: &Mois| format!("{:04}", m.annee());
     if let Some(m) = d.mois {
         candidats.retain(|x| m == *x);
     } else if let (Some(a), false) = (d.annee.as_ref().filter(|a| !a.is_empty()), d.toutes_les_annees) {
-        candidats.retain(|x| x.starts_with(a.as_str()));
+        candidats.retain(|x| annee_de(x) == *a);
     }
-    if let Some(j) = d.jusqu_a.as_ref().filter(|j| !j.is_empty()) {
-        candidats.retain(|x| x.as_str() <= j.as_str());
+    if let Some(j) = d.jusqu_a {
+        candidats.retain(|x| *x <= j);
     }
     if !d.annees.is_empty() {
-        candidats.retain(|x| d.annees.iter().any(|a| x.chars().take(4).collect::<String>() == *a));
+        candidats.retain(|x| d.annees.iter().any(|a| annee_de(x) == *a));
     }
     // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien : l'exemption se lit au mois.
-    let mut exemptes: Vec<String> = vec![];
-    for m in &candidats {
+    let mut exemptes: Vec<Mois> = vec![];
+    for &m in &candidats {
         if exemptee_au_mois(ctx, &eff, m)? {
-            exemptes.push(m.clone());
+            exemptes.push(m);
         }
     }
     candidats.retain(|m| !exemptes.contains(m));
+    let liste = |v: &[Mois]| v.iter().map(Mois::to_string).collect::<Vec<_>>().join(", ");
     if candidats.is_empty() && !exemptes.is_empty() {
         return Err(refus(format!(
             "L'entreprise est hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) pour {} : il n'y a rien a regulariser.",
-            exemptes.join(", ")
+            liste(&exemptes)
         )));
     }
     let mut avert: Vec<String> = vec![];
     if !exemptes.is_empty() {
-        avert.push(format!("Hors du dispositif CASC-SVP (article 4.22 B), donc hors du dossier : {}.", exemptes.join(", ")));
+        avert.push(format!("Hors du dispositif CASC-SVP (article 4.22 B), donc hors du dossier : {}.", liste(&exemptes)));
     }
-    let mut portees: Vec<String> = vec![];
-    let mut lues: Vec<(String, Vec<Versee>)> = vec![];
+    let mut portees: Vec<Mois> = vec![];
+    let mut lues: Vec<(Mois, Vec<Versee>)> = vec![];
     let contrat_casc = base.dsn.contrat.clone();
-    for m in &candidats {
+    for &m in &candidats {
         let paies = versees_du_mois(ctx, m)?;
         if paies.is_empty() {
             continue;
@@ -296,10 +302,10 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
         let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|(_, porte)| porte);
         if porte {
-            portees.push(m.clone());
+            portees.push(m);
             continue;
         }
-        lues.push((m.clone(), paies));
+        lues.push((m, paies));
     }
     if lues.is_empty() {
         if !faits.is_empty() {
@@ -319,7 +325,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         avert.push(format!("Deja regularises, donc hors du dossier : {}.", tries.join(", ")));
     }
     if !portees.is_empty() {
-        avert.push(format!("La DSN porte deja la CASC-SVP, donc hors du dossier : {}.", portees.join(", ")));
+        avert.push(format!("La DSN porte deja la CASC-SVP, donc hors du dossier : {}.", liste(&portees)));
     }
 
     let mut par_mois: Vec<MoisReg> = vec![];
@@ -329,7 +335,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         let source = format!("engagements importes de {}", m);
         let mut masse = Decimal::ZERO;
         let mut mois_sal: Vec<(String, String, Decimal)> = vec![];
-        let an: String = m.chars().take(4).collect();
+        let an = annee_de(m);
         for p in paies {
             // Les colonnes de l'etat nomment les cases de la fiche, lue par sa table.
             let fiche = Saisie::de_la_fiche("salarie", &p.salarie.champs)?;
@@ -378,7 +384,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut.clone(), fin: p.fin.clone(), pcs_ese: champ("pcs_ese"), emploi: champ("emploi") };
             emplois.push(EmploiReg {
                 annee: an.clone(),
-                mois: m.clone(),
+                mois: *m,
                 individu,
                 activite: p.activite.clone(),
                 debut: p.debut.clone(),
@@ -388,7 +394,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 fichier: source.clone(),
             });
         }
-        if let Some(plafond) = plafond_mensuel(m)? {
+        if let Some(plafond) = plafond_mensuel(*m)? {
             for (_, nom, b) in &mois_sal {
                 if *b > plafond {
                     avert.push(format!("{}, {} : brut {} au-dessus du plafond mensuel -- la T1 n'est plus égale au brut, base à recalculer.", m, nom, euros(*b)));
@@ -403,13 +409,13 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         })?;
         let mut cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         cot.rescale(2);
-        par_mois.push(MoisReg { mois: m.clone(), libelle: socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Accentuee)).map_err(|e| e.reclasser(Classe::Refuse))?, masse, taux, cotisation: cot, source });
+        par_mois.push(MoisReg { mois: *m, libelle: m.libelle(socle::mois::Graphie::Accentuee), masse, taux, cotisation: cot, source });
     }
 
     let siret = ent.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let mut annees: Vec<AnneeReg> = vec![];
     for r in &par_mois {
-        let an: String = r.mois.chars().take(4).collect();
+        let an = annee_de(&r.mois);
         let pos = match annees.iter().position(|a| a.annee == an) {
             Some(p) => p,
             None => {
@@ -446,7 +452,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     let mut tableau = vec!["| mois | masse | cotisation |".to_string(), "|---|---:|---:|".to_string()];
     for a in &annees {
         for r in &par_mois {
-            if r.mois.starts_with(&a.annee) {
+            if annee_de(&r.mois) == a.annee {
                 tableau.push(format!("| {} | {} | {} |", r.libelle, euros(r.masse), euros(r.cotisation)));
             }
         }
@@ -565,7 +571,7 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
     fichiers.push(ecrit_csv(
         "CASC-SVP_masses-par-mois.csv",
         &["mois", "masse", "taux %", "cotisation", "source"],
-        r.mois.iter().map(|x| vec![x.mois.clone(), virgule(&x.masse), virgule(&x.taux), virgule(&x.cotisation), x.source.clone()]).collect(),
+        r.mois.iter().map(|x| vec![x.mois.to_string(), virgule(&x.masse), virgule(&x.taux), virgule(&x.cotisation), x.source.clone()]).collect(),
     )?);
     fichiers.push(ecrit_csv(
         "CASC-SVP_liste-nominative.csv",
@@ -734,9 +740,10 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     }
     let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.is_empty()).collect();
     if !sans.is_empty() {
-        let mut mois: Vec<&str> = sans.iter().map(|x| x.mois.as_str()).collect();
+        let mut mois: Vec<Mois> = sans.iter().map(|x| x.mois).collect();
         mois.sort();
         mois.dedup();
+        let mois: Vec<String> = mois.iter().map(Mois::to_string).collect();
         r.avertissements.push(format!(
             "Liste nominative : {} emploi(s) sans jours, cachets ni heures dans leur DSN ({}) -- colonnes laissees vides.",
             sans.len(),
@@ -766,7 +773,7 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
     let calcule = r.mois.iter().fold(Decimal::ZERO, |t, m| t + m.cotisation);
     let entree = RegularisationNotee {
         annee: annee.to_string(),
-        mois: r.mois.iter().map(|m| m.mois.clone()).collect(),
+        mois: r.mois.iter().map(|m| m.mois.to_string()).collect(),
         montant: montant.to_string(),
         calcule: calcule.to_string(),
         vire_le: vire_le.to_string(),

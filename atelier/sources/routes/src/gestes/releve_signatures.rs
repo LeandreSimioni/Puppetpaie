@@ -15,6 +15,7 @@
 
 use std::path::PathBuf;
 use socle::echec::Classe;
+use socle::mois::Mois;
 
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
@@ -110,10 +111,9 @@ enum BoiteDeLaReleve {
 /// rien d'autre. `mois` : seulement les demandes de ce mois. `qui` : `veille`, `interface`, `ligne de commande`,
 /// `horloge`. Une erreur de transport ou de lecture se dit dans `incidents` ; seul un fichier qui ne s'ecrit pas remonte
 /// en `Err`.
-pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, mois: Option<&str>, qui: &str) -> R<ReleveSignatures> {
+pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courriel>, mois: Option<Mois>, qui: &str) -> R<ReleveSignatures> {
     let mut r = ReleveSignatures::nouvelle();
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    let mois = mois.filter(|m| !m.is_empty()).map(socle::mois::Mois::lire).transpose()?;
     let attendues = etats::signatures_attendues(|c| ctx.salaries.get(c).map(|f| &f.champs), &lignes, mois);
     r.attendues = attendues.len();
     if attendues.is_empty() {
@@ -137,7 +137,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
     for a in &attendues {
         let code = a.code.clone();
         let a_nom = a.qui();
-        let Some(a_mois) = a.mois.map(|m| m.to_string()) else {
+        let Some(a_mois) = a.mois else {
             r.incidents.push(format!("{} : la demande de signature ne dit pas son mois, elle ne se relève pas.", a_nom));
             continue;
         };
@@ -151,7 +151,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let Some(Reponse { identifiant: ident, brut, de, quand }) = retenue else { continue };
 
         // La preuve archivee : le message tel qu'il est arrive.
-        let dossier = ctx.racine.join("sorties").join(&a_mois).join("envoi");
+        let dossier = ctx.racine.join("sorties").join(a_mois.to_string()).join("envoi");
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
         let preuve = dossier.join(format!("Signature_{}_{}.eml", a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
@@ -160,9 +160,9 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         // UN PDF PAR FICHIER DISTINCT : des contrats groupes n'en ont qu'un (un par page) ; des avenants groupes en ont un
         // chacun.
         let a_fichier = a.fichier.clone();
-        let mut fichiers: Vec<(String, String)> = Vec::new();
+        let mut fichiers: Vec<(Mois, String)> = Vec::new();
         for c in &contrats {
-            let paire = (c.mois.to_string(), if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() });
+            let paire = (c.mois, if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() });
             if !fichiers.contains(&paire) {
                 fichiers.push(paire);
             }
@@ -172,7 +172,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
         let mut signes: Vec<(String, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
-            let envoye = ctx.racine.join("sorties").join(mois_f).join("envoi").join(nom_f);
+            let envoye = ctx.racine.join("sorties").join(mois_f.to_string()).join("envoi").join(nom_f);
             // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
             let souche = match envoye.file_stem() {
                 Some(s) => s.to_string_lossy().into_owned(),
@@ -241,7 +241,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             continue;
         }
         r.recues.push(SignatureRecue {
-            mois: a_mois.clone(),
+            mois: a_mois.to_string(),
             salarie: a_salarie.clone(),
             nom: a_nom.clone(),
             code: code.clone(),
@@ -257,7 +257,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         }
 
         // Le contrat contresigne, renvoye au salarie.
-        let (an, nom_mois) = socle::mois::Mois::lire(&a_mois).map(|m| (m.annee(), m.nom(socle::mois::Graphie::Accentuee)))?;
+        let (an, nom_mois) = (a_mois.annee(), a_mois.nom(socle::mois::Graphie::Accentuee));
         let pdfs: Vec<PathBuf> = signes.iter().map(|(_, p)| p.clone()).collect();
         let contresigne = Contresigne {
             a,

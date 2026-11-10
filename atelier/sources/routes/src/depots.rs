@@ -1091,14 +1091,14 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let mut numeros: HashMap<(String, String), String> = HashMap::new();
     // La nature de chaque embauche, par son nom court (« CDDU ») : le fichier ne dit que CDD, CDI ou CTT (Format 120).
     let mut natures: HashMap<(String, String), String> = HashMap::new();
-    let mut mois_vus: Vec<String> = Vec::new();
+    let mut mois_vus: Vec<socle::mois::Mois> = Vec::new();
     let mut lignes = Vec::new();
     let mut jours: Vec<Jour> = Vec::new();
     for e in &enrs {
         let Some(j) = zone(e, "date_embauche")?.and_then(jour_jjmmaaaa) else { continue };
-        let m_e = j.mois_civil().to_string();
+        let m_e = j.mois_civil();
         if !mois_vus.contains(&m_e) {
-            for etat in engagement::etats::tels_qu_ecrits(ctx, j.mois_civil(), &departs)? {
+            for etat in engagement::etats::tels_qu_ecrits(ctx, m_e, &departs)? {
                 let Some(v) = etat.valide() else { continue };
                 let brut = &*v.objet().brut;
                 let Some(cle) = &brut.saisie.carte.salarie else { continue };

@@ -298,7 +298,7 @@ struct EnCours {
     debut: String,
     fin: String,
     numero: String,
-    depuis: Option<String>,
+    depuis: Option<Mois>,
     taux_cachet: Option<f64>,
     deja_repris: bool,
     engagement: Reprise,
@@ -691,7 +691,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             debut,
             fin,
             numero,
-            depuis: i.continue_apres().map(|m| m.to_string()),
+            depuis: i.continue_apres(),
             taux_cachet,
             deja_repris: false,
             engagement,
@@ -1218,10 +1218,10 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
     if vise <= Decimal::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", vise)));
     }
-    let texte = c.mois.to_string();
+    let texte = c.mois.libelle(Graphie::Accentuee);
     let (data, ids) = mois_designe(ctx, c.mois, c.modifications)?;
     let i = ids.iter().position(|x| *x == c.engagement).ok_or_else(|| {
-        refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", Mois::en_clair(&texte)))
+        refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
     })?;
     let v = engagement::viser::viser(ctx, &data, &[i], c.cible, vise).map_err(|r| match r {
         engagement::viser::RefusVisee::Refus(m) => m,
@@ -1229,7 +1229,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
     })?;
     let (avant, apres) = match (data.engagements.get(i), v.saisie.engagements.get(i)) {
         (Some(a), Some(b)) => (a, b),
-        _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", Mois::en_clair(&texte))),
+        _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
     let vue = vue_paie(ctx, &v.paies[i], apres, &v.saisie)?;
     let atteint = q2(v.atteint);
@@ -1300,7 +1300,7 @@ pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, e: Echec) -> Ech
 /// de sa vue) prend ses changements comme `modifier-engagement` les prendra, et se calcule a sa place, en saisie. Rend
 /// ce mois et l'identite de chacun de ses engagements, dans son ordre. Rien ne s'ecrit.
 fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCours>) -> R<(VueDuMois, Vec<Identite>)> {
-    let texte = mois.to_string();
+    let texte = mois.libelle(Graphie::Accentuee);
     // Un mois qu'aucun engagement ne touche encore se calcule vide.
     let mut v = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(v) => v,
@@ -1308,11 +1308,11 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
     };
     let ids = engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?);
     if ids.len() != v.engagements.len() {
-        return Err(socle::refus!("{} : {} identités pour {} engagements.", Mois::en_clair(&texte), ids.len(), v.engagements.len()));
+        return Err(socle::refus!("{} : {} identités pour {} engagements.", texte, ids.len(), v.engagements.len()));
     }
     for m in modifications {
         let i = ids.iter().position(|x| *x == m.engagement).ok_or_else(|| {
-            refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", Mois::en_clair(&texte)))
+            refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
         })?;
         let ecrit = v.engagements[i].clone();
         if !ecrit.est_validee() {
@@ -1352,8 +1352,7 @@ pub(crate) struct PaieMontree {
 ///
 /// L'ecran rend chaque engagement valide tel que le moteur le lui a montre (`valide` pose) : il retrouve le sien, sur le
 /// disque, par son salarie et son numero de contrat (ecrit a la validation).
-pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: &str) -> R<Vec<PaieMontree>> {
-    let mois = Mois::lire(mois)?;
+pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> R<Vec<PaieMontree>> {
     let disque = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let etats = if disque.is_some() { engagement::etats::du_mois(ctx, mois, &departs)? } else { Vec::new() };
@@ -1479,10 +1478,10 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
 /// periode d'essai et les clauses se disent avant que le reste soit complet. La repartition des horaires attend la
 /// duree du travail calculee.
 /// Une carte qui ne nomme pas encore son salarie ou sa nature n'appelle encore aucune case.
-fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: &str) -> R<Vec<&'static str>> {
+fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<Vec<&'static str>> {
     let debut = e.debut_lu();
     let Some(cle) = &e.salarie else { return Ok(Vec::new()) };
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, Mois::lire(mois)?)? {
+    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
         return numero_a_dire(ctx, cle, &debut);
     }
     if e.nature.is_none() {
@@ -1548,8 +1547,8 @@ pub(crate) struct ContratVu {
     a_cheval: bool,
     chevrons: Chevrons,
     sans_paie: bool,
-    depuis: String,
-    jusqu_a: String,
+    depuis: Mois,
+    jusqu_a: Mois,
     periode: Periode,
     ecrits: Vec<&'static str>,
     /// Les modeles de contrat que sa case `modele_contrat` offre (`modeles_contrat::au_choix`).
@@ -1653,7 +1652,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         },
         None => None,
     };
-    let mois_du_contrat: Vec<String> = e.mois_du_contrat().iter().map(Mois::to_string).collect();
+    let mois_du_contrat = e.mois_du_contrat();
     // Le taux du cachet, tel que le contrat l'imprime : celui de la premiere ligne a l'unite « cachet » ; sans cachet, la
     // valeur ecrite, telle quelle, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
     let mut premier_cachet = None;
@@ -1720,10 +1719,10 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
         if e.fin.is_some() {
             if !e.premier_mois() {
-                t.push_str(&format!(" — en cours depuis {}", Mois::en_clair(&e.debut.iso()[..7])));
+                t.push_str(&format!(" — en cours depuis {}", e.debut.mois_civil().libelle(Graphie::Accentuee)));
             }
             if !e.dernier_mois() {
-                t.push_str(&format!(" — se poursuit en {}", Mois::en_clair(&e.debut_mois().mois_civil().suivant().to_string())));
+                t.push_str(&format!(" — se poursuit en {}", e.debut_mois().mois_civil().suivant().libelle(Graphie::Accentuee)));
             }
         }
         t
@@ -1747,8 +1746,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             a_cheval: e.a_cheval(),
             chevrons: chevrons_dits(e)?,
             sans_paie: e.sans_paie(),
-            depuis: mois_du_contrat.first().cloned().ok_or_else(trop_courte)?,
-            jusqu_a: mois_du_contrat.last().cloned().ok_or_else(trop_courte)?,
+            depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
+            jusqu_a: mois_du_contrat.last().copied().ok_or_else(trop_courte)?,
             periode: Periode { debut: e.debut_periode()?, fin: e.fin_periode()? },
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
             modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
@@ -1801,29 +1800,29 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
 /// LES CHEVRONS D'UN CONTRAT SUR PLUSIEURS MOIS : ses bornes, ce qu'il fait du cote ou il deborde du mois (commence
 /// avant, se poursuit apres), et le mois voisin ou mene le clic. `None` du cote ou il ne deborde pas.
 pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
-    let clair = |m: &str| Mois::en_clair(m);
+    let clair = |m: Mois| m.libelle(Graphie::Accentuee);
     let bornes = match &e.fin {
         Some(f) => format!("Contrat du {} au {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
         None => format!("Contrat du {}, sans date de fin", e.debut.jj_mm_aaaa()),
     };
-    let mois: Vec<String> = e.mois_du_contrat().iter().map(Mois::to_string).collect();
+    let mois = e.mois_du_contrat();
     let premier = e.debut_mois();
     let avant = match e.premier_mois() {
         true => None,
         false => {
-            let voisin = premier.plus_jours(-1)?.iso()[..7].to_string();
+            let voisin = premier.plus_jours(-1)?.mois_civil();
             Some(match mois.first() {
-                Some(m) => format!("{} — commencé en {} · voir {}", bornes, clair(m), clair(&voisin)),
-                None => format!("{} — voir {}", bornes, clair(&voisin)),
+                Some(&m) => format!("{} — commencé en {} · voir {}", bornes, clair(m), clair(voisin)),
+                None => format!("{} — voir {}", bornes, clair(voisin)),
             })
         }
     };
     let apres = (!e.dernier_mois()).then(|| {
         let suite = match (&e.fin, mois.last()) {
-            (Some(_), Some(j)) => format!("se poursuit jusqu'en {}", clair(j)),
+            (Some(_), Some(&j)) => format!("se poursuit jusqu'en {}", clair(j)),
             _ => "se poursuit".to_string(),
         };
-        format!("{} — {} · voir {}", bornes, suite, clair(&premier.mois_civil().suivant().to_string()))
+        format!("{} — {} · voir {}", bornes, suite, clair(premier.mois_civil().suivant()))
     });
     Ok(Chevrons { avant, apres })
 }
@@ -1994,13 +1993,13 @@ struct Apercu {
 /// calculent, et chacun de ceux-la tient sa place dans `paies` avec ce qui lui manque (`a_completer`), sans montant ;
 /// la carte qui en porte un n'a pas de total. Une saisie dont aucun refus ne se rapporte a un engagement refuse.
 fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
-    let mois = c.mois.to_string();
+    let mois = c.mois;
     let (data, identites) = mois_designe(ctx, c.mois, c.modifications)?;
     let r = apercu_des_paies(ctx, &data)?;
     let mut paies = Vec::new();
     for (mut paie, engagement) in r.paies.into_iter().zip(identites) {
         if let PaieVue::Calculee(v) = &mut paie {
-            dire_les_tarifs(ctx, &mois, v)?;
+            dire_les_tarifs(ctx, mois, v)?;
         }
         paies.push(PaieDeLApercu { paie, engagement });
     }
@@ -2033,11 +2032,11 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
 /// LE MONTANT D'UN REPAS OU D'UNE NUITEE DIT D'OU IL VIENT : une ligne au tarif de la convention (`engagement::tarif_conventionnel`,
 /// le barème de l'année, couche de la convention de la compagnie) le dit dans les informations de sa paie. Le tarif
 /// est daté : il se lit au premier jour du mois, au premier et au dernier jour de la paie dans le mois.
-fn dire_les_tarifs(ctx: &Contexte, mois: &str, p: &mut VuePaie) -> R<()> {
-    let premier = Mois::lire(mois)?.premier_jour();
+fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
+    let premier = mois.premier_jour();
     let mut jours = vec![premier];
     for j in std::iter::once(p.debut).chain(p.fin) {
-        if j.iso().starts_with(mois) && !jours.contains(&j) {
+        if mois.contient(&j) && !jours.contains(&j) {
             jours.push(j);
         }
     }
@@ -2089,9 +2088,9 @@ fn nom_prenom(nom: Option<&str>, prenom: Option<&str>) -> Option<String> {
 /// ne dit pas ses conges a la reprise, la ligne de « Pour démarrer » qui y mene (`a_dire`,
 /// `declarations::demarrage::conges_a_dire`) : le compteur de conges part du solde de l'ancien bulletin (L3141-3,
 /// `engagement::conges::reprise_conges`). `brut` : l'engagement tel que la saisie l'ecrit ; `v` : sa vue (`vue_paie`).
-fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie) -> R<()> {
+fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie) -> R<()> {
     let debut = v.debut.iso();
-    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, Mois::lire(mois)?)? {
+    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
         return Ok(());
     }
     let qui = match nom_prenom(v.salarie.nom.as_deref(), v.salarie.prenom.as_deref()) {
@@ -2114,7 +2113,7 @@ fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie
     v.informations.insert(0, phrase);
     let au_mois = v.nature.cle.proprietes()?.au_mois();
     if au_mois.is_some_and(|au| !declarations::demarrage::conges_repris(ctx, &au, &v.salarie.cle)) {
-        let depuis = socle::date::Jour::lire(&format!("{}-01", mois))?;
+        let depuis = mois.premier_jour();
         v.a_dire = Some([declarations::demarrage::conges_a_dire(&v.salarie.cle, &qui, depuis)]);
     }
     Ok(())
@@ -2135,7 +2134,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     let mut r = apercu_de(ctx, &complete)?;
     let mut calculees = std::mem::take(&mut r.paies).into_iter();
     let mut calcules = std::mem::take(&mut r.blocs).into_iter();
-    let mois = data.mois.to_string();
+    let mois = data.mois;
     for (e, m) in tous.iter().zip(&manques) {
         match m {
             None => {
@@ -2151,7 +2150,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: e.nature.map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: e.nature.map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.
@@ -2177,9 +2176,9 @@ fn phrase_du_mois(paies: &[PaieVue], aucun_chiffre: bool) -> Option<String> {
 
 /// L'apercu de la saisie `data` : chaque engagement se calcule.
 fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
-    let mois = data.mois.to_string();
+    let mois = data.mois;
     let lu = data.mois;
-    let montrees = paies_de_l_ecran(ctx, data, &mois)?;
+    let montrees = paies_de_l_ecran(ctx, data, mois)?;
     let mut paies: Vec<Paie> = montrees.iter().map(|m| m.paie.clone()).collect();
     documents::ecrire_documents::numeroter(ctx, &mut paies, lu.annee(), &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
     let tous = &data.engagements;
@@ -2198,7 +2197,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
         }
     }
     for (i, v) in vues.iter_mut().enumerate() {
-        dire_l_entree(ctx, &mois, carte(i)?, v)?;
+        dire_l_entree(ctx, mois, carte(i)?, v)?;
     }
     for (v, m) in vues.iter_mut().zip(&montrees) {
         if let Some(phrase) = m.recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul) {

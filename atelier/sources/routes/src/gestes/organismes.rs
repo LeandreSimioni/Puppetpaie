@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::echec::R;
+use socle::mois::Mois;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::temps::TempsDeLaCase;
@@ -49,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeOrganismes {
-    mois: Option<String>,
+    mois: Option<Mois>,
 }
 
 /// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, la convention, s'il reste a saisir, le mois
@@ -59,7 +60,7 @@ pub(crate) struct OrganismesDits {
     phrase: String,
     idcc: Option<String>,
     a_saisir: bool,
-    mois: String,
+    mois: Mois,
     contrats: Vec<ContratDit>,
     encarts: Vec<crate::Encart>,
 }
@@ -122,7 +123,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let (lu, enregistre) = match porte.route {
         Route::OrganismesContrats => {
             let c: ChargeOrganismes = charge.lire()?;
-            (lire(ctx, c.mois.as_deref())?, false)
+            (lire(ctx, c.mois.map(|m| m.to_string()).as_deref())?, false)
         }
         Route::OrganismesEnregistrer => {
             let c: ChargeEnregistrer = charge.lire()?;
@@ -143,8 +144,9 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         format!("Contrats de la DSN : {} ; rien à saisir.", n)
     };
     let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
+    let mois = Mois::lire(&lu.mois)?;
     let mut encarts = vec![crate::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
-    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", socle::mois::Mois::en_clair(&lu.mois))));
+    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));
     if lu.a_saisir {
         encarts.push(crate::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
@@ -168,5 +170,5 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         let temps = temps.iter().position(|t| t.champ == ligne.cle).map(|i| temps.swap_remove(i));
         contrats.push(ContratDit { ligne, periode, temps });
     }
-    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois, contrats, encarts })
+    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois, contrats, encarts })
 }
