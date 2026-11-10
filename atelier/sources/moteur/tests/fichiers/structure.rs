@@ -923,6 +923,31 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     }
 }
 
+/// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
+/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape) ne la lit
+/// par `case`, `dite` ou `mot` que dans sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
+#[test]
+fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
+    use droit::fiche::{ChampsEntreprise, ChampsSalarie, FormeDeCase};
+    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()).collect();
+    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()));
+    assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
+    let porte = espace().join("declarations/src/champs.rs");
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != porte) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
+        let t = std::fs::read_to_string(&p).unwrap();
+        for c in &rangees {
+            for lecture in ["case", "dite", "mot"] {
+                if t.contains(&format!(".{}(\"{}\")", lecture, c)) {
+                    fautes.push(format!("{} lit la case {} par son nom (`{}`)", rel, c, lecture));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une case d'une piece se lit par la piece ouverte, avec sa cle :\n{}", fautes.join("\n"));
+}
+
 /// LES FICHES N'ONT QU'UNE FORME : chaque cle de `champs-base.json` (`entreprise`, `salarie`) est un champ de sa structure
 /// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
 /// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en
