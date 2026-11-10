@@ -298,7 +298,6 @@ function dessinerFormulaire(fiche) {
     if (sousChamps(c) && v && typeof v === "object") STRUCTURES_ORIGINE[c.cle] = v;
   });
 
-  const caches = CACHES[FICHE_ACTIVE] || [];
   // Les champs CALCULES ne sont pas proposes a la saisie : c'est le programme qui les fabrique, et ils ne se montrent
   // pas (`saisissables`).
   const champHtml = (c) => champDeFiche(c, fiche, FICHE_ACTIVE);
@@ -314,15 +313,23 @@ function dessinerFormulaire(fiche) {
   } else {
     const parCle = {};
     saisissables.forEach((c) => { parCle[c.cle] = c; });
+    // CE QUI EST « AVANCÉ », LE MOTEUR LE DIT (`avance` de la description) : une case ne va dans un tiroir « Avancé »
+    // que s'il la dit avancée, et une case qu'il dit avancée n'en sort pas. Les tables ne disent que l'ordre et la place.
+    const avancee = (i) => !!(sections[i][2] || {}).avance;
     const places = new Set();
-    sections.forEach(([, cles]) => cles.forEach((k) => places.add(k)));
+    sections.forEach(([, cles], i) => cles.forEach((k) => {
+      if (parCle[k] && !!parCle[k].avance === avancee(i)) places.add(k);
+    }));
     const reste = saisissables.filter((c) => !places.has(c.cle));
-    // Un champ oublie des tables va dans la derniere section TITREE : la
-    // derniere tout court peut etre l'historique, qui n'a pas de titre.
-    const derniereTitree = sections.map(([t]) => !!t).lastIndexOf(true);
+    // Un champ oublie des tables va dans la derniere section TITREE de son rang (simple ou avancee) : la derniere tout
+    // court peut etre l'historique, qui n'a pas de titre.
+    const derniere = (avance) => sections.map(([t], i) => !!t && avancee(i) === avance).lastIndexOf(true);
+    const derniereSimple = derniere(false);
+    const derniereAvancee = derniere(true);
     champs = sections.map(([titre, cles, options], i) => {
-      let dedans = cles.map((k) => parCle[k]).filter(Boolean);
-      if (i === derniereTitree) dedans = dedans.concat(reste);
+      let dedans = cles.map((k) => parCle[k]).filter((c) => c && !!c.avance === avancee(i));
+      if (i === derniereSimple) dedans = dedans.concat(reste.filter((c) => !c.avance || derniereAvancee < 0));
+      if (i === derniereAvancee) dedans = dedans.concat(reste.filter((c) => !!c.avance));
       if (!dedans.length) return "";
       // Une section vide ne s'affiche pas : « Ce qui a changé » n'a de titre
       // que le jour ou une valeur declaree a change (`histoireDuChamp` ne
@@ -333,15 +340,9 @@ function dessinerFormulaire(fiche) {
       // aucune case (`montres`, `montrerBlocsPermanents`).
       const toute = dedans.every((c) => c.si_permanents);
       if ((options || {}).avance) {
-        // Ce qui vaut le cas ordinaire n'ouvre pas le tiroir : l'Urssaf du
-        // code postal, Audiens.
-        // code postal, Audiens ; pour un salarie, le matricule et le reste
-        // de ce qui est toujours rempli (ORDINAIRE).
-        const ecart = dedans.some((c) => {
-          const v = fiche.donnees[c.cle];
-          return !caches.includes(c.cle) && v !== null && v !== undefined
-            && v !== "" && v !== false && !(ORDINAIRE[c.cle] || (() => false))(v);
-        });
+        // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
+        const ecarts = new Set(fiche.ecarts || []);
+        const ecart = dedans.some((c) => ecarts.has(c.cle));
         return `<details class="bloc avance"${ecart ? " open" : ""}>
           <summary>${echapper(titre)}</summary>
           ${(options || {}).dfs ? DFS_HTML() : ""}

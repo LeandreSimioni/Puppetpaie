@@ -122,6 +122,11 @@ pub struct Rubrique {
     pub arret_de_travail: bool,
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
+    /// Le calcul ne la paie qu'a un contrat paye au mois (`paye_au_mois`), quand ses autres cases ne le disent pas :
+    /// l'indemnite de conges d'un permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav.
+    /// D. 7121-38), les indemnites journalieres que la compagnie subrogee reverse (la subrogation est une case des
+    /// permanents).
+    pub paye_au_mois: bool,
     pub origine: String,
     /// Ce que la ligne fait, que l'ecran dit sous elle quand son nom ne le dit pas (l'acompte).
     pub dit: Option<String>,
@@ -205,6 +210,7 @@ impl Rubrique {
             || self.arret_de_travail
             || self.conges_pris
             || self.dsn_bloc52.as_deref().is_some_and(|s| !s.is_empty())
+            || self.paye_au_mois
         {
             return Some("mensuelle");
         }
@@ -369,6 +375,7 @@ fn construire(code: &str, f: ChampsRubrique, origine: &str) -> Resultat<Rubrique
         arret_de_travail: dite(f.arret_de_travail, "arret_de_travail", &faute)?,
         conges_pris: dite(f.conges_pris, "conges_pris", &faute)?,
         dsn_bloc52: f.dsn_bloc52,
+        paye_au_mois: f.paye_au_mois == Some(true),
         origine: origine.to_string(),
         dit: f.dit,
     };
@@ -470,16 +477,6 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> Resultat<Arc<Vec<Rubrique>>> {
     g.insert(fichiers, (datee, c.clone()));
     g.insert(cle, (datee, c.clone()));
     Ok(c)
-}
-
-/// LA RUBRIQUE D'UNE LIGNE DE PAIE NEUVE, par forme de paie (`"activite"` ou `"mensuelle"`, celles de
-/// [`Rubrique::reservee_a`]) et par statut du salarie (`"artiste"` ou `"technicien"`, celui de
-/// [`Rubrique::reservee_au_statut`]) : une ligne neuve paie un travail, elle ne s'ouvre pas sur la premiere rubrique du
-/// deroulant, qui se range par libelle (« Absence » en tete) : la premiere rubrique de salaire (nature `salaire`) que la
-/// forme et le statut proposent, dans l'ordre du catalogue. `None` : aucune.
-pub fn par_defaut<'a>(cat: &'a [Rubrique], forme: &str, statut: &str) -> Option<&'a Rubrique> {
-    let proposee = |r: &&Rubrique| r.reservee_a().is_none_or(|f| f == forme) && r.reservee_au_statut().is_none_or(|s| s == statut);
-    cat.iter().filter(proposee).find(|r| r.nature == "salaire")
 }
 
 /// Une rubrique par son code, telle qu'elle vaut a `jour`. Refuse un code inconnu : mieux vaut s'arreter que payer une

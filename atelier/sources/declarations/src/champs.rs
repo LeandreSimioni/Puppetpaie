@@ -191,6 +191,35 @@ pub fn condition_remplie(si: Option<&Condition>, donnees: &Saisie) -> bool {
     si.is_none_or(|c| c.remplie(donnees))
 }
 
+/// CE QUI MONTRE UNE CASE, QUAND LE CALCUL NE LA LIT QUE DANS CE CAS (`si_fait` de `champs-base.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Fait {
+    /// Le minimum du metier d'un engagement du salarie la lit (`engagement::minima::cases_du_metier`) : un salarie sans
+    /// engagement ne la voit pas ; le calcul qui la demande la nomme.
+    MetierQuiLaLit,
+    /// L'effectif connu de la compagnie n'est pas sous onze salaries : en dessous, la CCNEAC tient la representation du
+    /// personnel pour « aucune » sans la lire (`droit::bareme::representation_du_personnel`, III.3.1), et l'exemption de
+    /// la CASC-SVP, qui demande un CSE, ne vaut pas (`droit::bareme::casc_exemptee`, 3090, 4.22 B).
+    OnzeSalaries,
+}
+
+/// UNE CASE DU TIROIR « Avancé » (`avance` de `champs-base.json`) : un cas particulier, et ce qui y est le cas
+/// ordinaire. Le tiroir s'ouvre de lui-meme quand une de ses cases s'en ecarte (`Champ::ecart`) ; une case sans `avance`
+/// est sur le chemin simple.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Avance {
+    /// Toute valeur dite s'ecarte du cas ordinaire, qui est de n'en rien dire.
+    CasParticulier,
+    /// Toujours remplie (ce que le metier remplit, un matricule) : sa valeur n'est jamais un ecart.
+    ToujoursRemplie,
+    /// L'organisme que le code postal de la compagnie donne est le cas ordinaire (`declarations::urssaf`).
+    DuCodePostal,
+    /// Ces valeurs sont le cas ordinaire.
+    Ordinaire(Vec<String>),
+}
+
 /// `Champ` : une ligne de la table.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -209,6 +238,11 @@ pub struct Champ {
     pub si: Option<Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<Condition>,
+    /// Le fait que le calcul lit, et sans lequel la case n'a pas de sens (`si_fait`) : la fiche ne la montre que s'il
+    /// tient (`routes::fiches::montres`).
+    pub si_fait: Option<Fait>,
+    /// La case est un cas particulier, rangee sous « Avancé », et ce qui y est le cas ordinaire (`avance`).
+    pub avance: Option<Avance>,
     /// Quand la compagnie DOIT le remplir (`exige_si`, meme forme que `si`) : `Champ::exige`.
     pub exige_si: Option<Condition>,
     pub booleen_defaut: bool,
@@ -315,6 +349,24 @@ impl Champ {
             && !(self.si_etablissements && !etablissements)
     }
 
+    /// La case du tiroir « Avancé » s'ecarte-t-elle du cas ordinaire dans la fiche `donnees` (`Avance`) ? `du_code_postal` :
+    /// l'organisme Urssaf que le code postal de la compagnie donne. Vide ou « non » n'est jamais un ecart.
+    pub fn ecart(&self, donnees: &Saisie, du_code_postal: Option<&str>) -> bool {
+        let Some(a) = &self.avance else { return false };
+        let mot = match comme_la_page(donnees.case(&self.cle)) {
+            VueDeLaPage::Vide => return false,
+            VueDeLaPage::Structure => return donnees.dite(&self.cle).is_some() && *a != Avance::ToujoursRemplie,
+            VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
+            VueDeLaPage::Mot(m) => m,
+        };
+        match a {
+            Avance::CasParticulier => true,
+            Avance::ToujoursRemplie => false,
+            Avance::DuCodePostal => Some(mot.as_str()) != du_code_postal,
+            Avance::Ordinaire(valeurs) => !valeurs.iter().any(|v| v.eq_ignore_ascii_case(&mot)),
+        }
+    }
+
     /// Le champ est-il EXIGE de la compagnie `donnees` ? Sa condition `exige_si` de `champs-base.json`, la seule : la
     /// fiche (« Pour demarrer », `demarrage::manques`) et la declaration qui le lit (la DSN, pour la licence) la lisent
     /// toutes deux. Un champ sans `exige_si` n'est exige de personne par cette voie. Un champ exige est toujours montre
@@ -357,6 +409,8 @@ impl Champ {
             si: self.si.as_ref(),
             si_etablissements: self.si_etablissements,
             si_entreprise: self.si_entreprise.as_ref(),
+            si_fait: self.si_fait,
+            avance: self.avance.as_ref(),
             exige_si: self.exige_si.as_ref(),
             booleen_defaut: self.booleen_defaut,
             ecran: self.ecran,
@@ -436,6 +490,10 @@ pub struct Description<'a> {
     pub si: Option<&'a Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<&'a Condition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub si_fait: Option<Fait>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avance: Option<&'a Avance>,
     pub exige_si: Option<&'a Condition>,
     pub booleen_defaut: bool,
     pub ecran: bool,

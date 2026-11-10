@@ -414,7 +414,7 @@ macro_rules! saisie_de {
 }
 saisie_de!(SaisieEntreprise = "entreprise", SaisieSalarie = "salarie", SaisieSpectacle = "spectacle");
 
-/// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`, `permanents`) : `{"nom": …, "donnees": {…}}`.
+/// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`) :`{"nom": …, "donnees": {…}}`.
 #[derive(Deserialize)]
 #[serde(tag = "nom", content = "donnees", deny_unknown_fields)]
 pub(crate) enum SaisieDeFiche {
@@ -438,7 +438,8 @@ impl SaisieDeFiche {
 }
 
 /// LA FICHE QUE L'ECRAN MONTRE EN CE MOMENT (`permanents`) : `{"nom": …, "donnees": {…}}`, et pour un salarie deja
-/// enregistre sa cle (`cle`) : les cases d'un permanent qui lui est du se montrent (`engagement::permanents`).
+/// enregistre sa cle (`cle`) : les cases d'un permanent qui lui est du (`engagement::permanents`), et celles que le
+/// metier d'un de ses engagements demande, se montrent (`fiches::montres`).
 #[derive(Deserialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum FicheEnCours {

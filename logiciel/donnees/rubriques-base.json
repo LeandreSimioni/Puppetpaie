@@ -517,6 +517,7 @@
     },
     "ijss_nettes": {
       "libelle": "Indemnités journalières (subrogation)",
+      "paye_au_mois": true,
       "unite": "jour", "nature": "indemnite", "sens": "+", "compte_pour": "droits_et_montant", "saisie": ["quantite", "taux"],
       "salaire_de_base": false, "retabli": false, "suspension": false, "arret_de_travail": false, "conges_pris": false,
       "heures_forfait": null, "plafond": null, "aem": null, "dsn_type": null,
@@ -545,6 +546,7 @@
     },
     "indemnite_conges_payes": {
       "libelle": "Indemnité de congés payés",
+      "paye_au_mois": true,
       "unite": "jour",
       "nature": "salaire",
       "sens": "+", "compte_pour": "droits_et_montant",

@@ -9,18 +9,14 @@ function rubriqueDe(code) {
   return (ETAT.rubriques || []).find((r) => r.code === code);
 }
 
-/** Le déroulant des rubriques, dans l'ordre où le moteur les rend. */
-function optionsRubriques(choisie, nat, statut) {
-  // CE QUI S'APPLIQUE AU CONTRAT ET AU SALARIÉ : le moteur dit à quelle forme de paie chaque
-  // rubrique s'adresse en ligne (`formes` : une carte au mois ne porte que ses frais)
-  // et à quel statut (`reservee_au_statut`, face au `statut` du
-  // salarié) ; la page compare, elle ne connaît aucune rubrique. Sans
-  // nature (`nat` absent) rien ne se filtre, et la rubrique DÉJÀ choisie
-  // reste toujours offerte : une saisie ne change pas sous les doigts.
-  const forme = nat ? (nat.mensuelle ? "mensuelle" : "activite") : null;
-  const propose = (r) => r.code === choisie || ((!forme || (r.formes || []).includes(forme))
-    && (!statut || !r.reservee_au_statut || r.reservee_au_statut === statut));
-  return (ETAT.rubriques || []).filter(propose).map((r) => `<option value="${echapper(r.code)}" ${r.code === choisie ? "selected" : ""}>
+/** Le déroulant des rubriques, dans l'ordre où le moteur les rend. CE QUE LA CARTE PROPOSE, LE MOTEUR LE DIT
+ *  (`propose.rubriques` : de l'aperçu pour un engagement, de `nouvelle_carte` pour une carte qui ne nomme pas encore
+ *  son salarié) ; la page ne connaît aucune rubrique. La rubrique DÉJÀ choisie reste toujours offerte : une saisie ne
+ *  change pas sous les doigts. */
+function optionsRubriques(choisie, propose) {
+  const siennes = propose ? new Set(propose.rubriques || []) : null;
+  const offerte = (r) => r.code === choisie || !siennes || siennes.has(r.code);
+  return (ETAT.rubriques || []).filter(offerte).map((r) => `<option value="${echapper(r.code)}" ${r.code === choisie ? "selected" : ""}>
       ${echapper(r.libelle)}</option>`).join("");
 }
 
@@ -42,38 +38,49 @@ function poserListe(cible, cle, sources, fabriquer) {
   cible.replaceChildren(l.gabarit.content.cloneNode(true));
 }
 
-/** Le déroulant des rubriques d'une ligne, depuis la liste commune de sa forme
- *  de paie. La rubrique choisie que cette forme n'offre pas (une saisie ne
- *  change pas sous les doigts) fait une liste à elle. */
-function poserRubriques(select, choisie, nat, statut) {
-  const forme = nat ? (nat.mensuelle ? "mensuelle" : "activite") : "";
-  statut = statut || "";
-  const r = rubriqueDe(choisie);
-  const offerte = !r || ((!forme || (r.formes || []).includes(forme))
-    && (!statut || !r.reservee_au_statut || r.reservee_au_statut === statut));
+/** Le déroulant des rubriques d'une ligne, depuis la liste commune de ce que la carte propose. La rubrique choisie
+ *  qu'elle n'offre pas (une saisie ne change pas sous les doigts) fait une liste à elle. */
+function poserRubriques(select, choisie, propose) {
+  const cle = propose ? (propose.rubriques || []).join(",") : "*";
+  const offerte = !rubriqueDe(choisie) || !propose || (propose.rubriques || []).includes(choisie);
   if (offerte) {
-    poserListe(select, "rubriques:" + forme + ":" + statut, [ETAT.rubriques], () => optionsRubriques(null, nat, statut));
+    poserListe(select, "rubriques:" + cle, [ETAT.rubriques], () => optionsRubriques(null, propose));
   } else {
-    select.innerHTML = optionsRubriques(choisie, nat, statut);
+    select.innerHTML = optionsRubriques(choisie, propose);
   }
   select.value = choisie;
   // Une rubrique hors catalogue : la première de la liste, comme un déroulant sans choix.
   if (select.value !== choisie) select.selectedIndex = 0;
-  select.dataset.forme = forme;
-  select.dataset.statut = statut;
+  select.dataset.propose = cle;
 }
 
-/** Le statut du salarié de la carte, tel que le moteur le rend (`statut` de `salaries`) ; `""` sans salarié. */
-function statutDuBloc(div) {
-  const cle = salarieDuBloc(div);
-  return ((ETAT.salaries || []).find((s) => s.cle === cle) || {}).statut || "";
+/** Ce que la carte propose, tel que le moteur le dit : pour un engagement, l'aperçu (`propose` de sa paie) ; avant,
+ *  ce qu'une carte neuve de sa nature propose (`nouvelle_carte.propose`). */
+function proposeDuBloc(div) {
+  if (div._propose) return div._propose;
+  const nature = (div.querySelector(".e-nature") || {}).value || (NOUVELLE_CARTE || {}).nature;
+  return ((NOUVELLE_CARTE || {}).propose || {})[nature] || null;
 }
 
 /** La rubrique d'une ligne neuve, le moteur la dit (la première du déroulant serait « Absence » dans une compagnie
- *  neuve) : par forme de paie et par statut du salarié (`etat.rubrique_par_defaut`, `catalogue::par_defaut`). */
-function rubriqueParDefaut(nat, statut) {
-  const forme = nat && nat.mensuelle ? "mensuelle" : "activite";
-  return ((ETAT.rubrique_par_defaut || {})[forme] || {})[statut || "artiste"] || "";
+ *  neuve) : celle que la carte propose (`propose.par_defaut`). */
+function rubriqueParDefaut(propose) {
+  return (propose && propose.par_defaut) || "";
+}
+
+/** LES DÉROULANTS D'UNE CARTE SUIVENT CE QU'ELLE PROPOSE (la rubrique choisie reste) ; une ligne neuve dont on n'a pas
+ *  choisi la rubrique prend celle que la carte propose, et son taux suit (`onchange`). */
+function reposerRubriques(div) {
+  const propose = proposeDuBloc(div);
+  const cle = propose ? (propose.rubriques || []).join(",") : "*";
+  div.querySelectorAll(".r-code").forEach((s) => {
+    const ligne = s.closest(".rubrique");
+    const voulue = ligne && ligne.dataset.parDefaut ? rubriqueParDefaut(propose) : "";
+    if (voulue && voulue !== s.value) {
+      poserRubriques(s, voulue, propose);
+      s.onchange();
+    } else if (s.dataset.propose !== cle) poserRubriques(s, s.value, propose);
+  });
 }
 
 /** Une ligne de rémunération : une rubrique, une quantité, un taux.
@@ -95,12 +102,12 @@ function peindreCases(r, cases) {
   });
 }
 
-function ligneRubrique(l = {}, nat, statut) {
+function ligneRubrique(l = {}, propose) {
   const div = document.createElement("div");
   div.className = "rubrique";
   // LA RUBRIQUE D'UNE LIGNE NEUVE, le moteur la dit ; tant qu'on ne l'a pas
-  // choisie, elle suit le statut du salarié de la carte (`majQui`).
-  const code = l.rubrique || rubriqueParDefaut(nat, statut);
+  // choisie, elle suit ce que la carte propose (`reposerRubriques`).
+  const code = l.rubrique || rubriqueParDefaut(propose);
   if (!l.rubrique) div.dataset.parDefaut = "1";
   // Une ligne neuve part du dernier taux donné, pas d'un champ vide : c'est
   // là que « on met de base le dernier taux » se voit. Le dernier taux DE SA
@@ -175,7 +182,7 @@ function ligneRubrique(l = {}, nat, statut) {
          le jour prend le lieu de la ligne. -->
     <div class="r-lieux-jours">${lieuxDesJours(l)}</div>
     <div class="r-dit discret cachee"></div>`;
-  poserRubriques(div.querySelector(".r-code"), code, nat, statut);
+  poserRubriques(div.querySelector(".r-code"), code, propose);
   const majAffichage = () => {
     const r = rubriqueDe(div.querySelector(".r-code").value);
     // Les cases de la ligne sont celles que le moteur dit de sa rubrique (`cles`).
@@ -1128,7 +1135,8 @@ function construireCarte(div, e) {
   // Le nom court se lit ; ce qu'il veut dire est dans l'aide du champ, nature par nature.
   div.querySelector(".e-nature-bloc").title = offertes().filter((n) => n.aide).map((n) => `${n.libelle} : ${n.aide}`).join("\n");
   selNat.value = e.nature || "";
-  selNat.onchange = () => { viderBornes(div); majNature(div); rafraichirApercu(); };
+  // Une autre nature : ce que l'aperçu proposait pour l'ancienne ne vaut plus, la carte neuve de celle-ci le dit.
+  selNat.onchange = () => { div._propose = null; viderBornes(div); majNature(div); rafraichirApercu(); };
   const selSpec = div.querySelector(".e-spectacle");
   poserSpectacles(selSpec);
   selSpec.value = e.spectacle || "";
@@ -1156,10 +1164,10 @@ function construireCarte(div, e) {
   cadre.onchange = rafraichirApercu;
   // --- les lignes de paie
   const cible = div.querySelector(".rubriques");
-  lignesDe(e, natureDe(selNat.value)).forEach((l) => cible.appendChild(ligneRubrique(l, natureDe(selNat.value), statutDuBloc(div))));
+  lignesDe(e, natureDe(selNat.value)).forEach((l) => cible.appendChild(ligneRubrique(l, proposeDuBloc(div))));
   div.querySelector(".ajouter-rubrique").onclick = (ev) => {
     ev.preventDefault();
-    cible.appendChild(ligneRubrique({}, natureDe(selNat.value), statutDuBloc(div)));
+    cible.appendChild(ligneRubrique({}, proposeDuBloc(div)));
     rafraichirApercu();
   };
   div.querySelectorAll(".ligne1 input").forEach((c) => {
@@ -1299,7 +1307,7 @@ function viderBornes(div) {
     const nat = natureDe(div.querySelector(".e-nature").value);
     const cible = div.querySelector(".rubriques");
     cible.innerHTML = "";
-    lignesDe({}, nat).forEach((l) => cible.appendChild(ligneRubrique(l, nat, statutDuBloc(div))));
+    lignesDe({}, nat).forEach((l) => cible.appendChild(ligneRubrique(l, proposeDuBloc(div))));
     majContrat(div);
     majRupture(div);
   }
@@ -1315,13 +1323,8 @@ function majNature(div) {
   div.classList.toggle("bloc-permanent", !!nat.mensuelle);
   div.querySelector(".e-spectacle-bloc").hidden = !nat.spectacle;
   div.querySelector(".e-permanent").hidden = !nat.mensuelle;
-  // Le déroulant des rubriques suit la nature : ce qui ne s'applique pas à
-  // ce contrat ne s'y propose plus (la rubrique choisie reste).
-  // (Rien à refaire quand la forme de paie est celle de la liste posée.)
-  const forme = nat.mensuelle ? "mensuelle" : "activite";
-  div.querySelectorAll(".r-code").forEach((s) => {
-    if (s.dataset.forme !== forme) poserRubriques(s, s.value, nat, statutDuBloc(div));
-  });
+  // Le déroulant des rubriques suit ce que la carte propose (la rubrique choisie reste).
+  reposerRubriques(div);
   // Les bornes : saisies pour un contrat payé au mois, déduites du
   // calendrier pour un contrat d'usage — sauf si elles sont déjà écrites.
   const ecrites = !!(div.querySelector(".e-debut").value
@@ -1628,18 +1631,10 @@ function majQui(div) {
   resume.classList.toggle("vide", !c);
   // Un imprévu se dit d'un salarié : la porte ne s'ouvre que sur une carte qui en porte un.
   majPorteImprevu(div);
-  // Les rubriques offertes suivent le statut du salarié choisi (la rubrique choisie reste) ; une ligne neuve
-  // dont on n'a pas choisi la rubrique prend celle de ce statut, et son taux suit (`onchange`).
-  const statut = statutDuBloc(div);
-  const nat = natureDe(div.querySelector(".e-nature").value);
-  div.querySelectorAll(".r-code").forEach((s) => {
-    const ligne = s.closest(".rubrique");
-    const voulue = ligne && ligne.dataset.parDefaut ? rubriqueParDefaut(nat, statut) : "";
-    if (voulue && voulue !== s.value) {
-      poserRubriques(s, voulue, nat, statut);
-      s.onchange();
-    } else if (s.dataset.statut !== statut) poserRubriques(s, s.value, nat, statut);
-  });
+  // Un autre salarié : ce que l'aperçu proposait pour l'autre ne vaut plus ; le prochain aperçu dit ce que sa carte
+  // propose (`propose`), et d'ici là, ce qu'une carte neuve de sa nature propose.
+  if (div._proposePour !== salarieDuBloc(div)) div._propose = null;
+  reposerRubriques(div);
 }
 
 /** Une liste ouverte se referme quand on clique ailleurs — un <details> ne

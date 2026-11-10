@@ -1124,3 +1124,62 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> Resultat<Vec<Avis>> {
     }
     Ok(avis)
 }
+
+/// LES CASES DE LA FICHE D'UN SALARIE QUE LE MINIMUM DE SON METIER LIT, pour un engagement de metier `code` a `jour` :
+/// les memes chemins que `Cx::plancher_de`, lus sans paie. L'echelon de la CCNEAC d'un emploi non artistique classe
+/// dans un groupe (`plancher_horaire_1285`, art. X.4.1) ; le poste depuis lequel la grille administrative de la 3090
+/// compte ses echelons (`echelon_3090`) ; et chaque case qu'une grille ou une majoration qui vise ce metier nomme
+/// (`anciennete`, `si_salarie` : l'artiste stagiaire, l'anciennete du choeur de la CCNEAC, l'experience de la 3241).
+/// Ce que la paie seule departage (la population, l'unite de la ligne, les conditions sur le spectacle et
+/// l'entreprise) ne retire rien : une case que le calcul peut demander se montre. La fiche du salarie montre ces
+/// cases-la, et seulement celles-la (`champs::Champ::si_metier`).
+pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> Resultat<BTreeSet<String>> {
+    let mut lues = BTreeSet::new();
+    let ent = ctx.entreprise_au(jour);
+    let Some(idcc) = ent.idcc.portee() else { return Ok(lues) };
+    let Some(m) = emplois::metier(code)? else { return Ok(lues) };
+    let tab = table()?;
+    let t: &Table = &tab;
+    let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
+    let Some((grille, _)) = grille_au(t, idcc, organisation.as_deref(), Some(&jour.iso())) else { return Ok(lues) };
+    let statut = m.statut().as_str();
+    if idcc == "1285" && statut == "technicien" {
+        let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| g.to_string()).filter(|g| !g.is_empty());
+        if groupe.is_some_and(|g| grille.emplois_autres_qu_artistiques.as_ref().is_some_and(|e| e.groupes.contains_key(&g))) {
+            lues.insert("echelon_ccneac".to_string());
+        }
+    }
+    if idcc == "3090" && statut == "technicien" {
+        let administratif = m.classification_3090().filter(|c| c.grille == "administratif" && !c.niveau.is_empty());
+        let communes = t.convention("3090").and_then(|c| c.clauses_communes.as_ref());
+        if let (Some(c), Some(communes)) = (administratif, communes) {
+            if communes.administratifs_mensuel_echelons.du_niveau(&c.niveau).is_some_and(|v| v.len() > 1) {
+                lues.insert("poste_depuis".to_string());
+            }
+        }
+    }
+    let ligne = m.au_catalogue().and_then(|f| f.minima.ligne(idcc));
+    let vise = |c: &Conditions| {
+        c.categories.is_none_or(|cats| cats.iter().any(|x| Some(x.as_str()) == ligne || (x.is_empty() && ligne.is_none())))
+            && c.codes.is_none_or(|codes| codes.iter().any(|x| *x == m.code))
+    };
+    let nommees = |c: &Conditions, lues: &mut BTreeSet<String>| {
+        lues.extend(c.anciennete.map(|a| a.champ.clone()));
+        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.keys().cloned()));
+    };
+    let grilles = grille.grilles.iter().flatten().chain(grille.grilles_complementaires.iter().flatten());
+    for gr in grilles.filter(|gr| gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut)) {
+        let c = gr.conditions();
+        if !vise(&c) {
+            continue;
+        }
+        nommees(&c, &mut lues);
+        for maj in gr.majorations.iter().flatten() {
+            let c = maj.conditions();
+            if vise(&c) {
+                nommees(&c, &mut lues);
+            }
+        }
+    }
+    Ok(lues)
+}

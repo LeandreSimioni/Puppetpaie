@@ -773,20 +773,15 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
 /// designation les nomme). Rien ne se fabrique.
 fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     let lignes = envois::journal::lu(&ctx.racine).map_err(plain)?.lignes;
-    let principal = ctx.entreprise.nic.ecrite("nic").map_err(plain)?;
-    let nic = match d.etablissement.as_deref().filter(|n| !n.is_empty()) {
-        Some(n) => n,
-        None => principal,
-    };
+    // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
+    let principal = ctx.entreprise.nic_principal();
+    let nic = d.etablissement.as_deref().filter(|n| !n.is_empty()).or(principal);
     let voulues: Option<BTreeSet<(String, String)>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
     let voulues: Option<BTreeSet<(String, Option<String>)>> = voulues.map(|v| v.into_iter().map(|(s, n)| (s, Some(n))).collect());
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
-            let de = match l.etablissement() {
-                Some(e) => e,
-                None => principal,
-            };
+            let de = l.etablissement().or(principal);
             l.fichier().is_some_and(|f| f.starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.to_string(), x.numero.as_deref().map(str::to_string))).collect::<BTreeSet<_>>() == *v),
