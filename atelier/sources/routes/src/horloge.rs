@@ -681,12 +681,13 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                     return Ok(false);
                 };
                 let numero = x.numero.as_ref().map(|n| n.to_string());
-                let voulu = AvenantVoulu { salarie: salarie.clone(), debut: *debut, numero, mois: Some(*mois), effet: None, relance: None };
+                let voulu = AvenantVoulu { salarie: salarie.clone(), debut: *debut, numero, mois: Some(*mois), effet: None };
                 // LA BOITE MUETTE, et jamais une autre ; sans courriel dans la fiche, l'avenant s'imprime et se remet en
                 // main propre : l'impression est son depart.
                 let mut ouvrir = || -> R<Box<dyn Courriel>> { Ok(Box::new(BoiteMuette::nouvelle())) };
                 if x.destinataire.is_some() {
-                    crate::contrats::envoyer_avenants(ctx, std::slice::from_ref(&voulu), &Preuve::default(), &mut ouvrir)?;
+                    let etats = crate::contrats::signature_apercu(ctx, *mois)?.contrats;
+                    crate::contrats::envoyer_avenants(ctx, std::slice::from_ref(&voulu), &etats, &Preuve::default(), &mut ouvrir)?;
                 } else {
                     crate::contrats::contrats_imprimer(ctx, ChargeSignature::des_avenants(*mois, vec![voulu]), QUI_HORLOGE)?;
                     imprime.set(true);
