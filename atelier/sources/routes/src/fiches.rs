@@ -488,11 +488,10 @@ impl FaitsDeLaFiche {
     /// representation du personnel que la fiche dit se lit encore (`representation_du_personnel` la prend d'abord), et
     /// l'exemption cochee se refuse en se nommant (`casc_exemptee`) : dites, elles restent montrees.
     fn tient(&self, c: &champs::Champ, donnees: &Saisie) -> bool {
-        match c.si_fait {
-            None => true,
-            Some(champs::Fait::MetierQuiLaLit) => self.du_metier.contains(&c.cle),
-            Some(champs::Fait::OnzeSalaries) => !self.sous_onze || donnees.dite(&c.cle).is_some(),
-        }
+        c.si_fait.as_ref().is_none_or(|f| match f {
+            champs::Fait::MetierQuiLaLit => self.du_metier.contains(&c.cle),
+            champs::Fait::OnzeSalaries => !self.sous_onze || donnees.dite(&c.cle).is_some(),
+        })
     }
 }
 
