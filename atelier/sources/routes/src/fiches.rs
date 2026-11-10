@@ -568,8 +568,8 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
 /// lit la jauge de la salle de l'annexe I (`droit::fiche::Piece::MetierAuMois`).
 fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
     for t in std::iter::once(&s.carte).chain(s.avenants.iter().map(|a| &a.termes)) {
-        if let Some(n) = t.nature.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
-            if droit::natures::nature(n)?.au_mois().is_some() {
+        if let Some(n) = t.nature {
+            if n.proprietes()?.au_mois().is_some() {
                 return Ok(true);
             }
         }

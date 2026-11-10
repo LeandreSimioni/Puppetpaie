@@ -22,7 +22,7 @@ use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors
 use crate::bulletin::fmt_eur;
 use socle::texte::{euros, virgule};
 use droit::contexte::Contexte;
-use droit::natures::{self, Nature};
+use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
 use socle::echec::{erreur, Classe, R};
 use socle::num::Decimal;
@@ -447,61 +447,67 @@ pub fn refuser_un_modele_incomplet(m: &ModeleDuContrat, nat: &Nature, valeurs: &
     Err(erreur(Classe::ModeleIncomplet, format!("{} ne fait pas ce contrat : {} {} Rien n'est écrit.", m.nom, dits.join(" "), quoi_faire)))
 }
 
+const TOUS: &[NatureDeContrat] = &NatureDeContrat::TOUTES;
+const CDDU: &[NatureDeContrat] = &[NatureDeContrat::CdduSpectacle];
+const CDD: &[NatureDeContrat] = &[NatureDeContrat::Cdd];
+const AU_TERME: &[NatureDeContrat] = &[NatureDeContrat::CdduSpectacle, NatureDeContrat::Cdd];
+const PERMANENTS: &[NatureDeContrat] = &[NatureDeContrat::Cdd, NatureDeContrat::Cdi];
+
 /// LES CHAMPS QU'UN MODELE PEUT CITER, et ce que chacun imprime : ce que l'ecran montre a qui ecrit le modele de sa
-/// compagnie. `(marqueur, ce qu'il imprime, natures ou il vaut)` ; « tous » : toute nature.
-pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
-    (Marqueur::EmployeurRaisonSociale, "la raison sociale de la compagnie", "tous"),
-    (Marqueur::EmployeurAdresse, "son adresse (la rue)", "tous"),
-    (Marqueur::EmployeurCodePostal, "son code postal", "tous"),
-    (Marqueur::EmployeurCommune, "sa commune", "tous"),
-    (Marqueur::EmployeurSiret, "son SIRET", "tous"),
-    (Marqueur::EmployeurNaf, "son code APE", "tous"),
-    (Marqueur::EmployeurLicence, "sa licence d'entrepreneur de spectacles", "cddu_spectacle"),
-    (Marqueur::EmployeurIdcc, "le numéro (IDCC) de sa convention collective", "tous"),
-    (Marqueur::EmployeurConvention, "l'intitulé de sa convention collective", "tous"),
-    (Marqueur::EmployeurCongesspectacles, "son numéro d'adhérent aux Congés Spectacles", "cddu_spectacle"),
-    (Marqueur::EmployeurSignataire, "le prénom et le nom de qui signe pour elle", "tous"),
-    (Marqueur::EmployeurSignataireFonction, "sa fonction", "tous"),
-    (Marqueur::EmployeurQualiteDe, "« d' » ou « de », selon la fonction qui suit", "tous"),
-    (Marqueur::SalarieNomComplet, "le prénom et le nom du salarié", "tous"),
-    (Marqueur::SalarieNom, "son nom", "tous"),
-    (Marqueur::SalariePrenom, "son prénom", "tous"),
-    (Marqueur::SalarieDateNaissance, "sa date de naissance", "tous"),
-    (Marqueur::SalarieLieuNaissance, "son lieu de naissance", "tous"),
-    (Marqueur::SalarieAdresse, "son adresse (la rue)", "tous"),
-    (Marqueur::SalarieCodePostal, "son code postal", "tous"),
-    (Marqueur::SalarieCommune, "sa commune", "tous"),
-    (Marqueur::SalarieNir, "son numéro de sécurité sociale", "tous"),
-    (Marqueur::SalarieEmploi, "son emploi (le métier de l'engagement, ou de sa fiche)", "tous"),
-    (Marqueur::SalarieQualiteDe, "« d' » ou « de », selon l'emploi qui suit", "tous"),
-    (Marqueur::SalarieCategorie, "sa catégorie d'emploi (son classement conventionnel)", "tous"),
-    (Marqueur::ContratNumero, "le numéro du contrat", "tous"),
-    (Marqueur::ContratDebut, "la date d'embauche", "tous"),
-    (Marqueur::ContratFin, "la date du terme", "cddu_spectacle cdd"),
-    (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", "cddu_spectacle cdd"),
-    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
-    (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", "cddu_spectacle"),
-    (Marqueur::ContratLieu, "le lieu de travail", "tous"),
-    (Marqueur::ContratDatePaiement, "la date du paiement", "tous"),
-    (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", "cdd cdi"),
-    (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", "cdd cdi"),
-    (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", "tous"),
-    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", "tous"),
-    (Marqueur::RemunerationDetail, "la rémunération et ses composantes", "tous"),
-    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", "tous"),
-    (Marqueur::RemunerationBrut, "le brut du (premier) mois", "tous"),
-    (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", "tous"),
-    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", "cddu_spectacle"),
-    (Marqueur::RemunerationCachets, "le nombre de cachets", "cddu_spectacle"),
-    (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", "cddu_spectacle"),
-    (Marqueur::SpectacleTitre, "le titre du spectacle", "cddu_spectacle"),
-    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", "cddu_spectacle"),
-    (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", "tous"),
-    (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", "tous"),
-    (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", "tous"),
-    (Marqueur::MentionsConges, "les congés payés", "tous"),
-    (Marqueur::MentionsRupture, "comment le contrat prend fin", "tous"),
-    (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", "tous"),
+/// compagnie. `(marqueur, ce qu'il imprime, natures ou il vaut)`.
+pub const CHAMPS: &[(Marqueur, &str, &[NatureDeContrat])] = &[
+    (Marqueur::EmployeurRaisonSociale, "la raison sociale de la compagnie", TOUS),
+    (Marqueur::EmployeurAdresse, "son adresse (la rue)", TOUS),
+    (Marqueur::EmployeurCodePostal, "son code postal", TOUS),
+    (Marqueur::EmployeurCommune, "sa commune", TOUS),
+    (Marqueur::EmployeurSiret, "son SIRET", TOUS),
+    (Marqueur::EmployeurNaf, "son code APE", TOUS),
+    (Marqueur::EmployeurLicence, "sa licence d'entrepreneur de spectacles", CDDU),
+    (Marqueur::EmployeurIdcc, "le numéro (IDCC) de sa convention collective", TOUS),
+    (Marqueur::EmployeurConvention, "l'intitulé de sa convention collective", TOUS),
+    (Marqueur::EmployeurCongesspectacles, "son numéro d'adhérent aux Congés Spectacles", CDDU),
+    (Marqueur::EmployeurSignataire, "le prénom et le nom de qui signe pour elle", TOUS),
+    (Marqueur::EmployeurSignataireFonction, "sa fonction", TOUS),
+    (Marqueur::EmployeurQualiteDe, "« d' » ou « de », selon la fonction qui suit", TOUS),
+    (Marqueur::SalarieNomComplet, "le prénom et le nom du salarié", TOUS),
+    (Marqueur::SalarieNom, "son nom", TOUS),
+    (Marqueur::SalariePrenom, "son prénom", TOUS),
+    (Marqueur::SalarieDateNaissance, "sa date de naissance", TOUS),
+    (Marqueur::SalarieLieuNaissance, "son lieu de naissance", TOUS),
+    (Marqueur::SalarieAdresse, "son adresse (la rue)", TOUS),
+    (Marqueur::SalarieCodePostal, "son code postal", TOUS),
+    (Marqueur::SalarieCommune, "sa commune", TOUS),
+    (Marqueur::SalarieNir, "son numéro de sécurité sociale", TOUS),
+    (Marqueur::SalarieEmploi, "son emploi (le métier de l'engagement, ou de sa fiche)", TOUS),
+    (Marqueur::SalarieQualiteDe, "« d' » ou « de », selon l'emploi qui suit", TOUS),
+    (Marqueur::SalarieCategorie, "sa catégorie d'emploi (son classement conventionnel)", TOUS),
+    (Marqueur::ContratNumero, "le numéro du contrat", TOUS),
+    (Marqueur::ContratDebut, "la date d'embauche", TOUS),
+    (Marqueur::ContratFin, "la date du terme", AU_TERME),
+    (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", AU_TERME),
+    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", CDD),
+    (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", CDDU),
+    (Marqueur::ContratLieu, "le lieu de travail", TOUS),
+    (Marqueur::ContratDatePaiement, "la date du paiement", TOUS),
+    (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", PERMANENTS),
+    (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", PERMANENTS),
+    (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", TOUS),
+    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", TOUS),
+    (Marqueur::RemunerationDetail, "la rémunération et ses composantes", TOUS),
+    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", TOUS),
+    (Marqueur::RemunerationBrut, "le brut du (premier) mois", TOUS),
+    (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", TOUS),
+    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", CDDU),
+    (Marqueur::RemunerationCachets, "le nombre de cachets", CDDU),
+    (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", CDDU),
+    (Marqueur::SpectacleTitre, "le titre du spectacle", CDDU),
+    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", CDDU),
+    (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", TOUS),
+    (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", TOUS),
+    (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", TOUS),
+    (Marqueur::MentionsConges, "les congés payés", TOUS),
+    (Marqueur::MentionsRupture, "comment le contrat prend fin", TOUS),
+    (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", TOUS),
 ];
 
 /// Ce que l'avenant ajoute aux champs du contrat, et ce que chacun imprime : les siens, et ceux de chaque modification
@@ -526,7 +532,7 @@ pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> R<Vec<ChampDeModele>> 
     if !avenant {
         mentions.push((Marqueur::ContratClausesParticulieres, CLAUSES_EXIGEES.to_string(), true));
     }
-    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
+    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| ou.contains(&nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
     let siens = CHAMPS_DE_L_AVENANT.iter().filter(|_| avenant).copied();
     Ok(du_contrat
         .chain(siens)

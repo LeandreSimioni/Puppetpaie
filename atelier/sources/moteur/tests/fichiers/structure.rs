@@ -2055,14 +2055,16 @@ fn sans_tests(t: &str) -> String {
     v.join("\n")
 }
 
-/// LA CARTE VALIDE A UNE VARIANTE PAR NATURE DE `contrats-base.json` (`engagement::carte::NATURES`), et le motif de recours
-/// d'un CDD un cas par motif que le fichier offre, la personne remplacee la ou il la nomme (`engagement::carte::Recours`).
+/// LA CARTE VALIDE A UNE VARIANTE PAR NATURE DE `contrats-base.json` (`droit::natures::NatureDeContrat`), et le motif de
+/// recours d'un CDD un cas par motif que le fichier offre, la personne remplacee la ou il la nomme
+/// (`engagement::carte::Recours`).
 #[test]
 fn la_carte_valide_a_une_variante_par_nature_et_par_motif() {
-    use engagement::carte::{Recours, NATURES};
+    use droit::natures::NatureDeContrat;
+    use engagement::carte::Recours;
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/contrats-base.json")).unwrap()).unwrap();
     let ecrites: BTreeSet<&str> = base["natures"].as_object().unwrap().keys().map(String::as_str).collect();
-    assert_eq!(ecrites, NATURES.iter().map(|(n, _)| *n).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
+    assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
     for (n, v) in base["natures"].as_object().unwrap() {
         let offerts: Vec<(&str, bool)> = v["champs"]["S21.G00.40.021"]["valeurs"]
             .as_array()

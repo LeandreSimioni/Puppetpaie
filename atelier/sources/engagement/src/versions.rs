@@ -121,6 +121,7 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
             None => t.clone(),
         },
         Some(Valeur::Texte(t)) => t.clone(),
+        Some(Valeur::Nature(n)) => n.to_string(),
     }
 }
 

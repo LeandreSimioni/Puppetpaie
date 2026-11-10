@@ -909,7 +909,7 @@ mod tests {
                 ij_subrogees_jours: if ij > 0 { 10 } else { 0 },
                 ..DuMois::default()
             };
-            let au = droit::natures::nature("cdi").unwrap().au_mois().unwrap();
+            let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
             let l = lignes(&m, "2026-03", &au);
             l[0].taux().unwrap()
         };

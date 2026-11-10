@@ -326,8 +326,8 @@ pub struct Embauche {
     pub debut: Jour,
     /// Le terme de l'engagement, s'il en a un.
     pub fin: Option<Jour>,
-    /// La cle de sa nature de contrat.
-    pub nature: String,
+    /// Sa nature de contrat.
+    pub nature: natures::NatureDeContrat,
     pub spectacle: Option<droit::fiche::Spectacle>,
 }
 
@@ -464,7 +464,10 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     // n'en prevoit aucune : `000` est exact. Un CDI ou un CDD, le logiciel ne
     // redige pas le contrat et n'en connait pas l'essai : la zone reste a
     // blanc plutot que devinee, et la DPAE est enregistree en 99.
-    let essai = if nat.cle == "cddu_spectacle" { "000".to_string() } else { " ".repeat(3) };
+    let essai = match nat.cle {
+        natures::NatureDeContrat::CdduSpectacle => "000".to_string(),
+        natures::NatureDeContrat::Cdi | natures::NatureDeContrat::Cdd => " ".repeat(3),
+    };
     poser(&mut buf, "jours_essai", &essai)?;
     Ok(buf.into_iter().collect())
 }
@@ -636,10 +639,9 @@ pub fn ecrire(embauches: &[Embauche], chemin: &Path, p: &Parametres, zipper: boo
     Ok(())
 }
 
-/// La nature de contrat de cette embauche. Une nature inconnue se refuse, son
-/// message entre guillemets.
+/// La nature de contrat de cette embauche.
 fn nature_de(e: &Embauche) -> R<std::sync::Arc<natures::Nature>> {
-    natures::nature(&e.nature).map_err(|m| m.reformuler(repr))
+    e.nature.proprietes()
 }
 
 /// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.
@@ -889,6 +891,7 @@ pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use droit::natures::NatureDeContrat as N;
     use socle::fichiers::dossier_du_code;
 
     /// Le gabarit neutre livre avec le logiciel.
@@ -909,7 +912,7 @@ mod tests {
         Jour::lire(t).unwrap()
     }
 
-    fn embauche_de(fiche: &str, nature: &str, fin: Option<&str>) -> Embauche {
+    fn embauche_de(fiche: &str, nature: N, fin: Option<&str>) -> Embauche {
         Embauche {
             salarie: droit::fiche::SalarieDuContrat::de(droit::fiche::FicheSalarie {
                 id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(),
@@ -917,12 +920,12 @@ mod tests {
             }),
             debut: jour("2026-10-01"),
             fin: fin.map(jour),
-            nature: nature.to_string(),
+            nature,
             spectacle: None,
         }
     }
 
-    fn embauche(nature: &str, fin: Option<&str>) -> Embauche {
+    fn embauche(nature: N, fin: Option<&str>) -> Embauche {
         embauche_de(SALARIE, nature, fin)
     }
 
@@ -964,11 +967,11 @@ mod tests {
 
     #[test]
     fn un_cdd_sans_terme_est_refuse_ici_et_non_par_l_urssaf() {
-        let e = embauche("cdd", None);
+        let e = embauche(N::Cdd, None);
         let m = enr(&e, None, None).unwrap_err().phrase;
         assert!(m.contains("date de fin"), "{}", m);
         // Avec son terme, il part, type 1 (CDD) et date de fin dans la case.
-        let e = embauche("cdd", Some("2026-12-31"));
+        let e = embauche(N::Cdd, Some("2026-12-31"));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "31122026");
@@ -976,18 +979,18 @@ mod tests {
 
     #[test]
     fn un_cdi_est_declare_a_duree_indeterminee_sans_terme() {
-        let e = embauche("cdi", None);
+        let e = embauche(N::Cdi, None);
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "2");
         assert_eq!(zone(&t, "date_fin"), " ".repeat(8));
         // Une fin portee par un CDI n'est pas declaree : il n'a pas de terme.
-        let e = embauche("cdi", Some("2026-12-31"));
+        let e = embauche(N::Cdi, Some("2026-12-31"));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "date_fin"), " ".repeat(8));
     }
 
     #[test]
     fn un_cdd_d_usage_est_un_cdd_avec_terme() {
-        let e = embauche("cddu_spectacle", Some("2026-10-05"));
+        let e = embauche(N::CdduSpectacle, Some("2026-10-05"));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "05102026");
@@ -996,7 +999,7 @@ mod tests {
 
     #[test]
     fn les_zones_du_salarie() {
-        let e = embauche("cdi", None);
+        let e = embauche(N::Cdi, None);
         let t = enr(&e, None, Some("117")).unwrap();
         assert_eq!(zone(&t, "horodatage"), "031020261407");
         assert_eq!(zone(&t, "code_urssaf"), "117");
@@ -1013,14 +1016,14 @@ mod tests {
 
     #[test]
     fn sans_nir_la_zone_reste_a_blanc_et_le_sexe_vient_de_la_fiche() {
-        let t = enr(&embauche_de(SALARIE_SANS_NIR, "cdi", None), None, None).unwrap();
+        let t = enr(&embauche_de(SALARIE_SANS_NIR, N::Cdi, None), None, None).unwrap();
         assert_eq!(zone(&t, "nir"), " ".repeat(13));
         assert_eq!(zone(&t, "sexe"), "M");
     }
 
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
-        let e = embauche("cdi", None);
+        let e = embauche(N::Cdi, None);
         let a = enr(&e, None, Some("11")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().unwrap_or_default();
         assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'11'")), "{:?}", a);
         let m = enr(&e, None, Some("abc")).unwrap_err().phrase;
@@ -1043,18 +1046,18 @@ mod tests {
             ENTREPRISE
         ));
         let nantes = crate::urssaf::base().unwrap().du_departement("44").unwrap();
-        let mut e = embauche("cdi", None);
+        let mut e = embauche(N::Cdi, None);
         e.salarie.etablissement = Some("00024".into());
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), nantes);
-        let t = enr(&embauche("cdi", None), Some(&ent), Some("117")).unwrap();
+        let t = enr(&embauche(N::Cdi, None), Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), "117");
     }
 
     #[test]
     fn l_employeur_vient_de_la_fiche_entreprise() {
         let ent = entreprise();
-        let e = embauche("cdi", None);
+        let e = embauche(N::Cdi, None);
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
         let ch = |nom: &str| {
             let (a, b) = zone_employeur(nom);
@@ -1095,11 +1098,11 @@ mod tests {
 
     #[test]
     fn un_cddu_ecrit_000_en_periode_d_essai_les_autres_la_laissent_a_blanc() {
-        let e = embauche("cddu_spectacle", Some("2026-10-05"));
+        let e = embauche(N::CdduSpectacle, Some("2026-10-05"));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "000");
-        let e = embauche("cdi", None);
+        let e = embauche(N::Cdi, None);
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
-        let e = embauche("cdd", Some("2026-12-31"));
+        let e = embauche(N::Cdd, Some("2026-12-31"));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
     }
 

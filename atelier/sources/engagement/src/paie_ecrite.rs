@@ -233,7 +233,7 @@ pub struct FormeDEngagement {
     pub statut_conventionnel: Option<String>,
     pub statut_categoriel_rc: Option<String>,
     pub etablissement: Option<String>,
-    pub nature: String,
+    pub nature: droit::natures::NatureDeContrat,
     #[serde(with = "nombre_opt")]
     pub quotite_contrat: Option<Decimal>,
     #[serde(with = "nombre_opt")]

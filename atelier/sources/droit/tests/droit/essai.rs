@@ -5,12 +5,12 @@
 //! `atelier/reference/sources/kali-3090-titres-vii-x-xi-annexes-20260924.md`).
 
 use droit::essai::{plafond, refuser_au_dela};
-use droit::natures::nature;
+use droit::natures::NatureDeContrat as N;
 use socle::date::Jour;
 
 #[test]
 fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
-    let (cddu, cdd, cdi) = (nature("cddu_spectacle").unwrap(), nature("cdd").unwrap(), nature("cdi").unwrap());
+    let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
     let j = |s: &str| Jour::lire(s).unwrap();
     let jours = |p: Option<droit::essai::Plafond>| p.map(|p| p.jours);
 

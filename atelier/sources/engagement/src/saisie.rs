@@ -109,7 +109,7 @@ carte! {
         #[champ(Terme, Spectacle)]
         pub spectacle: Option<droit::contexte::IdSpectacle>,
         #[champ(Terme, Nature)]
-        pub nature: Option<String>,
+        pub nature: Option<droit::natures::NatureDeContrat>,
         #[champ(Partage, Debut)]
         pub debut: Option<String>,
         #[champ(Partage, Fin)]
@@ -230,6 +230,7 @@ impl Champ {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Valeur {
+    Nature(droit::natures::NatureDeContrat),
     Texte(String),
     Nombre(NombreLu),
     Oui(bool),
@@ -255,6 +256,12 @@ impl Simple for droit::contexte::IdSalarie {
 impl Simple for droit::contexte::IdSpectacle {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for droit::natures::NatureDeContrat {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Nature(*self))
     }
 }
 
@@ -354,8 +361,8 @@ impl Carte {
 
     /// La nature de son contrat ; une carte qui ne la dit pas se refuse (`crate::PAS_DE_NATURE`).
     pub fn nature_lue(&self) -> R<std::sync::Arc<droit::natures::Nature>> {
-        match self.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-            Some(n) => droit::natures::nature(n),
+        match self.nature {
+            Some(n) => n.proprietes(),
             None => Err(match &self.salarie {
                 Some(s) => socle::refus!("{}{}", s, crate::PAS_DE_NATURE),
                 None => socle::refus!("Cet engagement{}", crate::PAS_DE_NATURE),

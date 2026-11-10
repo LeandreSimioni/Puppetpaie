@@ -30,6 +30,7 @@
 use std::collections::BTreeMap;
 
 use droit::fiche::Lue;
+use droit::natures::NatureDeContrat;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -88,7 +89,7 @@ pub struct ContratAtteste {
     /// Le bulletin d'un permanent ne dit pas la nature de son contrat : elle se demande apres l'import (`import::nature`).
     pub nature_a_dire: bool,
     /// La nature dite, quand l'import relit un contrat dont elle a ete dite.
-    pub nature: Option<String>,
+    pub nature: Option<NatureDeContrat>,
     pub numero_bulletin: Option<String>,
     /// Le numero du contrat qu'un bulletin imprime (il se lit, il ne se tire pas : regle 4).
     pub numero_contrat: Option<String>,
@@ -357,7 +358,7 @@ impl Importe {
         }
         let mut i = Importe { objet: o, permanent: true };
         if let Some(n) = i.nature() {
-            i.permanent = droit::natures::nature(&n)?.mensuelle();
+            i.permanent = n.proprietes()?.mensuelle();
         }
         Ok(Some(i))
     }
@@ -396,11 +397,11 @@ impl Importe {
     /// porte pas et ne la laisse pas a dire est celle d'un contrat d'usage : son bulletin porte une marque du spectacle
     /// (numero d'objet ou Congés Spectacles, `routes::importation::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
     /// `None` : elle reste a dire (`a_dire`).
-    pub fn nature(&self) -> Option<String> {
+    pub fn nature(&self) -> Option<NatureDeContrat> {
         match self.nature_dite() {
             Some(n) => Some(n),
             None if self.contrat().is_some_and(|c| c.nature_a_dire) => None,
-            None => Some(crate::carte::CDDU.to_string()),
+            None => Some(NatureDeContrat::CdduSpectacle),
         }
     }
 
@@ -408,16 +409,16 @@ impl Importe {
     /// celle d'un contrat d'usage, sous laquelle l'import range la paie que l'ancien logiciel a versee : ses montants sont
     /// ceux des pieces, rien ne s'y calcule. Un contrat a dire ne se compare pas (`ecarts::comparer`) et attend sa nature
     /// (`import::nature`).
-    pub fn nature_rangee(&self) -> String {
+    pub fn nature_rangee(&self) -> NatureDeContrat {
         match self.nature() {
             Some(n) => n,
-            None => crate::carte::CDDU.to_string(),
+            None => NatureDeContrat::CdduSpectacle,
         }
     }
 
     /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
-    fn nature_dite(&self) -> Option<String> {
-        self.carte().nature.clone().filter(|n| !n.is_empty()).or_else(|| self.contrat().and_then(|c| c.nature.clone()))
+    fn nature_dite(&self) -> Option<NatureDeContrat> {
+        self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature))
     }
 
     /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`nature_a_dire`), et personne ne l'a
@@ -543,7 +544,7 @@ impl Importe {
         let mut non_dits: Vec<&'static str> = montants(p).iter().filter(|(_, m)| m.is_none()).map(|(k, _)| *k).collect();
 
         let nature = self.nature_rangee();
-        let nat = droit::natures::nature(&nature)?;
+        let nat = nature.proprietes()?;
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
@@ -613,7 +614,7 @@ impl Importe {
             statut_conventionnel: imprime(|i| &i.statut_conventionnel),
             statut_categoriel_rc: imprime(|i| &i.statut_categoriel_rc),
             etablissement: None,
-            nature: nature.clone(),
+            nature,
             quotite_contrat: quotite,
             quotite_reference_saisie: None,
             modalite_temps_travail_saisie: None,
@@ -852,7 +853,7 @@ pub struct Neuf {
 /// LE CONTRAT DE PERMANENT QUI CONTINUE ICI : sa nature est dite et payee au mois, il a ete verse le dernier mois repris
 /// (`dernier`), et il ne finit pas avant le mois qui suit.
 fn continue_ici(e: &Neuf, dernier: &str) -> R<bool> {
-    let mensuel = e.carte.nature.as_deref().filter(|n| !n.is_empty()).map(|n| droit::natures::nature(n).map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
+    let mensuel = e.carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
     let suite = socle::mois::Mois::lire(dernier).map(|m| m.suivant().to_string())?;
     let premier_jour_suivant = format!("{}-01", suite);
     Ok(mensuel && e.pieces.paies.contains_key(dernier) && e.carte.fin.as_deref().is_none_or(|f| f.is_empty() || f >= premier_jour_suivant.as_str()))
@@ -878,7 +879,7 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
         if let Some(k) = meme {
             repris[k] = true;
             let x = &existants[k].objet.brut;
-            if e.carte.nature.as_deref().is_none_or(str::is_empty) && x.saisie.carte.nature.as_deref().is_some_and(|n| !n.is_empty()) {
+            if e.carte.nature.is_none() && x.saisie.carte.nature.is_some() {
                 ecrit = (**x).clone();
                 e.carte = ecrit.saisie.carte.clone();
             }

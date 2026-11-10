@@ -136,7 +136,7 @@ forme! {
         pub rubrique: String,
         pub dsn_bloc52: CodeDsn,
         /// Les natures de contrat (`contrats-base.json`) qui n'y ont pas droit, et pourquoi.
-        pub natures_exclues: BTreeMap<String, String>,
+        pub natures_exclues: BTreeMap<crate::natures::NatureDeContrat, String>,
         pub motifs_rupture_exclus: ParMotif,
     }
 }

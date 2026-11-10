@@ -110,7 +110,7 @@ impl Objet {
     /// l'avenant qui lui donne une nature payee au mois ; `None` s'il ne l'est jamais, ou ne dit pas encore son debut ou
     /// sa nature (un contrat repris dont la nature est a dire, `routes::importation::nature` : rien ne le paie encore).
     pub fn au_mois_depuis(&self) -> R<Option<(Jour, Arc<Nature>)>> {
-        if self.carte().nature.as_deref().is_none_or(|n| n.trim().is_empty()) {
+        if self.carte().nature.is_none() {
             return Ok(None);
         }
         let premiere = self.carte().nature_lue()?;
@@ -122,8 +122,8 @@ impl Objet {
             return Ok(Some((Jour::lire(&debut)?, premiere)));
         }
         for a in self.avenants() {
-            if let Some(n) = a.termes.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-                let n = droit::natures::nature(n)?;
+            if let Some(n) = a.termes.nature {
+                let n = n.proprietes()?;
                 if n.mensuelle() {
                     return Ok(Some((a.depuis, n)));
                 }

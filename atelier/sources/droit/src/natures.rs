@@ -26,13 +26,91 @@ pub enum Paie {
 /// La rubrique du motif de recours (S21.G00.40.021), dont une nature peut dire les valeurs (`champs`).
 const MOTIF_DE_RECOURS: &str = "S21.G00.40.021";
 
-/// UNE NATURE DE CONTRAT, telle que `contrats-base.json` la decrit (`natures.<cle>`).
+/// UNE NATURE DE CONTRAT, et la seule facon d'en nommer une : personne n'en ajoute hors du logiciel, une nature neuve
+/// arrive par une mise a jour. Elle s'ecrit par sa cle (`cle`), celle de `natures` dans `contrats-base.json`, qui dit ses
+/// proprietes (`proprietes`) ; une cle qui n'en est pas une se refuse a la lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NatureDeContrat {
+    CdduSpectacle,
+    Cdi,
+    Cdd,
+}
+
+impl NatureDeContrat {
+    pub const TOUTES: [NatureDeContrat; 3] = [NatureDeContrat::CdduSpectacle, NatureDeContrat::Cdi, NatureDeContrat::Cdd];
+
+    /// Sa cle, le seul endroit ou elle s'ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            NatureDeContrat::CdduSpectacle => "cddu_spectacle",
+            NatureDeContrat::Cdi => "cdi",
+            NatureDeContrat::Cdd => "cdd",
+        }
+    }
+
+    /// LA SEULE LECTURE D'UNE NATURE : ses proprietes, telles que `contrats-base.json` les dit.
+    pub fn proprietes(self) -> R<Arc<Nature>> {
+        Ok(lu()?.par_nature[self as usize].clone())
+    }
+}
+
+/// Dans l'ordre de leurs cles : un objet indexe par nature s'ecrit comme quand sa cle etait un texte.
+impl Ord for NatureDeContrat {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.cle().cmp(autre.cle())
+    }
+}
+
+impl PartialOrd for NatureDeContrat {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl std::fmt::Display for NatureDeContrat {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.cle())
+    }
+}
+
+impl Serialize for NatureDeContrat {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.cle())
+    }
+}
+
+impl<'de> Deserialize<'de> for NatureDeContrat {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let cle = String::deserialize(d)?;
+        match NatureDeContrat::TOUTES.into_iter().find(|n| n.cle() == cle) {
+            Some(n) => Ok(n),
+            None => {
+                let mut connues: Vec<&str> = NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect();
+                connues.sort();
+                Err(serde::de::Error::custom(format!("Nature de contrat inconnue : {}. Connues : {}.", repr(&cle), connues.join(", "))))
+            }
+        }
+    }
+}
+
+/// UNE NATURE DE CONTRAT ET SES PROPRIETES (`Proprietes`, `natures.<cle>` de `contrats-base.json`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Nature {
+    pub cle: NatureDeContrat,
+    proprietes: Proprietes,
+}
+
+impl std::ops::Deref for Nature {
+    type Target = Proprietes;
+    fn deref(&self) -> &Proprietes {
+        &self.proprietes
+    }
+}
+
+/// CE QUE `contrats-base.json` DIT D'UNE NATURE (`natures.<cle>`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Nature {
-    /// La cle de la nature dans le fichier (`cddu_spectacle`, `cdi`, `cdd`).
-    #[serde(skip)]
-    pub cle: String,
+pub struct Proprietes {
     pub libelle: String,
     /// Ce que le nom court veut dire, pour qui hesite en choisissant.
     pub aide: String,
@@ -340,7 +418,7 @@ pub struct UniteDAbsence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuMois(());
 
-impl Nature {
+impl Proprietes {
     /// Paye au mois : un permanent.
     pub fn mensuelle(&self) -> bool {
         self.paie == Paie::Mensuelle
@@ -598,7 +676,7 @@ struct Fichier {
     categories_d_emploi: CategoriesDEmploi,
     /// Dans l'ordre du fichier.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    natures: Vec<(String, Nature)>,
+    natures: Vec<(NatureDeContrat, Proprietes)>,
 }
 
 /// `categories_d_emploi` de `contrats-base.json`.
@@ -622,28 +700,37 @@ struct ArtisteNonCadre {
     _note: String,
 }
 
-/// Les natures de contrat, construites : dans l'ordre du fichier, les categories d'emploi.
+/// Les natures de contrat, construites : dans l'ordre du fichier, chacune a sa place dans `NatureDeContrat::TOUTES`, les
+/// categories d'emploi.
 struct Contrats {
     natures: Arc<Vec<Arc<Nature>>>,
+    par_nature: [Arc<Nature>; 3],
     categories: CategoriesDEmploi,
 }
 
 const ILLISIBLE: &str = "Les natures de contrat livrées avec le logiciel ne se lisent pas : le signaler au développeur.";
 
-/// LA SEULE LECTURE DE `contrats-base.json` : sa forme, puis ce qu'elle ne dit pas seule (le type de contrat de la DPAE
-/// est l'un des trois du Format 120).
+/// LA SEULE LECTURE DE `contrats-base.json` : sa forme (une cle qui n'est pas une `NatureDeContrat` refuse), puis ce
+/// qu'elle ne dit pas seule : chaque nature du logiciel y est, et son type de contrat de la DPAE est l'un des trois du
+/// Format 120.
 fn lu() -> R<Arc<Contrats>> {
     static CACHE: OnceLock<FormeGardee<Contrats>> = OnceLock::new();
     forme_en_cache(&CACHE, "contrats-base.json", ILLISIBLE, |f: Fichier| {
         let mut natures = Vec::new();
-        for (cle, mut n) in f.natures {
-            if !TYPES_CONTRAT_DPAE.iter().any(|(k, _)| *k == n.dpae.type_contrat.valeur) {
-                return Err(socle::echec::a_la_cle(ILLISIBLE, &format!("natures.{}.dpae.type_contrat.valeur", cle), format!("{} n'est pas un type de contrat du Format 120 (1, 2 ou 3)", repr(&n.dpae.type_contrat.valeur))));
+        for (cle, proprietes) in f.natures {
+            if !TYPES_CONTRAT_DPAE.iter().any(|(k, _)| *k == proprietes.dpae.type_contrat.valeur) {
+                return Err(socle::echec::a_la_cle(ILLISIBLE, &format!("natures.{}.dpae.type_contrat.valeur", cle), format!("{} n'est pas un type de contrat du Format 120 (1, 2 ou 3)", repr(&proprietes.dpae.type_contrat.valeur))));
             }
-            n.cle = cle;
-            natures.push(Arc::new(n));
+            natures.push(Arc::new(Nature { cle, proprietes }));
         }
-        Ok(Contrats { natures: Arc::new(natures), categories: f.categories_d_emploi })
+        let de = |n: NatureDeContrat| -> R<Arc<Nature>> {
+            match natures.iter().find(|x| x.cle == n) {
+                Some(x) => Ok(x.clone()),
+                None => Err(socle::echec::a_la_cle(ILLISIBLE, "natures", format!("la nature {} n'y est pas", n))),
+            }
+        };
+        let par_nature = [de(NatureDeContrat::TOUTES[0])?, de(NatureDeContrat::TOUTES[1])?, de(NatureDeContrat::TOUTES[2])?];
+        Ok(Contrats { natures: Arc::new(natures), par_nature, categories: f.categories_d_emploi })
     })
 }
 
@@ -663,17 +750,6 @@ pub fn natures() -> R<Arc<Vec<Arc<Nature>>>> {
     Ok(lu()?.natures.clone())
 }
 
-/// Une nature par sa cle : une nature se dit, elle ne se devine pas (regle 6). Refuse une cle inconnue.
-pub fn nature(cle: &str) -> R<Arc<Nature>> {
-    let lus = lu()?;
-    if let Some(n) = lus.natures.iter().find(|n| n.cle == cle) {
-        return Ok(n.clone());
-    }
-    let mut connues: Vec<&str> = lus.natures.iter().map(|n| n.cle.as_str()).collect();
-    connues.sort();
-    Err(socle::refus!("Nature de contrat inconnue : {}. Connues : {}.", repr(&cle), connues.join(", ")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,9 +758,9 @@ mod tests {
     /// permanents du spectacle » ; un CDDU garde le code de la nomenclature.
     #[test]
     fn la_nature_fixe_999spt_pour_les_permanents_seulement() {
-        for cle in ["cdi", "cdd"] {
-            assert_eq!(nature(cle).unwrap().code("S21.G00.40.005").as_deref(), Some("999SPT"), "{}", cle);
+        for n in [NatureDeContrat::Cdi, NatureDeContrat::Cdd] {
+            assert_eq!(n.proprietes().unwrap().code("S21.G00.40.005").as_deref(), Some("999SPT"), "{}", n);
         }
-        assert_eq!(nature("cddu_spectacle").unwrap().code("S21.G00.40.005"), None);
+        assert_eq!(NatureDeContrat::CdduSpectacle.proprietes().unwrap().code("S21.G00.40.005"), None);
     }
 }

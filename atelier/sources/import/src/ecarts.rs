@@ -84,7 +84,7 @@ pub struct Cas {
     mois: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     logiciel: Option<String>,
-    nature: String,
+    nature: droit::natures::NatureDeContrat,
     statut: Option<String>,
     cadre: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,7 +170,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     let cas = |c: &Comparaison, p: &mut Propre| Cas {
         mois: p.texte(&c.mois),
         logiciel: None,
-        nature: p.texte(&c.nature),
+        nature: c.nature,
         statut: p.option(&c.statut),
         cadre: c.cadre,
         taux_atmp: c.taux_atmp,

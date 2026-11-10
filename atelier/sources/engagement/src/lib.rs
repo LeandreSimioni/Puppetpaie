@@ -52,7 +52,7 @@ use socle::forme::NombreLu;
 
 use droit::catalogue::rubrique;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::natures::{self, Nature};
+use droit::natures::{Nature, NatureDeContrat};
 pub use ligne::{Chiffre, DateDeLigne, LignePaie};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -105,8 +105,8 @@ pub struct Engagement {
     /// L'etablissement (NIC) ou le salarie est rattache pour CE contrat, quand la compagnie en a plusieurs ; `None` : le
     /// principal. La fiche du salarie le porte pour la paie et les declarations du contrat (`calcul::fiche_de_l_engagement`).
     pub etablissement: Option<String>,
-    /// La cle de sa nature de contrat (`droit::natures`), toujours dite (regle 6).
-    pub nature: String,
+    /// Sa nature de contrat, toujours dite (regle 6).
+    pub nature: NatureDeContrat,
     pub quotite_contrat: Option<f64>,
     pub quotite_reference_saisie: Option<f64>,
     pub modalite_temps_travail_saisie: Option<String>,
@@ -172,7 +172,7 @@ pub struct Assemble {
     pub debut: Option<String>,
     pub fin: Option<String>,
     pub numero: Option<String>,
-    pub nature: Option<String>,
+    pub nature: Option<NatureDeContrat>,
     pub taux_cachet: Option<Chiffre>,
     pub jours: Option<Chiffre>,
     pub jours_contrat: Option<Chiffre>,
@@ -278,10 +278,10 @@ impl Engagement {
 
         // Un contrat permanent ne se deduit pas de ses dates.
         // Une nature se dit, elle ne se devine pas (regle 6).
-        let Some(nature) = v.nature.clone().filter(|n| !n.trim().is_empty()) else {
+        let Some(nature) = v.nature else {
             return Err(socle::echec::cle(format!("{}{}", qui, PAS_DE_NATURE), "nature"));
         };
-        let nat = natures::nature(&nature)?;
+        let nat = nature.proprietes()?;
         let mensuel = nat.mensuelle();
         let planning_brut = &v.planning;
         if mensuel {
@@ -551,9 +551,9 @@ impl Engagement {
 
     // ------------------------------------------------ le contrat et le mois
 
-    /// La nature de contrat, relue a chaque acces.
+    /// Les proprietes de sa nature de contrat.
     pub fn nat(&self) -> R<Arc<Nature>> {
-        natures::nature(&self.nature)
+        self.nature.proprietes()
     }
 
     pub fn debut_mois(&self) -> R<Jour> {
@@ -758,7 +758,7 @@ impl Engagement {
             statut_categoriel_rc: self.statut_categoriel_rc.clone(),
             // Ecrit seulement quand il est dit.
             etablissement: self.etablissement.clone(),
-            nature: self.nat()?.cle.clone(),
+            nature: self.nature,
             quotite_contrat: nombre_f(self.quotite_contrat)?,
             quotite_reference_saisie: nombre_f(self.quotite_reference_saisie)?,
             modalite_temps_travail_saisie: self.modalite_temps_travail_saisie.clone(),
@@ -947,7 +947,7 @@ pub(crate) fn engagements(
         // Seule une carte valide entre dans le calcul : sa nature dite, ses cases obligatoires remplies, aucune case que
         // sa nature n'a pas (`carte::CarteValide::depuis`). Ce qui depend de la nature se lit de sa variante.
         let valide = carte::CarteValide::depuis(carte, &qui)?;
-        let nat = droit::natures::nature(valide.nature()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
+        let nat = valide.nature().proprietes().map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         let termes = Termes::de(&valide, &defaut_taux);
         let tarifee;
         let carte = match if nat.mensuelle() { None } else { lignes_au_tarif(ctx, carte.lignes(), &mois_dit)? } {
@@ -1056,7 +1056,7 @@ pub(crate) fn engagements(
             // Le libelle que `resoudre` a donne a CE metier, feminin compris ; un `emploi` ecrit a la main dirait un autre
             // metier que lui.
             emploi_affichage: if ecrit(&carte.emploi).is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },
-            nature: Some(valide.nature().to_string()),
+            nature: Some(valide.nature()),
             quotite_contrat: termes.quotite_contrat,
             quotite_reference_saisie: termes.quotite_reference.filter(Chiffre::vrai),
             modalite_temps_travail_saisie: termes.modalite_temps_travail,

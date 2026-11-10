@@ -29,7 +29,8 @@ use crate::fiches::{maintenant, refus};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
-use engagement::carte::{Brouillon, Changements, NatureDeContrat};
+use droit::natures::NatureDeContrat;
+use engagement::carte::{Brouillon, Changements};
 use engagement::saisie::{Carte as SaisieCarte, VueDuMois};
 use engagement::stock::Identite;
 use engagement::viser::Cible;
@@ -247,15 +248,15 @@ struct Defauts {
 /// deja sa nature la garde. Changer de nature change la carte de variante (`engagement::carte::CarteValide`).
 #[derive(Debug, Serialize)]
 struct NouvelleCarte {
-    nature: &'static str,
-    natures: Vec<String>,
+    nature: NatureDeContrat,
+    natures: Vec<NatureDeContrat>,
     nature_au_choix: bool,
     /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
     /// propose ou en paie un.
     aide_vide: &'static str,
     /// Les rubriques qu'une carte neuve propose avant de nommer son salarie, nature par nature (`natures`) : celles de sa
     /// nature (`engagement::proposees`).
-    propose: std::collections::BTreeMap<String, engagement::proposees::Proposees>,
+    propose: std::collections::BTreeMap<NatureDeContrat, engagement::proposees::Proposees>,
 }
 
 /// LE MOIS TEL QUE L'ECRAN L'OUVRE (`saisie`).
@@ -307,7 +308,7 @@ struct EnCours {
 /// cachets a dater.
 #[derive(Debug, Serialize)]
 struct Reprise {
-    nature: &'static str,
+    nature: NatureDeContrat,
     salarie: IdSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
     spectacle: Option<String>,
@@ -572,14 +573,14 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     };
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
-    let neuves: Vec<String> = p.natures_neuves()?.iter().map(|n| n.cle.clone()).collect();
+    let mut neuves = Vec::new();
     let mut propose = std::collections::BTreeMap::new();
-    for n in &neuves {
-        let mensuelle = droit::natures::nature(n)?.mensuelle();
-        propose.insert(n.clone(), engagement::proposees::proposees(ctx, Some(mensuelle), None, None, &mois.premier_jour())?);
+    for n in p.natures_neuves()?.iter() {
+        neuves.push(n.cle);
+        propose.insert(n.cle, engagement::proposees::proposees(ctx, Some(n.mensuelle()), None, None, &mois.premier_jour())?);
     }
     let nouvelle_carte = NouvelleCarte {
-        nature: engagement::carte::CDDU,
+        nature: NatureDeContrat::CdduSpectacle,
         nature_au_choix: neuves.len() > 1,
         natures: neuves,
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
@@ -677,7 +678,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: &str) -> R<Vec<EnCours>> {
         };
         let engagement = Reprise {
             // Un contrat qui continue ici est un contrat d'usage (`importe::Importe::continue_apres` : jamais un permanent).
-            nature: engagement::carte::CDDU,
+            nature: NatureDeContrat::CdduSpectacle,
             salarie: fiche.id.clone(),
             spectacle: spectacle.clone(),
             debut: debut.clone(),
@@ -1470,7 +1471,7 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
         v.push("repartition_horaire");
     }
     v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, &nat.cle)?.is_empty() {
+    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
         v.push("modele_contrat");
     }
     Ok(v)
@@ -1486,7 +1487,7 @@ fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: &str
     if engagement::stock::commence_avant_le_logiciel(&ctx.racine, &debut, mois)? {
         return numero_a_dire(ctx, cle, &debut);
     }
-    if e.nature.as_deref().is_none_or(|n| n.trim().is_empty()) {
+    if e.nature.is_none() {
         return Ok(Vec::new());
     }
     let nat = e.nature_lue()?;
@@ -1498,7 +1499,7 @@ fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: &str
         v.push("personne_remplacee");
     }
     v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, &nat.cle)?.is_empty() {
+    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
         v.push("modele_contrat");
     }
     Ok(v)
@@ -1522,7 +1523,7 @@ pub(crate) struct SpectacleVu {
 /// La nature du contrat : sa cle, son libelle, et s'il se paie au mois.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct NatureVue {
-    cle: String,
+    cle: NatureDeContrat,
     libelle: String,
     mensuelle: bool,
 }
@@ -1739,7 +1740,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         numero_contrat: e.numero.clone(),
         salarie,
         spectacle,
-        nature: NatureVue { cle: nat.cle.clone(), libelle: nat.libelle.clone(), mensuelle: nat.mensuelle() },
+        nature: NatureVue { cle: nat.cle, libelle: nat.libelle.clone(), mensuelle: nat.mensuelle() },
         debut: e.debut,
         fin: e.fin,
         contrat: ContratVu {
@@ -1752,7 +1753,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             jusqu_a: mois_du_contrat.last().cloned().ok_or_else(trop_courte)?,
             periode: Periode { debut: e.debut_periode()?, fin: e.fin_periode()? },
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
-            modeles: crate::modeles_contrat::au_choix(ctx, &nat.cle)?,
+            modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
             rupture: rupture_de(e, &nat)?,
         },
         dates_travail: e.dates_travail.clone(),
@@ -2113,7 +2114,7 @@ fn dire_l_entree(ctx: &Contexte, mois: &str, brut: &SaisieCarte, v: &mut VuePaie
         )
     };
     v.informations.insert(0, phrase);
-    let au_mois = droit::natures::nature(&v.nature.cle)?.au_mois();
+    let au_mois = v.nature.cle.proprietes()?.au_mois();
     if au_mois.is_some_and(|au| !declarations::demarrage::conges_repris(ctx, &au, &v.salarie.cle)) {
         let depuis = socle::date::Jour::lire(&format!("{}-01", mois))?;
         v.a_dire = Some([declarations::demarrage::conges_a_dire(&v.salarie.cle, &qui, depuis)]);
@@ -2152,7 +2153,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: e.nature.as_deref().filter(|n| !n.trim().is_empty()).map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, &mois)?, modeles: e.nature.map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

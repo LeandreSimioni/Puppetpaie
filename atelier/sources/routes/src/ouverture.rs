@@ -1345,7 +1345,7 @@ fn faits_de_rupture(n: &Nature, m: &str) -> R<Vec<&'static str>> {
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
 struct NatureDeLaPage {
-    cle: String,
+    cle: droit::natures::NatureDeContrat,
     libelle: String,
     aide: String,
     /// Les cases de sa carte, obligatoires ou facultatives, et ce que chaque motif de recours porte en plus, tirees du
@@ -1392,7 +1392,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             .find(|d| d.nature == n.cle)
             .ok_or_else(|| erreur(Classe::Manque, format!("Le logiciel ne sait pas saisir un {}.", n.libelle)))?;
         sortie.push(NatureDeLaPage {
-            cle: n.cle.clone(),
+            cle: n.cle,
             libelle: n.libelle.clone(),
             aide: n.aide.clone(),
             carte,

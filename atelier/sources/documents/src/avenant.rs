@@ -441,7 +441,7 @@ pub fn ent_du_mois(ctx: &Contexte, mois: &str) -> R<droit::contexte::EntrepriseD
 /// contrat ecrit (`contrat_ecrit::poser_les_mentions`).
 pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &FormeDePaie<A>, numero: Option<&str>) -> R<Valeurs> {
     let eng = &paie.engagement;
-    let nat = droit::natures::nature(&eng.nature)?;
+    let nat = eng.nature.proprietes()?;
     let mut e = Eng::de(eng);
     if let Some(n) = numero {
         e.numero = Some(n.to_string());
@@ -500,6 +500,7 @@ fn terme_nomme(terme: &str) -> (&'static str, &'static str) {
 /// motif ou un spectacle par son nom.
 fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v: &Valeur) -> R<String> {
     let texte = match v {
+        Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
         Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).en_texte(),
         Valeur::Oui(true) => "True".into(),
@@ -510,7 +511,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
             Valeur::Texte(s) => s.trim().replace(',', ".").parse().map_err(|_| refus(socle::num::illisible(s))),
-            Valeur::Oui(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme, texte)),
+            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme, texte)),
         }
     };
     Ok(match terme {
@@ -521,10 +522,10 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
                 Valeur::Oui(b) => *b,
                 Valeur::Nombre(n) => n.en_f64() != 0.0,
                 Valeur::Texte(s) => !s.is_empty(),
+                Valeur::Nature(_) => true,
             };
             if cadre { "cadre".into() } else { "non cadre".into() }
         }
-        "nature" => droit::natures::nature(&texte)?.libelle.clone(),
         "motif_recours" => nat.libelle_motif_recours(&texte).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
         "spectacle" => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
         "emploi" => format!("« {} »", texte),

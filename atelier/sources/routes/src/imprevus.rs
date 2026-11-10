@@ -1522,10 +1522,10 @@ fn contrat_de(ctx: &Contexte, imp: &impl Suspend) -> R<Option<ContratAuJour>> {
 fn nature_du_contrat(ctx: &Contexte, a: &ArretSaisi) -> R<Option<std::sync::Arc<droit::natures::Nature>>> {
     let Some(c) = contrat_de(ctx, a)? else { return Ok(None) };
     // Une nature se dit, elle ne se devine pas (regle 6) : celle d'un contrat repris se dit apres l'import (`import::nature`).
-    let Some(cle) = c.nature.as_deref() else {
+    let Some(n) = c.nature else {
         return Err(refus(format!("{} : la nature de son contrat du {} n'est pas encore dite.", c.nom, c.debut)));
     };
-    Ok(Some(droit::natures::nature(cle).map_err(|e| e.reclasser(Classe::Refuse))?))
+    Ok(Some(n.proprietes().map_err(|e| e.reclasser(Classe::Refuse))?))
 }
 
 /// L'arret ouvre-t-il le maintien de salaire, par la loi ou la convention (`engagement::maintien::droits`) ? Un arret dont
@@ -2315,12 +2315,12 @@ pub(crate) fn resume_d_arret_complet(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi,
 
 // ----------------------------------------------------------- fins de contrat
 
-/// La nature d'un engagement : dite (regle 6), et connue ; sinon `Manque`.
+/// La nature d'un engagement : dite (regle 6) ; sinon `Manque`.
 fn nature_de(e: &Carte) -> R<std::sync::Arc<droit::natures::Nature>> {
-    let Some(texte) = e.nature.as_deref() else {
+    let Some(n) = e.nature else {
         return Err(socle::fichiers::absent("nature").reclasser(Classe::Manque));
     };
-    droit::natures::nature(texte).map_err(|m| m.reclasser(Classe::Manque))
+    n.proprietes().map_err(|m| m.reclasser(Classe::Manque))
 }
 
 /// CE QUI MANQUE A UN SIGNALEMENT, tel que l'ecran le dit : `champ` (la donnee de l'engagement, `data-fait` de sa carte),
@@ -2478,7 +2478,9 @@ pub(crate) struct FinASignaler {
     pub en_retard: bool,
     pub numero: Option<String>,
     pub fin: Jour,
-    nature: String,
+    /// Le libelle de sa nature de contrat.
+    #[serde(rename = "nature")]
+    libelle_nature: String,
     motif_rupture: Option<String>,
     preavis: Option<Preavis>,
     pub a_saisir: Vec<Manque>,
@@ -2537,7 +2539,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             en_retard,
             numero: e.numero.clone(),
             fin,
-            nature: nat.libelle.clone(),
+            libelle_nature: nat.libelle.clone(),
             motif_rupture: e.motif_rupture.clone(),
             preavis: e.preavis.clone(),
             a_saisir,
@@ -2560,7 +2562,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
     for f in &mut fins {
         let fin = f.fin.jj_mm_aaaa();
         let ailleurs = if f.mois != c.mois { format!(" ({})", Mois::en_clair(&f.mois.to_string())) } else { String::new() };
-        f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(f.salarie.as_str()), f.nature, fin, ailleurs));
+        f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(f.salarie.as_str()), f.libelle_nature, fin, ailleurs));
         f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(&f.numero), fin));
     }
     Ok(ReponseFins { phrase: format!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
@@ -2624,7 +2626,7 @@ fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
             // qu'un arret ou une suspension se pose. Un contrat dont la nature n'est pas encore dite n'est pas tenu pour
             // paye au mois : il ne couvre que ses bornes. Le mois le plus recent qui le saisit fait foi (une fin ecrite
             // plus tard l'emporte) : il est retenu, couvrant ou non, avant les mois plus anciens.
-            let mensuel = e.nature.as_deref().map(droit::natures::nature).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|n| n.mensuelle());
+            let mensuel = e.nature.map(droit::natures::NatureDeContrat::proprietes).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|n| n.mensuelle());
             if debut.is_empty() || (fin.is_none() && !mensuel) {
                 continue;
             }
@@ -2645,7 +2647,7 @@ fn contrats_au(ctx: &Contexte, cle: &str, jour: &str) -> R<Vec<ContratAuJour>> {
                 // Paye au mois (`Nature::mensuelle`) : son mois de paie se tire du moteur, et un arret y appelle le maintien
                 // de salaire (L1226-1 : pas pour un intermittent).
                 mensuel,
-                nature: e.nature.clone(),
+                nature: e.nature,
                 dit: None,
             });
         }

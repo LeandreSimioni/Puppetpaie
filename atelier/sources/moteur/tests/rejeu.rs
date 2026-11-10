@@ -580,7 +580,7 @@ fn aucune_piece_fermee_ne_se_montre(racine: &std::path::Path, jour: &str) -> (Va
         for e in m["engagements"].as_array().unwrap().iter().filter(|e| e["non_actif"].is_null()) {
             let s = &e["saisie"];
             let natures = std::iter::once(&s["carte"]["nature"]).chain(s["avenants"].as_array().into_iter().flatten().map(|a| &a["termes"]["nature"]));
-            if natures.filter_map(Value::as_str).any(|n| droit::natures::nature(n).unwrap().mensuelle()) {
+            if natures.filter(|n| !n.is_null()).any(|n| serde_json::from_value::<droit::natures::NatureDeContrat>(n.clone()).unwrap().proprietes().unwrap().mensuelle()) {
                 au_mois.insert(s["carte"]["salarie"].as_str().unwrap().to_string());
             }
         }

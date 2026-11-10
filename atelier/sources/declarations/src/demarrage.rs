@@ -170,10 +170,10 @@ fn spectacles_declares(ctx: &Contexte) -> R<Vec<droit::contexte::IdSpectacle>> {
         if o.est_non_actif() || o.importe_seul() {
             continue;
         }
-        let nature = o.carte().nature.as_deref();
+        let nature = o.carte().nature;
         let Some(sp) = o.carte().spectacle.as_deref().filter(|s| !s.trim().is_empty()) else { continue };
         let cle = ctx.spectacle(sp)?.cle;
-        let declare = nature.map(droit::natures::nature).transpose()?.is_some_and(|n| n.ecrit("S21.G00.40.050"));
+        let declare = nature.map(droit::natures::NatureDeContrat::proprietes).transpose()?.is_some_and(|n| n.ecrit("S21.G00.40.050"));
         if declare && !out.contains(&cle) {
             out.push(cle);
         }
@@ -466,8 +466,8 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
         }
         let e = o.carte();
         let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
-        let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature.as_deref()) else { continue };
-        let Some(au) = droit::natures::nature(nature)?.au_mois().filter(|_| !vus.contains(&salarie)) else {
+        let (Some(debut), Some(nature)) = (e.debut.as_deref().filter(|d| !d.is_empty()), e.nature) else { continue };
+        let Some(au) = nature.proprietes()?.au_mois().filter(|_| !vus.contains(&salarie)) else {
             continue;
         };
         vus.push(salarie.clone());

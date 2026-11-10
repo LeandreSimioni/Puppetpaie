@@ -3,7 +3,6 @@
 //! ce que le droit en rend. `PUPPETPAIE_REECRIRE_ORACLES=1` les reecrit.
 
 use crate::outils::typee::{cas_de, jouer, Rendu};
-use droit::natures::nature;
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
@@ -74,7 +73,7 @@ fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
 }
 
 // Les entrees de chaque fonction : ses arguments, dans l'ordre.
-type Nature = String;
+type Nature = droit::natures::NatureDeContrat;
 type Motif = Option<String>;
 
 fn arrondir_jours(a: &(Decimal,)) -> Decimal {
@@ -103,7 +102,7 @@ fn les_conges() {
 }
 
 fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
-    p::precarite_due(&nature(&a.0).unwrap(), a.1.as_deref()).into()
+    p::precarite_due(&a.0.proprietes().unwrap(), a.1.as_deref()).into()
 }
 fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
     p::indemnite_precarite(a.0).into()
@@ -153,7 +152,7 @@ fn la_fin_du_contrat() {
 }
 
 fn droit_au_maintien(a: &(Option<Nature>, Decimal)) -> Rendu<Option<String>> {
-    let n = a.0.as_deref().map(|n| nature(n).unwrap());
+    let n = a.0.map(|n| n.proprietes().unwrap());
     p::droit_au_maintien(n.as_deref(), a.1).into()
 }
 fn jours_de_carence(a: &(bool, bool)) -> Rendu<i64> {

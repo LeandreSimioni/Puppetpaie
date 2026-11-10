@@ -23,7 +23,7 @@ pub(crate) struct ContratAuJour {
     pub(crate) mois: String,
     pub(crate) spectacle: Option<String>,
     pub(crate) mensuel: bool,
-    pub(crate) nature: Option<String>,
+    pub(crate) nature: Option<droit::natures::NatureDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) dit: Option<String>,
 }

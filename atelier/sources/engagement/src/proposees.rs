@@ -53,8 +53,8 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, 
 /// celui de la fiche de son salarie.
 pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
     let dit = |x: &Option<String>| x.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-    let mensuelle = match dit(&carte.nature) {
-        Some(n) => Some(droit::natures::nature(&n)?.mensuelle()),
+    let mensuelle = match carte.nature {
+        Some(n) => Some(n.proprietes()?.mensuelle()),
         None => None,
     };
     let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c.as_str()));

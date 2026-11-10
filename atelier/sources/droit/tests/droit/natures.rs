@@ -2,14 +2,14 @@
 //! `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit la reference.
 
 use crate::outils::typee::{reference, verifier, Ligne};
-use droit::natures::{contrat_court, nature, Jour};
+use droit::natures::{contrat_court, Jour, NatureDeContrat};
 use serde::{Deserialize, Serialize};
 
 /// Un contrat et le jour ou on le lit : est-il court ?
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CasCourt {
-    nature: String,
+    nature: NatureDeContrat,
     debut: Jour,
     fin: Option<Jour>,
     le: Jour,
@@ -22,7 +22,7 @@ fn contrat_court_des_natures() {
     let obtenu = lignes
         .into_iter()
         .map(|l| {
-            let n = nature(&l.cas.nature).unwrap();
+            let n = l.cas.nature.proprietes().unwrap();
             let court = contrat_court(&n, l.cas.debut, l.cas.fin, l.cas.le);
             Ligne { cas: l.cas, attendu: court }
         })

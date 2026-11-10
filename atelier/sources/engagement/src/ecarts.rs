@@ -31,6 +31,7 @@
 use std::collections::BTreeMap;
 
 use droit::fiche::Lue as _;
+use droit::natures::NatureDeContrat;
 use std::path::Path;
 
 
@@ -104,7 +105,7 @@ pub struct Comparaison {
     pub mois: String,
     /// Le logiciel que le lecteur a reconnu au bulletin ; `None` : un autre.
     pub logiciel: Option<String>,
-    pub nature: String,
+    pub nature: NatureDeContrat,
     pub statut: Option<String>,
     /// Cadre (`true`) ou non cadre, quand le bulletin ou la fiche le dit.
     pub cadre: Option<bool>,
@@ -178,7 +179,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
                 empreinte,
                 mois: mois.clone(),
                 logiciel,
-                nature: nature.clone(),
+                nature,
                 statut: None,
                 cadre: None,
                 taux_atmp: None,
@@ -187,7 +188,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
                 non_rattachees: Vec::new(),
             };
             let jours_comptes = p.jours.or(du_contrat);
-            c.ecarts = comparer_une(racine, brut, mois, p, &nature, jours_comptes, &mut c);
+            c.ecarts = comparer_une(racine, brut, mois, p, nature, jours_comptes, &mut c);
             Some(c)
         })
         .collect()
@@ -198,7 +199,7 @@ fn comparer_une(
     brut: &crate::saisie::Carte,
     mois: &str,
     p: &PaieVersee,
-    nature: &str,
+    nature: NatureDeContrat,
     jours_comptes: Option<i64>,
     c: &mut Comparaison,
 ) -> R<Vec<Ecart>> {
@@ -260,7 +261,7 @@ fn comparer_une(
     //   et l'engagement court se juge sur le debut et la fin du contrat ; le minimum conventionnel et le bareme se
     //   lisent au premier jour, qui est le debut de la periode. Le debut et les jours qui le suivent en tiennent lieu.
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
-    let mensuelle = droit::natures::nature(nature)?.mensuelle();
+    let mensuelle = nature.proprietes()?.mensuelle();
     if jours.is_empty() && !mensuelle {
         if let (Some(d), Some(f)) = (p.debut, p.fin) {
             let periode = f.moins(&d) + 1;
@@ -328,7 +329,7 @@ fn comparer_une(
     let e = crate::saisie::Carte {
         salarie: Some(salarie.clone()),
         spectacle,
-        nature: Some(nature.to_string()),
+        nature: Some(nature),
         debut: p.debut.map(|j| j.iso()),
         fin: p.fin.map(|j| j.iso()),
         emploi: imprime(|i| &i.emploi),

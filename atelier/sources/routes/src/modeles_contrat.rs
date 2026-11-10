@@ -28,7 +28,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
 use droit::contexte::Contexte;
-use droit::natures::Nature;
+use droit::natures::{Nature, NatureDeContrat};
 use engagement::calcul::Paie;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -167,7 +167,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 #[serde(deny_unknown_fields)]
 struct ModelesDeContrat {
     speciaux: Vec<Special>,
-    defauts: BTreeMap<String, String>,
+    defauts: BTreeMap<NatureDeContrat, String>,
     supprimes: Vec<String>,
 }
 
@@ -178,7 +178,7 @@ struct ModelesDeContrat {
 struct Special {
     id: String,
     nom: String,
-    nature: String,
+    nature: NatureDeContrat,
     contrat: Texte,
     avenant: Texte,
 }
@@ -251,10 +251,6 @@ fn ecrire(ctx: &Contexte, m: &ModelesDeContrat) -> R<()> {
 
 fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
-}
-
-fn nature_de(cle: &str) -> R<std::sync::Arc<Nature>> {
-    droit::natures::nature(cle)
 }
 
 /// Le texte livre d'une partie du modele de base de cette nature.
@@ -343,7 +339,7 @@ pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
         None => m.defauts.get(&nat.cle).map(|id| special(&m, id)).transpose()?,
     };
     match choisi {
-        Some(s) if s.nature != nat.cle => Err(refus(format!("{} est un modèle de {}, pas de {} : en choisir un autre. Rien n'est écrit.", s.nom_dit(), nature_de(&s.nature)?.nom_du_contrat(), nat.nom_du_contrat()))),
+        Some(s) if s.nature != nat.cle => Err(refus(format!("{} est un modèle de {}, pas de {} : en choisir un autre. Rien n'est écrit.", s.nom_dit(), s.nature.proprietes()?.nom_du_contrat(), nat.nom_du_contrat()))),
         Some(s) => modele_lu(s.nom_dit(), false, &s.contrat.texte, &s.avenant.texte),
         None => modele_lu(nom_de_base(&nat), true, &texte_de_base(&nat, Partie::Contrat)?, &texte_de_base(&nat, Partie::Avenant)?),
     }
@@ -475,7 +471,7 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
 fn sur_les_paragraphes(ctx: &Contexte, id: &str, partie: Partie, faire: impl FnOnce(&mut Decoupe) -> R<String>) -> R<Modeles> {
     let mut m = lus(ctx)?;
     let i = m.speciaux.iter().position(|s| s.id == id).ok_or_else(|| aucun(id))?;
-    let nat = nature_de(&m.speciaux[i].nature)?;
+    let nat = m.speciaux[i].nature.proprietes()?;
     let avant = m.speciaux[i].partie(partie).texte.clone();
     let mut d = Decoupe::de(&avant)?;
     let fait = faire(&mut d)?;
@@ -589,7 +585,7 @@ fn supprimer_paragraphe(ctx: &Contexte, c: ChargeParagraphe) -> R<Modeles> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
-    nature: String,
+    nature: NatureDeContrat,
     id: Option<String>,
     partie: Partie,
 }
@@ -597,14 +593,14 @@ struct ChargeLire {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDefaut {
-    nature: String,
+    nature: NatureDeContrat,
     id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCopier {
-    nature: String,
+    nature: NatureDeContrat,
     nom: String,
 }
 
@@ -633,7 +629,7 @@ struct EngagementVise {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeApercu {
-    nature: String,
+    nature: NatureDeContrat,
     id: Option<String>,
     partie: Partie,
     engagement: Option<EngagementVise>,
@@ -656,7 +652,7 @@ struct ModeleDit {
 /// Une nature et ses modeles de contrat.
 #[derive(Debug, Serialize)]
 struct NatureDite {
-    nature: String,
+    nature: NatureDeContrat,
     libelle: String,
     nom: String,
     modeles: Vec<ModeleDit>,
@@ -698,7 +694,7 @@ struct EngagementAuChoix {
 #[derive(Debug, Serialize)]
 struct ModeleRendu {
     phrase: String,
-    nature: String,
+    nature: NatureDeContrat,
     id: Option<String>,
     partie: Partie,
     nom: String,
@@ -809,10 +805,10 @@ fn ce_qui_a_change(avant: &str, maintenant: &str) -> Vec<String> {
 
 /// LES ENGAGEMENTS QUE L'APERCU D'UN MODELE DE CETTE NATURE PEUT REMPLIR : ceux de la compagnie, valides, actifs, saisis
 /// dans le logiciel, de cette nature, le plus recent d'abord.
-fn engagements_de(ctx: &Contexte, nature: &str) -> R<Vec<EngagementAuChoix>> {
+fn engagements_de(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<EngagementAuChoix>> {
     let mut v: Vec<EngagementAuChoix> = Vec::new();
     for o in engagement::stock::objets(&ctx.racine)? {
-        if !o.est_valide() || o.est_importe() || o.est_non_actif() || o.carte().nature.as_deref() != Some(nature) {
+        if !o.est_valide() || o.est_importe() || o.est_non_actif() || o.carte().nature != Some(nature) {
             continue;
         }
         let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), Jour::du_texte(&engagement::debut_brut(&o.brut))) else { continue };
@@ -827,7 +823,7 @@ fn engagements_de(ctx: &Contexte, nature: &str) -> R<Vec<EngagementAuChoix>> {
 /// manque, les champs qu'un alinea insere ou pose en condition, ce qui a change dans sa base, les engagements de
 /// l'apercu.
 fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
-    let nat = nature_de(&c.nature)?;
+    let nat = c.nature.proprietes()?;
     let m = lus(ctx)?;
     let (nom, s) = designe(&m, &nat, c.id.as_deref())?;
     let texte = texte_de(&nat, s, c.partie)?;
@@ -856,7 +852,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     // La base n'est copiee de rien : rien ne se compare, `None`.
     let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
     let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
-    let engagements = engagements_de(ctx, &nat.cle)?;
+    let engagements = engagements_de(ctx, nat.cle)?;
     Ok(ModeleRendu {
         phrase,
         nature: nat.cle.clone(),
@@ -882,12 +878,12 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
 /// changer ; dans `sorties/apercus/`, rien d'autre ne s'ecrit, rien ne part. Un modele qui ne fait pas ce contrat se
 /// refuse comme au depart, et dit pourquoi.
 fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
-    let nat = nature_de(&c.nature)?;
+    let nat = c.nature.proprietes()?;
     let m = lus(ctx)?;
     let (nom, s) = designe(&m, &nat, c.id.as_deref())?;
     let vise = match c.engagement {
         Some(v) => v,
-        None => engagements_de(ctx, &nat.cle)?
+        None => engagements_de(ctx, nat.cle)?
             .into_iter()
             .next()
             .map(|e| e.engagement)
@@ -944,7 +940,7 @@ fn nom_libre(m: &ModelesDeContrat, sauf: Option<&str>, nom: &str) -> R<String> {
 /// COPIER LA BASE D'UNE NATURE EN UN MODELE SPECIAL : `{nature, nom}`, son contrat et son avenant ; chacun garde le texte
 /// de la base dont il part.
 fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
-    let nat = nature_de(&c.nature)?;
+    let nat = c.nature.proprietes()?;
     let mut m = lus(ctx)?;
     let nom = nom_libre(&m, None, &c.nom)?;
     let partie = |p| texte_de_base(&nat, p).map(|t| Texte { base: t.clone(), texte: t });
@@ -995,7 +991,7 @@ fn supprimer(ctx: &Contexte, c: ChargeId) -> R<Modeles> {
 
 /// CHOISIR LE MODELE PAR DEFAUT D'UNE NATURE : `{nature, id}` ; sans id, la base.
 fn par_defaut(ctx: &Contexte, c: ChargeDefaut) -> R<Modeles> {
-    let nat = nature_de(&c.nature)?;
+    let nat = c.nature.proprietes()?;
     let mut m = lus(ctx)?;
     let devant = match &c.id {
         Some(id) => {
@@ -1014,13 +1010,13 @@ fn par_defaut(ctx: &Contexte, c: ChargeDefaut) -> R<Modeles> {
 
 /// LES MODELES QU'UN ENGAGEMENT DE CETTE NATURE PEUT CHOISIR (sa case `modele_contrat`) : le defaut d'abord (sans id),
 /// puis chaque special ; vide quand la compagnie n'en a fait aucun.
-pub(crate) fn au_choix(ctx: &Contexte, nature: &str) -> R<Vec<ModeleAuChoix>> {
+pub(crate) fn au_choix(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<ModeleAuChoix>> {
     let m = lus(ctx)?;
     let siens: Vec<&Special> = m.speciaux.iter().filter(|s| s.nature == nature).collect();
     if siens.is_empty() {
         return Ok(Vec::new());
     }
-    let defaut = match m.defauts.get(nature).map(|id| special(&m, id)).transpose()? {
+    let defaut = match m.defauts.get(&nature).map(|id| special(&m, id)).transpose()? {
         Some(s) => format!("Le modèle par défaut (« {} »)", s.nom),
         None => "Le modèle par défaut (la base)".to_string(),
     };

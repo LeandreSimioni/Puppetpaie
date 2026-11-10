@@ -200,17 +200,23 @@ pub fn texte_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String
 }
 
 /// UN OBJET DONT L'ORDRE COMPTE (un catalogue montre dans l'ordre du fichier), lu en paires `(cle, valeur)` :
-/// `#[serde(deserialize_with = "socle::forme::en_ordre")]` sur un `Vec<(String, T)>`. Une cle repetee refuse.
-pub fn en_ordre<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> Result<Vec<(String, T)>, D::Error> {
-    struct Visiteur<T>(std::marker::PhantomData<T>);
-    impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for Visiteur<T> {
-        type Value = Vec<(String, T)>;
+/// `#[serde(deserialize_with = "socle::forme::en_ordre")]` sur un `Vec<(K, T)>` (`K` : un texte, ou un type qui se lit
+/// d'un texte). Une cle repetee refuse.
+pub fn en_ordre<'de, D, K, T>(d: D) -> Result<Vec<(K, T)>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: serde::Deserialize<'de> + PartialEq + std::fmt::Display,
+    T: serde::Deserialize<'de>,
+{
+    struct Visiteur<K, T>(std::marker::PhantomData<(K, T)>);
+    impl<'de, K: serde::Deserialize<'de> + PartialEq + std::fmt::Display, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for Visiteur<K, T> {
+        type Value = Vec<(K, T)>;
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("un objet")
         }
         fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
-            let mut out: Vec<(String, T)> = Vec::new();
-            while let Some((k, v)) = m.next_entry::<String, T>()? {
+            let mut out: Vec<(K, T)> = Vec::new();
+            while let Some((k, v)) = m.next_entry::<K, T>()? {
                 if out.iter().any(|(x, _)| *x == k) {
                     return Err(serde::de::Error::custom(format!("la clé {} est répétée", k)));
                 }

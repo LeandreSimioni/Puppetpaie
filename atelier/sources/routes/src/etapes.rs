@@ -1066,7 +1066,8 @@ pub(crate) struct Vue {
     salarie: Option<String>,
     nom: Option<String>,
     spectacle: Option<String>,
-    nature: Option<String>,
+    /// Le libelle de sa nature de contrat, quand elle est dite.
+    libelle_nature: Option<String>,
     numero: Option<NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
@@ -1163,7 +1164,7 @@ impl<'a> LigneDePage<'a> {
             salarie: v.salarie.as_deref(),
             nom: v.nom.as_deref(),
             spectacle: v.spectacle.as_deref(),
-            nature: v.nature.as_deref(),
+            nature: v.libelle_nature.as_deref(),
             numero: v.numero.as_deref(),
             debut: v.debut,
             fin: v.fin,
@@ -1596,7 +1597,7 @@ impl<'a> Moteur<'a> {
                 salarie: Some(cle.clone()),
                 nom: Some(super::nom_a_l_ecran(sal, &cle.to_string())),
                 spectacle,
-                nature: Some(nat.libelle.clone()),
+                libelle_nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
                 debut: Some(p.engagement.debut),
                 // Un CDI n'a pas de fin : rien, comme `Engagement::canon`.
@@ -1640,8 +1641,8 @@ impl<'a> Moteur<'a> {
             },
             None => None,
         };
-        let nature = match e.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-            Some(_) => Some(e.nature_lue()?.libelle.clone()),
+        let libelle_nature = match e.nature {
+            Some(n) => Some(n.proprietes()?.libelle.clone()),
             None => None,
         };
         let premier_mois = o.premier_mois() == mois;
@@ -1662,7 +1663,7 @@ impl<'a> Moteur<'a> {
             salarie: cle,
             nom,
             spectacle,
-            nature,
+            libelle_nature,
             numero,
             debut,
             fin,
@@ -2908,7 +2909,7 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
         socle::fichiers::repr(&fin),
         socle::fichiers::repr(&spectacle),
         ident.join(", "),
-        socle::fichiers::repr(&e.nature)
+        socle::fichiers::repr(e.nature.cle())
     );
     sha256_hex(brut.as_bytes())[..16].to_string()
 }

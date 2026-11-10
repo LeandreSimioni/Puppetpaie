@@ -253,16 +253,15 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     }
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
     // Le contrat d'un permanent : sa nature, payee au mois, est dite, ou reste a dire (`import::nature`).
-    let mensuelle = |n: &str| -> R<bool> { Ok(droit::natures::nature(n)?.mensuelle()) };
-    let mut permanents: HashSet<String> = HashSet::new();
+    let mut permanents: HashSet<droit::natures::NatureDeContrat> = HashSet::new();
     for c in &contrats {
-        if let Some(n) = c.contrat.nature.as_deref() {
-            if mensuelle(n)? {
-                permanents.insert(n.to_string());
+        if let Some(n) = c.contrat.nature {
+            if n.proprietes()?.mensuelle() {
+                permanents.insert(n);
             }
         }
     }
-    let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.as_deref().is_some_and(|n| permanents.contains(n));
+    let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.is_some_and(|n| permanents.contains(&n));
     let mut groupes: Vec<Groupe> = Vec::new();
     for c in contrats {
         groupes.push(Groupe { salarie: c.salarie.clone(), debut: plein(&c.debut), fin: plein(&c.fin), contrat: Some(c), paies: Vec::new() });

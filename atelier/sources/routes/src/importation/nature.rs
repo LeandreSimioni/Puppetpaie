@@ -143,7 +143,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
     let mut out = Vec::new();
     for (salarie, c) in par {
         let en_cours = c.en_cours;
-        let natures = natures.iter().map(|x| NatureProposee { cle: x.cle.clone(), libelle: x.libelle.clone(), demande: demande(x, en_cours) }).collect();
+        let natures = natures.iter().map(|x| NatureProposee { cle: x.cle, libelle: x.libelle.clone(), demande: demande(x, en_cours) }).collect();
         // Le mois de la derniere DSN qui l'a declare, tel que l'ecran le lit (« de novembre 2026 »).
         let mois_au = c.payes.map(|(_, au)| au.mois_civil());
         let au_dit: Option<String> = mois_au.map(|m| crate::regularisation::de_mois_en_clair(&m.to_string()));
@@ -209,7 +209,7 @@ pub(crate) struct ADire {
 /// Une nature de permanent qui peut se dire, et ce qu'elle demande d'un contrat qui court encore.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct NatureProposee {
-    pub(crate) cle: String,
+    pub(crate) cle: droit::natures::NatureDeContrat,
     pub(crate) libelle: String,
     pub(crate) demande: Vec<Demande>,
 }
@@ -223,7 +223,7 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeNature {
     pub(crate) salarie: String,
-    pub(crate) nature: String,
+    pub(crate) nature: droit::natures::NatureDeContrat,
     pub(crate) debut: Option<String>,
     pub(crate) fin: Option<String>,
     pub(crate) numero: Option<String>,
@@ -291,7 +291,7 @@ pub(crate) struct NatureDite {
 pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     let plein = |s: &str| Some(s.trim().to_string()).filter(|s| !s.is_empty());
     let salarie = plein(&charge.salarie).ok_or_else(|| refus("Le salarié manque : rien n'a été écrit."))?;
-    let nature = plein(&charge.nature).ok_or_else(|| refus("La nature du contrat manque : rien n'a été écrit."))?;
+    let nature = charge.nature;
     let permises = natures_permanentes()?;
     let Some(nat) = permises.iter().find(|n| n.cle == nature) else {
         let noms: Vec<&str> = permises.iter().map(|n| n.libelle.as_str()).collect();
@@ -364,10 +364,10 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     // La nature va sur l'engagement de chaque contrat a dire ; ce qui definit le contrat qui court encore, sur le sien.
     let ecrits = engagement::importe::completer(&ctx.racine, |e, pieces| {
         let a_dire = pieces.contrat.as_ref().is_some_and(|c| c.nature_a_dire);
-        if e.salarie.as_deref() != Some(salarie.as_str()) || !a_dire || e.nature.as_deref().is_some_and(|n| !n.is_empty()) {
+        if e.salarie.as_deref() != Some(salarie.as_str()) || !a_dire || e.nature.is_some() {
             return false;
         }
-        e.nature = Some(nature.to_string());
+        e.nature = Some(nature);
         if dernier.as_ref().is_some_and(|d| pieces.paies.contains_key(d)) {
             for k in engagement::saisie::Champ::TOUS.iter().copied().filter(|k| contrat.dit(*k)) {
                 if k != engagement::saisie::Champ::Numero || e.numero_dit().is_none() {
@@ -445,7 +445,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let Some(code) = c.and_then(|c| c.nature_dsn.clone()) else { continue };
         let Some(nat) = permises.iter().find(|n| n.code("S21.G00.40.007").as_deref() == Some(code.as_str())) else { continue };
         let en_cours = x.en_cours;
-        let mut charge = ChargeNature { salarie: salarie.clone(), nature: nat.cle.clone(), debut: None, fin: None, numero: None, salaire: None, quotite: None };
+        let mut charge = ChargeNature { salarie: salarie.clone(), nature: nat.cle, debut: None, fin: None, numero: None, salaire: None, quotite: None };
         let mut complet = true;
         for champ in demande(nat, en_cours) {
             let v = match champ {

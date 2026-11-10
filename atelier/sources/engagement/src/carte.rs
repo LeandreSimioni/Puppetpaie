@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
+use droit::natures::NatureDeContrat;
 use socle::forme::NombreLu;
 use socle::echec::{refus, R};
 
@@ -358,15 +359,13 @@ impl Recours {
     }
 }
 
-/// LA CARTE VALIDE : une variante par nature de contrat, la nature dite (`nature`).
+/// LA CARTE VALIDE : une variante par nature de contrat, du nom de la sienne (`NatureDeContrat`), la nature dite
+/// (`nature`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "nature", deny_unknown_fields)]
+#[serde(tag = "nature", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CarteValide {
-    #[serde(rename = "cddu_spectacle")]
     CdduSpectacle(Cddu),
-    #[serde(rename = "cdi")]
     Cdi(Cdi),
-    #[serde(rename = "cdd")]
     Cdd(Cdd),
 }
 
@@ -374,7 +373,7 @@ pub enum CarteValide {
 /// sa cle, chacune de ses cases (obligatoire ou facultative), et, pour un CDD, ses motifs et ce que chacun porte en plus.
 #[derive(Debug, Clone, Serialize)]
 pub struct NatureDecrite {
-    pub nature: &'static str,
+    pub nature: NatureDeContrat,
     pub cases: Vec<CaseDecrite>,
     pub motifs_recours: Vec<MotifDecrit>,
 }
@@ -394,16 +393,14 @@ pub struct MotifDecrit {
     pub cases: Vec<CaseDecrite>,
 }
 
-/// La nature d'un contrat d'usage du spectacle.
-pub const CDDU: &str = "cddu_spectacle";
-
-/// Les natures et leurs cases, dans l'ordre de `contrats-base.json`.
-pub const NATURES: [(&str, &[(Champ, Exige)]); 3] = [("cddu_spectacle", Cddu::CASES), ("cdi", Cdi::CASES), ("cdd", Cdd::CASES)];
-
 impl CarteValide {
-    /// Les cases de la nature `cle` ; `None` : ce n'est pas une nature.
-    pub fn cases_de(cle: &str) -> Option<&'static [(Champ, Exige)]> {
-        NATURES.iter().find(|(n, _)| *n == cle).map(|(_, c)| *c)
+    /// Les cases de la nature `n`.
+    pub fn cases_de(n: NatureDeContrat) -> &'static [(Champ, Exige)] {
+        match n {
+            NatureDeContrat::CdduSpectacle => Cddu::CASES,
+            NatureDeContrat::Cdi => Cdi::CASES,
+            NatureDeContrat::Cdd => Cdd::CASES,
+        }
     }
 
     /// Chaque nature et ses cases, tirees du type.
@@ -411,12 +408,12 @@ impl CarteValide {
         let decrire = |cases: &'static [(Champ, Exige)]| -> Vec<CaseDecrite> {
             cases.iter().map(|(c, e)| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: *e }).collect()
         };
-        NATURES
-            .iter()
-            .map(|(n, cases)| NatureDecrite {
+        NatureDeContrat::TOUTES
+            .into_iter()
+            .map(|n| NatureDecrite {
                 nature: n,
-                cases: decrire(cases),
-                motifs_recours: if *n == "cdd" {
+                cases: decrire(CarteValide::cases_de(n)),
+                motifs_recours: if n == NatureDeContrat::Cdd {
                     Recours::TOUS
                         .iter()
                         .map(|(code, remplace)| MotifDecrit {
@@ -439,21 +436,18 @@ impl CarteValide {
     /// Le refus nomme chaque case a remplir (`A_REMPLIR`), ou chaque case a retirer ; `qui` : le salarie qu'il nomme. Ce
     /// que la vue deduit (`Groupe::Deduit`) et ce qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases.
     pub fn depuis(c: &Carte, qui: &str) -> R<CarteValide> {
-        let Some(nature) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
+        let Some(nature) = c.nature else {
             return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
         };
-        let Some(cases) = CarteValide::cases_de(nature) else {
-            let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-            return Err(socle::refus!("{} : « {} » n'est pas une nature de contrat : {}.", qui, nature, cles.join(", ")));
-        };
-        let nat = droit::natures::nature(nature)?;
+        let cases = CarteValide::cases_de(nature);
+        let nat = nature.proprietes()?;
         let libelle_nature = nat.libelle.clone();
         // Un motif que la nature n'offre pas se refuse en disant ceux qu'elle offre (`contrats-base.json`).
         if let Some(phrase) = c.motif_recours.as_deref().and_then(|m| nat.motif_recours_refuse(m, qui)) {
             return Err(refus(phrase));
         }
         // Ce que porte un motif de recours est une case du CDD (son motif dit ensuite s'il la porte).
-        let du_motif: &[Champ] = if nature == "cdd" { Recours::CASES } else { &[] };
+        let du_motif: &[Champ] = if nature == NatureDeContrat::Cdd { Recours::CASES } else { &[] };
         let a_elle = |x: Champ| x == Champ::Nature || du_motif.contains(&x) || cases.iter().any(|(k, _)| *k == x);
         let de_trop: Vec<&str> = Champ::TOUS
             .iter()
@@ -477,9 +471,9 @@ impl CarteValide {
         }
         let manquante = || socle::refus!("{}{}({})", qui, A_REMPLIR, libelle_nature);
         Ok(match nature {
-            "cddu_spectacle" => CarteValide::CdduSpectacle(Cddu::tiree(c)?.ok_or_else(manquante)?),
-            "cdi" => CarteValide::Cdi(Cdi::tiree(c)?.ok_or_else(manquante)?),
-            _ => {
+            NatureDeContrat::CdduSpectacle => CarteValide::CdduSpectacle(Cddu::tiree(c)?.ok_or_else(manquante)?),
+            NatureDeContrat::Cdi => CarteValide::Cdi(Cdi::tiree(c)?.ok_or_else(manquante)?),
+            NatureDeContrat::Cdd => {
                 let v = Cdd::tiree(c)?.ok_or_else(manquante)?;
                 if c.personne_remplacee.is_some() && !v.motif_recours.remplace() {
                     return Err(socle::refus!(
@@ -494,34 +488,12 @@ impl CarteValide {
         })
     }
 
-    /// Sa nature, telle que `contrats-base.json` la nomme.
-    pub fn nature(&self) -> &'static str {
+    /// Sa nature.
+    pub fn nature(&self) -> NatureDeContrat {
         match self {
-            CarteValide::CdduSpectacle(_) => "cddu_spectacle",
-            CarteValide::Cdi(_) => "cdi",
-            CarteValide::Cdd(_) => "cdd",
-        }
-    }
-}
-
-/// UNE NATURE DE CONTRAT, telle que `contrats-base.json` la nomme : celle d'un brouillon, des sa naissance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NatureDeContrat {
-    #[serde(rename = "cddu_spectacle")]
-    CdduSpectacle,
-    #[serde(rename = "cdi")]
-    Cdi,
-    #[serde(rename = "cdd")]
-    Cdd,
-}
-
-impl NatureDeContrat {
-    /// Sa cle.
-    pub fn cle(self) -> &'static str {
-        match self {
-            NatureDeContrat::CdduSpectacle => "cddu_spectacle",
-            NatureDeContrat::Cdi => "cdi",
-            NatureDeContrat::Cdd => "cdd",
+            CarteValide::CdduSpectacle(_) => NatureDeContrat::CdduSpectacle,
+            CarteValide::Cdi(_) => NatureDeContrat::Cdi,
+            CarteValide::Cdd(_) => NatureDeContrat::Cdd,
         }
     }
 }
@@ -529,15 +501,13 @@ impl NatureDeContrat {
 /// LE BROUILLON D'UNE CARTE : ce que la page enregistre tant que l'engagement n'est pas valide, peut-etre incomplet. Il
 /// nait avec sa nature (une carte neuve s'ouvre dans celle que dit la route saisie du mois, `nouvelle_carte`) et n'existe jamais
 /// sans elle ; chacune des cases de sa nature y est, remplie ou `null`. Il change d'une case a la fois (`Changement`) ;
-/// changer de nature le fait changer de variante. Valider, c'est le lire en carte valide (`CarteValide::depuis`).
+/// changer de nature le fait changer de variante. Valider, c'est le lire en carte valide (`CarteValide::depuis`). Comme
+/// la carte valide, une variante par nature, du nom de la sienne.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "nature", deny_unknown_fields)]
+#[serde(tag = "nature", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Brouillon {
-    #[serde(rename = "cddu_spectacle")]
     CdduSpectacle(BrouillonCddu),
-    #[serde(rename = "cdi")]
     Cdi(BrouillonCdi),
-    #[serde(rename = "cdd")]
     Cdd(BrouillonCdd),
 }
 
@@ -573,17 +543,8 @@ impl Brouillon {
     /// dite, et aucune case que sa nature n'a pas (le refus les nomme). Ce que la vue deduit (`Groupe::Deduit`) et ce
     /// qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases. `qui` : le salarie que le refus nomme.
     pub fn de_la_carte(c: &Carte, qui: &str) -> R<Brouillon> {
-        let Some(cle) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
+        let Some(n) = c.nature else {
             return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
-        };
-        let n = match cle {
-            "cddu_spectacle" => NatureDeContrat::CdduSpectacle,
-            "cdi" => NatureDeContrat::Cdi,
-            "cdd" => NatureDeContrat::Cdd,
-            autre => {
-                let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-                return Err(socle::refus!("{} : « {} » n'est pas une nature de contrat : {}.", qui, autre, cles.join(", ")));
-            }
         };
         let cases = Brouillon::cases(n);
         let de_trop: Vec<&str> = Champ::TOUS
@@ -598,7 +559,7 @@ impl Brouillon {
                 qui,
                 guillemets(&de_trop),
                 if de_trop.len() > 1 { "ne sont" } else { "n'est" },
-                droit::natures::nature(cle)?.libelle
+                n.proprietes()?.libelle
             ));
         }
         Ok(match n {
@@ -610,7 +571,7 @@ impl Brouillon {
 
     /// La carte qu'il ecrit : sa nature et ses cases remplies.
     pub fn en_carte(&self) -> Carte {
-        let mut c = Carte { nature: Some(self.nature().cle().to_string()), ..Carte::default() };
+        let mut c = Carte { nature: Some(self.nature()), ..Carte::default() };
         match self {
             Brouillon::CdduSpectacle(b) => b.sur_la_carte(&mut c),
             Brouillon::Cdi(b) => b.sur_la_carte(&mut c),
@@ -626,7 +587,7 @@ impl Brouillon {
     pub fn changer(&mut self, ch: Changement, qui: &str) -> R<()> {
         let mut c = self.en_carte();
         if let Changement::Nature(n) = ch {
-            let mut neuve = Carte { nature: Some(n.cle().to_string()), ..Carte::default() };
+            let mut neuve = Carte { nature: Some(n), ..Carte::default() };
             for x in Brouillon::cases(n) {
                 neuve.prendre(&c, *x);
             }
@@ -635,11 +596,11 @@ impl Brouillon {
         }
         let x = ch.champ();
         if !Brouillon::cases(self.nature()).contains(&x) {
-            let nat = droit::natures::nature(self.nature().cle())?;
+            let nat = self.nature().proprietes()?;
             return Err(socle::refus!("{} : {} n'est pas une case d'un {}. Rien n'est écrit.", qui, guillemets(&[libelle(x)]), nat.libelle));
         }
         if let Changement::MotifRecours(Some(m)) = &ch {
-            let nat = droit::natures::nature(self.nature().cle())?;
+            let nat = self.nature().proprietes()?;
             if let Some(phrase) = nat.motif_recours_refuse(m, qui) {
                 return Err(refus(phrase));
             }
@@ -708,7 +669,7 @@ macro_rules! changements {
             /// Pose sur la carte `c` la valeur qu'il dit.
             fn poser(self, c: &mut Carte) {
                 match self {
-                    Changement::Nature(n) => c.nature = Some(n.cle().to_string()),
+                    Changement::Nature(n) => c.nature = Some(n),
                     Changement::Salarie(x) => c.salarie = x,
                     Changement::Spectacle(x) => c.spectacle = x,
                     Changement::Lignes(x) => c.lignes = x,

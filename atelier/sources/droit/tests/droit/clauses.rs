@@ -111,7 +111,7 @@ pub(crate) fn dit_ou_vide(t: &str) -> Option<&str> {
 
 pub(crate) fn profil_lu(idcc: &str, fiche: &str, eng: Option<&Eng>) -> R<Profil> {
     // Le profil d'un salarie au mois, comme le solde de tout compte le lit : sa fiche dit sa categorie.
-    let au_mois = droit::natures::nature("cdi")?.au_mois();
+    let au_mois = droit::natures::NatureDeContrat::Cdi.proprietes()?.au_mois();
     c::profil(dit_ou_vide(idcc), &champs(fiche)?, au_mois.as_ref(), &dit(eng)?)
 }
 

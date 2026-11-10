@@ -652,7 +652,7 @@ fn entier_de(m: &crate::fiche::Montant) -> R<i64> {
 
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
 pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> R<Pile> {
-    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
+    let Some(au_mois) = nat.and_then(|n| n.au_mois()) else {
         return Ok(bar);
     };
     let au_mois = &au_mois;
@@ -806,7 +806,7 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> R<Pile> {
 
 /// La prevoyance d'un permanent : la CONVENTION la fixe, pas le bareme.
 pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> R<Pile> {
-    let Some(au_mois) = nat.and_then(Nature::au_mois) else {
+    let Some(au_mois) = nat.and_then(|n| n.au_mois()) else {
         return Ok(bar);
     };
     let cot = prevoyance::cotisation(sal, &au_mois, est_cadre(sal), fin, ent)?;

@@ -13,14 +13,14 @@
 use droit::caisse_conges::{affilie, douze_mois_ou_plus};
 use droit::contexte::IdSalarie;
 use droit::fiche::{FicheSalarie, SalarieDuContrat};
-use droit::natures::nature;
+use droit::natures::NatureDeContrat as N;
 use socle::date::Jour;
 
 use crate::outils::typee::lu;
 
 #[test]
 fn qui_est_declare_a_la_caisse() {
-    let (cddu, cdd, cdi) = (nature("cddu_spectacle").unwrap(), nature("cdd").unwrap(), nature("cdi").unwrap());
+    let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
     let j = |s: &str| Jour::lire(s).unwrap();
     let comedien = fiche(r#"{"code_emploi_ft": "COM010", "statut": "artiste"}"#, None);
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
