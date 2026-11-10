@@ -191,7 +191,7 @@ pub(super) fn maintenant() -> String {
 /// L'ENGAGEMENT QU'UNE CARTE MONTRE : celui que designe son identite, que le moteur lui a rendue
 /// (`engagement::stock::identites`). Refus : une identite que l'ecran de `mois` ne montre pas.
 fn designe(ctx: &Contexte, mois: &str, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
-    engagement::stock::designe(&ctx.racine, mois, id).map_err(refus)
+    engagement::stock::designe(&ctx.racine, mois, id).map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 
@@ -220,19 +220,19 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
     let brouillon = engagement::stock::Brouillon::ouvrir(&ctx.racine);
     // Ce qui se valide est le brouillon ecrit, lu en sa forme (`engagement::carte::Brouillon`).
     crate::mois::brouillon_ecrit(ctx, mois, &id)?;
-    let (i, o) = engagement::stock::designe(&ctx.racine, mois, &id).map_err(Echec::from)?;
+    let (i, o) = engagement::stock::designe(&ctx.racine, mois, &id)?;
     if o.est_valide() {
         return Err(refus(format!("{} : cet engagement est déjà validé ; il se modifie d'un geste. Rien n'est écrit.", engagement::etats::qui_de(ctx, &o))));
     }
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let data = engagement::stock::vue_du_mois(&ctx.racine, mois)
-        .map_err(Echec::from)?
+        ?
         .ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", engagement::etats::qui_de(ctx, &o))))?;
     if let Some(manque) = crate::mois::manque_de(ctx, &data, i) {
         return Err(crate::mois::refus_du_calcul(ctx, &data, manque));
     }
-    engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| crate::mois::refus_du_calcul(ctx, &data, m.into()))?;
-    brouillon.ecrire().map_err(Echec::from)?;
+    engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| crate::mois::refus_du_calcul(ctx, &data, m))?;
+    brouillon.ecrire()?;
     if let Some(e) = data.engagements.get(i) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
@@ -288,14 +288,14 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
             return Ok(Modification::Avertie { avertissement: a, phrase: "Ce qui est parti le demande : rien n'est écrit sans confirme.", phrases });
         }
     };
-    brouillon.ecrire().map_err(Echec::from)?;
-    let vue = engagement::stock::vue_du_mois(&ctx.racine, mois).map_err(Echec::from)?;
+    brouillon.ecrire()?;
+    let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
     if let Some(e) = vue.as_ref().and_then(|d| d.engagements.get(i)) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, &e.debut_lu())?;
         }
     }
-    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| erreur(Classe::Disque, m))?;
+    crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| m.reclasser(Classe::Disque))?;
     let phrase = match depuis {
         Some(j) => format!("Engagement modifié. {}", vaut_a_partir_du(&j)),
         None => "Engagement modifié.".to_string(),
@@ -326,7 +326,7 @@ fn vaut_a_partir_du(j: &socle::date::Jour) -> String {
 /// dernier changement date de ce mois, s'il n'etait pas deja ecrit. `None` : la carte ne change aucun terme a ce mois
 /// (le premier mois du contrat dit ses termes de son debut).
 fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, mois: &str) -> R<Option<socle::date::Jour>> {
-    if !devenu.mensuel().map_err(Echec::from)? {
+    if !devenu.mensuel()? {
         return Ok(None);
     }
     let du_mois = |x: &engagement::stock::Objet| -> Vec<engagement::stock::Avenant> {
@@ -341,16 +341,16 @@ fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, 
 /// elle s'ecrit (`Issue::Ecrite`).
 fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
     let qui = engagement::etats::qui_de(ctx, o);
-    let vue = o.vue(mois).map_err(Echec::from)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
-    let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(refus)?;
-    changements.appliquer(ctx, Mois::lire(mois).map_err(Echec::from)?, &mut carte, |_| qui.clone()).map_err(refus)?;
-    engagement::etats::modifier(ctx, mois, i).map_err(Echec::from)?;
-    engagement::stock::poser_la_saisie(ctx, mois, i, &carte.en_carte(), jour).map_err(refus)?;
-    if !engagement::etats::a_revalider_rouvert(ctx, mois, i).map_err(Echec::from)? {
+    let vue = o.vue(mois)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
+    let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;
+    changements.appliquer(ctx, Mois::lire(mois)?, &mut carte, |_| qui.clone()).map_err(|e| e.reclasser(Classe::Refuse))?;
+    engagement::etats::modifier(ctx, mois, i)?;
+    engagement::stock::poser_la_saisie(ctx, mois, i, &carte.en_carte(), jour).map_err(|e| e.reclasser(Classe::Refuse))?;
+    if !engagement::etats::a_revalider_rouvert(ctx, mois, i)? {
         return Ok(Issue::Rien);
     }
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
-    let devenu = engagement::stock::objets(&ctx.racine).map_err(Echec::from)?.into_iter().find(|x| x.fichier == o.fichier && x.rang == o.rang);
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
+    let devenu = engagement::stock::objets(&ctx.racine)?.into_iter().find(|x| x.fichier == o.fichier && x.rang == o.rang);
     let depuis = match devenu.as_ref() {
         Some(d) => a_partir_de(o, d, mois)?,
         None => None,
@@ -363,9 +363,9 @@ fn modifier_puis_revalider(ctx: &Contexte, mois: &str, i: usize, o: &engagement:
     }
     let v = engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| {
         match engagement::stock::vue_du_mois(&ctx.racine, mois) {
-            Ok(Some(data)) => crate::mois::refus_du_calcul(ctx, &data, m.into()),
-            Ok(None) => Echec::from(m),
-            Err(lu) => Echec::from(lu),
+            Ok(Some(data)) => crate::mois::refus_du_calcul(ctx, &data, m),
+            Ok(None) => m,
+            Err(lu) => lu,
         }
     })?;
     // L'AVERTISSEMENT : l'engagement touche, nomme (`qui`), une ligne par ce que le changement entraine pour lui, et le
@@ -456,16 +456,16 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
     let mois = &charge.mois.to_string();
     let _verrou = crate::mois::avant_d_ecrire(ctx, mois)?;
     let (i, o) = designe(ctx, mois, &charge.engagement)?;
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(Echec::from)?;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     if !charge.confirme {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
             Ok(()) => Ok(Retrait { phrase: "Engagement retiré.".into(), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: String::from(m.clone()), avertissement: Some(m.into()) }),
-            Err(m) => Err(Echec::from(m)),
+            Err(m) if parti => Ok(Retrait { phrase: m.phrase.clone(), avertissement: Some(m.phrase) }),
+            Err(m) => Err(m),
         };
     }
-    let n = engagement::etats::desactiver(ctx, mois, i, &departs).map_err(Echec::from)?;
+    let n = engagement::etats::desactiver(ctx, mois, i, &departs)?;
     let a_faire = a_faire_en_phrases(&n.a_refaire(&departs));
     let phrase = if a_faire.is_empty() { "Engagement non actif.".to_string() } else { format!("Engagement non actif. À faire : {}.", a_faire.join(", ")) };
     Ok(Retrait { phrase, avertissement: None })

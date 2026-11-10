@@ -546,7 +546,7 @@ fn rejouer_les_gestes(
                 };
                 let cle = g.cle.as_deref().ok_or_else(|| refus!("geste {} : `etat` sans cle", n))?;
                 let o = Options::de_la_compagnie(&racine);
-                let refait = crate::service::contexte(&o).map_err(|m| socle::echec::Echec { classe: None, phrase: m, a_part: None }).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
+                let refait = crate::service::contexte(&o).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
                 crate::remettre_le_fil();
                 // Comme une route : l'etat refait reussit, ou refuse, comme il l'a fait au banc (`ok`, vrai s'il est tu).
                 let attendu = g.a_reussi();

@@ -7,9 +7,8 @@ use std::path::PathBuf;
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{Classe, R};
 use socle::fichiers::dossier_du_code;
-use socle::num::Resultat;
 
 use crate::catalogue::Route;
 use crate::enveloppe::{Options, Refus, Reponse};
@@ -25,7 +24,7 @@ pub(crate) fn options(args: &[String]) -> Option<R<Options>> {
             "--racine" => o.racine = Some(PathBuf::from(valeur)).filter(|r| !r.as_os_str().is_empty()),
             "--date" => match Jour::lire(valeur) {
                 Ok(d) => o.date = Some(d),
-                Err(m) => return Some(Err(erreur(Classe::Illisible, m))),
+                Err(m) => return Some(Err(m.reclasser(Classe::Illisible))),
             },
             _ => return None,
         }
@@ -50,8 +49,8 @@ pub(crate) fn compagnie_nommee(o: &Options) -> bool {
 }
 
 /// La compagnie de la route, au jour de la route.
-pub(crate) fn contexte(o: &Options) -> Resultat<Contexte> {
-    Contexte::nouveau(&racine_de(o), o.date).map_err(String::from)
+pub(crate) fn contexte(o: &Options) -> R<Contexte> {
+    Contexte::nouveau(&racine_de(o), o.date)
 }
 
 /// `moteur route [--racine R] [--date D] [--texte]` : la demande sur l'entree standard. `None` : usage.

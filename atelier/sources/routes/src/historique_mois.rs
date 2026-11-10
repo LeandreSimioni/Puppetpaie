@@ -27,7 +27,7 @@ use droit::contexte::Contexte;
 use envois::etats;
 use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::mois::Mois;
 
@@ -478,8 +478,9 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 // ------------------------------------------------------------------ les retours, lus
 
 /// Le refus d'un dossier des retours qui ne se lit pas : la phrase en mots, le dossier et l'erreur a part.
-fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
-    socle::echec::avec(
+#[track_caller]
+fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
+    socle::echec::refus_avec(
         "Le dossier des retours ne se lit pas.",
         socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
     )
@@ -488,7 +489,7 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
 /// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<&str>) -> Result<Option<PathBuf>, String> {
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<&str>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
@@ -591,9 +592,9 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
             }
             Ok(_) => match retours::membres_du_zip(o) {
                 Ok(m) => l.phrases.push(format!("Une archive de {} fichier{}, sans attestation.", m.len(), plur(m.len(), "", "s"))),
-                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", String::from(m))),
+                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.phrase)),
             },
-            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", String::from(m))),
+            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.phrase)),
         }
         return l;
     }
@@ -602,17 +603,17 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
     match retours::lire_rapport(o) {
         Ok(Some(rapport)) => return rapport_lu(&rapport, o, nature),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.into()),
+        Err(m) => pas_lus.push(m.phrase),
     }
     match retours::lire_neores(o) {
         Ok(Some(crm)) => return neores_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.into()),
+        Err(m) => pas_lus.push(m.phrase),
     }
     match retours::lire_crm_oc(o) {
         Ok(Some(crm)) => return crm_oc_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.into()),
+        Err(m) => pas_lus.push(m.phrase),
     }
     let mut l = Lecture::nouvelle("Compte rendu");
     l.traduite = false;
@@ -680,7 +681,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
     if nature == retours::NATURE_TAUX_PAS {
         match retours::taux_pas_d_octets(o) {
             Ok(t) => l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", t.releves.len(), plur(t.releves.len(), "", "s"))),
-            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", String::from(m))),
+            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.phrase)),
         }
     }
     l.anomalies = rapport.anomalies.iter().map(Anomalie::du_rapport).collect();
@@ -1017,7 +1018,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
                 }
                 Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),
             },
-            Err(m) => PieceDuRetour::Illisible(m),
+            Err(m) => PieceDuRetour::Illisible(m.phrase),
         },
     };
     let mut phrases: Vec<String> = Vec::new();
@@ -1107,7 +1108,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
 fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     let mois = le_mois.to_string();
     // Les lignes du mois ; un signalement porte le mois de son evenement.
-    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur(Classe::Disque, m))?;
+    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let recus = etats::contrats_recus(&lignes);
     let avenants = etats::avenants_par_contrat(&lignes);
     let mut envois = Vec::new();

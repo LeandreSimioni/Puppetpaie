@@ -23,7 +23,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{Classe, R};
 
 const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
 const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
@@ -195,7 +195,7 @@ pub fn sans_compagnie(o: &super::enveloppe::Options) -> std::path::PathBuf {
 /// Une route de ce module, sans compagnie (`sans_compagnie`).
 pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, charge: &Charge) -> R<Rendu> {
     let racine = sans_compagnie(o);
-    std::fs::create_dir_all(&racine).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&racine, &e)))?;
+    std::fs::create_dir_all(&racine).map_err(|e| socle::echec::du_disque(&racine, &e).reclasser(Classe::du_disque(&e)))?;
     route_de(&racine, nom, charge)
 }
 

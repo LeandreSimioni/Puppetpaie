@@ -24,24 +24,24 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
     }
     if let Some(d) = &s.depot_refuse {
         if let Err(e) = noter_incident_depot(ctx, d) {
-            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", String::from(e)));
+            faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.phrase));
         }
     }
     if !s.taux_pas.is_empty() {
         if let Err(e) = appliquer_taux_pas(ctx, &s.taux_pas) {
-            faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", String::from(e)));
+            faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.phrase));
         }
     }
     if !s.taux_atmp.is_empty() {
         match appliquer_taux_atmp(ctx, &s.taux_atmp) {
             Ok(a_faire) => faites.a_faire.extend(a_faire),
-            Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", String::from(e))),
+            Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.phrase)),
         }
     }
     if !s.aer.is_empty() {
         match crate::documents::ranger_aer(ctx, None, Some(&s.aer)) {
             Ok(a_faire) => faites.a_faire.extend(a_faire),
-            Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", String::from(e))),
+            Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
     }
     Ok(faites)
@@ -54,7 +54,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
     let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
-    let journal = envois::journal::lu(&ctx.racine).map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
+    let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<String> {
         let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
         let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
@@ -63,7 +63,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     let mut tous = Vec::new();
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
         let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
@@ -98,17 +98,17 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
     };
     for (retour, chemin) in notifications {
         let publiee = envois::releve_retours::date_publication(retour);
-        let le_jour = publiee.as_deref().map(socle::date::Jour::lire).transpose().map_err(|m| socle::echec::erreur(Classe::Illisible, m))?;
+        let le_jour = publiee.as_deref().map(socle::date::Jour::lire).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
         let archive = socle::fichiers::nom_du(chemin);
         let source = match &publiee {
             Some(le) => format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive),
             None => format!("Notification AT/MP de la CARSAT (retour DSN de nature 34, archive retours/{})", archive),
         };
-        let octets = std::fs::read(chemin).map_err(|e| socle::echec::erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+        let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, String::from(e)));
+                a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, e.phrase));
                 continue;
             }
         };

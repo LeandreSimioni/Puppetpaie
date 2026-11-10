@@ -23,7 +23,7 @@ use engagement::calcul::Paie;
 use envois::depot;
 use envois::etats;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::repr;
 use socle::mois::Mois;
 use socle::num::{entier_lu, q2, Decimal};
@@ -32,14 +32,12 @@ use crate::depots::{lire_octets, nom_du_chemin, resoudre};
 use crate::etapes::Moteur;
 use socle::ecran::Pastille;
 
-type R<T> = Result<T, Echec>;
-
 const TYPES: [(&str, &str); 5] = depot::TYPES;
 
 /// Les paies validees du mois, a leurs numeros declares.
-fn saisie_aux_numeros_declares(ctx: &Contexte, mois: &str) -> Result<Vec<Paie>, String> {
+fn saisie_aux_numeros_declares(ctx: &Contexte, mois: &str) -> R<Vec<Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1).map_err(String::from)
+    paies_aux_numeros_declares(ctx, mois, None, &departs).map(|t| t.1)
 }
 
 // ------------------------------------------------------------------ recapitulatif_dsn
@@ -69,9 +67,9 @@ struct ContratLu {
 }
 
 impl ContratLu {
-    fn de(d: &DsnLue, c: &ContratDeclare) -> Result<ContratLu, String> {
-        let numero = c.numero.clone().ok_or_else(|| "Un contrat du fichier ne porte pas son numéro (S21.G00.40.009).".to_string())?;
-        let debut = c.debut.ok_or_else(|| format!("Le contrat {} du fichier ne porte pas sa date de début (S21.G00.40.001).", numero))?;
+    fn de(d: &DsnLue, c: &ContratDeclare) -> R<ContratLu> {
+        let numero = c.numero.clone().ok_or_else(|| refus("Un contrat du fichier ne porte pas son numéro (S21.G00.40.009)."))?;
+        let debut = c.debut.ok_or_else(|| socle::refus!("Le contrat {} du fichier ne porte pas sa date de début (S21.G00.40.001).", numero))?;
         Ok(ContratLu {
             mois: d.mesures(&c.nir, &numero, false),
             rappel: d.mesures(&c.nir, &numero, true),
@@ -113,7 +111,7 @@ fn en_mots(t: Option<&str>) -> String {
 }
 
 /// CE QU'UN CONTRAT DU FICHIER DIT AUTREMENT QUE LA PAIE `p` QUI LE PORTE : son brut, ses mesures d'activite, son emploi.
-fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> Result<Vec<String>, String> {
+fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
@@ -151,8 +149,8 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> Result<Vec<String>,
 /// `recapitulatif_dsn` : ce que la DSN declare, contrat par contrat, comparé aux contrats saisis de l'etablissement `nic`
 /// (tous sans etablissement). La paie du mois qui ne se lit pas (ou l'etablissement d'un salarie) ne se compare pas, et
 /// la phrase le dit.
-fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) -> Result<RecapDsn, String> {
-    let mut sans_comparaison: Option<String> = None;
+fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) -> R<RecapDsn> {
+    let mut sans_comparaison: Option<Echec> = None;
     let liste = match saisie_aux_numeros_declares(ctx, mois) {
         Ok(l) => l,
         Err(m) => {
@@ -169,12 +167,12 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) 
                 Ok(e) if e == nic => {}
                 Ok(_) => continue,
                 Err(m) => {
-                    sans_comparaison = Some(m.into());
+                    sans_comparaison = Some(m);
                     break;
                 }
             }
         }
-        let n = p.engagement.numero.as_ref().ok_or_else(|| format!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.to_string();
+        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.to_string();
         if !par_numero.contains_key(&n) {
             ordre.push(n.clone());
         }
@@ -185,7 +183,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) 
     let mut salaries = Vec::new();
     let (mut n_contrats, mut n_ecarts, mut n_corrections) = (0usize, 0usize, 0usize);
     for sal in &d.individus {
-        let lus = d.contrats_de(&sal.nir).map(|c| ContratLu::de(d, c)).collect::<Result<Vec<ContratLu>, String>>()?;
+        let lus = d.contrats_de(&sal.nir).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
         let mut contrats = Vec::new();
         // Un contrat se dit par ce qu'il declare pour le mois, comparé a la paie du mois, et par ses rappels d'un mois deja
         // declare (`dsn_lue::Remuneration::rappel`), qui ne se comparent pas a la paie du mois. Un contrat qui n'a que des rappels
@@ -295,7 +293,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: &str, nic: Option<&str>) 
         // `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 2291-2309).
         "Aucun salarié ce mois-ci : la DSN se dépose sans individu.".to_string()
     } else if let Some(m) = &sans_comparaison {
-        format!("Le fichier ne se compare pas à la paie du mois : {}", socle::echec::phrase_de(m))
+        format!("Le fichier ne se compare pas à la paie du mois : {}", m.phrase)
     } else {
         "Aucune paie validée ce mois-ci : le fichier ne se compare à rien.".to_string()
     };
@@ -482,7 +480,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     } else {
         Some(match recapitulatif_dsn(ctx, &a, &mois_t, a.etablissement()) {
             Ok(v) => Recapitulatif::Lu(v),
-            Err(erreur) => Recapitulatif::Illisible { erreur },
+            Err(e) => Recapitulatif::Illisible { erreur: e.phrase },
         })
     };
     let repetition = etats::repetition(&lignes, envois::journal::Acte::Dsn, &empreinte, &nom);

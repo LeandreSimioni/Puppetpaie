@@ -38,7 +38,7 @@ use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
 use envois::releve_signatures::ReleveDite;
 use socle::date::{jour_iso, Jour};
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{erreur, Classe, R};
 use socle::fichiers::repr;
 use socle::mois::Mois;
 
@@ -631,7 +631,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         })
     };
     let quand_note = retour.quand.clone();
-    if journal::rattacher(&ctx.racine, porte, journal::Revenu::Contrat(retour)).map_err(Echec::from)?.is_none() {
+    if journal::rattacher(&ctx.racine, porte, journal::Revenu::Contrat(retour))?.is_none() {
         return Err(refus(format!("Le {} de {} n'est jamais parti : rien ne peut en revenir. Rien n'est écrit.", ce, nom)));
     }
     let phrase = format!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
@@ -934,8 +934,8 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     for p in &paies {
         // SEUL UN CONTRAT ECRIT SE FAIT SIGNER ICI (`engagement::contrat_a_signer`) ; un contrat signe hors du logiciel
         // (`engagement::signe_ailleurs`) n'y vient que pour son avenant, a faire ou attendu.
-        let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement).map_err(Echec::from)?;
-        if !ailleurs && !engagement::contrat_a_signer(&ctx.racine, &p.engagement).map_err(Echec::from)? {
+        let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
+        if !ailleurs && !engagement::contrat_a_signer(&ctx.racine, &p.engagement)? {
             continue;
         }
         let cle_s = p.salarie.id.to_string();
@@ -1092,7 +1092,7 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
         None => match avenant_d_un_contrat_signe_ailleurs(ctx, c)? {
             Some(a) => a,
             None if c.numero().is_none() => {
-                return Err(erreur(Classe::Manque, socle::echec::cle("Le numéro du contrat désigne le contrat parti dont l'avenant se fait, et la demande ne le dit pas. Rien n'est écrit.", "numero")));
+                return Err(socle::echec::cle("Le numéro du contrat désigne le contrat parti dont l'avenant se fait, et la demande ne le dit pas. Rien n'est écrit.", "numero").reclasser(Classe::Manque));
             }
             None => {
                 return Err(erreur(
@@ -1273,7 +1273,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let siens = version_validee(ctx, &mois_parti, salarie, paies[i].engagement.numero.as_deref(), &departs)?;
     let passee = siens.as_ref().and_then(|v| engagement::etats::version_au_depart(v, &departs, engagement::departs::Envoi::Contrat));
     let mois_effet = match (siens.as_ref(), passee) {
-        (Some(v), Some(x)) => engagement::etats::mois_du_changement(v, x).map_err(Echec::from)?.filter(|m| *m > mois_parti),
+        (Some(v), Some(x)) => engagement::etats::mois_du_changement(v, x)?.filter(|m| *m > mois_parti),
         _ => None,
     };
     let (paies, i, mois_compare) = match &mois_effet {
@@ -1287,10 +1287,10 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let effet = match (&mois_effet, siens.as_ref()) {
         (Some(me), Some(v)) => {
-            let dite = v.objet().vue(me).map_err(Echec::from)?.and_then(|x| x.date_modification.filter(|d| !d.is_empty()));
+            let dite = v.objet().vue(me)?.and_then(|x| x.date_modification.filter(|d| !d.is_empty()));
             match dite {
                 Some(d) => d,
-                None => engagement::stock::premier_jour(me).map_err(Echec::from)?.iso(),
+                None => engagement::stock::premier_jour(me)?.iso(),
             }
         }
         _ => c.debut.iso(),
@@ -1300,7 +1300,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(salarie.to_string(), parti.numero.as_ref().map(|n| n.to_string()))), &parti);
     let ent = documents::avenant::ent_du_mois(ctx, &mois_parti)?;
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
-    let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_deref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| erreur(Classe::Illisible, m))?;
+    let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_deref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
     let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
     let numero_porte = p.engagement.numero.as_deref();
     let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;
@@ -1309,11 +1309,11 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let ancienne = match (siens.as_ref(), passee) {
         (Some(v), Some(x)) => {
             let o = v.objet();
-            let mut mois = engagement::paies::mois_ecrits(o).map_err(Echec::from)?;
+            let mut mois = engagement::paies::mois_ecrits(o)?;
             mois.retain(|m| *m <= mois_compare);
             let mut trouvee = None;
             for m in mois.iter().rev() {
-                if let Some(p) = engagement::etats::paie_ecrite_de_la_version(o, x, m).map_err(Echec::from)? {
+                if let Some(p) = engagement::etats::paie_ecrite_de_la_version(o, x, m)? {
                     trouvee = Some(p.paie.clone());
                     break;
                 }
@@ -1389,7 +1389,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, &mois_t, None, &departs)?;
     let Some(i) = etats::paie_du_contrat(&paies, salarie, numero)? else { return Ok(None) };
     let p = &paies[i];
-    if !engagement::signe_ailleurs(&ctx.racine, &p.engagement).map_err(Echec::from)? {
+    if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
         return Ok(None);
     }
     let debut = p.engagement.debut;
@@ -1403,10 +1403,10 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         Some(x) => saisie_de(x.saisie())?,
         None => engagement::stock::Saisie { avenants: Vec::new(), ..presente.clone() },
     };
-    let nat = p.engagement.nat().map_err(Echec::from)?;
+    let nat = p.engagement.nat()?;
     let changes = engagement::versions::termes_changes(&convenue, &presente);
     let modifications = documents::avenant::changements_en_clair(ctx, &nat, &changes)
-        .map_err(Echec::from)?
+        ?
         .into_iter()
         .map(|m| ArticleModifie { numero: None, article: m.article, avant: m.avant, apres: m.apres, blocs: Vec::new(), phrase: Some(m.phrase), jour: Some(m.jour) })
         .collect::<Vec<_>>();
@@ -1430,7 +1430,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         pour: nomme.pour,
         periode: nomme.periode,
         mois,
-        contrat: Some(NumeroContrat::lire(numero).map_err(|m| erreur(Classe::Illisible, m))?),
+        contrat: Some(NumeroContrat::lire(numero).map_err(|m| m.reclasser(Classe::Illisible))?),
         date_contrat: debut.iso(),
         signe: None,
         contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, &debut.iso())),

@@ -104,7 +104,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 }
                 // Un dossier qui resiste ne doit pas emporter les autres : la sauvegarde est
                 // partielle, elle le dit, et le prochain passage reprendra celui-la.
-                resultat.incidents.push(format!("{} : {}", dossier, String::from(e.echec.clone())));
+                resultat.incidents.push(format!("{} : {}", dossier, e.echec.phrase));
                 let cause = cause_de(&e);
                 indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
                 resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: cause.into() });
@@ -159,7 +159,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                     en_echec.insert(relatif.clone());
                 }
                 Err(e) => {
-                    resultat.incidents.push(format!("{} : {}", relatif, String::from(e.echec.clone())));
+                    resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                     let cause = cause_de(&e);
                     indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
                     resultat.reportes.push(Reporte { quoi: relatif.clone(), dossier: false, cause: cause.into() });

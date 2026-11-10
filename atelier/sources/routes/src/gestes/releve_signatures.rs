@@ -56,7 +56,7 @@ pub(crate) fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
             ),
         };
         let brut = envois::simulation_courriels::reponse_jouee(adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
-            .map_err(|m| erreur(Classe::Illisible, m))?;
+            .map_err(|m| m.reclasser(Classe::Illisible))?;
         boite.repondre(&code, brut);
     }
     Ok(boite)
@@ -81,22 +81,27 @@ fn os(m: impl Into<String>) -> Echec {
 
 /// La boite ou chercher les reponses, quand l'appelant n'en donne pas, selon le branchement de la compagnie
 /// (`bridage::branchement`) : le simulateur (les salaries fictifs repondent) ; le message, rien ne se releve (la releve
-/// renverrait le contrat contresigne au salarie : un envoi) ; le monde, la vraie boite. `Err` : l'incident qui dit
-/// pourquoi rien ne se releve.
-fn boite_de_la_releve(ctx: &Contexte) -> R<Result<Box<dyn Courriel>, String>> {
+/// renverrait le contrat contresigne au salarie : un envoi) ; le monde, la vraie boite.
+fn boite_de_la_releve(ctx: &Contexte) -> R<BoiteDeLaReleve> {
     match compagnie::bridage::branchement(&ctx.racine)? {
-        envois::branchement::Branchement::Simulateur => return Ok(Ok(Box::new(boite_des_signatures(ctx)?))),
-        envois::branchement::Branchement::Message(r) => return Ok(Err(r.phrase.to_string())),
+        envois::branchement::Branchement::Simulateur => return Ok(BoiteDeLaReleve::Ouverte(Box::new(boite_des_signatures(ctx)?))),
+        envois::branchement::Branchement::Message(r) => return Ok(BoiteDeLaReleve::Aucune(r.phrase.to_string())),
         envois::branchement::Branchement::Monde => {}
     }
     if !compagnie::boite::disponible(&ctx.racine)? {
-        return Ok(Err(
+        return Ok(BoiteDeLaReleve::Aucune(
             "Aucune boite courriel : les signatures ne peuvent pas etre relevees. Poser le mot de passe d'application de la boite (Configuration > Mots de passe)."
                 .to_string(),
         ));
     }
     let vrai_client = compagnie::boite::client_du_contexte(ctx)?;
-    Ok(Ok(Box::new(vrai_client)))
+    Ok(BoiteDeLaReleve::Ouverte(Box::new(vrai_client)))
+}
+
+/// La boite de la releve, ou l'incident qui dit pourquoi rien ne se releve.
+enum BoiteDeLaReleve {
+    Ouverte(Box<dyn Courriel>),
+    Aucune(String),
 }
 
 /// Cherche dans la boite les reponses « Je signe » encore attendues, et fait tout ce qui suit.
@@ -118,8 +123,8 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
     let client: &mut dyn Courriel = match client {
         Some(c) => c,
         None => match boite_de_la_releve(ctx)? {
-            Ok(b) => ouverte.insert(b).as_mut(),
-            Err(incident) => {
+            BoiteDeLaReleve::Ouverte(b) => ouverte.insert(b).as_mut(),
+            BoiteDeLaReleve::Aucune(incident) => {
                 r.incidents.push(incident);
                 return Ok(r);
             }
@@ -176,7 +181,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
             // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
             let fait = match &mention {
-                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(String::from),
+                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.phrase),
                 None => Err("la fiche du salarié ne dit pas son nom".to_string()),
             };
             match fait {
@@ -221,13 +226,13 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                     crate::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
                 (None, _) => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),
-                (_, Err(m)) => Err(erreur(Classe::Illisible, m)),
+                (_, Err(m)) => Err(m.reclasser(Classe::Illisible)),
             };
             match note {
                 Ok(_) => notes += 1,
                 Err(e) => r.incidents.push(format!(
                     "{} : la signature de {} est arrivee mais le contrat du {} n'a pas pu etre enregistre ({}) ; il n'est pas note signe.",
-                    a_nom, code, debut, String::from(e)
+                    a_nom, code, debut, e.phrase
                 )),
             }
         }
@@ -272,7 +277,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 let dernier = r.recues.len() - 1;
                 r.recues[dernier].renvoye = true;
             }
-            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, String::from(e), fichier_signe)),
+            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, e.phrase, fichier_signe)),
         }
     }
     client.fermer();

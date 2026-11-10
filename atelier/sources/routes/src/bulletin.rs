@@ -11,7 +11,7 @@ use crate::fiches::refus;
 use droit::contexte::Contexte;
 use documents::bulletin::{jeux_et_description, Modele};
 use socle::fichiers::dossier_du_code;
-use socle::echec::R;
+use socle::echec::{Classe, R};
 
 const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
 
@@ -71,7 +71,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// `bulletin-modele-apercu` : le bulletin d'exemple dans le modele demande, en PDF.
 fn apercu(c: ChargeModele) -> R<ApercuModele> {
     let modele = modele_demande(&c)?;
-    let pdf = apercu_pdf(modele).map_err(refus)?;
+    let pdf = apercu_pdf(modele).map_err(|e| e.reclasser(Classe::Refuse))?;
     Ok(ApercuModele {
         phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
         modele: modele.cle().to_string(),
@@ -179,7 +179,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
     let modele = documents::bulletin::modele_de_la_compagnie(&ctx.entreprise);
     let mut autrement = Vec::new();
     for (cle, sal) in &ctx.salaries {
-        if let Some(m) = documents::bulletin::modele_du_salarie(sal).map_err(refus)? {
+        if let Some(m) = documents::bulletin::modele_du_salarie(sal).map_err(|e| e.reclasser(Classe::Refuse))? {
             if m != modele {
                 let nom = match (sal.prenom_affichage.portee(), sal.nom_affichage.portee()) {
                     (Some(prenom), Some(nom)) => format!("{} {}", prenom, nom),
@@ -234,7 +234,7 @@ struct SaisieDeLApercu {
 }
 
 /// La description du bulletin de la paie fictive sous `modele` : le moteur du jour, la compagnie fictive, rien d'ecrit.
-pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Description, String> {
+pub(crate) fn apercu_description(modele: Modele) -> R<fabrique_pdf::Description> {
     let racine = dossier_apercu();
     let lue: SaisieDeLApercu = socle::forme::lire_fichier(&racine.join("saisie.json"), "La paie de l'aperçu ne se lit pas.")?;
     let saisie = engagement::saisie::VueDuMois { mois: lue.mois, taux_cachet: None, engagements: lue.engagements };
@@ -250,12 +250,12 @@ pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Descrip
     let numeros: Vec<Option<String>> = (1..=s.paies.len()).map(|n| Some(format!("{}/{}", n, &mois[..4]))).collect();
     let departs = engagement::departs::Departs::default();
     let passe = documents::bulletin::passe_des_bulletins(&ctx, &s.paies, &mois, &departs)?;
-    Ok(jeux_et_description(&ctx, &s.paies, &numeros, &ent, &mois, None, false, &HashMap::new(), &departs, &passe)?)
+    jeux_et_description(&ctx, &s.paies, &numeros, &ent, &mois, None, false, &HashMap::new(), &departs, &passe)
 }
 
 /// Le PDF de la paie fictive sous `modele`.
-pub(crate) fn apercu_pdf(modele: Modele) -> Result<Vec<u8>, String> {
-    Ok(documents::fabrique::fabriquer_octets(&apercu_description(modele)?)?)
+pub(crate) fn apercu_pdf(modele: Modele) -> R<Vec<u8>> {
+    documents::fabrique::fabriquer_octets(&apercu_description(modele)?)
 }
 
 // ------------------------------------------------------------------ bulletin-modele-choisir
@@ -268,7 +268,7 @@ fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
         Modele::Complet => droit::fiche::ModeleBulletin::Complet,
     };
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::modele_bulletin(Some(choix)), Some(ctx.aujourdhui))?;
-    let neuf = Contexte::nouveau(&ctx.racine, None).map_err(refus)?;
+    let neuf = Contexte::nouveau(&ctx.racine, None).map_err(|e| e.reclasser(Classe::Refuse))?;
     let mut v = modeles(&neuf)?;
     v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);
     Ok(v)

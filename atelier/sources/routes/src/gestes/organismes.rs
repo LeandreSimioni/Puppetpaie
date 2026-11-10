@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
-use socle::echec::Echec;
+use socle::echec::R;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::temps::TempsDeLaCase;
@@ -12,8 +12,6 @@ use crate::temps::TempsDeLaCase;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-
-type R<T> = Result<T, Echec>;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Organismes);
@@ -88,7 +86,7 @@ pub(crate) struct ContratSaisi {
 /// `adhesions_prevoyance` de `config/organismes.json`, lue contrat par contrat (sa valeur a chaque version, une fois tant
 /// qu'elle ne change pas ; absent d'une version, il n'y est pas saisi).
 fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<ContratSaisi>>> {
-    let fichier = droit::organismes::fichier_organismes(ctx).map_err(plain)?;
+    let fichier = droit::organismes::fichier_organismes(ctx)?;
     let Some(liste) = fichier.adhesions_prevoyance.as_deref() else { return Ok(Vec::new()) };
     let mut par_cle: Vec<(String, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
     for version in droit::fiche::valeurs_datees(liste) {
@@ -153,8 +151,8 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     let en_clair = |j: &Option<String>| -> R<Option<String>> {
         match j.as_deref().filter(|j| !j.is_empty()) {
             Some(j) => {
-                let tete = j.get(..10).ok_or_else(|| plain(format!("jour illisible : {}", socle::fichiers::repr(j))))?;
-                Ok(Some(Jour::lire(tete).map_err(plain)?.jj_mm_aaaa()))
+                let tete = j.get(..10).ok_or_else(|| socle::refus!("jour illisible : {}", socle::fichiers::repr(j)))?;
+                Ok(Some(Jour::lire(tete)?.jj_mm_aaaa()))
             }
             None => Ok(None),
         }
@@ -171,9 +169,4 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         contrats.push(ContratDit { ligne, periode, temps });
     }
     Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois, contrats, encarts })
-}
-
-#[track_caller]
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
 }

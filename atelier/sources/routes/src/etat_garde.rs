@@ -1031,7 +1031,7 @@ impl FileDesEtats {
                 if let Some((g, true)) = self.connu(cle, &jour) {
                     return Ok(g);
                 }
-                let ctx = crate::service::contexte(o).map_err(|m| Echec { classe: None, phrase: m, a_part: None })?;
+                let ctx = crate::service::contexte(o)?;
                 garde_juste(o, &ctx, cle)
             }));
             // Un calcul tombe a pu laisser son fil sale (un registre ouvert, les nombres « fideles ») : le travail

@@ -1152,7 +1152,7 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
     // le bilan des mois ne se fait pas.
     Ok(match bilan_des_mois(m, ctx, &mois) {
         Ok(b) => (b, None),
-        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase()))),
+        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
     })
 }
 

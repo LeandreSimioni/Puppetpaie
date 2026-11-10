@@ -106,7 +106,7 @@ impl<'a> HorlogeFictive<'a> {
 
     /// Un contexte lu a `date` (la fin du mois qu'on ecrit), dont `aujourdhui` reste le jour joue.
     fn contexte_a(&self, date: Jour) -> R<Contexte> {
-        let mut ctx = Contexte::nouveau(self.racine, Some(date)).map_err(Echec::from)?;
+        let mut ctx = Contexte::nouveau(self.racine, Some(date))?;
         ctx.aujourdhui = self.jour;
         Ok(ctx)
     }
@@ -187,7 +187,7 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
 
 /// Le message entier, ses lignes mises bout a bout sur une seule, ou le nom de la classe quand le message est vide.
 fn motif_de(e: &Echec) -> String {
-    let message = String::from(e.clone());
+    let message = e.en_lignes();
     if message.trim().is_empty() {
         return e.classe_notee().to_string();
     }
@@ -271,7 +271,7 @@ fn deposer_les_dsn(
     for chemin in chemins {
         let p = Path::new(&chemin);
         let nom = socle::fichiers::nom_du(p);
-        let octets = std::fs::read(p).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(p, &e)))?;
+        let octets = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e).reclasser(Classe::du_disque(&e)))?;
         // LA DEMANDE DE TAUX NE PART QU'AVEC LA DPAE (`depot_acte::deposer_dpae`) : un signalement d'amorcage reste d'un
         // essai ne part pas avec la DSN du mois.
         let lue = declarations::dsn_lue::lire(&octets, &nom)?;
@@ -292,7 +292,7 @@ fn deposer_les_dsn(
         for reel in [false, true] {
             a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, reel).map_err(|mut e| {
                 if signalement {
-                    e = Echec { phrase: format!("le signalement {} ne part pas : {}", nom, e.phrase()), a_part: None, ..e };
+                    e = Echec { a_part: None, ..e.reformuler(|p| format!("le signalement {} ne part pas : {}", nom, p)) };
                 }
                 e
             })?);
@@ -309,7 +309,7 @@ fn deposer_les_dsn(
 pub(crate) fn dernier_rattrapage(racine: &Path, aujourdhui: Option<Jour>) -> R<Vec<String>> {
     let jour = match aujourdhui {
         Some(j) => j,
-        None => droit::contexte::aujourdhui().map_err(Echec::from)?,
+        None => droit::contexte::aujourdhui()?,
     }
     .iso();
     // Une horloge qui n'a jamais joue, ou rien ce jour-la, n'a rien a dire.
@@ -346,7 +346,7 @@ fn memoire(racine: &Path) -> R<Option<Memoire>> {
     if !socle::fichiers::existe(&f) {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&f, "La mémoire de l'horloge ne se lit pas.").map(Some).map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&f, "La mémoire de l'horloge ne se lit pas.").map(Some).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ le calendrier
@@ -396,7 +396,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
     };
     let jour = match aujourdhui {
         Some(j) => j,
-        None => droit::contexte::aujourdhui().map_err(Echec::from)?,
+        None => droit::contexte::aujourdhui()?,
     };
     let d = d.au_jour(jour);
     // SA MEMOIRE (config/horloge.json) : le dernier jour joue, et les mois dont tout est fait, chacun avec l'empreinte de
@@ -409,7 +409,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
     };
 
     // CE QUI EST DU, chaque pas avec son instant : les mois qui ne sont pas faits, les annees qui ne sont pas finies.
-    let saisis = engagement::stock::mois_saisis(racine).map_err(Echec::from)?;
+    let saisis = engagement::stock::mois_saisis(racine)?;
     let mut calendrier: Vec<Pas> = Vec::new();
     let mut echus: Vec<socle::mois::Mois> = Vec::new();
     {
@@ -427,7 +427,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
             }
             // Un mois echu dont tout est deja fait (par la personne, avant que l'horloge ne passe) est fait : rien n'est a
             // jouer pour lui.
-            let suivant = le_mois.dernier_jour().plus_jours(1).map_err(Echec::from)?;
+            let suivant = le_mois.dernier_jour().plus_jours(1)?;
             if jour >= suivant && mois_fait(&ctx, le_mois, jour)? {
                 clos.insert(mois.clone(), empreinte_du_mois(racine, mois)?);
                 continue;
@@ -477,7 +477,7 @@ pub fn rattraper(racine: &Path, aujourdhui: Option<Jour>, retenir: bool) -> R<Ve
         ancien
     };
     let sortie = Memoire { quoi: QUOI.to_string(), le: jour.iso(), mois_faits: clos, annees_faites, dernier };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_HORLOGE), &sortie, 2).map_err(|m| erreur(Classe::Disque, m))?;
+    socle::ecriture::ecrire_json(&racine.join(FICHIER_HORLOGE), &sortie, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(fait)
 }
 
@@ -496,14 +496,14 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     let mois = &le_mois.to_string();
     let jour_iso = jour.iso();
     let debuts: BTreeSet<String> = engagement::stock::objets_du_mois(d.racine, mois)
-        .map_err(Echec::from)?
+        ?
         .iter()
         .filter(|o| !o.importe_seul())
         .map(|o| engagement::debut_brut(&o.brut))
         .filter(|debut| debut.starts_with(mois) && **debut <= *jour_iso)
         .collect();
     for debut in debuts {
-        let le_jour = Jour::lire(&debut).map_err(|m| erreur(Classe::Illisible, m))?;
+        let le_jour = Jour::lire(&debut).map_err(|m| m.reclasser(Classe::Illisible))?;
         let j = le(&debut);
         calendrier.push(Pas {
             quand: format!("{}T05:00:00", debut),
@@ -537,7 +537,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     }
     calendrier.extend(signalements_dus(ctx, le_mois, jour, false)?);
 
-    let suivant = le_mois.dernier_jour().plus_jours(1).map_err(Echec::from)?;
+    let suivant = le_mois.dernier_jour().plus_jours(1)?;
     if jour < suivant {
         return Ok(false);
     }
@@ -552,7 +552,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         geste: Geste::Valider { mois: le_mois, jusqu_au: fin },
     });
     // Le jour ou la DSN est due (`echeance_dsn`, reporte au jour ouvre) : elle part ce matin-la, avant midi.
-    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois).map_err(Echec::from)?.jour;
+    let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois)?.jour;
     if jour < echeance {
         return Ok(false);
     }
@@ -563,7 +563,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         // Les documents partent apres la validation : la paie partie d'un engagement revalide apres l'echeance repart, en
         // bulletin rectificatif, a l'instant de sa revalidation.
         let revalide = engagement::stock::objets_du_mois(d.racine, mois)
-            .map_err(Echec::from)?
+            ?
             .iter()
             .filter_map(|o| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect::<String>()))
             .max();
@@ -805,7 +805,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             fait
         }
         Geste::Cloture { annee } => pas(d, quoi, quand, |ctx| {
-            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.iter().any(|m| m.annee() == *annee);
+            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == *annee);
             if Moteur::nouveau(ctx).exercice_clos(&annee.to_string())? || !a_des_paies {
                 return Ok(false);
             }
@@ -830,11 +830,11 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
 /// manque un fait attend qu'on le complete, et un refus du moteur arrete le pas, qui le dit.
 fn valider_les_engagements(d: &HorlogeFictive, mois: &str, jusqu_au: Jour, quoi: &str, quand: &str) -> Vec<String> {
     pas(d, quoi, quand, |ctx| {
-        let objets = engagement::stock::objets_du_mois(&ctx.racine, mois).map_err(Echec::from)?;
+        let objets = engagement::stock::objets_du_mois(&ctx.racine, mois)?;
         let ids = engagement::stock::identites(&objets);
         let le_mois = socle::mois::Mois::lire(mois)?;
         // Un mois sans saisie n'a rien a valider.
-        let Some(vue) = engagement::stock::vue_du_mois(&ctx.racine, mois).map_err(Echec::from)? else { return Ok(false) };
+        let Some(vue) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(false) };
         let manques = crate::mois::manques_de_la_saisie(ctx, &vue);
         let mut fait = false;
         for ((o, id), manque) in objets.iter().zip(ids).zip(manques) {
@@ -880,7 +880,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
 
 /// Le jour et l'heure ou l'engagement de ce contrat a ete valide en dernier (`valide.le`) : `AAAA-MM-JJTHH:MM:SS`.
 fn revalide_le(ctx: &Contexte, mois: &str, salarie: &str, debut: &str) -> R<Option<String>> {
-    Ok(engagement::stock::objets_du_mois(&ctx.racine, mois).map_err(Echec::from)?.into_iter().find_map(|o| {
+    Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
         let b = &*o.brut;
         let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == debut;
         sien.then(|| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect()))?
@@ -894,7 +894,7 @@ fn a_faire(o: &crate::obligations::Obligation) -> R<Option<Jour>> {
     if o.etat != crate::obligations::A_FAIRE && o.etat != crate::obligations::EN_RETARD {
         return Ok(None);
     }
-    o.butoir.as_deref().map(Jour::lire).transpose().map_err(|m| erreur(Classe::Illisible, m))
+    o.butoir.as_deref().map(Jour::lire).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Une obligation a faire (`a_faire`) dont la date butoir est passee ou d'aujourd'hui : sa butoir.
@@ -931,7 +931,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
     let natures = [(crate::obligations::CleDObligation::SignalementArret, NatureSignalement::Arret, "d'arrêt"), (crate::obligations::CleDObligation::SignalementReprise, NatureSignalement::Reprise, "de reprise")];
     let suivi = crate::obligations::Suivi::lire(ctx)?;
     for a in crate::metier::imprevus::tous_les_arrets(ctx)? {
-        let dernier = Jour::lire(&a.dernier_jour_travaille).map_err(|m| erreur(Classe::Illisible, m))?;
+        let dernier = Jour::lire(&a.dernier_jour_travaille).map_err(|m| m.reclasser(Classe::Illisible))?;
         if dernier.mois_civil() != le_mois {
             continue;
         }
@@ -966,10 +966,10 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
 /// fait dont l'empreinte change se rejoue.
 fn empreinte_du_mois(racine: &Path, mois: &str) -> R<String> {
     // Un mois sans saisie, ou sans imprevus, ou sans fiche de suivi, a une empreinte : celle de ce qu'il n'a pas.
-    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(Echec::from)?);
+    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None)?);
     let mut tout = saisie.into_bytes();
     for f in [engagement::imprevus::dossier(racine).join(format!("{}.json", mois)), engagement::imprevus::dossier(racine).join("obligations.json")] {
-        let octets = if socle::fichiers::existe(&f) { Some(std::fs::read(&f).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&f, &e)))?) } else { None };
+        let octets = if socle::fichiers::existe(&f) { Some(std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?) } else { None };
         tout.extend(format!("{:?}", octets.map(|o| socle::fichiers::sha256_hex(&o))).into_bytes());
     }
     Ok(socle::fichiers::sha256_hex(&tout)[..16].to_string())
@@ -989,7 +989,7 @@ fn annee_finie(d: &HorlogeFictive, annee: i32) -> R<bool> {
     }
     let ctx = d.contexte()?;
     let a = annee.to_string();
-    if !engagement::stock::mois_saisis(&ctx.racine).map_err(Echec::from)?.iter().any(|m| m.annee() == annee) {
+    if !engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == annee) {
         return Ok(true);
     }
     Ok(Moteur::nouveau(&ctx).exercice_clos(&a)? && crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a)?)
