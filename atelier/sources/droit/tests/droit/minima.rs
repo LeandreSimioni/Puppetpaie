@@ -14,7 +14,8 @@ use crate::outils::typee::{code_livre, lire, lu};
 fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() {
     let t: droit::minima::Table = lire(&code_livre(), "minima-conventionnels.json");
     let a = accord(&t, "kali-1285-accord-salaires-20260701").expect("l'accord de 2026 de la 1285 est dans la table");
-    let lie = |org: Option<&str>, depuis: &str| lie_depuis(a, org, depuis);
+    let j = |t: &str| socle::date::Jour::lire(t).unwrap();
+    let lie = |org: Option<&str>, depuis: &str| lie_depuis(a, org, j(depuis)).map(|x| x.iso());
 
     // Les minima (01/08) et les indemnites (01/09), pour une adherente d'un signataire (sous un nom ou sous un autre).
     for org in ["SYNDEAC", "syndeac", "Les Forces musicales", "Scène Ensemble"] {
@@ -28,11 +29,11 @@ fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() 
     }
     // Un accord qui n'est pas etendu ne lie que les adherentes.
     let non_etendu: droit::minima::Convention = lu(r#"{"signataires": ["SYNDEAC"]}"#);
-    assert_eq!(lie_depuis(&non_etendu, Some("SYNDEAC"), "2026-08-01").as_deref(), Some("2026-08-01"));
-    assert_eq!(lie_depuis(&non_etendu, None, "2026-08-01"), None);
+    assert_eq!(lie_depuis(&non_etendu, Some("SYNDEAC"), j("2026-08-01")), Some(j("2026-08-01")));
+    assert_eq!(lie_depuis(&non_etendu, None, j("2026-08-01")), None);
 
     // La grille du jour suit la meme date : celle de l'accord des qu'il lie la compagnie, celle d'avant jusque-la.
-    let depuis = |org: Option<&str>, jour: &str| grille_au(&t, "1285", org, Some(jour)).unwrap().1;
+    let depuis = |org: Option<&str>, jour: &str| grille_au(&t, "1285", org, Some(j(jour))).unwrap().1.map(|x| x.iso());
     assert_eq!(depuis(Some("SYNDEAC"), "2026-07-31"), None);
     assert_eq!(depuis(Some("SYNDEAC"), "2026-08-01").as_deref(), Some("2026-08-01"));
     assert_eq!(depuis(None, "2026-09-18"), None);

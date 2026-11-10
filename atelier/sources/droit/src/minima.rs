@@ -39,10 +39,10 @@ forme_notee! {
         pub libelle: Option<String>,
         pub texte: Option<String>,
         pub lien: Option<String>,
-        pub en_vigueur: Option<String>,
+        pub en_vigueur: Option<Jour>,
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
-        pub etendu_le: Option<String>,
+        pub etendu_le: Option<Jour>,
         /// Les organisations d'employeurs signataires de l'accord.
         pub signataires: Option<Vec<String>>,
         pub annexes: Option<BTreeMap<String, Annexe>>,
@@ -630,26 +630,23 @@ pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
 /// pas. Les deux articles : `atelier/reference/sources/legi-entrepot/articles.jsonl.gz`. Les minima d'un accord
 /// (`grille_au`) et les valeurs datees du bareme qui en viennent (`accord` dans l'entree,
 /// `droit::contexte::dater_les_accords`) se lisent ici.
-pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: &str) -> Option<String> {
-    let depuis: String = depuis.chars().take(10).collect();
+pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: Jour) -> Option<Jour> {
     if signataire(accord, organisation) {
         return Some(depuis);
     }
-    let etendu: String = accord.etendu_le.as_deref().filter(|e| !e.is_empty())?.chars().take(10).collect();
-    Some(etendu.max(depuis))
+    Some(accord.etendu_le?.max(depuis))
 }
 
 /// LA GRILLE DE LA CONVENTION `idcc` QUI LIE LA COMPAGNIE AU `jour` : celle du dernier de ses accords (`accords`) dont
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
 /// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
 /// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
-pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<&str>) -> Option<(&'a Convention, Option<String>, ParLaGrille)> {
+pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
     let base = t.convention(idcc)?;
-    let jour: Option<String> = jour.map(|j| j.chars().take(10).collect());
     let lie = |a: &'a Convention| {
         // Un accord qui ne dit pas quand ses minima entrent en vigueur ne lie personne.
-        let depuis = lie_depuis(a, organisation, a.en_vigueur.as_deref()?)?;
-        jour.as_ref().filter(|j| **j >= depuis).map(|_| (a, Some(depuis)))
+        let depuis = lie_depuis(a, organisation, a.en_vigueur?)?;
+        jour.filter(|j| *j >= depuis).map(|_| (a, Some(depuis)))
     };
     let (grille, depuis) = match base.accords.iter().flatten().rev().find_map(lie) {
         Some(retenu) => retenu,
