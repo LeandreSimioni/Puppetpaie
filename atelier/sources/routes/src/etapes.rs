@@ -2810,7 +2810,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             debut,
             fin,
             non_actif: n.le().to_string(),
-            non_actif_dit: format!("non actif depuis le {}", socle::ecran::quand(n.le())),
+            non_actif_dit: format!("non actif depuis le {}", socle::ecran::quand(&n.le().iso())),
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });
     }

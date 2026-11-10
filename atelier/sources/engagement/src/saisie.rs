@@ -389,7 +389,7 @@ impl Carte {
 
     /// Valide, dans la vue de son mois (un engagement que le calcul compte seulement comme valide ne l'est pas).
     pub fn est_validee(&self) -> bool {
-        self.valide.as_ref().is_some_and(|v| v.le.as_deref().is_some_and(|l| !l.is_empty()))
+        self.valide.as_ref().is_some_and(|v| v.le.is_some())
     }
 
     /// Un contrat paye au mois ?
@@ -449,7 +449,7 @@ pub struct Avant {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validee {
-    pub le: Option<String>,
+    pub le: Option<socle::paris::InstantEcrit>,
 }
 
 /// Ce que la saisie d'un mois pose pour tous ses engagements (le cachet par defaut), tel que la paie ecrite le garde

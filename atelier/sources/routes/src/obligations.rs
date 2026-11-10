@@ -762,11 +762,11 @@ fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> R<Option<Fait>> {
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> R<Option<(Depart, Option<Fait>)>> {
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
     let Some(premier) = signalements.iter().map(|e| e.quand.as_str()).min() else { return Ok(None) };
-    let Some(p) = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && p.saisi_le.as_str() > premier).last() else { return Ok(None) };
+    let Some(p) = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && p.saisi_le.iso().as_str() > premier).last() else { return Ok(None) };
     let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
     let rectificatif = signalements
         .iter()
-        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && e.quand >= p.saisi_le)
+        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && e.quand >= p.saisi_le.iso())
         .map(|e| e.quand.clone())
         .min();
     let fait = match rectificatif {
@@ -870,10 +870,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             traverses = socle::mois::Mois::entre(&p, &d);
         }
     }
-    let saisi = match lu {
-        Imprevu::Arret(a) => &a.saisi_le,
-        Imprevu::Suspension(s) => &s.saisi_le,
-    };
+    let saisi = &match lu {
+        Imprevu::Arret(a) => a.saisi_le,
+        Imprevu::Suspension(s) => s.saisi_le,
+    }
+    .iso();
     // Une DSN mensuelle a reporte l'imprevu : celle d'un mois qu'il traverse, partie apres sa saisie ; ou, un arret, la DSN suivante
     // qui reporte l'arret saisi apres le depart de celles de ses mois (`Arret::a_reporter`).
     let reporte = |mois: socle::mois::Mois, quand: &str| -> R<bool> {
@@ -1294,7 +1295,7 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
             )));
         }
     }
-    Ok(j.map(|j| ConnaissanceSaisie { jour: j.iso(), heure, saisi_le: compagnie::maintenant() }))
+    Ok(j.map(|j| ConnaissanceSaisie { jour: j.iso(), heure, saisi_le: compagnie::maintenant().iso() }))
 }
 
 /// Ecrit dans la fiche de suivi de l'arret `a` ce que `connaissance_saisie` a controle.
@@ -1418,7 +1419,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 heure: heure_saisie(charge.heure.as_deref())?,
                 depot,
                 reference: charge.reference.clone().filter(|r| !r.trim().is_empty()),
-                saisi_le: compagnie::maintenant(),
+                saisi_le: compagnie::maintenant().iso(),
             })
         }
     };
@@ -1528,7 +1529,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).
     let connue = |jour: Option<Jour>, heure: Option<&str>| {
-        jour.map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.map(String::from), saisi_le: compagnie::maintenant() })
+        jour.map(|j| ConnaissanceSaisie { jour: j.iso(), heure: heure.map(String::from), saisi_le: compagnie::maintenant().iso() })
     };
     let heure_accident = tape(&c.connaissance_heure).filter(|h| lire_heure(h).is_some());
     let jour_accident = jour_tape(&c.connaissance_accident).or_else(|| heure_accident.and(jour_tape(&c.date_accident)));

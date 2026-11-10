@@ -562,7 +562,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         let revalide = engagement::stock::objets_du_mois(d.racine, le_mois)
             ?
             .iter()
-            .filter_map(|o| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect::<String>()))
+            .filter_map(|o| o.brut.valide.as_ref().map(|v| v.le.iso()))
             .max();
         let documents = format!("{}T11:00:00", echeance.iso());
         let documents = match revalide {
@@ -878,7 +878,7 @@ fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Opti
     Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
         let b = &*o.brut;
         let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == Some(debut);
-        sien.then(|| o.brut.valide.as_ref().map(|v| v.le.chars().take(19).collect()))?
+        sien.then(|| o.brut.valide.as_ref().map(|v| v.le.iso()))?
     }))
 }
 

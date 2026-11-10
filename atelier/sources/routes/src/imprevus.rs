@@ -1390,7 +1390,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         premier_jour: premier,
         dernier_jour: dernier,
         note: s.note.clone(),
-        saisi_le: s.saisi_le.clone(),
+        saisi_le: s.saisi_le.iso(),
         reporte_par_dit: mois_de_la_dsn(&reportee),
         gestes: gestes_d_une_absence(s, &reportee),
         cachets,
@@ -2075,10 +2075,10 @@ enum Trace<'a> {
 }
 
 impl Trace<'_> {
-    fn quand(&self) -> &str {
+    fn quand(&self) -> socle::paris::HeureDeSaisie {
         match self {
-            Trace::Prolongation(p) => &p.saisi_le,
-            Trace::Reprise(r) => &r.saisi_le,
+            Trace::Prolongation(p) => p.saisi_le,
+            Trace::Reprise(r) => r.saisi_le,
         }
     }
 
@@ -2102,10 +2102,10 @@ impl Trace<'_> {
 /// la fin prescrite et la fin de subrogation d'avant, une reprise (`reprises`) la reprise et son motif d'avant. Une saisie
 /// de la minute meme a pu preceder l'instant ou le suivre : chacun de ces etats est rendu, du plus recent au plus ancien ;
 /// l'empreinte de ce qui est parti dit lequel c'etait (`gestes::depart::refaire_le_signalement`).
-pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, instant: &str) -> R<Vec<ArretSaisi>> {
+pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, instant: socle::paris::HeureDeSaisie) -> R<Vec<ArretSaisi>> {
     let (_, _, lu) = l_arret(ctx, &cle_du_nom(ctx, salarie)?, dernier_jour)?;
     let mut traces: Vec<Trace> = lu.prolongations.iter().map(Trace::Prolongation).chain(lu.reprises.iter().map(Trace::Reprise)).collect();
-    traces.sort_by(|x, y| x.quand().cmp(y.quand()));
+    traces.sort_by_key(|t| t.quand());
     let apres = traces.iter().filter(|t| t.quand() > instant).count();
     let memes = traces.iter().filter(|t| t.quand() == instant).count();
     let mut a = lu.clone();
@@ -2243,7 +2243,7 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
         reprise: a.reprise,
         reprise_motif: a.reprise_motif.clone(),
         note: a.note.clone(),
-        saisi_le: a.saisi_le.clone(),
+        saisi_le: a.saisi_le.iso(),
         signale,
         signalement_du,
         signalements,

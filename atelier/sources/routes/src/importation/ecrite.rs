@@ -575,7 +575,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
 /// (`reprise_journal::reprendre_les_depots`). Rend le nombre de depots repris.
 fn depots_attestes_au_journal(ctx: &Contexte) -> R<usize> {
     let qui = compagnie::INTERFACE.to_string();
-    compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &compagnie::maintenant()))
+    compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::reprise_journal::reprendre_les_depots(ctx, &qui, &compagnie::maintenant().iso()))
 }
 
 

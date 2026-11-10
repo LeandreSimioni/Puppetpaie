@@ -263,7 +263,7 @@ fn valide_le(o: &engagement::stock::Objet, n: u64) -> R<Option<socle::date::Jour
     let Some(le) = o.brut.valide.iter().map(Version::Presente).chain(o.brut.versions.iter().map(Version::Passee)).find(|v| v.numero() == Some(n)).and_then(|v| v.valide_le()) else {
         return Ok(None);
     };
-    jour_d_un_instant(le).map(Some)
+    Ok(Some(le.jour()))
 }
 
 /// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
@@ -315,7 +315,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
         // La version d'un non actif : la correction annulait ce qui avait ete declare (`Paie::annulee`), le jour ou il
         // a cesse d'etre actif. Sinon, le jour ou la version qu'elle emporte a ete validee.
         let (apres, decidee_le) = match (engagement::etats::NonActif::de(o.clone()).filter(|n| n.version() == version), &dernier) {
-            (Some(n), Some(d)) => (d.avant.annulee(), Some(jour_d_un_instant(n.le())?)),
+            (Some(n), Some(d)) => (d.avant.annulee(), Some(n.le().jour())),
             _ => (paie_de_la_version(&ctx_c, &o, &cle, &numero, c, version)?, valide_le(&o, version)?),
         };
         regs.push(match dernier {
@@ -1332,7 +1332,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                 let nature = crate::imprevus::NatureSignalement::du_code(n)?;
                 let charge = crate::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());
-                for a in crate::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, &compagnie::maintenant())? {
+                for a in crate::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, compagnie::maintenant())? {
                     crate::imprevus::signaler_l_arret(&ctx_j, &charge, Some(&a))?;
                     rendu = garder_si_identique(l, &[cible.to_path_buf()]);
                     if rendu.is_ok() {

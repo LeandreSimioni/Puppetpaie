@@ -63,6 +63,7 @@ use crate::{empreinte, relire};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
+use socle::paris::InstantEcrit;
 use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
 
 /// La raison d'un recalcul : le taux de prelevement a la source a change.
@@ -152,7 +153,7 @@ pub struct EnSaisie {
 #[derive(Debug, Clone)]
 pub struct Valide {
     objet: Objet,
-    le: String,
+    le: InstantEcrit,
     /// Pourquoi la paie du mois lu ne s'est pas ecrite : le refus du recalcul (`du_mois`), quand elle manque, ou quand il
     /// dit une saisie a finir (`saisie_incomplete`) : la paie ecrite ne tient plus, et elle ne se lit pas.
     refus: Option<Echec>,
@@ -178,7 +179,7 @@ pub enum Etat {
 
 impl Valide {
     fn de(objet: Objet) -> Option<Valide> {
-        let le = objet.brut.valide.as_ref()?.le.clone();
+        let le = objet.brut.valide.as_ref()?.le;
         Some(Valide { objet, le, refus: None, en_cours: None })
     }
 
@@ -188,8 +189,8 @@ impl Valide {
     }
 
     /// Quand il a ete valide.
-    pub fn le(&self) -> &str {
-        &self.le
+    pub fn le(&self) -> InstantEcrit {
+        self.le
     }
 
     /// Le numero de sa version (1 tant qu'aucune modification n'a suivi un envoi) ; `None` pour une validation qui ne le
@@ -643,7 +644,7 @@ fn valides_lues(ctx: &Contexte, mois: Mois, salarie: Option<&str>) -> R<Vec<(usi
             Some((_, _, paies)) => {
                 let Some(p) = paies.get(&mois) else { continue };
                 let mut lue = o.clone();
-                lue.brut_mut().valide = Some(stock::Validation::default());
+                lue.brut_mut().valide = Some(stock::Validation { le: maintenant(), version: None, saisie: None });
                 Valide::de(lue).map(|v| Valide { en_cours: Some((mois, p.clone())), ..v })
             }
             None => Valide::de(o),
@@ -945,8 +946,8 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
 }
 
 /// Le moment d'un geste, a l'heure du moteur.
-fn maintenant() -> String {
-    socle::paris::iso_secondes(socle::temps::secondes())
+fn maintenant() -> InstantEcrit {
+    InstantEcrit::maintenant()
 }
 
 
@@ -972,12 +973,12 @@ fn memes_chiffres(a: &BTreeMap<Mois, PaieEcrite>, b: &BTreeMap<Mois, PaieEcrite>
 /// sur elle (`siens`), elle se garde, datee, dans les versions de l'engagement, ses paies sous son numero dans le fichier
 /// de leur mois (`paies::garder_la_version`), et le present prend le numero suivant ; sinon le present garde son numero
 /// `n`, sans historique.
-fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: &str) -> R<u64> {
+fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: InstantEcrit) -> R<u64> {
     if !siens.iter().any(|d| d.version == n) {
         return Ok(n);
     }
     crate::paies::garder_la_version(o, n)?;
-    let passee = stock::VersionPassee { version: n, valide_le: actuelle.le.clone(), remplacee_le: le.to_string(), saisie: actuelle.saisie.clone() };
+    let passee = stock::VersionPassee { version: n, valide_le: actuelle.le, remplacee_le: le, saisie: actuelle.saisie.clone() };
     o.brut_mut().versions.push(passee);
     Ok(n + 1)
 }
@@ -996,7 +997,7 @@ pub fn valider(ctx: &Contexte, mois: Mois, rang: usize, departs: &Departs) -> R<
     // refuse rend l'engagement tel qu'il etait.
     let avant = o.clone();
     let le = maintenant();
-    crate::numeros::a_la_validation(ctx, &mut o, &le, departs)?;
+    crate::numeros::a_la_validation(ctx, &mut o, le, departs)?;
     let numerote = o.brut != avant.brut;
     if numerote {
         stock::reecrire(&ctx.racine, &o)?;
@@ -1021,8 +1022,8 @@ pub fn valider(ctx: &Contexte, mois: Mois, rang: usize, departs: &Departs) -> R<
     let saisie = saisie_de(&o);
     // Une validation qui ne change rien garde sa version et la date de celle-ci : la version est la meme.
     let (version, le) = match precedente.as_ref().and_then(|p| Some((p, p.version?))) {
-        Some((p, n)) if p.saisie.as_ref() != Some(&saisie) || !memes_chiffres(&gardees, &paies) => (nouvelle_version(&mut o, p, n, &siens, &le)?, le),
-        Some((p, n)) => (n, p.le.clone()),
+        Some((p, n)) if p.saisie.as_ref() != Some(&saisie) || !memes_chiffres(&gardees, &paies) => (nouvelle_version(&mut o, p, n, &siens, le)?, le),
+        Some((p, n)) => (n, p.le),
         None => (1, le),
     };
     // Sous un autre numero, la validation d'avant n'a plus de paies ; sous le meme, ses mois que celle-ci ne couvre plus.
@@ -1254,7 +1255,7 @@ pub fn supprimer(ctx: &Contexte, o: &Objet, departs: &Departs) -> R<()> {
 #[derive(Debug, Clone)]
 pub struct NonActif {
     objet: Objet,
-    le: String,
+    le: InstantEcrit,
     version: u64,
 }
 
@@ -1276,8 +1277,8 @@ impl NonActif {
     }
 
     /// Depuis quand.
-    pub fn le(&self) -> &str {
-        &self.le
+    pub fn le(&self) -> InstantEcrit {
+        self.le
     }
 
     /// CE QUE SA DESACTIVATION REND FAUX, tire de ce qui est parti (`departs`) comparé a son present, qui est : rien.
@@ -1477,7 +1478,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
             // Une validation a revalider (`a_revalider`) n'a rien emporte : sa paie se refait, sans version.
             let actuelle = o.brut.valide.clone().filter(|v| a_revalider(ctx, &o, stock::Version::Presente(v)).is_none());
             if let Some((actuelle, n)) = actuelle.as_ref().and_then(|a| Some((a, a.version?))) {
-                let suivante = nouvelle_version(&mut o, actuelle, n, &emportee, &le)?;
+                let suivante = nouvelle_version(&mut o, actuelle, n, &emportee, le)?;
                 if suivante != n {
                     if let Some(v) = o.brut_mut().valide.as_mut() {
                         v.version = Some(suivante);
@@ -1922,11 +1923,7 @@ pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: Mois) 
 
 /// La phrase d'un recalcul, pour l'ecran : « Recalculé le JJ/MM/AAAA : taux de PAS reçu. »
 pub fn phrase_du_recalcul(r: &Recalcul) -> Option<String> {
-    // Un instant (AAAA-MM-JJTHH:MM) se dit par son jour.
-    let jour = match r.le.get(..10).map(Jour::lire) {
-        Some(Ok(j)) => j.jj_mm_aaaa(),
-        _ => r.le.clone(),
-    };
-    Some(format!("Recalculé le {} : {}.", jour, r.raison))
+    // Un instant se dit par son jour.
+    Some(format!("Recalculé le {} : {}.", r.le.jour().jj_mm_aaaa(), r.raison))
 }
 

@@ -924,7 +924,7 @@ mod tests {
             "motif": "01", "dernier_jour_travaille": "2026-03-06", "debut": "2026-03-09", "fin_previsionnelle": "2026-03-20",
             "subrogation": null, "subrogation_debut": null, "subrogation_fin": null, "reprise": null, "reprise_motif": null,
             "date_accident": null, "jours_deja_indemnises": null, "ij_brute": "40.89", "ij_nette": "38.15", "ij_brute_majoree": null,
-            "ij_nette_majoree": null, "prolongations": [], "reprises": [], "saisi_le": "2026-03-09T10:00:00", "qui": "interface", "note": ""}"#,
+            "ij_nette_majoree": null, "prolongations": [], "reprises": [], "saisi_le": "2026-03-09 10:00", "qui": "interface", "note": ""}"#,
             crate::imprevus::ILLISIBLE).unwrap();
         let (premier, dernier) = (crate::imprevus::premier_jour_d_arret(&imp).unwrap(), crate::imprevus::dernier_jour_d_arret(&imp).unwrap());
         let premier_indemnise = |o: Origine| {

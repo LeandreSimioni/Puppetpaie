@@ -53,7 +53,7 @@ pub struct Empreinte {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recalcul {
-    pub le: String,
+    pub le: socle::paris::InstantEcrit,
     pub raison: String,
 }
 

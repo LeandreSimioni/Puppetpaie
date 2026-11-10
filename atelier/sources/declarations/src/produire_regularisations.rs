@@ -110,7 +110,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
                     format!("Correction de {} pour {} : la validation de l'engagement ne porte pas son numéro de version, ce qu'elle déclare ne se dit pas. La revalider.", mois, documents::tableaux_export::qui_souple(&apres.salarie)),
                 )
             })?;
-            let decidee_le = decidee_le(d.valide.le())?;
+            let decidee_le = Some(d.valide.le().jour());
             if d.declarees.is_empty() {
                 out.push(ajout(mois, version, decidee_le, apres)?);
                 continue;
@@ -182,7 +182,7 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
         out.push(Reg {
             mois,
             version: n.version(),
-            decidee_le: decidee_le(n.le())?,
+            decidee_le: Some(n.le().jour()),
             taux_pas_origine: lu.versement.taux_pas.clone(),
             avant: lu.avant,
             declare: lu.versement,
@@ -294,14 +294,6 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
             decidee_le: r.decidee_le,
         })
         .collect()
-}
-
-/// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
-fn decidee_le(le: &str) -> R<Option<Jour>> {
-    match le.get(..10) {
-        Some(jour) => Jour::lire(jour).map(Some).map_err(|e| e.reclasser(Classe::Illisible)),
-        None => Ok(None),
-    }
 }
 
 

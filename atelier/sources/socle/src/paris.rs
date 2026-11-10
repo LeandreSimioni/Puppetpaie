@@ -87,7 +87,7 @@ impl<'de> serde::Deserialize<'de> for Moment {
 
 /// UNE HEURE DE PARIS, en secondes d'une epoque « naive » (l'heure locale lue comme si c'etait de l'UTC) : de quoi
 /// additionner des heures et comparer deux heures locales. Son jour est un jour du calendrier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Naif(i64);
 
 impl Naif {
@@ -157,6 +157,184 @@ impl<'de> serde::Deserialize<'de> for Naif {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Naif, D::Error> {
         let t = i64::deserialize(d)?;
         Naif::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
+    }
+}
+
+/// UN INSTANT ECRIT A LA SECONDE : l'heure de Paris d'un geste, `AAAA-MM-JJTHH:MM:SS` (la saisie d'un imprevu, la
+/// validation d'une version, le depart d'un envoi). Il se lit et s'ecrit dans cette forme, et elle seule, octet pour
+/// octet ; deux instants se comparent comme leurs textes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstantEcrit(Naif);
+
+/// UN INSTANT ECRIT A LA MINUTE : l'heure de Paris `AAAA-MM-JJTHH:MM` (la pose d'un secret dans le coffre, la fin d'une
+/// seance). Meme regle que l'instant a la seconde, dans sa forme a lui.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MinuteEcrite(Naif);
+
+impl InstantEcrit {
+    /// L'heure de Paris de cet instant, comme `iso_secondes` l'ecrit (la fraction arrondie a la microseconde).
+    pub fn de(t: Moment) -> InstantEcrit {
+        InstantEcrit(Naif(local_arrondi(t)))
+    }
+
+    /// L'heure de Paris a cet instant (`socle::temps`).
+    pub fn maintenant() -> InstantEcrit {
+        InstantEcrit::de(crate::temps::secondes())
+    }
+
+    /// Une heure naive, tronquee a la seconde (elle l'est deja).
+    pub fn du_naif(n: Naif) -> InstantEcrit {
+        InstantEcrit(n)
+    }
+
+    /// `AAAA-MM-JJTHH:MM:SS`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<InstantEcrit> {
+        let n = Naif::lire(texte)?;
+        (n.iso() == texte).then_some(InstantEcrit(n))
+    }
+
+    /// L'heure naive.
+    pub fn naif(self) -> Naif {
+        self.0
+    }
+
+    /// Son jour.
+    pub fn jour(self) -> Jour {
+        self.0.jour()
+    }
+
+    /// `AAAA-MM-JJTHH:MM:SS`.
+    pub fn iso(self) -> String {
+        self.0.iso()
+    }
+}
+
+impl MinuteEcrite {
+    /// L'heure de Paris de cet instant, comme `iso_minutes` l'ecrit.
+    pub fn de(t: Moment) -> MinuteEcrite {
+        MinuteEcrite::du_naif(Naif(local_arrondi(t)))
+    }
+
+    /// L'heure de Paris a cet instant (`socle::temps`).
+    pub fn maintenant() -> MinuteEcrite {
+        MinuteEcrite::de(crate::temps::secondes())
+    }
+
+    /// Une heure naive, tronquee a la minute.
+    pub fn du_naif(n: Naif) -> MinuteEcrite {
+        MinuteEcrite(Naif(n.0 - n.0.rem_euclid(60)))
+    }
+
+    /// `AAAA-MM-JJTHH:MM`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<MinuteEcrite> {
+        let n = Naif::lire(texte)?;
+        (texte.len() == 16 && n.iso()[..16] == *texte).then_some(MinuteEcrite(n))
+    }
+
+    /// L'heure naive.
+    pub fn naif(self) -> Naif {
+        self.0
+    }
+
+    /// Son jour.
+    pub fn jour(self) -> Jour {
+        self.0.jour()
+    }
+
+    /// `AAAA-MM-JJTHH:MM`.
+    pub fn iso(self) -> String {
+        self.0.iso()[..16].to_string()
+    }
+}
+
+/// L'HEURE D'UNE SAISIE : l'heure de Paris `AAAA-MM-JJ HH:MM`, une espace entre le jour et l'heure (la saisie d'un
+/// imprevu, de la connaissance d'un arret). Meme regle que l'instant a la seconde, dans sa forme a elle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HeureDeSaisie(Naif);
+
+impl HeureDeSaisie {
+    /// L'heure de Paris a cet instant (`socle::temps`), tronquee a la minute.
+    pub fn maintenant() -> HeureDeSaisie {
+        HeureDeSaisie(MinuteEcrite::maintenant().0)
+    }
+
+    /// `AAAA-MM-JJ HH:MM`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<HeureDeSaisie> {
+        let n = Naif::lire(&texte.replacen(' ', "T", 1))?;
+        let h = HeureDeSaisie(MinuteEcrite::du_naif(n).0);
+        (h.iso() == texte).then_some(h)
+    }
+
+    /// L'heure naive.
+    pub fn naif(self) -> Naif {
+        self.0
+    }
+
+    /// Son jour.
+    pub fn jour(self) -> Jour {
+        self.0.jour()
+    }
+
+    /// `AAAA-MM-JJ HH:MM`.
+    pub fn iso(self) -> String {
+        self.0.iso()[..16].replacen('T', " ", 1)
+    }
+}
+
+impl std::fmt::Display for HeureDeSaisie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.iso())
+    }
+}
+
+impl serde::Serialize for HeureDeSaisie {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for HeureDeSaisie {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeSaisie, D::Error> {
+        let s = String::deserialize(d)?;
+        HeureDeSaisie::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJ HH:MM", crate::date::repr_texte(&s))))
+    }
+}
+
+impl std::fmt::Display for InstantEcrit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.iso())
+    }
+}
+
+impl std::fmt::Display for MinuteEcrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.iso())
+    }
+}
+
+impl serde::Serialize for InstantEcrit {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for InstantEcrit {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<InstantEcrit, D::Error> {
+        let s = String::deserialize(d)?;
+        InstantEcrit::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAA-MM-JJTHH:MM:SS", crate::date::repr_texte(&s))))
+    }
+}
+
+impl serde::Serialize for MinuteEcrite {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for MinuteEcrite {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteEcrite, D::Error> {
+        let s = String::deserialize(d)?;
+        MinuteEcrite::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAA-MM-JJTHH:MM", crate::date::repr_texte(&s))))
     }
 }
 
