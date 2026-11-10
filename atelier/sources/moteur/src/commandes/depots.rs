@@ -39,7 +39,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         return Ok(2);
     };
     let environnement = args.exige("environnement")?;
-    let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| ko(String::from(p.echec)))?;
+    let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| Echec { classe: None, ..p.echec })?;
     derouler(cadre, args, client)
 }
 
@@ -63,7 +63,7 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
     match resultat {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            dire!("Echec : {}", String::from(p.echec));
+            dire!("Echec : {}", p.echec.en_lignes());
             return Ok(1);
         }
         Err(p) => return Err(p.en_echec()),
@@ -86,20 +86,16 @@ pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, E
 /// Le reseau injoignable ou coupe, ou le coffre qui ne s'ouvre pas : une phrase et un code, pas un plantage.
 fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
     if matches!(e.classe, Some(Classe::Reseau | Classe::DelaiDepasse)) {
-        dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", String::from(e));
+        dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", e.en_lignes());
         return 1;
     }
     // Le coffre ferme et la seance refusee : « rien ici ne l'ouvre » est une phrase pour l'utilisateur, pas un defaut du logiciel.
     // Code 2, comme « le mot de passe n'est nulle part ».
     if e.classe == Some(Classe::Coffre) {
-        dire!("{}", String::from(e));
+        dire!("{}", e.en_lignes());
         return 2;
     }
     cadre.plantage(e)
-}
-
-fn ko(m: String) -> Echec {
-    Echec { classe: None, phrase: m, a_part: None }
 }
 
 const JOUR: i64 = 86_400;

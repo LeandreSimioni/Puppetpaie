@@ -26,7 +26,7 @@
 //! 3. ce que la route rend est une structure `serde` qui porte sa phrase et la dit (`impl Dite`) ; la porte en controle les
 //!    phrases (`Rendu::phrases`, `Rendu::plus_longue_phrase`) ;
 //! 4. un refus est un `Echec` dont la classe est un mot du logiciel (`erreur(Classe::Manque, …)`), ce qui n'est pas pour
-//!    l'ecran a part (`socle::echec::avec`, que la reponse rend dans `refus.a_part`) ; la fiche dit quoi corriger pour
+//!    l'ecran a part (`socle::echec::APart`, que la reponse rend dans `refus.a_part`) ; la fiche dit quoi corriger pour
 //!    chaque classe qu'elle refuse ;
 //! 5. dans `servir`, son bras est `m::route(&porte, charge)`.
 //!
@@ -274,18 +274,15 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // dependent d'aucun de ces manques : leur refus se dit seul.
     match rendu {
         Err(e) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && e.classe != Some(Classe::EnvoiBride) => {
-            let (classe, message) = (e.classe, String::from(e));
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
-            let message = if message.contains(socle::echec::A_PART) {
-                message
-            } else {
-                match declarations::demarrage::a_la_suite(&ctx, &message) {
-                    Ok(Some(suite)) => message + &suite,
-                    Ok(None) => message,
-                    Err(e) => format!("{} {}", message, String::from(e)),
-                }
-            };
-            Err(Echec { classe, phrase: message, a_part: None })
+            if e.a_part.is_some() {
+                return Err(e);
+            }
+            match declarations::demarrage::a_la_suite(&ctx, &e.phrase) {
+                Ok(Some(suite)) => Err(e.reformuler(|p| format!("{}{}", p, suite))),
+                Ok(None) => Err(e),
+                Err(m) => Err(Echec { a_part: m.a_part, ..e.reformuler(|p| format!("{} {}", p, m.phrase)) }),
+            }
         }
         autre => autre,
     }
@@ -325,14 +322,14 @@ impl<'a> PhraseNotee<'a> {
             sans_contexte: true,
         };
         if let Err(e) = compagnie::incidents::noter(racine, &note) {
-            compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", e.phrase()));
+            compagnie::diagnostic::noter_moteur(&format!("Une phrase mal placée ne se note pas au journal des incidents : {}", e.phrase));
         }
     }
 }
 
 /// UNE PHRASE DE REFUS QUI N'EST PAS FAITE POUR L'ECRAN (un chemin, un nom de fichier, un terme de code :
 /// `affiche::defaut`) se lit quand meme, et note un incident silencieux au developpeur : la route et le defaut, jamais la
-/// phrase. On la corrige a la cause : la phrase en mots, ce qui n'est pas pour l'ecran a part (`socle::echec::avec`).
+/// phrase. On la corrige a la cause : la phrase en mots, ce qui n'est pas pour l'ecran a part (`socle::echec::APart`).
 fn refus_a_sa_place(racine: &Path, route: &str, phrase: &str) {
     let Some(d) = affiche::defaut(phrase, usize::MAX, false) else { return };
     let resume = format!("Un refus de la route {} n'est pas fait pour l'écran : {}.", route, d.corriger());

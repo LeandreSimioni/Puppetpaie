@@ -42,8 +42,8 @@ pub struct Visee {
 type R<T> = Result<T, RefusVisee>;
 
 #[track_caller]
-fn refus(m: impl Into<Echec>) -> RefusVisee {
-    RefusVisee::Refus(m.into())
+fn refus(m: impl Into<String>) -> RefusVisee {
+    RefusVisee::Refus(socle::echec::refus(m))
 }
 
 const TOURS: usize = 12;
@@ -62,7 +62,7 @@ fn flottant(x: Decimal) -> Option<Chiffre> {
 
 /// La rubrique de la ligne ; une rubrique que le catalogue ne connait pas se refuse.
 fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubrique> {
-    droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(refus)
+    droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
 }
 
 /// Une ligne dont le taux est une case : en unites (un salaire, une absence, une indemnite), ou de frais.
@@ -127,7 +127,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
             )));
         }
         if let Some(l) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))) {
-            l.poser_taux(Decimal::ONE).map_err(refus)?;
+            l.poser_taux(Decimal::ONE).map_err(RefusVisee::Refus)?;
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
@@ -135,7 +135,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
             for l in ls.iter_mut().filter(|l| taux_vide(l)) {
-                l.poser_taux(Decimal::ZERO).map_err(refus)?;
+                l.poser_taux(Decimal::ZERO).map_err(RefusVisee::Refus)?;
             }
         } else {
             ls.retain(|l| !taux_vide(l));
@@ -146,7 +146,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
 
 /// Un montant multiplie par `facteur`, au centime, en flottant.
 fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<Option<Chiffre>> {
-    let a = x.dec().map_err(refus)?;
+    let a = x.dec().map_err(RefusVisee::Refus)?;
     let p = a.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
     Ok(flottant(centimes(p)))
 }
@@ -168,7 +168,7 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
         if let Some(t) = l.taux() {
             // Le taux au centime, sous sa forme flottante la plus courte (`mis_a_l_echelle`).
             let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::dec_f64(socle::num::flottant(centimes(p))).map_err(refus)?).map_err(refus)?;
+            l.poser_taux(socle::num::dec_f64(socle::num::flottant(centimes(p))).map_err(RefusVisee::Refus)?).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }

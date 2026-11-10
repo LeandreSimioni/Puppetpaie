@@ -63,7 +63,7 @@ fn quand_dit(depuis: Option<Jour>, jusqu_au: Option<Jour>) -> String {
 /// LES TEMPS DE LA CASE `champ` (sa liste datee `liste`) a `jour` (`droit::fiche::temps_au`, `meme` disant deux valeurs
 /// pareilles) ; `None` si elle n'a qu'une valeur.
 pub(crate) fn d_une_case<V: Clone>(champ: &str, liste: &[droit::fiche::Datee<V>], jour: &Jour, meme: impl Fn(&V, &V) -> bool) -> R<Option<TempsDeLaCase<V>>> {
-    let temps = droit::fiche::temps_au(liste, jour, meme).map_err(Echec::from)?;
+    let temps = droit::fiche::temps_au(liste, jour, meme)?;
     if temps.toutes.len() < 2 {
         return Ok(None);
     }
@@ -73,7 +73,7 @@ pub(crate) fn d_une_case<V: Clone>(champ: &str, liste: &[droit::fiche::Datee<V>]
     let en_vigueur = temps.en_vigueur.map(|e| e.depuis);
     let mut valeurs = Vec::new();
     for (i, e) in temps.toutes.iter().enumerate() {
-        let jusqu_au = temps.toutes.get(i + 1).and_then(|s| s.depuis).map(|d| d.plus_jours(-1)).transpose().map_err(Echec::from)?;
+        let jusqu_au = temps.toutes.get(i + 1).and_then(|s| s.depuis).map(|d| d.plus_jours(-1)).transpose()?;
         valeurs.push(LigneDuTemps { valeur: e.valeur.clone(), depuis: e.depuis, jusqu_au, dit: quand_dit(e.depuis, jusqu_au), en_vigueur: en_vigueur == Some(e.depuis), note: e.note.clone() });
     }
     Ok(Some(TempsDeLaCase { champ: champ.to_string(), avant, a_venir, valeurs, lignes: Vec::new() }))

@@ -143,7 +143,7 @@ pub(crate) fn lire_au<T: serde::de::DeserializeOwned>(
     LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.map(str::to_string), retenues: Vec::new() }));
     let lu = socle::forme::lire_fichier::<T>(fichier, phrase);
     let lecture = LECTURE.with(|l| l.borrow_mut().take());
-    let mut retenues = lecture.ok_or_else(|| "La lecture du barème a perdu ses dates : le signaler au développeur.".to_string())?.retenues;
+    let mut retenues = lecture.ok_or_else(|| socle::echec::refus("La lecture du barème a perdu ses dates : le signaler au développeur."))?.retenues;
     retenues.sort();
     retenues.dedup();
     Ok((lu?, retenues))
@@ -172,8 +172,8 @@ pub(crate) mod datee {
         LECTURE.with(|l| {
             let mut l = l.borrow_mut();
             let lecture = l.as_mut().ok_or_else(|| D::Error::custom("une valeur datée ne se lit qu'à une date"))?;
-            // Le refus devient le texte de l'erreur de serde, ce qu'il porte a part compris (`From<Echec> for String`).
-            retenir(entrees, lecture).map_err(|e| D::Error::custom(String::from(e)))
+            // Le refus devient le texte de l'erreur de serde, ce qu'il porte a part compris, sur sa ligne (`en_lignes`).
+            retenir(entrees, lecture).map_err(|e| D::Error::custom(e.en_lignes()))
         })
     }
 

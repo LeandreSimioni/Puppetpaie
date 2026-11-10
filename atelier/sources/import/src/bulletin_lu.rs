@@ -751,7 +751,7 @@ impl Table {
         let mut mentions = Vec::new();
         for (n, x) in &t.mentions {
             let &(nom, sorte, section, rangs, employeur) =
-                MENTIONS.iter().find(|c| c.0 == n).ok_or_else(|| format!("mentions.{} : mention inconnue", n))?;
+                MENTIONS.iter().find(|c| c.0 == n).ok_or_else(|| socle::refus!("mentions.{} : mention inconnue", n))?;
             mentions.push(Mention { nom, sorte, section, rangs, employeur, libelles: x.phrases(&format!("mentions.{}", n))? });
         }
         let e = &t.entetes;

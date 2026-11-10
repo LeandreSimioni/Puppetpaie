@@ -181,7 +181,7 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> R<S
         if e.a_cheval()? && !e.dernier_mois()? {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
-            let fin = e.fin.ok_or("un contrat sans fin n'a pas de date de fin")?;
+            let fin = e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de date de fin"))?;
             ligne.push_str(&format!(" (contrat en cours jusqu'au {} : son attestation viendra à la fin)", fin.jj_mm_aaaa()));
         }
         lignes.push(ligne);
@@ -992,7 +992,7 @@ pub fn date_de(t: i64) -> R<String> {
     let local = t + decalage;
     let jours = local.div_euclid(86_400);
     let secondes = local.rem_euclid(86_400);
-    let j = socle::date::Jour::depuis_jours_unix(jours).ok_or("L'horloge du poste donne une date impossible.")?;
+    let j = socle::date::Jour::depuis_jours_unix(jours).ok_or_else(|| socle::echec::refus("L'horloge du poste donne une date impossible."))?;
     // Le 01/01/1970 etait un jeudi.
     let semaine = (jours + 3).rem_euclid(7) as usize;
     Ok(format!(

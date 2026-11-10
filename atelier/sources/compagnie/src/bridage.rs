@@ -60,7 +60,7 @@ fn dit(p: &Path) -> Option<bool> {
         Ok(e) => bride_selon(&e.edition),
         // Il ne debloque pas ; le developpeur le saura (le fil du moteur).
         Err(illisible) => {
-            crate::diagnostic::noter_moteur(&format!("bridage : {}", illisible.phrase()));
+            crate::diagnostic::noter_moteur(&format!("bridage : {}", illisible.phrase));
             None
         }
     }

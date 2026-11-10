@@ -1729,7 +1729,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
         t
     };
-    let trop_courte = || socle::fichiers::trop_courte("les mois du contrat");
+    let trop_courte = || socle::echec::refus(socle::fichiers::trop_courte("les mois du contrat"));
     Ok(VuePaie {
         resolu_dit,
         contrat_dit,

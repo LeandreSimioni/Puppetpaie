@@ -61,7 +61,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
             0
         }
         Err(e) => {
-            dire!("! {}", e);
+            dire!("! {}", e.en_lignes());
             2
         }
     })
@@ -74,6 +74,6 @@ fn phrase_publiee(dite: Option<String>) -> String {
 }
 
 /// Le refus d'une commande a qui manquent des options : la phrase, et les options a part.
-fn options_manquantes(phrase: &str, options: &str) -> String {
-    socle::echec::avec(phrase, socle::echec::Lieu { detail: Some(options.to_string()), ..Default::default() })
+fn options_manquantes(phrase: &str, options: &str) -> socle::echec::Echec {
+    socle::echec::refus_avec(phrase, socle::echec::Lieu { detail: Some(options.to_string()), ..Default::default() })
 }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::fiches::{aujourd_hui, creer_dossier, ecrire, en_os, refus};
+use crate::fiches::{aujourd_hui, creer_dossier, ecrire, refus};
 use crate::ouverture::{EcranDeLImage, Identite, ImageIdentite};
 use droit::contexte::Contexte;
 use socle::echec::{Echec, R};
@@ -174,7 +174,7 @@ fn format_de(o: &[u8]) -> Option<&'static str> {
 fn avant(f: &Path) -> R<()> {
     let mut nom = f.as_os_str().to_owned();
     nom.push(".avant");
-    std::fs::rename(f, PathBuf::from(nom)).map_err(|e| en_os(socle::echec::du_disque(&f, &e)))
+    std::fs::rename(f, PathBuf::from(nom)).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))
 }
 
 fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
@@ -230,7 +230,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         _ => ".svg",
     };
     let cible = dossier.join(format!("{}{}", quoi, extension));
-    std::fs::write(&cible, &octets).map_err(|e| en_os(socle::echec::du_disque(&cible, &e)))?;
+    std::fs::write(&cible, &octets).map_err(|e| socle::echec::du_disque(&cible, &e).reclasser(socle::echec::Classe::Disque))?;
     if quoi == "signature" {
         // Pour qui elle est posee : la personne qui signe CE JOUR-LA.
         let mut registre = crate::ouverture::registre_identite(&dossier)?;

@@ -35,7 +35,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(c) => c,
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
         Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
-            dire!("! {}", String::from(e));
+            dire!("! {}", e.en_lignes());
             2
         }
         Err(e) => cadre.plantage(e),
@@ -114,7 +114,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             Ok(0)
         }
         compagnie::demande::Verdict::Refuse(e) => {
-            dire!("! {}", String::from(e));
+            dire!("! {}", e.en_lignes());
             Ok(2)
         }
     }

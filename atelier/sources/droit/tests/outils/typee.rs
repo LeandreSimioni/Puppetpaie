@@ -157,7 +157,7 @@ impl<T> From<Result<T, socle::echec::Echec>> for Rendu<T> {
     fn from(r: Result<T, socle::echec::Echec>) -> Rendu<T> {
         match r {
             Ok(v) => Rendu::Ok(v),
-            Err(e) => Rendu::Err(e.into()),
+            Err(e) => Rendu::Err(e.en_lignes()),
         }
     }
 }

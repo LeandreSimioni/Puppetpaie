@@ -154,8 +154,8 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
-    let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| "le préavis de la convention ne donne pas de durée et ne dit pas pourquoi".to_string());
-    let conv_article = || conv.article.as_deref().ok_or_else(|| "le préavis de la convention donne une durée sans dire son article".to_string());
+    let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
+    let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
     let categorie_dite: String = categorie.map(clauses::categorie_en_mots).into_iter().collect();
     let mut out = Preavis { mois: None, legal, convention: conv_mois, qui: String::new(), dit: String::new(), pourquoi: None };
     let rel = clauses::releve(idcc)?;
@@ -833,7 +833,7 @@ fn indemnite_de_rupture(
         if let (true, Some(rc_sec)) = (lic.du, rc_sec) {
             cc.bas = lic.bas;
             cc.haut = lic.haut;
-            let renvoi = lic.article.as_deref().ok_or_else(|| "l'indemnité conventionnelle de licenciement est due sans dire son article".to_string())?;
+            let renvoi = lic.article.as_deref().ok_or_else(|| socle::echec::refus("l'indemnité conventionnelle de licenciement est due sans dire son article"))?;
             cc.article = Some(format!("{} (art. {}, qui renvoie a {})", clauses::nom(idcc), rc_sec.article, renvoi));
         }
         c = cc;
@@ -846,7 +846,7 @@ fn indemnite_de_rupture(
     }
     let conv_pourquoi = c.pourquoi.clone();
     // Une indemnite legale qui n'est pas due dit pourquoi (`permanents`).
-    let pourquoi_legal = || legale.pourquoi.as_deref().ok_or_else(|| format!("{} : l'indemnité légale de {} n'est pas due et ne dit pas pourquoi", qui, quoi));
+    let pourquoi_legal = || legale.pourquoi.as_deref().ok_or_else(|| socle::refus!("{} : l'indemnité légale de {} n'est pas due et ne dit pas pourquoi", qui, quoi));
 
     let du_legal = legale.du;
     let m_legal = if du_legal { legale.montant } else { zero2() };

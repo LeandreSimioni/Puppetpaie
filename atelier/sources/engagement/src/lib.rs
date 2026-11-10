@@ -1355,7 +1355,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
             etrangeres.push(out.len());
         } else if let (Some(taux), false) = (taux, de_l_annexe) {
             let erreur_bareme = |cle: &str| {
-                format!(
+                socle::refus!(
                     "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {} (`{}`). Rien n'est calculé.",
                     qui,
                     jour.an,

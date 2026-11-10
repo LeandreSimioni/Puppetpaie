@@ -766,7 +766,7 @@ impl Coffre {
         }
         let brut = lire_octets(&p)?;
         let lu = match std::str::from_utf8(&brut) {
-            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| m.phrase()),
+            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| m.phrase),
             Err(e) => Err(e.to_string()),
         };
         match lu {

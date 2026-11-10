@@ -93,7 +93,7 @@ pub fn reduction_generale(
             if parts.len() != 2 {
                 return Err(socle::refus!("fraction illisible : {}", socle::fichiers::repr(t)));
             }
-            let lire = |s: &str| Decimal::from_str(s).map_err(|_| socle::num::illisible(s));
+            let lire = |s: &str| Decimal::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
             let (num, den) = (lire(parts[0])?, lire(parts[1])?);
             coefficient = diviser(mul(coefficient, num), den)?;
         }

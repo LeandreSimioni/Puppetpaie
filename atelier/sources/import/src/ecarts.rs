@@ -283,7 +283,7 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
         match incidents::noter(racine, &note) {
             Ok(Some(_)) => notes += 1,
             Ok(None) => {}
-            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase()),
+            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase),
         }
     }
     if !faites.is_empty() {

@@ -465,7 +465,7 @@ struct DuMois<'a> {
 fn recalcul_refuse(racine: &Path, mois: &str, refus: &socle::echec::Echec) {
     let detail = DuMois { mois, a_part: refus.a_part.as_ref() };
     if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), &refus.phrase, None, "engagement::etats::du_mois", detail, None) {
-        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", e.phrase());
+        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", e.phrase);
     }
 }
 
@@ -856,7 +856,7 @@ pub fn envoi_actif(racine: &Path) -> bool {
     match envoi(racine) {
         Ok(actif) => actif,
         Err(e) => {
-            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", e.phrase()));
+            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", e.phrase));
             false
         }
     }

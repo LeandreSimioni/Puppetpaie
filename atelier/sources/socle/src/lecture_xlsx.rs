@@ -78,9 +78,9 @@ impl Classeur {
         let mut f = self
             .archive
             .by_name(membre)
-            .map_err(|e| format!("{} : {} absent du classeur ({})", self.nom, membre, e))?;
+            .map_err(|e| refus(format!("{} : {} absent du classeur ({})", self.nom, membre, e)))?;
         let mut octets = Vec::new();
-        f.read_to_end(&mut octets).map_err(|e| format!("{} : {} illisible ({})", self.nom, membre, e))?;
+        f.read_to_end(&mut octets).map_err(|e| refus(format!("{} : {} illisible ({})", self.nom, membre, e)))?;
         String::from_utf8(octets).map_err(|_| refus(format!("{} : {} n'est pas en UTF-8", self.nom, membre)))
     }
 }
@@ -122,7 +122,7 @@ fn colonne(reference: &str) -> R<usize> {
         n = n
             .checked_mul(26)
             .and_then(|n| n.checked_add(c as usize - 64))
-            .ok_or_else(|| format!("colonne hors d'atteinte : {}", reference))?;
+            .ok_or_else(|| refus(format!("colonne hors d'atteinte : {}", reference)))?;
     }
     Ok(n - 1)
 }
@@ -180,7 +180,7 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
             cible = l.attribute("Target").map(str::to_string);
         }
     }
-    let cible = cible.ok_or_else(|| format!("{} : la feuille « {} » ({}) n'a pas de cible", c.nom, feuille, rid))?;
+    let cible = cible.ok_or_else(|| refus(format!("{} : la feuille « {} » ({}) n'a pas de cible", c.nom, feuille, rid)))?;
     let mut chemin_feuille = cible.trim_start_matches('/').to_string();
     if !chemin_feuille.starts_with("xl/") {
         chemin_feuille = format!("xl/{}", chemin_feuille);
@@ -194,11 +194,11 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
     let texte = c.lire(&chemin_feuille)?;
     let doc = analyser(&c.nom, &chemin_feuille, &texte)?;
     let donnees = enfant(doc.root_element(), "sheetData")
-        .ok_or_else(|| format!("{} : {} sans sheetData", c.nom, chemin_feuille))?;
+        .ok_or_else(|| refus(format!("{} : {} sans sheetData", c.nom, chemin_feuille)))?;
     let mut rangs: Vec<Ligne> = Vec::new();
     for rang in enfants(donnees, "row") {
         let numero = entier(
-            rang.attribute("r").ok_or_else(|| format!("{} : une ligne sans numero", c.nom))?,
+            rang.attribute("r").ok_or_else(|| refus(format!("{} : une ligne sans numero", c.nom)))?,
             "numero de ligne",
         )?;
         let mut cellules: std::collections::BTreeMap<usize, Cellule> = std::collections::BTreeMap::new();
@@ -206,19 +206,19 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
             let genre = case.attribute("t");
             let v = enfant(case, "v").and_then(|v| v.text());
             let valeur = if genre == Some("inlineStr") {
-                let is = enfant(case, "is").ok_or_else(|| format!("{} : texte en ligne sans <is>", c.nom))?;
+                let is = enfant(case, "is").ok_or_else(|| refus(format!("{} : texte en ligne sans <is>", c.nom)))?;
                 Cellule::Texte(texte_de(is))
             } else if let Some(v) = v {
                 match genre {
                     Some("s") => {
                         let i = entier(v, "indice de texte partage")?;
                         let i = usize::try_from(i)
-                            .map_err(|_| format!("{} : indice de texte partage {} hors de la table", c.nom, i))?;
+                            .map_err(|_| refus(format!("{} : indice de texte partage {} hors de la table", c.nom, i)))?;
                         Cellule::Texte(
                             partages
                                 .get(i)
                                 .cloned()
-                                .ok_or_else(|| format!("{} : indice de texte partage {} hors de la table", c.nom, i))?,
+                                .ok_or_else(|| refus(format!("{} : indice de texte partage {} hors de la table", c.nom, i)))?,
                         )
                     }
                     Some("str") | Some("e") => Cellule::Texte(v.to_string()),
@@ -226,14 +226,14 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
                     _ if v.contains(['.', 'e', 'E']) => Cellule::Flottant(
                         v.trim_matches(crate::texte::blanc)
                             .parse::<f64>()
-                            .map_err(|_| format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v)))?,
+                            .map_err(|_| refus(format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v))))?,
                     ),
                     _ => Cellule::Entier(entier(v, "nombre")?),
                 }
             } else {
                 continue;
             };
-            let r = case.attribute("r").ok_or_else(|| format!("{} : une case sans reference", c.nom))?;
+            let r = case.attribute("r").ok_or_else(|| refus(format!("{} : une case sans reference", c.nom)))?;
             cellules.insert(colonne(r)?, valeur);
         }
         while (rangs.len() as i64) < numero - 1 {

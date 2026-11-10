@@ -53,14 +53,14 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         2
     };
     if let Err(e) = refuser_si_pas_redirige(cadre, Organisme::Google, "la restauration depuis le Drive") {
-        return refus(Some(socle::echec::Classe::Refuse), &String::from(e));
+        return refus(Some(socle::echec::Classe::Refuse), &e.en_lignes());
     }
     if !routes::coffre::autorise(&cadre.racine) {
         return refus(Some(socle::echec::Classe::Google), "Compte Google non autorise : relier d'abord le Drive de la compagnie : la route google-autoriser, ou dans la fenetre Configuration > Mots de passe > Lier le Drive.");
     }
     let racine_drive = match args.exige("racine-drive") {
         Ok(r) => r,
-        Err(e) => return refus(e.classe, &String::from(e)),
+        Err(e) => return refus(e.classe, &e.en_lignes()),
     };
     // `DOSSIER` : ou ecrire ; sans lui, le dossier des donnees de la commande (voir l'en-tete).
     let cible = match args.texte("dossier").filter(|d| !d.is_empty()) {
@@ -69,14 +69,14 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     };
     let mut client = match routes::coffre::client_drive(&cadre.racine) {
         Ok(c) => c,
-        Err(e) => return refus(e.echec.classe, &String::from(e.echec)),
+        Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
     if !json {
         dire!("Restauration de Drive/{}/{} vers {}", racine_drive, sauvegarde::DOSSIER_DRIVE, cible.display());
     }
     let r = match restauration::restaurer(&cible, racine_drive, &mut client) {
         Ok(r) => r,
-        Err(e) => return refus(e.echec.classe, &String::from(e.echec)),
+        Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
     let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible, ""));
     let code = if r.incidents.is_empty() { 0 } else { 1 };

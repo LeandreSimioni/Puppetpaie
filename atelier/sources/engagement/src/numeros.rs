@@ -105,7 +105,7 @@ impl std::fmt::Display for NumeroContrat {
 
 impl TryFrom<String> for NumeroContrat {
     type Error = String;
-    fn try_from(s: String) -> Result<NumeroContrat, String> {
+    fn try_from(s: String) -> Result<NumeroContrat, Self::Error> {
         NumeroContrat::lire(&s).map_err(|e| e.phrase)
     }
 }

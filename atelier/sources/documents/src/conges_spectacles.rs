@@ -244,7 +244,7 @@ impl ContratCs {
     pub fn de(e: &Engagement) -> R<ContratCs> {
         Ok(ContratCs {
             debut: e.debut,
-            fin: e.fin.ok_or("un contrat sans fin n'a pas de certificat")?,
+            fin: e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?,
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,

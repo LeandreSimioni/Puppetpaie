@@ -226,7 +226,7 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
                 continue;
             }
             if let Some(a01) = codes.get(CODE_SECURITE_SOCIALE) {
-                annees.insert(an.parse::<i32>().map_err(|e| e.to_string())?, a01.valeur);
+                annees.insert(an.parse::<i32>().map_err(|e| refus(e.to_string()))?, a01.valeur);
             }
         }
     }
@@ -1001,7 +1001,7 @@ impl std::fmt::Display for IdSalarie {
 
 impl TryFrom<String> for IdSalarie {
     type Error = String;
-    fn try_from(s: String) -> Result<IdSalarie, String> {
+    fn try_from(s: String) -> Result<IdSalarie, Self::Error> {
         IdSalarie::lire(&s).map_err(|e| e.phrase)
     }
 }
@@ -1091,7 +1091,7 @@ impl std::fmt::Display for IdSpectacle {
 
 impl TryFrom<String> for IdSpectacle {
     type Error = String;
-    fn try_from(s: String) -> Result<IdSpectacle, String> {
+    fn try_from(s: String) -> Result<IdSpectacle, Self::Error> {
         IdSpectacle::lire(&s).map_err(|e| e.phrase)
     }
 }

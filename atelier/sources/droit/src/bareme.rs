@@ -976,7 +976,7 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
             continue;
         }
         let i = rang(d_avant, id).ok_or_else(|| {
-            format!("par_caisse_conges['{}'] reprend la rubrique {} du corps du bareme {}, qui ne la porte pas.", cle, id, annee(&out))
+            socle::refus!("par_caisse_conges['{}'] reprend la rubrique {} du corps du bareme {}, qui ne la porte pas.", cle, id, annee(&out))
         })?;
         // A sa place : apres la rubrique qui la precede dans le corps, si elle est la ; sinon a la fin.
         let apres = d_avant[..i].iter().rev().find_map(|r| rang(&out.rubriques_bulletin, &r.id));
@@ -1450,7 +1450,7 @@ impl Fraction {
     /// `Fraction("2/3")` ou `Fraction("1")`.
     fn lire(s: &str) -> R<Fraction> {
         let s = s.trim();
-        let faux = || format!("fraction illisible : {}", socle::fichiers::repr(s));
+        let faux = || socle::refus!("fraction illisible : {}", socle::fichiers::repr(s));
         let (n, dn) = match s.split_once('/') {
             Some((a, b)) => (a.trim().parse::<i128>().map_err(|_| faux())?, b.trim().parse::<i128>().map_err(|_| faux())?),
             None => (s.parse::<i128>().map_err(|_| faux())?, 1),
@@ -1645,7 +1645,7 @@ fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], 
             )
         })?;
         let i = cots.iter().rposition(|c| code81(c) == Some(apres.as_str()) && c.base78 == a.base78).ok_or_else(|| {
-            format!(
+            socle::refus!(
                 "Bareme {} : par_categorie['{}'].cotisations_ajoutees ajoute la cotisation {} apres une cotisation {} sur \
 la base {}, que la pile de bareme de ce contrat ne declare pas. Elle ne se place pas au hasard.",
                 an,

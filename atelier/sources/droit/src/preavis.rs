@@ -152,7 +152,7 @@ pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<String>> {
 pub fn desaccord_du_preavis(type_preavis: &str, versees: &[(String, String)]) -> R<Option<String>> {
     let types = base()?.types_preavis;
     let t = types.du_code(type_preavis).ok_or_else(|| {
-        format!("Type de preavis {} inconnu de la norme (S21.G00.63.001). Les types sont dans fctu-base.json.", repr(type_preavis))
+        socle::refus!("Type de preavis {} inconnu de la norme (S21.G00.63.001). Les types sont dans fctu-base.json.", repr(type_preavis))
     })?;
     let nom = format!("« {} - {} »", type_preavis, t.libelle);
     let codes = types.codes_52_de_l_indemnite_de_preavis.join(" ou ");

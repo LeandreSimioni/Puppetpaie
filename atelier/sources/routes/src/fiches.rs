@@ -727,18 +727,14 @@ pub(super) fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// Le refus du disque `e`, rendu dans sa classe.
-pub(crate) fn en_os(e: Echec) -> Echec {
-    e.reclasser(Classe::Disque)
-}
 
 pub(crate) fn creer_dossier(d: &Path) -> R<()> {
-    std::fs::create_dir_all(d).map_err(|e| en_os(socle::echec::du_disque(&d, &e)))
+    std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))
 }
 
 /// Une forme ecrite dans le fichier `chemin` (`socle::ecriture::ecrire_json`).
 pub(crate) fn ecrire<T: serde::Serialize + ?Sized>(chemin: &Path, v: &T) -> R<()> {
-    ecrire_json(chemin, v, 2).map_err(en_os)
+    ecrire_json(chemin, v, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// La configuration, relue apres l'ecriture (`web._configuration(Contexte(racine))`).
@@ -1026,7 +1022,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
         None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
     };
     let expediteur = client.compte().to_lowercase();
-    let code = fq::code_fiche().map_err(en_os)?;
+    let code = fq::code_fiche().map_err(|e| e.reclasser(Classe::Disque))?;
     let utiles = champs::utiles("salarie")?;
     let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
@@ -1228,9 +1224,9 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             continue;
         }
         let dossier = ctx.racine.join("sorties").join("fiches-salaries");
-        std::fs::create_dir_all(&dossier).map_err(|e| en_os(socle::echec::du_disque(&dossier, &e)))?;
+        std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("Fiche_{}.eml", code));
-        std::fs::write(&eml, &brut).map_err(|e| en_os(socle::echec::du_disque(&eml, &e)))?;
+        std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
         let jour: Vec<&str> = quand.get(..10).into_iter().flat_map(|j| j.split('-').rev()).collect();
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", jour.join("/"));
         if !illisible.is_empty() {
@@ -1274,7 +1270,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let retour = journal::RetourFiche {
             code: code.clone(),
             abandon: false,
-            salarie: f.cle.as_deref().map(droit::contexte::IdSalarie::lire).transpose().map_err(en_os)?,
+            salarie: f.cle.as_deref().map(droit::contexte::IdSalarie::lire).transpose().map_err(|e| e.reclasser(Classe::Disque))?,
             illisible: Some(illisible.clone()),
             erreurs: Some(erreurs),
             quand: quand.clone(),
@@ -1283,7 +1279,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             message: Some(ident.clone()),
             reponse: format!("fiche {} par courriel", if existante.is_some() { "completee" } else { "creee" }),
         };
-        journal::rattacher(&ctx.racine, |l| demande_de(l, &code), journal::Revenu::Fiche(retour)).map_err(en_os)?;
+        journal::rattacher(&ctx.racine, |l| demande_de(l, &code), journal::Revenu::Fiche(retour)).map_err(|e| e.reclasser(Classe::Disque))?;
         r.recues.push(FicheRecue { code: code.clone(), cle: f.cle, nom: strip(&nom).to_string(), illisible, erreurs });
     }
     client.fermer();

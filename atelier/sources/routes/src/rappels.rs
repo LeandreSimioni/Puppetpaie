@@ -953,7 +953,7 @@ fn marquer_echeance(ctx: &Contexte, cle: &str, fait: bool, qui: &str) -> socle::
     if let Some(parent) = p.parent() {
         crate::fiches::creer_dossier(parent)?;
     }
-    socle::ecriture::ecrire_json(&p, &c, 2).map_err(crate::fiches::en_os)
+    socle::ecriture::ecrire_json(&p, &c, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// `{nom}` remplace, `{{` et `}}` s'ecrivent `{` et `}`.

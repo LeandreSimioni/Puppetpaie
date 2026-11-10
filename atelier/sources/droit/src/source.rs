@@ -29,7 +29,7 @@ fn sans_code(s: &str) -> &str {
 
 impl TryFrom<String> for CheminDepose {
     type Error = String;
-    fn try_from(s: String) -> Result<Self, String> {
+    fn try_from(s: String) -> Result<Self, Self::Error> {
         let fichier = sans_code(&s);
         if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI) || fichier.contains("..") {
             return Err("ce fichier n'est pas un texte déposé dans la référence de l'atelier".to_string());
@@ -125,7 +125,7 @@ struct FondementLu {
 
 impl TryFrom<FondementLu> for Fondement {
     type Error = String;
-    fn try_from(l: FondementLu) -> Result<Self, String> {
+    fn try_from(l: FondementLu) -> Result<Self, Self::Error> {
         match (l.sources, l.raisonnement) {
             (Some(sources), Some(raisonnement)) if l.fichier.is_none() && l.emetteur.is_none() && l.article.is_none() && l.citation.is_none() => {
                 Ok(Fondement::Convergence { sources, raisonnement })

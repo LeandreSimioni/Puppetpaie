@@ -53,11 +53,10 @@ impl Cadre {
     pub fn plantage(&self, e: Echec) -> i32 {
         let nature = ::compagnie::incidents::nature_de(e.classe);
         let ou = if nature == ::compagnie::incidents::REFUS { self.commande } else { "" };
-        let (classe, message) = (e.classe, String::from(e));
-        if let Err(f) = ::compagnie::incidents::depuis_exception(&self.racine, classe, &message, Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
-            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", f.phrase());
+        if let Err(f) = ::compagnie::incidents::depuis_exception(&self.racine, e.classe, &e.en_lignes(), Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
+            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", f.phrase);
         }
-        eprintln!("{}", message);
+        eprintln!("{}", e.phrase);
         1
     }
 
@@ -85,7 +84,7 @@ impl Cadre {
         eprintln!("Le coffre de ce poste ne s'ouvre pas avec sa cle. Ouverture de la seance : le mot de passe du logiciel, une");
         eprintln!("fois, pour {} h.", ::compagnie::demande::HEURES_SEANCE);
         if let ::compagnie::demande::Verdict::Refuse(e) = ::compagnie::demande::ouvrir_seance(&self.racine) {
-            eprintln!("! {}", String::from(e));
+            eprintln!("! {}", e.en_lignes());
         }
     }
 }
@@ -188,8 +187,8 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
     ::compagnie::installation::fixer_le_code();
     let racine = match compagnie::racine(dev) {
         Ok(r) => r,
-        Err(phrase) => {
-            eprintln!("{}", phrase);
+        Err(e) => {
+            eprintln!("{}", e.en_lignes());
             return 1;
         }
     };
@@ -200,7 +199,7 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
     let ctx = match Contexte::nouveau(&racine, Some(aujourdhui)) {
         Ok(c) => c,
         Err(m) => {
-            eprintln!("{}", String::from(m));
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };

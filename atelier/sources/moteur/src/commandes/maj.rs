@@ -30,7 +30,7 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            dire!("! {}", String::from(e));
+            dire!("! {}", e.en_lignes());
             2
         }
     }

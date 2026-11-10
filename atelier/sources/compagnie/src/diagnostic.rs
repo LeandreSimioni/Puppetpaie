@@ -332,7 +332,7 @@ fn construire(racine: &Path) -> Personnes {
                     ajouter(noms, format!("salarié n°{}", numero_de(&fiche, rang)), &mut inconnues);
                 }
             }
-            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", e.phrase())),
+            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", e.phrase)),
         }
     }
     let entreprise = racine.join(droit::contexte::ENTREPRISE);
@@ -352,7 +352,7 @@ fn construire(racine: &Path) -> Personnes {
                 }
                 ajouter(noms, "compagnie".to_string(), &mut inconnues);
             }
-            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", e.phrase())),
+            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", e.phrase)),
         }
     }
     tous.sort_by_key(|m| std::cmp::Reverse(m.len()));

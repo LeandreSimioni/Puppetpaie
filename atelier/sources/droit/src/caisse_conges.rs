@@ -85,7 +85,7 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
         10 => Ok(true),
         8 => {
             let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
-                "La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).".to_string()
+                socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
             })?;
             Ok(m.nomme_par_l_annexe8(idcc))
         }

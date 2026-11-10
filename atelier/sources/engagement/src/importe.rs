@@ -537,7 +537,7 @@ impl Importe {
     ///
     /// Ce que les pieces ne disent pas vaut zero et se nomme (`Importee::non_dits`) : un etat le laisse vide.
     pub fn paie(&self, ctx: &Contexte, mois: &str) -> R<Paie> {
-        let p = self.paies().get(mois).ok_or_else(|| format!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
+        let p = self.paies().get(mois).ok_or_else(|| socle::refus!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
         let contrat = self.contrat();
         let zero = Decimal::new(0, 2);
         let mut non_dits: Vec<&'static str> = montants(p).iter().filter(|(_, m)| m.is_none()).map(|(k, _)| *k).collect();

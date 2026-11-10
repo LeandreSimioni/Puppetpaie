@@ -34,11 +34,6 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// Un refus de la saisie, rendu `Refuse`.
-fn refuse(e: Echec) -> Echec {
-    e.reclasser(Classe::Refuse)
-}
-
 #[track_caller]
 fn en_os(e: &std::io::Error, p: &Path) -> Echec {
     socle::echec::du_disque(p, e).reclasser(Classe::Disque)
@@ -174,7 +169,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
     let mut mois: Vec<String> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = socle::mois::Mois::lire(&m)?.numero();
-        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, &m).map_err(refuse)? {
+        if du <= n && n <= au && engagement::stock::a_une_saisie(&ctx.racine, &m).map_err(|e| e.reclasser(Classe::Refuse))? {
             mois.push(m);
         }
     }
@@ -224,8 +219,8 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(refuse)?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
-        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, &mois, None).map_err(refuse)? {
+    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().map(String::from).filter(|x| x.starts_with(annee)) {
+        if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, &mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
             m.insert(mois, e);
         }
     }
@@ -384,7 +379,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mois = mois_de_l_annee(ctx, annee)?;
     let mut sans_dsn: Vec<String> = Vec::new();
     for m in &mois {
-        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(refuse)? && !dsn_acceptee(ctx, m)? {
+        if engagement::stock::a_une_saisie(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? && !dsn_acceptee(ctx, m)? {
             sans_dsn.push(m.clone());
         }
     }
@@ -411,7 +406,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let mut fichiers_engagements: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for m in &mois {
         fichiers_engagements.insert(m.clone());
-        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(refuse)? {
+        for o in engagement::stock::objets_du_mois(&ctx.racine, m).map_err(|e| e.reclasser(Classe::Refuse))? {
             fichiers_engagements.insert(o.fichier);
         }
     }

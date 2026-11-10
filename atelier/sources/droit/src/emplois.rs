@@ -334,7 +334,7 @@ pub struct ChampsDuMetier {
 /// inconnu.
 pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
     let m = metier(code)?.ok_or_else(|| {
-        format!(
+        socle::refus!(
             "Metier {} inconnu : ni dans le catalogue (emplois-base.json), ni \
              dans la nomenclature France Travail (nomenclature-emplois-ft.json).",
             repr(code))

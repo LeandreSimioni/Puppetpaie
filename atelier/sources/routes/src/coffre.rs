@@ -776,10 +776,6 @@ fn config(racine: &Path) -> PathBuf {
     racine.join(socle::fichiers::CONFIG)
 }
 
-/// `ErreurGoogle` : le refus, dont la phrase est ecrite pour etre lue, rendu `Google`.
-fn erreur_google(e: Echec) -> Echec {
-    e.reclasser(Classe::Google)
-}
 
 /// L'APPLICATION GOOGLE TELLE QU'ELLE S'ECRIT (`google.json` de la compagnie, `google-application.json` livre) : son
 /// identifiant et son secret.
@@ -805,7 +801,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
     if p.exists() {
         // Un `google.json` illisible est un refus, pas un plantage.
         let a: ApplicationEcrite = socle::forme::lire_fichier(&p, "L'application Google de la compagnie (google.json) ne se lit pas : la corriger, ou la supprimer pour revenir à celle du logiciel.")
-            .map_err(erreur_google)?;
+            .map_err(|e| e.reclasser(Classe::Google))?;
         if a.client_id.is_empty() || a.client_secret.is_empty() {
             let lieu = socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() };
             return Err(Echec {
@@ -828,7 +824,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
             ..erreur(Classe::Google, "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.")
         });
     }
-    let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(erreur_google)?;
+    let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|e| e.reclasser(Classe::Google))?;
     Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, "le logiciel".into()))
 }
 
@@ -954,9 +950,9 @@ fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoo
         .proteger(brut.as_bytes(), DESCRIPTION)
         .map_err(|e| e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)).reclasser(Classe::Google))?;
     let dossier = config(racine);
-    std::fs::create_dir_all(&dossier).map_err(|e| erreur_google(socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Google))?;
     let chemin = dossier.join(FICHIER_JETON);
-    std::fs::write(&chemin, scelle).map_err(|e| erreur_google(socle::echec::du_disque(&chemin, &e)))?;
+    std::fs::write(&chemin, scelle).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Google))?;
     Ok(jeton.compte.clone())
 }
 

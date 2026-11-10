@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use socle::date::Jour;
+use socle::echec::{refus_avec, Lieu, R};
 
 use compagnie::installation::MARQUEUR;
 const FICHIER_MODE: &str = ".mode-developpeur.json";
@@ -46,7 +47,7 @@ struct ModeDeveloppeur {
 }
 
 /// Le mode developpeur est-il allume ? Sans `.mode-developpeur.json`, il est eteint.
-pub fn mode_actif() -> Result<bool, String> {
+pub fn mode_actif() -> R<bool> {
     let p = chemin_mode();
     if !p.is_file() {
         return Ok(false);
@@ -56,7 +57,7 @@ pub fn mode_actif() -> Result<bool, String> {
 }
 
 /// La copie de developpement est-elle faite ? Son marqueur le dit, dans sa forme (`compagnie::installation::Marqueur`).
-pub fn copie_faite() -> Result<bool, String> {
+pub fn copie_faite() -> R<bool> {
     Ok(compagnie::installation::marqueur(&dossier_dev())?.is_some())
 }
 
@@ -74,19 +75,19 @@ pub fn poser_le_jour() -> Jour {
     paris
 }
 
-/// La racine de la compagnie de cette commande. `dev` : la copie de developpement, ou la phrase du refus.
-pub fn racine(dev: bool) -> Result<PathBuf, String> {
+/// La racine de la compagnie de cette commande. `dev` : la copie de developpement, ou le refus.
+pub fn racine(dev: bool) -> R<PathBuf> {
     if dev {
         if !mode_actif()? {
-            return Err(socle::echec::avec(
+            return Err(refus_avec(
                 "Le mode développeur est éteint sur ce poste : la copie de développement ne s'y ouvre pas.",
-                socle::echec::Lieu { chemin: Some(chemin_mode().to_string_lossy().into_owned()), detail: Some("{\"actif\": true} l'allume".to_string()), ..Default::default() },
+                Lieu { chemin: Some(chemin_mode().to_string_lossy().into_owned()), detail: Some("{\"actif\": true} l'allume".to_string()), ..Lieu::default() },
             ));
         }
         if !copie_faite()? {
-            return Err(socle::echec::avec(
+            return Err(refus_avec(
                 "Ce poste n'a pas de copie de développement.",
-                socle::echec::Lieu { chemin: Some(dossier_dev().join(MARQUEUR).to_string_lossy().into_owned()), ..Default::default() },
+                Lieu { chemin: Some(dossier_dev().join(MARQUEUR).to_string_lossy().into_owned()), ..Lieu::default() },
             ));
         }
         let d = dossier_dev();

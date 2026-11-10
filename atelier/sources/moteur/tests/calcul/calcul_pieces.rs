@@ -11,20 +11,20 @@ use serde_json::{json, Value};
 const ORACLE: &str = "calcul-pieces.json";
 
 /// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
-fn decimal(v: &Value) -> Result<rust_decimal::Decimal, String> {
+fn decimal(v: &Value) -> socle::echec::R<rust_decimal::Decimal> {
     match v {
         Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
             (Some(i), _, _) => Ok(i.into()),
             (_, Some(u), _) => Ok(u.into()),
-            (_, _, Some(f)) => socle::num::dec_f64(f).map_err(String::from),
-            _ => Err(format!("nombre illisible : {}", n)),
+            (_, _, Some(f)) => socle::num::dec_f64(f),
+            _ => Err(socle::refus!("nombre illisible : {}", n)),
         },
-        autre => Err(format!("nombre attendu, lu {}", autre)),
+        autre => Err(socle::refus!("nombre attendu, lu {}", autre)),
     }
 }
 
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
-fn canon_valeur(v: &Value) -> Result<Value, String> {
+fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
     Ok(match v {
         Value::Number(_) => Value::String(socle::num::nombre(decimal(v)?)),
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
@@ -32,7 +32,7 @@ fn canon_valeur(v: &Value) -> Result<Value, String> {
             o.iter()
                 .filter(|(k, _)| !k.starts_with('_'))
                 .map(|(k, x)| canon_valeur(x).map(|c| (k.clone(), c)))
-                .collect::<Result<serde_json::Map<_, _>, String>>()?,
+                .collect::<socle::echec::R<serde_json::Map<_, _>>>()?,
         ),
         autre => autre.clone(),
     })
@@ -45,10 +45,10 @@ fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::Reduction
 
 
 /// `{"ok": canon(v)}` ou `{"refus": message}`.
-fn essai<E: Into<String>>(r: Result<Value, E>) -> Value {
+fn essai(r: socle::echec::R<Value>) -> Value {
     match r {
         Ok(v) => json!({"ok": canon_valeur(&v).unwrap()}),
-        Err(e) => json!({"refus": socle::echec::phrase_de(&e.into())}),
+        Err(e) => json!({"refus": e.phrase}),
     }
 }
 

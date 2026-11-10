@@ -39,13 +39,14 @@ use compagnie::preuve::{motdepasse_organisme, verifier_preuve, Preuve};
 
 /// UN REFUS DE DEPOT QUI PORTE OU EN EST CE QUI LE REFUSE (la DSN du mois, le test du fichier) : sa phrase, et l'etat a
 /// part (`routes::enveloppe::APart`, case `etat`).
+#[track_caller]
 fn avec_etat<T: serde::Serialize + Clone + Send + Sync + 'static>(classe: Classe, message: impl Into<String>, etat: &T) -> Echec {
     /// Ce que le refus porte a part : l'etat.
     #[derive(serde::Serialize)]
     struct Etat<T> {
         etat: T,
     }
-    Echec { classe: Some(classe), phrase: message.into(), a_part: Some(socle::echec::APart::forme(Etat { etat: etat.clone() })) }
+    Echec { a_part: Some(socle::echec::APart::forme(Etat { etat: etat.clone() })), ..erreur(classe, message) }
 }
 
 // -------------------------------------------------------- la repetition avant l'irreversible

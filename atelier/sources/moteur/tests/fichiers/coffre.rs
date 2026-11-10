@@ -26,8 +26,8 @@ fn autre_poste(c: &Coffre) -> Coffre {
     Coffre { racine: c.racine.clone(), dossier_cle: dossier(), maintenant: c.maintenant.clone(), variables: BTreeMap::new() }
 }
 
-fn lire(c: &Coffre, ouverture: Option<&str>) -> Result<Option<String>, String> {
-    c.lire("net-entreprises", CONSULTATION, false, ouverture).map_err(String::from)
+fn lire(c: &Coffre, ouverture: Option<&str>) -> socle::echec::R<Option<String>> {
+    c.lire("net-entreprises", CONSULTATION, false, ouverture)
 }
 
 #[test]
@@ -74,8 +74,8 @@ fn un_coffre_apporte_sur_un_autre_poste_s_ouvre_par_le_mot_de_passe() {
     c.poser_ouverture("sesame-123", None).unwrap();
     let ailleurs = autre_poste(&c);
     assert!(!ailleurs.ouvre_a_ce_poste().unwrap());
-    assert!(lire(&ailleurs, None).unwrap_err().contains("n'a pas ete donne"));
-    assert!(lire(&ailleurs, Some("faux-faux")).unwrap_err().contains("ne l'ouvre pas non plus"));
+    assert!(lire(&ailleurs, None).unwrap_err().phrase.contains("n'a pas ete donne"));
+    assert!(lire(&ailleurs, Some("faux-faux")).unwrap_err().phrase.contains("ne l'ouvre pas non plus"));
     // le mot de passe ouvre sans rien changer au poste
     assert_eq!(lire(&ailleurs, Some("sesame-123")).unwrap().as_deref(), Some("unvraimotdepasse"));
     assert!(!ailleurs.chemin_cle().exists());
@@ -91,7 +91,7 @@ fn sans_cle_ni_mot_de_passe_le_coffre_refuse_et_le_dit() {
     let c = coffre();
     c.poser("net-entreprises", "unvraimotdepasse", None).unwrap();
     std::fs::remove_file(c.chemin_cle()).unwrap();
-    assert!(lire(&c, None).unwrap_err().contains("et elle est absente"));
+    assert!(lire(&c, None).unwrap_err().phrase.contains("et elle est absente"));
     assert!(c.poser("urssaf", "unvraimotdepasse", None).unwrap_err().phrase.starts_with("Ce coffre ne s'ouvre pas ici"));
 }
 
@@ -104,11 +104,11 @@ fn un_fichier_altere_ou_d_une_autre_version_est_refuse() {
     let t = v["secrets"].as_str().unwrap().to_string();
     v["secrets"] = json!(format!("{}{}", if t.starts_with('A') { "B" } else { "A" }, &t[1..]));
     std::fs::write(c.chemin(), dumps(&v, Some(2), false, true)).unwrap();
-    assert!(lire(&c, None).unwrap_err().starts_with("Le scelle refuse"));
+    assert!(lire(&c, None).unwrap_err().phrase.starts_with("Le scelle refuse"));
     for contenu in ["", "{}", "[]", "pas du json", "{\"version\": 1}"] {
         std::fs::write(c.chemin(), contenu).unwrap();
         let e = lire(&c, None).unwrap_err();
-        assert!(e.contains("n'est pas au format de cette version"), "{:?}", contenu);
+        assert!(e.phrase.contains("n'est pas au format de cette version"), "{:?}", contenu);
         assert!(!c.ouverture_exigee().unwrap());
         assert!(c.services().unwrap().iter().all(|s| !s.pose));
     }

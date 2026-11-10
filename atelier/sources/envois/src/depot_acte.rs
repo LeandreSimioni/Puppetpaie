@@ -109,7 +109,7 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
     let classe = e.classe_notee();
     let _ = noter(ctx, d, ligne);
-    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase(), repetition: d.repetition.cloned() });
+    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
     e
 }
 
@@ -167,7 +167,7 @@ pub fn deposer_dsn(
         Ok(r) => r,
         Err(e) => {
             let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature: texte(apercu.nature.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement.clone(), ..Default::default() };
-            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase(), None, detail, false));
+            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
     };
@@ -234,7 +234,7 @@ pub fn deposer_dpae(
         Ok(r) => r,
         Err(e) => {
             let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..Default::default() };
-            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase(), None, detail, false));
+            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }
     };
