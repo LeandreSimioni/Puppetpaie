@@ -890,7 +890,7 @@ pub(crate) struct SaisieMois {
     pub(crate) identites: Vec<engagement::stock::Identite>,
     /// Ce qui manque a chaque engagement du mois (`None` : rien), dans l'ordre de `stock::objets_du_mois` :
     /// `paies` ne porte que ceux qui ne manquent de rien.
-    pub(crate) manques: Vec<Option<String>>,
+    pub(crate) manques: Vec<Option<socle::echec::Echec>>,
 }
 
 /// Les etats du journal et de la saisie, calcules une fois par processus : ce que le journal des envois dit de chaque
@@ -1455,7 +1455,7 @@ impl<'a> Moteur<'a> {
         let mut out = Vec::new();
         for (j, (e, id)) in etats_eng.iter().zip(&ids).enumerate() {
             if let Some(Some(manque)) = s.manques.get(j) {
-                let vue = self.ligne_a_completer(mois, e.objet(), manque)?;
+                let vue = self.ligne_a_completer(mois, e.objet(), &manque.phrase)?;
                 out.push(Ligne::de(vue, le_mois, None, id.clone())?);
                 continue;
             }

@@ -38,7 +38,7 @@ use socle::num::Decimal;
 /// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`) ; un socle livre qui ne se
 /// lit pas se refuse.
 fn socle_de(an: i32) -> R<Option<droit::forme_bareme::Pile>> {
-    droit::contexte::socle_livre_lu(an).map_err(|m| erreur(Classe::Illisible, m))
+    droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 fn en_pourcent(t: Decimal) -> String {
@@ -52,7 +52,7 @@ fn premier_janvier(an: i32) -> R<Jour> {
 }
 
 fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
-    t.valeur.as_ref().map(Montant::decimal).transpose().map_err(|m| erreur(Classe::Illisible, m))
+    t.valeur.as_ref().map(Montant::decimal).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les sources
@@ -73,7 +73,7 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
     if n.code_risque == bareme::SANS_NOTIFICATION {
         return Ok(Some(format!("{} : code risque {} ; rien n'est inscrit. Le code et le taux se lisent sur la notification (compte AT/MP sur net-entreprises) et s'inscrivent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, n.code_risque)));
     }
-    if let Some(m) = bareme::taux_atmp_refuse(&t).map_err(|m| erreur(Classe::Illisible, m))? {
+    if let Some(m) = bareme::taux_atmp_refuse(&t).map_err(|m| m.reclasser(Classe::Illisible))? {
         return Ok(Some(format!("{} : {} Rien n'est inscrit ; le code et le taux de la notification (compte AT/MP sur net-entreprises) s'inscrivent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, m)));
     }
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
@@ -258,7 +258,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
     let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
     let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()).map_err(|e| e.phrase));
-    let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| erreur(Classe::Illisible, m))?;
+    let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| m.reclasser(Classe::Illisible))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {
             Some(t) => ligne_dite(t)?,
@@ -294,7 +294,7 @@ fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: i32, nom
                 format!("999ZZ : la compagnie n'a pas encore reçu de notification de la CARSAT. La DSN le déclare ainsi, sans taux. Aucun texte ne dit quel taux le bulletin cotise en attendant : le logiciel ne calcule pas la paie de {} tant que le code et le taux notifiés ne sont pas inscrits.", an),
             ),
         },
-        Some(Err(m)) => (format!("Taux AT/MP {} : à inscrire.", an), m.into()),
+        Some(Err(m)) => (format!("Taux AT/MP {} : à inscrire.", an), m.phrase),
         None => (
             format!("Taux AT/MP {} : pas encore dit.", an),
             format!("Le code risque et le taux AT/MP de {} ne sont pas dits : ils sont sur la notification de la CARSAT, et s'inscrivent ici avec la date à partir de laquelle ils valent.", an),

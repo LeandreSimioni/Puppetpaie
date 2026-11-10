@@ -119,7 +119,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         let Some(t) = apres.taux_atmp.as_ref() else {
             return Err(refus("Accidents du travail (AT/MP) : une ligne ne se retire pas ; inscrivez celle qui la remplace, avec sa date. Rien n'a été enregistré."));
         };
-        match droit::bareme::taux_atmp_refuse(t).map_err(refus)? {
+        match droit::bareme::taux_atmp_refuse(t).map_err(|e| e.reclasser(Classe::Refuse))? {
             Some(m) => Err(refus(format!("Accidents du travail (AT/MP) : {} Rien n'a été enregistré.", m))),
             None => Ok(()),
         }
@@ -136,7 +136,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         let atmp = match apres.taux_atmp.as_ref().filter(|_| apres.taux_atmp != avant.taux_atmp) {
             Some(t) => {
                 let recue = t.depuis.and_then(|d| ctx.entreprise_au(&d).taux_atmp);
-                droit::bareme::taux_atmp_a_confirmer(recue.as_ref(), t).map_err(refus)?
+                droit::bareme::taux_atmp_a_confirmer(recue.as_ref(), t).map_err(|e| e.reclasser(Classe::Refuse))?
             }
             None => None,
         };
@@ -229,7 +229,7 @@ impl SorteDeFiche for FicheSalarieDatee {
     }
     fn ou_neuve<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de salarié se nomme par sa clé."))?;
-        Ok(f.fiches.entry(IdSalarie::lire(cle).map_err(plain)?).or_default())
+        Ok(f.fiches.entry(IdSalarie::lire(cle)?).or_default())
     }
     fn contient(f: &droit::fiche::Salaries, cle: &str) -> bool {
         f.fiches.contains_key(cle)
@@ -307,7 +307,7 @@ impl SorteDeFiche for FicheSpectacleDatee {
     }
     fn ou_neuve<'a>(f: &'a mut droit::fiche::Spectacles, cle: Option<&str>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de spectacle se nomme par sa clé."))?;
-        Ok(f.fiches.entry(IdSpectacle::lire(cle).map_err(plain)?).or_default())
+        Ok(f.fiches.entry(IdSpectacle::lire(cle)?).or_default())
     }
     fn contient(f: &droit::fiche::Spectacles, cle: &str) -> bool {
         f.fiches.contains_key(cle)
@@ -349,7 +349,7 @@ pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
     if !chemin.exists() {
         return Ok(F::Fichier::default());
     }
-    droit::fiche::lire_fichier(&chemin, F::FICHIER).map_err(plain)
+    droit::fiche::lire_fichier(&chemin, F::FICHIER)
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
@@ -390,7 +390,7 @@ pub(crate) fn reporter<F: SorteDeFiche>(plate: &mut F::Plate, avant: &Saisie, ap
     let cles: Vec<&str> = apres.cases().iter().chain(avant.cases()).map(|(k, _)| k.as_str()).collect();
     for k in cles {
         if avant.case(k) != apres.case(k) {
-            let ch: F::Changement = droit::fiche::lire_saisie(&CaseEcrite { case: k, valeur: apres.case(k) }, F::FICHIER).map_err(refus)?;
+            let ch: F::Changement = droit::fiche::lire_saisie(&CaseEcrite { case: k, valeur: apres.case(k) }, F::FICHIER).map_err(|e| e.reclasser(Classe::Refuse))?;
             F::appliquer(plate, ch);
         }
     }
@@ -406,7 +406,7 @@ macro_rules! saisie_de {
             impl<'de> Deserialize<'de> for $t {
                 fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$t, D::Error> {
                     use serde::de::{DeserializeSeed, Error};
-                    champs::lecture($nom).map_err(|e| D::Error::custom(String::from(e)))?.deserialize(d).map($t)
+                    champs::lecture($nom).map_err(|e| D::Error::custom(e.phrase))?.deserialize(d).map($t)
                 }
             }
         )*
@@ -573,7 +573,7 @@ pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(&
         // plus, le moteur l'ecrit (`pays::codification`). Sans pays, ou avec un pays inconnu (qui refuse sur sa case), la
         // case reste ce qu'elle est.
         if let (true, Some(code)) = (source("pays_nationalite"), texte(d, "pays_nationalite")) {
-            if let Some(p) = socle::pays::du_code(code).map_err(Echec::from)? {
+            if let Some(p) = socle::pays::du_code(code)? {
                 let attendu = socle::pays::codification(&p).to_string();
                 if d.texte("code_nationalite_dsn") != Some(attendu.as_str()) {
                     d.poser("code_nationalite_dsn", Valeur::Texte(attendu));
@@ -1320,7 +1320,7 @@ fn suggestions(nom: &str, d: &Saisie) -> R<BTreeMap<&'static str, Suggestion>> {
             }
         }
     } else if nom == "entreprise" && texte(d, "code_urssaf").is_none() {
-        if let Some(code) = texte(d, "code_postal").map(|cp| declarations::urssaf::base().map(|b| b.du_code_postal(cp))).transpose().map_err(Echec::from)?.flatten() {
+        if let Some(code) = texte(d, "code_postal").map(|cp| declarations::urssaf::base().map(|b| b.du_code_postal(cp))).transpose()?.flatten() {
             propose.insert(
                 "code_urssaf",
                 Suggestion {

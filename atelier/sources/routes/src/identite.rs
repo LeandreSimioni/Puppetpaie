@@ -203,7 +203,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
             let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
             let (k, dit) = match p {
                 PoidsVise::Nombre(k) => (*k, k.to_string()),
-                PoidsVise::Texte(s) => (s.trim().replace(',', ".").parse::<f64>().map_err(|e| refus(socle::echec::a_la_cle(&faute(s), "poids", e)))?, s.clone()),
+                PoidsVise::Texte(s) => (s.trim().replace(',', ".").parse::<f64>().map_err(|e| socle::echec::a_la_cle(&faute(s), "poids", e).reclasser(socle::echec::Classe::Refuse))?, s.clone()),
             };
             if !(1.0..=OCTETS_MAX as f64 / 1024.0).contains(&k) {
                 return Err(refus(faute(&dit)));
