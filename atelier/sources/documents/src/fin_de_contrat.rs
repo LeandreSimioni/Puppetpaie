@@ -15,7 +15,7 @@ use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{erreur, Classe, Echec, R};
 use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
@@ -74,7 +74,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
-    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| erreur(Classe::Manque, m))?, p.salarie.nom.ecrite("nom").map_err(|m| erreur(Classe::Manque, m))?);
+    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| Echec { classe: Some(Classe::Manque), ..m })?, p.salarie.nom.ecrite("nom").map_err(|m| Echec { classe: Some(Classe::Manque), ..m })?);
     let maintien = engagement::portabilite::de(&ctx.racine, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
@@ -114,9 +114,9 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-        c.ecrite(k).map(str::to_string).map_err(|m| erreur(Classe::Manque, m))
+        c.ecrite(k).map(str::to_string).map_err(|m| Echec { classe: Some(Classe::Manque), ..m })
     }
-    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur(Classe::Manque, m))?;
+    let sig = ent.signataire.exigee("signataire").map_err(|m| Echec { classe: Some(Classe::Manque), ..m })?;
     let aujourdhui = date.jj_mm_aaaa();
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -131,7 +131,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::EmployeurSignataire, format!("{} {}", ecrite(&sig.prenom, "prenom")?, ecrite(&sig.nom, "nom")?));
     poser(Marqueur::EmployeurSignataireFonction, ecrite(&sig.fonction, "fonction")?);
     poser(Marqueur::SalarieNomComplet, format!("{} {}", ecrite(&s.prenom, "prenom")?, ecrite(&s.nom, "nom")?));
-    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur(Classe::Manque, m))?.jj_mm_aaaa());
+    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| Echec { classe: Some(Classe::Manque), ..m })?.jj_mm_aaaa());
     poser(Marqueur::SalarieLieuNaissance, ecrite(&s.lieu_naissance, "lieu_naissance")?);
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
@@ -140,7 +140,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
-    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur(Classe::Illisible, m))?.libelle.clone());
+    poser(Marqueur::ContratNature, e.nat().map_err(|m| Echec { classe: Some(Classe::Illisible), ..m })?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());
     poser(Marqueur::RecuDate, aujourdhui);
     Ok(m)
