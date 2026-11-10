@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Ce que la compagnie dit de ses mois Conges Spectacles regularises hors DSN, sous sa racine.
 pub const CASC_SVP: &str = "config/casc-svp.json";
@@ -31,17 +31,17 @@ pub struct RegularisationNotee {
 }
 
 /// `config/casc-svp.json` de la compagnie, lu par sa forme ; `None` s'il n'existe pas (aucune annee notee).
-pub fn lue(ctx: &Contexte) -> Resultat<Option<CascSvp>> {
+pub fn lue(ctx: &Contexte) -> R<Option<CascSvp>> {
     let p = ctx.racine.join(CASC_SVP);
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier de la CASC-SVP de la compagnie (config/casc-svp.json) ne se lit pas : le signaler au développeur.").map(Some).map_err(String::from)
+    socle::forme::lire_fichier(&p, "Le fichier de la CASC-SVP de la compagnie (config/casc-svp.json) ne se lit pas : le signaler au développeur.").map(Some)
 }
 
 /// `mois_regularises` : les mois de `config/casc-svp.json` regularises hors DSN, tries (un fichier absent n'en
 /// regularise aucun).
-pub fn mois_regularises(ctx: &Contexte) -> Resultat<Vec<String>> {
+pub fn mois_regularises(ctx: &Contexte) -> R<Vec<String>> {
     let mut mois: Vec<String> = vec![];
     for reg in lue(ctx)?.iter().flat_map(|d| &d.regularisations) {
         for m in &reg.mois {

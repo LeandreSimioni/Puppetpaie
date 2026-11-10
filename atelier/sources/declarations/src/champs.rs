@@ -29,11 +29,6 @@ use socle::texte::sans_accent;
 
 type R<T> = Result<T, Echec>;
 
-#[track_caller]
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
-}
-
 // ------------------------------------------------------------------ la table
 
 /// LA FORME D'UNE CASE (`forme` dans `champs-base.json`) : ce qu'elle porte, et ce qu'on en verifie.
@@ -540,7 +535,7 @@ struct Table {
     spectacle: Vec<Champ>,
 }
 
-static TABLE: OnceLock<Result<Table, String>> = OnceLock::new();
+static TABLE: OnceLock<R<Table>> = OnceLock::new();
 
 /// CHAQUE CASE DANS SA PIECE : celle que sa forme lui donne (`droit::fiche`), et nulle autre : la table n'a pas de mot
 /// pour la dire (`deny_unknown_fields`).
@@ -562,9 +557,9 @@ fn ranger(mut t: Table) -> Table {
 fn table(nom: &str) -> R<&'static [Champ]> {
     let chemin = dossier_du_code().join("champs-base.json");
     let t = TABLE
-        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").map(ranger).map_err(String::from))
+        .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").map(ranger))
         .as_ref()
-        .map_err(|m| plain(m.clone()))?;
+        .map_err(Echec::clone)?;
     // Lu une fois par processus (le code livre ne change pas sous la fenetre), mais note a chaque usage : un calcul
     // suivi dans un processus deja chaud a les memes entrees qu'un processus neuf.
     socle::fichiers::noter_si_besoin(&chemin);
@@ -748,7 +743,7 @@ impl Saisie {
     /// LA FICHE TYPEE `fiche` (`droit::fiche`) DANS LA FORME D'UNE SAISIE de la fiche `nom`, pour etre verifiee comme ce
     /// que l'ecran saisit : ce qu'elle ecrit, relu par la table (`socle::forme::relire_selon`).
     pub fn de_la_fiche<F: Serialize + ?Sized>(nom: &str, fiche: &F) -> R<Saisie> {
-        socle::forme::relire_selon(fiche, lecture(nom)?, "Une fiche ne se relit pas dans la table de ses cases : le signaler au développeur.").map_err(plain)
+        socle::forme::relire_selon(fiche, lecture(nom)?, "Une fiche ne se relit pas dans la table de ses cases : le signaler au développeur.")
     }
 
     /// La saisie, ses formes lisibles comblees (`a_combler`).
@@ -1443,7 +1438,7 @@ fn sans_caracteres_refuses(c: &Champ, v: String) -> R<String> {
     if v.is_empty() {
         return Ok(v);
     }
-    let refuses = crate::formats::caracteres_refuses(rubrique, &v).map_err(plain)?;
+    let refuses = crate::formats::caracteres_refuses(rubrique, &v)?;
     if refuses.is_empty() {
         return Ok(v);
     }
@@ -1453,7 +1448,7 @@ fn sans_caracteres_refuses(c: &Champ, v: String) -> R<String> {
             essai = essai.replace(*r, remplacant);
         }
         let essai = essai.split(espace).filter(|m| !m.is_empty()).collect::<Vec<_>>().join(" ");
-        if !essai.is_empty() && crate::formats::mauvaise(rubrique, &essai).map_err(plain)?.is_empty() {
+        if !essai.is_empty() && crate::formats::mauvaise(rubrique, &essai)?.is_empty() {
             return Ok(essai);
         }
     }
@@ -1630,7 +1625,7 @@ fn explication_nir(nir: &str) -> R<Option<String>> {
             "plus de cinq « 9 » a la suite en fin de numero : la norme ne l'admet pas (CCH-16). C'est la marque d'un numero complete au juge -- il vaut mieux une fiche qui refuse qu'une declaration qui identifie la mauvaise personne".into(),
         ));
     }
-    if crate::formats::mauvaise(RUBRIQUE_NIR, v).map_err(plain)?.is_empty() {
+    if crate::formats::mauvaise(RUBRIQUE_NIR, v)?.is_empty() {
         return Ok(None);
     }
     for (deb, fin, nom, attendu, _) in MORCEAUX_NIR {
@@ -1734,16 +1729,16 @@ fn faute_des_jours(v: &Valeur) -> Option<String> {
     use droit::conges::JoursTravailles;
     use droit::fiche::JourDeLaSemaine;
     let illisible = JoursTravailles::case_illisible("le salarie");
-    let lus: Result<Vec<JourDeLaSemaine>, String> = match v {
+    let lus: Option<Vec<JourDeLaSemaine>> = match v {
         Valeur::Mots(mots) => mots
             .iter()
-            .map(|m| JourDeLaSemaine::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(m)).map_err(|_| illisible.clone()))
+            .map(|m| JourDeLaSemaine::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(m)).ok())
             .collect(),
-        _ => Err(illisible.clone()),
+        _ => None,
     };
     let faute = match lus {
-        Ok(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(String::from),
-        Err(e) => Some(e),
+        Some(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(String::from),
+        None => Some(illisible),
     };
     faute.map(|e| match e.split_once(" : ") {
         Some((_, m)) => m.to_string(),
@@ -1772,11 +1767,11 @@ fn faute_de_rubrique(forme: Forme, rubrique: Option<&str>, valeur: &str) -> R<Op
         return Ok(None);
     }
     let Some(v) = forme_declarative(forme, valeur).filter(|v| !v.is_empty()) else { return Ok(None) };
-    let mut pourquoi = crate::formats::mauvaise(rubrique, &v).map_err(plain)?;
+    let mut pourquoi = crate::formats::mauvaise(rubrique, &v)?;
     if pourquoi.is_empty() {
         return Ok(None);
     }
-    let refuses = crate::formats::caracteres_refuses(rubrique, &v).map_err(plain)?;
+    let refuses = crate::formats::caracteres_refuses(rubrique, &v)?;
     if !refuses.is_empty() {
         let liste: Vec<String> = refuses.iter().map(|c| format!("\u{ab} {} \u{bb}", c)).collect();
         pourquoi = format!("{} n'y {} pas admis", liste.join(", "), if refuses.len() > 1 { "sont" } else { "est" });
@@ -1909,9 +1904,9 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     // « Pays » de la DSN (`pays::de_la_table_dsn`), le Kosovo et les Etats disparus compris.
     if c.forme == Forme::Pays {
         let connu = if c.cle == "pays_naissance" {
-            socle::pays::de_la_table_dsn(v).map_err(plain)?.is_some()
+            socle::pays::de_la_table_dsn(v)?.is_some()
         } else {
-            socle::pays::du_code(v).map_err(plain)?.is_some()
+            socle::pays::du_code(v)?.is_some()
         };
         if !connu {
             let quoi = format!("Le {}", c.libelle.to_lowercase());
@@ -1936,7 +1931,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.
     if c.cle == "naf" {
-        if let Some(faute) = crate::naf::faute_de_saisie(v).map_err(plain)? {
+        if let Some(faute) = crate::naf::faute_de_saisie(v)? {
             return Ok(Some(faute));
         }
     }
@@ -2055,7 +2050,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
     if nom == "entreprise" {
         if let Some(choisi) = texte_dit(d, "code_urssaf") {
             let deduit = match d.mot("code_postal") {
-                Some(cp) => crate::urssaf::base().map_err(Echec::from)?.du_code_postal(&cp),
+                Some(cp) => crate::urssaf::base()?.du_code_postal(&cp),
                 None => None,
             };
             if let Some(deduit) = deduit.filter(|d| *d != choisi) {
@@ -2184,15 +2179,15 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         let (code, pays_n, hors) = (d.mot("code_nationalite_dsn"), d.mot("pays_nationalite"), d.mot("pays_nationalite_hors_liste"));
         let fiche = socle::codification_ue::Nationalite::nouvelle(code.as_deref(), pays_n.as_deref(), hors.as_deref(), qui);
         let pays_inconnu = match d.dite("pays_nationalite") {
-            Some(Valeur::Texte(p)) => socle::pays::du_code(p).map_err(plain)?.is_none(),
+            Some(Valeur::Texte(p)) => socle::pays::du_code(p)?.is_none(),
             _ => false,
         };
         let hors_liste = d.dite("pays_nationalite_hors_liste").is_some();
-        if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche).map_err(plain)? {
+        if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche)? {
             out.push(constat("pays_nationalite_hors_liste", Gravite::Erreur, m));
         } else if !pays_inconnu && (hors_liste || d.dite("code_nationalite_dsn").is_some() || d.dite("pays_nationalite").is_some()) {
             if let Err(m) = socle::codification_ue::codification_ue(&fiche) {
-                out.push(constat("code_nationalite_dsn", Gravite::Erreur, m));
+                out.push(constat("code_nationalite_dsn", Gravite::Erreur, String::from(m)));
             }
         }
         // LES BORNES D'UNE DISPENSE DE SANTE (Q13) : elles bornent un motif, et la fin ne precede pas le debut. Ce que
