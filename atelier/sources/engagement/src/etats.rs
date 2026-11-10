@@ -829,7 +829,6 @@ fn calculer_les_rangs(ctx: &Contexte, mois: &str, rangs: &[usize]) -> R<Vec<Paie
                 Ok((relire::ecrire(ctx, p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode()?, config, entree_fiches))
             })
             .collect::<R<Vec<_>>>()
-            .map_err(String::from)
     })?;
     // DES AUTRES ENGAGEMENTS DE SON MOIS, UNE PAIE NE LIT QUE CEUX DE SON SALARIE (`calcul::dfs_deja_deduite`, sur
     // `precedentes`) ; `un_numero_un_salarie` refuse sans changer un chiffre. Des autres mois, elle ne lit que les paies
@@ -1538,7 +1537,7 @@ fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: &
     let fin = socle::mois::Mois::lire(mois)?.dernier_jour();
     // Un compteur avant le mois n'est tenu que pour un engagement paye au mois (`conges::compteur_ecrit`).
     let Some(au) = o.au_mois_depuis()?.and_then(|(_, nature)| nature.au_mois()) else { return Ok(None) };
-    let (avant, mut lues) = empreinte::suivre(ctx, || crate::conges::avant_le_mois(ctx, &au, &cle, &fin, mois).map_err(String::from))?;
+    let (avant, mut lues) = empreinte::suivre(ctx, || crate::conges::avant_le_mois(ctx, &au, &cle, &fin, mois))?;
     let spectacle = o.carte().spectacle.as_deref();
     lues.extend([empreinte::fiches(ctx, mois, &cle, spectacle)?]);
     let mut nouvelle = ancienne.clone();
