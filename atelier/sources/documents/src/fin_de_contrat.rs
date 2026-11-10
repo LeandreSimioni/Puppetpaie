@@ -1,7 +1,8 @@
 //! Le certificat de travail et le reçu pour solde de tout compte d'un contrat qui se termine : deux papiers que la
 //! compagnie remet au salarié, rien ne part nulle part. Ils se fabriquent depuis la paie validée de l'engagement.
 //!
-//! Le certificat se délivre à l'expiration du contrat (L1234-19) et ne porte que les mentions de D1234-6 ; le reçu
+//! Le certificat se délivre à l'expiration du contrat (L1234-19) et porte les mentions de D1234-6, et le maintien des
+//! garanties collectives de prévoyance et de santé que CSS L. 911-8, 6° lui fait signaler (`portabilite`) ; le reçu
 //! fait l'inventaire des sommes versées (L1234-20), ligne à ligne, et s'établit en double exemplaire (D1234-7).
 
 use droit::fiche::Lue as _;
@@ -18,11 +19,52 @@ use socle::echec::{erreur, Classe, R};
 use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
-pub const AVIS: [&str; 3] = [
+pub const AVIS: &[&str] = &[
     "Le reçu pour solde de tout compte s'établit en double exemplaire (D1234-7) : un pour le salarié, un pour la compagnie. Il se signe de sa main, avec la mention « pour solde de tout compte ».",
     "Il peut être dénoncé par lettre recommandée dans les six mois (L1234-20 et D1234-8) ; passé ce délai, il est libératoire pour les seules sommes qui y sont inscrites.",
-    "Le certificat de travail ne contient que les mentions de D1234-6 : dates d'entrée et de sortie, emplois occupés et leurs périodes.",
+    "Le certificat de travail contient les mentions de D1234-6 (dates d'entrée et de sortie, emplois occupés et leurs périodes) et, pour un salarié couvert par une prévoyance ou une complémentaire santé collective, le maintien de ces garanties (code de la sécurité sociale, L911-8, 6°), sauf faute lourde.",
+    "L'organisme assureur apprend la fin du contrat par la DSN (sa fin dans la mensuelle, et le signalement de fin de contrat quand il part) : rien d'autre à lui envoyer.",
 ];
+
+/// LES MOTIFS DE FIN POUR FAUTE LOURDE (S21.G00.62.002, `contrats-base.json` : « 088 - Licenciement pour faute lourde »,
+/// « 096 - Rupture anticipée pour faute lourde ») : la seule fin que L. 911-8 exclut et que l'employeur connaît. Le droit
+/// à l'assurance chômage, l'autre condition, se décide à France Travail, et l'ancien salarié en justifie à l'organisme
+/// (5°) : il se dit dans la mention, il ne se devine pas du motif (une démission peut être légitime : règlement général
+/// de l'assurance chômage, art. 2, § 2, `atelier/reference/sources/chomage-permanents/`).
+const FAUTE_LOURDE: [&str; 2] = ["088", "096"];
+
+/// LE MAINTIEN DES GARANTIES QUE LE CERTIFICAT SIGNALE (CSS L. 911-8,
+/// `atelier/reference/sources/code-de-la-securite-sociale/xml/L911-8.xml`, 6° : « L'employeur signale le maintien de ces
+/// garanties dans le certificat de travail » ; les accords santé des permanents de la 1285 et de la 3090 le redisent :
+/// `kali-1285-accord-frais-de-sante-20260130-20261011.md`, l. 201, `kali-3090-accord-sante-permanents-20240719-20261011.md`,
+/// l. 153). Les garanties sont celles que sa dernière paie cotise, collectives et obligatoires : la prévoyance
+/// (`prevoyance…` : celle de la convention ou de l'accord interbranche des intermittents) et la complémentaire santé
+/// (`mutuelle` : celle des permanents ; la garantie santé des intermittents est une adhésion individuelle). Vide : aucune
+/// garantie collective, ou une fin pour faute lourde.
+fn portabilite(p: &Paie, nom: &str, fin: &Jour) -> String {
+    if p.engagement.motif_rupture.as_deref().is_some_and(|m| FAUTE_LOURDE.contains(&m)) {
+        return String::new();
+    }
+    let prevoyance = p.lignes.iter().any(|l| l.id.as_deref().is_some_and(|i| i == "prevoyance" || i.starts_with("prevoyance_")));
+    let sante = p.lignes.iter().any(|l| l.est("mutuelle"));
+    let garanties = match (prevoyance, sante) {
+        (true, true) => "de prévoyance (décès, incapacité de travail, invalidité) et de complémentaire santé",
+        (true, false) => "de prévoyance (décès, incapacité de travail, invalidité)",
+        (false, true) => "de complémentaire santé",
+        (false, false) => return String::new(),
+    };
+    format!(
+        "Maintien des garanties (article L. 911-8 du code de la sécurité sociale) : si la cessation de son contrat de \
+travail lui ouvre droit à une prise en charge par l'assurance chômage, {} bénéficie du maintien à titre gratuit des \
+garanties collectives {} en vigueur dans l'entreprise, à compter du {} et pendant la durée de son indemnisation, dans \
+la limite de la durée de son dernier contrat de travail (ou de ses derniers contrats consécutifs dans l'entreprise), \
+appréciée en mois et arrondie au mois supérieur, sans pouvoir excéder douze mois. Il en justifie auprès de l'organisme \
+assureur, à l'ouverture et au cours de la période de maintien.",
+        nom,
+        garanties,
+        fin.jj_mm_aaaa()
+    )
+}
 
 /// Écrit les deux papiers de la paie `p` (dont l'engagement finit), établis le `date`, dans `sortie` : le certificat
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
@@ -42,8 +84,10 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let poste = ctx.gabarits();
     let certificat = sortie.join(format!("CertificatTravail_{}_{}.pdf", cle, fin.aaaammjj()));
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
-    let valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
+    let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
+    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| erreur(Classe::Manque, m))?, p.salarie.nom.ecrite("nom").map_err(|m| erreur(Classe::Manque, m))?);
+    valeurs_cert.insert(Marqueur::CertificatPortabilite, portabilite(p, &nom, &fin));
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
     ecrire_papier(&socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste), valeurs_cert, &certificat, &ent, true)?;

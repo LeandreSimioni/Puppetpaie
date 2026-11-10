@@ -10,6 +10,13 @@
 # de rupture ou le montant d'un salaire, c'est sortir de ce que la loi
 # autorise. Relevé le 19/09/2026 dans la base LEGI (LEGIARTI000021339779).
 #
+# Une seule mention s'y ajoute, parce qu'un autre texte l'exige : le maintien
+# des garanties collectives de prévoyance et de santé (code de la sécurité
+# sociale, L911-8, 6° : « L'employeur signale le maintien de ces garanties
+# dans le certificat de travail »). Le moteur l'écrit dans le marqueur
+# certificat.portabilite, vide quand rien n'est maintenu (aucune garantie
+# collective, ou une fin pour faute lourde).
+#
 # Les marqueurs {{...}} sont remplacés à l'édition ; un marqueur inconnu
 # arrête la génération plutôt que d'imprimer un trou.
 
@@ -31,6 +38,8 @@ ARTICLE: Emploi occupé
 Emploi : **{{contrat.emploi}}**, du {{contrat.debut}} au {{contrat.fin}}.
 
 Nature du contrat : {{contrat.nature}}.
+
+{{certificat.portabilite}}
 
 SIGNATURES:
 {{salarie.nom_complet}} est libre de tout engagement envers notre entreprise.
