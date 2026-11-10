@@ -842,7 +842,7 @@ use crate::catalogue::{Ecran, Place};
 /// LE DERNIER MOIS PARTI pour la fiche `nom` (`cle` pour un salarie) : le dernier dont les documents ou la DSN sont
 /// partis (`engagement::departs`), ou que l'ancien logiciel a verse et declare (un engagement importe), pour ce salarie,
 /// ou pour quiconque quand c'est la fiche de l'entreprise. `None` : aucun ; une fiche de spectacle n'en a pas.
-pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<Option<String>> {
+pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<Option<socle::mois::Mois>> {
     use engagement::departs::Envoi;
     if nom == "spectacle" {
         return Ok(None);
@@ -861,7 +861,7 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -
             importes.extend(i.paies().keys().cloned());
         }
     }
-    Ok(partis.chain(importes).max().map(|m| m.to_string()))
+    Ok(partis.chain(importes).max())
 }
 
 /// LA DATE QU'UN CHANGEMENT DE FICHE PROPOSE, et pourquoi : le premier jour du mois qui suit le dernier mois parti
@@ -871,7 +871,6 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(
     let qui = if nom == "entreprise" { "" } else { " pour ce salarié" };
     Ok(match dernier_mois_parti(ctx, nom, cle)? {
         Some(m) => {
-            let m = socle::mois::Mois::lire(&m)?;
             let phrase = format!(
                 "Proposé : le premier mois dont rien n'est parti{}. Jusqu'à {} compris, ce qui est parti garde l'ancienne valeur.",
                 qui,

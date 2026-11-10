@@ -492,7 +492,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     // Les engagements valides du mois (rien ne part d'un engagement en saisie), vus comme des embauches, sans relire leur
     // paie.
     let journal = envois::journal::lu(&ctx.racine)?;
-    let data = engagement::etats::validees_du_mois(ctx, socle::mois::Mois::lire(&mois)?, &journal.departs)?.map(|(d, _)| d)
+    let data = engagement::etats::validees_du_mois(ctx, le_mois, &journal.departs)?.map(|(d, _)| d)
         .ok_or_else(|| erreur(Classe::FichierAbsent, format!("Aucune saisie pour {}.", mois)))?;
     let paies: Vec<Paie> = {
         let engs = engagement::engagements_de_la_saisie(ctx, &data)?;
