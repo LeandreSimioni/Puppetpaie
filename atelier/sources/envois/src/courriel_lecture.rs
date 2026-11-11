@@ -127,18 +127,7 @@ const MOIS: [&str; 24] = [
 
 /// Un entier signe en chiffres ASCII (ni autres ecritures de chiffres, ni `_`).
 fn entier(t: &str) -> Option<i64> {
-    let (signe, chiffres) = if let Some(c) = t.strip_prefix('-') {
-        (-1, c)
-    } else if let Some(c) = t.strip_prefix('+') {
-        (1, c)
-    } else {
-        (1, t)
-    };
-    if chiffres.is_empty() || !chiffres.bytes().all(|b| b.is_ascii_digit()) || chiffres.len() > 15 {
-        return None;
-    }
-    // Quinze chiffres au plus : la valeur tient dans un i64.
-    Some(signe * chiffres.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0')))
+    socle::num::entier_signe(t)
 }
 
 /// (an, mois, jour, heure, minute, seconde, decalage en secondes ou `None`).

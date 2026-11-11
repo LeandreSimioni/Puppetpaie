@@ -27,6 +27,16 @@ pub fn entier_de_chiffres(t: &str) -> Option<i64> {
     Some(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
 }
 
+/// UN ENTIER SIGNE ECRIT EN CHIFFRES : un signe `+` ou `-` facultatif, puis un entier de chiffres seuls
+/// (`entier_de_chiffres`) ; tout autre texte rend `None`.
+pub fn entier_signe(t: &str) -> Option<i64> {
+    match (t.strip_prefix('-'), t.strip_prefix('+')) {
+        (Some(c), _) => entier_de_chiffres(c).map(|n| -n),
+        (None, Some(c)) => entier_de_chiffres(c),
+        (None, None) => entier_de_chiffres(t),
+    }
+}
+
 /// LA FORME LA PLUS COURTE D'UN DECIMAL, une decimale au moins (`24` et `24.00` s'ecrivent `24.0`, `0.10` s'ecrit
 /// `0.1`) : celle qu'un nombre a virgule d'un fichier donne a sa lecture (`forme::court`), et que gardent les taux,
 /// quantites et quotites que le calcul lit.

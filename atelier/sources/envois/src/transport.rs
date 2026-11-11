@@ -146,13 +146,6 @@ fn avant<'a>(t: &'a str, signes: &[char]) -> &'a str {
     }
 }
 
-/// Un texte lu en nombre entier ; `None` s'il n'en est pas un.
-fn entier(t: &str) -> Option<u64> {
-    if t.is_empty() || !t.bytes().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    t.bytes().try_fold(0u64, |n, c| n.checked_mul(10)?.checked_add(u64::from(c - b'0')))
-}
 
 /// Les trois caracteres que le HTML reserve (`&`, `<`, `>`) echappes.
 pub fn echapper(s: &str) -> String {
@@ -587,7 +580,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
     let code = parts.status.as_u16();
     let entetes = en_tetes_de(&parts);
     // Une longueur annoncee qui ne se lit pas n'annonce rien.
-    let attendu = entete(&entetes, "Content-Length").and_then(|v| entier(v.trim()));
+    let attendu = entete(&entetes, "Content-Length").and_then(|v| socle::num::entier_de_chiffres(v.trim())).map(i64::unsigned_abs);
     let brut = lire_corps(corps, r.delai, attendu, https);
     if !(200..300).contains(&code) {
         return Err(Panne::Statut { code, corps: brut.map_err(Box::new) });

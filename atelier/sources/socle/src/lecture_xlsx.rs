@@ -129,9 +129,7 @@ fn colonne(reference: &str) -> R<usize> {
 
 /// Un entier ecrit en texte (blancs autour admis).
 fn entier(texte: &str, quoi: &str) -> R<i64> {
-    texte.trim_matches(crate::texte::blanc)
-        .parse::<i64>()
-        .map_err(|_| refus(format!("{} illisible : {}", quoi, crate::fichiers::repr(texte))))
+    crate::num::entier_signe(texte.trim_matches(crate::texte::blanc)).ok_or_else(|| refus(format!("{} illisible : {}", quoi, crate::fichiers::repr(texte))))
 }
 
 /// Les noms des feuilles du classeur, dans l'ordre.
