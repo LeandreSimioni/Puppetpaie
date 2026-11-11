@@ -14,7 +14,9 @@ use socle::echec::{refus, R};
 use socle::num::{div, sub, Decimal};
 use droit::pas::Versement;
 use rust_decimal::RoundingStrategy;
-use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Morceau};
+use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Mesure, Morceau};
+use fabrique_pdf::mesure::mesure;
+use crate::mesure_du_document;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -31,17 +33,17 @@ const NBSP: &str = "\u{a0}";
 const BLANC: &str = "#FFFFFF";
 
 /// Emplacement du logo sur la page, en points PDF (A4 = 595 x 842).
-pub const LOGO_LARGEUR: f32 = 74.0;
-pub const LOGO_MARGE_DROITE: f32 = 34.0;
-pub const LOGO_MARGE_HAUT: f32 = 28.0;
+pub const LOGO_LARGEUR: Mesure = Mesure::entier(74);
+pub const LOGO_MARGE_DROITE: Mesure = Mesure::entier(34);
+pub const LOGO_MARGE_HAUT: Mesure = Mesure::entier(28);
 
 /// Le pied de chaque page du bulletin : « Édité avec » et le mot Puppetpaie dessiné (`donnees/puppetpaie-mot.svg`),
 /// en gris clair, en bas a droite. Le mot a 657,2 sur 195,4 de cadre, sa ligne de base a 84,1 du bas : a 33 points de
 /// large, il descend de 4,2 points sous celle du texte.
 const PIED_TEXTE: &str = "Édité avec";
 const PIED_GRIS: &str = "#C5C9CE";
-const PIED_MOT_LARGEUR: f32 = 33.0;
-const PIED_MOT_DESCENTE: f32 = 4.2;
+const PIED_MOT_LARGEUR: Mesure = Mesure::entier(33);
+const PIED_MOT_DESCENTE: Mesure = mesure("4.2");
 
 /// Dans l'ordre de preference : le vectoriel d'abord.
 pub const IDENTITE_EXTENSIONS: [&str; 3] = [".svg", ".png", ".jpg"];
@@ -116,8 +118,8 @@ fn mt(texte: impl Into<String>) -> Morceau {
 }
 
 /// Une mesure du bulletin ; nulle, elle ne se dit pas.
-fn dite(x: f64) -> Option<f32> {
-    (x != 0.0).then_some(x as f32)
+fn dite(x: f64) -> Option<Mesure> {
+    (x != 0.0).then(|| mesure_du_document(x))
 }
 
 /// Un paragraphe du bulletin : ses morceaux, sa taille, sa couleur, l'espace avant et apres ; ce qui est nul ne se dit
@@ -197,7 +199,7 @@ fn ligne(cellules: Vec<Cellule>, options: Vec<Opt>) -> Ligne {
             Opt::Gras => l.gras = Some(true),
             Opt::Fond(c) => l.fond = Some(c.to_string()),
             Opt::Couleur(c) => l.couleur = Some(c.to_string()),
-            Opt::Taille(t) => l.taille = Some(t as f32),
+            Opt::Taille(t) => l.taille = Some(mesure_du_document(t)),
             Opt::FiletHaut(c, e) => l.filet_haut = Some(filet(c, e)),
         }
     }
@@ -213,12 +215,12 @@ fn filet_haut(couleur: &'static str, epaisseur: f64) -> Opt {
 }
 
 fn filet(couleur: &str, epaisseur: f64) -> f::Filet {
-    f::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(epaisseur as f32) }
+    f::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(mesure_du_document(epaisseur)) }
 }
 
 /// Les cellules des tableaux : 7 pt, 1,4 pt au-dessus et au-dessous, 3 pt de chaque cote.
 fn marge_cellule() -> f::MargeCellule {
-    f::MargeCellule { haut: Some(1.4), droite: Some(3.0), bas: Some(1.4), gauche: Some(3.0) }
+    f::MargeCellule { haut: Some(mesure("1.4")), droite: Some(Mesure::entier(3)), bas: Some(mesure("1.4")), gauche: Some(Mesure::entier(3)) }
 }
 
 /// Premiere colonne a gauche, les autres a droite, un filet fin sous chaque ligne.
@@ -227,7 +229,7 @@ fn tableau(largeurs: &[f64], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: &st
         .iter()
         .enumerate()
         .map(|(i, l)| f::ColonneTableau {
-            largeur: *l as f32,
+            largeur: mesure_du_document(*l),
             alignement: Some(if i == 0 { f::Alignement::Gauche } else { f::Alignement::Droite }),
         })
         .collect();
@@ -235,9 +237,9 @@ fn tableau(largeurs: &[f64], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: &st
         colonnes,
         entete: Some(entete),
         lignes: Some(lignes),
-        taille: Some(7.0),
+        taille: Some(Mesure::entier(7)),
         couleur: None,
-        interligne: Some(1.27),
+        interligne: Some(mesure("1.27")),
         marge_cellule: Some(marge_cellule()),
         filet_lignes: Some(filet(teinte, 0.3)),
         filets_cellules: None,
@@ -1132,14 +1134,14 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         k("Licence spec. :"),
         mt(format!(" {}", licence)),
     ]);
-    let moitie = || f::ColonneTableau { largeur: 0.5, alignement: None };
+    let moitie = || f::ColonneTableau { largeur: mesure("0.5"), alignement: None };
     blocs.push(Bloc::Tableau(f::Tableau {
         colonnes: vec![moitie(), moitie()],
         entete: None,
         lignes: Some(vec![ligne(vec![cm(salarie, None), cm(employeur, None)], vec![])]),
-        taille: Some(7.0),
+        taille: Some(Mesure::entier(7)),
         couleur: None,
-        interligne: Some(1.27),
+        interligne: Some(mesure("1.27")),
         marge_cellule: Some(marge_cellule()),
         filet_lignes: None,
         filets_cellules: Some(filet("#dddddd", 0.5)),
@@ -1290,15 +1292,15 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero)?));
         }
     }
-    let marge = Some(42.0);
+    let marge = Some(Mesure::entier(42));
     Ok(Description {
         format: FORMAT,
         page: Some(f::Page {
-            largeur: Some(595.28),
-            hauteur: Some(841.89),
+            largeur: Some(f::PAGE_LARGEUR),
+            hauteur: Some(f::PAGE_HAUTEUR),
             marges: Some(f::Marges { haut: marge, droite: marge, bas: marge, gauche: marge }),
         }),
-        police: Some(f::Police { taille: Some(7.4), interligne: Some(1.2), couleur: Some(ARDOISE.to_string()) }),
+        police: Some(f::Police { taille: Some(mesure("7.4")), interligne: Some(mesure("1.2")), couleur: Some(ARDOISE.to_string()) }),
         style: None,
         logo: identite_de(&ent.gabarits, "logo").map(|logo| f::Logo {
             chemin: chemin_texte(&logo),
@@ -1313,10 +1315,10 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             gauche: None,
             centre: None,
             droite: Some(PIED_TEXTE.to_string()),
-            taille: Some(6.0),
+            taille: Some(Mesure::entier(6)),
             couleur: Some(PIED_GRIS.to_string()),
             gras: None,
-            distance: Some(24.0),
+            distance: Some(Mesure::entier(24)),
             premiere_page: None,
             image: Some(f::ImageRepere {
                 chemin: chemin_texte(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),

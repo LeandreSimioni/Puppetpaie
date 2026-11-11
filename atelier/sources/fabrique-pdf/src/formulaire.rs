@@ -33,27 +33,23 @@ use serde::Serialize;
 use crate::description::Refus;
 use crate::forme::{AjoutDeChamps, Alignement, Remplissage};
 use crate::marquage::{cadre, flux_existants, q_ouverts};
+use crate::marquage::nb;
+use crate::mesure::{mesure, Mesure};
 use crate::texte::{dico, herite, nombres};
 
 fn refus<T>(m: impl Into<String>) -> Result<T, Refus> {
     Err(Refus(m.into()))
 }
 
-/// Un nombre pour un flux de contenu : quatre décimales au plus, sans zéros inutiles.
-fn nb(v: f64) -> String {
-    let s = format!("{:.4}", v);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s.is_empty() || s == "-0" {
-        "0".to_string()
-    } else {
-        s.to_string()
-    }
+/// Arrondi à deux décimales, pour le JSON rendu.
+fn r2(v: Mesure) -> Mesure {
+    v.arrondie(2)
 }
 
-/// Arrondi à deux décimales, pour le JSON rendu.
-fn r2(v: f64) -> f64 {
-    (v * 100.0).round() / 100.0
-}
+const Z: Mesure = Mesure::ZERO;
+
+/// Une page sans cadre lisible : A4 (595 x 842).
+const A4: [Mesure; 4] = [Z, Z, Mesure::entier(595), Mesure::entier(842)];
 
 fn suivre<'a>(doc: &'a Document, o: &'a Object) -> &'a Object {
     let mut o = o;
@@ -154,7 +150,7 @@ struct Herite {
 fn entier(doc: &Document, o: Option<&Object>) -> Option<i64> {
     match o.map(|o| suivre(doc, o)) {
         Some(Object::Integer(i)) => Some(*i),
-        Some(Object::Real(r)) => Some(*r as i64),
+        Some(o @ Object::Real(_)) => Mesure::de_l_objet(o).map(Mesure::tronque),
         _ => None,
     }
 }
@@ -283,12 +279,12 @@ fn pages_des_annotations(doc: &Document) -> HashMap<ObjectId, (usize, ObjectId)>
 
 /// Le rectangle d'un widget dans le repère de PyMuPDF : en points, origine en haut à gauche de la
 /// page visible, y vers le bas.
-fn rect_vu(doc: &Document, widget: ObjectId, page: ObjectId) -> Option<[f64; 4]> {
+fn rect_vu(doc: &Document, widget: ObjectId, page: ObjectId) -> Option<[Mesure; 4]> {
     let r = nombres(doc, doc.get_dictionary(widget).ok()?.get(b"Rect").ok());
     if r.len() != 4 {
         return None;
     }
-    let c = cadre(doc, page).unwrap_or([0.0, 0.0, 595.0, 842.0]);
+    let c = cadre(doc, page).unwrap_or(A4);
     let (x0, x1) = (r[0].min(r[2]), r[0].max(r[2]));
     let (y0, y1) = (r[1].min(r[3]), r[1].max(r[3]));
     Some([r2(x0 - c[0]), r2(c[3] - y1), r2(x1 - c[0]), r2(c[3] - y0)])
@@ -312,7 +308,7 @@ pub enum ValeurLue {
     Rien,
     Texte(String),
     Entier(i64),
-    Reel(f32),
+    Reel(Mesure),
     Booleen(bool),
     Liste(Vec<ValeurLue>),
 }
@@ -341,7 +337,7 @@ pub struct ChampLu {
     /// La page de son premier widget (à partir de 1) ; aucune si aucune page ne le porte.
     pub page: Option<usize>,
     /// [x0, y0, x1, y1], origine en haut à gauche de la page visible.
-    pub rect: Option<[f64; 4]>,
+    pub rect: Option<[Mesure; 4]>,
 }
 
 fn valeur_lue(doc: &Document, v: &Option<Object>) -> ValeurLue {
@@ -350,7 +346,10 @@ fn valeur_lue(doc: &Document, v: &Option<Object>) -> ValeurLue {
         Some(Object::String(s, _)) => ValeurLue::Texte(chaine_pdf(s)),
         Some(Object::Name(n)) => ValeurLue::Texte(String::from_utf8_lossy(n).into_owned()),
         Some(Object::Integer(i)) => ValeurLue::Entier(*i),
-        Some(Object::Real(r)) => ValeurLue::Reel(*r),
+        Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
+            Some(r) => ValeurLue::Reel(r),
+            None => ValeurLue::Rien,
+        },
         Some(Object::Boolean(b)) => ValeurLue::Booleen(*b),
         Some(Object::Array(a)) => ValeurLue::Liste(a.iter().map(|x| valeur_lue(doc, &Some(x.clone()))).collect()),
         Some(_) => ValeurLue::Rien,
@@ -409,17 +408,17 @@ pub fn champs(octets: &[u8]) -> Result<Vec<ChampLu>, Refus> {
 // ------------------------------------------------------------------ l'apparence d'un champ texte
 
 /// Ce que `/DA` dit : le corps (0 = automatique) et l'opérateur de couleur (`0 g`).
-fn lire_da(da: &[u8]) -> (f64, String) {
+fn lire_da(da: &[u8]) -> (Mesure, String) {
     let texte = String::from_utf8_lossy(da);
     let jetons: Vec<&str> = texte.split_whitespace().collect();
-    let mut corps = 0.0;
+    let mut corps = Z;
     let mut couleur = "0 g".to_string();
     for (i, j) in jetons.iter().enumerate() {
-        let operandes = |n: usize| -> Option<Vec<f64>> {
+        let operandes = |n: usize| -> Option<Vec<Mesure>> {
             if i < n {
                 return None;
             }
-            jetons[i - n..i].iter().map(|x| x.parse::<f64>().ok()).collect()
+            jetons[i - n..i].iter().map(|x| Mesure::lue(x)).collect()
         };
         match *j {
             "Tf" => {
@@ -447,22 +446,21 @@ const COMB: i64 = 1 << 24;
 const MULTILIGNE: i64 = 1 << 12;
 const MOT_DE_PASSE: i64 = 1 << 13;
 /// L'interligne des champs multilignes, en corps (celui de MuPDF).
-const INTERLIGNE: f64 = 1.116;
+const INTERLIGNE: Mesure = mesure("1.116");
 
 struct Metriques<'a> {
     face: ttf_parser::Face<'a>,
 }
 
 impl<'a> Metriques<'a> {
-    fn largeur(&self, c: char, corps: f64) -> f64 {
-        let em = self.face.units_per_em() as f64;
-        self.face
-            .glyph_index(c)
-            .and_then(|g| self.face.glyph_hor_advance(g))
-            .map(|a| a as f64 / em * corps)
-            .unwrap_or(0.0)
+    /// L'avance du caractère, en unités de la police (0 s'il n'y est pas).
+    fn unites(&self, c: char) -> i64 {
+        self.face.glyph_index(c).and_then(|g| self.face.glyph_hor_advance(g)).map_or(0, |a| a as i64)
     }
-    fn largeur_texte(&self, t: &str, corps: f64) -> f64 {
+    fn largeur(&self, c: char, corps: Mesure) -> Mesure {
+        corps * self.unites(c) / self.face.units_per_em() as i64
+    }
+    fn largeur_texte(&self, t: &str, corps: Mesure) -> Mesure {
         t.chars().map(|c| self.largeur(c, corps)).sum()
     }
 }
@@ -473,7 +471,7 @@ fn hex(t: &str) -> String {
 
 /// Les lignes d'un champ multiligne : les sauts de ligne du texte, puis des coupures aux espaces
 /// pour tenir dans `large` (un mot plus long que la case se coupe où il déborde).
-fn couper(m: &Metriques, texte: &str, corps: f64, large: f64) -> Vec<String> {
+fn couper(m: &Metriques, texte: &str, corps: Mesure, large: Mesure) -> Vec<String> {
     let mut lignes = Vec::new();
     for paragraphe in texte.split('\n') {
         let mut courante = String::new();
@@ -505,35 +503,36 @@ fn couper(m: &Metriques, texte: &str, corps: f64, large: f64) -> Vec<String> {
 }
 
 /// Le flux de l'apparence d'un champ texte de `l` × `h` points.
-fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: f64, h: f64, police: &str) -> Vec<u8> {
+fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, police: &str) -> Vec<u8> {
     let (mut corps, couleur) = lire_da(c.da.as_deref().unwrap_or(b"0 g /Helv 0 Tf"));
     let multiligne = c.ff & MULTILIGNE != 0;
     let comb = c.ff & COMB != 0 && c.maxlen.unwrap_or(0) > 0 && !multiligne;
-    if corps <= 0.0 {
+    let (deux, quatre) = (Mesure::entier(2), Mesure::entier(4));
+    if corps <= Z {
         // Corps automatique : ce qui tient en hauteur (12 au plus), puis en largeur sur une ligne.
-        corps = ((h - 4.0) / INTERLIGNE).clamp(4.0, 12.0);
+        corps = (h - quatre).sur(INTERLIGNE).unwrap_or(Z).clamp(quatre, Mesure::entier(12));
         if !multiligne && !comb {
             let lt = m.largeur_texte(texte, corps);
-            if lt > l - 4.0 && lt > 0.0 {
-                corps = (corps * (l - 4.0) / lt).max(4.0);
+            if lt > l - quatre && lt > Z {
+                corps = corps.fois_rapport((l - quatre).en_millioniemes(), lt.en_millioniemes()).unwrap_or(corps).max(quatre);
             }
         }
     }
     let mut s = String::new();
     s.push_str("/Tx BMC\nq\n");
-    s.push_str(&format!("1 1 {} {} re\nW\nn\nBT\n{}\n/{} {} Tf\n", nb(l - 2.0), nb(h - 2.0), couleur, police, nb(corps)));
-    let base_une_ligne = (h - corps) / 2.0 + 0.2 * corps;
+    s.push_str(&format!("1 1 {} {} re\nW\nn\nBT\n{}\n/{} {} Tf\n", nb(l - deux), nb(h - deux), couleur, police, nb(corps)));
+    let base_une_ligne = (h - corps) / 2 + corps * mesure("0.2");
     if comb {
-        let n = c.maxlen.unwrap_or(1) as f64;
+        let n = c.maxlen.unwrap_or(1).max(1);
         let case = l / n;
         for (i, ch) in texte.chars().enumerate() {
-            let x = i as f64 * case + (case - m.largeur(ch, corps)) / 2.0;
+            let x = case * i as i64 + (case - m.largeur(ch, corps)) / 2;
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(base_une_ligne), hex(&ch.to_string())));
         }
     } else if multiligne {
-        let lignes = couper(m, texte, corps, l - 4.0);
+        let lignes = couper(m, texte, corps, l - quatre);
         for (i, ligne) in lignes.iter().enumerate() {
-            let y = h - 2.0 - INTERLIGNE * corps * (i as f64 + 1.0);
+            let y = h - deux - INTERLIGNE * corps * (i as i64 + 1);
             let x = aligner(c.q, m.largeur_texte(ligne, corps), l);
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(y), hex(ligne)));
         }
@@ -546,11 +545,11 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: f64, h: f64, police:
 }
 
 /// L'abscisse du texte selon `/Q` : 0 à gauche, 1 centré, 2 à droite (à 2 pt du bord).
-fn aligner(q: i64, largeur: f64, l: f64) -> f64 {
+fn aligner(q: i64, largeur: Mesure, l: Mesure) -> Mesure {
     match q {
-        1 => (l - largeur) / 2.0,
-        2 => l - 2.0 - largeur,
-        _ => 2.0,
+        1 => (l - largeur) / 2,
+        2 => l - Mesure::entier(2) - largeur,
+        _ => Mesure::entier(2),
     }
 }
 
@@ -560,8 +559,8 @@ fn aligner(q: i64, largeur: f64, l: f64) -> f64 {
 /// taille naturelle (pixels, ou points du SVG), qui en donne les proportions.
 struct Image {
     xobjet: ObjectId,
-    largeur: f64,
-    hauteur: f64,
+    largeur: Mesure,
+    hauteur: Mesure,
 }
 
 /// Ce qu'est le fichier, d'après ses premiers octets (pas son extension).
@@ -647,7 +646,7 @@ fn image_matricielle(doc: &mut Document, octets: &[u8], sorte: &str, nom: &str) 
             if (n == 1 || n == 3) && l > 0 && h > 0 {
                 let espace = if n == 1 { "DeviceGray" } else { "DeviceRGB" };
                 let id = doc.add_object(Object::Stream(flux_image(l, h, espace, "DCTDecode", octets.to_vec())));
-                return Ok(Image { xobjet: id, largeur: l as f64, hauteur: h as f64 });
+                return Ok(Image { xobjet: id, largeur: Mesure::entier(l as i64), hauteur: Mesure::entier(h as i64) });
             }
         }
     }
@@ -674,23 +673,28 @@ fn image_matricielle(doc: &mut Document, octets: &[u8], sorte: &str, nom: &str) 
         flux.dict.set("SMask", Object::Reference(masque));
     }
     let id = doc.add_object(Object::Stream(flux));
-    Ok(Image { xobjet: id, largeur: l as f64, hauteur: h as f64 })
+    Ok(Image { xobjet: id, largeur: Mesure::entier(l as i64), hauteur: Mesure::entier(h as i64) })
 }
 
 /// Un morceau de texte d'un SVG, posé tel quel en texte PDF : sa police (gras ou non), son corps, sa couleur et
 /// ses caractères.
 struct Morceau {
     gras: bool,
-    corps: f64,
+    corps: Mesure,
     couleur: [u8; 3],
     texte: String,
 }
 
+/// Un nombre que le dessin du SVG (`usvg`) rend, lu par son texte.
+fn lu(x: impl std::fmt::Display) -> Option<Mesure> {
+    Mesure::par_son_texte(x)
+}
+
 /// Une ligne de texte d'un SVG (un « chunk » d'usvg) : son point d'ancrage, son alignement et ses morceaux.
 struct LigneSvg {
-    matrice: [f64; 6],
-    x: f64,
-    y: f64,
+    matrice: [Mesure; 6],
+    x: Mesure,
+    y: Mesure,
     ancre: usvg::TextAnchor,
     morceaux: Vec<Morceau>,
 }
@@ -702,21 +706,21 @@ struct LigneSvg {
 fn textes_simples(arbre: &usvg::Tree) -> Option<Vec<(usvg::Node, Vec<LigneSvg>)>> {
     use usvg::NodeExt;
     let vb = arbre.view_box.rect;
-    if vb.x() != 0.0 || vb.y() != 0.0 || vb.width() != arbre.size.width() || vb.height() != arbre.size.height() {
+    if lu(vb.x()) != Some(Z) || lu(vb.y()) != Some(Z) || lu(vb.width()) != lu(arbre.size.width()) || lu(vb.height()) != lu(arbre.size.height()) {
         return None;
     }
     let mut textes = Vec::new();
     for noeud in arbre.root.descendants() {
         let usvg::NodeKind::Text(ref t) = *noeud.borrow() else { continue };
         if t.writing_mode != usvg::WritingMode::LeftToRight
-            || t.rotate.iter().any(|r| *r != 0.0)
+            || t.rotate.iter().any(|r| lu(r) != Some(Z))
             || t.positions.iter().any(|p| p.dx.is_some() || p.dy.is_some())
             || t.positions.iter().filter(|p| p.x.is_some() || p.y.is_some()).count() > t.chunks.len()
         {
             return None;
         }
         let m = noeud.abs_transform();
-        let matrice = [m.sx as f64, m.ky as f64, m.kx as f64, m.sy as f64, m.tx as f64, m.ty as f64];
+        let matrice = [lu(m.sx)?, lu(m.ky)?, lu(m.kx)?, lu(m.sy)?, lu(m.tx)?, lu(m.ty)?];
         let mut lignes = Vec::new();
         for c in &t.chunks {
             if !matches!(c.text_flow, usvg::TextFlow::Linear) {
@@ -725,7 +729,7 @@ fn textes_simples(arbre: &usvg::Tree) -> Option<Vec<(usvg::Node, Vec<LigneSvg>)>
             let mut morceaux = Vec::new();
             for s in &c.spans {
                 let couleur = match &s.fill {
-                    Some(usvg::Fill { paint: usvg::Paint::Color(c), opacity, .. }) if opacity.get() == 1.0 => [c.red, c.green, c.blue],
+                    Some(usvg::Fill { paint: usvg::Paint::Color(c), opacity, .. }) if lu(opacity.get()) == Some(Mesure::UN) => [c.red, c.green, c.blue],
                     _ => return None,
                 };
                 let d = &s.decoration;
@@ -734,8 +738,8 @@ fn textes_simples(arbre: &usvg::Tree) -> Option<Vec<(usvg::Node, Vec<LigneSvg>)>
                     || d.overline.is_some()
                     || d.line_through.is_some()
                     || s.small_caps
-                    || s.letter_spacing != 0.0
-                    || s.word_spacing != 0.0
+                    || lu(s.letter_spacing) != Some(Z)
+                    || lu(s.word_spacing) != Some(Z)
                     || s.text_length.is_some()
                     || !s.baseline_shift.is_empty()
                     || s.dominant_baseline != usvg::DominantBaseline::Auto
@@ -761,9 +765,17 @@ fn textes_simples(arbre: &usvg::Tree) -> Option<Vec<(usvg::Node, Vec<LigneSvg>)>
                 if texte.chars().any(|ch| ch.is_control() || ch as u32 > 0xFFFF) {
                     return None;
                 }
-                morceaux.push(Morceau { gras: s.font.weight > 500, corps: s.font_size.get() as f64, couleur, texte });
+                morceaux.push(Morceau { gras: s.font.weight > 500, corps: lu(s.font_size.get())?, couleur, texte });
             }
-            lignes.push(LigneSvg { matrice, x: c.x.unwrap_or(0.0) as f64, y: c.y.unwrap_or(0.0) as f64, ancre: c.anchor, morceaux });
+            let x = match c.x {
+                Some(x) => lu(x)?,
+                None => Z,
+            };
+            let y = match c.y {
+                Some(y) => lu(y)?,
+                None => Z,
+            };
+            lignes.push(LigneSvg { matrice, x, y, ancre: c.anchor, morceaux });
         }
         textes.push((noeud.clone(), lignes));
     }
@@ -773,7 +785,7 @@ fn textes_simples(arbre: &usvg::Tree) -> Option<Vec<(usvg::Node, Vec<LigneSvg>)>
 /// Le texte `lignes` d'un SVG ajouté à son objet formulaire `forme` (écrit par svg2pdf, dans le repère du SVG
 /// retourné, `hauteur` sa hauteur), en texte PDF avec les sous-ensembles de Liberation Sans de `doc`
 /// (`police_pour`). Refus : un caractère que la police n'a pas.
-fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], hauteur: f64, avant: Option<&Document>) -> Result<(), Refus> {
+fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], hauteur: Mesure, avant: Option<&Document>) -> Result<(), Refus> {
     let romain = crate::polices::sans_regulier()?;
     let gras = crate::polices::sans_gras()?;
     let faces = [
@@ -797,10 +809,10 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
             noms[i] = nom;
         }
     }
-    let avance = |m: &Morceau| -> f64 {
+    let avance = |m: &Morceau| -> Mesure {
         let f = &faces[m.gras as usize];
-        let em = f.units_per_em() as f64;
-        m.texte.chars().filter_map(|c| f.glyph_index(c)).map(|g| f.glyph_hor_advance(g).unwrap_or(0) as f64 / em * m.corps).sum()
+        let em = f.units_per_em() as i64;
+        m.texte.chars().filter_map(|c| f.glyph_index(c)).map(|g| m.corps * f.glyph_hor_advance(g).unwrap_or(0) as i64 / em).sum()
     };
     let srgb = match doc.get_object(forme) {
         Ok(Object::Stream(s)) => s.dict.get(b"Resources").ok().and_then(|r| dico(doc, r)).and_then(|r| r.get(b"ColorSpace").ok()).and_then(|c| dico(doc, c)).map_or(false, |c| c.has(b"srgb")),
@@ -809,16 +821,16 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
     // Le repère du SVG (y vers le bas) comme svg2pdf le pose, puis chaque ligne dans le sien.
     let mut s = format!("q\n1 0 0 -1 0 {} cm\n", nb(hauteur));
     for l in lignes {
-        let largeur: f64 = l.morceaux.iter().map(|m| avance(m)).sum();
+        let largeur: Mesure = l.morceaux.iter().map(|m| avance(m)).sum();
         let mut x = match l.ancre {
             usvg::TextAnchor::Start => l.x,
-            usvg::TextAnchor::Middle => l.x - largeur / 2.0,
+            usvg::TextAnchor::Middle => l.x - largeur / 2,
             usvg::TextAnchor::End => l.x - largeur,
         };
         let m = l.matrice;
         s.push_str(&format!("q\n{} {} {} {} {} {} cm\nBT\n", nb(m[0]), nb(m[1]), nb(m[2]), nb(m[3]), nb(m[4]), nb(m[5])));
         for mo in &l.morceaux {
-            let [r, v, b] = mo.couleur.map(|c| nb(c as f64 / 255.0));
+            let [r, v, b] = mo.couleur.map(|c| nb(Mesure::entier(c as i64) / 255));
             if srgb {
                 s.push_str(&format!("/srgb cs {} {} {} scn\n", r, v, b));
             } else {
@@ -888,10 +900,10 @@ fn image_svg(doc: &mut Document, octets: &[u8], nom: &str, avant: Option<&Docume
             Vec::new()
         }
     };
-    let (l, h) = (arbre.size.width() as f64, arbre.size.height() as f64);
-    if !(l > 0.0 && h > 0.0) {
-        return refus(format!("le SVG {} n'a pas de taille", nom));
-    }
+    let (l, h) = match (lu(arbre.size.width()), lu(arbre.size.height())) {
+        (Some(l), Some(h)) if l > Z && h > Z => (l, h),
+        _ => return refus(format!("le SVG {} n'a pas de taille", nom)),
+    };
 
     // svg2pdf écrit dans un PDF minimal, que lopdf relit ; on en garde l'objet formulaire et ce
     // qu'il cite.
@@ -962,14 +974,14 @@ fn renumeroter(o: &mut Object, table: &BTreeMap<ObjectId, ObjectId>) {
 // ------------------------------------------------------------------ remplir
 
 /// Un rectangle [x0, y0, x1, y1] de nombres finis, x1 > x0 et y1 > y0.
-fn rect_valide(r: &[f64; 4]) -> bool {
-    r.iter().all(|x| x.is_finite()) && r[2] > r[0] && r[3] > r[1]
+fn rect_valide(r: &[Mesure; 4]) -> bool {
+    r[2] > r[0] && r[3] > r[1]
 }
 
 struct Pose {
     page: usize,
-    rect: [f64; 4],
-    marge: f64,
+    rect: [Mesure; 4],
+    marge: Mesure,
     octets: Vec<u8>,
     nom: String,
 }
@@ -1014,8 +1026,8 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
         return refus(format!("image {} : « rect » doit être [x0, y0, x1, y1] avec x1 > x0 et y1 > y0", rang));
     }
     let marge = match im.marge {
-        None => 0.0,
-        Some(m) if m.is_finite() && m >= 0.0 => m,
+        None => Z,
+        Some(m) if m >= Z => m,
         Some(_) => return refus(format!("image {} : « marge » doit être un nombre positif", rang)),
     };
     let (octets, nom) = match (&im.fichier, &im.svg) {
@@ -1126,7 +1138,7 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
             let mut dict = Dictionary::new();
             dict.set("Type", Object::Name(b"XObject".to_vec()));
             dict.set("Subtype", Object::Name(b"Form".to_vec()));
-            dict.set("BBox", Object::Array(vec![0.into(), 0.into(), Object::Real(l as f32), Object::Real(h as f32)]));
+            dict.set("BBox", Object::Array(vec![0.into(), 0.into(), l.en_objet(), h.en_objet()]));
             let mut ressources = Dictionary::new();
             if let Some(p) = police {
                 let mut polices = Dictionary::new();
@@ -1154,7 +1166,7 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
 
 fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) -> Result<(), Refus> {
     let pages: BTreeMap<u32, ObjectId> = doc.get_pages();
-    let mut par_page: BTreeMap<usize, Vec<(ObjectId, [f64; 6])>> = BTreeMap::new();
+    let mut par_page: BTreeMap<usize, Vec<(ObjectId, [Mesure; 6])>> = BTreeMap::new();
     for p in poses {
         let page = match pages.get(&(p.page as u32)) {
             Some(id) => *id,
@@ -1167,10 +1179,10 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
         if rotation != 0 {
             return refus(format!("la page {} est tournée ({}°) : on n'y pose pas d'image", p.page, rotation));
         }
-        let c = cadre(doc, page).unwrap_or([0.0, 0.0, 595.0, 842.0]);
+        let c = cadre(doc, page).unwrap_or(A4);
         let dedans = [p.rect[0] + p.marge, p.rect[1] + p.marge, p.rect[2] - p.marge, p.rect[3] - p.marge];
         let (cl, ch) = (dedans[2] - dedans[0], dedans[3] - dedans[1]);
-        if cl <= 0.0 || ch <= 0.0 {
+        if cl <= Z || ch <= Z {
             return refus(format!("image {} : la marge ne laisse rien du rectangle", p.nom));
         }
         let image = match sorte(&p.octets) {
@@ -1179,12 +1191,18 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
             None => return refus(format!("l'image {} n'est ni un SVG, ni un PNG, ni un JPEG", p.nom)),
         };
         // Le plus grand rectangle aux proportions de l'image qui tient dans la case, centré.
-        let k = (cl / image.largeur).min(ch / image.hauteur);
-        let (dl, dh) = (image.largeur * k, image.hauteur * k);
-        let x = c[0] + dedans[0] + (cl - dl) / 2.0;
-        let haut = dedans[1] + (ch - dh) / 2.0;
+        // La largeur remplit la case si cl / l ≤ ch / h, c'est-à-dire cl × h ≤ ch × l ; sinon la hauteur.
+        let (l, h) = (image.largeur.en_millioniemes(), image.hauteur.en_millioniemes());
+        let largeur_d_abord = cl.en_millioniemes() as i128 * h as i128 <= ch.en_millioniemes() as i128 * l as i128;
+        let (dl, dh) = match (largeur_d_abord, ch.fois_rapport(l, h), cl.fois_rapport(h, l)) {
+            (true, _, Some(dh)) => (cl, dh),
+            (false, Some(dl), _) => (dl, ch),
+            _ => return refus(format!("l'image {} n'a pas de taille", p.nom)),
+        };
+        let x = c[0] + dedans[0] + (cl - dl) / 2;
+        let haut = dedans[1] + (ch - dh) / 2;
         let y = c[3] - haut - dh;
-        par_page.entry(p.page).or_default().push((image.xobjet, [dl, 0.0, 0.0, dh, x, y]));
+        par_page.entry(p.page).or_default().push((image.xobjet, [dl, Z, Z, dh, x, y]));
     }
     for (n, liste) in par_page {
         let id = pages[&(n as u32)];
@@ -1233,10 +1251,10 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
 struct Ajout {
     nom: String,
     page: usize,
-    rect: [f64; 4],
+    rect: [Mesure; 4],
     valeur: Option<String>,
     lecture_seule: bool,
-    taille: f64,
+    taille: Mesure,
     q: i64,
 }
 
@@ -1254,8 +1272,8 @@ fn lire_ajout(c: &crate::forme::ChampAjoute, rang: usize) -> Result<Ajout, Refus
     let lecture_seule = c.lecture_seule.unwrap_or(false);
     // Le corps 0 : celui qui tient (`/DA`).
     let taille = match c.taille {
-        None => 0.0,
-        Some(t) if t.is_finite() && t >= 0.0 => t,
+        None => Z,
+        Some(t) if t >= Z => t,
         Some(_) => return refus(format!("champ « {} » : « taille » doit être un nombre positif ou nul", nom)),
     };
     let q = match c.alignement {
@@ -1343,14 +1361,14 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
     let mut nouveaux: Vec<ObjectId> = Vec::new();
     for a in &ajouts {
         let page = pages[&(a.page as u32)];
-        let c = cadre(&doc, page).unwrap_or([0.0, 0.0, 595.0, 842.0]);
+        let c = cadre(&doc, page).unwrap_or(A4);
         let r = [c[0] + a.rect[0], c[3] - a.rect[3], c[0] + a.rect[2], c[3] - a.rect[1]];
         let mut w = Dictionary::new();
         w.set("Type", Object::Name(b"Annot".to_vec()));
         w.set("Subtype", Object::Name(b"Widget".to_vec()));
         w.set("FT", Object::Name(b"Tx".to_vec()));
         w.set("T", Object::String(vers_chaine_pdf(&a.nom), lopdf::StringFormat::Literal));
-        w.set("Rect", Object::Array(r.iter().map(|x| Object::Real(*x as f32)).collect()));
+        w.set("Rect", Object::Array(r.iter().map(|x| x.en_objet()).collect()));
         w.set("P", Object::Reference(page));
         w.set("F", Object::Integer(4));
         w.set("Ff", Object::Integer(0));

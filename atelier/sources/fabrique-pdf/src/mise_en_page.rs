@@ -10,7 +10,7 @@ use genpdfi::fonts::{Font, FontFamily};
 use genpdfi::render::Area;
 use genpdfi::style::{Color, LineStyle, Style, StyledString};
 use genpdfi::{
-    pt, Alignment, Context, Document, Element, Margins, PageDecorator,
+    Alignment, Context, Document, Element, Margins, PageDecorator,
     Position, RenderResult, Size,
 };
 
@@ -18,15 +18,39 @@ use crate::description::{
     refus, resoudre, Alignement, Bloc, BlocEtiquete, CelluleTableau, Filet,
     LigneTableau, Morceau, Police, PoliceFixe, Refus, Repere, Rvb, CORPS_PLANCHER,
 };
+use crate::mesure::Mesure;
 use crate::polices;
-
-/// Un peu de marge pour les comparaisons de hauteurs en millimètres (erreurs d'arrondi).
-const EPS_MM: f32 = 0.01;
 
 type Mm = genpdfi::Mm;
 
-fn en_points(mm: Mm) -> f32 {
-    genpdfi::printpdf::Pt::from(mm).0
+/// Un peu de marge pour les comparaisons de hauteurs du dessin (ses erreurs d'arrondi) : 0,01 mm.
+fn eps() -> Mm {
+    pt(Mesure::millioniemes(28_346))
+}
+
+/// Une mesure en points, dans l'unité du dessin (`genpdfi`, qui compte en millimètres).
+fn pt(m: Mesure) -> Mm {
+    m.en_mm()
+}
+
+/// Une longueur du dessin, en points.
+fn en_points(mm: Mm) -> Mesure {
+    Mesure::du_mm(mm)
+}
+
+/// La part `frac` (un rapport) d'une longueur du dessin.
+fn part(l: Mm, frac: Mesure) -> Mm {
+    pt(en_points(l) * frac)
+}
+
+/// La moitié d'une longueur du dessin.
+fn moitie(l: Mm) -> Mm {
+    pt(en_points(l) / 2)
+}
+
+/// Une taille de lettre ou un facteur d'interligne, tel que le dessin (`genpdfi`) le prend.
+fn reel(m: Mesure) -> genpdfi::Reel {
+    genpdfi::reel_de_millioniemes(m.en_millioniemes())
 }
 
 fn couleur_genpdfi((r, v, b): Rvb) -> Color {
@@ -96,7 +120,7 @@ impl Fixe {
     fn poser(&self, ctx: &Context, area: &Area<'_>) -> Result<(), ErreurGenpdfi> {
         // La zone de la page entière, à l'origine de la page.
         let mut zone = area.clone();
-        let zero = Mm::from(0.0f32);
+        let zero = Mm::default();
         zone.add_offset(Position::new(zero - self.origine.0, zero - self.origine.1));
         zone.set_size(self.page);
         match &self.objet {
@@ -107,7 +131,7 @@ impl Fixe {
                 let largeur = style.text_width(&ctx.font_cache, texte);
                 let x = match alignement {
                     Alignement::Droite => *x - largeur,
-                    Alignement::Centre => *x - largeur / 2.0,
+                    Alignement::Centre => *x - moitie(largeur),
                     _ => *x,
                 };
                 // La section de texte pose la ligne de base à `position.y + ascent`.
@@ -135,7 +159,7 @@ pub struct Tableau {
     largeur: Mm,
     /// Abscisse et largeur de chaque colonne.
     colonnes: Vec<(Mm, Mm)>,
-    interligne: f32,
+    interligne: Mesure,
     /// haut, droite, bas, gauche.
     marge: [Mm; 4],
     filet_lignes: Option<Filet>,
@@ -153,7 +177,7 @@ pub struct Colonnes {
     filet: Option<(Color, Mm)>,
     avant: Mm,
     marge_haut: Mm,
-    colonnes: Vec<(f32, Vec<Noeud>)>,
+    colonnes: Vec<(Mesure, Vec<Noeud>)>,
     fait: bool,
 }
 
@@ -166,7 +190,7 @@ impl Noeud {
             } => *avant + para.height(ctx, largeur - *retrait, style) + *apres,
             Noeud::Espace { hauteur, .. } => *hauteur,
             Noeud::Image(p) => p.height(),
-            Noeud::ImageFlottante(_) | Noeud::Fixe(_) => Mm::from(0.0f32),
+            Noeud::ImageFlottante(_) | Noeud::Fixe(_) => Mm::default(),
             Noeud::Colonnes(c) => c.hauteur(ctx, largeur, style),
             // Le tableau entier, comme s'il tenait sur une page : pour qui l'additionne.
             Noeud::Tableau(t) => {
@@ -181,17 +205,17 @@ impl Noeud {
 
 impl Colonnes {
     fn epaisseur_filet(&self) -> Mm {
-        self.filet.map(|(_, e)| e).unwrap_or(Mm::from(0.0f32))
+        self.filet.map(|(_, e)| e).unwrap_or(Mm::default())
     }
 
     fn hauteur_contenu(&self, ctx: &Context, largeur: Mm, style: Style) -> Mm {
         self.colonnes
             .iter()
             .map(|(frac, blocs)| {
-                let l = largeur * *frac;
+                let l = part(largeur, *frac);
                 blocs.iter().map(|b| b.hauteur(ctx, l, style)).sum::<Mm>()
             })
-            .fold(Mm::from(0.0f32), |a, b| a.max(b))
+            .fold(Mm::default(), |a, b| a.max(b))
     }
 
     fn hauteur(&self, ctx: &Context, largeur: Mm, style: Style) -> Mm {
@@ -244,7 +268,7 @@ impl Element for Noeud {
                 commence,
             } => {
                 let premier = !*commence;
-                let decalage = if premier { *avant } else { Mm::from(0.0f32) };
+                let decalage = if premier { *avant } else { Mm::default() };
                 if decalage > area.size().height {
                     return Ok(RenderResult {
                         size: Size::new(0, 0),
@@ -255,7 +279,7 @@ impl Element for Noeud {
                 sous.add_offset(Position::new(*retrait, decalage));
                 sous.set_width(area.size().width - *retrait);
                 let r = para.render(ctx, sous, style)?;
-                if r.has_more && r.size.height == Mm::from(0.0f32) {
+                if r.has_more && r.size.height == Mm::default() {
                     // Pas même une ligne : tout à la page suivante, espace avant compris.
                     return Ok(RenderResult {
                         size: Size::new(0, 0),
@@ -266,7 +290,7 @@ impl Element for Noeud {
                 let mut hauteur = decalage + r.size.height;
                 if !r.has_more {
                     let reste = area.size().height - hauteur;
-                    hauteur += if *apres > reste { reste.max(Mm::from(0.0f32)) } else { *apres };
+                    hauteur += if *apres > reste { reste.max(Mm::default()) } else { *apres };
                 }
                 Ok(RenderResult {
                     size: Size::new(r.size.width, hauteur),
@@ -291,7 +315,7 @@ impl Colonnes {
         }
         let largeur = area.size().width;
         let besoin = self.hauteur(ctx, largeur, style);
-        if besoin > area.size().height + Mm::from(EPS_MM) {
+        if besoin > area.size().height + eps() {
             // Les colonnes ne se coupent pas : tout à la page suivante.
             return Ok(RenderResult {
                 size: Size::new(0, 0),
@@ -300,24 +324,24 @@ impl Colonnes {
         }
         let epaisseur = self.epaisseur_filet();
         let contenu = self.hauteur_contenu(ctx, largeur, style);
-        let mut x = Mm::from(0.0f32);
+        let mut x = Mm::default();
         for (frac, blocs) in self.colonnes.iter_mut() {
-            let lc = largeur * *frac;
+            let lc = part(largeur, *frac);
             let mut zone = area.clone();
             zone.add_offset(Position::new(x, self.avant));
             zone.set_width(lc);
             if let Some((couleur, e)) = self.filet {
                 zone.draw_line(
                     vec![
-                        Position::new(0, e / 2.0),
-                        Position::new(lc, e / 2.0),
+                        Position::new(0, moitie(e)),
+                        Position::new(lc, moitie(e)),
                     ],
                     LineStyle::new().with_thickness(e).with_color(couleur),
                 );
             }
             let mut dedans = zone.clone();
             dedans.add_offset(Position::new(0, epaisseur + self.marge_haut));
-            dedans.set_height(contenu + Mm::from(EPS_MM));
+            dedans.set_height(contenu + eps());
             for b in blocs.iter_mut() {
                 let r = b.render(ctx, dedans.clone(), style)?;
                 dedans.add_offset(Position::new(0, r.size.height));
@@ -344,13 +368,13 @@ fn aligner(a: Alignement) -> Alignment {
 impl Tableau {
     /// Le texte d'une cellule, à refaire à chaque pose (un paragraphe se consomme en s'imprimant,
     /// et l'en-tête se pose sur chaque page).
-    fn paragraphe(&self, c: &CelluleTableau, taille: f32, defaut: Rvb) -> Paragraph {
+    fn paragraphe(&self, c: &CelluleTableau, taille: Mesure, defaut: Rvb) -> Paragraph {
         let mut para = Paragraph::default()
             .aligned(aligner(c.alignement))
-            .with_line_height_factor(self.interligne);
+            .with_line_height_factor(reel(self.interligne));
         for m in &c.morceaux {
             let base = Style::new()
-                .with_font_size(taille)
+                .with_font_size(reel(taille))
                 .with_color(couleur_genpdfi(m.couleur.unwrap_or(defaut)));
             let st = if m.gras { base.bold() } else { base };
             let st = if m.italique { st.italic() } else { st };
@@ -378,7 +402,7 @@ impl Tableau {
     /// La hauteur d'une ligne : celle de sa cellule la plus haute, marges comprises.
     fn hauteur_ligne(&self, ctx: &Context, l: &LigneTableau, style: Style) -> Mm {
         let mut debut = 0;
-        let mut h = Mm::from(0.0f32);
+        let mut h = Mm::default();
         for c in &l.cellules {
             let (_, lc) = self.emprise(debut, c.etendue);
             debut += c.etendue;
@@ -416,7 +440,7 @@ impl Tableau {
                 let mut zone = area.clone();
                 zone.add_offset(Position::new(x + self.marge[3], *y + self.marge[0]));
                 zone.set_width(self.largeur_texte(lc));
-                zone.set_height(*h - self.marge[0] + Mm::from(0.05f32));
+                zone.set_height(*h - self.marge[0] + pt(Mesure::millioniemes(141_732)));
                 let mut p = self.paragraphe(c, l.taille, (0, 0, 0));
                 p.render(ctx, zone, style)?;
             }
@@ -445,7 +469,7 @@ impl Tableau {
             if let Some((c, e)) = haut {
                 let (e, c) = (pt(e), couleur_genpdfi(c));
                 area.draw_line(
-                    vec![Position::new(0, *y + e / 2.0), Position::new(self.largeur, *y + e / 2.0)],
+                    vec![Position::new(0, *y + moitie(e)), Position::new(self.largeur, *y + moitie(e))],
                     LineStyle::new().with_thickness(e).with_color(c),
                 );
             }
@@ -453,8 +477,8 @@ impl Tableau {
                 let (e, c) = (pt(e), couleur_genpdfi(c));
                 area.draw_line(
                     vec![
-                        Position::new(0, *y + *h - e / 2.0),
-                        Position::new(self.largeur, *y + *h - e / 2.0),
+                        Position::new(0, *y + *h - moitie(e)),
+                        Position::new(self.largeur, *y + *h - moitie(e)),
                     ],
                     LineStyle::new().with_thickness(e).with_color(c),
                 );
@@ -471,8 +495,8 @@ impl Tableau {
     ) -> Result<RenderResult, ErreurGenpdfi> {
         let rien = || RenderResult { size: Size::new(0, 0), has_more: true };
         let premier = !self.commence;
-        let decalage = if premier { self.avant } else { Mm::from(0.0f32) };
-        let dispo = area.size().height - decalage + Mm::from(EPS_MM);
+        let decalage = if premier { self.avant } else { Mm::default() };
+        let dispo = area.size().height - decalage + eps();
         let h_entete: Mm = self.h_entete.iter().copied().sum();
         // Les lignes du corps qui tiennent sous l'en-tête ; sans une seule (et sans corps du
         // tout, l'en-tête seul), tout passe à la page suivante.
@@ -503,7 +527,7 @@ impl Tableau {
         let mut hauteur = y;
         if !a_suivre {
             let reste = area.size().height - hauteur;
-            hauteur += if self.apres > reste { reste.max(Mm::from(0.0f32)) } else { self.apres };
+            hauteur += if self.apres > reste { reste.max(Mm::default()) } else { self.apres };
         }
         Ok(RenderResult { size: Size::new(self.largeur, hauteur), has_more: a_suivre })
     }
@@ -578,7 +602,7 @@ impl PageDecorator for Decorateur {
                 let largeur = r.style.text_width(&context.font_cache, &texte);
                 let x = match ou {
                     0 => gauche,
-                    1 => (gauche + droite) / 2.0 - largeur / 2.0,
+                    1 => moitie(gauche + droite) - moitie(largeur),
                     _ => droite - largeur,
                 };
                 area.print_str(&context.font_cache, Position::new(x, y), r.style, texte)?;
@@ -595,7 +619,7 @@ impl PageDecorator for Decorateur {
 
 fn charger_image(
     chemin: &str,
-    largeur_pt: f32,
+    largeur_pt: Mesure,
     ou: &str,
     quoi: &str,
 ) -> Result<Picture, Refus> {
@@ -666,11 +690,11 @@ fn construire(
             retrait,
         } => {
             let base = Style::new()
-                .with_font_size(*taille)
+                .with_font_size(reel(*taille))
                 .with_color(couleur_genpdfi(*couleur));
             let mut para = Paragraph::default()
                 .aligned(aligner(*alignement))
-                .with_line_height_factor(police.interligne);
+                .with_line_height_factor(reel(police.interligne));
             for m in morceaux {
                 let texte = m.texte.replace("\r\n", "\n").replace('\r', "\n");
                 verifier_texte(ctx, style_du_morceau(m), &texte, ou)?;
@@ -700,7 +724,7 @@ fn construire(
             flottante,
         } => {
             let p = charger_image(chemin, *l, ou, "image")?;
-            if p.width() > largeur + Mm::from(EPS_MM) {
+            if p.width() > largeur + eps() {
                 return refus(format!(
                     "{} : l'image ({} pt de large) est plus large que la place disponible ({:.1} pt)",
                     ou,
@@ -729,7 +753,7 @@ fn construire(
             if texte.contains('\n') {
                 return refus(format!("{} : un texte à position fixe tient sur une ligne (pas de \\n)", ou));
             }
-            let base = Style::new().with_font_size(*taille).with_color(couleur_genpdfi(*couleur));
+            let base = Style::new().with_font_size(reel(*taille)).with_color(couleur_genpdfi(*couleur));
             let base = match nom {
                 PoliceFixe::Helvetica => base,
                 PoliceFixe::Times => base.with_font_family(cadre.times.expect("famille Times")),
@@ -742,10 +766,9 @@ fn construire(
             let base = match largeur_max {
                 Some(place) => {
                     let largeur = en_points(if *gras { base.bold() } else { base }.text_width(&ctx.font_cache, &texte));
-                    if largeur <= *place {
-                        base
-                    } else {
-                        base.with_font_size((*taille * *place / largeur).max(CORPS_PLANCHER))
+                    match taille.fois_rapport(place.en_millioniemes(), largeur.en_millioniemes()) {
+                        Some(reduit) if largeur > *place => base.with_font_size(reel(reduit.max(CORPS_PLANCHER))),
+                        _ => base,
                     }
                 }
                 None => base,
@@ -777,17 +800,16 @@ fn construire(
             // largeur, puis, si elle déborde en hauteur, à la largeur qui remplit la hauteur.
             let mut p = charger_image(chemin, *l, ou, "image")?;
             let mut largeur_image = *l;
-            if p.height() > pt(*h) + Mm::from(EPS_MM) {
-                largeur_image = *l * *h / en_points(p.height());
-                p = charger_image(chemin, largeur_image, ou, "image")?;
+            if p.height() > pt(*h) + eps() {
+                if let Some(reduite) = l.fois_rapport(h.en_millioniemes(), en_points(p.height()).en_millioniemes()) {
+                    largeur_image = reduite;
+                    p = charger_image(chemin, largeur_image, ou, "image")?;
+                }
             }
             let (dx, dy) = if *centree {
-                (
-                    (*l - largeur_image) / 2.0,
-                    (*h - en_points(p.height())) / 2.0,
-                )
+                ((*l - largeur_image) / 2, (*h - en_points(p.height())) / 2)
             } else {
-                (0.0, 0.0)
+                (Mesure::ZERO, Mesure::ZERO)
             };
             Noeud::Fixe(Fixe {
                 origine: cadre.origine,
@@ -813,10 +835,10 @@ fn construire(
                     }
                 }
             }
-            let mut x = Mm::from(0.0f32);
+            let mut x = Mm::default();
             let mut cols = Vec::new();
             for (frac, _) in colonnes {
-                let lc = largeur * *frac;
+                let lc = part(largeur, *frac);
                 cols.push((x, lc));
                 x += lc;
             }
@@ -824,7 +846,7 @@ fn construire(
             if let Some((k, (_, lc))) = cols
                 .iter()
                 .enumerate()
-                .find(|(_, (_, lc))| *lc <= pt(md + mg) + Mm::from(EPS_MM))
+                .find(|(_, (_, lc))| *lc <= pt(md + mg) + eps())
             {
                 return refus(format!(
                     "{} : la colonne {} ({:.1} pt) est plus étroite que les marges de ses cellules",
@@ -853,9 +875,9 @@ fn construire(
             t.h_lignes = t.lignes.iter().map(|l| t.hauteur_ligne(ctx, l, style)).collect();
             // L'en-tête et la plus haute ligne doivent tenir ensemble sur une page : sinon le
             // tableau ne finirait jamais de passer à la page suivante.
-            let plus_haute = t.h_lignes.iter().copied().fold(Mm::from(0.0f32), |a, b| a.max(b));
+            let plus_haute = t.h_lignes.iter().copied().fold(Mm::default(), |a, b| a.max(b));
             let besoin = t.avant + t.h_entete.iter().copied().sum::<Mm>() + plus_haute;
-            if besoin > hauteur_page + Mm::from(EPS_MM) {
+            if besoin > hauteur_page + eps() {
                 return refus(format!(
                     "{} : l'en-tête et la plus haute ligne du tableau occupent {:.1} pt, plus que la hauteur utile d'une page ({:.1} pt) ; une ligne ne se coupe pas entre deux pages",
                     ou,
@@ -873,7 +895,7 @@ fn construire(
         } => {
             let mut cols = Vec::new();
             for (frac, blocs) in colonnes {
-                let lc = largeur * *frac;
+                let lc = part(largeur, *frac);
                 let mut noeuds = Vec::new();
                 for sb in blocs {
                     noeuds.push(construire(sb, ctx, lc, police, hauteur_page, style, cadre)?);
@@ -893,7 +915,7 @@ fn construire(
     // Ce qui ne se coupe pas doit tenir sur une page.
     if matches!(noeud, Noeud::Colonnes(_) | Noeud::Image(_)) {
         let h = noeud.hauteur(ctx, largeur, style);
-        if h > hauteur_page + Mm::from(EPS_MM) {
+        if h > hauteur_page + eps() {
             let quoi = if matches!(noeud, Noeud::Colonnes(_)) {
                 "les colonnes ne se coupent pas entre deux pages, et elles"
             } else {
@@ -926,11 +948,11 @@ fn fondre_marges(noeuds: &mut [Noeud]) {
         };
         if let (Some(avant), Some(a)) = (avant, apres_prec) {
             let b = *avant;
-            *avant = if b > a { b - a } else { Mm::from(0.0) };
+            *avant = if b > a { b - a } else { Mm::default() };
         }
         apres_prec = match n {
             Noeud::Paragraphe { apres, .. } => Some(*apres),
-            Noeud::Colonnes(_) => Some(Mm::from(0.0)),
+            Noeud::Colonnes(_) => Some(Mm::default()),
             Noeud::Tableau(t) => Some(t.apres),
             _ => None,
         };
@@ -989,7 +1011,7 @@ fn fabriquer_passe(description: &crate::forme::Description, total: usize) -> Res
     doc.set_creator("PuppetPaie");
     doc.set_paper_size(Size::new(pt(d.page.largeur), pt(d.page.hauteur)));
     doc.set_minimal_conformance();
-    doc.set_font_size(d.police.taille);
+    doc.set_font_size(reel(d.police.taille));
 
     let logo = match &d.logo {
         Some(l) => Some((
@@ -1002,7 +1024,7 @@ fn fabriquer_passe(description: &crate::forme::Description, total: usize) -> Res
     let mut reperes = Vec::new();
     for (r, en_bas, nom) in [(&d.entete_page, false, "entete_page"), (&d.pied_page, true, "pied_page")] {
         if let Some(r) = r {
-            let base = Style::new().with_font_size(r.taille).with_color(couleur_genpdfi(r.couleur));
+            let base = Style::new().with_font_size(reel(r.taille)).with_color(couleur_genpdfi(r.couleur));
             for t in [&r.gauche, &r.centre, &r.droite] {
                 verifier_texte(doc.context(), if r.gras { base.bold() } else { base }, t, nom)?;
             }
@@ -1037,7 +1059,7 @@ fn fabriquer_passe(description: &crate::forme::Description, total: usize) -> Res
 
     let largeur = pt(d.page.largeur_utile());
     let hauteur_page = pt(d.page.hauteur_utile());
-    let style = Style::new().with_font_size(d.police.taille);
+    let style = Style::new().with_font_size(reel(d.police.taille));
     let mut noeuds: Vec<Noeud> = Vec::new();
     let mut sauts = Vec::new();
     {

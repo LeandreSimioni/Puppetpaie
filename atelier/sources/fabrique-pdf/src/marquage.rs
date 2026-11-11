@@ -19,34 +19,29 @@ use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use crate::description::Refus;
+use crate::mesure::{mesure, Mesure};
 use crate::texte::{contenu_de_page, dico, herite, nombres};
 
 /// Le corps de la marque, en points.
-pub const CORPS: f64 = 6.0;
+pub const CORPS: Mesure = Mesure::entier(6);
 /// Sa distance au bord gauche de la page, en points.
-pub const X: f64 = 34.0;
+pub const X: Mesure = Mesure::entier(34);
 /// La distance de sa ligne de base au bord bas de la page, en points.
-pub const DISTANCE_DU_BAS: f64 = 12.0;
+pub const DISTANCE_DU_BAS: Mesure = Mesure::entier(12);
 /// Son gris (rouge = vert = bleu).
-pub const GRIS: f64 = 0.45;
+pub const GRIS: Mesure = mesure("0.45");
 
 fn refus<T>(m: impl Into<String>) -> Result<T, Refus> {
     Err(Refus(m.into()))
 }
 
 /// Un nombre pour un flux de contenu : quatre décimales au plus, sans zéros inutiles.
-fn nb(v: f64) -> String {
-    let s = format!("{:.4}", v);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s.is_empty() || s == "-0" {
-        "0".to_string()
-    } else {
-        s.to_string()
-    }
+pub(crate) fn nb(v: Mesure) -> String {
+    v.arrondie(4).to_string()
 }
 
 /// Le cadre visible de la page (`CropBox` dans `MediaBox`) : x0, y0, x1, y1.
-pub(crate) fn cadre(doc: &Document, page: ObjectId) -> Option<[f64; 4]> {
+pub(crate) fn cadre(doc: &Document, page: ObjectId) -> Option<[Mesure; 4]> {
     let v = nombres(doc, herite(doc, page, b"MediaBox"));
     if v.len() != 4 {
         return None;
@@ -100,16 +95,17 @@ pub(crate) fn q_ouverts(doc: &Document, page: ObjectId) -> usize {
 }
 
 /// Le flux de la marque : position et sens de lecture selon la rotation de la page.
-fn flux_de_marque(nom_police: &str, codes: &str, c: [f64; 4], rotation: i64) -> Vec<u8> {
+fn flux_de_marque(nom_police: &str, codes: &str, c: [Mesure; 4], rotation: i64) -> Vec<u8> {
     let (largeur, hauteur) = (c[2] - c[0], c[3] - c[1]);
     // La hauteur de la page telle qu'on la voit (celle de `page.rect` dans PyMuPDF).
     let vue = if rotation % 180 == 0 { hauteur } else { largeur };
     let vy = vue - DISTANCE_DU_BAS; // la ligne de base, depuis le haut de la page vue
+    let (z, un) = (Mesure::ZERO, Mesure::UN);
     let (m, e, f) = match rotation {
-        90 => ([0.0, 1.0, -1.0, 0.0], c[0] + vy, c[1] + X),
-        180 => ([-1.0, 0.0, 0.0, -1.0], c[0] + largeur - X, c[1] + vy),
-        270 => ([0.0, -1.0, 1.0, 0.0], c[0] + largeur - vy, c[1] + hauteur - X),
-        _ => ([1.0, 0.0, 0.0, 1.0], c[0] + X, c[1] + hauteur - vy),
+        90 => ([z, un, -un, z], c[0] + vy, c[1] + X),
+        180 => ([-un, z, z, -un], c[0] + largeur - X, c[1] + vy),
+        270 => ([z, -un, un, z], c[0] + largeur - vy, c[1] + hauteur - X),
+        _ => ([un, z, z, un], c[0] + X, c[1] + hauteur - vy),
     };
     format!(
         "q\n{g} {g} {g} rg\nBT\n/{police} {corps} Tf\n{a} {b} {c} {d} {e} {f} Tm\n<{codes}> Tj\nET\nQ\n",
@@ -159,7 +155,7 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
     for id in pages {
         let c = match cadre(&doc, id) {
             Some(c) => c,
-            None => [0.0, 0.0, 595.0, 842.0],
+            None => [Mesure::ZERO, Mesure::ZERO, Mesure::entier(595), Mesure::entier(842)],
         };
         let rotation = match herite(&doc, id, b"Rotate") {
             Some(Object::Integer(r)) => r.rem_euclid(360),
@@ -235,48 +231,53 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     // La police de la case : Liberation Sans, ses mesures (`hhea`, comme la mise en page).
     let donnees = crate::polices::sans_regulier()?;
     let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?;
-    let em = face.units_per_em() as f64;
-    let (asc, desc, ecart) = (face.ascender() as f64 / em, -(face.descender() as f64) / em, face.line_gap() as f64 / em);
-    let taille = sc::MENTION_TAILLE as f64;
-    let (marge_x, marge_y) = (sc::MENTION_MARGE.0 as f64, sc::MENTION_MARGE.1 as f64);
-    let hauteur = sc::MENTION_HAUTEUR as f64;
+    let em = face.units_per_em() as i64;
+    let (asc, desc, ecart) = (
+        Mesure::entier(face.ascender() as i64) / em,
+        Mesure::entier(-(face.descender() as i64)) / em,
+        Mesure::entier(face.line_gap() as i64) / em,
+    );
+    let taille = sc::MENTION_TAILLE;
+    let (marge_x, marge_y) = sc::MENTION_MARGE;
+    let hauteur = sc::MENTION_HAUTEUR;
     let page = sc::page();
-    let largeur_utile = (page.largeur - page.gauche - page.droite) as f64;
-    let (x_case, l_case) = (page.gauche as f64 + largeur_utile / 2.0, largeur_utile / 2.0);
+    let largeur_utile = page.largeur - page.gauche - page.droite;
+    let (x_case, l_case) = (page.gauche + largeur_utile / 2, largeur_utile / 2);
     let mut caracteres = BTreeSet::new();
     for l in &lignes {
-        let mut avance = 0.0;
+        let mut unites: i64 = 0;
         for c in l.chars() {
             let gid = match face.glyph_index(c) {
                 Some(g) if (c as u32) <= 0xFFFF => g,
                 _ => return refus(format!("la mention de signature : le caractère « {} » (U+{:04X}) n'existe pas dans la police Liberation", c, c as u32)),
             };
-            avance += face.glyph_hor_advance(gid).unwrap_or(0) as f64 / em * taille;
+            unites += face.glyph_hor_advance(gid).unwrap_or(0) as i64;
             caracteres.insert(c);
         }
-        if avance + 2.0 * marge_x > l_case {
+        let avance = taille * unites / em;
+        if avance + marge_x * 2 > l_case {
             return refus(format!("la mention de signature ne tient pas dans la case (la ligne « {} » est trop longue)", l));
         }
     }
-    let interligne = (asc + desc + ecart) * taille * sc::MENTION_INTERLIGNE as f64;
-    if interligne * lignes.len() as f64 + marge_y > hauteur + 0.01 {
+    let interligne = (asc + desc + ecart) * taille * sc::MENTION_INTERLIGNE;
+    if interligne * lignes.len() as i64 + marge_y > hauteur + mesure("0.01") {
         return refus(format!("la mention de signature ne tient pas dans la case ({} lignes)", lignes.len()));
     }
 
     // Les cases : la ligne « signature » de la colonne de droite, sa boîte (repère de la page).
-    let mut cases: Vec<(ObjectId, f64)> = Vec::new();
+    let mut cases: Vec<(ObjectId, Mesure)> = Vec::new();
     for id in doc.get_pages().values().copied() {
         let lue = crate::texte::inspecter_page(&doc, id).map_err(|m| Refus(format!("page illisible ({})", m)))?;
         for (texte, boites) in &lue.lignes {
             let Some(Some(b)) = boites.first() else { continue };
-            if texte.trim() != sc::LIBELLE_CASE_ARTISTE || (b[0] - x_case).abs() > 2.0 {
+            if texte.trim() != sc::LIBELLE_CASE_ARTISTE || (b[0] - x_case).abs() > Mesure::entier(2) {
                 continue;
             }
-            let bas = boites.iter().flatten().map(|b| b[1]).fold(f64::MAX, f64::min);
-            let haut = boites.iter().flatten().map(|b| b[3]).fold(f64::MIN, f64::max);
+            let bas = boites.iter().flatten().map(|b| b[1]).fold(Mesure::MAX, Mesure::min);
+            let haut = boites.iter().flatten().map(|b| b[3]).fold(Mesure::MIN, Mesure::max);
             // La ligne occupe son pas, le glyphe au milieu ; la case est 3 pt sous son pas.
-            let pas = (sc::TAILLE_SOUS_LIBELLE * sc::police().interligne) as f64;
-            cases.push((id, bas - (pas - (haut - bas)) / 2.0 - sc::MENTION_ECART as f64));
+            let pas = sc::TAILLE_SOUS_LIBELLE * sc::police().interligne;
+            cases.push((id, bas - (pas - (haut - bas)) / 2 - sc::MENTION_ECART));
         }
     }
     if cases.is_empty() {
@@ -290,7 +291,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     let polices_case = crate::formulaire::polices_pour_ajout(&mut neuf, &donnees, &caracteres, &doc)?;
     let (r, v, b) = sc::COULEUR_TEXTE;
     let (fr, fv, fb) = sc::MENTION_FILET;
-    let c255 = |x: u8| nb(x as f64 / 255.0);
+    let c255 = |x: u8| nb(Mesure::entier(x as i64) / 255);
     let mut par_page: Vec<(ObjectId, Vec<u8>)> = Vec::new();
     for (id, haut) in cases {
         let mut flux = format!(
@@ -305,7 +306,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             flux.push_str(&format!(
                 "BT\n1 0 0 1 {} {} Tm\n",
                 nb(x_case + marge_x),
-                nb(haut - marge_y - i as f64 * interligne - asc * taille)
+                nb(haut - marge_y - interligne * i as i64 - asc * taille)
             ));
             // Des morceaux par police : chacun continue où le précédent s'arrête.
             let mut morceaux: Vec<(usize, String)> = Vec::new();

@@ -22,10 +22,17 @@ use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::glyphes::GLYPHES;
+use crate::mesure::{mesure, Mesure};
 
-type Mat = [f64; 6];
-const ID: Mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+type Mat = [Mesure; 6];
+const ID: Mat = [Mesure::UN, Mesure::ZERO, Mesure::ZERO, Mesure::UN, Mesure::ZERO, Mesure::ZERO];
 static NUL: Object = Object::Null;
+const Z: Mesure = Mesure::ZERO;
+
+/// Un nombre lu, en entier positif (un code, un numéro de caractère) : sa partie entière, bornée.
+fn entier_u32(m: Mesure) -> u32 {
+    m.tronque().clamp(0, u32::MAX as i64) as u32
+}
 
 /// `a` puis `b` (convention PDF des vecteurs lignes).
 fn mul(a: &Mat, b: &Mat) -> Mat {
@@ -39,7 +46,12 @@ fn mul(a: &Mat, b: &Mat) -> Mat {
     ]
 }
 
-fn point(m: &Mat, x: f64, y: f64) -> (f64, f64) {
+/// La translation de (`x`, `y`).
+fn translation(x: Mesure, y: Mesure) -> Mat {
+    [Mesure::UN, Z, Z, Mesure::UN, x, y]
+}
+
+fn point(m: &Mat, x: Mesure, y: Mesure) -> (Mesure, Mesure) {
     (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
 }
 
@@ -51,12 +63,8 @@ pub(crate) fn suivre<'a>(doc: &'a Document, o: &'a Object) -> &'a Object {
     doc.dereference(o).map(|(_, o)| o).unwrap_or(&NUL)
 }
 
-pub(crate) fn nombre(doc: &Document, o: &Object) -> Option<f64> {
-    match suivre(doc, o) {
-        Object::Integer(i) => Some(*i as f64),
-        Object::Real(r) => Some(*r as f64),
-        _ => None,
-    }
+pub(crate) fn nombre(doc: &Document, o: &Object) -> Option<Mesure> {
+    Mesure::de_l_objet(suivre(doc, o))
 }
 
 pub(crate) fn dico<'a>(doc: &'a Document, o: &'a Object) -> Option<&'a Dictionary> {
@@ -74,7 +82,7 @@ fn nom<'a>(doc: &'a Document, o: &'a Object) -> Option<&'a [u8]> {
     }
 }
 
-pub(crate) fn nombres(doc: &Document, o: Option<&Object>) -> Vec<f64> {
+pub(crate) fn nombres(doc: &Document, o: Option<&Object>) -> Vec<Mesure> {
     match o.map(|o| suivre(doc, o)) {
         Some(Object::Array(v)) => v.iter().filter_map(|x| nombre(doc, x)).collect(),
         _ => Vec::new(),
@@ -300,25 +308,25 @@ struct Police {
     unicode: HashMap<u32, String>,
     /// Polices simples : le caractère de chaque code d'après l'encodage.
     encodage: Vec<Option<char>>,
-    largeurs: HashMap<u32, f64>,
-    largeur_defaut: f64,
+    largeurs: HashMap<u32, Mesure>,
+    largeur_defaut: Mesure,
     /// Largeurs tirées de Liberation pour une police standard sans `/Widths`.
     standard: Option<crate::polices::Metrique>,
     vertical: bool,
     /// Ascendant et descendant (fractions du corps), qui bornent la boîte d'un glyphe pour
     /// `--inspecter` : ceux du fichier de police incorporé, sinon (polices standard) ceux de MuPDF,
     /// sinon ceux du `/FontDescriptor`, sinon 0,8 et 0,2. Laissés à 0,8 et 0,2 pour `--texte`.
-    asc: f64,
-    desc: f64,
+    asc: Mesure,
+    desc: Mesure,
 }
 
 /// Une boîte (x0, y0, x1, y1), dans le repère de la page du PDF (origine en bas à gauche).
-pub(crate) type Boite = [f64; 4];
+pub(crate) type Boite = [Mesure; 4];
 
 /// La boîte englobante du rectangle (x0, y0)-(x1, y1) transformé par `m`.
-fn englobante(m: &Mat, x0: f64, y0: f64, x1: f64, y1: f64) -> Boite {
+fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite {
     let p = [point(m, x0, y0), point(m, x1, y0), point(m, x0, y1), point(m, x1, y1)];
-    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    let mut b = [Mesure::MAX, Mesure::MAX, Mesure::MIN, Mesure::MIN];
     for (x, y) in p {
         b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
     }
@@ -328,16 +336,16 @@ fn englobante(m: &Mat, x0: f64, y0: f64, x1: f64, y1: f64) -> Boite {
 /// L'ascendant et le descendant d'une police (fractions du corps). Comme MuPDF : ceux du fichier de
 /// police incorporé (`hhea`) ; pour une police standard non incorporée, ceux des polices de
 /// remplacement de MuPDF (mesurés) ; sinon le `/FontDescriptor` ; sinon 0,8 et 0,2.
-fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: &str) -> (f64, f64) {
+fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: &str) -> (Mesure, Mesure) {
     let fichier = fd.and_then(|d| {
         [b"FontFile2".as_slice(), b"FontFile3", b"FontFile"].iter().find_map(|cle| d.get(cle).ok().map(|o| suivre(doc, o)))
     });
     if let Some(flux) = fichier {
         let octets = contenu_du_flux(flux);
         if let Ok(face) = ttf_parser::Face::parse(&octets, 0) {
-            let em = face.units_per_em() as f64;
-            let (a, d) = (face.ascender() as f64 / em, -(face.descender() as f64) / em);
-            if a > 0.0 && a <= 2.0 && (0.0..=1.0).contains(&d) {
+            let em = face.units_per_em() as i64;
+            let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
+            if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
                 return (a, d);
             }
         }
@@ -346,19 +354,19 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: &str
         let n = n.rsplit('+').next().unwrap_or("");
         let gras = n.contains("bold");
         if n.contains("helvetica") || n == "arial" || n == "arialmt" || n.starts_with("arial,") || n.starts_with("arial-") {
-            return if gras { (1.07, 0.307) } else { (1.075, 0.299) };
+            return if gras { (mesure("1.07"), mesure("0.307")) } else { (mesure("1.075"), mesure("0.299")) };
         }
         if n.contains("times") {
-            return if gras { (1.044, 0.341) } else { (1.053, 0.281) };
+            return if gras { (mesure("1.044"), mesure("0.341")) } else { (mesure("1.053"), mesure("0.281")) };
         }
         if n.contains("courier") {
-            return (0.932, 0.317);
+            return (mesure("0.932"), mesure("0.317"));
         }
     }
     let lire = |cle: &[u8]| fd.and_then(|d| d.get(cle).ok()).and_then(|o| nombre(doc, o));
     match (lire(b"Ascent"), lire(b"Descent")) {
-        (Some(a), Some(d)) if a > 0.0 && a <= 1500.0 && d.abs() <= 1000.0 => (a / 1000.0, d.abs() / 1000.0),
-        _ => (0.8, 0.2),
+        (Some(a), Some(d)) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => (a / 1000, d.abs() / 1000),
+        _ => (mesure("0.8"), mesure("0.2")),
     }
 }
 
@@ -420,10 +428,10 @@ impl Police {
     }
 
     /// La largeur du code, en fraction d'em.
-    fn largeur(&self, code: u32) -> f64 {
+    fn largeur(&self, code: u32) -> Mesure {
         let cle = if self.composee { self.cid(code) } else { code };
         if let Some(w) = self.largeurs.get(&cle) {
-            return w / 1000.0;
+            return *w / 1000;
         }
         if let Some(m) = &self.standard {
             if let Some(c) = self.encodage.get(code as usize).copied().flatten() {
@@ -432,7 +440,7 @@ impl Police {
                 }
             }
         }
-        self.largeur_defaut / 1000.0
+        self.largeur_defaut / 1000
     }
 }
 
@@ -486,11 +494,11 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
         unicode: HashMap::new(),
         encodage: Vec::new(),
         largeurs: HashMap::new(),
-        largeur_defaut: 0.0,
+        largeur_defaut: Z,
         standard: None,
         vertical: false,
-        asc: 0.8,
-        desc: 0.2,
+        asc: mesure("0.8"),
+        desc: mesure("0.2"),
     };
     if let Some(o) = d.get(b"ToUnicode").ok() {
         let c = lire_cmap(&contenu_du_flux(suivre(doc, o)));
@@ -521,12 +529,12 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
                 let fd = desc.get(b"FontDescriptor").ok().and_then(|o| dico(doc, o));
                 (p.asc, p.desc) = ascendant_descendant(doc, fd, &nom_de_base(doc, d));
             }
-            p.largeur_defaut = desc.get(b"DW").ok().and_then(|o| nombre(doc, o)).unwrap_or(1000.0);
+            p.largeur_defaut = desc.get(b"DW").ok().and_then(|o| nombre(doc, o)).unwrap_or(Mesure::entier(1000));
             if let Some(Object::Array(w)) = desc.get(b"W").ok().map(|o| suivre(doc, o)) {
                 let mut i = 0;
                 while i < w.len() {
                     let premier = match nombre(doc, &w[i]) {
-                        Some(n) => n as u32,
+                        Some(n) => entier_u32(n),
                         None => break,
                     };
                     match w.get(i + 1).map(|o| suivre(doc, o)) {
@@ -539,8 +547,8 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
                             i += 2;
                         }
                         Some(_) => {
-                            let dernier = w.get(i + 1).and_then(|o| nombre(doc, o)).unwrap_or(0.0) as u32;
-                            let v = w.get(i + 2).and_then(|o| nombre(doc, o)).unwrap_or(0.0);
+                            let dernier = entier_u32(w.get(i + 1).and_then(|o| nombre(doc, o)).unwrap_or(Z));
+                            let v = w.get(i + 2).and_then(|o| nombre(doc, o)).unwrap_or(Z);
                             for c in premier..=dernier.min(premier + 0xFFFF) {
                                 p.largeurs.insert(c, v);
                             }
@@ -571,8 +579,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
                 let mut code = 0usize;
                 for x in v {
                     match suivre(doc, x) {
-                        Object::Integer(n) => code = *n as usize,
-                        Object::Real(n) => code = *n as usize,
+                        o @ (Object::Integer(_) | Object::Real(_)) => code = Mesure::de_l_objet(o).map_or(0, entier_u32) as usize,
                         Object::Name(g) => {
                             if let Some(c) = nom_de_glyphe(&String::from_utf8_lossy(g)) {
                                 differences.push((code, c));
@@ -597,7 +604,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
     }
 
     // Les largeurs.
-    let premier = d.get(b"FirstChar").ok().and_then(|o| nombre(doc, o)).unwrap_or(0.0) as u32;
+    let premier = entier_u32(d.get(b"FirstChar").ok().and_then(|o| nombre(doc, o)).unwrap_or(Z));
     let mut a_des_largeurs = false;
     if let Some(Object::Array(w)) = d.get(b"Widths").ok().map(|o| suivre(doc, o)) {
         a_des_largeurs = true;
@@ -613,7 +620,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
         .and_then(|o| dico(doc, o))
         .and_then(|fd| fd.get(b"MissingWidth").ok())
         .and_then(|o| nombre(doc, o))
-        .unwrap_or(0.0);
+        .unwrap_or(Z);
     if !a_des_largeurs {
         p.standard = crate::polices::Metrique::pour(base_nom.as_deref().unwrap_or(""));
     }
@@ -628,16 +635,16 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
 // PDF (aucun couple mal classé) : un écart se mesure en corps de la police du caractère posé.
 
 /// Au-dessous de cette avance, le caractère suivant colle au précédent.
-const ESPACE_MIN: f64 = 0.15;
+const ESPACE_MIN: Mesure = mesure("0.15");
 /// Entre `ESPACE_MIN` et celle-ci, un espace est inséré ; au-delà, c'est une autre ligne. Un recul
 /// de plus que cela (caractère posé avant le bout du précédent) ouvre aussi une ligne.
-const ESPACE_MAX: f64 = 0.8;
+const ESPACE_MAX: Mesure = mesure("0.8");
 /// Écart de ligne de base toléré (en corps) pour rester sur la même ligne : les exposants
 /// (« 1er ») et les indices restent dans la ligne.
-const DECALAGE_MAX: f64 = 0.8;
+const DECALAGE_MAX: Mesure = mesure("0.8");
 
 struct LigneCourante {
-    dir: (f64, f64),
+    dir: (Mesure, Mesure),
     texte: String,
     /// Une boîte par caractère de `texte` (`None` : un espace ajouté), si `Mise::garder`.
     boites: Vec<Option<Boite>>,
@@ -651,7 +658,7 @@ struct Mise {
     boites: Vec<Vec<Option<Boite>>>,
     courante: Option<LigneCourante>,
     /// Le bout du dernier caractère posé.
-    stylo: (f64, f64),
+    stylo: (Mesure, Mesure),
 }
 
 impl Mise {
@@ -666,20 +673,23 @@ impl Mise {
 
     /// Pose un caractère : origine `p`, vecteur de direction `dir` (déjà à l'échelle du corps),
     /// avance `adv` (fraction d'em).
-    fn caractere(&mut self, c: char, p: (f64, f64), dir: (f64, f64), taille: f64, adv: Option<f64>, boite: Boite) {
+    fn caractere(&mut self, c: char, p: (Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Boite) {
         let longueur = dir.0.hypot(dir.1);
-        if longueur == 0.0 || taille == 0.0 {
+        let (Some(nx), Some(ny)) = (dir.0.sur(longueur), dir.1.sur(longueur)) else {
+            return;
+        };
+        if taille.est_nulle() {
             return;
         }
-        let nd = (dir.0 / longueur, dir.1 / longueur);
+        let nd = (nx, ny);
         let mut nouvelle = true;
         let mut espace = false;
         if let Some(l) = &self.courante {
-            if (nd.0 - l.dir.0).abs() + (nd.1 - l.dir.1).abs() < 0.05 {
+            if (nd.0 - l.dir.0).abs() + (nd.1 - l.dir.1).abs() < mesure("0.05") {
                 let d = (p.0 - self.stylo.0, p.1 - self.stylo.1);
                 let le_long = d.0 * l.dir.0 + d.1 * l.dir.1;
                 let en_travers = -d.0 * l.dir.1 + d.1 * l.dir.0;
-                let ecart = le_long / taille;
+                let ecart = le_long.sur(taille).unwrap_or(Z);
                 if en_travers.abs() <= taille * DECALAGE_MAX {
                     if ecart >= -ESPACE_MAX && ecart < ESPACE_MIN {
                         nouvelle = false;
@@ -736,14 +746,14 @@ impl Mise {
 #[derive(Clone)]
 struct Etat {
     ctm: Mat,
-    tc: f64,
-    tw: f64,
-    th: f64,
-    tl: f64,
+    tc: Mesure,
+    tw: Mesure,
+    th: Mesure,
+    tl: Mesure,
     police: Option<Rc<Police>>,
-    taille: f64,
+    taille: Mesure,
     rendu: i64,
-    rise: f64,
+    rise: Mesure,
 }
 
 struct Interprete<'a> {
@@ -751,7 +761,7 @@ struct Interprete<'a> {
     polices: HashMap<ObjectId, Rc<Police>>,
     mise: Mise,
     /// Le cadre de la page (x0, y0, x1, y1) : le texte tout entier hors de lui n'est pas lu.
-    cadre: Option<[f64; 4]>,
+    cadre: Option<[Mesure; 4]>,
     /// Le `/ActualText` en cours : son texte, le premier glyphe (origine, direction, corps) et
     /// l'avance totale des glyphes qu'il remplace.
     actuel: Option<Actuel>,
@@ -768,14 +778,14 @@ pub(crate) struct Releve {
     pub traits: Vec<Boite>,
     pub polices: Vec<String>,
     /// Les points du dernier chemin peint s'il n'a été que rempli (voir `peindre`).
-    dernier_rempli: Option<Vec<(f64, f64)>>,
+    dernier_rempli: Option<Vec<(Mesure, Mesure)>>,
 }
 
 impl Releve {
     /// Un chemin peint : sa boîte (épaisseur du trait non comptée). Comme PyMuPDF, le tracé d'un
     /// chemin que l'opération de dessin précédente vient de remplir (même points) n'ajoute rien : les
     /// deux ne font qu'un seul dessin (« fs »).
-    fn peindre(&mut self, points: &[(f64, f64)], trace: bool, rempli: bool) {
+    fn peindre(&mut self, points: &[(Mesure, Mesure)], trace: bool, rempli: bool) {
         let precedent = self.dernier_rempli.take();
         if points.len() < 2 {
             return;
@@ -796,12 +806,12 @@ impl Releve {
 
 struct Actuel {
     texte: String,
-    premier: Option<((f64, f64), (f64, f64), f64)>,
-    adv: f64,
+    premier: Option<((Mesure, Mesure), (Mesure, Mesure), Mesure)>,
+    adv: Mesure,
     /// La matrice de rendu du premier glyphe, son ascendant et son descendant.
     trm: Mat,
-    asc: f64,
-    desc: f64,
+    asc: Mesure,
+    desc: Mesure,
 }
 
 /// Remplace chaque image en ligne (`BI … ID données EI`) par l'opérateur `PPBI`, que l'analyseur
@@ -896,9 +906,9 @@ impl<'a> Interprete<'a> {
             Some(p) => p,
             None => return,
         };
-        let n = a.texte.chars().count().max(1) as f64;
+        let n = a.texte.chars().count().max(1) as i64;
         for (k, c) in a.texte.chars().enumerate() {
-            let decalage = k as f64 * a.adv / n;
+            let decalage = a.adv * k as i64 / n;
             let boite = englobante(&a.trm, decalage, -a.desc, decalage + a.adv / n, a.asc);
             self.mise.caractere(c, (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), boite);
         }
@@ -957,17 +967,17 @@ impl<'a> Interprete<'a> {
             Ok(c) => c,
             Err(_) => return,
         };
-        let mut e = Etat { ctm, tc: 0.0, tw: 0.0, th: 1.0, tl: 0.0, police: None, taille: 0.0, rendu: 0, rise: 0.0 };
+        let mut e = Etat { ctm, tc: Z, tw: Z, th: Mesure::UN, tl: Z, police: None, taille: Z, rendu: 0, rise: Z };
         let mut pile: Vec<Etat> = Vec::new();
         let mut tm = ID;
         let mut tlm = ID;
         // Pour chaque contenu marqué ouvert : a-t-il ouvert un `/ActualText` ?
         let mut marques: Vec<bool> = Vec::new();
         // Le chemin en construction (ses points, dans le repère de la page), pour `--inspecter`.
-        let mut points: Vec<(f64, f64)> = Vec::new();
+        let mut points: Vec<(Mesure, Mesure)> = Vec::new();
         for op in &contenu.operations {
             let a = &op.operands;
-            let num = |i: usize| a.get(i).and_then(|o| nombre(self.doc, o)).unwrap_or(0.0);
+            let num = |i: usize| a.get(i).and_then(|o| nombre(self.doc, o)).unwrap_or(Z);
             match op.operator.as_str() {
                 "q" => pile.push(e.clone()),
                 "Q" => {
@@ -982,9 +992,9 @@ impl<'a> Interprete<'a> {
                 }
                 "Tc" => e.tc = num(0),
                 "Tw" => e.tw = num(0),
-                "Tz" => e.th = num(0) / 100.0,
+                "Tz" => e.th = num(0) / 100,
                 "TL" => e.tl = num(0),
-                "Tr" => e.rendu = num(0) as i64,
+                "Tr" => e.rendu = num(0).tronque(),
                 "Ts" => e.rise = num(0),
                 "Tf" => {
                     if let Some(Object::Name(n)) = a.first() {
@@ -993,12 +1003,12 @@ impl<'a> Interprete<'a> {
                     e.taille = num(1);
                 }
                 "Td" => {
-                    tlm = mul(&[1.0, 0.0, 0.0, 1.0, num(0), num(1)], &tlm);
+                    tlm = mul(&translation(num(0), num(1)), &tlm);
                     tm = tlm;
                 }
                 "TD" => {
                     e.tl = -num(1);
-                    tlm = mul(&[1.0, 0.0, 0.0, 1.0, num(0), num(1)], &tlm);
+                    tlm = mul(&translation(num(0), num(1)), &tlm);
                     tm = tlm;
                 }
                 "Tm" => {
@@ -1006,7 +1016,7 @@ impl<'a> Interprete<'a> {
                     tm = tlm;
                 }
                 "T*" => {
-                    tlm = mul(&[1.0, 0.0, 0.0, 1.0, 0.0, -e.tl], &tlm);
+                    tlm = mul(&translation(Z, -e.tl), &tlm);
                     tm = tlm;
                 }
                 "Tj" | "'" | "\"" => {
@@ -1015,7 +1025,7 @@ impl<'a> Interprete<'a> {
                             e.tw = num(0);
                             e.tc = num(1);
                         }
-                        tlm = mul(&[1.0, 0.0, 0.0, 1.0, 0.0, -e.tl], &tlm);
+                        tlm = mul(&translation(Z, -e.tl), &tlm);
                         tm = tlm;
                     }
                     if let Some(Object::String(s, _)) = a.last() {
@@ -1028,10 +1038,10 @@ impl<'a> Interprete<'a> {
                             match x {
                                 Object::String(s, _) => self.montrer(&e, &mut tm, s),
                                 Object::Integer(_) | Object::Real(_) => {
-                                    let n = nombre(self.doc, x).unwrap_or(0.0);
+                                    let n = nombre(self.doc, x).unwrap_or(Z);
                                     let vertical = e.police.as_ref().map(|p| p.vertical).unwrap_or(false);
-                                    let t = -n / 1000.0 * e.taille;
-                                    let d = if vertical { [1.0, 0.0, 0.0, 1.0, 0.0, t] } else { [1.0, 0.0, 0.0, 1.0, t * e.th, 0.0] };
+                                    let t = -(n * e.taille) / 1000;
+                                    let d = if vertical { translation(Z, t) } else { translation(t * e.th, Z) };
                                     tm = mul(&d, &tm);
                                 }
                                 _ => {}
@@ -1059,7 +1069,7 @@ impl<'a> Interprete<'a> {
                     });
                     match reel {
                         Some(t) if self.actuel.is_none() => {
-                            self.actuel = Some(Actuel { texte: t, premier: None, adv: 0.0, trm: ID, asc: 0.8, desc: 0.2 });
+                            self.actuel = Some(Actuel { texte: t, premier: None, adv: Z, trm: ID, asc: mesure("0.8"), desc: mesure("0.2") });
                             marques.push(true);
                         }
                         _ => marques.push(false),
@@ -1098,7 +1108,7 @@ impl<'a> Interprete<'a> {
                 // Une image en ligne (voir `remplacer_images_en_ligne`) : le carré unité sous la CTM.
                 "PPBI" => {
                     if let Some(r) = self.releve.as_mut() {
-                        r.images.push(englobante(&e.ctm, 0.0, 0.0, 1.0, 1.0));
+                        r.images.push(englobante(&e.ctm, Z, Z, Mesure::UN, Mesure::UN));
                     }
                 }
                 "Do" => {
@@ -1132,7 +1142,7 @@ impl<'a> Interprete<'a> {
         let sous_type = s.dict.get(b"Subtype").ok().and_then(|o| nom(doc, o));
         if sous_type == Some(b"Image") {
             if let Some(r) = self.releve.as_mut() {
-                r.images.push(englobante(ctm, 0.0, 0.0, 1.0, 1.0));
+                r.images.push(englobante(ctm, Z, Z, Mesure::UN, Mesure::UN));
             }
             return;
         }
@@ -1157,21 +1167,21 @@ impl<'a> Interprete<'a> {
         };
         for (code, n) in police.codes(chaine) {
             let w0 = police.largeur(code);
-            let trm = mul(&[e.taille * e.th, 0.0, 0.0, e.taille, 0.0, e.rise], &mul(tm, &e.ctm));
+            let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
             let texte = police.texte(code);
             let visible = self.dans_le_cadre(&trm, w0);
-            let boite = englobante(&trm, 0.0, -police.desc, w0, police.asc);
+            let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
+            // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
+            let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().unwrap_or(Z);
             if let Some(a) = &mut self.actuel {
                 // Sous un `/ActualText` : on ne garde que la position du premier glyphe et
                 // l'avance totale ; le texte réel se pose à la fermeture.
                 if a.premier.is_none() {
-                    let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().sqrt();
                     a.premier = Some(((trm[4], trm[5]), (trm[0], trm[1]), taille));
                     (a.trm, a.asc, a.desc) = (trm, police.asc, police.desc);
                 }
                 a.adv += w0;
             } else if visible {
-                let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().sqrt();
                 let dir = if police.vertical { (trm[2], trm[3]) } else { (trm[0], trm[1]) };
                 for (k, c) in texte.chars().enumerate() {
                     self.mise.caractere(c, (trm[4], trm[5]), dir, taille, if k == 0 { Some(w0) } else { None }, boite);
@@ -1182,14 +1192,14 @@ impl<'a> Interprete<'a> {
                 tx += e.tw;
             }
             *tm = if police.vertical {
-                mul(&[1.0, 0.0, 0.0, 1.0, 0.0, -tx.abs()], tm)
+                mul(&translation(Z, -tx.abs()), tm)
             } else {
-                mul(&[1.0, 0.0, 0.0, 1.0, tx * e.th, 0.0], tm)
+                mul(&translation(tx * e.th, Z), tm)
             };
         }
     }
 
-    fn dans_le_cadre(&self, trm: &Mat, w0: f64) -> bool {
+    fn dans_le_cadre(&self, trm: &Mat, w0: Mesure) -> bool {
         let c = match &self.cadre {
             Some(c) => c,
             None => return true,
@@ -1197,7 +1207,7 @@ impl<'a> Interprete<'a> {
         let p = (trm[4], trm[5]);
         let q = (p.0 + w0 * trm[0], p.1 + w0 * trm[1]);
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
-        let (y0, y1) = (p.1.min(q.1) - trm[3].abs() * 0.25, p.1.max(q.1) + trm[3].abs() * 0.75);
+        let (y0, y1) = (p.1.min(q.1) - trm[3].abs() * mesure("0.25"), p.1.max(q.1) + trm[3].abs() * mesure("0.75"));
         !(x1 < c[0] || x0 > c[2] || y1 < c[1] || y0 > c[3])
     }
 }
@@ -1219,7 +1229,7 @@ pub(crate) fn herite<'a>(doc: &'a Document, page: ObjectId, cle: &[u8]) -> Optio
     None
 }
 
-pub(crate) fn cadre_de(doc: &Document, page: ObjectId) -> Option<[f64; 4]> {
+pub(crate) fn cadre_de(doc: &Document, page: ObjectId) -> Option<[Mesure; 4]> {
     let v = nombres(doc, herite(doc, page, b"MediaBox"));
     if v.len() != 4 {
         return None;
@@ -1286,7 +1296,7 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
             Some(d) => d,
             None => continue,
         };
-        let drapeaux = d.get(b"F").ok().and_then(|o| nombre(doc, o)).unwrap_or(0.0) as i64;
+        let drapeaux = d.get(b"F").ok().and_then(|o| nombre(doc, o)).unwrap_or(Z).tronque();
         if drapeaux & (2 | 32) != 0 || d.get(b"Subtype").ok().and_then(|o| nom(doc, o)) == Some(b"Popup") {
             continue;
         }
@@ -1317,13 +1327,13 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
         }
         let m = matrice(doc, s.dict.get(b"Matrix").ok());
         let coins = [point(&m, bbox[0], bbox[1]), point(&m, bbox[2], bbox[1]), point(&m, bbox[0], bbox[3]), point(&m, bbox[2], bbox[3])];
-        let (bx0, bx1) = coins.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
-        let (by0, by1) = coins.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
+        let (bx0, bx1) = coins.iter().fold((Mesure::MAX, Mesure::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
+        let (by0, by1) = coins.iter().fold((Mesure::MAX, Mesure::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
         let (rx0, rx1) = (rect[0].min(rect[2]), rect[0].max(rect[2]));
         let (ry0, ry1) = (rect[1].min(rect[3]), rect[1].max(rect[3]));
-        let sx = if bx1 > bx0 { (rx1 - rx0) / (bx1 - bx0) } else { 1.0 };
-        let sy = if by1 > by0 { (ry1 - ry0) / (by1 - by0) } else { 1.0 };
-        let a_m = [sx, 0.0, 0.0, sy, rx0 - bx0 * sx, ry0 - by0 * sy];
+        let sx = if bx1 > bx0 { (rx1 - rx0).sur(bx1 - bx0).unwrap_or(Mesure::UN) } else { Mesure::UN };
+        let sy = if by1 > by0 { (ry1 - ry0).sur(by1 - by0).unwrap_or(Mesure::UN) } else { Mesure::UN };
+        let a_m = [sx, Z, Z, sy, rx0 - bx0 * sx, ry0 - by0 * sy];
         let res_ap = s.dict.get(b"Resources").ok().and_then(|o| dico(doc, o)).cloned().unwrap_or_else(|| res.clone());
         let contenu = contenu_du_flux(flux_ap);
         it.executer(&contenu, &res_ap, mul(&m, &a_m), 1);

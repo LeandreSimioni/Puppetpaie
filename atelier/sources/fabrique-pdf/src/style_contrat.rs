@@ -8,7 +8,10 @@
 //! de la même mise en page (`Variante`), qui ne diffèrent que par ce qui suit le préambule.
 
 use crate::description::{Alignement, Bloc, BlocEtiquete, Morceau, Page, Police, Refus, Rvb, refus};
+use crate::mesure::{mesure, Mesure};
 use crate::modele::{self, Modele, Valeurs};
+
+const Z: Mesure = Mesure::ZERO;
 
 pub const COULEUR_TEXTE: Rvb = (0x2C, 0x3E, 0x50); // body
 const ROUGE: Rvb = (0xB2, 0x22, 0x22); // h1, h2, .label
@@ -16,22 +19,22 @@ const GRIS: Rvb = (0x55, 0x55, 0x55); // .sub
 const GRIS_CLAIR: Rvb = (0x77, 0x77, 0x77); // .pt
 const FILET: Rvb = (0xCC, 0xCC, 0xCC); // .sign td
 /// Une ligne de `<br/>` dans une case : 7,5 pt x 1,25.
-const LIGNE_CORPS: f32 = 7.5 * 1.25;
+const LIGNE_CORPS: Mesure = mesure("9.375");
 /// `.cite { margin-left: 12pt }`
-const RETRAIT_CITATION: f32 = 12.0;
+const RETRAIT_CITATION: Mesure = Mesure::entier(12);
 /// La largeur imprimée de la signature de l'employeur dans un contrat (`documents::largeur_imprimee`).
-pub const SIGNATURE_LARGEUR: f32 = 92.0;
+pub const SIGNATURE_LARGEUR: Mesure = Mesure::entier(92);
 /// La case de la mention de signature de l'artiste, posée sur le contrat parti (`marquage::contresigner`) :
 /// 46 pt de haut, filet gris à 0,5 pt, texte de 6,6 pt à 1,35, en retrait de 4 pt et 3 pt, 3 pt sous la ligne
 /// « signature » de la case de l'artiste (7 pt).
-pub(crate) const MENTION_HAUTEUR: f32 = 46.0;
-pub(crate) const MENTION_TAILLE: f32 = 6.6;
-pub(crate) const MENTION_INTERLIGNE: f32 = 1.35;
+pub(crate) const MENTION_HAUTEUR: Mesure = Mesure::entier(46);
+pub(crate) const MENTION_TAILLE: Mesure = mesure("6.6");
+pub(crate) const MENTION_INTERLIGNE: Mesure = mesure("1.35");
 pub(crate) const MENTION_FILET: Rvb = (0xB3, 0xB3, 0xB3);
-pub(crate) const MENTION_MARGE: (f32, f32) = (4.0, 3.0);
-pub(crate) const MENTION_ECART: f32 = 3.0;
+pub(crate) const MENTION_MARGE: (Mesure, Mesure) = (Mesure::entier(4), Mesure::entier(3));
+pub(crate) const MENTION_ECART: Mesure = Mesure::entier(3);
 pub(crate) const LIBELLE_CASE_ARTISTE: &str = "signature";
-pub(crate) const TAILLE_SOUS_LIBELLE: f32 = 7.0;
+pub(crate) const TAILLE_SOUS_LIBELLE: Mesure = Mesure::entier(7);
 
 /// La phrase d'un contrat qui annule et remplace, quand le modèle n'a pas de clé `ANNULE:`.
 const ANNULE_DEFAUT: &str = "Le présent contrat annule et remplace le contrat n° {{remplace.numero}} du {{remplace.date}}, qui est réputé n'avoir jamais produit d'effet.";
@@ -40,11 +43,18 @@ const ANNULE_DEFAUT: &str = "Le présent contrat annule et remplace le contrat n
 /// la zone du chemin PyMuPDF — le haut laisse passer le logo — plus 7,5 pt à gauche et à droite
 /// (la marge du `<body>` HTML).
 pub fn page() -> Page {
-    Page { largeur: 595.0, hauteur: 842.0, haut: 106.0, droite: 59.5, bas: 46.0, gauche: 59.5 }
+    Page {
+        largeur: Mesure::entier(595),
+        hauteur: Mesure::entier(842),
+        haut: Mesure::entier(106),
+        droite: mesure("59.5"),
+        bas: Mesure::entier(46),
+        gauche: mesure("59.5"),
+    }
 }
 
 pub fn police() -> Police {
-    Police { taille: 7.5, interligne: 1.25, couleur: COULEUR_TEXTE }
+    Police { taille: mesure("7.5"), interligne: mesure("1.25"), couleur: COULEUR_TEXTE }
 }
 
 /// Les trois mises en page (le `style` de la description : « contrat », « avenant »,
@@ -93,26 +103,26 @@ pub struct Contrat<'a> {
 
 fn para(
     morceaux: Vec<(String, bool)>,
-    taille: Option<f32>,
+    taille: Option<Mesure>,
     couleur: Option<Rvb>,
     alignement: Alignement,
-    avant: f32,
-    apres: f32,
+    avant: Mesure,
+    apres: Mesure,
 ) -> Bloc {
     Bloc::Paragraphe {
         morceaux: morceaux.into_iter().map(|(texte, gras)| Morceau { texte, gras, italique: false, couleur: None }).collect(),
-        taille: taille.unwrap_or(7.5),
+        taille: taille.unwrap_or(police().taille),
         couleur: couleur.unwrap_or(COULEUR_TEXTE),
         alignement,
         espace_avant: avant,
         espace_apres: apres,
-        retrait: 0.0,
+        retrait: Z,
     }
 }
 
 /// Une citation : le paragraphe en italique, en retrait de 12 pt (`.cite` de l'avenant).
 fn cite(morceaux: Vec<(String, bool)>) -> Bloc {
-    let mut b = para(morceaux, None, None, Alignement::Justifie, 0.0, 2.6);
+    let mut b = para(morceaux, None, None, Alignement::Justifie, Z, mesure("2.6"));
     if let Bloc::Paragraphe { morceaux, retrait, .. } = &mut b {
         for m in morceaux.iter_mut() {
             m.italique = true;
@@ -138,9 +148,9 @@ fn valeur<'a>(v: &'a Valeurs, cle: &str) -> Result<&'a str, Refus> {
 fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
     let case = |libelle: &str, nom: &str, sous: &str| -> Vec<Bloc> {
         vec![
-            para(vec![(libelle.to_string(), true)], Some(6.6), Some(ROUGE), Alignement::Gauche, 0.0, 0.0),
-            para(vec![(nom.to_string(), false)], None, None, Alignement::Gauche, 0.0, 0.0),
-            para(vec![(sous.to_string(), false)], Some(TAILLE_SOUS_LIBELLE), Some(GRIS_CLAIR), Alignement::Gauche, 0.0, 0.0),
+            para(vec![(libelle.to_string(), true)], Some(mesure("6.6")), Some(ROUGE), Alignement::Gauche, Z, Z),
+            para(vec![(nom.to_string(), false)], None, None, Alignement::Gauche, Z, Z),
+            para(vec![(sous.to_string(), false)], Some(TAILLE_SOUS_LIBELLE), Some(GRIS_CLAIR), Alignement::Gauche, Z, Z),
         ]
     };
     let mut employeur = case(
@@ -154,17 +164,17 @@ fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
     let mut artiste = case(qualite, valeur(v, "salarie.nom_complet")?, LIBELLE_CASE_ARTISTE);
     match signature {
         Some(chemin) => {
-            employeur.push(Bloc::Espace(3.0));
+            employeur.push(Bloc::Espace(Mesure::entier(3)));
             employeur.push(Bloc::Image {
                 chemin: chemin.to_string(),
                 largeur: SIGNATURE_LARGEUR,
                 flottante: true,
             });
-            employeur.push(Bloc::Espace(3.0 * LIGNE_CORPS - 3.0));
+            employeur.push(Bloc::Espace(LIGNE_CORPS * 3 - Mesure::entier(3)));
         }
-        None => employeur.push(Bloc::Espace(3.0 * LIGNE_CORPS)),
+        None => employeur.push(Bloc::Espace(LIGNE_CORPS * 3)),
     }
-    artiste.push(Bloc::Espace(3.0 * LIGNE_CORPS));
+    artiste.push(Bloc::Espace(LIGNE_CORPS * 3));
     let etiquetter = |blocs: Vec<Bloc>, col: usize| -> Vec<BlocEtiquete> {
         blocs
             .into_iter()
@@ -176,10 +186,10 @@ fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
             .collect()
     };
     Ok(Bloc::Colonnes {
-        filet: Some((FILET, 0.5)),
-        espace_avant: 4.0,
-        marge_interne_haut: 5.0,
-        colonnes: vec![(0.5, etiquetter(employeur, 1)), (0.5, etiquetter(artiste, 2))],
+        filet: Some((FILET, mesure("0.5"))),
+        espace_avant: Mesure::entier(4),
+        marge_interne_haut: Mesure::entier(5),
+        colonnes: vec![(mesure("0.5"), etiquetter(employeur, 1)), (mesure("0.5"), etiquetter(artiste, 2))],
     })
 }
 
@@ -194,23 +204,23 @@ fn signature_employeur(v: &Valeurs, image: &str) -> Result<Bloc, Refus> {
             .collect()
     };
     let droite = vec![
-        para(vec![(valeur(v, "employeur.signataire")?.to_string(), false)], None, None, Alignement::Gauche, 0.0, 0.0),
+        para(vec![(valeur(v, "employeur.signataire")?.to_string(), false)], None, None, Alignement::Gauche, Z, Z),
         para(
             vec![(valeur(v, "employeur.signataire_fonction")?.to_string(), false)],
-            Some(7.0),
+            Some(Mesure::entier(7)),
             Some(GRIS_CLAIR),
             Alignement::Gauche,
-            0.0,
-            0.0,
+            Z,
+            Z,
         ),
-        Bloc::Espace(3.0),
+        Bloc::Espace(Mesure::entier(3)),
         Bloc::Image { chemin: image.to_string(), largeur: SIGNATURE_LARGEUR, flottante: false },
     ];
     Ok(Bloc::Colonnes {
         filet: None,
-        espace_avant: 10.0,
-        marge_interne_haut: 0.0,
-        colonnes: vec![(0.6, Vec::new()), (0.4, etiquetter(droite))],
+        espace_avant: Mesure::entier(10),
+        marge_interne_haut: Z,
+        colonnes: vec![(mesure("0.6"), Vec::new()), (mesure("0.4"), etiquetter(droite))],
     })
 }
 
@@ -224,19 +234,19 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
     let attestation = c.variante == Variante::Attestation;
     // Un paragraphe du modèle : un seul, ou un par ligne que la substitution a produite
     // (attestation : l'inventaire du reçu).
-    let corps = |texte: &str, v: &Valeurs, avant: f32| -> Result<Vec<Bloc>, Refus> {
+    let corps = |texte: &str, v: &Valeurs, avant: Mesure| -> Result<Vec<Bloc>, Refus> {
         if attestation {
             Ok(modele::lignes_substituees(texte, v)?
                 .iter()
-                .map(|l| para(modele::morceaux_substitues(l, false), None, None, Justifie, avant, 2.6))
+                .map(|l| para(modele::morceaux_substitues(l, false), None, None, Justifie, avant, mesure("2.6")))
                 .collect())
         } else {
-            Ok(vec![para(modele::morceaux(texte, v, false)?, None, None, Justifie, avant, 2.6)])
+            Ok(vec![para(modele::morceaux(texte, v, false)?, None, None, Justifie, avant, mesure("2.6"))])
         }
     };
-    let mut blocs = vec![para(modele::morceaux(&m.titre, v, true)?, Some(11.0), Some(ROUGE), Gauche, 10.0, 1.0)];
+    let mut blocs = vec![para(modele::morceaux(&m.titre, v, true)?, Some(Mesure::entier(11)), Some(ROUGE), Gauche, Mesure::entier(10), Mesure::UN)];
     if !m.soustitre.is_empty() {
-        blocs.push(para(modele::morceaux(&m.soustitre, v, false)?, Some(6.8), Some(GRIS), Justifie, 0.0, 7.0));
+        blocs.push(para(modele::morceaux(&m.soustitre, v, false)?, Some(mesure("6.8")), Some(GRIS), Justifie, Z, Mesure::entier(7)));
     }
     if let Some((numero, date)) = c.remplace {
         let mut vr = v.clone();
@@ -245,11 +255,11 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
         let defaut = [ANNULE_DEFAUT.to_string()];
         let phrases: &[String] = if m.annule.is_empty() { &defaut } else { &m.annule };
         for b in phrases {
-            blocs.push(para(modele::morceaux(b, &vr, true)?, None, None, Justifie, 0.0, 6.0));
+            blocs.push(para(modele::morceaux(b, &vr, true)?, None, None, Justifie, Z, Mesure::entier(6)));
         }
     }
     for b in &m.preambule {
-        blocs.extend(corps(b, v, 0.0)?);
+        blocs.extend(corps(b, v, Z)?);
     }
     // Les articles modifiés prennent les premiers numéros ; ceux du modèle les suivent.
     let mut n = 0;
@@ -261,9 +271,9 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
         if let Some(phrase) = &modif.phrase {
             vm.insert("modification.phrase".to_string(), phrase.clone());
             let intitule = format!("Article {} \u{2014} {{{{modification.article}}}}", n);
-            blocs.push(para(modele::morceaux(&intitule, &vm, true)?, Some(7.7), Some(ROUGE), Gauche, 4.5, 1.0));
+            blocs.push(para(modele::morceaux(&intitule, &vm, true)?, Some(mesure("7.7")), Some(ROUGE), Gauche, mesure("4.5"), Mesure::UN));
             for b in m.modification.iter().filter(|b| b.contains("modification.phrase")) {
-                blocs.push(para(modele::morceaux(b, &vm, false)?, None, None, Justifie, 0.0, 2.6));
+                blocs.push(para(modele::morceaux(b, &vm, false)?, None, None, Justifie, Z, mesure("2.6")));
             }
             continue;
         }
@@ -271,7 +281,7 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
             "Article {} \u{2014} Modification de l'article {{{{modification.numero}}}} \u{ab} {{{{modification.article}}}} \u{bb}",
             n
         );
-        blocs.push(para(modele::morceaux(&intitule, &vm, true)?, Some(7.7), Some(ROUGE), Gauche, 4.5, 1.0));
+        blocs.push(para(modele::morceaux(&intitule, &vm, true)?, Some(mesure("7.7")), Some(ROUGE), Gauche, mesure("4.5"), Mesure::UN));
         for b in m.modification.iter().filter(|b| !b.contains("modification.phrase")) {
             // Un paragraphe qui porte l'ancien ou le nouveau texte se répète pour chaque
             // paragraphe cité ; les autres se posent une fois.
@@ -291,20 +301,20 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
                         blocs.push(cite(modele::morceaux(b, &vt, false)?));
                     }
                 }
-                None => blocs.push(para(modele::morceaux(b, &vm, false)?, None, None, Justifie, 0.0, 2.6)),
+                None => blocs.push(para(modele::morceaux(b, &vm, false)?, None, None, Justifie, Z, mesure("2.6"))),
             }
         }
     }
     for (titre, paragraphes) in m.articles.iter() {
         n += 1;
         let intitule = if attestation { titre.clone() } else { format!("Article {} \u{2014} {}", n, titre) };
-        blocs.push(para(modele::morceaux(&intitule, v, true)?, Some(7.7), Some(ROUGE), Gauche, 4.5, 1.0));
+        blocs.push(para(modele::morceaux(&intitule, v, true)?, Some(mesure("7.7")), Some(ROUGE), Gauche, mesure("4.5"), Mesure::UN));
         for b in paragraphes {
-            blocs.extend(corps(b, v, 0.0)?);
+            blocs.extend(corps(b, v, Z)?);
         }
     }
     for b in &m.signatures {
-        blocs.extend(corps(b, v, 6.0)?);
+        blocs.extend(corps(b, v, Mesure::entier(6))?);
     }
     if !attestation {
         blocs.push(signatures(v, c.signature)?);

@@ -30,15 +30,25 @@ pub mod taxe_sur_les_salaires;
 /// (`fabrique_pdf::style_contrat::SIGNATURE_LARGEUR`), le certificat Congés Spectacles (`conges_spectacles`, son cadre)
 /// et l'AER (`aer::cadre_signature` dans la case du formulaire, `aer::CASE_SIGNATURE`). Le tampon : la case cachet de
 /// l'AER (`aer::CASE_CACHET`).
-pub fn largeur_imprimee(quoi: &str) -> Option<f64> {
+pub fn largeur_imprimee(quoi: &str) -> Option<Mesure> {
     match quoi {
-        "logo" => Some(bulletin::LOGO_LARGEUR as f64),
-        "signature" => Some(
-            [fabrique_pdf::style_contrat::SIGNATURE_LARGEUR as f64, conges_spectacles::SIGNATURE_LARGEUR, { let r = aer::cadre_signature([0.0, 0.0, aer::CASE_SIGNATURE, 1.0]); r[2] - r[0] }]
-                .into_iter()
-                .fold(0.0, f64::max),
-        ),
+        "logo" => Some(bulletin::LOGO_LARGEUR),
+        "signature" => [
+            fabrique_pdf::style_contrat::SIGNATURE_LARGEUR,
+            mesure_du_document(conges_spectacles::SIGNATURE_LARGEUR),
+            { let r = aer::cadre_signature([Mesure::ZERO, Mesure::ZERO, aer::CASE_SIGNATURE, Mesure::UN]); r[2] - r[0] },
+        ]
+        .into_iter()
+        .max(),
         "cachet" => Some(aer::CASE_CACHET),
         _ => None,
     }
+}
+
+pub use fabrique_pdf::forme::Mesure;
+
+/// Un nombre d'un document, en mesure de la fabrique de PDF (`fabrique_pdf::forme::Mesure`, en nombre exact) : lu par
+/// son texte, sa forme la plus courte. Une mesure d'un document est celle d'une page.
+pub fn mesure_du_document(x: f64) -> Mesure {
+    Mesure::par_son_texte(x).expect("une mesure d'un document tient dans une page")
 }

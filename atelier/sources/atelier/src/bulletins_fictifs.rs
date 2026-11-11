@@ -14,7 +14,9 @@
 
 #![allow(dead_code)]
 
-use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Page, Police, TexteFixe};
+use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Mesure, Page, Police, TexteFixe};
+use fabrique_pdf::mesure::mesure;
+use documents::mesure_du_document as m;
 use std::path::Path;
 
 // ------------------------------------------------------------------------------------------- la fabrique
@@ -23,9 +25,9 @@ use std::path::Path;
 fn texte_fixe(x: f64, y: f64, texte: &str, taille: f64, alignement: Option<Alignement>) -> Bloc {
     Bloc::TexteFixe(TexteFixe {
         texte: texte.to_string(),
-        x: x as f32,
-        y: y as f32,
-        taille: Some(taille as f32),
+        x: m(x),
+        y: m(y),
+        taille: Some(m(taille)),
         police: None,
         gras: None,
         couleur: None,
@@ -49,15 +51,15 @@ pub fn grand(b: &mut Vec<Bloc>, x: f64, y: f64, texte: &str, taille: f64) {
 
 /// Les octets d'un PDF d'une page par liste de blocs, A4.
 pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
-    let nulle = Some(0.0);
+    let nulle = Some(Mesure::ZERO);
     let d = Description {
         format: 3,
         page: Some(Page {
-            largeur: Some(595.22),
-            hauteur: Some(842.0),
+            largeur: Some(mesure("595.22")),
+            hauteur: Some(Mesure::entier(842)),
             marges: Some(Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
         }),
-        police: Some(Police { taille: Some(9.0), interligne: Some(1.25), couleur: Some("#000000".to_string()) }),
+        police: Some(Police { taille: Some(Mesure::entier(9)), interligne: Some(mesure("1.25")), couleur: Some("#000000".to_string()) }),
         style: None,
         logo: None,
         titre: None,

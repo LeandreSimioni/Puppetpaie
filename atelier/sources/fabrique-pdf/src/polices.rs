@@ -134,9 +134,9 @@ impl Metrique {
     }
 
     /// La largeur du caractère, en fraction d'em (`None` : la police ne le dessine pas).
-    pub fn largeur(&self, c: char) -> Option<f64> {
+    pub fn largeur(&self, c: char) -> Option<crate::mesure::Mesure> {
         let face = ttf_parser::Face::parse(&self.donnees, 0).ok()?;
         let g = face.glyph_index(c)?;
-        Some(face.glyph_hor_advance(g)? as f64 / face.units_per_em() as f64)
+        crate::mesure::Mesure::entier(face.glyph_hor_advance(g)? as i64).sur(crate::mesure::Mesure::entier(face.units_per_em() as i64))
     }
 }

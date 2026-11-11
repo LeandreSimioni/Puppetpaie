@@ -10,6 +10,7 @@ use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
 use crate::bulletin::{identite_de, FORMAT};
+use crate::mesure_du_document;
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
@@ -530,14 +531,14 @@ fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Op
     };
     pdf::Bloc::TexteFixe(pdf::TexteFixe {
         texte: texte.to_string(),
-        x: x as f32,
-        y: y as f32,
-        taille: Some(corps as f32),
+        x: mesure_du_document(x),
+        y: mesure_du_document(y),
+        taille: Some(mesure_du_document(corps)),
         police: Some(nom),
         gras: gras.then_some(true),
         couleur: Some(NOIR.to_string()),
         alignement: None,
-        largeur_max: largeur.map(|l| l as f32),
+        largeur_max: largeur.map(mesure_du_document),
     })
 }
 
@@ -546,11 +547,11 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         .iter()
         .map(|(x0, y0, x1, y1, ep)| {
             pdf::Bloc::Trait(pdf::Trait {
-                x1: *x0 as f32,
-                y1: *y0 as f32,
-                x2: *x1 as f32,
-                y2: *y1 as f32,
-                epaisseur: Some(*ep as f32),
+                x1: mesure_du_document(*x0),
+                y1: mesure_du_document(*y0),
+                x2: mesure_du_document(*x1),
+                y2: mesure_du_document(*y1),
+                epaisseur: Some(mesure_du_document(*ep)),
                 couleur: Some(NOIR.to_string()),
             })
         })
@@ -569,10 +570,10 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
             chemin: chemin_texte(&signature),
-            x: x0 as f32,
-            y: y0 as f32,
-            largeur: (x1 - x0) as f32,
-            hauteur: (y1 - y0) as f32,
+            x: mesure_du_document(x0),
+            y: mesure_du_document(y0),
+            largeur: mesure_du_document(x1) - mesure_du_document(x0),
+            hauteur: mesure_du_document(y1) - mesure_du_document(y0),
             centree: Some(!svg),
         }));
     }
@@ -590,12 +591,12 @@ pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) 
     for (c, p) in certs {
         documents.push(pdf::Document::Blocs(blocs_certificat(c, p, ent)?));
     }
-    let nulle = Some(0.0);
+    let nulle = Some(pdf::Mesure::ZERO);
     Ok(pdf::Description {
         format: FORMAT,
         page: Some(pdf::Page {
-            largeur: Some(595.22),
-            hauteur: Some(842.0),
+            largeur: Some(fabrique_pdf::mesure::mesure("595.22")),
+            hauteur: Some(pdf::Mesure::entier(842)),
             marges: Some(pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
         }),
         police: None,

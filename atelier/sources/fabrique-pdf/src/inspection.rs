@@ -8,6 +8,7 @@ use lopdf::{Document, Object};
 use serde::Serialize;
 
 use crate::description::Refus;
+use crate::mesure::Mesure;
 use crate::texte::{cadre_de, dico, herite, inspecter_page, nombre, suivre, Boite};
 
 #[derive(Serialize)]
@@ -32,8 +33,8 @@ struct Mot {
 
 #[derive(Serialize)]
 struct Page {
-    largeur: f64,
-    hauteur: f64,
+    largeur: Mesure,
+    hauteur: Mesure,
     rotation: i64,
     polices: Vec<String>,
     images: Vec<Boite>,
@@ -48,12 +49,9 @@ struct Inspection {
     pages: Vec<Page>,
 }
 
-/// Arrondi à 2 décimales (et jamais « -0.0 »).
-fn arrondi(x: f64) -> f64 {
-    if !x.is_finite() {
-        return 0.0;
-    }
-    (x * 100.0).round() / 100.0 + 0.0
+/// Arrondi à 2 décimales.
+fn arrondi(x: Mesure) -> Mesure {
+    x.arrondie(2)
 }
 
 /// Le passage du repère du PDF (origine en bas à gauche) à celui de PyMuPDF : origine en haut à
@@ -61,7 +59,7 @@ fn arrondi(x: f64) -> f64 {
 /// restent dans le repère de la page **non tournée**, alors que `largeur` et `hauteur` (`page.rect`)
 /// sont ceux de la page tournée de `/Rotate`.
 struct Repere {
-    cadre: [f64; 4],
+    cadre: [Mesure; 4],
     rotation: i64,
 }
 
@@ -71,7 +69,7 @@ impl Repere {
         [arrondi(b[0].min(b[2]) - x0), arrondi(y1 - b[1].max(b[3])), arrondi(b[0].max(b[2]) - x0), arrondi(y1 - b[1].min(b[3]))]
     }
 
-    fn dimensions(&self) -> (f64, f64) {
+    fn dimensions(&self) -> (Mesure, Mesure) {
         let (l, h) = (self.cadre[2] - self.cadre[0], self.cadre[3] - self.cadre[1]);
         if self.rotation % 180 == 90 {
             (h, l)
@@ -155,14 +153,14 @@ fn chaine_pdf(s: &[u8]) -> String {
 fn chiffrement(doc: &Document) -> Option<Chiffrement> {
     let e = dico(doc, doc.trailer.get(b"Encrypt").ok()?)?;
     let entier = |cle: &[u8]| e.get(cle).ok().and_then(|o| nombre(doc, o));
-    let v = entier(b"V").unwrap_or(0.0) as i64;
-    let r = entier(b"R").unwrap_or(0.0) as i64;
+    let v = entier(b"V").map_or(0, Mesure::tronque);
+    let r = entier(b"R").map_or(0, Mesure::tronque);
     let longueur = match v {
         5 => 256,
         4 => 128,
-        _ => entier(b"Length").map(|l| l as i64).unwrap_or(40),
+        _ => entier(b"Length").map_or(40, Mesure::tronque),
     };
-    let mut p = entier(b"P").unwrap_or(0.0) as i64;
+    let mut p = entier(b"P").map_or(0, Mesure::tronque);
     if p > i32::MAX as i64 {
         p -= 1 << 32;
     }
@@ -201,7 +199,10 @@ fn metadonnees(doc: &Document) -> std::collections::BTreeMap<String, String> {
             Object::String(s, _) => chaine_pdf(s),
             Object::Name(n) => String::from_utf8_lossy(n).into_owned(),
             Object::Integer(i) => i.to_string(),
-            Object::Real(r) => r.to_string(),
+            o @ Object::Real(_) => match Mesure::de_l_objet(o) {
+                Some(r) => r.to_string(),
+                None => continue,
+            },
             Object::Boolean(b) => b.to_string(),
             _ => continue,
         };
@@ -212,8 +213,8 @@ fn metadonnees(doc: &Document) -> std::collections::BTreeMap<String, String> {
 
 fn page_de(doc: &Document, numero: u32, id: lopdf::ObjectId, avertissements: &mut Vec<String>) -> Page {
     // Sans MediaBox, PyMuPDF prend le format Lettre.
-    let cadre = cadre_de(doc, id).unwrap_or([0.0, 0.0, 612.0, 792.0]);
-    let tour = herite(doc, id, b"Rotate").and_then(|o| nombre(doc, o)).unwrap_or(0.0) as i64;
+    let cadre = cadre_de(doc, id).unwrap_or([Mesure::ZERO, Mesure::ZERO, Mesure::entier(612), Mesure::entier(792)]);
+    let tour = herite(doc, id, b"Rotate").and_then(|o| nombre(doc, o)).map_or(0, Mesure::tronque);
     let rotation = if tour % 90 == 0 { tour.rem_euclid(360) } else { 0 };
     let repere = Repere { cadre, rotation };
     let (largeur, hauteur) = repere.dimensions();

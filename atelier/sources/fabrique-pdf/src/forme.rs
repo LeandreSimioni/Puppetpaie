@@ -11,23 +11,24 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 use crate::description::{francais, Refus};
+pub use crate::mesure::Mesure;
 
 /// Une page sans largeur dite : A4 (en points).
-pub const PAGE_LARGEUR: f32 = 595.28;
+pub const PAGE_LARGEUR: Mesure = Mesure::milliemes(595_280);
 /// Une page sans hauteur dite : A4 (en points).
-pub const PAGE_HAUTEUR: f32 = 841.89;
+pub const PAGE_HAUTEUR: Mesure = Mesure::milliemes(841_890);
 /// Une marge de page non dite (en points, 2 cm).
-pub const MARGE: f32 = 56.7;
+pub const MARGE: Mesure = Mesure::milliemes(56_700);
 /// Le corps d'une police non dite.
-pub const TAILLE: f32 = 10.0;
+pub const TAILLE: Mesure = Mesure::entier(10);
 /// L'interligne d'une police non dite.
-pub const INTERLIGNE: f32 = 1.25;
+pub const INTERLIGNE: Mesure = Mesure::milliemes(1_250);
 /// La couleur d'une police, d'un filet ou d'un trait non dite.
 pub const COULEUR: &str = "#000000";
 /// L'épaisseur d'un filet ou d'un trait non dite (en points).
-pub const EPAISSEUR: f32 = 0.5;
+pub const EPAISSEUR: Mesure = Mesure::milliemes(500);
 /// La distance d'un repère au bord de la page non dite (en points, jusqu'à la ligne de base).
-pub const DISTANCE_REPERE: f32 = 20.0;
+pub const DISTANCE_REPERE: Mesure = Mesure::entier(20);
 
 /// Lit `texte` en `T`, strictement ; un refus est une ligne de français.
 pub fn lire<T: serde::de::DeserializeOwned>(texte: &str, quoi: &str) -> Result<T, Refus> {
@@ -77,9 +78,9 @@ pub enum Style {
 #[serde(deny_unknown_fields)]
 pub struct Page {
     /// Sans elle : `PAGE_LARGEUR`.
-    pub largeur: Option<f32>,
+    pub largeur: Option<Mesure>,
     /// Sans elle : `PAGE_HAUTEUR`.
-    pub hauteur: Option<f32>,
+    pub hauteur: Option<Mesure>,
     /// Sans elles : `MARGE` de chaque côté.
     pub marges: Option<Marges>,
 }
@@ -88,18 +89,18 @@ pub struct Page {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Marges {
-    pub haut: Option<f32>,
-    pub droite: Option<f32>,
-    pub bas: Option<f32>,
-    pub gauche: Option<f32>,
+    pub haut: Option<Mesure>,
+    pub droite: Option<Mesure>,
+    pub bas: Option<Mesure>,
+    pub gauche: Option<Mesure>,
 }
 
 /// Chaque valeur non dite : `TAILLE`, `INTERLIGNE`, `COULEUR`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Police {
-    pub taille: Option<f32>,
-    pub interligne: Option<f32>,
+    pub taille: Option<Mesure>,
+    pub interligne: Option<Mesure>,
     pub couleur: Option<String>,
 }
 
@@ -107,11 +108,11 @@ pub struct Police {
 #[serde(deny_unknown_fields)]
 pub struct Logo {
     pub chemin: String,
-    pub largeur: f32,
+    pub largeur: Mesure,
     /// Sans elle : 0.
-    pub marge_haut: Option<f32>,
+    pub marge_haut: Option<Mesure>,
     /// Sans elle : 0.
-    pub marge_droite: Option<f32>,
+    pub marge_droite: Option<Mesure>,
 }
 
 /// Un en-tête ou un pied de page répété sur chaque page (FORMAT.md, « En-tête et pied de page »).
@@ -123,13 +124,13 @@ pub struct Repere {
     pub centre: Option<String>,
     pub droite: Option<String>,
     /// Sans elle : celle de la police.
-    pub taille: Option<f32>,
+    pub taille: Option<Mesure>,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
     /// Sans lui : maigre.
     pub gras: Option<bool>,
     /// Sans elle : `DISTANCE_REPERE`.
-    pub distance: Option<f32>,
+    pub distance: Option<Mesure>,
     /// Sans lui : le repère est aussi sur la première page.
     pub premiere_page: Option<bool>,
     pub image: Option<ImageRepere>,
@@ -140,9 +141,9 @@ pub struct Repere {
 #[serde(deny_unknown_fields)]
 pub struct ImageRepere {
     pub chemin: String,
-    pub largeur: f32,
+    pub largeur: Mesure,
     /// Sans elle : 0 (le bas de l'image sur la ligne de base).
-    pub descente: Option<f32>,
+    pub descente: Option<Mesure>,
 }
 
 /// Un document : ses blocs, ou un modèle que la fabrique met en page selon le style. En JSON,
@@ -251,7 +252,7 @@ pub struct Morceau {
 pub struct Paragraphe {
     pub morceaux: Vec<Morceau>,
     /// Sans elle : celle de la police.
-    pub taille: Option<f32>,
+    pub taille: Option<Mesure>,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
     /// Sans lui : à gauche.
@@ -259,17 +260,17 @@ pub struct Paragraphe {
     /// Sans lui : le texte tel quel.
     pub majuscules: Option<bool>,
     /// Sans lui : 0.
-    pub espace_avant: Option<f32>,
+    pub espace_avant: Option<Mesure>,
     /// Sans lui : 0.
-    pub espace_apres: Option<f32>,
+    pub espace_apres: Option<Mesure>,
     /// Marge à gauche du paragraphe, en points (une citation, un alinéa). Sans lui : 0.
-    pub retrait: Option<f32>,
+    pub retrait: Option<Mesure>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Espace {
-    pub hauteur: f32,
+    pub hauteur: Mesure,
 }
 
 /// Un trait : sans couleur, `COULEUR` ; sans épaisseur, `EPAISSEUR`.
@@ -277,7 +278,7 @@ pub struct Espace {
 #[serde(deny_unknown_fields)]
 pub struct Filet {
     pub couleur: Option<String>,
-    pub epaisseur: Option<f32>,
+    pub epaisseur: Option<Mesure>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -285,9 +286,9 @@ pub struct Filet {
 pub struct Colonnes {
     pub filet_haut: Option<Filet>,
     /// Sans lui : 0.
-    pub espace_avant: Option<f32>,
+    pub espace_avant: Option<Mesure>,
     /// Sans elle : 0.
-    pub marge_interne_haut: Option<f32>,
+    pub marge_interne_haut: Option<Mesure>,
     pub colonnes: Vec<Colonne>,
 }
 
@@ -295,7 +296,7 @@ pub struct Colonnes {
 #[serde(deny_unknown_fields)]
 pub struct Colonne {
     /// La fraction de la largeur utile ; les colonnes font 1 à elles toutes.
-    pub largeur: f32,
+    pub largeur: Mesure,
     /// Sans eux : une colonne vide.
     pub blocs: Option<Vec<Bloc>>,
 }
@@ -304,7 +305,7 @@ pub struct Colonne {
 #[serde(deny_unknown_fields)]
 pub struct Image {
     pub chemin: String,
-    pub largeur: f32,
+    pub largeur: Mesure,
     /// Posée à l'endroit courant sans occuper de hauteur. Sans lui : elle occupe sa hauteur.
     pub flottante: Option<bool>,
 }
@@ -323,11 +324,11 @@ pub enum PoliceFixe {
 #[serde(deny_unknown_fields)]
 pub struct TexteFixe {
     pub texte: String,
-    pub x: f32,
+    pub x: Mesure,
     /// L'ordonnée de la ligne de base, depuis le haut de la page.
-    pub y: f32,
+    pub y: Mesure,
     /// Sans elle : celle de la police.
-    pub taille: Option<f32>,
+    pub taille: Option<Mesure>,
     /// Sans elle : Helvetica.
     pub police: Option<PoliceFixe>,
     /// Sans lui : maigre.
@@ -337,18 +338,18 @@ pub struct TexteFixe {
     /// Par rapport à `x` ; sans lui : à gauche.
     pub alignement: Option<Alignement>,
     /// La largeur que le texte ne doit pas dépasser : sinon son corps est réduit (FORMAT.md).
-    pub largeur_max: Option<f32>,
+    pub largeur_max: Option<Mesure>,
 }
 
 /// Un trait : sans épaisseur, `EPAISSEUR` ; sans couleur, `COULEUR`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trait {
-    pub x1: f32,
-    pub y1: f32,
-    pub x2: f32,
-    pub y2: f32,
-    pub epaisseur: Option<f32>,
+    pub x1: Mesure,
+    pub y1: Mesure,
+    pub x2: Mesure,
+    pub y2: Mesure,
+    pub epaisseur: Option<Mesure>,
     pub couleur: Option<String>,
 }
 
@@ -356,10 +357,10 @@ pub struct Trait {
 #[serde(deny_unknown_fields)]
 pub struct ImageFixe {
     pub chemin: String,
-    pub x: f32,
-    pub y: f32,
-    pub largeur: f32,
-    pub hauteur: f32,
+    pub x: Mesure,
+    pub y: Mesure,
+    pub largeur: Mesure,
+    pub hauteur: Mesure,
     /// Sans lui : posée au coin (x, y).
     pub centree: Option<bool>,
 }
@@ -368,7 +369,7 @@ pub struct ImageFixe {
 #[serde(deny_unknown_fields)]
 pub struct ColonneTableau {
     /// La fraction de la largeur utile ; les colonnes font 1 à elles toutes.
-    pub largeur: f32,
+    pub largeur: Mesure,
     /// Sans lui : à gauche.
     pub alignement: Option<Alignement>,
 }
@@ -377,10 +378,10 @@ pub struct ColonneTableau {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MargeCellule {
-    pub haut: Option<f32>,
-    pub droite: Option<f32>,
-    pub bas: Option<f32>,
-    pub gauche: Option<f32>,
+    pub haut: Option<Mesure>,
+    pub droite: Option<Mesure>,
+    pub bas: Option<Mesure>,
+    pub gauche: Option<Mesure>,
 }
 
 /// Une cellule : son texte seul (en JSON, une chaîne), ou une cellule décrite (un objet).
@@ -437,7 +438,7 @@ pub struct Ligne {
     /// Sans elle : celle du tableau.
     pub couleur: Option<String>,
     /// Sans elle : celle du tableau.
-    pub taille: Option<f32>,
+    pub taille: Option<Mesure>,
     pub filet_haut: Option<Filet>,
     pub filet_bas: Option<Filet>,
 }
@@ -451,19 +452,19 @@ pub struct Tableau {
     /// Sans elles : aucune.
     pub lignes: Option<Vec<Ligne>>,
     /// Sans elle : celle de la police.
-    pub taille: Option<f32>,
+    pub taille: Option<Mesure>,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
     /// Sans lui : celui de la police.
-    pub interligne: Option<f32>,
+    pub interligne: Option<Mesure>,
     /// Sans elle : 0 de chaque côté.
     pub marge_cellule: Option<MargeCellule>,
     pub filet_lignes: Option<Filet>,
     pub filets_cellules: Option<Filet>,
     /// Sans lui : 0.
-    pub espace_avant: Option<f32>,
+    pub espace_avant: Option<Mesure>,
     /// Sans lui : 0.
-    pub espace_apres: Option<f32>,
+    pub espace_apres: Option<Mesure>,
 }
 
 // ---------------------------------------------------------------------------
@@ -495,9 +496,9 @@ pub struct ImagePosee {
     /// À partir de 1.
     pub page: usize,
     /// [x0, y0, x1, y1], en points, origine en haut à gauche (comme `--champs`).
-    pub rect: [f64; 4],
+    pub rect: [Mesure; 4],
     /// Sans elle : 0.
-    pub marge: Option<f64>,
+    pub marge: Option<Mesure>,
     /// `fichier` (PNG, JPEG ou SVG) et `svg` (le texte du SVG) s'excluent.
     pub fichier: Option<String>,
     pub svg: Option<String>,
@@ -523,12 +524,12 @@ pub struct ChampAjoute {
     /// À partir de 1.
     pub page: usize,
     /// [x0, y0, x1, y1], origine en haut à gauche.
-    pub rect: [f64; 4],
+    pub rect: [Mesure; 4],
     pub valeur: Option<String>,
     /// Sans lui : on peut y écrire.
     pub lecture_seule: Option<bool>,
     /// Le corps ; sans lui : celui qui tient.
-    pub taille: Option<f64>,
+    pub taille: Option<Mesure>,
     /// Gauche, centre ou droite ; sans lui : à gauche.
     pub alignement: Option<Alignement>,
 }

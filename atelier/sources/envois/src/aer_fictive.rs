@@ -32,7 +32,8 @@
 use droit::fiche::Lue as _;
 use std::io::Write;
 
-use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Description, Document, Marges, Page, TexteFixe, Trait};
+use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Description, Document, Marges, Mesure, Page, TexteFixe, Trait};
+use documents::mesure_du_document as m;
 
 use declarations::dsn_lue::{ContratDeclare, DsnLue, IndividuDeclare, Mesures};
 use droit::contexte::Contexte;
@@ -147,9 +148,9 @@ fn periode(c: &ContratDeclare, numero: &str, x: &Mesures, debut: Jour, fin: Jour
 fn texte_aligne(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str, alignement: Option<Alignement>) -> Bloc {
     Bloc::TexteFixe(TexteFixe {
         texte: t.to_string(),
-        x: x as f32,
-        y: y as f32,
-        taille: Some(taille as f32),
+        x: m(x),
+        y: m(y),
+        taille: Some(m(taille)),
         police: None,
         gras: Some(gras),
         couleur: Some(couleur.to_string()),
@@ -168,11 +169,11 @@ fn centre(x: f64, y: f64, t: &str, taille: f64, gras: bool, couleur: &str) -> Bl
 
 fn trait_(x1: f64, y1: f64, x2: f64, y2: f64, ep: f64, couleur: &str) -> Bloc {
     Bloc::Trait(Trait {
-        x1: x1 as f32,
-        y1: y1 as f32,
-        x2: x2 as f32,
-        y2: y2 as f32,
-        epaisseur: Some(ep as f32),
+        x1: m(x1),
+        y1: m(y1),
+        x2: m(x2),
+        y2: m(y2),
+        epaisseur: Some(m(ep)),
         couleur: Some(couleur.to_string()),
     })
 }
@@ -216,10 +217,10 @@ impl Champs {
             self.0.push(ChampAjoute {
                 nom: nom.to_string(),
                 page,
-                rect: r,
+                rect: r.map(m),
                 valeur: Some(v.to_string()),
                 lecture_seule: Some(true),
-                taille: Some(taille),
+                taille: Some(m(taille)),
                 alignement: Some(alignement),
             });
         }
@@ -232,7 +233,7 @@ impl Champs {
     }
     /// A remplir par l'employeur (le cadre 5).
     fn vide(&mut self, nom: &str, r: [f64; 4]) {
-        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r, valeur: None, lecture_seule: None, taille: Some(9.0), alignement: None });
+        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r.map(m), valeur: None, lecture_seule: None, taille: Some(Mesure::entier(9)), alignement: None });
     }
 }
 
@@ -490,12 +491,12 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     case(&mut p3, [401.0, 685.0, 562.0, 765.0]);
     f.vide("EMPLOYEUR_CACHET", [401.0, 685.0, 562.0, 765.0]);
 
-    let nulle = Some(0.0);
+    let nulle = Some(Mesure::ZERO);
     let description = Description {
         format: fabrique_pdf::FORMAT,
         page: Some(Page {
-            largeur: Some(595.28),
-            hauteur: Some(841.89),
+            largeur: Some(fabrique_pdf::forme::PAGE_LARGEUR),
+            hauteur: Some(fabrique_pdf::forme::PAGE_HAUTEUR),
             marges: Some(Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
         }),
         police: None,

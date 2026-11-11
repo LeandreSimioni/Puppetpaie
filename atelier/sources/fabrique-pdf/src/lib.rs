@@ -11,6 +11,7 @@ pub mod inspection;
 pub mod lecture;
 pub mod ligne_de_commande;
 pub mod marquage;
+pub mod mesure;
 pub mod mise_en_page;
 pub mod modele;
 pub mod polices;

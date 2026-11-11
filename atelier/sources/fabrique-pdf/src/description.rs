@@ -10,6 +10,7 @@ use crate::modele;
 use crate::style_contrat;
 
 pub use crate::forme::{Alignement, PoliceFixe};
+pub use crate::mesure::Mesure;
 
 /// Un refus : une ligne de français, prête à être affichée telle quelle.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,7 +37,7 @@ pub const FORMAT: i64 = 3;
 
 /// Le corps en dessous duquel `largeur_max` ne réduit pas un texte (6 pt : sous
 /// cette taille la case est illisible, et c'est le signe que la donnée ne va pas).
-pub const CORPS_PLANCHER: f32 = 6.0;
+pub const CORPS_PLANCHER: Mesure = Mesure::entier(6);
 
 // ---------------------------------------------------------------------------
 // Ce qui est validé.
@@ -46,36 +47,36 @@ pub type Rvb = (u8, u8, u8);
 
 #[derive(Debug, Clone)]
 pub struct Page {
-    pub largeur: f32,
-    pub hauteur: f32,
-    pub haut: f32,
-    pub droite: f32,
-    pub bas: f32,
-    pub gauche: f32,
+    pub largeur: Mesure,
+    pub hauteur: Mesure,
+    pub haut: Mesure,
+    pub droite: Mesure,
+    pub bas: Mesure,
+    pub gauche: Mesure,
 }
 
 impl Page {
-    pub fn largeur_utile(&self) -> f32 {
+    pub fn largeur_utile(&self) -> Mesure {
         self.largeur - self.gauche - self.droite
     }
-    pub fn hauteur_utile(&self) -> f32 {
+    pub fn hauteur_utile(&self) -> Mesure {
         self.hauteur - self.haut - self.bas
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Police {
-    pub taille: f32,
-    pub interligne: f32,
+    pub taille: Mesure,
+    pub interligne: Mesure,
     pub couleur: Rvb,
 }
 
 #[derive(Debug, Clone)]
 pub struct Logo {
     pub chemin: String,
-    pub largeur: f32,
-    pub marge_haut: f32,
-    pub marge_droite: f32,
+    pub largeur: Mesure,
+    pub marge_haut: Mesure,
+    pub marge_droite: Mesure,
 }
 
 /// Un en-tête ou un pied de page : trois textes d'une ligne (`{page}` et `{pages}` y sont remplacés
@@ -86,10 +87,10 @@ pub struct Repere {
     pub gauche: String,
     pub centre: String,
     pub droite: String,
-    pub taille: f32,
+    pub taille: Mesure,
     pub couleur: Rvb,
     pub gras: bool,
-    pub distance: f32,
+    pub distance: Mesure,
     pub premiere_page: bool,
     /// Une image posée au bout de la ligne, à droite, après le texte de droite.
     pub image: Option<ImageRepere>,
@@ -100,8 +101,8 @@ pub struct Repere {
 #[derive(Debug, Clone)]
 pub struct ImageRepere {
     pub chemin: String,
-    pub largeur: f32,
-    pub descente: f32,
+    pub largeur: Mesure,
+    pub descente: Mesure,
 }
 
 impl Repere {
@@ -121,7 +122,7 @@ pub struct Morceau {
 }
 
 /// Un trait : couleur et épaisseur.
-pub type Filet = (Rvb, f32);
+pub type Filet = (Rvb, Mesure);
 
 #[derive(Debug, Clone)]
 pub struct CelluleTableau {
@@ -135,7 +136,7 @@ pub struct CelluleTableau {
 pub struct LigneTableau {
     pub cellules: Vec<CelluleTableau>,
     pub fond: Option<Rvb>,
-    pub taille: f32,
+    pub taille: Mesure,
     pub filet_haut: Option<Filet>,
     pub filet_bas: Option<Filet>,
 }
@@ -144,33 +145,33 @@ pub struct LigneTableau {
 pub enum Bloc {
     Paragraphe {
         morceaux: Vec<Morceau>,
-        taille: f32,
+        taille: Mesure,
         couleur: Rvb,
         alignement: Alignement,
-        espace_avant: f32,
-        espace_apres: f32,
+        espace_avant: Mesure,
+        espace_apres: Mesure,
         /// Marge à gauche, en points : le texte se met en page dans une largeur d'autant réduite.
-        retrait: f32,
+        retrait: Mesure,
     },
-    Espace(f32),
+    Espace(Mesure),
     Colonnes {
-        filet: Option<(Rvb, f32)>,
-        espace_avant: f32,
-        marge_interne_haut: f32,
-        colonnes: Vec<(f32, Vec<BlocEtiquete>)>,
+        filet: Option<(Rvb, Mesure)>,
+        espace_avant: Mesure,
+        marge_interne_haut: Mesure,
+        colonnes: Vec<(Mesure, Vec<BlocEtiquete>)>,
     },
     Image {
         chemin: String,
-        largeur: f32,
+        largeur: Mesure,
         /// Posée à l'endroit courant sans occuper de hauteur (FORMAT.md).
         flottante: bool,
     },
     /// Position absolue sur la page, en points depuis son coin haut-gauche : ne coule pas.
     TexteFixe {
         texte: String,
-        x: f32,
-        y: f32,
-        taille: f32,
+        x: Mesure,
+        y: Mesure,
+        taille: Mesure,
         police: PoliceFixe,
         gras: bool,
         couleur: Rvb,
@@ -178,36 +179,36 @@ pub enum Bloc {
         alignement: Alignement,
         /// Largeur à ne pas dépasser, en points : au-delà, le corps est réduit pour que le texte
         /// tienne, sans descendre sous `CORPS_PLANCHER`.
-        largeur_max: Option<f32>,
+        largeur_max: Option<Mesure>,
     },
     Trait {
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        epaisseur: f32,
+        x1: Mesure,
+        y1: Mesure,
+        x2: Mesure,
+        y2: Mesure,
+        epaisseur: Mesure,
         couleur: Rvb,
     },
     ImageFixe {
         chemin: String,
-        x: f32,
-        y: f32,
-        largeur: f32,
-        hauteur: f32,
+        x: Mesure,
+        y: Mesure,
+        largeur: Mesure,
+        hauteur: Mesure,
         centree: bool,
     },
     Tableau {
         /// Fraction de la largeur utile et alignement de chaque colonne.
-        colonnes: Vec<(f32, Alignement)>,
-        interligne: f32,
+        colonnes: Vec<(Mesure, Alignement)>,
+        interligne: Mesure,
         /// haut, droite, bas, gauche : l'espace entre le bord d'une cellule et son texte.
-        marge_cellule: [f32; 4],
+        marge_cellule: [Mesure; 4],
         filet_lignes: Option<Filet>,
         filets_cellules: Option<Filet>,
         entete: Vec<LigneTableau>,
         lignes: Vec<LigneTableau>,
-        espace_avant: f32,
-        espace_apres: f32,
+        espace_avant: Mesure,
+        espace_apres: Mesure,
     },
 }
 
@@ -312,7 +313,7 @@ fn traduit_type(t: &str) -> String {
         .replace("null", "null")
         .replace("unit value", "null")
         .replace("a nombre décimal", "un nombre décimal")
-        .replace("f32", "un nombre")
+        .replace("a JSON number", "un nombre")
         .replace("a chaîne", "une chaîne")
         .replace("a liste", "une liste")
         .replace("a booléen", "un booléen")
@@ -336,17 +337,8 @@ pub fn couleur(texte: &str, ou: &str) -> Result<Rvb, Refus> {
     Ok((v(1), v(3), v(5)))
 }
 
-fn fini(valeur: f32, nom: &str, ou: &str) -> Result<f32, Refus> {
-    if valeur.is_finite() {
-        Ok(valeur)
-    } else {
-        refus(format!("{} : {} n'est pas un nombre fini", ou, nom))
-    }
-}
-
-fn positif_ou_nul(valeur: f32, nom: &str, ou: &str) -> Result<f32, Refus> {
-    let v = fini(valeur, nom, ou)?;
-    if v < 0.0 {
+fn positif_ou_nul(v: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {
+    if v < Mesure::ZERO {
         refus(format!("{} : {} ne peut pas être négatif ({})", ou, nom, v))
     } else {
         Ok(v)
@@ -354,13 +346,12 @@ fn positif_ou_nul(valeur: f32, nom: &str, ou: &str) -> Result<f32, Refus> {
 }
 
 /// Une longueur facultative : sans elle, 0.
-fn longueur(valeur: Option<f32>, nom: &str, ou: &str) -> Result<f32, Refus> {
-    positif_ou_nul(valeur.unwrap_or(0.0), nom, ou)
+fn longueur(valeur: Option<Mesure>, nom: &str, ou: &str) -> Result<Mesure, Refus> {
+    positif_ou_nul(valeur.unwrap_or(Mesure::ZERO), nom, ou)
 }
 
-fn strictement_positif(valeur: f32, nom: &str, ou: &str) -> Result<f32, Refus> {
-    let v = fini(valeur, nom, ou)?;
-    if v <= 0.0 {
+fn strictement_positif(v: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {
+    if v <= Mesure::ZERO {
         refus(format!("{} : {} doit être positif ({})", ou, nom, v))
     } else {
         Ok(v)
@@ -376,7 +367,7 @@ fn couleur_ou(texte: &Option<String>, heritee: Rvb, ou: &str) -> Result<Rvb, Ref
 }
 
 /// Une taille facultative : sans elle, `heritee`.
-fn taille_ou(valeur: Option<f32>, heritee: f32, nom: &str, ou: &str) -> Result<f32, Refus> {
+fn taille_ou(valeur: Option<Mesure>, heritee: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {
     match valeur {
         Some(t) => strictement_positif(t, nom, ou),
         None => Ok(heritee),
@@ -427,7 +418,7 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
                 return refus(format!("{} : une liste de colonnes vide", etiquette));
             }
             let filet = lire_filet(&c.filet_haut, etiquette)?;
-            let mut somme = 0.0f32;
+            let mut somme = Mesure::ZERO;
             let mut colonnes = Vec::new();
             for (k, col) in c.colonnes.iter().enumerate() {
                 let ou_col = format!("{}, colonne {}", etiquette, k + 1);
@@ -453,7 +444,7 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
                 }
                 colonnes.push((l, blocs));
             }
-            if (somme - 1.0).abs() > 0.001 {
+            if (somme - Mesure::UN).abs() > Mesure::milliemes(1) {
                 return refus(format!(
                     "{} : la somme des largeurs de colonnes vaut {}, elle doit valoir 1",
                     etiquette, somme
@@ -476,8 +467,8 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
                 ));
             }
             Ok(Bloc::TexteFixe {
-                x: fini(t.x, "x", etiquette)?,
-                y: fini(t.y, "y", etiquette)?,
+                x: t.x,
+                y: t.y,
                 taille: taille_ou(t.taille, police.taille, "taille", etiquette)?,
                 couleur: couleur_ou(&t.couleur, police.couleur, etiquette)?,
                 texte: t.texte.clone(),
@@ -491,16 +482,16 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
             })
         }
         f::Bloc::Trait(t) => Ok(Bloc::Trait {
-            x1: fini(t.x1, "x1", etiquette)?,
-            y1: fini(t.y1, "y1", etiquette)?,
-            x2: fini(t.x2, "x2", etiquette)?,
-            y2: fini(t.y2, "y2", etiquette)?,
+            x1: t.x1,
+            y1: t.y1,
+            x2: t.x2,
+            y2: t.y2,
             epaisseur: strictement_positif(t.epaisseur.unwrap_or(f::EPAISSEUR), "epaisseur", etiquette)?,
             couleur: couleur(t.couleur.as_deref().unwrap_or(f::COULEUR), etiquette)?,
         }),
         f::Bloc::ImageFixe(i) => Ok(Bloc::ImageFixe {
-            x: fini(i.x, "x", etiquette)?,
-            y: fini(i.y, "y", etiquette)?,
+            x: i.x,
+            y: i.y,
             largeur: strictement_positif(i.largeur, "largeur", etiquette)?,
             hauteur: strictement_positif(i.hauteur, "hauteur", etiquette)?,
             centree: i.centree.unwrap_or(false),
@@ -524,8 +515,8 @@ fn lire_filet(f: &Option<f::Filet>, ou: &str) -> Result<Option<Filet>, Refus> {
 fn lire_ligne(
     l: &f::Ligne,
     ou: &str,
-    colonnes: &[(f32, Alignement)],
-    taille: f32,
+    colonnes: &[(Mesure, Alignement)],
+    taille: Mesure,
     couleur_table: Rvb,
 ) -> Result<LigneTableau, Refus> {
     let taille = taille_ou(l.taille, taille, "taille", ou)?;
@@ -606,14 +597,14 @@ fn lire_tableau(t: &f::Tableau, etiquette: &str, police: &Police) -> Result<Bloc
         return refus(format!("{} : un tableau sans colonne", etiquette));
     }
     let mut colonnes = Vec::new();
-    let mut somme = 0.0f32;
+    let mut somme = Mesure::ZERO;
     for (k, c) in t.colonnes.iter().enumerate() {
         let ou_col = format!("{}, colonne {}", etiquette, k + 1);
         let l = strictement_positif(c.largeur, "largeur", &ou_col)?;
         somme += l;
         colonnes.push((l, c.alignement.unwrap_or(Alignement::Gauche)));
     }
-    if (somme - 1.0).abs() > 0.001 {
+    if (somme - Mesure::UN).abs() > Mesure::milliemes(1) {
         return refus(format!(
             "{} : la somme des largeurs de colonnes vaut {}, elle doit valoir 1",
             etiquette, somme
@@ -630,7 +621,7 @@ fn lire_tableau(t: &f::Tableau, etiquette: &str, police: &Police) -> Result<Bloc
             longueur(m.bas, "bas", &ou_m)?,
             longueur(m.gauche, "gauche", &ou_m)?,
         ],
-        None => [0.0; 4],
+        None => [Mesure::ZERO; 4],
     };
     let mut entete = Vec::new();
     for (i, l) in t.entete.iter().flatten().enumerate() {
@@ -693,7 +684,7 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Res
     let brute = match (p, style) {
         (Some(p), _) => {
             let m = p.marges.as_ref();
-            let marge = |c: fn(&f::Marges) -> Option<f32>| m.and_then(c).unwrap_or(f::MARGE);
+            let marge = |c: fn(&f::Marges) -> Option<Mesure>| m.and_then(c).unwrap_or(f::MARGE);
             Page {
                 largeur: p.largeur.unwrap_or(f::PAGE_LARGEUR),
                 hauteur: p.hauteur.unwrap_or(f::PAGE_HAUTEUR),
@@ -721,7 +712,7 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Res
         bas: positif_ou_nul(brute.bas, "bas", "page, marges")?,
         gauche: positif_ou_nul(brute.gauche, "gauche", "page, marges")?,
     };
-    if page.largeur_utile() <= 0.0 || page.hauteur_utile() <= 0.0 {
+    if page.largeur_utile() <= Mesure::ZERO || page.hauteur_utile() <= Mesure::ZERO {
         return refus("page : les marges ne laissent aucune place au texte");
     }
     Ok(page)

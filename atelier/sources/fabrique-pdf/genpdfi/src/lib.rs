@@ -64,6 +64,17 @@ impl Mm {
     pub fn max(self, other: Mm) -> Mm {
         Mm(self.0.max(other.0))
     }
+
+    /// PuppetPaie : une longueur donnée en millionièmes de point (`fabrique_pdf::mesure::Mesure`, en nombre exact),
+    /// en millimètres. La porte entre la fabrique et le dessin, qui compte en flottant.
+    pub fn de_millioniemes_de_point(n: i64) -> Mm {
+        pt((n as f64 / 1e6) as f32)
+    }
+
+    /// PuppetPaie : la longueur en millionièmes de point, arrondie au plus proche.
+    pub fn en_millioniemes_de_point(self) -> i64 {
+        (printpdf::Pt::from(printpdf::Mm(self.0)).0 as f64 * 1e6).round() as i64
+    }
 }
 
 impl From<i8> for Mm {
@@ -131,6 +142,15 @@ impl From<Mm> for printpdf::Pt {
     fn from(mm: Mm) -> printpdf::Pt {
         printpdf::Mm(mm.0).into()
     }
+}
+
+/// PuppetPaie : le nombre réel du dessin (une taille de lettre, un facteur d'interligne), que `printpdf` compte en
+/// flottant.
+pub type Reel = f32;
+
+/// PuppetPaie : un nombre donné en millionièmes (`fabrique_pdf::mesure::Mesure`, en nombre exact), en réel du dessin.
+pub fn reel_de_millioniemes(n: i64) -> Reel {
+    (n as f64 / 1e6) as f32
 }
 
 /// Converts a length in points into millimeters (PuppetPaie modification).

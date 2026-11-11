@@ -46,7 +46,8 @@ use std::path::Path;
 
 use std::collections::BTreeMap;
 
-use fabrique_pdf::forme::{ImagePosee, Remplissage};
+use fabrique_pdf::forme::{ImagePosee, Mesure, Remplissage};
+use fabrique_pdf::mesure::mesure;
 use fabrique_pdf::formulaire::ChampLu;
 
 use engagement::cachet;
@@ -424,19 +425,20 @@ pub fn verifier(donnees: &[u8], paies: &[PaieAer]) -> R<Vec<String>> {
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
 /// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::largeur_imprimee`).
-pub const CASE_SIGNATURE: f64 = 121.0;
-pub const CASE_CACHET: f64 = 161.0;
+pub const CASE_SIGNATURE: Mesure = Mesure::entier(121);
+pub const CASE_CACHET: Mesure = Mesure::entier(161);
 
 /// La signature occupe le haut de la case, sur 80 % de sa largeur.
 ///
 /// Meme parti que pour le certificat Conges Spectacles : un tampon pose en
 /// travers, pas une image etiree aux dimensions de la case. `rect` :
 /// [x0, y0, x1, y1] en points, l'origine en haut a gauche de la page.
-pub fn cadre_signature(rect: [f64; 4]) -> [f64; 4] {
+pub fn cadre_signature(rect: [Mesure; 4]) -> [Mesure; 4] {
     let [x0, y0, x1, y1] = rect;
-    let largeur = (x1 - x0) * 0.80;
-    let hauteur = (y1 - y0) * 0.55;
-    [x0 + 4.0, y0 + 4.0, x0 + 4.0 + largeur, y0 + 4.0 + hauteur]
+    let largeur = (x1 - x0) * mesure("0.8");
+    let hauteur = (y1 - y0) * mesure("0.55");
+    let quatre = Mesure::entier(4);
+    [x0 + quatre, y0 + quatre, x0 + quatre + largeur, y0 + quatre + hauteur]
 }
 
 /// Le champ `nom` du formulaire, s'il en a un.
@@ -445,7 +447,7 @@ fn champ<'a>(champs: &'a [ChampLu], nom: &str) -> Option<&'a ChampLu> {
 }
 
 /// La page et le rectangle du champ `nom`, s'il est sur une page.
-fn case(champs: &[ChampLu], nom: &str) -> Option<(usize, [f64; 4])> {
+fn case(champs: &[ChampLu], nom: &str) -> Option<(usize, [Mesure; 4])> {
     let c = champ(champs, nom)?;
     Some((c.page?, c.rect?))
 }
@@ -556,8 +558,8 @@ pub fn periodes_attendues(periode: Mois, cle: &str, paies_du_mois: &mut dyn FnMu
 /// reste VECTORIEL, net quelle que soit la taille de la case, la ou un PNG
 /// agrandi bave. Un fichier illisible n'est pas pose en silence : la fabrique
 /// refuse, et l'attestation ne sort pas sans qu'on sache pourquoi.
-fn image_fichier(page: usize, rect: [f64; 4], fichier: &str) -> ImagePosee {
-    ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: Some(fichier.to_string()), svg: None }
+fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &str) -> ImagePosee {
+    ImagePosee { page, rect, marge: Some(crate::mesure_du_document(cachet::MARGE)), fichier: Some(fichier.to_string()), svg: None }
 }
 
 /// Le cachet a poser dans `rect` de la page `page` : celui de la compagnie
@@ -569,12 +571,12 @@ fn image_fichier(page: usize, rect: [f64; 4], fichier: &str) -> ImagePosee {
 /// fiche, et il suit la fiche quand elle change. Un fichier pose l'emporte
 /// simplement parce qu'une compagnie qui prend la peine d'apporter son tampon
 /// veut le sien.
-fn image(page: usize, rect: [f64; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
+fn image(page: usize, rect: [Mesure; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
     if let Some(f) = fichier {
         if Path::new(f).exists() {
             return Some(image_fichier(page, rect, f));
         }
     }
     let dessin = cachet::svg(ent)?;
-    Some(ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: None, svg: Some(dessin) })
+    Some(ImagePosee { page, rect, marge: Some(crate::mesure_du_document(cachet::MARGE)), fichier: None, svg: Some(dessin) })
 }

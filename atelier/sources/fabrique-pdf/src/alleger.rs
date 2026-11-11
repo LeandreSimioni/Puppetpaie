@@ -8,11 +8,12 @@
 use image::{DynamicImage, GenericImageView};
 
 use crate::description::Refus;
+use crate::mesure::{mesure, Mesure};
 
 /// La résolution visée, en points par pouce : ce qu'une imprimante de bureau rend d'une image posée.
-pub const RESOLUTION: f64 = 200.0;
+pub const RESOLUTION: Mesure = Mesure::entier(200);
 /// La résolution au-dessous de laquelle on ne descend pas pour tenir l'objectif de poids.
-pub const RESOLUTION_MIN: f64 = 120.0;
+pub const RESOLUTION_MIN: Mesure = Mesure::entier(120);
 /// Les qualités JPEG essayées, de la meilleure à la plus légère.
 const QUALITES: [u8; 4] = [85, 75, 65, 55];
 
@@ -67,8 +68,8 @@ fn jpeg(image: &DynamicImage, qualite: u8) -> Result<Vec<u8>, Refus> {
 }
 
 /// La largeur en pixels d'une image imprimée sur `points` à `resolution`.
-fn pixels(points: f64, resolution: f64) -> u32 {
-    (points / 72.0 * resolution).ceil().max(1.0) as u32
+fn pixels(points: Mesure, resolution: Mesure) -> u32 {
+    (points * resolution / 72).plafond().clamp(1, u32::MAX as i64) as u32
 }
 
 /// L'écriture de `image` (à sa taille) : PNG, sans perte, si l'image est transparente, si le PNG tient dans `objectif`
@@ -103,7 +104,7 @@ fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, &'static st
 
 /// `octets` (PNG, JPEG ou SVG) allégée pour être imprimée sur `largeur_points` au plus, à `objectif` octets au
 /// plus si la résolution le permet (voir l'en-tête du module).
-pub fn alleger(octets: &[u8], largeur_points: f64, objectif: usize) -> Result<Allegee, Refus> {
+pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result<Allegee, Refus> {
     let format = format_de(octets).ok_or_else(|| Refus("ni un PNG, ni un JPEG, ni un SVG".into()))?;
     if format == "svg" {
         return Ok(Allegee { octets: octets.to_vec(), format, largeur: 0, avant: octets.len(), telle_quelle: true });
@@ -121,7 +122,7 @@ pub fn alleger(octets: &[u8], largeur_points: f64, objectif: usize) -> Result<Al
         let cible = pixels(largeur_points, resolution);
         let reduite = if image.width() > cible { genpdfi::elements::reduire_a(image.clone(), cible) } else { image.clone() };
         let (o, f) = ecrire(&reduite, objectif)?;
-        let plus_bas = resolution * 0.85;
+        let plus_bas = resolution * mesure("0.85");
         if o.len() <= objectif || plus_bas < RESOLUTION_MIN {
             // Une écriture plus lourde que l'image reçue, à la même taille, ne sert à rien.
             if o.len() >= octets.len() && reduite.width() == image.width() {
