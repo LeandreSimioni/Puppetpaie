@@ -182,9 +182,17 @@ fn edition_bridee(quoi: &str) -> String {
     )
 }
 
-/// La phrase HTTP d'un code de réponse.
-fn phrase(code: u16) -> &'static str {
-    match code {
+/// Un code de réponse HTTP en mots : son code, et sa phrase quand le code en a une.
+fn statut_dit(code: u16) -> String {
+    match phrase(code) {
+        Some(p) => format!("HTTP Error {}: {}", code, p),
+        None => format!("HTTP Error {}", code),
+    }
+}
+
+/// La phrase HTTP d'un code de réponse, s'il en a une.
+fn phrase(code: u16) -> Option<&'static str> {
+    Some(match code {
         100 => "Continue",
         101 => "Switching Protocols",
         102 => "Processing",
@@ -247,14 +255,14 @@ fn phrase(code: u16) -> &'static str {
         508 => "Loop Detected",
         510 => "Not Extended",
         511 => "Network Authentication Required",
-        _ => "",
-    }
+        _sans_phrase => return None,
+    })
 }
 
 /// Une panne du transport, en mots.
 fn panne_dite(p: &Panne) -> String {
     match p {
-        Panne::Statut { code, .. } => format!("HTTP Error {}: {}", code, phrase(*code)),
+        Panne::Statut { code, .. } => statut_dit(*code),
         Panne::Reseau(raison) => raison.trim_end_matches('.').to_string(),
         Panne::Brute(e) => e.phrase.trim_end_matches('.').to_string(),
     }
@@ -263,7 +271,7 @@ fn panne_dite(p: &Panne) -> String {
 /// Ce que le serveur dit d'un refus : son `erreur` ; un corps vide ou qui n'a pas cette forme laisse le statut seul le
 /// dire, et dit pourquoi.
 fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
-    let propre = format!("HTTP Error {}: {}", code, phrase(code));
+    let propre = statut_dit(code);
     match corps {
         Err(p) => format!("{} (corps de la réponse non lu : {})", propre, panne_dite(p)),
         Ok(o) if o.is_empty() => propre,

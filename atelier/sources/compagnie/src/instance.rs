@@ -206,8 +206,11 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
                     continue;
                 }
             };
-            let _ = c.set_nonblocking(false);
-            let _ = c.set_read_timeout(Some(DELAI));
+            // Une demande qui ne se regle pas (attente bloquante, delai) est perdue comme une demande coupee : la suivante.
+            if let Err(perdue) = c.set_nonblocking(false).and_then(|()| c.set_read_timeout(Some(DELAI))) {
+                drop(perdue);
+                continue;
+            }
             let mut lecteur = BufReader::new(&c);
             let mut ligne = String::new();
             // Une demande qui ne vient pas a temps, ou coupee : le demandeur est parti, rien a lui repondre.
@@ -223,7 +226,10 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
             } else {
                 continue;
             };
-            let _ = (&c).write_all(format!("{} {}\n", REPONSE, ici).as_bytes());
+            // Le demandeur parti avant la reponse n'attend plus rien ; la fenetre revient devant quand meme.
+            if let Err(parti) = (&c).write_all(format!("{} {}\n", REPONSE, ici).as_bytes()) {
+                drop(parti);
+            }
             if verbe && la_bas == ici {
                 devant();
             }
@@ -266,7 +272,9 @@ pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static)
         let Some(page) = ecouter(plage.page(k))? else { continue };
         if retenu != Some(k) {
             // Un support en lecture seule ne retient rien (`retenir`) : la fenetre s'ouvre quand meme.
-            let _ = retenir(inst, k);
+            if let Err(lecture_seule) = retenir(inst, k) {
+                drop(lecture_seule);
+            }
         }
         let verrou = repondre(verrou, ici.clone(), devant)?;
         return Ok(Instance::Tenue(Prise { verrou: Some(verrou), page, port: plage.page(k), creneau: Some(k) }));

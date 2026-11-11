@@ -218,7 +218,13 @@ fn resoudre(p: &Path) -> R<PathBuf> {
     let mut reste: Vec<std::ffi::OsString> = Vec::new();
     let mut tete = absolu;
     loop {
-        if let Ok(c) = std::fs::canonicalize(&tete) {
+        let c = match std::fs::canonicalize(&tete) {
+            Ok(c) => Some(c),
+            // Ce qui n'existe pas encore se resout par son parent.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(oserr(&e, &tete)),
+        };
+        if let Some(c) = c {
             let mut sortie = c;
             for r in reste.iter().rev() {
                 if r == ".." {
@@ -389,13 +395,15 @@ fn dossier_de(p: &Path) -> R<()> {
 }
 
 #[cfg(unix)]
-fn permissions(p: &Path, mode: u32) {
+fn permissions(p: &Path, mode: u32) -> R<()> {
     use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode));
+    std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode)).map_err(|e| oserr(&e, p))
 }
 
 #[cfg(not(unix))]
-fn permissions(_: &Path, _: u32) {}
+fn permissions(_: &Path, _: u32) -> R<()> {
+    Ok(())
+}
 
 fn aleas(n: usize) -> R<Vec<u8>> {
     let mut o = vec![0u8; n];
@@ -708,7 +716,7 @@ impl Coffre {
         }
         dossier_de(&p)?;
         if let Some(d) = p.parent() {
-            permissions(d, 0o700);
+            permissions(d, 0o700)?;
         }
         let cle = aleas(32)?;
         // 0600 des l'ouverture, et O_EXCL : pas d'instant ou la cle se lit.
@@ -905,7 +913,7 @@ impl Coffre {
         let p = self.chemin();
         dossier_de(&p)?;
         std::fs::write(&p, octets).map_err(|e| oserr(&e, &p))?;
-        permissions(&p, 0o600);
+        permissions(&p, 0o600)?;
         Ok(p)
     }
 

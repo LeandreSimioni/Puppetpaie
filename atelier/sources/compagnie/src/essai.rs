@@ -360,12 +360,16 @@ fn absolu(p: &Path) -> R<PathBuf> {
     let mut reste = Vec::new();
     let mut a = p.as_path();
     loop {
-        if let Ok(c) = a.canonicalize() {
-            let mut c = c;
-            for r in reste.iter().rev() {
-                c.push(r);
+        match a.canonicalize() {
+            Ok(mut c) => {
+                for r in reste.iter().rev() {
+                    c.push(r);
+                }
+                return Ok(c);
             }
-            return Ok(c);
+            // Ce qui n'existe pas encore se resout par son parent.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(socle::echec::du_disque(a, &e)),
         }
         match (a.file_name(), a.parent()) {
             (Some(n), Some(parent)) => {

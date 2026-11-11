@@ -260,7 +260,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             continue;
         };
         let chemin = relatif.split('/').fold(cible.to_path_buf(), |p, s| p.join(s));
-        if std::fs::symlink_metadata(&chemin).is_ok() {
+        if socle::fichiers::present(&chemin)? {
             resultat.incidents.push(format!("{} : il existe deja ici, il est garde tel quel.", relatif));
             continue;
         }
@@ -337,8 +337,8 @@ fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool>
     part.push(".part");
     let part = PathBuf::from(part);
     std::fs::write(&part, contenu).map_err(|e| panne(e, &part))?;
-    if std::fs::symlink_metadata(chemin).is_ok() {
-        let _ = std::fs::remove_file(&part);
+    if socle::fichiers::present(chemin)? {
+        socle::fichiers::effacer(&part)?;
         return Ok(false);
     }
     std::fs::rename(&part, chemin).map_err(|e| panne(e, chemin))?;

@@ -602,7 +602,10 @@ mod terminal_windows {
             invite.push_str(super::invite(q, super::INVITE_DU_TERMINAL));
             let (envoi, recu) = mpsc::channel();
             std::thread::spawn(move || {
-                let _ = envoi.send(rpassword::prompt_password(invite));
+                // Le delai passe, plus personne n'attend ce qui a ete tape.
+                if let Err(parti) = envoi.send(rpassword::prompt_password(invite)) {
+                    drop(parti);
+                }
             });
             match recu.recv_timeout(ATTENTE) {
                 Ok(Ok(m)) => Reponse::Mot(m.trim_end_matches(['\r', '\n']).to_string()),
@@ -636,7 +639,14 @@ mod terminal_unix {
 
     impl Tty {
         pub fn presente() -> bool {
-            ouvrir().is_ok()
+            match ouvrir() {
+                Ok(_) => true,
+                // Un processus sans terminal ne l'ouvre pas : c'est la reponse.
+                Err(sans) => {
+                    drop(sans);
+                    false
+                }
+            }
         }
     }
 
@@ -676,32 +686,34 @@ mod terminal_unix {
             if let Err(e) = stty(&tty, &["-echo"]) {
                 return sans_masque(e);
             }
-            let _ = writeln!(tty, "\n{}", q.titre);
+            let mut invite = format!("\n{}\n", q.titre);
             for l in &q.lignes {
-                let _ = writeln!(tty, "  {}", l);
+                invite.push_str(&format!("  {}\n", l));
             }
             if q.precedent_refuse {
-                let _ = writeln!(tty, "  Mot de passe refuse (essai {}).", q.essai);
+                invite.push_str(&format!("  Mot de passe refuse (essai {}).\n", q.essai));
             }
-            let _ = write!(tty, "{}", super::invite(q, super::INVITE_DU_TERMINAL));
-            let _ = tty.flush();
-            let (envoi, recu) = mpsc::channel();
-            match tty.try_clone() {
+            invite.push_str(super::invite(q, super::INVITE_DU_TERMINAL));
+            let posee = write!(tty, "{}", invite).and_then(|()| tty.flush()).and_then(|()| tty.try_clone());
+            let ligne = match posee {
                 Ok(l) => {
+                    let (envoi, recu) = mpsc::channel();
                     std::thread::spawn(move || {
                         let mut ligne = String::new();
                         let lu = BufReader::new(l).read_line(&mut ligne).map(|_| ligne).map_err(|e| e.to_string());
-                        let _ = envoi.send(lu);
+                        // Le delai passe, plus personne n'attend ce qui a ete tape.
+                        if let Err(parti) = envoi.send(lu) {
+                            drop(parti);
+                        }
                     });
+                    recu.recv_timeout(ATTENTE)
                 }
-                Err(e) => {
-                    let _ = envoi.send(Err(e.to_string()));
-                }
+                Err(e) => Ok(Err(e.to_string())),
+            };
+            // Rendre le terminal dans tous les cas : un terminal qui reste sans echo se dit.
+            if let Err(e) = stty(&tty, &[&avant]).and_then(|_| writeln!(tty)) {
+                return refus_du_terminal("Le terminal n'a pas été rendu tel qu'il était (sa saisie reste masquée) : refusé. Rien n'est parti.", e);
             }
-            let ligne = recu.recv_timeout(ATTENTE);
-            // Rendre le terminal dans tous les cas.
-            let _ = stty(&tty, &[&avant]);
-            let _ = writeln!(tty);
             match ligne {
                 Ok(Ok(l)) => Reponse::Mot(l.trim_end_matches(['\r', '\n']).to_string()),
                 Ok(Err(e)) => refus_du_terminal("Le terminal ne se lit pas : refuse. Rien n'est parti.", e),

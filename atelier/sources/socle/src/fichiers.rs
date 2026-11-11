@@ -298,6 +298,15 @@ pub fn sous<'a>(chemin: &'a Path, base: &Path) -> Option<&'a Path> {
     base.components().all(|b| reste.next() == Some(b)).then(|| reste.as_path())
 }
 
+/// `chemin` est-il sur le disque (un lien compte, sans le suivre) ? Le disque qui refuse de le dire se dit.
+pub fn present(chemin: &Path) -> R<bool> {
+    match std::fs::symlink_metadata(chemin) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(crate::echec::du_disque(chemin, &e)),
+    }
+}
+
 /// EFFACE `chemin`, un fichier ou un dossier entier : un chemin qui n'existe pas est deja efface ; le disque qui refuse
 /// se dit (`echec::du_disque`).
 pub fn effacer(chemin: &Path) -> R<()> {
@@ -310,6 +319,15 @@ pub fn effacer(chemin: &Path) -> R<()> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(crate::echec::du_disque(chemin, &e)),
+    }
+}
+
+/// UN RESTE QU'ON EFFACE APRES COUP, quand ce qu'il fallait faire est fait (ou a la sortie d'une portee, ou rien ne
+/// remonte) : un echec n'y defait rien ; il est note a sa naissance (`echec::noter_echec`, que les incidents lisent), et
+/// le reste s'efface la fois suivante.
+pub fn effacer_apres_coup(chemin: &Path) {
+    if let Err(note) = effacer(chemin) {
+        std::mem::drop(note);
     }
 }
 

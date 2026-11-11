@@ -207,7 +207,7 @@ pub fn version_lue(v: &str) -> String {
     let chiffres = |x: &str, n: usize| x.len() == n && x.bytes().all(|c| c.is_ascii_digit());
     if p.len() == 3 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) {
         format!("{}.{}.{}", p[2], p[1], p[0])
-    } else if p.len() == 4 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) && p[3].parse::<u32>().is_ok() {
+    } else if p.len() == 4 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) && !p[3].is_empty() && p[3].bytes().all(|c| c.is_ascii_digit()) {
         // La deuxieme version d'un meme jour (`AAAA.MM.JJ.N`, posee par le flux « Publier ») : « JJ.MM.AAAA (N) ».
         format!("{}.{}.{} ({})", p[2], p[1], p[0], p[3])
     } else {
@@ -533,7 +533,8 @@ pub fn cles_de_l_editeur() -> Vec<&'static str> {
     // `PUPPETPAIE_ATELIER_CLE_MAJ` (une cle publique Ed25519 en base64) : la mise a jour et le dossier portable s'y
     // jouent de bout en bout par `moteur route`. Le binaire livre n'en porte rien (`tests/atelier.rs`).
     #[cfg(feature = "atelier")]
-    if let Ok(c) = std::env::var("PUPPETPAIE_ATELIER_CLE_MAJ") {
+    if let Some(c) = std::env::var_os("PUPPETPAIE_ATELIER_CLE_MAJ") {
+        let c = c.to_string_lossy();
         if !c.trim().is_empty() {
             v.push(Box::leak(c.trim().to_string().into_boxed_str()));
         }
@@ -651,10 +652,17 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
         c.creation_flags(0x0800_0000);
     }
     let mut p = c.spawn().map_err(|e| socle::refus!("le nouveau programme ne se lance pas : {}", e))?;
-    if let Some(mut e) = p.stdin.take() {
-        let _ = e.write_all(br#"{"route": "configuration", "charge": {}}"#);
-    }
+    // Un programme qui n'a pas recu sa demande le dit par son issue : son refus de la lire passe d'abord.
+    let demande = match p.stdin.take() {
+        Some(mut e) => e.write_all(br#"{"route": "configuration", "charge": {}}"#),
+        None => Err(std::io::Error::other("son entree n'est pas ouverte")),
+    };
     let s = p.wait_with_output().map_err(|e| refus(e.to_string()))?;
+    if s.status.success() {
+        if let Err(e) = demande {
+            return Err(socle::refus!("il n'a pas reçu sa demande ({})", e));
+        }
+    }
     let sortie = String::from_utf8_lossy(&s.stdout);
     let erreurs = || -> String { String::from_utf8_lossy(&s.stderr).trim().chars().rev().take(800).collect::<String>().chars().rev().collect() };
     // L'issue est le code de sortie de `moteur route` (0 : la route a repondu ; un refus sort en 1, `service::commande`) :
@@ -753,7 +761,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     suivi.poser(Etape::Preparation, Some(version), |_| {});
     let au_controle = |e: Echec| (REFUSEE_AU_CONTROLE, e);
     let cible = dossier_maj(inst).join(version);
-    let _ = std::fs::remove_dir_all(&cible);
+    socle::fichiers::effacer(&cible).map_err(au_controle)?;
     let neuf = logiciel_de(&cible);
     std::fs::create_dir_all(&neuf).map_err(|e| au_controle(refus(e.to_string())))?;
     for (_, octets) in &prises {
@@ -765,17 +773,19 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     // Le programme de chaque systeme doit y etre, meme sans compagnie a controler.
     if let Some(s) = systemes.iter().find(|s| !programme_de(&neuf, s, "puppetpaie").is_file()) {
-        let _ = std::fs::remove_dir_all(&cible);
-        return Err(au_controle(socle::echec::refus_avec(
-            format!("le programme de {} manque dans l'archive", s),
-            socle::echec::Lieu { chemin: Some(programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().into_owned()), ..Default::default() },
+        return Err(au_controle(socle::fichiers::effacer_apres(
+            socle::echec::refus_avec(
+                format!("le programme de {} manque dans l'archive", s),
+                socle::echec::Lieu { chemin: Some(programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().into_owned()), ..Default::default() },
+            ),
+            &cible,
         )));
     }
     // Le programme neuf lit la configuration de chaque compagnie de l'installation (sans compagnie, il n'y a rien a lire).
     for racine in compagnies_de(inst).map_err(au_controle)? {
         if let Err(p) = controler(&neuf, &racine) {
-            let _ = std::fs::remove_dir_all(&cible);
-            return Err(au_controle(p.reformuler(|m| format!("le nouveau code ne demarre pas sur {} : {}", racine.display(), m))));
+            let p = p.reformuler(|m| format!("le nouveau code ne demarre pas sur {} : {}", racine.display(), m));
+            return Err(au_controle(socle::fichiers::effacer_apres(p, &cible)));
         }
     }
     let prete = Prete {
@@ -1016,13 +1026,12 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
     let essai = || -> R<()> {
         let octets = archive_verifiee(depot, f.signee(), cles, &|_, _| {}).map_err(|(_, e)| e)?;
         let part = maj.join(format!("{}.part", FICTIVES_PRETES));
-        let _ = std::fs::remove_dir_all(&part);
+        socle::fichiers::effacer(&part)?;
         deballer_les_fictives(&octets, &part)?;
         if empreinte_retenue(&part.join(crate::installation::DOSSIER_FICTIVES))?.as_deref() != Some(empreinte) {
-            let _ = std::fs::remove_dir_all(&part);
-            return Err(refus("l'archive des fictives ne dit pas l'empreinte annoncee"));
+            return Err(socle::fichiers::effacer_apres(refus("l'archive des fictives ne dit pas l'empreinte annoncee"), &part));
         }
-        let _ = std::fs::remove_dir_all(&pretes);
+        socle::fichiers::effacer(&pretes)?;
         std::fs::rename(&part, &pretes).map_err(|e| refus(e.to_string()))
     };
     Some(match essai() {
@@ -1066,8 +1075,9 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     };
     let origines = poste.join(".origine");
     let avant = dossier_maj(inst).join("fictives-avant");
-    let _ = std::fs::remove_dir_all(&avant);
-    let _ = std::fs::create_dir_all(&poste);
+    if let Err(e) = socle::fichiers::effacer(&avant).and_then(|()| std::fs::create_dir_all(&poste).map_err(|e| socle::echec::du_disque(&poste, &e))) {
+        return Some(format!("Compagnies fictives non posees : {}", e.phrase));
+    }
     let empreinte_de = |a: &Livraison, nom: &str| a.posees.get(nom).cloned();
     // Un dossier est a la livraison si sa marque dit l'empreinte retenue ; une marque qui ne se lit pas se dit, et le
     // dossier reste tel quel.
@@ -1087,8 +1097,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
             std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
             std::fs::rename(&d, avant.join(nom)).map_err(|e| socle::echec::du_disque(&d, &e))?;
         }
-        let _ = std::fs::remove_dir_all(origines.join(nom));
-        Ok(())
+        socle::fichiers::effacer(&origines.join(nom))
     };
     let mut posees = std::collections::BTreeMap::new();
     let mut dit = Vec::new();
@@ -1168,9 +1177,14 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
         Err(e) => dit.push(format!("les fichiers de la livraison ne se lisent pas ({})", e)),
     }
     let retenue = if manque { ancienne.as_ref().and_then(|a| a.empreinte.clone()) } else { Some(empreinte.clone()) };
-    let _ = ecrire_json(&poste.join(LIVRAISON), &Livraison { empreinte: retenue, posees: posees.clone() });
-    let _ = std::fs::remove_dir_all(&avant);
-    let _ = std::fs::remove_dir_all(&pretes);
+    if let Err(e) = ecrire_json(&poste.join(LIVRAISON), &Livraison { empreinte: retenue, posees: posees.clone() }) {
+        dit.push(format!("la livraison retenue ne s'ecrit pas ({}) : le lancement suivant la reposera", e.phrase));
+    }
+    for reste in [&avant, &pretes] {
+        if let Err(e) = socle::fichiers::effacer(reste) {
+            dit.push(format!("{} ne s'efface pas ({})", reste.display(), e.phrase));
+        }
+    }
     Some(format!(
         "Compagnies fictives : livraison {} posee ({}){}.",
         &empreinte[..empreinte.len().min(12)],
@@ -1660,7 +1674,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
     let version = d.version.clone();
     let neuf = maj.join(&version).join("logiciel");
     let avant = code.join(".avant");
-    let _ = std::fs::remove_dir_all(&avant);
+    socle::fichiers::effacer(&avant)?;
     std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
     // Les entrees d'un dossier, par nom, sauf ce que la bascule ne touche pas.
     let entrees = |d: &Path| -> R<Vec<std::ffi::OsString>> {
@@ -1700,21 +1714,30 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
         // Tout revient : ce qui est arrive repart, ce qui est parti revient. Ce qui est arrive se suit par son nom, pas par
         // difference avec ce qui est parti (un fichier de la version neuve qui porte le nom d'un fichier de l'ancienne --
         // VERSION, donnees -- resterait en place, et l'ancien ne reviendrait pas : un melange des deux).
+        // Ce qui ne revient pas se dit avec l'echec : l'installation est alors melangee.
+        let mut pas_revenus = Vec::new();
         for nom in &arrives {
-            let _ = deplacer(&code.join(nom), &neuf.join(nom));
+            if let Err(x) = deplacer(&code.join(nom), &neuf.join(nom)) {
+                pas_revenus.push(format!("{} ({})", nom.to_string_lossy(), x));
+            }
         }
         for nom in &deplaces {
             if avant.join(nom).exists() && !code.join(nom).exists() {
-                let _ = deplacer(&avant.join(nom), &code.join(nom));
+                if let Err(x) = deplacer(&avant.join(nom), &code.join(nom)) {
+                    pas_revenus.push(format!("{} ({})", nom.to_string_lossy(), x));
+                }
             }
+        }
+        if !pas_revenus.is_empty() {
+            return Err(e.reformuler(|m| format!("la bascule a echoue, et l'ancienne version n'est pas revenue entiere ({}) : {}", pas_revenus.join(", "), m)));
         }
         return Err(e.reformuler(|m| format!("la bascule a echoue, l'ancienne version reste en place : {}", m)));
     }
     let quand = MinuteEcrite::maintenant();
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand, notes: d.notes, calcul: d.calcul, vue: false })?;
-    let _ = std::fs::remove_file(maj.join(PRETE));
-    let _ = std::fs::remove_dir_all(maj.join(&version));
+    socle::fichiers::effacer_apres_coup(&maj.join(PRETE));
+    socle::fichiers::effacer_apres_coup(&maj.join(&version));
     Ok(Basculee { version, avant: avant.display().to_string(), quand })
 }
 
@@ -1729,7 +1752,7 @@ pub fn revenir(inst: &Path) -> R<String> {
     // Ce qui part est DEPLACE dans `.apres/`, puis efface si possible : sous Windows, le programme qui lance `maj
     // --revenir` (`puppetpaie.exe`) ne peut pas s'effacer pendant qu'il tourne, mais il peut se deplacer.
     let apres = code.join(".apres");
-    let _ = std::fs::remove_dir_all(&apres);
+    socle::fichiers::effacer(&apres)?;
     std::fs::create_dir_all(&apres).map_err(|e| refus(e.to_string()))?;
     for e in std::fs::read_dir(code).map_err(|e| socle::echec::du_disque(code, &e))? {
         let e = e.map_err(|e| socle::echec::du_disque(code, &e))?;
@@ -1743,9 +1766,10 @@ pub fn revenir(inst: &Path) -> R<String> {
         let e = e.map_err(|e| socle::echec::du_disque(&avant, &e))?;
         deplacer(&e.path(), &code.join(e.file_name())).map_err(|e| refus(e.to_string()))?;
     }
-    let _ = std::fs::remove_dir(&avant);
-    let _ = std::fs::remove_dir_all(&apres);
-    let _ = std::fs::remove_file(dossier_maj(inst).join(APPLIQUEE));
+    // `.avant/` est vide a present ; `.apres/` porte, sous Windows, le programme qui tourne : il s'efface la fois suivante.
+    socle::fichiers::effacer_apres_coup(&avant);
+    socle::fichiers::effacer_apres_coup(&apres);
+    socle::fichiers::effacer_apres_coup(&dossier_maj(inst).join(APPLIQUEE));
     Ok(version_avant)
 }
 
@@ -1843,9 +1867,14 @@ pub fn chercher_tant_qu_il_tourne(inst: &Path, cles: &[&str], suivi: &Recherche,
 /// une ligne datee par evenement.
 pub fn noter(inst: &Path, t: &str) {
     let d = dossier_maj(inst);
-    let _ = std::fs::create_dir_all(&d);
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("journal.log")) {
-        let _ = writeln!(f, "{} {}", MinuteEcrite::maintenant(), t);
+    let chemin = d.join("journal.log");
+    let ecrit = std::fs::create_dir_all(&d)
+        .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&chemin))
+        .and_then(|mut f| writeln!(f, "{} {}", MinuteEcrite::maintenant(), t));
+    // Le journal de la mise a jour n'a personne a qui dire qu'il ne s'ecrit pas : son echec est note a sa naissance
+    // (`echec::noter_echec`, que les incidents lisent).
+    if let Err(e) = ecrit {
+        std::mem::drop(socle::echec::du_disque(&chemin, &e));
     }
 }
 
@@ -1868,7 +1897,7 @@ pub fn lancer_relais(inst: &Path, version: &str) -> R<bool> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&relais, std::fs::Permissions::from_mode(0o755));
+        std::fs::set_permissions(&relais, std::fs::Permissions::from_mode(0o755)).map_err(|e| socle::echec::du_disque(&relais, &e))?;
     }
     let mut c = std::process::Command::new(&relais);
     c.arg("maj-relais").arg("--installation").arg(inst).arg("--code").arg(logiciel_de(inst)).arg("--attendre").arg(std::process::id().to_string());
@@ -1961,7 +1990,9 @@ pub fn relais(args: &[String]) -> i32 {
             Err(e) => journal(&format!("Mise a jour non appliquee : {}", e.phrase)),
         }
     }
-    let _ = std::process::Command::new(programme(&code, "puppetpaie")).spawn();
+    if let Err(e) = std::process::Command::new(programme(&code, "puppetpaie")).spawn() {
+        noter(&inst, &format!("La fenetre ne se relance pas apres la mise a jour ({}) : la rouvrir a la main.", e));
+    }
     0
 }
 

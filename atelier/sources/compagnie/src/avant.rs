@@ -34,7 +34,7 @@ pub fn sauver_avant(chemin: &Path) -> R<()> {
     anciennes.sort();
     if anciennes.len() > GARDER_COPIES {
         for vieille in &anciennes[..anciennes.len() - GARDER_COPIES] {
-            let _ = std::fs::remove_file(dossier.join(vieille));
+            socle::fichiers::effacer(&dossier.join(vieille))?;
         }
     }
     Ok(())

@@ -49,11 +49,15 @@ pub fn fixer_le_code() {
         // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
         Some(pose) => candidats.push(PathBuf::from(pose)),
         None => {
-            if let Ok(exe) = std::env::current_exe() {
-                for a in exe.ancestors().skip(1) {
-                    candidats.push(a.join("donnees"));
-                    candidats.push(a.join("logiciel").join("donnees"));
+            match std::env::current_exe() {
+                Ok(exe) => {
+                    for a in exe.ancestors().skip(1) {
+                        candidats.push(a.join("donnees"));
+                        candidats.push(a.join("logiciel").join("donnees"));
+                    }
                 }
+                // Un programme qui ne sait pas ou il est n'a pas de voisins a proposer : restent les autres candidats.
+                Err(sans) => drop(sans),
             }
             candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
@@ -63,14 +67,17 @@ pub fn fixer_le_code() {
             continue;
         }
         // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
-        if let Ok(abs) = c.canonicalize() {
-            // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
-            let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
-                Some(sans) => PathBuf::from(sans),
-                None => abs.clone(),
-            };
-            std::env::set_var("PUPPETPAIE_CODE", abs);
-            return;
+        match c.canonicalize() {
+            Ok(abs) => {
+                // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
+                let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
+                    Some(sans) => PathBuf::from(sans),
+                    None => abs.clone(),
+                };
+                std::env::set_var("PUPPETPAIE_CODE", abs);
+                return;
+            }
+            Err(pas_lui) => drop(pas_lui),
         }
     }
 }

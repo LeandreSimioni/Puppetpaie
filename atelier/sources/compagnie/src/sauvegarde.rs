@@ -333,7 +333,7 @@ fn parcourir(racine: &Path, dossier: &Path, sortie: &mut Vec<PathBuf>) -> Result
         };
         if genre.is_dir() {
             parcourir(racine, &chemin, sortie)?;
-        } else if let Ok(rel) = chemin.strip_prefix(racine) {
+        } else if let Some(rel) = socle::fichiers::sous(&chemin, racine) {
             sortie.push(rel.to_path_buf());
         }
     }
