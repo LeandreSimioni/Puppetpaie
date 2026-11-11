@@ -418,7 +418,11 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             e.mois = a.mois;
             e.flux = a.flux.clone();
             // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise.
-            let quand = a.quand.unwrap_or_else(InstantEcrit::maintenant).into();
+            let quand = match a.quand {
+                Some(q) => q,
+                None => InstantEcrit::maintenant(),
+            }
+            .into();
             journal::noter(&ctx.racine, Ligne::Dpae(e), None, journal::Datation::Lue { quand, origine: format!("retours/dpae/{}", a.piece) })?;
         }
     }

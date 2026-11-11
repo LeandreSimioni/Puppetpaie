@@ -155,15 +155,18 @@ impl Norme {
     /// (`droit::natures::ListeDeLaNorme::depuis`, `jusqu_a`), comparees dans l'ordre des versions de la donnee.
     pub fn a_dans_sa_liste<T: droit::natures::ListeDeLaNorme>(&self, v: T) -> R<bool> {
         let ici = Norme::rang(&self.version)?;
-        let apres_le_debut = match v.depuis() {
-            Some(d) => Norme::rang(d)? <= ici,
-            None => true,
-        };
-        let avant_la_fin = match v.jusqu_a() {
-            Some(j) => ici <= Norme::rang(j)?,
-            None => true,
-        };
-        Ok(apres_le_debut && avant_la_fin)
+        // Une borne que le code ne dit pas ne le borne pas.
+        if let Some(d) = v.depuis() {
+            if Norme::rang(d)? > ici {
+                return Ok(false);
+            }
+        }
+        if let Some(j) = v.jusqu_a() {
+            if ici > Norme::rang(j)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// La table des usages de cette version (un fichier de `logiciel/donnees/`).

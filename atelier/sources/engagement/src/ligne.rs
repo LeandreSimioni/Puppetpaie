@@ -49,7 +49,7 @@ impl Chiffre {
     /// Ni zero, ni un texte vide.
     pub fn vrai(&self) -> bool {
         match self {
-            Chiffre::Nombre(n) => n.decimal().is_ok_and(|d| !d.is_zero()),
+            Chiffre::Nombre(n) => !n.est_nul(),
             Chiffre::Texte(s) => !s.is_empty(),
         }
     }

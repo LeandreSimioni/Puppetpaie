@@ -210,11 +210,14 @@ pub struct Assemble {
 fn entier_dit(v: &Option<Chiffre>, nom: &str) -> R<Option<i64>> {
     match v {
         None => Ok(None),
-        Some(Chiffre::Nombre(n)) => n
-            .as_i64()
-            .or_else(|| n.decimal().ok().filter(|d| d.fract().is_zero()).and_then(|d| rust_decimal::prelude::ToPrimitive::to_i64(&d)))
-            .map(Some)
-            .ok_or_else(|| socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
+        Some(Chiffre::Nombre(n)) => match n.as_i64() {
+            Some(i) => Ok(Some(i)),
+            None => Some(n.decimal()?)
+                .filter(|d| d.fract().is_zero())
+                .and_then(|d| rust_decimal::prelude::ToPrimitive::to_i64(&d))
+                .map(Some)
+                .ok_or_else(|| socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
+        },
         Some(autre) => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, socle::date::repr_texte(&autre.en_texte()))),
     }
 }
@@ -658,9 +661,12 @@ impl Engagement {
         }
     }
 
-    /// Les mois AAAA-MM que couvre le contrat, du premier au dernier.
+    /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
     pub fn mois_du_contrat(&self) -> Vec<Mois> {
-        Mois::entre(&self.debut, &self.fin.unwrap_or(self.fin_mois()))
+        match self.fin {
+            Some(fin) => Mois::entre(&self.debut, &fin),
+            None => Mois::entre(&self.debut, &self.fin_mois()),
+        }
     }
 
     // ------------------------------------------------------------ les lieux

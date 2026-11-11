@@ -317,7 +317,10 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut lignes = Vec::new();
     for l in journal {
         // Un acte porte le mois qu'il declare ; un acte annuel se range au mois ou il a eu lieu.
-        let m = l.mois.unwrap_or_else(|| l.quand.jour().mois_civil());
+        let m = match l.mois {
+            Some(m) => m,
+            None => l.quand.jour().mois_civil(),
+        };
         if !p.contient(m) {
             continue;
         }

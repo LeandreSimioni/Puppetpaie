@@ -210,11 +210,15 @@ pub fn telecharger(source: &dyn Source, url: &str) -> R<Vec<u8>> {
     for n in 0..3u64 {
         match source.lire(url, 300) {
             Ok(o) => return Ok(o),
-            Err(_) => source.pause(2 * (n + 1)),
+            Err(e) => {
+                eprintln!("essai {} : {}", n + 1, e.en_lignes());
+                source.pause(2 * (n + 1));
+            }
         }
     }
     let derniere = source.lire(url, 300);
-    if derniere.is_err() {
+    if let Err(e) = &derniere {
+        eprintln!("dernier essai : {}", e.en_lignes());
         source.pause(8);
     }
     derniere

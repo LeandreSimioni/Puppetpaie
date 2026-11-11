@@ -531,8 +531,8 @@ async function boiteArret(ou) {
     let r;
     try {
       r = await api("arret-obligations", {
-        motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut"), fin: val("ar-fin"), salarie: p.salarie, ...contratAEnvoyer(trouve),
-        date_accident: val("ar-accident"), connaissance_accident: tapeDans(caseConnu), connaissance_heure: tapeDans(caseHeure),
+        motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut") || null, fin: val("ar-fin") || null, salarie: p.salarie, ...contratAEnvoyer(trouve),
+        date_accident: val("ar-accident") || null, connaissance_accident: tapeDans(caseConnu) || null, connaissance_heure: tapeDans(caseHeure),
       });
     } catch (e) { ligne.textContent = ""; return; }
     const os = r.obligations || [];

@@ -489,10 +489,10 @@ pub(crate) fn apercu_lu(
             };
             let fiche = proposee::de("entreprise", &ctx.entreprise)?;
             // L'entreprise ne se lit que dans les DSN : sans DSN, rien a quoi comparer la fiche.
-            let ec = match lecture.dernier_mois {
-                Some(m) => ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?,
-                None => Vec::new(),
-            };
+            let mut ec = Vec::new();
+            if let Some(m) = lecture.dernier_mois {
+                ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?;
+            }
             let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer("entreprise", &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(lecture.dernier_mois));

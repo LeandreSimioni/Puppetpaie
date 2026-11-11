@@ -516,7 +516,7 @@ document.addEventListener("click", async (ev) => {
   try {
     const charge = { salarie: b.dataset.natureSalarie, nature };
     rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      charge[c.dataset.natureChamp] = c.value;
+      charge[c.dataset.natureChamp] = c.value || null;
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);

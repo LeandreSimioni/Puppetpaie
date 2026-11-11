@@ -345,7 +345,7 @@ impl FicheDeSuivi {
 
 /// CE QUE LA COMPAGNIE A DIT D'UN ARRET : sa fiche de suivi, ou ce que la boite de saisie tape avant qu'il s'ecrive
 /// (`arret_obligations`). Rien de dit : tout est vide.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct CeQueDitLaCompagnie<'a> {
     connaissance_arret: Option<&'a ConnaissanceSaisie>,
     connaissance_accident: Option<&'a ConnaissanceSaisie>,
@@ -354,6 +354,11 @@ struct CeQueDitLaCompagnie<'a> {
 }
 
 impl CeQueDitLaCompagnie<'_> {
+    /// La compagnie n'a rien dit de l'arret.
+    fn rien() -> CeQueDitLaCompagnie<'static> {
+        CeQueDitLaCompagnie { connaissance_arret: None, connaissance_accident: None, accident_declare: None, attestation_salaire: None }
+    }
+
     fn connaissance(&self, de: DeQuoi) -> Option<&ConnaissanceSaisie> {
         match de {
             DeQuoi::Arret => self.connaissance_arret,
@@ -397,7 +402,10 @@ impl Suivi {
 
     /// La fiche de l'arret, si la compagnie en a dit quelque chose.
     fn de(&self, salarie: &str, dernier_jour: Jour) -> CeQueDitLaCompagnie<'_> {
-        self.fiches.iter().find(|f| f.salarie == salarie && f.dernier_jour_travaille == dernier_jour).map(FicheDeSuivi::dit).unwrap_or_default()
+        match self.fiches.iter().find(|f| f.salarie == salarie && f.dernier_jour_travaille == dernier_jour) {
+            Some(f) => f.dit(),
+            None => CeQueDitLaCompagnie::rien(),
+        }
     }
 
     /// Change la fiche de l'arret (`changer`), puis ecrit le fichier ; une fiche qui ne dit plus rien s'en va.
@@ -1465,26 +1473,19 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
 /// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou se
 /// tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure). Un champ
-/// absent n'est pas encore tape.
+/// absent ou nul n'est pas encore tape ; un jour tape s'ecrit AAAA-MM-JJ.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretObligations {
     motif: Option<String>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     dernier_jour: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     debut: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     fin: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     reprise: Option<Jour>,
     salarie: Option<String>,
     contrat: Option<String>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     date_accident: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     connaissance_arret: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     connaissance_accident: Option<Jour>,
     connaissance_heure: Option<String>,
 }
@@ -1557,7 +1558,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     let heure_accident = tape(&c.connaissance_heure).filter(|h| lire_heure(h).is_some());
     let jour_accident = c.connaissance_accident.or_else(|| heure_accident.and(c.date_accident));
     let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None), connue(jour_accident, heure_accident));
-    let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::default() };
+    let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::rien() };
     let obligations = obligations_de(ctx, &a, &[], dit, ctx.aujourdhui)?;
     // Ce que la boite d'un arret pas encore ecrit dit de ce qu'il fera naitre, en une ligne.
     let suites: Vec<String> = obligations

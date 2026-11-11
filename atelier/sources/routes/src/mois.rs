@@ -1488,12 +1488,14 @@ fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois
         return Ok(Vec::new());
     }
     let nat = e.nature_lue()?;
-    let repris = match debut {
-        Some(d) => engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_deref())?,
-        None => false,
-    };
-    if nat.modele_contrat().is_none() || repris {
+    if nat.modele_contrat().is_none() {
         return Ok(Vec::new());
+    }
+    // Un contrat repris d'un ancien logiciel (sa date de debut dite) ne se refait pas.
+    if let Some(d) = debut {
+        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_deref())? {
+            return Ok(Vec::new());
+        }
     }
     let mut v = vec!["periode_essai_jours"];
     if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {

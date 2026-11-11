@@ -541,7 +541,11 @@ fn grouper(lignes: &[LigneLivre], regroupement: &str) -> R<Vec<Groupe>> {
         v.sort_by_cached_key(|l| dedans(l));
         let refs: Vec<&LigneLivre> = v.iter().collect();
         let totaux = totaliser_lignes(&refs);
-        let libelle = m.map(libelle_mois).unwrap_or(k);
+        // Groupe par mois : il se nomme par son mois ; sinon par sa cle (le salarie, le spectacle).
+        let libelle = match m {
+            Some(m) => libelle_mois(m),
+            None => k,
+        };
         out.push(Groupe { libelle, lignes: v, totaux });
     }
     Ok(out)

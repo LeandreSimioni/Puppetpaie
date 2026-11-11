@@ -838,7 +838,10 @@ fn avenant_neuf(ctx: &Contexte, v: &AvenantVoulu) -> R<UnAvenant> {
         )));
     }
     // La date d'effet dite, sinon celle que l'apercu propose (la premiere modification).
-    let effet = v.effet.unwrap_or(apercu.effet);
+    let effet = match v.effet {
+        Some(dite) => dite,
+        None => apercu.effet,
+    };
     Ok(UnAvenant {
         salarie: apercu.salarie,
         debut: apercu.debut,
@@ -1270,8 +1273,11 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     };
     let effet = match (mois_effet, siens.as_ref()) {
         (Some(me), Some(v)) => {
-            let dite = v.objet().vue(me)?.and_then(|x| x.date_modification);
-            dite.unwrap_or(me.premier_jour())
+            // La date de la modification dite, sinon le premier jour du mois ou elle prend effet.
+            match v.objet().vue(me)?.and_then(|x| x.date_modification) {
+                Some(dite) => dite,
+                None => me.premier_jour(),
+            }
         }
         _ => c.debut,
     };

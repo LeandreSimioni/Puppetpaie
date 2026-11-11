@@ -564,7 +564,7 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
         &["annee", "salarie", "NIR", "date de naissance", "adresse", "masse"],
         r.salaries
             .iter()
-            .map(|s| vec![s.annee.clone(), s.salarie.clone(), cellule(&s.nir), s.date_naissance.map(|j| j.iso()).unwrap_or_default(), s.adresse.clone(), virgule(&s.masse)])
+            .map(|s| vec![s.annee.clone(), s.salarie.clone(), cellule(&s.nir), s.date_naissance.iter().map(Jour::iso).collect(), s.adresse.clone(), virgule(&s.masse)])
             .collect(),
     )?);
     for (nom, c) in [("CASC-SVP_courriel-audiens.txt", &r.courriel_audiens), ("CASC-SVP_courriel-casc.txt", &r.courriel_casc)] {
@@ -677,7 +677,8 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             }
         };
         let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir));
-        let jj = |j: &Option<Jour>| -> String { j.map(|j| j.jj_mm_aaaa()).unwrap_or_default() };
+        // Une case vide du fichier quand la date n'est pas dite.
+        let jj = |j: &Option<Jour>| -> String { j.iter().map(Jour::jj_mm_aaaa).collect() };
         let textes: Vec<(u16, String)> = vec![
             (0, "CASC-SVP".to_string()),
             (1, siret.clone()),

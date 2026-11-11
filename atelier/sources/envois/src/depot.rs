@@ -89,8 +89,9 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
     let prefixe = b"S20.G00.05.002,'";
     let mut contenu = octets.to_vec();
     if let Some((i, _)) = premier(octets, prefixe, deux_chiffres) {
-        let lu = std::str::from_utf8(&octets[i + prefixe.len()..i + prefixe.len() + 2]).ok().and_then(TypeDeLaDeclaration::du_code);
-        let type_ar = match lu {
+        // Deux chiffres (`deux_chiffres`) : de l'ASCII.
+        let code = String::from_utf8_lossy(&octets[i + prefixe.len()..i + prefixe.len() + 2]);
+        let type_ar = match TypeDeLaDeclaration::du_code(&code) {
             Some(TypeDeLaDeclaration::Normale) => Some(TypeDeLaDeclaration::AnnuleEtRemplace),
             Some(TypeDeLaDeclaration::NormaleSansIndividu) => Some(TypeDeLaDeclaration::AnnuleEtRemplaceSansIndividu),
             _ => None,

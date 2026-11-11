@@ -220,9 +220,7 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 pub(crate) struct ChargeNature {
     pub(crate) salarie: String,
     pub(crate) nature: droit::natures::NatureDeContrat,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     pub(crate) debut: Option<Jour>,
-    #[serde(default, deserialize_with = "Jour::ou_vide")]
     pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<String>,
     pub(crate) salaire: Option<MontantSaisi>,
@@ -377,7 +375,10 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     // paient) : un contrat paye au mois qui commence sans elle se refuse (`engagement::engagements`), et ce qu'elle
     // ouvre (les contrats de prevoyance et de sante des permanents) se demande alors dans « Pour demarrer », comme pour
     // toute compagnie qui la coche.
-    let depuis = debut_dit.unwrap_or(du);
+    let depuis = match debut_dit {
+        Some(debut) => debut,
+        None => du,
+    };
     let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;

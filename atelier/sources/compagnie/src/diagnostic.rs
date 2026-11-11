@@ -237,11 +237,17 @@ fn motif_de(nom: &str) -> Option<String> {
     Some(s)
 }
 
-/// La date et la taille d'un fichier, pour savoir s'il a change ; `None` quand le systeme ne les donne pas (absent : il
-/// se relira).
+/// La date et la taille d'un fichier, pour savoir s'il a change ; `None` quand le fichier est absent, ou que le systeme
+/// ne les donne pas (le refus du disque se note) : il se relira.
 fn signature(p: &Path) -> Option<(SystemTime, u64)> {
-    let m = std::fs::metadata(p).ok()?;
-    Some((m.modified().ok()?, m.len()))
+    match std::fs::metadata(p).and_then(|m| Ok((m.modified()?, m.len()))) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            socle::echec::noter_echec(Some(socle::echec::Classe::du_disque(&e)), &format!("{} : {}", p.display(), e));
+            None
+        }
+    }
 }
 
 /// Les textes qu'une fiche datee a portes, champ par champ (`droit::fiche::VoirListe`) : tout ce qui peut nommer une

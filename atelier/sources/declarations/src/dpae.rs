@@ -552,7 +552,10 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: MinuteEcrite) -> R<Vec<u8>> {
     let jour = horodatage.jour();
     let s = horodatage.naif().seconde_du_jour();
     let (j, mo, h, m) = (jour.jour, jour.mois, (s / 3_600) as u32, (s / 60 % 60) as u32);
-    let a = u32::try_from(jour.an).ok().filter(|a| (1980..2108).contains(a)).ok_or_else(|| socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)))?;
+    if !(1980..2108).contains(&jour.an) {
+        return Err(socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)));
+    }
+    let a = jour.an as u32;
     let (date, heure) = (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5));
     let mut crc = Crc::new();
     crc.update(donnees);

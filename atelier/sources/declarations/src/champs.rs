@@ -1727,16 +1727,17 @@ fn faute_des_jours(v: &Valeur) -> Option<String> {
     use droit::conges::JoursTravailles;
     use droit::fiche::JourDeLaSemaine;
     let illisible = JoursTravailles::case_illisible("le salarie");
-    let lus: Option<Vec<JourDeLaSemaine>> = match v {
-        Valeur::Mots(mots) => mots
+    let faute = match v {
+        Valeur::Mots(mots) => match mots
             .iter()
-            .map(|m| JourDeLaSemaine::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(m)).ok())
-            .collect(),
-        _ => None,
-    };
-    let faute = match lus {
-        Some(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(|e| e.phrase),
-        None => Some(illisible),
+            .map(|m| JourDeLaSemaine::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(m)))
+            .collect::<Result<Vec<JourDeLaSemaine>, _>>()
+        {
+            Ok(jours) => JoursTravailles::de_la_case(&Some(jours), "le salarie").err().map(|e| e.phrase),
+            // Un mot qui n'est pas un jour de la semaine : la case ne se lit pas.
+            Err(serde::de::value::Error { .. }) => Some(illisible),
+        },
+        _ => Some(illisible),
     };
     faute.map(|e| match e.split_once(" : ") {
         Some((_, m)) => m.to_string(),

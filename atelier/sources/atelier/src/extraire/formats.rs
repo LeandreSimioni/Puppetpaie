@@ -320,7 +320,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
         let (longueur, valeurs) = match lon {
             Some(l) => {
                 let n = |i: usize| l[i].parse::<i64>().map_err(|e| refus!("{} : longueur illisible {} ({})", rid, &l[0], e));
-                let apres = l.get(0).map_or(corps.len(), |m| m.end());
+                let apres = l.get_match().end();
                 (Some([n(1)?, n(2)?]), liste_de(valeurs_du_cahier(&corps[apres..]), rid, notes))
             }
             None => (None, None),
