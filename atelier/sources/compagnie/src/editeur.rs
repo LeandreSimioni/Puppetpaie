@@ -116,43 +116,15 @@ pub struct Reponses {
     pub retours: Vec<ReponseDuServeur>,
 }
 
-/// La reponse a un retour : vide tant que l'editeur n'a pas repondu.
+/// La reponse a un retour : vide tant que l'editeur n'a pas repondu (`repondu_le` : `""` tant qu'il n'a pas repondu,
+/// sinon la minute UTC de la reponse ; `socle::paris::ecrit::minute_utc::vide_ou`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReponseDuServeur {
     pub numero: String,
     pub reponse: String,
-    pub repondu_le: HeureDeReponse,
-}
-
-/// L'HEURE D'UNE REPONSE, telle que le serveur du filet l'ecrit (`infra/filet/filet_serveur.py`) : `""` tant que
-/// l'editeur n'a pas repondu, sinon une minute UTC. Le `""` est un contrat avec les versions installees, qui le lisent en
-/// texte strict : le serveur ne change pas, et il se lit ici, a la porte, comme le cas qu'il nomme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeureDeReponse {
-    /// `""` : pas de reponse.
-    Aucune,
-    Le(socle::paris::MinuteUtc),
-}
-
-impl HeureDeReponse {
-    /// La minute de la reponse ; `None` : pas de reponse.
-    pub fn minute(self) -> Option<socle::paris::MinuteUtc> {
-        match self {
-            HeureDeReponse::Aucune => None,
-            HeureDeReponse::Le(m) => Some(m),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for HeureDeReponse {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeReponse, D::Error> {
-        match socle::forme::Remplie::<socle::paris::MinuteUtc>::deserialize(d)? {
-            socle::forme::Remplie::Vide => Ok(HeureDeReponse::Aucune),
-            socle::forme::Remplie::Dite(m) => Ok(HeureDeReponse::Le(m)),
-            socle::forme::Remplie::Nulle => Err(serde::de::Error::invalid_type(serde::de::Unexpected::Unit, &"a string")),
-        }
-    }
+    #[serde(deserialize_with = "socle::paris::ecrit::minute_utc::vide_ou")]
+    pub repondu_le: Option<socle::paris::Moment>,
 }
 
 /// `POST /paies` : ce que le serveur a recu.

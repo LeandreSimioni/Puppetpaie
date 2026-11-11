@@ -283,7 +283,8 @@ pub struct Signalement {
     pub ticket: Option<String>,
     pub ticket_numero: Option<i64>,
     pub reponse: Option<String>,
-    pub repondu_le: Option<socle::paris::MinuteUtc>,
+    #[serde(default, with = "socle::paris::ecrit::minute_utc::option")]
+    pub repondu_le: Option<socle::paris::Moment>,
     pub lu: Option<bool>,
 }
 
@@ -684,7 +685,7 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
             let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
             l.reponse = Some(tete(&x.reponse, 2000));
-            l.repondu_le = x.repondu_le.minute();
+            l.repondu_le = x.repondu_le;
             l.lu = Some(false);
             n += 1;
         }

@@ -860,43 +860,6 @@ impl<'de> serde::Deserialize<'de> for HeureDuJournal {
     }
 }
 
-/// UNE MINUTE UTC, `AAAA-MM-JJTHH:MMZ` : l'heure ou le serveur du filet a releve la reponse a un retour (`iso` de
-/// `infra/filet/filet_serveur.py`, `FORMAT = "%Y-%m-%dT%H:%M"` suivi de `Z`). Elle se lit et s'ecrit dans cette forme,
-/// et elle seule, octet pour octet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MinuteUtc(Naif);
-
-impl MinuteUtc {
-    /// `AAAA-MM-JJTHH:MMZ`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<MinuteUtc> {
-        MinuteEcrite::lire(texte.strip_suffix('Z')?).map(|m| MinuteUtc(m.0))
-    }
-
-    /// `AAAA-MM-JJTHH:MMZ`.
-    pub fn iso(self) -> String {
-        format!("{}Z", MinuteEcrite(self.0).iso())
-    }
-}
-
-impl std::fmt::Display for MinuteUtc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.iso())
-    }
-}
-
-impl serde::Serialize for MinuteUtc {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for MinuteUtc {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteUtc, D::Error> {
-        let s = String::deserialize(d)?;
-        MinuteUtc::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", crate::date::repr_texte(&s))))
-    }
-}
-
 /// UN INSTANT ECRIT D'UN BLOC, `AAAAMMJJHHMMSS` : la date d'un depot que la plate-forme DSN liste (guide
 /// d'implementation de l'API DSN v6.8, « Date du dépôt », `depot.date`, format `yyyyMMddhhmmss`, [14,14] ;
 /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). Le guide ne dit
