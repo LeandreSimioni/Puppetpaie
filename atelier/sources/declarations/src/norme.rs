@@ -2,7 +2,7 @@
 //!
 //! Elle ne vient plus d'une constante : `logiciel/donnees/norme-dsn-base.json` dit, par version, ce qui la declenche
 //! (le mois principal declare d'une DSN mensuelle, le jour de constitution d'un signalement), ses tables d'usages et de
-//! formats, les valeurs de liste qu'elle n'admet plus et le code de la CET patronale. Le moteur applique la donnee ;
+//! formats (dont les listes de valeurs qu'elle admet) et le code de la CET patronale. Le moteur applique la donnee ;
 //! ce qu'elle ne couvre pas refuse. LA REGLE DE BASCULE EST UNE INFERENCE (la `note` de la donnee) : le cahier
 //! technique 2027.1.1 ne la donne pas (p. 129, une seule valeur par cahier ).
 //!
@@ -61,8 +61,6 @@ struct Version {
     usages: String,
     /// La table des formats.
     formats: String,
-    /// Par rubrique, les valeurs que la version n'admet plus dans sa liste, et pourquoi.
-    valeurs_retirees: BTreeMap<String, BTreeMap<String, String>>,
     /// Les rubriques que le tableau des usages admet et que la description dit « a ne pas renseigner ».
     rubriques_a_ne_pas_renseigner: Option<ANePasRenseigner>,
     /// Les regles d'ecriture que la version ajoute a la precedente : le nom de la regle, le texte qui la porte.
@@ -190,12 +188,6 @@ impl Norme {
         Ok(matches!(crate::usages::usage(self, rubrique, nature)?, Some(crate::usages::Usage::O | crate::usages::Usage::C)))
     }
 
-    /// Pourquoi cette valeur n'est plus dans la liste de la rubrique pour cette version (le texte de la donnee), ou
-    /// `None`.
-    pub fn valeur_retiree(&self, rubrique: &str, valeur: &str) -> R<Option<String>> {
-        self.entree(|e| e.valeurs_retirees.get(rubrique).and_then(|r| r.get(valeur)).cloned())
-    }
-
     /// Pourquoi cette rubrique ne se renseigne pas dans cette version alors que son tableau des usages l'admet (le texte
     /// de la donnee, `rubriques_a_ne_pas_renseigner`), ou `None`.
     pub fn rubrique_a_ne_pas_renseigner(&self, rubrique: &str) -> R<Option<String>> {
@@ -298,15 +290,38 @@ pas. Rien n'est ecrit.",
     ))
 }
 
-/// Les valeurs que la version du fichier n'admet plus dans leur liste (`valeurs_retirees`), et les rubriques que son
-/// tableau des usages admet mais que sa description dit « a ne pas renseigner » (`rubriques_a_ne_pas_renseigner`) :
-/// refus, avec le texte de la donnee.
+/// Pourquoi la valeur `v` de la rubrique `r` n'est pas dans la liste que la table des formats de cette version releve
+/// pour elle (`valeurs` de `formats-dsn-*-base.json`), avec le libelle qu'elle a dans les autres versions livrees ;
+/// `None` si elle y est, ou si la rubrique n'a pas de liste dans cette version. « Une rubrique assortie d'une liste de
+/// valeurs ne peut contenir qu'une des valeurs indiquees dans cette liste » (cahier 2027.1.1, p. 86,
+/// `atelier/reference/norme-dsn/texte-2027/chapitre-4-controles.txt`, l. 164).
+fn hors_de_sa_liste(tables: &[(String, Arc<crate::formats::Table>)], r: &str, v: &str) -> Option<String> {
+    let [(version, ici), autres @ ..] = tables else { return None };
+    let liste = ici.formats.get(r)?.valeurs.as_ref()?;
+    if liste.contains_key(v) {
+        return None;
+    }
+    let ailleurs: Vec<String> = autres
+        .iter()
+        .filter_map(|(autre, t)| t.formats.get(r)?.valeurs.as_ref()?.get(v).map(|l| format!("{} : « {} - {} »", autre, v, l)))
+        .collect();
+    let ailleurs = if ailleurs.is_empty() { String::new() } else { format!(" (la liste de {})", ailleurs.join(" ; ")) };
+    Some(format!("la liste de la rubrique relevée pour {} ne l'a pas{}", version, ailleurs))
+}
+
+/// Les valeurs que la liste de leur rubrique, dans la version du fichier, n'a pas (`hors_de_sa_liste`), et les
+/// rubriques que son tableau des usages admet mais que sa description dit « a ne pas renseigner »
+/// (`rubriques_a_ne_pas_renseigner`) : refus, avec le texte de la donnee.
 pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
+    let mut tables = vec![(norme.version.clone(), crate::formats::table_de(norme)?)];
+    for autre in versions()?.into_iter().filter(|n| n != norme) {
+        tables.push((autre.version.clone(), crate::formats::table_de(&autre)?));
+    }
     let mut refus = Vec::new();
     let mut a_ne_pas = Vec::new();
     for ligne in lignes(texte) {
         let (r, v) = rubrique_valeur(ligne);
-        if let Some(pourquoi) = norme.valeur_retiree(r, v)? {
+        if let Some(pourquoi) = hors_de_sa_liste(&tables, r, v) {
             let dit = format!("    {} = '{}' : {}", r, v, pourquoi);
             if !refus.contains(&dit) {
                 refus.push(dit);
@@ -334,6 +349,6 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
             norme.version,
             refus.join("\n")
         ),
-        Lieu { fichier: Some(BASE.to_string()), cle: Some("valeurs_retirees".to_string()), ..Lieu::default() },
+        Lieu { fichier: Some(norme.table_formats()?), cle: Some("valeurs".to_string()), ..Lieu::default() },
     ))
 }
