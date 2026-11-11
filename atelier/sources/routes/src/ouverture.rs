@@ -596,7 +596,7 @@ pub(crate) struct RegistreIdentite {
 pub(crate) struct PoseePour {
     /// La personne qui signait ; vide quand la fiche ne le disait pas.
     pub(crate) de: Option<String>,
-    pub(crate) le: String,
+    pub(crate) le: socle::date::Jour,
 }
 
 /// Le registre des images posees, lu par sa forme ; vide s'il n'existe pas. Sa seule lecture.
@@ -622,7 +622,7 @@ pub(crate) struct ImageIdentite {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) quand: Option<String>,
+    pub(crate) quand: Option<socle::paris::InstantEcrit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
     pub(crate) documents: &'static [&'static str],
@@ -687,7 +687,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
-                e.quand = socle::paris::mtime(&st).map(socle::paris::iso_secondes);
+                e.quand = socle::paris::mtime(&st).map(socle::paris::InstantEcrit::de);
                 e.fichier = Some(f.display().to_string());
             }
         }
@@ -1014,12 +1014,12 @@ pub(crate) struct MoisDuBilan {
     saisi_dit: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pastille: Option<socle::ecran::Pastille>,
-    depose_le: Option<String>,
+    depose_le: Option<socle::paris::HeureDuJournal>,
     depose_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     documents_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    echeance: Option<String>,
+    echeance: Option<socle::date::Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     echeance_depot: Option<declarations::echeance_dsn::EcheanceDite>,
     corrigeable: bool,
@@ -1121,9 +1121,9 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
                 (true, Some(q)) => Some(format!("le {}", q.jour().jj_mm_aaaa())),
                 _ => None,
             },
-            depose_le: quand.map(|q| q.iso()),
+            depose_le: quand,
             documents_dit: Some(if sortes.is_empty() { "aucun document".to_string() } else { sortes.join(" · ") }),
-            echeance: Some(limite.iso()),
+            echeance: Some(limite),
             echeance_depot: Some(echeance.dite()),
             // Deposee, passee, et l'echeance derriere : la correction part dans
             // la DSN du mois courant.

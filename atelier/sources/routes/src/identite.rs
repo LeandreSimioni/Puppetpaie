@@ -235,7 +235,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         // Pour qui elle est posee : la personne qui signe CE JOUR-LA.
         let mut registre = crate::ouverture::registre_identite(&dossier)?;
         let signataire = crate::ouverture::signataire_de(&ctx.entreprise);
-        registre.signature = Some(crate::ouverture::PoseePour { de: signataire.nom, le: aujourd_hui().iso() });
+        registre.signature = Some(crate::ouverture::PoseePour { de: signataire.nom, le: aujourd_hui() });
         ecrire(&dossier.join("identite.json"), &registre)?;
     }
     Ok((identite(ctx)?, poids))
@@ -341,7 +341,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), socle::ecran::quand(quand))),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), quand.dit())),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

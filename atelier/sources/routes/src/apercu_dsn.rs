@@ -88,7 +88,7 @@ impl ContratLu {
 /// Un versement du fichier (S21.G00.50.001, .004, .002, .006, .009), tel qu'il l'ecrit ; ce qu'il ne dit pas est vide.
 #[derive(Debug, Serialize)]
 struct VersementDuFichier {
-    date: Option<String>,
+    date: Option<Jour>,
     net_verse: Option<String>,
     net_fiscal: Option<String>,
     taux_pas: Option<String>,
@@ -98,7 +98,7 @@ struct VersementDuFichier {
 impl VersementDuFichier {
     fn de(v: &VersementLu) -> VersementDuFichier {
         let t = |m: Option<Decimal>| m.map(|m| m.to_string());
-        VersementDuFichier { date: v.verse_le.map(|j| j.iso()), net_verse: t(v.net_verse), net_fiscal: t(v.net_imposable), taux_pas: t(v.taux_pas), montant_pas: t(v.pas) }
+        VersementDuFichier { date: v.verse_le, net_verse: t(v.net_verse), net_fiscal: t(v.net_imposable), taux_pas: t(v.taux_pas), montant_pas: t(v.pas) }
     }
 }
 
@@ -223,8 +223,8 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 dates_dit: dates_dites(c.debut, c.fin),
                 fin_dit,
                 numero: c.numero.clone(),
-                debut: c.debut.iso(),
-                fin: c.fin.map(|j| j.iso()),
+                debut: c.debut,
+                fin: c.fin,
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
@@ -232,7 +232,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 jours: norm(m.jours),
                 cachets: norm(m.cachets),
                 heures: norm(m.heures),
-                fin_declaree: c.fin_declaree.map(|j| j.iso()),
+                fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin.clone(),
                 remunere: m.remunere,
                 paie: p.is_some(),
@@ -261,8 +261,8 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
             dit,
             nom,
             numero: n.clone(),
-            debut: p.engagement.debut.iso(),
-            fin: p.engagement.fin.map(|f| f.iso()),
+            debut: p.engagement.debut,
+            fin: p.engagement.fin,
             pastille: Pastille::de("a_faire", "absent du fichier"),
         });
     }
@@ -350,8 +350,8 @@ struct ContratDuFichier {
     dates_dit: String,
     fin_dit: String,
     numero: String,
-    debut: String,
-    fin: Option<String>,
+    debut: Jour,
+    fin: Option<Jour>,
     emploi: Option<String>,
     /// La nature du contrat telle que la DSN la code (S21.G00.40.007).
     #[serde(rename = "nature")]
@@ -361,7 +361,7 @@ struct ContratDuFichier {
     jours: String,
     cachets: String,
     heures: String,
-    fin_declaree: Option<String>,
+    fin_declaree: Option<Jour>,
     motif_fin: Option<String>,
     remunere: bool,
     paie: bool,
@@ -376,8 +376,8 @@ struct AbsentDuFichier {
     salarie: String,
     nom: Option<String>,
     numero: String,
-    debut: String,
-    fin: Option<String>,
+    debut: Jour,
+    fin: Option<Jour>,
     dit: String,
     pastille: Pastille,
 }

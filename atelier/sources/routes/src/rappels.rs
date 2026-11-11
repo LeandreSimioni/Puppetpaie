@@ -137,8 +137,10 @@ pub(crate) struct Rappels {
 #[derive(Debug, Serialize)]
 struct Echeancier {
     phrase: String,
-    aujourdhui: String,
-    date: String,
+    aujourdhui: Jour,
+    /// Aujourd'hui en clair, « lundi 2 novembre 2026 ».
+    #[serde(rename = "date")]
+    date_dite: String,
     date_dit: String,
     bienvenue: &'static str,
     /// Le nom de la compagnie ; `null` : la fiche ne le dit pas encore.
@@ -329,7 +331,7 @@ pub(crate) struct Echeance {
     /// Son dernier jour, quand elle en a un.
     date: Option<Jour>,
     /// Quand, en clair (« vendredi 15/01/2027 à midi », « après la DSN de décembre… »).
-    quand: String,
+    quand_dit: String,
     etat: EtatEcheance,
     /// DUE MAINTENANT : son moment est venu et elle n'est pas faite. Les rappels sont exactement celles-ci.
     due: bool,
@@ -384,7 +386,7 @@ impl Echeance {
             source: String::new(),
             tombe,
             date: None,
-            quand: String::new(),
+            quand_dit: String::new(),
             etat: AFaire,
             due: true,
             etape: String::new(),
@@ -406,7 +408,7 @@ impl Echeance {
     /// Son dernier jour, et ce jour en clair.
     fn le(&mut self, jour: &Jour) {
         self.date = Some(*jour);
-        self.quand = format!("le {}", jour.jj_mm_aaaa());
+        self.quand_dit = format!("le {}", jour.jj_mm_aaaa());
     }
 
     /// Ce sur quoi l'echeancier la range : son dernier jour, ou le mois ou elle tombe (en texte : « 2026-11-05 » se range
@@ -498,7 +500,7 @@ impl Echeance {
             source: self.source.clone(),
             tombe: self.tombe,
             date: self.date,
-            quand: self.quand.clone(),
+            quand_dit: self.quand_dit.clone(),
             etat: self.etat,
             en_retard: self.etat == EnRetard,
             rappel: self.due,
@@ -535,7 +537,9 @@ pub(crate) struct EcheanceDite {
     /// Le mois ou elle tombe ; `null` sans date butoir.
     pub(crate) tombe: Option<Mois>,
     pub(crate) date: Option<Jour>,
-    pub(crate) quand: String,
+    /// Quand, en clair.
+    #[serde(rename = "quand")]
+    pub(crate) quand_dit: String,
     pub(crate) etat: EtatEcheance,
     pub(crate) en_retard: bool,
     /// Due maintenant : un rappel la dit.
@@ -600,7 +604,7 @@ pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
     let phrases: Vec<String> = rappels
         .iter()
         .map(|r| {
-            let quand = if r.quand.is_empty() { String::new() } else { format!(" Échéance : {}.", r.quand) };
+            let quand = if r.quand_dit.is_empty() { String::new() } else { format!(" Échéance : {}.", r.quand_dit) };
             format!("{} ({}) : {} {}{}", r.titre, r.pastille.mots, r.question, r.detail, quand).replace("  ", " ")
         })
         .collect();
@@ -642,12 +646,12 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;
     let a_venir: Vec<EcheanceDite> = a_venir.iter().map(Echeance::dite).collect::<R<_>>()?;
-    let ligne = |x: &EcheanceDite| format!("{} ({}{})", x.titre, x.pastille.mots, if x.quand.is_empty() { String::new() } else { format!(", {}", x.quand) });
+    let ligne = |x: &EcheanceDite| format!("{} ({}{})", x.titre, x.pastille.mots, if x.quand_dit.is_empty() { String::new() } else { format!(", {}", x.quand_dit) });
     let phrases: Vec<String> = ce_mois.iter().chain(&a_venir).map(ligne).collect();
     Ok(Echeancier {
         phrase,
-        aujourdhui: st.aujourdhui.iso(),
-        date: date_en_clair(&st.aujourdhui),
+        aujourdhui: st.aujourdhui,
+        date_dite: date_en_clair(&st.aujourdhui),
         date_dit: format!("Nous sommes le {}", date_en_clair(&st.aujourdhui)),
         bienvenue: "Bienvenue sur PuppetPaie",
         compagnie,
@@ -702,7 +706,7 @@ fn dsn_a_venir(st: &Etat, mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     e.detail = dsn_detail(modele, &echeance)?;
     e.source = formater(&modele.source, &[])?;
     e.date = Some(echeance.jour);
-    e.quand = echeance.phrase();
+    e.quand_dit = echeance.phrase();
     e.echeance_depot = Some(echeance.dite());
     Ok(e)
 }
@@ -802,7 +806,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
         x.annee = Some(precedente);
         x.cle = format!("{}:{}", CLOTURE, precedente);
         // LA CLOTURE VIENT APRES LA DSN DE DECEMBRE : tant qu'elle n'est pas partie, c'est son rappel qui parle.
-        x.quand = format!("après la DSN de décembre, due {}", dsn_decembre.phrase());
+        x.quand_dit = format!("après la DSN de décembre, due {}", dsn_decembre.phrase());
         let partie = etat_dsn::du_mois(ctx, decembre, None)?;
         x.due = x.due && (partie.partie() || partie.refusee());
         x.etat = if x.etat == EnRetard && !x.due { AFaire } else { x.etat };
@@ -910,7 +914,7 @@ const QUOI_COCHEES: &str = "Les echeances que l'utilisateur a dites faites.";
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Coche {
-    le: String,
+    le: Jour,
     qui: String,
 }
 
@@ -941,7 +945,7 @@ fn marquer_echeance(ctx: &Contexte, cle: &str, fait: bool, qui: &str) -> socle::
     }
     let mut c = cochees(ctx)?;
     if fait {
-        c.fait.insert(cle.to_string(), Coche { le: ctx.aujourdhui.iso(), qui: qui.to_string() });
+        c.fait.insert(cle.to_string(), Coche { le: ctx.aujourdhui, qui: qui.to_string() });
     } else {
         c.fait.remove(cle);
     }
@@ -1128,7 +1132,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, le_mois)?;
     r.etat = if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
     r.date = Some(echeance.jour);
-    r.quand = echeance.phrase();
+    r.quand_dit = echeance.phrase();
     r.source = formater(&modele.source, &[])?;
     r.echeance_depot = Some(echeance.dite());
 
@@ -1361,7 +1365,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
         );
         r.mois = Some(mois);
         r.le(&jour);
-        r.quand = format!("avant la première heure de travail, le {}", jour.jj_mm_aaaa());
+        r.quand_dit = format!("avant la première heure de travail, le {}", jour.jj_mm_aaaa());
         r.detail = quand;
         r.etat = if retard { EnRetard } else { AFaire };
         r.engagements = groupe.len() as i64;
