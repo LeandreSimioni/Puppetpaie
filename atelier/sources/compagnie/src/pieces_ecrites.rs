@@ -86,8 +86,8 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
 
 /// QUAND LE MOTEUR A ECRIT CETTE PIECE, a la minute, lu au journal des ecritures (`noter_piece_ecrite`) ; `None` s'il ne
 /// le dit pas. Jamais la date du fichier.
-pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::MinuteEcrite>> {
-    Ok(piece_notee(racine, fichier)?.map(|n| socle::paris::MinuteEcrite::de(n.quand)))
+pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::Moment>> {
+    Ok(piece_notee(racine, fichier)?.map(|n| n.quand.a_la_minute()))
 }
 
 /// UNE PIECE NOTEE AU JOURNAL DES ECRITURES, telle que `noter_piece_ecrite` l'ecrit : quand, la paie qu'elle declare, et

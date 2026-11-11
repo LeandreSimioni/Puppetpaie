@@ -23,7 +23,7 @@ use crate::editeur::Retour;
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
-use socle::paris::{MinuteEcrite, Moment};
+use socle::paris::Moment;
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -273,7 +273,8 @@ pub struct EnvoiDuMessage {
 #[serde(deny_unknown_fields)]
 pub struct Signalement {
     pub id: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
     pub texte: String,
     pub captures: usize,
     pub incidents: usize,
@@ -433,7 +434,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
     let fichier = chemin_corps(racine, &id);
     let ligne = Signalement {
         id: id.clone(),
-        quand: MinuteEcrite::maintenant(),
+        quand: socle::temps::secondes().a_la_minute(),
         texte: corps.texte.clone(),
         captures: corps.captures.len(),
         incidents: corps.incidents.len(),

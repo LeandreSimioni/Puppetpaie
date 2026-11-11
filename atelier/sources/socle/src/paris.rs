@@ -471,19 +471,6 @@ impl<'de> serde::Deserialize<'de> for Moment {
 pub struct Naif(i64);
 
 impl Naif {
-    /// L'heure locale naive d'un `AAAA-MM-JJ[THH:MM[:SS]]`, ou `None` (ce qui ne se lit pas, ou qui sort du calendrier).
-    pub(crate) fn lire(iso: &str) -> Option<Naif> {
-        let c: Vec<char> = iso.chars().collect();
-        let n = |a: usize, b: usize| -> Option<i64> {
-            let t: String = c.get(a..b)?.iter().collect();
-            // Des chiffres seuls, au plus quatre : leur valeur se compte, sans lecture qui puisse echouer.
-            t.chars().all(|x| x.is_ascii_digit()).then(|| t.bytes().fold(0i64, |n, x| n * 10 + i64::from(x - b'0')))
-        };
-        let jour = Jour::nouveau(n(0, 4)? as i32, n(5, 7)? as u32, n(8, 10)? as u32)?;
-        let (h, m, s) = if c.len() >= 16 { (n(11, 13)?, n(14, 16)?, if c.len() >= 19 { n(17, 19)? } else { 0 }) } else { (0, 0, 0) };
-        Naif::du_jour(jour, h, m, s)
-    }
-
     /// `jour` a `heure:minute:seconde` ; `None` si l'heure deborde hors du calendrier.
     pub fn du_jour(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Naif> {
         Naif::de_secondes((jour.ordinal() - 719_163) * 86_400 + heure * 3_600 + minute * 60 + seconde)
@@ -543,74 +530,6 @@ impl<'de> serde::Deserialize<'de> for Naif {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Naif, D::Error> {
         let t = i64::deserialize(d)?;
         Naif::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
-    }
-}
-
-/// UN INSTANT ECRIT A LA MINUTE : l'heure de Paris `AAAA-MM-JJTHH:MM` (la pose d'un secret dans le coffre, la fin d'une
-/// seance). Meme regle que l'instant a la seconde, dans sa forme a lui.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MinuteEcrite(Naif);
-
-impl MinuteEcrite {
-    /// L'heure de Paris de cet instant, tronquee a la minute (la fraction de seconde s'arrondit d'abord a la
-    /// microseconde, au pair le plus proche).
-    pub fn de(t: Moment) -> MinuteEcrite {
-        MinuteEcrite::du_naif(Naif(local_arrondi(t)))
-    }
-
-    /// L'heure de Paris a cet instant (`socle::temps`).
-    pub fn maintenant() -> MinuteEcrite {
-        MinuteEcrite::de(crate::temps::secondes())
-    }
-
-    /// Une heure naive, tronquee a la minute.
-    pub fn du_naif(n: Naif) -> MinuteEcrite {
-        MinuteEcrite(Naif(n.0 - n.0.rem_euclid(60)))
-    }
-
-    /// `AAAA-MM-JJTHH:MM`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<MinuteEcrite> {
-        let n = Naif::lire(texte)?;
-        (texte.len() == 16 && n.iso()[..16] == *texte).then_some(MinuteEcrite(n))
-    }
-
-    /// L'heure naive.
-    pub fn naif(self) -> Naif {
-        self.0
-    }
-
-    /// Son jour.
-    pub fn jour(self) -> Jour {
-        self.0.jour()
-    }
-
-    /// `AAAA-MM-JJTHH:MM`.
-    pub fn iso(self) -> String {
-        self.0.iso()[..16].to_string()
-    }
-
-    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 ».
-    pub fn dit(self) -> String {
-        self.0.dit()
-    }
-}
-
-impl std::fmt::Display for MinuteEcrite {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.iso())
-    }
-}
-
-impl serde::Serialize for MinuteEcrite {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for MinuteEcrite {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteEcrite, D::Error> {
-        let s = String::deserialize(d)?;
-        MinuteEcrite::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAA-MM-JJTHH:MM", crate::date::repr_texte(&s))))
     }
 }
 
@@ -930,8 +849,8 @@ mod tests {
         let t = Jour::nouveau(2026, 3, 29).unwrap().ordinal() - 719_163;
         assert_eq!(decalage(a(t * 86_400 + 3_599)), 3_600);
         assert_eq!(decalage(a(t * 86_400 + 3_600)), 7_200);
-        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_599)).iso(), "2026-03-29T01:59");
-        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_600)).iso(), "2026-03-29T03:00");
+        assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_599)), "2026-03-29T01:59");
+        assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_600)), "2026-03-29T03:00");
     }
 
     /// Directive 2000/84/CE, art. 3 : la période « se termine […] à 1 heure du matin, temps universel, le dernier dimanche
@@ -942,8 +861,8 @@ mod tests {
         let t = Jour::nouveau(2026, 10, 25).unwrap().ordinal() - 719_163;
         assert_eq!(decalage(a(t * 86_400 + 3_599)), 7_200);
         assert_eq!(decalage(a(t * 86_400 + 3_600)), 3_600);
-        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_599)).iso(), "2026-10-25T02:59");
-        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_600)).iso(), "2026-10-25T02:00");
+        assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_599)), "2026-10-25T02:59");
+        assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_600)), "2026-10-25T02:00");
     }
 
     /// Directive 2000/84/CE, art. 2 (même fichier) : à 1 h UTC le dernier dimanche de mars, Paris passe de 2 h à 3 h ;

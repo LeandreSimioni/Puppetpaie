@@ -25,7 +25,7 @@ use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
-use socle::paris::MinuteEcrite;
+use socle::paris::Moment;
 use crate::ntt;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
@@ -335,7 +335,7 @@ pub struct Embauche {
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
     /// La minute de l'ecriture, donnee par l'appelant (heure de Paris), que la zone ecrit JJMMAAAAHHMM.
-    pub horodatage: MinuteEcrite,
+    pub horodatage: Moment,
     pub heure_embauche: String,
     /// Le code Urssaf voulu, tel que l'appelant l'a donne (`None` : celui du gabarit).
     pub code_urssaf: Option<String>,
@@ -344,8 +344,9 @@ pub struct Parametres<'a> {
 }
 
 /// La zone `horodatage` d'une minute : JJMMAAAAHHMM.
-fn horodatage_dpae(m: MinuteEcrite) -> String {
-    let (j, s) = (m.jour(), m.naif().seconde_du_jour());
+fn horodatage_dpae(m: Moment) -> String {
+    let m = m.a_la_minute();
+    let (j, s) = (m.jour_de_paris(), m.seconde_du_jour_de_paris());
     format!("{:02}{:02}{:04}{:02}{:02}", j.jour, j.mois, j.an, s / 3_600, s / 60 % 60)
 }
 
@@ -544,14 +545,15 @@ pub fn contenu(embauches: &[Embauche], p: &Parametres) -> R<Vec<u8>> {
 /// les deux, et CoolPaie deposait le zip. La date du fichier dans l'archive
 /// est la minute de l'ecriture (JJMMAAAAHHMM) : le zip est le meme a chaque
 /// ecriture du meme contenu.
-pub fn zip(nom: &str, donnees: &[u8], horodatage: MinuteEcrite) -> R<Vec<u8>> {
+pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     use flate2::write::DeflateEncoder;
     use flate2::{Compression, Crc};
     use std::io::Write;
 
     // L'horodatage, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
-    let jour = horodatage.jour();
-    let s = horodatage.naif().seconde_du_jour();
+    let minute = horodatage.a_la_minute();
+    let jour = minute.jour_de_paris();
+    let s = minute.seconde_du_jour_de_paris();
     let (j, mo, h, m) = (jour.jour, jour.mois, (s / 3_600) as u32, (s / 60 % 60) as u32);
     if !(1980..2108).contains(&jour.an) {
         return Err(socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)));
@@ -982,7 +984,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: MinuteEcrite::du_naif(socle::paris::Naif::du_jour(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap()), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {

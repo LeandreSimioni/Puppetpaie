@@ -73,7 +73,7 @@ use sha2::{Digest, Sha256};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
 use socle::num::Decimal;
-use socle::paris::MinuteEcrite;
+use socle::paris::Moment;
 
 
 /// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
@@ -280,7 +280,8 @@ pub fn depot(pose: Option<String>) -> String {
 #[serde(deny_unknown_fields)]
 pub struct Prete {
     pub version: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
     pub archives: Vec<String>,
     pub notes: String,
     pub calcul: String,
@@ -792,7 +793,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     let prete = Prete {
         version: version.to_string(),
-        quand: MinuteEcrite::maintenant(),
+        quand: socle::temps::secondes().a_la_minute(),
         archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
         notes: d.notes.clone(),
         calcul: d.calcul.clone(),
@@ -1596,7 +1597,8 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
 #[serde(deny_unknown_fields)]
 struct Appliquee {
     version: String,
-    quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    quand: Moment,
     notes: String,
     calcul: String,
     vue: bool,
@@ -1659,7 +1661,8 @@ pub fn appliquer(inst: &Path) -> R<Basculee> {
 pub struct Basculee {
     pub version: String,
     pub avant: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
 }
 
 /// `appliquer`, le dossier de la version prete et le logiciel donnes : `<installation>/maj/`, ou, pour le relais lance avec
@@ -1729,7 +1732,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
         }
         return Err(e.reformuler(|m| format!("la bascule a echoue, l'ancienne version reste en place : {}", m)));
     }
-    let quand = MinuteEcrite::maintenant();
+    let quand = socle::temps::secondes().a_la_minute();
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand, notes: d.notes, calcul: d.calcul, vue: false })?;
     socle::fichiers::effacer_apres_coup(&maj.join(PRETE));
@@ -1866,7 +1869,7 @@ pub fn noter(inst: &Path, t: &str) {
     let chemin = d.join("journal.log");
     let ecrit = std::fs::create_dir_all(&d)
         .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&chemin))
-        .and_then(|mut f| writeln!(f, "{} {}", MinuteEcrite::maintenant(), t));
+        .and_then(|mut f| writeln!(f, "{} {}", socle::paris::ecrit::minute::texte(socle::temps::secondes()), t));
     // Le journal de la mise a jour n'a personne a qui dire qu'il ne s'ecrit pas : son echec se note
     // (`echec::noter_echec`, que les incidents lisent).
     if let Err(e) = ecrit {
@@ -2026,7 +2029,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: "2026.11.01".into(), quand: MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap()), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: "2026.11.01".into(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 

@@ -566,7 +566,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let mut f: Option<PathBuf> = None;
     {
         let parametres = Parametres {
-            horodatage: socle::paris::MinuteEcrite::maintenant(),
+            horodatage: socle::temps::secondes().a_la_minute(),
             heure_embauche: heure_texte.to_string(),
             code_urssaf: Some(code.to_string()),
             ent: Some(&ent),
@@ -658,7 +658,7 @@ pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, r
     let chemins = Chemins { defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"), poste: ctx.gabarits() };
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let parametres = Parametres {
-        horodatage: socle::paris::MinuteEcrite::de(quand),
+        horodatage: quand.a_la_minute(),
         heure_embauche: heure.to_string(),
         code_urssaf: Some(code.to_string()),
         ent: Some(&ent),
